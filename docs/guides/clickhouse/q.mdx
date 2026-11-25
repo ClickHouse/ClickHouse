@@ -110,7 +110,8 @@ digits it is a timestamp.
 - The values of a program are compiled, not evaluated: recursion, control statements (`if`, `do`, `while`),
   system commands, IPC, files, and the modification of tables in place (`` `t insert ... ``) are not supported.
 - General lists must consist of items of the same shape; dictionaries are supported in simple forms.
-  `exec` with several phrases or with a named phrase, which is a dictionary of the columns in q, returns a table.
+  `exec` with several phrases, with a named phrase, or without a phrase returns a dictionary of the columns or
+  a record in q, and is not supported: use `select`.
 - A temporal literal must be in the range of its type in q: the dates within the years 0001..9999, the minutes, seconds,
   and times within 32 bits, and the timestamps and timespans within 64 bits of nanoseconds (`106751D23:47:16.854775807`
   is the longest timespan). A literal out of range is a syntax error. The values that ClickHouse stores are limited by
@@ -122,8 +123,9 @@ digits it is a timestamp.
   the setting `max_expanded_ast_elements`.
 - The compilation of a program is under the memory limit of the query (`max_memory_usage`): a table literal of
   ten million items takes its memory even if the program does not use the table.
-- The compiled query is logged like any other query. When a program cannot be compiled, its text is logged, with
-  the queries embedded by `.ch.sql` written without their secrets, such as the password of `remote` or the keys of `s3`.
+- The compiled query is logged like any other query, without its secrets. When it has none, or when the program
+  cannot be compiled, the text of the program is logged, with the queries embedded by `.ch.sql` written without
+  their secrets, such as the password of `remote` or the keys of `s3`.
 - The names starting with `__q` are reserved for the helper columns of the generated query: a table with such a column
   cannot be used in a q program (rename the column with `.ch.sql`).
 - The columns of a table are those that the user is allowed to see, as in `system.columns`. A program needs the `SELECT` grant

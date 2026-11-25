@@ -13,7 +13,12 @@ exec sum x from ([] x:10 20);
 1 + exec max x from ([] x:10 20);
 exec sum x by g from ([] g:1 1 2; x:10 20 30);
 d:exec sum x by g from ([] g:1 1 2; x:10 20 30); d 2;
-exec x, y from ([] x:1 2; y:3 4);
+
+/ The forms of `exec` that return a dictionary of the columns or a record in q are not supported.
+exec x, y from ([] x:1 2; y:3 4); -- { serverError NOT_IMPLEMENTED }
+exec a:x from ([] x:1 2); -- { serverError NOT_IMPLEMENTED }
+exec from ([] x:1 2); -- { serverError NOT_IMPLEMENTED }
+count exec from ([] x:1 2); -- { serverError NOT_IMPLEMENTED }
 
 / A projection of a projection keeps the arguments of the first one.
 f:{[x;y;z] x+y+z}; g:f[1]; h:g[;3]; h[2];
@@ -67,8 +72,23 @@ t:([] x:2003.07m 2003.08m); u:update y:x+1 from t; select n:`long$y from u;
 `date$2024.01.15D10:30:00;
 `month$2024.01.15;
 
+/ An aggregate as a column keeps the order of the rows, and sees the rows of a group in their order.
+update m: med x by g from ([] g:2 1 2; x:1 2 10);
+update f: first x, l: last x by g from ([] g:2 1 2 1; x:1 2 3 4);
+update m: max x from ([] g:2 1 2; x:1 2 10) where g=2;
+select from ([] g:2 1 2 1; x:1 2 3 4) where x=(max; x) fby g;
+
 SET filter = 'n > 0';
 / The settings that construct the result apply to the compiled query.
 .ch.sql "SELECT number AS n FROM numbers(3)";
+SET filter = 'x > 10';
+([] x:10 20 30);
 SET filter = '';
 .ch.sql "SELECT number AS n FROM numbers(3)";
+SET limit = 1;
+SET page = 3;
+([] x:10 20 30);
+.ch.sql "SELECT number AS n FROM numbers(5)";
+SET page = 0;
+SET limit = 0;
+count ([] x:10 20 30);
