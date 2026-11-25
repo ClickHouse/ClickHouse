@@ -509,8 +509,12 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTr
     dag_outputs.resize(step_dag.getOutputs().size());
 
     /// See `MergedPlanDAG::unremovable_outputs`. A join above can pad such a value as any other of this subtree.
-    for (size_t position : join_step->getUnremovableOutputPositions())
+    const auto removable_positions = join_step->getRemovableOutputPositions();
+    for (size_t position = 0; position < dag_outputs.size(); ++position)
     {
+        if (std::ranges::binary_search(removable_positions, position))
+            continue;
+
         const auto * kept = &dag.addAlias(*dag_outputs[position], dag_outputs[position]->result_name);
         dag_outputs[position] = kept;
         built.dag.origins.emplace(kept, MergedPlanDAG::Origin{&node, nullptr});

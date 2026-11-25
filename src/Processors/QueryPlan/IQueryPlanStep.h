@@ -165,10 +165,12 @@ public:
     /// and getUnneededColumns unless it has no children to ask about.
     [[nodiscard]] virtual bool canRemoveUnusedColumns() const { return false; }
 
-    /// The positions of the output header whose columns the step never removes, whether or not anybody needs them:
-    /// it has to keep making them the way it does. Whoever changes the plan around the step leaves these columns
-    /// to it and takes them from its output, rather than from the expressions that compute them.
-    [[nodiscard]] virtual VectorWithMemoryTracking<size_t> getUnremovableOutputPositions() const { return {}; }
+    /// The columns of the output header that can go away once nobody needs them: all of them, unless the step
+    /// says otherwise. A column that is not returned stays the way the step makes it: whoever changes the plan
+    /// around the step leaves it to the step and takes it from the step's output, rather than from the
+    /// expressions that compute it.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    [[nodiscard]] virtual VectorWithMemoryTracking<size_t> getRemovableOutputPositions() const;
 
     /// What removeUnusedColumns did. The default is the answer when nothing changes.
     struct RemoveUnusedColumnsResult
