@@ -2247,6 +2247,10 @@ bool partHasOnlyDefaultsInColumn(const MergeTreeData::DataPartPtr & part, const 
     if (part->info.isPatch())
         return false;
 
+    /// The reader does not return the stored values of these columns.
+    if (part->isSystemColumnInvalidated(column.name) || (part->isProjectionPart() && column.name == "_parent_part_offset"))
+        return false;
+
     const auto column_in_part = part->tryGetColumn(column.name);
     if (!column_in_part || !column_in_part->type->equals(*column.type))
         return false;

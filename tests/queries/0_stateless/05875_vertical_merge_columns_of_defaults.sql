@@ -116,6 +116,71 @@ SELECT count(), sum(v), countIf(e_t != ''), countIf(e_s != '') FROM t_defaults_t
 SELECT count() FROM t_defaults_text WHERE hasToken(e_t, 'abc');
 SELECT count() FROM t_defaults_text WHERE e_t = '' AND e_s = '';
 
+SELECT 'Parent part offsets in a projection of one-row parts';
+
+DROP TABLE IF EXISTS t_defaults_projection;
+
+CREATE TABLE t_defaults_projection
+(
+    k UInt64,
+    b UInt64,
+    PROJECTION p (SELECT b, _part_offset ORDER BY b)
+)
+ENGINE = MergeTree ORDER BY k
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    ratio_of_defaults_for_sparse_serialization = 0.9,
+    compute_exact_num_defaults_for_sparse_columns = 1,
+    enable_vertical_merge_algorithm = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_defaults_projection VALUES (2, 20);
+INSERT INTO t_defaults_projection VALUES (1, 10);
+OPTIMIZE TABLE t_defaults_projection FINAL;
+
+SELECT b, _parent_part_offset FROM mergeTreeProjection(currentDatabase(), t_defaults_projection, p) ORDER BY b;
+SELECT b, _part_offset FROM t_defaults_projection ORDER BY b;
+
+SELECT 'Block offsets of attached parts';
+
+DROP TABLE IF EXISTS t_defaults_attach_src;
+DROP TABLE IF EXISTS t_defaults_attach_dst;
+
+CREATE TABLE t_defaults_attach_src
+(
+    k UInt64,
+    v UInt64
+)
+ENGINE = MergeTree ORDER BY k
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    ratio_of_defaults_for_sparse_serialization = 0.9,
+    compute_exact_num_defaults_for_sparse_columns = 1,
+    enable_vertical_merge_algorithm = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+CREATE TABLE t_defaults_attach_dst AS t_defaults_attach_src;
+
+INSERT INTO t_defaults_attach_src VALUES (1, 10);
+INSERT INTO t_defaults_attach_src VALUES (2, 20);
+INSERT INTO t_defaults_attach_src VALUES (3, 30);
+OPTIMIZE TABLE t_defaults_attach_src FINAL;
+SELECT k, _block_offset FROM t_defaults_attach_src ORDER BY k;
+
+ALTER TABLE t_defaults_attach_dst ATTACH PARTITION tuple() FROM t_defaults_attach_src;
+ALTER TABLE t_defaults_attach_dst ATTACH PARTITION tuple() FROM t_defaults_attach_src;
+OPTIMIZE TABLE t_defaults_attach_dst FINAL;
+SELECT k, _block_offset FROM t_defaults_attach_dst ORDER BY k, _block_offset;
+
 DROP TABLE t_defaults_wide;
 DROP TABLE t_defaults_replacing;
 DROP TABLE t_defaults_text;
+DROP TABLE t_defaults_projection;
+DROP TABLE t_defaults_attach_src;
+DROP TABLE t_defaults_attach_dst;
