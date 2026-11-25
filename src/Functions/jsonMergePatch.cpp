@@ -145,30 +145,52 @@ namespace
         }
     }
 
-    /// Merges a patch into the text form of a stored row, where a value stored at both `x` and `x.y` is two members
-    /// named `x`, a literal and an object: a patch value replaces both, a patch object replaces the literal.
+    /// Merges a patch into the text form of a stored row as mergeObjects does, except for a value stored at both `x` and
+    /// `x.y`, which is two members named `x`, a literal and an object: the member of the other kind than the patch value is dropped.
     void mergeIntoStoredRow(TrackedValue & dest, const TrackedValue & src, TrackedPoolAllocator & allocator)
     {
         for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
         {
             const bool is_object = it->value.IsObject();
-            for (auto member = dest.MemberBegin(); member != dest.MemberEnd();)
+
+            auto target = dest.MemberEnd();
+            for (auto member = dest.MemberBegin(); member != dest.MemberEnd(); ++member)
             {
-                if (member->name == it->name && !(is_object && member->value.IsObject()))
-                    member = dest.EraseMember(member);
-                else
-                    ++member;
+                if (!(member->name == it->name))
+                    continue;
+                if (member->value.IsObject() == is_object)
+                {
+                    target = member;
+                    break;
+                }
+                if (target == dest.MemberEnd())
+                    target = member;
             }
 
-            if (auto member = dest.FindMember(it->name); member != dest.MemberEnd())
-            {
-                mergeIntoStoredRow(member->value, it->value, allocator);
-            }
-            else
+            if (target == dest.MemberEnd())
             {
                 TrackedValue key(it->name, allocator);
                 TrackedValue value(it->value, allocator);
                 dest.AddMember(key, value, allocator);
+                continue;
+            }
+
+            if (is_object && target->value.IsObject())
+            {
+                mergeIntoStoredRow(target->value, it->value, allocator);
+            }
+            else
+            {
+                TrackedValue value(it->value, allocator);
+                target->value = value;
+            }
+
+            for (auto member = dest.MemberBegin(); member != dest.MemberEnd();)
+            {
+                if (member->name == it->name && member->value.IsObject() != is_object)
+                    member = dest.EraseMember(member);
+                else
+                    ++member;
             }
         }
     }

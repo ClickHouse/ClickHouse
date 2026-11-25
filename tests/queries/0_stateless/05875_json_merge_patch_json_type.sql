@@ -78,6 +78,11 @@ SELECT id, p, JSONMergePatch(c, p) AS r, toString(r) = toString(CAST(JSONMergePa
 FROM t_map, (SELECT arrayJoin(['{"m":{"y":2}}', '{"m":{"x":null}}', '{"u":{"a":9}}', '{"m":null}', '{"other":1}']) AS p) AS patches
 ORDER BY id, p;
 SELECT id, JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM t_map ORDER BY id;
+SELECT p, JSONMergePatch(c, p) AS r, toString(r) = toString(CAST(JSONMergePatch(c::String, p), toTypeName(c)))
+FROM (SELECT CAST('{"m":{"x":1,"y":2}}', 'JSON(m Map(String, UInt8))') AS c) AS src,
+    (SELECT arrayJoin(['{"m":{"x":3}}', '{"m":{"x":null}}', '{"m":{"y":3,"z":4}}']) AS p) AS patches ORDER BY p;
+SELECT JSONMergePatch(c, '{"m":{"x":3}}') AS r, toString(r) = toString(CAST(JSONMergePatch(c::String, '{"m":{"x":3}}'), toTypeName(c)))
+FROM (SELECT CAST('{"m":{"x":1,"x":2}}', 'JSON(m Map(String, UInt8))') AS c);
 
 SELECT 'round-trip settings';
 SELECT JSONAllPathsWithTypes(JSONMergePatch(c, '{"m":{"y":2}}'))['n'] FROM (SELECT CAST('{"m":{"x":1},"n":42}', 'JSON(m Map(String, UInt8))') AS c) SETTINGS output_format_json_quote_64bit_integers = 1;
