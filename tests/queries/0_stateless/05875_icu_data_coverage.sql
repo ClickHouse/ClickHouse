@@ -13,7 +13,8 @@ SELECT 'ru', groupArray(s) FROM (SELECT arrayJoin(['я', 'а', 'Б', 'ё', 'е',
 SELECT 'tr', groupArray(s) FROM (SELECT arrayJoin(['i', 'I', 'ı', 'İ', 'z', 'ç', 'c']) AS s ORDER BY s COLLATE 'tr');
 SELECT 'sv', groupArray(s) FROM (SELECT arrayJoin(['z', 'å', 'ä', 'ö', 'a']) AS s ORDER BY s COLLATE 'sv');
 SELECT 'zh', groupArray(s) FROM (SELECT arrayJoin(['中', '文', '汉', '字', '阿']) AS s ORDER BY s COLLATE 'zh');
-SELECT 'ja', groupArray(s) FROM (SELECT arrayJoin(['カ', 'か', 'あ', 'ア', '漢', '亜']) AS s ORDER BY s COLLATE 'ja');
+-- Hiragana and katakana of the same sound are equal for the `ja` collator, so every item here is a different sound.
+SELECT 'ja', groupArray(s) FROM (SELECT arrayJoin(['カ', 'あ', '漢', '亜', 'さ']) AS s ORDER BY s COLLATE 'ja');
 SELECT 'ko', groupArray(s) FROM (SELECT arrayJoin(['하', '가', '다', '나']) AS s ORDER BY s COLLATE 'ko');
 SELECT 'de phonebook', groupArray(s) FROM (SELECT arrayJoin(['Müller', 'Mueller', 'Muller', 'Mz']) AS s ORDER BY s COLLATE 'de@collation=phonebook');
 SELECT 'es traditional', groupArray(s) FROM (SELECT arrayJoin(['chico', 'cuna', 'dedo', 'llama', 'luna']) AS s ORDER BY s COLLATE 'es@collation=traditional');
