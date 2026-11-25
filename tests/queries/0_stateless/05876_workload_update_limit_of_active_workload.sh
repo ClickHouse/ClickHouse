@@ -41,10 +41,10 @@ $CLICKHOUSE_CLIENT -m -q "
 for workload in $A $B
 do
     timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT --query_id "${CLICKHOUSE_DATABASE}_$workload" --format Null \
-        -q "SELECT count() FROM numbers_mt(1e13) SETTINGS workload = '$workload', max_threads = 8, max_execution_time = $CALL_TIMEOUT" >/dev/null 2>&1 &
+        -q "SELECT count() FROM numbers_mt(1e13) SETTINGS workload = '$workload', max_threads = 8, max_execution_time = $CALL_TIMEOUT, max_rows_to_read = 0, max_bytes_to_read = 0" >/dev/null 2>&1 &
 done
 
-for _ in {1..600}
+for _ in {1..300}
 do
     waiting=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.scheduler WHERE resource = '$RESOURCE' AND type = 'request_queue' AND queue_length > 0")
     [ "$waiting" -eq 2 ] && break
