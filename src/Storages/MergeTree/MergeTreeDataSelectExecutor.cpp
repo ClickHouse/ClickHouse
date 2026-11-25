@@ -170,6 +170,28 @@ namespace ErrorCodes
 namespace
 {
 
+/// Holds a CPU slot for the current thread: a CPU lease is charged with the CPU time of the thread that releases it.
+/// The lease is published for `CPULeaseParkGuard`, which gives the slot away while the thread waits for a read (e.g. from object storage).
+struct CPUSlotHolder : boost::noncopyable
+{
+    explicit CPUSlotHolder(AcquiredSlotPtr slot_)
+        : slot(std::move(slot_))
+        , previous_lease(getCurrentCPULease())
+    {
+        if (auto * lease = dynamic_cast<ISlotLease *>(slot.get()))
+        {
+            lease->startConsumption();
+            if (lease->isParkingEnabled())
+                setCurrentCPULease(lease);
+        }
+    }
+
+    ~CPUSlotHolder() { setCurrentCPULease(previous_lease); }
+
+    AcquiredSlotPtr slot;
+    ISlotLease * previous_lease;
+};
+
 /// Calls `process_part(part_index)` for parts [0, num_parts), in order, on the calling thread and on one more thread
 /// per granted CPU slot (see `allocateCPUSlots`), up to `num_threads` in total. Stops once `process_part` returns false or throws.
 /// Never waits for a slot: the caller may hold the only one of its workload (`mergeTreeAnalyzeIndexes`), and such a wait
@@ -194,29 +216,27 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
     std::atomic<size_t> next_part_index = 0;
     std::atomic<bool> stopped = false;
 
-    /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
-    auto process_parts = [&](ThreadPool & pool, IAcquiredSlot & slot, const auto & before_part)
+    /// Returns false if there is nothing more to process.
+    auto process_next_part = [&]
     {
-        auto * lease = dynamic_cast<ISlotLease *>(&slot);
-        if (lease)
-            lease->startConsumption();
+        if (stopped.load(std::memory_order_relaxed))
+            return false;
 
-        /// Published for `CPULeaseParkGuard`, which gives the slot away while the thread waits for a read (e.g. from object storage).
-        ISlotLease * previous_lease = getCurrentCPULease();
-        if (lease && lease->isParkingEnabled())
-            setCurrentCPULease(lease);
-        SCOPE_EXIT({ setCurrentCPULease(previous_lease); });
+        const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+        if (part_index >= num_parts)
+            return false;
 
-        while (!stopped.load(std::memory_order_relaxed) && !pool.isFinished())
+        try
         {
-            before_part();
-            const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
-            if (part_index >= num_parts)
-                return;
-
             if (!process_part(part_index))
                 stopped.store(true, std::memory_order_relaxed);
         }
+        catch (...)
+        {
+            stopped.store(true, std::memory_order_relaxed);
+            throw;
+        }
+        return true;
     };
 
     /// Declared after everything its jobs use: its destructor joins them.
@@ -226,29 +246,43 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
         CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
         num_threads - 1);
 
+    /// If the calling thread throws, the jobs do not take more parts.
+    SCOPE_EXIT({ stopped.store(true, std::memory_order_relaxed); });
+
+    /// A released slot can be granted again, so a thread is started only while there are parts for it.
     auto start_threads = [&]
     {
-        while (auto granted_slot = cpu_slots->tryAcquire())
+        while (next_part_index.load(std::memory_order_relaxed) < num_parts && !stopped.load(std::memory_order_relaxed))
         {
+            auto granted_slot = cpu_slots->tryAcquire();
+            if (!granted_slot)
+                break;
+
             pool.scheduleOrThrowOnError(
-                [&process_parts, &pool, slot = std::move(granted_slot), thread_group = CurrentThread::getGroup(),
+                [&process_next_part, slot = std::move(granted_slot), thread_group = CurrentThread::getGroup(),
                  component_name = Coordination::getCurrentComponent()] mutable
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
                     /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
                     /// explicitly: index analysis may read from a Keeper-backed disk.
                     auto local_component_guard = Coordination::setCurrentComponent(component_name);
-                    /// Released on this thread: a CPU lease is charged with the CPU time of the thread that releases it.
-                    auto worker_slot = std::move(slot);
-                    process_parts(pool, *worker_slot, [] {});
+                    CPUSlotHolder slot_holder(std::move(slot));
+                    while (process_next_part())
+                        ;
                 });
         }
     };
 
-    auto master_slot = cpu_slots->acquire();
-    process_parts(pool, *master_slot, start_threads);
-    /// Waiting for the other threads does not use CPU.
-    master_slot.reset();
+    {
+        CPUSlotHolder slot_holder(cpu_slots->acquire());
+        /// The workload scheduler grants slots asynchronously, so the threads are started for the slots granted meanwhile.
+        do
+        {
+            start_threads();
+        } while (process_next_part());
+    }
+
+    /// The slot is released before: the wait does not use CPU.
     pool.wait();
 }
 
