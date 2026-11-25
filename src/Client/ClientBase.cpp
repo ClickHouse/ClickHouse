@@ -3827,14 +3827,21 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
+    /// Disable the logs if errors are expected.
+    bool logs_disabled_for_expected_errors = false;
+    auto disable_logs_for_expected_errors = [&]
     {
-        /// disable logs if expects errors
+        if (logs_disabled_for_expected_errors)
+            return;
+        logs_disabled_for_expected_errors = true;
+        auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+        UNUSED(u);
+    };
+
+    {
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
-        {
-            auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-            UNUSED(u);
-        }
+            disable_logs_for_expected_errors();
     }
 
     /// Test tags are started with "--" so they are interpreted as comments anyway.
@@ -4022,6 +4029,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     hint_text = std::string_view(hint_begin, this_query_end - hint_begin);
                 }
                 TestHint test_hint(hint_text);
+
+                /// The scan of the whole text above uses the ClickHouse lexer, which does not see the hints behind the text
+                /// of another dialect: e.g., a single `"` inside a q comment starts a quoted identifier that swallows
+                /// the hints after it. So the logs are also disabled here, where the hint of a single query is known.
+                if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
+                    disable_logs_for_expected_errors();
 
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);
