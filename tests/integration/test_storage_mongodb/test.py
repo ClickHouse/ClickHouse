@@ -998,6 +998,7 @@ def test_where(started_cluster):
         node.query("SELECT * FROM where_table WHERE equals(keyInt, keyFloat)")
 
     node.query("DROP TABLE where_table")
+    where_mongo_table.drop()
 
 
 def test_in_null_as_unknown_does_not_push_mongodb_filter_and_limit(started_cluster):
@@ -1019,7 +1020,7 @@ def test_in_null_as_unknown_does_not_push_mongodb_filter_and_limit(started_clust
         "SETTINGS in_null_as_unknown = 1, mongodb_throw_on_unsupported_query = 0"
     ) == "2\n"
     node.query("DROP TABLE nullable_membership")
-    where_mongo_table.drop()
+    db["nullable_membership"].drop()
 
 
 def test_defaults(started_cluster):
