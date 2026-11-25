@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/Jemalloc.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/JemallocMergeTreeArena.h>
 
 namespace DB
@@ -65,7 +65,7 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     /// For the same reason they are not charged to the query building the part: it is freed much later
     /// by a background thread, so the charge drifts onto the per-user tracker permanently. See
     /// `IMergeTreeDataPart::setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     if (!part_type)
@@ -117,7 +117,7 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageByType(
     /// Create them in the dedicated arena here: on the write paths this runs while configuring the
     /// builder, before `build()` enters its own scope, so the scope there would otherwise miss them.
     /// Not charged to the query for the same reason, see `IMergeTreeDataPart::setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     using Type = MergeTreeDataPartStorageType;

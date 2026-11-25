@@ -8,7 +8,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
@@ -1109,7 +1109,7 @@ private:
         ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
-        MemoryTrackerBlockerInThread memory_blocker;
+        ServerOwnedMemoryScope memory_blocker;
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try

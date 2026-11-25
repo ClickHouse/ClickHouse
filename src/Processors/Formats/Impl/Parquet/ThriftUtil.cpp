@@ -1,7 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <base/defines.h>
 #include <IO/WriteBuffer.h>
 
@@ -574,7 +574,7 @@ namespace DB::Parquet
 /// Kept offset indexes belong to the cache, not to the query that reads or evicts them.
 KeptOffsetIndexes::~KeptOffsetIndexes()
 {
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr>().swap(offset_indexes);
     UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr>().swap(column_indexes);
 }
@@ -595,7 +595,7 @@ KeptOffsetIndexes::ColumnIndexPtr KeptOffsetIndexes::getColumnIndex(size_t row_g
 
 bool KeptOffsetIndexes::add(const VectorWithMemoryTracking<Entry> & entries)
 {
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     std::lock_guard lock(mutex);
     UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr> added_offset_indexes;
     UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr> added_column_indexes;

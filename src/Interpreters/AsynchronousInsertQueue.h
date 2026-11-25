@@ -4,7 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <Common/Logger.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
@@ -262,7 +262,7 @@ private:
                 entry->resetChunk();
 
             {
-                MemoryTrackerBlockerInThread queued_data_not_charged_to_the_flush;
+                ServerOwnedMemoryScope queued_data_not_charged_to_the_flush;
                 entries.clear();
             }
 

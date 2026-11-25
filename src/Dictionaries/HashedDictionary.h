@@ -18,7 +18,7 @@
 
 #include <Common/ArenaUtils.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -399,12 +399,12 @@ HashedDictionary<dictionary_key_type, sparse>::~HashedDictionary()
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
 
                 /// Do not account memory that was occupied by the dictionaries for the query/user context.
-                MemoryTrackerBlockerInThread memory_blocker;
+                ServerOwnedMemoryScope memory_blocker;
 
                 clearContainer(container);
             }))
         {
-            MemoryTrackerBlockerInThread memory_blocker;
+            ServerOwnedMemoryScope memory_blocker;
             clearContainer(container);
         }
 

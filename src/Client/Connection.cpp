@@ -28,7 +28,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/DNSResolver.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
@@ -362,7 +362,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             /// The buffers live as long as the connection, which outlives the query that connects it. Only here: the
             /// I/O around can suspend the coroutine that connects, and a blocker left active would block its thread.
-            MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+            ServerOwnedMemoryScope connection_buffers_not_charged_to_the_query;
             in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
             in->setAsyncCallback(async_callback);
 
@@ -498,7 +498,7 @@ void Connection::reset() noexcept
     maybe_compressed_out.reset();
     {
         /// Allocated by `connect`, not charged to any query.
-        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        ServerOwnedMemoryScope connection_buffers_not_charged_to_the_query;
         out.reset();
     }
     socket.reset();
@@ -512,7 +512,7 @@ void Connection::disconnect()
 {
     {
         /// Allocated by `connect`, not charged to any query.
-        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        ServerOwnedMemoryScope connection_buffers_not_charged_to_the_query;
         in.reset();
     }
     last_input_packet_type.reset();

@@ -18,7 +18,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
 #include <Processors/ConcatProcessor.h>
@@ -327,7 +327,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (log_capture)
     {
         /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
-        MemoryTrackerBlockerInThread block_memory_tracker;
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
         try
         {

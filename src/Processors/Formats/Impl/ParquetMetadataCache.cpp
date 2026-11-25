@@ -2,7 +2,7 @@
 
 #if USE_PARQUET
 
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <IO/UncompressedCache.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
@@ -107,14 +107,14 @@ namespace
 
 void deleteKeptRanges(const ParquetKeptStatistics::Ranges * ranges)
 {
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     delete ranges;
 }
 
 template <typename Index>
 void deleteKeptIndex(const Index * index)
 {
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     delete index;
 }
 
@@ -132,7 +132,7 @@ std::shared_ptr<const Index> copyIndexToKeep(const std::shared_ptr<const Index> 
 /// Kept statistics are released like they are allocated, see `ParquetMetadataCache::keepStatistics`.
 ParquetKeptStatistics::~ParquetKeptStatistics()
 {
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     UnorderedMapWithMemoryTracking<String, RangesPtr>().swap(ranges_by_column);
 }
 
@@ -230,7 +230,7 @@ void ParquetMetadataCache::keepStatistics(
     size_t ranges_bytes)
 {
     /// The kept ranges belong to the shared cache, not to the query that reads the file.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     auto column = cell->kept_statistics->prepare(column_key, ranges, ranges_bytes);
     if (!column)
         return;
@@ -244,7 +244,7 @@ void ParquetMetadataCache::keepOffsetIndexes(
     const ParquetMetadataCacheKey & key, const MappedPtr & cell, const VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> & entries)
 {
     /// The kept offset indexes belong to the shared cache, not to the query that reads the file.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> copies;
     const auto & kept = *cell->kept_offset_indexes;
     for (const auto & entry : entries)

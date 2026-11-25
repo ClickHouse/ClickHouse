@@ -7,7 +7,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 #include <Core/Block.h>
@@ -77,7 +77,7 @@ public:
                     );
 
                     /// Do not account memory that was occupied by the dictionaries for the query/user context.
-                    MemoryTrackerBlockerInThread memory_blocker;
+                    ServerOwnedMemoryScope memory_blocker;
 
                     LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
 

@@ -14,7 +14,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -154,7 +154,7 @@ void StorageJoin::optimizeUnlocked()
     size_t dummy = current_bytes;
     {
         /// Table data belongs to the server, not to the query releasing it.
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        ServerOwnedMemoryScope table_data_not_charged_to_the_query;
         join->shrinkStoredBlocksToFit(dummy, true);
     }
 
@@ -178,7 +178,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
 
     increment = 0;
     {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        ServerOwnedMemoryScope table_data_not_charged_to_the_query;
         join = HashJoin::create(
             table_join, std::make_shared<const Block>(getRightSampleBlock()), HashJoinBuildLayout::oneBucket(1), overwrite);
     }
@@ -231,7 +231,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
     {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        ServerOwnedMemoryScope table_data_not_charged_to_the_query;
         join = std::move(new_data);
     }
     setCurrentQueryMemoryDriftExpected();

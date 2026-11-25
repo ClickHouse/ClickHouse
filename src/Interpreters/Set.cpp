@@ -8,7 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/Logger.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
@@ -1132,7 +1132,7 @@ MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuff
     /// The cache outlives the query, so its memory (also freed here on eviction) must not be
     /// charged to whichever query happens to be running on this thread. See FieldValue::update
     /// for the same blocker on reallocations of the cached columns.
-    MemoryTrackerBlockerInThread blocker;
+    ServerOwnedMemoryScope blocker;
 
     FieldValueRanges ranges;
     ranges.reserve(tuple_size);
@@ -1498,7 +1498,7 @@ void MergeTreeSetIndex::FieldValue::update(const Field & x)
     {
         /// When the column belongs to the thread-local buffer of getFieldValueRangesBuffer, which
         /// outlives the query, its reallocations must not be charged to the current query.
-        std::optional<MemoryTrackerBlockerInThread> blocker;
+        std::optional<ServerOwnedMemoryScope> blocker;
         if (block_memory_tracker)
             blocker.emplace();
         /// Keep at most one element in column.

@@ -1,7 +1,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/logger_useful.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Allocator.h>
@@ -5619,7 +5619,7 @@ void Reader::addToColumnsCacheWrite(
     auto entry = makeColumnsCacheEntry();
     {
         /// The rest of the entry is the server's from the start, see `makeColumnsCacheEntry`.
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ServerOwnedMemoryScope not_charged_to_query_or_user;
         entry->part_name = cache_options.file_path;
         entry->column_name = extended_sample_block.getByPosition(idx_in_output_block).name;
     }

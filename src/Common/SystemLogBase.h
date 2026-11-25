@@ -8,7 +8,7 @@
 #include <base/types.h>
 
 #include <Common/Logger_fwd.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -153,7 +153,7 @@ public:
     void add(FillElement && fill)
     {
         MemoryTrackerUntrackedAllocationsBlockerInThread untracked_allocations_blocker;
-        MemoryTrackerBlockerInThread block_memory_tracker;
+        ServerOwnedMemoryScope block_memory_tracker;
         LogElement element{};
         fill(element);
         push(std::move(element));

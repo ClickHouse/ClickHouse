@@ -4,7 +4,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/JemallocCacheAllocator.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ServerOwnedAllocator.h>
+#include <Common/ServerOwnedMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
@@ -28,7 +28,7 @@ struct UncompressedCacheCell
 
     ~UncompressedCacheCell()
     {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ServerOwnedMemoryScope not_charged_to_query_or_user;
         data = {};
     }
 };

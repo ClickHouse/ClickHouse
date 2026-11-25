@@ -7,7 +7,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
@@ -338,7 +338,7 @@ void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
         return;
     }
 
-    MemoryTrackerBlockerInThread queued_data_not_charged_to_the_flush;
+    ServerOwnedMemoryScope queued_data_not_charged_to_the_flush;
     chunk = {};
     query_parameters.clear();
 }
@@ -515,12 +515,12 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     /// uncharge it, so allocate and release it the same way, charged to neither side.
     std::shared_ptr<const InsertQuery> job_key;
     {
-        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
+        ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_query;
         job_key = std::shared_ptr<const InsertQuery>(
             new InsertQuery(key),
             [](const InsertQuery * ptr)
             {
-                MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+                ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_flush;
                 delete ptr;
             });
     }
@@ -801,7 +801,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
 
         /// The queue's own bookkeeping (the `InsertQuery` key, `InsertData` holder, map/list nodes) outlives
         /// this query, freed by a flush thread; entries stay charged to it until it ends, then to the server total.
-        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
+        ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_query;
 
         auto [it, inserted] = shard.iterators.try_emplace(key.hash);
         auto now = std::chrono::steady_clock::now();
@@ -1044,7 +1044,7 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
 
             /// Moving the buckets out of the queue frees its nodes and keys, which were allocated without
             /// charging the pushing query, so this must not credit whoever asked for the flush either.
-            MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+            ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_flush;
 
             for (auto it = queue.begin(); it != queue.end();)
             {
@@ -1090,7 +1090,7 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
         /// What is left of the buckets is the queue's own bookkeeping, allocated without charging the pushing
         /// query, so it is released the same way rather than credited to the query asking for the flush.
         {
-            MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+            ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_flush;
             queues_to_flush.clear();
         }
 
@@ -1126,12 +1126,12 @@ void AsynchronousInsertQueue::flushAll()
     /// As in `flush`: the queue's nodes and keys were allocated without charging the pushing query, so moving
     /// them out and releasing them must not credit this one.
     SCOPE_EXIT({
-        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+        ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_flush;
         queues_to_flush.clear();
     });
 
     {
-        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+        ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_flush;
         for (size_t i = 0; i < pool_size; ++i)
         {
             std::lock_guard lock(queue_shards[i].mutex);
@@ -1227,7 +1227,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
                 NOEXCEPT_SCOPE({
                     /// The only exception that is possible here is MEMORY_LIMIT_EXCEEDED, by blocking them it is highly unlikely that we will fail here.
                     /// Besides it is not possible to write exception safe code here even with proper rollback, since the object can be moved out already (we can do copy, but this is more costly)
-                    MemoryTrackerBlockerInThread lock_memory_tracker;
+                    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
                     shard.iterators.erase(it->second.key.hash);
 
@@ -1331,7 +1331,7 @@ try
     /// Created before the scope exists, so nothing charged the flush for it; release it the same way, before
     /// the scope ends, so what it accumulated while attached is settled with the flush instead.
     SCOPE_EXIT_SAFE({
-        MemoryTrackerBlockerInThread flush_context_not_charged_to_the_flush;
+        ServerOwnedMemoryScope flush_context_not_charged_to_the_flush;
         insert_context.reset();
     });
 

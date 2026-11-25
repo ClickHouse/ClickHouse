@@ -69,7 +69,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadStatus.h>
@@ -483,7 +483,7 @@ IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
     /// that resets a virtual minmax column to null (see MergeTreeDataWriter) first create it here.
     /// Part-lifetime metadata, so it is not charged to whichever query happens to materialize it
     /// either; see `setColumns` for why.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     if (is_temp || isEmpty())
@@ -503,7 +503,7 @@ void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
 {
     /// Part-lifetime metadata: not charged to the query that builds it, see `setColumns`. Kept outside
     /// the `isEnabled` check below so the exclusion does not depend on the arena feature.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     /// Re-home the index into the parts arena (deep copy under the scope, then adopt), same rationale as
     /// `setColumns`. The index is one of the larger part-lifetime metadata structures and is built outside
@@ -761,7 +761,7 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     /// The primary index lives for the part's whole lifetime, so build the `Index` object in the
     /// dedicated arena and keep it off the query's memory tracker, like `setColumns` / `setMinMaxIndex`.
     /// This covers every caller (insert / merge write finalize and the mutation path) in one place.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
     index = std::make_shared<Index>(std::move(index_columns));
@@ -900,7 +900,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     /// ones, so `total_memory_tracker` still accounts the bytes and the server limit still sees them.
     /// Unlike the narrow arena scopes, it covers the whole function: the transient work is freed on
     /// this same thread, so it nets out either way.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     {
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
@@ -1549,7 +1549,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
             /// The loaded statistics and the bookkeeping of the cache outlive the query in the server-wide
             /// cache, so they are not charged to the query or the user, like the marks and the primary index
             /// in their caches. The merged statistics of the query are built by the caller and still charged.
-            MemoryTrackerBlockerInThread not_charged_to_the_query;
+            ServerOwnedMemoryScope not_charged_to_the_query;
             const auto key = StatisticsCache::hash(part_path, column_desc->name);
             cell = cache->getOrSet(key, load);
             /// `clearCaches` sets the flag before it removes the entries, so if it ran concurrently
@@ -1764,7 +1764,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     /// Long-lived per-part metadata (columns substreams, checksums, index granularity, patch part
     /// index, primary index, per-column sizes, partition / minmax index, TTL infos, projections)
@@ -2050,7 +2050,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadIndex");
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     /// The loaded primary-index `Columns` are long-lived (kept on the part or handed to
     /// `PrimaryIndexCache`), so route them into the dedicated parts arena. Keeping cache-owned indices
@@ -3095,7 +3095,7 @@ void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_
 {
     /// The interned list is shared between parts and outlives the query, so it is not charged to it;
     /// see `setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     if (validate_against_loaded_columns)
         columns_substreams_.validateColumns(getColumns().getNames());
@@ -3114,7 +3114,7 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
         return;
 
     /// Part-lifetime metadata, so the copies are not charged to the query; see `setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     /// Re-home the members built outside the arena into it (copy under the scope, then adopt).
@@ -3703,7 +3703,7 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked(
     /// happens to compute them; see `setColumns`. Unlike the arena scope below this covers the whole
     /// computation, because the short-lived churn it allocates is freed on this same thread and so
     /// nets out either way.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     /// The computation must run outside the dedicated arena: `calculateEachColumnSizes` resolves a
     /// stream name and builds a sample column for every column and substream, which is heavy

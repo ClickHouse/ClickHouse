@@ -11,7 +11,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProxyConfiguration.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -719,7 +719,7 @@ private:
         static Ptr create(Args &&... args)
         {
             /// Pool is global, we shouldn't attribute this memory to query/user.
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            ServerOwnedMemoryScope server_owned;
 
             struct make_shared_enabler : public PooledConnection
             {
@@ -927,7 +927,7 @@ public:
         std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
 
         SCOPE_EXIT({
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            ServerOwnedMemoryScope server_owned;
             expired_connections.clear();
         });
 
@@ -1369,7 +1369,7 @@ private:
             connection_to_store->markIdle();
 
             {
-                MemoryTrackerSwitcher switcher{&total_memory_tracker};
+                ServerOwnedMemoryScope server_owned;
                 std::lock_guard lock(mutex);
                 stored_connections.push(connection_to_store);
             }
@@ -1513,7 +1513,7 @@ public:
         std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
         std::vector<IExtendedPool::Ptr> dropped_pools;
         SCOPE_EXIT({
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            ServerOwnedMemoryScope server_owned;
             dropped_pools.clear();
             expired_connections.clear();
         });
@@ -1587,7 +1587,7 @@ public:
         /// The pools and their stored connections are destroyed after `mutex` is released.
         decltype(endpoints_pool) dropped_pools;
         SCOPE_EXIT({
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            ServerOwnedMemoryScope server_owned;
             dropped_pools.clear();
         });
 

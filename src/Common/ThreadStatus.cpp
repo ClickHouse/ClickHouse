@@ -329,7 +329,7 @@ void ThreadStatus::flushUntrackedMemory()
     if (current_untracked_memory == 0)
         return;
 
-    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
+    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level, MemoryTrackerBlockerInThread::ExactLevel{});
     untracked_memory.store(0);
     untracked_memory_flushed_unchecked = std::max<Int64>(0, untracked_memory_flushed_unchecked + current_untracked_memory);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);

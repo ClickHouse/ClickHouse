@@ -1,7 +1,7 @@
 #include <Common/Exception.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
@@ -182,7 +182,7 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 
     /// Runs on the query-finish path after the client has already received the result. An exception
     /// here would fail a query that had already succeeded, so diagnostics must not propagate.
-    MemoryTrackerBlockerInThread block_memory_tracker;
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     try
     {

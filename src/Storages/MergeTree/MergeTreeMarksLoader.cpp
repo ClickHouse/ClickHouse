@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -150,7 +150,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     LOG_TEST(getLogger("MergeTreeMarksLoader"), "Loading marks from path {}", mrk_path);
 
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     auto data_part_storage = data_part_reader->getDataPartStorage();
 
@@ -399,7 +399,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache)
 {
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     for (const auto & [stream_name, marks] : cached_marks)
     {

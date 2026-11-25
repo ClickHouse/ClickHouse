@@ -26,7 +26,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -563,7 +563,7 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
     try
     {
         /// The tables live as long as the database, not the query that first needs them.
-        MemoryTrackerBlockerInThread not_charged_to_the_query;
+        ServerOwnedMemoryScope not_charged_to_the_query;
         populate(const_cast<DatabaseWithOwnTablesBase &>(*this));
     }
     catch (...)

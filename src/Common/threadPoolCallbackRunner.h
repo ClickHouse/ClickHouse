@@ -2,7 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
-#include <Common/ServerOwnedAllocator.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadGroupSwitcher.h>

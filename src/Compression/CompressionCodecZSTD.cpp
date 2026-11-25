@@ -7,6 +7,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/PerCPU.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/memory.h>
@@ -179,7 +180,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
 UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     static std::atomic<size_t> num_contexts = 0;
-    MemoryTrackerBlockerInThread blocker;
+    ServerOwnedMemoryScope blocker;
     LockMemoryExceptionInThread lock(VariableContext::Global);
     auto holder = getPooledContext<ZstdDCtxPtr>([]
     {
