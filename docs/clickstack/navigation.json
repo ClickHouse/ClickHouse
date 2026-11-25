@@ -63,6 +63,12 @@
                   "group": "2026",
                   "pages": [
                     {
+                      "group": "November",
+                      "pages": [
+                        "clickstack/demo-days/2026/2026-11-12"
+                      ]
+                    },
+                    {
                       "group": "October",
                       "pages": [
                         "clickstack/demo-days/2026/2026-10-22",
@@ -473,6 +479,12 @@
                 {
                   "group": "2026",
                   "pages": [
+                    {
+                      "group": "November",
+                      "pages": [
+                        "clickstack/demo-days/2026/2026-11-12"
+                      ]
+                    },
                     {
                       "group": "October",
                       "pages": [
