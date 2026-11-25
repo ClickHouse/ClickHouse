@@ -23,6 +23,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -35,6 +37,8 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+
+#include <Poco/String.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -61,6 +65,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
     extern const SettingsBool restore_replace_external_engines_to_null;
+    extern const SettingsBool restore_replace_external_dictionary_source_to_null;
 }
 
 namespace FailPoints
@@ -118,6 +123,18 @@ namespace
     bool isSystemResourcesTableName(const QualifiedTableName & table_name)
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
+    }
+
+    /// Whether the tables restored to the database are also created on its other replicas: the database is `Replicated`,
+    /// whether it exists or the restore creates it from the backup.
+    bool isReplicatedRestoreTarget(const String & database_name, const ASTPtr & create_database_query)
+    {
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+            return database->getEngineName() == "Replicated";
+        if (!create_database_query)
+            return false;
+        const auto & create = create_database_query->as<const ASTCreateQuery &>();
+        return create.storage && create.storage->engine && create.storage->engine->name == "Replicated";
     }
 
     /// Engine name if the database is skipped by the restore, so neither it nor any table under it
@@ -482,7 +499,32 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
                 if (create.is_dictionary)
+                {
                     flags |= AccessType::CREATE_DICTIONARY;
+
+                    /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing: the named collection of the
+                    /// source is authorized here. A source replaced by `Null` sends nothing. Under `CHECK_ACCESS_ONLY` the dictionary
+                    /// is created on other hosts, and only a value in the query reaches every host. A `clickhouse` source is replaced
+                    /// only if it is not local, so it is authorized anyway.
+                    const bool replace_dictionary_source_to_null
+                        = context->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null]
+                        && (mode != Mode::CHECK_ACCESS_ONLY
+                            || restore_settings.core_settings.tryGet("restore_replace_external_dictionary_source_to_null") != nullptr);
+                    const bool source_replaced_to_null = replace_dictionary_source_to_null && create.dictionary
+                        && create.dictionary->source && Poco::toLower(create.dictionary->source->name) != "clickhouse";
+                    if (!source_replaced_to_null)
+                    {
+                        if (auto collection_name = InterpreterCreateQuery::getNamedCollectionOfDictionarySource(create))
+                            required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
+
+                        /// On other hosts (`ON CLUSTER`, a `Replicated` database) the dictionary is created with full access,
+                        /// and their named collection can store other keys, so the overrides of its keys are authorized here.
+                        const auto & create_database_query
+                            = database_it != database_infos.end() ? database_it->second.create_database_query : ASTPtr{};
+                        if (mode == Mode::CHECK_ACCESS_ONLY || isReplicatedRestoreTarget(table_name.database, create_database_query))
+                            required_access.append_range(InterpreterCreateQuery::getAccessToOverrideNamedCollectionOfDictionarySource(create));
+                    }
+                }
                 else if (create.is_ordinary_view || create.is_materialized_view)
                     flags |= AccessType::CREATE_VIEW;
                 else

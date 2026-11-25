@@ -227,27 +227,6 @@ namespace fs = std::filesystem;
 namespace
 {
 
-/// Returns the named collection that the source of a dictionary refers to with the key `name`, if any.
-/// The constant expressions of the source must be already evaluated.
-std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery & create)
-{
-    if (!create.dictionary || !create.dictionary->source || !create.dictionary->source->elements)
-        return {};
-
-    for (const auto & child : create.dictionary->source->elements->children)
-    {
-        const auto * pair = child->as<ASTPair>();
-        if (!pair || Poco::toLower(pair->first) != "name")
-            continue;
-        if (const auto * identifier = pair->second->as<ASTIdentifier>())
-            return identifier->name();
-        if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-            return literal->value.safeGet<String>();
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
-    }
-    return {};
-}
-
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
 /// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
 /// their constructors, before the outer object itself is attached. The whole group must be
@@ -2510,6 +2489,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// The other replicas create a dictionary with full access, and their named collection can store other keys
+        /// than the one here, so the overrides of its keys are authorized here, before the query is enqueued.
+        /// A replayed entry was authorized on the replica that enqueued it.
+        if (isFreshTableDefinition(mode, create.attach_short_syntax) && !getContext()->isDDLOrOnClusterInternal())
+            getContext()->checkAccess(getAccessToOverrideNamedCollectionOfDictionarySource(create));
+
         chassert(!ddl_guard);
         /// Release before the guard: this replica runs the entry in this thread, and a synchronous drop waits for every snapshot.
         releaseQueryStorageSnapshots(getContext());
@@ -4109,6 +4094,9 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
+    /// The hosts create a dictionary with full access unless they run the query as this user, and their named collection can
+    /// store other keys than the one here, so they cannot check the overrides of its keys: they are authorized here.
+    params.access_to_check.append_range(getAccessToOverrideNamedCollectionOfDictionarySource(create));
     params.additional_access_check = [captured_query_ptr = query_ptr](const String &, bool throw_if_unresolved)
     {
         /// `throw_if_unresolved` means the hosts do not run the query as this user.
@@ -4183,6 +4171,41 @@ BlockIO InterpreterCreateQuery::execute()
     return createTable(create);
 }
 
+
+std::optional<String> InterpreterCreateQuery::getNamedCollectionOfDictionarySource(const ASTCreateQuery & create)
+{
+    if (!create.dictionary || !create.dictionary->source || !create.dictionary->source->elements)
+        return {};
+
+    for (const auto & child : create.dictionary->source->elements->children)
+    {
+        const auto * pair = child->as<ASTPair>();
+        if (!pair || Poco::toLower(pair->first) != "name")
+            continue;
+        if (const auto * identifier = pair->second->as<ASTIdentifier>())
+            return identifier->name();
+        if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            return literal->value.safeGet<String>();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
+    }
+    return {};
+}
+
+AccessRightsElements InterpreterCreateQuery::getAccessToOverrideNamedCollectionOfDictionarySource(const ASTCreateQuery & create)
+{
+    const auto collection_name = getNamedCollectionOfDictionarySource(create);
+    if (!collection_name)
+        return {};
+
+    /// Whether a key replaces a stored key depends on the collection on each host, so any key other than `name` counts.
+    for (const auto & child : create.dictionary->source->elements->children)
+    {
+        const auto * pair = child->as<ASTPair>();
+        if (pair && Poco::toLower(pair->first) != "name")
+            return {AccessRightsElement(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, *collection_name)};
+    }
+    return {};
+}
 
 AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 {

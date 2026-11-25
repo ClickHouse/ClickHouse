@@ -96,7 +96,7 @@ function create_as_user()
     local name="$2"
     $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
         CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
-            SOURCE(MYSQL(NAME ${name} TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
+            SOURCE(MYSQL(NAME ${name})) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
         | grep -qE "necessary to have the grant NAMED COLLECTION ON \`?${nc}\`?\." && echo 1 || echo 0
     $CLICKHOUSE_CLIENT --multiquery --query "
         SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'dict_nc';

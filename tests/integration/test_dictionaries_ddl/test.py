@@ -737,3 +737,59 @@ def test_named_collection(started_cluster):
     ) == "0\n"
 
     node1.query("DROP DICTIONARY test.clickhouse_named_collection")
+
+
+def test_mysql_lookup_keys_with_no_backslash_escapes(started_cluster):
+    # ClickHouse writes the keys of a lookup with backslash escapes. With `NO_BACKSLASH_ESCAPES` on the MySQL server a backslash
+    # is a plain character, so a quote in a key would end its literal; the source turns the mode off for its session.
+    mysql_conn = create_mysql_conn(
+        "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+    )
+    execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS no_backslash_escapes")
+    execute_mysql_query(mysql_conn, "CREATE DATABASE no_backslash_escapes")
+    execute_mysql_query(
+        mysql_conn,
+        "CREATE TABLE no_backslash_escapes.t (k VARCHAR(100), v TEXT, PRIMARY KEY (k))",
+    )
+    execute_mysql_query(
+        mysql_conn,
+        "INSERT INTO no_backslash_escapes.t VALUES ('O''Brien', 'quote'), ('other', 'other')",
+    )
+    with mysql_conn.cursor() as cursor:
+        cursor.execute("SELECT @@GLOBAL.sql_mode")
+        sql_mode = cursor.fetchone()[0]
+    execute_mysql_query(
+        mysql_conn,
+        f"SET GLOBAL sql_mode = '{sql_mode},NO_BACKSLASH_ESCAPES'"
+        if sql_mode
+        else "SET GLOBAL sql_mode = 'NO_BACKSLASH_ESCAPES'",
+    )
+    try:
+        node1.query(
+            f"""
+            CREATE DICTIONARY default.no_backslash_escapes_dict (k String, v String DEFAULT 'missing')
+            PRIMARY KEY k
+            SOURCE(MYSQL(
+                USER 'root' PASSWORD '{mysql_pass}' DB 'no_backslash_escapes' TABLE 't'
+                REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)))
+            LAYOUT(COMPLEX_KEY_DIRECT())
+            """
+        )
+        # In the mode, `'O\'Brien'` is the string `O\` followed by `Brien'`, a syntax error.
+        assert (
+            node1.query(
+                "SELECT dictGet('default.no_backslash_escapes_dict', 'v', tuple('O''Brien'))"
+            ).strip()
+            == "quote"
+        )
+        # In the mode, this key would end its literal and add `OR 1=1`; out of it, the key is one value and misses.
+        assert (
+            node1.query(
+                "SELECT dictGet('default.no_backslash_escapes_dict', 'v', tuple(''') OR 1=1 -- '))"
+            ).strip()
+            == "missing"
+        )
+    finally:
+        execute_mysql_query(mysql_conn, f"SET GLOBAL sql_mode = '{sql_mode}'")
+        node1.query("DROP DICTIONARY IF EXISTS default.no_backslash_escapes_dict")
+        execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS no_backslash_escapes")

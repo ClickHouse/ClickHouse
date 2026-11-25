@@ -36,6 +36,15 @@ public:
 
     BlockIO execute() override;
 
+    /// The named collection that the source of a dictionary refers to with the key `name`, if any.
+    /// The constant expressions of the source must be already evaluated: a key that is not a string throws.
+    static std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery & create);
+
+    /// `SHOW NAMED COLLECTIONS SECRETS` on the named collection of the source of a dictionary, if the source replaces
+    /// any of its keys. Required for a definition that is created on other hosts: `checkNamedCollectionOverride`
+    /// runs there with full access, and the collection there can store other keys than here.
+    static AccessRightsElements getAccessToOverrideNamedCollectionOfDictionarySource(const ASTCreateQuery & create);
+
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);

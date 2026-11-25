@@ -1,0 +1,38 @@
+--- RESTORE requires NAMED COLLECTION
+Without the grant: denied, not restored
+1
+0
+Without the grant, the source replaced by Null: restored
+0
+1
+With the grant: restored
+0
+1
+--- Keys of the collection on other hosts require SHOW NAMED COLLECTIONS SECRETS
+ON CLUSTER, only the name: created
+0
+1
+ON CLUSTER, a key that the collection does not store: denied, not created
+1
+0
+Replicated database, a stored key: denied, not created
+1
+0
+Local, a key that the collection does not store: created
+0
+1
+RESTORE ON CLUSTER with an override: denied, not restored
+1
+0
+RESTORE into a Replicated database with an override: denied, not restored
+1
+0
+With the grant, ON CLUSTER: created
+0
+1
+With the grant, Replicated database: created
+0
+1
+With the grant, RESTORE ON CLUSTER: restored
+0
+1

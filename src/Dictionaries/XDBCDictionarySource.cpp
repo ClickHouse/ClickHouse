@@ -139,7 +139,7 @@ BlockIO XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
     if (configuration.check_queries_are_select)
-        checkExternalDictionaryQueryIsSelect(load_query_update, "Update query for ODBC dictionary", "Only SELECT query can be used as a dictionary source");
+        checkExternalDictionaryQueryIsSelect(load_query_update, "Update query for ODBC dictionary", "Only SELECT query can be used as a dictionary source", true);
 
     LOG_TRACE(log, fmt::runtime(load_query_update));
     BlockIO io;
@@ -205,7 +205,7 @@ bool XDBCDictionarySource::isModified() const
 std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     if (configuration.check_queries_are_select)
-        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for ODBC dictionary", "Only SELECT query can be used as a dictionary invalidate query");
+        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for ODBC dictionary", "Only SELECT query can be used as a dictionary invalidate query", true);
 
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());

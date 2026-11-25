@@ -37,7 +37,8 @@ void checkDictionaryQueryIsSelect(const String & query, const String & descripti
 /// so what the database can read differently is rejected too: comments (MySQL executes `/*! ... */`), heredocs,
 /// typographic quotes, backslashes in quoted tokens (PostgreSQL and SQL Server read them literally), and `INTO OUTFILE`,
 /// `FORMAT` and `SETTINGS`, which are a part of a `SELECT` only for ClickHouse.
-void checkExternalDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
+/// For ODBC, whose dialect is unknown, square brackets and aliases without `AS` are rejected too (`is_odbc`), see the definition.
+void checkExternalDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message, bool is_odbc);
 
 /// Checks the load query of a source of an external database, see `checkExternalDictionaryQueryIsSelect`. It is checked once,
 /// when the source is created. The lookups of `direct` and `cache` layouts add to it a condition on the requested keys, which

@@ -135,7 +135,7 @@ BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     if (configuration.check_queries_are_select)
-        checkExternalDictionaryQueryIsSelect(load_update_query, "Update query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary source");
+        checkExternalDictionaryQueryIsSelect(load_update_query, "Update query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary source", false);
     LOG_TRACE(log, fmt::runtime(load_update_query));
     BlockIO io;
     io.pipeline = loadBase(load_update_query);
@@ -200,7 +200,7 @@ bool PostgreSQLDictionarySource::isModified() const
 std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     if (configuration.check_queries_are_select)
-        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary invalidate query");
+        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary invalidate query", false);
 
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
