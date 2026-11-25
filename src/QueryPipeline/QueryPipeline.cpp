@@ -14,7 +14,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/LimitRangeTransform.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -39,6 +38,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -219,17 +219,6 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_being_counted)
         {
             processors.emplace(processor);
-            continue;
-        }
-
-        if (typeid_cast<LimitRangeTransform *>(processor))
-        {
-            has_limit = true;
-            /// LimitRangeTransform is a single-input simple transform that keeps its own counter
-            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). Like any
-            /// other limiting operation, it does not take the counter over from a limit downstream.
-            if (!limit_being_counted)
-                processors.emplace(processor);
             continue;
         }
 
@@ -474,10 +463,8 @@ QueryPipeline::QueryPipeline(Chain chain)
         processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
-    auto * sink_ptr = sink.get();
+    connect(chain.getOutputPort(), sink->getPort());
     processors->emplace_back(std::move(sink));
-
-    connect(chain.getOutputPort(), sink_ptr->getPort());
 
     input = &chain.getInputPort();
 }
@@ -492,21 +479,16 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     if (!totals)
     {
         auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
-        auto * source_ptr = source.get();
+        totals = &source->getPort();
         processors->emplace_back(std::move(source));
-        totals = &source_ptr->getPort();
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
-        auto * source_ptr = source.get();
+        extremes = &source->getPort();
         processors->emplace_back(std::move(source));
-        extremes = &source_ptr->getPort();
     }
-
-    output_format = format.get();
-    processors->emplace_back(std::move(format));
 
     connect(*totals, format_totals);
     connect(*extremes, format_extremes);
@@ -514,6 +496,10 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     input = &format_main;
     totals = nullptr;
     extremes = nullptr;
+
+    output_format = format.get();
+
+    processors->emplace_back(std::move(format));
 }
 
 /// Discards `totals`/`extremes` without adding a childless node; see `DroppingTransform`.
@@ -532,24 +518,22 @@ static void dropTotalsAndExtremesViaTransform(
         totals ? totals->getSharedHeader() : nullptr,
         extremes ? extremes->getSharedHeader() : nullptr);
 
-    auto * dropping_ptr = dropping.get();
-    processors.emplace_back(std::move(dropping));
-
-    connect(*output, dropping_ptr->getInputs().front());
+    connect(*output, dropping->getInputs().front());
 
     if (totals)
     {
-        connect(*totals, *dropping_ptr->getTotalsPort());
+        connect(*totals, *dropping->getTotalsPort());
         totals = nullptr;
     }
 
     if (extremes)
     {
-        connect(*extremes, *dropping_ptr->getExtremesPort());
+        connect(*extremes, *dropping->getExtremesPort());
         extremes = nullptr;
     }
 
-    output = &dropping_ptr->getOutputs().front();
+    output = &dropping->getOutputs().front();
+    processors.emplace_back(std::move(dropping));
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipeline(Chain(std::move(sink))) {}
@@ -561,10 +545,8 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
 
     dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
 
-    auto * sink_ptr = sink.get();
+    connect(*output, sink->getPort());
     processors->emplace_back(std::move(sink));
-
-    connect(*output, sink_ptr->getPort());
     output = nullptr;
 }
 
@@ -581,11 +563,9 @@ void QueryPipeline::complete(Chain chain)
         processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
-    auto * sink_ptr = sink.get();
-    processors->emplace_back(std::move(sink));
-
     connect(*output, chain.getInputPort());
-    connect(chain.getOutputPort(), sink_ptr->getPort());
+    connect(chain.getOutputPort(), sink->getPort());
+    processors->emplace_back(std::move(sink));
     output = nullptr;
 }
 
@@ -601,13 +581,11 @@ void QueryPipeline::complete(Pipe pipe)
 
     pipe.resize(1);
     pipe.dropTotalsAndExtremes();
-    auto * pipe_output = pipe.getOutputPort(0);
+    connect(*pipe.getOutputPort(0), *input);
+    input = nullptr;
 
     auto pipe_processors = Pipe::detachProcessors(std::move(pipe));
     processors->insert(processors->end(), pipe_processors.begin(), pipe_processors.end());
-
-    connect(*pipe_output, *input);
-    input = nullptr;
 }
 
 static void addMaterializing(OutputPort *& output, Processors & processors, bool remove_special_column_representations)
@@ -616,11 +594,9 @@ static void addMaterializing(OutputPort *& output, Processors & processors, bool
         return;
 
     auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader(), remove_special_column_representations);
-    auto * materializing_ptr = materializing.get();
+    connect(*output, materializing->getInputPort());
+    output = &materializing->getOutputPort();
     processors.emplace_back(std::move(materializing));
-
-    connect(*output, materializing_ptr->getInputPort());
-    output = &materializing_ptr->getOutputPort();
 }
 
 void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
@@ -643,21 +619,16 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     if (!totals)
     {
         auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
-        auto * source_ptr = source.get();
+        totals = &source->getPort();
         processors->emplace_back(std::move(source));
-        totals = &source_ptr->getPort();
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
-        auto * source_ptr = source.get();
+        extremes = &source->getPort();
         processors->emplace_back(std::move(source));
-        extremes = &source_ptr->getPort();
     }
-
-    auto * format_ptr = format.get();
-    processors->emplace_back(std::move(format));
 
     connect(*output, format_main);
     connect(*totals, format_totals);
@@ -667,16 +638,18 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     totals = nullptr;
     extremes = nullptr;
 
-    initRowsBeforeLimit(format_ptr);
+    initRowsBeforeLimit(format.get());
     for (const auto & context : resources.interpreter_context)
     {
         if (context->getSettingsRef()[Setting::rows_before_aggregation])
         {
-            initRowsBeforeAggregation(processors, format_ptr);
+            initRowsBeforeAggregation(processors, format.get());
             break;
         }
     }
-    output_format = format_ptr;
+    output_format = format.get();
+
+    processors->emplace_back(std::move(format));
 }
 
 Block QueryPipeline::getHeader() const
@@ -700,11 +673,6 @@ SharedHeader QueryPipeline::getSharedHeader() const
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     progress_callback = callback;
-}
-
-void QueryPipeline::setStepProfiler(StepProfilerPtr step_profiler_)
-{
-    step_profiler = std::move(step_profiler_);
 }
 
 void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
@@ -735,12 +703,9 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
     transform->setNormalizedQueryHash(normalized_query_hash);
-
-    auto * transform_ptr = transform.get();
+    connect(*output, transform->getInputPort());
+    output = &transform->getOutputPort();
     processors->emplace_back(std::move(transform));
-
-    connect(*output, transform_ptr->getInputPort());
-    output = &transform_ptr->getOutputPort();
 }
 
 bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
@@ -751,6 +716,11 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
+}
+
+void QueryPipeline::setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_)
+{
+    step_wall_clock_registry = std::move(step_wall_clock_registry_);
 }
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
@@ -768,11 +738,9 @@ void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultC
             return;
 
         auto transform = std::make_shared<StreamInQueryResultCacheTransform>(out_port->getHeader(), query_result_cache_writer, chunk_type);
-        auto * transform_ptr = transform.get();
+        connect(*out_port, transform->getInputPort());
+        out_port = &transform->getOutputPort();
         processors->emplace_back(std::move(transform));
-
-        connect(*out_port, transform_ptr->getInputPort());
-        out_port = &transform_ptr->getOutputPort();
     };
 
     using enum QueryResultCacheWriter::ChunkType;
@@ -804,9 +772,8 @@ void QueryPipeline::readFromQueryResultCache(
     {
         if (!source_)
             return;
-        auto * source_ptr = source_.get();
+        out_port = &source_->getPort();
         processors->emplace_back(std::shared_ptr<SourceFromChunks>(std::move(source_)));
-        out_port = &source_ptr->getPort();
     };
 
     add_stream_from_query_result_cache_source(output, std::move(source));
@@ -858,11 +825,9 @@ static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Proc
     if (port)
     {
         auto transform = std::make_shared<ExpressionTransform>(port->getSharedHeader(), actions);
-        auto * transform_ptr = transform.get();
+        connect(*port, transform->getInputPort());
+        port = &transform->getOutputPort();
         processors.emplace_back(std::move(transform));
-
-        connect(*port, transform_ptr->getInputPort());
-        port = &transform_ptr->getOutputPort();
     }
 }
 
@@ -906,9 +871,6 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
 {
-    if (!report_read_progress)
-        return nullptr;
-
     auto callback = std::make_unique<ReadProgressCallback>();
 
     callback->setProgressCallback(progress_callback);

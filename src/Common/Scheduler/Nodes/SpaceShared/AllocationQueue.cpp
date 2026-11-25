@@ -181,6 +181,9 @@ void AllocationQueue::purgeQueue()
     allocated = 0;
     allocations = 0;
     is_not_usable = true;
+
+    // Older hierarchy versions can retain this retired queue after its workload is destroyed.
+    workload = nullptr;
 }
 
 void AllocationQueue::propagateUpdate(ISpaceSharedNode &, Update &&)

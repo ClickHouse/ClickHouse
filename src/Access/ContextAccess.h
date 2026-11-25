@@ -132,13 +132,6 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
-    /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
-    /// administer roles. Besides the role DDL guarded in checkAccessImplHelper, this includes changing which
-    /// roles are activated by default for a user (SET DEFAULT ROLE / ALTER USER ... DEFAULT ROLE), which is
-    /// authorized with plain ALTER_USER and is therefore not caught by that flag-based guard. Throws if the
-    /// current session is limited by such a clause.
-    void checkCanAdministerDefaultRoles() const;
-
     /// Checks access of grants with parameter where a filter can be applied.
     /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
     /// because we are checking for `READ` permissions for all possible URLs.
@@ -163,6 +156,8 @@ private:
     void setUser(const UserPtr & user_) const TSA_REQUIRES(mutex);
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
     void findRowPoliciesOfInitialUser() const TSA_REQUIRES(mutex);
+    void findRowPoliciesOfInitialUserImpl(
+        std::shared_ptr<const EnabledRowPolicies> & row_policies, std::vector<String> & unknown_current_roles) const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
@@ -224,6 +219,12 @@ private:
     mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user TSA_GUARDED_BY(mutex);
+    /// The subscription for changes of roles, which change the forwarded current roles of the initial user.
+    mutable scope_guard subscription_for_roles_of_initial_user_changes TSA_GUARDED_BY(mutex);
+    /// Forwarded current roles of the initial user which do not exist on this node. If not empty, reading tables is denied.
+    mutable std::vector<String> unknown_current_roles_of_initial_user TSA_GUARDED_BY(mutex);
+    /// Whether the last attempt to find the row policies of the initial user threw. If true, reading tables is denied.
+    mutable bool failed_to_find_row_policies_of_initial_user TSA_GUARDED_BY(mutex) = false;
 #if CLICKHOUSE_CLOUD
     mutable std::shared_ptr<const EnabledMaskingPolicies> enabled_masking_policies TSA_GUARDED_BY(mutex);
 #endif
@@ -338,9 +339,6 @@ public:
     ALWAYS_INLINE void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const { access->checkGranteeIsAllowed(grantee_id, grantee); }
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     ALWAYS_INLINE void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const { access->checkGranteesAreAllowed(grantee_ids); }
-
-    /// Rejects changing users' default roles when the current session is limited by an authentication method's GRANTS clause.
-    ALWAYS_INLINE void checkCanAdministerDefaultRoles() const { access->checkCanAdministerDefaultRoles(); }
 
     /// Checks access of grants with parameter where a filter can be applied.
     ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }

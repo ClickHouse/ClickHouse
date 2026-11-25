@@ -23,7 +23,7 @@
       "pages": [
         "ar/concepts/features/index",
         {
-          "group": "العروض المُجسَّدة",
+          "group": "العروض المادية",
           "pages": [
             "ar/concepts/features/materialized-views/index",
             "ar/concepts/features/materialized-views/incremental-materialized-view",
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "فهارس تخطي البيانات",
+              "group": "فهارس التخطي",
               "pages": [
                 "ar/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ar/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -83,7 +83,6 @@
         {
           "group": "العمليات",
           "pages": [
-            "ar/concepts/features/operations/background-queries",
             {
               "group": "الإدراج",
               "pages": [
@@ -96,7 +95,7 @@
               ]
             },
             {
-              "group": "استرجاع البيانات",
+              "group": "الاستعلام",
               "pages": [
                 "ar/concepts/features/operations/select/joining-tables"
               ]
@@ -123,7 +122,7 @@
           ]
         },
         {
-          "group": "التهيئة",
+          "group": "الإعداد",
           "pages": [
             {
               "group": "الإعدادات",
@@ -142,7 +141,7 @@
               ]
             },
             {
-              "group": "إعداد الخادم",
+              "group": "تهيئة الخادم",
               "pages": [
                 "ar/concepts/features/configuration/server-config/configuration-files",
                 "ar/concepts/features/configuration/server-config/storing-data",
@@ -150,8 +149,7 @@
                 "ar/concepts/features/configuration/server-config/workload-scheduling",
                 "ar/concepts/features/configuration/server-config/quotas",
                 "ar/concepts/features/configuration/server-config/composable-protocols",
-                "ar/concepts/features/configuration/server-config/startup-scripts",
-                "ar/concepts/features/configuration/server-config/introspection-port"
+                "ar/concepts/features/configuration/server-config/startup-scripts"
               ]
             }
           ]
@@ -171,7 +169,7 @@
               ]
             },
             {
-              "group": "آليات المصادقة الخارجية",
+              "group": "موفرو المصادقة الخارجيون",
               "pages": [
                 "ar/concepts/features/security/external-authenticators/index",
                 {
@@ -213,34 +211,30 @@
             "ar/concepts/features/interfaces/native-clients-interfaces-index",
             "ar/concepts/features/interfaces/cli",
             "ar/concepts/features/interfaces/client",
-            "ar/concepts/features/interfaces/mcp",
             {
-              "group": "المشغّلات والواجهات",
+              "group": "برامج التشغيل والواجهات",
               "pages": [
                 "ar/concepts/features/interfaces/overview",
                 "ar/concepts/features/interfaces/http",
-                "ar/concepts/features/interfaces/framing-formats",
                 "ar/concepts/features/interfaces/tcp",
-                "ar/concepts/features/interfaces/adbc",
+                "ar/concepts/features/interfaces/jdbc",
                 "ar/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
                 },
                 "ar/concepts/features/interfaces/postgresql",
                 "ar/concepts/features/interfaces/prometheus",
-                "ar/concepts/features/interfaces/prometheus-metrics",
                 "ar/concepts/features/interfaces/ssh",
                 "ar/concepts/features/interfaces/grpc",
                 "ar/concepts/features/interfaces/arrowflight"
               ]
             },
+            "ar/concepts/features/interfaces/cpp",
             "ar/concepts/features/interfaces/schema-inference",
             "ar/concepts/features/interfaces/documentation-search",
             "ar/concepts/features/interfaces/web-sql",
-            "ar/concepts/features/interfaces/sql-console",
             "ar/concepts/features/interfaces/web-ui-color-coding",
             "ar/concepts/features/interfaces/web-ui-pinned-columns",
-            "ar/concepts/features/interfaces/web-ui-result-shaping",
             "ar/concepts/features/interfaces/web-terminal",
             {
               "group": "العملاء من جهات خارجية",

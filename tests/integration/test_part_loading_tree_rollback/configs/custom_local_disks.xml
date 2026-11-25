@@ -1,3 +1,0 @@
-<clickhouse>
-    <custom_local_disks_base_directory>/var/lib/clickhouse/plt_refresh/</custom_local_disks_base_directory>
-</clickhouse>

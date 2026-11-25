@@ -496,8 +496,6 @@ public:
     virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
     /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
     virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
-
-    virtual String getDefaultTableEngineName(const String & /*table_name*/) const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise

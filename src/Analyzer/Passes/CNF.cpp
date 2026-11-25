@@ -387,14 +387,12 @@ CNFAtomicFormula CNF::pushNotIntoFunction(const CNFAtomicFormula & atom, const C
         {"lessOrEquals", "greater"},
         {"in", "notIn"},
         {"like", "notLike"},
-        {"similarTo", "notSimilarTo"},
         {"empty", "notEmpty"},
         {"notEquals", "equals"},
         {"greaterOrEquals", "less"},
         {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
-        {"notSimilarTo", "similarTo"},
         {"notEmpty", "empty"},
     };
 
@@ -415,7 +413,6 @@ CNF & CNF::pullNotOutFunctions(const ContextPtr & context)
             {"greater", "lessOrEquals"},
             {"notIn", "in"},
             {"notLike", "like"},
-            {"notSimilarTo", "similarTo"},
             {"notEmpty", "empty"},
         };
 
@@ -528,7 +525,7 @@ CNF CNF::toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_gro
     auto cnf = tryBuildCNF(node, context, max_growth_multiplier);
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
-            "Cannot convert expression '{}' to CNF, because it produces to many clauses. "
+            "Cannot convert expression '{}' to CNF, because it produces to many clauses."
             "Size of boolean formula in CNF can be exponential of size of source formula.",
             node->formatConvertedASTForErrorMessage());
 

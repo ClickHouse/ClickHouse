@@ -17,7 +17,6 @@
 #include <IO/Operators.h>
 #include <algorithm>
 #include <cstring> // memcpy
-#include <limits>
 
 
 namespace DB
@@ -231,12 +230,6 @@ UInt64 ColumnArray::getNumberOfDefaultRows() const
     return result;
 }
 
-bool ColumnArray::hasOnlyTypeDefaults() const
-{
-    const auto & offsets_data = getOffsets();
-    return offsets_data.empty() || offsets_data.back() == 0;
-}
-
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /// Similarly - only for arrays of fixed length values.
@@ -321,6 +314,15 @@ void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
         getData().deserializeAndInsertFromArena(in, settings);
 
     getOffsets().push_back(getOffsets().back() + array_size);
+}
+
+void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
+{
+    size_t array_size = 0;
+    readBinaryLittleEndian<size_t>(array_size, in);
+
+    for (size_t i = 0; i < array_size; ++i)
+        getData().skipSerializedInArena(in);
 }
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
@@ -426,72 +428,6 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     getOffsets().push_back(getOffsets().back() + size);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
-#else
-void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
-#endif
-{
-    /// Keep the same no-op behavior as IColumn::insertManyFrom, including for an invalid position.
-    if (length == 0)
-        return;
-
-    /// A single insertion does not benefit from bulk setup.
-    if (length == 1)
-    {
-        insertFrom(src_, position);
-        return;
-    }
-
-    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
-    const size_t source_size = src.sizeAt(position);
-
-    auto & offsets_data = getOffsets();
-    const size_t old_rows = offsets_data.size();
-    if (length > std::numeric_limits<size_t>::max() - old_rows)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
-
-    const size_t new_rows = old_rows + length;
-    const size_t old_offset = offsets_data.back();
-
-    auto insert_scalar = [&]
-    {
-        for (size_t i = 0; i < length; ++i)
-            insertFrom(src_, position);
-    };
-
-    /// Nested insertManyFrom repeats one value, so it can represent a repeated Array row
-    /// directly only when source_size == 1.
-    /// Keep the existing scalar implementation outside the narrow fast path.
-    if (getDataPtr().get() == src.getDataPtr().get()
-        || source_size > 1
-        || getData().hasDynamicStructure())
-    {
-        insert_scalar();
-        return;
-    }
-
-    if (new_rows > offsets_data.capacity())
-        offsets_data.reserve(new_rows);
-
-    if (source_size == 0)
-    {
-        offsets_data.resize_assume_reserved(new_rows);
-        std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
-        return;
-    }
-
-    /// source_size == 1
-    if (length > std::numeric_limits<Offset>::max() - old_offset)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", old_offset, length);
-
-    getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
-
-    offsets_data.resize_assume_reserved(new_rows);
-    for (size_t i = 0; i < length; ++i)
-        offsets_data[old_rows + i] = old_offset + i + 1;
-}
-
 
 void ColumnArray::insertDefault()
 {
@@ -504,11 +440,12 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::insertManyDefaults(size_t length)
 {
-    /// Not `IColumn::insertManyDefaults`: its `reserve(size() + length)` would also size the nested column, which a
-    /// default array never fills. Only the offsets grow, so only they are pre-sized.
-    auto & offsets_data = getOffsets();
-    const auto last_offset = offsets_data.back(); /// By value: `resize_fill` may reallocate.
-    offsets_data.resize_fill(offsets_data.size() + length, last_offset);
+    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would size the nested column for elements
+    /// that default arrays never hold, and ColumnArray::reserve passes that count down unchanged. Appending the
+    /// offsets grows them geometrically instead, so repeated calls stay amortized without reserving nested data.
+    auto last_offset = getOffsets().back();
+    for (size_t i = 0; i < length; ++i)
+        getOffsets().push_back(last_offset);
 }
 
 
@@ -737,8 +674,9 @@ void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t le
 
     const ColumnArray & src_concrete = assert_cast<const ColumnArray &>(src);
 
-    if (start > src_concrete.getOffsets().size() || length > src_concrete.getOffsets().size() - start)
-        throwInsertRangeFromOutOfBound("ColumnArray", start, length, src_concrete.getOffsets().size());
+    if (start + length > src_concrete.getOffsets().size())
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnArray::insertRangeFrom method. "
+            "[start({}) + length({}) > offsets.size({})]", start, length, src_concrete.getOffsets().size());
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
@@ -1077,17 +1015,17 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
     ssize_t nested_result_size_hint = 0;
     if (result_size_hint < 0)
         nested_result_size_hint = result_size_hint;
     else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)    /// Avoid overflow.
          nested_result_size_hint = result_size_hint * data->size() / size;
 
-    res->data = data->filter(nested_filt, nested_result_size_hint);
+    /// See the comment in `indexImpl` about building the nested result first.
+    ColumnPtr res_data = data->filter(nested_filt, nested_result_size_hint);
 
-    Offsets & res_offsets = res->getOffsets();
+    auto res_offsets_column = ColumnOffsets::create();
+    Offsets & res_offsets = res_offsets_column->getData();
     if (result_size_hint)
         res_offsets.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
@@ -1101,7 +1039,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
         }
     }
 
-    return res;
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
@@ -1335,10 +1273,8 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
     nested_indexes.reserve_exact(getOffsets().back());
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
-    Offsets & res_offsets = res->getOffsets();
-    res_offsets.resize_exact(limit);
+    auto res_offsets_column = ColumnOffsets::create(limit);
+    Offsets & res_offsets = res_offsets_column->getData();
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
@@ -1349,10 +1285,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
         res_offsets[i] = current_offset;
     }
 
-    if (current_offset != 0)
-        res->data = data->index(*nested_indexes_column, current_offset);
-
-    return res;
+    /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
+    /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
+    ColumnPtr res_data = current_offset != 0 ? data->index(*nested_indexes_column, current_offset) : data->cloneEmpty();
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
@@ -1756,10 +1692,4 @@ void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-ColumnPlanes ColumnArray::getPlanes() const
-{
-    ColumnPlanes planes(ColumnPlanes::Shape::Array, getOffsets().data());
-    planes.children = {&getData()};
-    return planes;
-}
 }

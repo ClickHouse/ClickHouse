@@ -30,6 +30,29 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+
+/// PostgreSQL itself does not allow more than 6 dimensions (MAXDIM). The number comes from the remote server,
+/// and each dimension is one more level of `Array`, so refuse absurd values instead of building a type
+/// so deep that working with it exhausts the stack.
+constexpr Int64 MAX_POSTGRESQL_ARRAY_DIMENSIONS = 100;
+
+DataTypePtr wrapInArrays(DataTypePtr type, Int64 dimensions)
+{
+    if (dimensions < 1 || dimensions > MAX_POSTGRESQL_ARRAY_DIMENSIONS)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "PostgreSQL array has unsupported number of dimensions: {} (must be from 1 to {})",
+            dimensions, MAX_POSTGRESQL_ARRAY_DIMENSIONS);
+
+    for (Int64 i = 0; i < dimensions; ++i)
+        type = std::make_shared<DataTypeArray>(type);
+    return type;
+}
+
 }
 
 
@@ -170,8 +193,7 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
         }
         else
         {
-            while (dimensions--)
-                res = std::make_shared<DataTypeArray>(res);
+            res = wrapInArrays(res, dimensions);
         }
     }
 
@@ -267,7 +289,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             /// such arrays are not able to be used as ClickHouse Array at all.
             ///
             /// For empty arrays, array_ndims([]) will return NULL.
-            auto postgres_column = doubleQuoteStringPostgreSQL(name_and_type.name);
+            auto postgres_column = doubleQuoteString(name_and_type.name);
             pqxx::result result{tx.exec(
                 fmt::format("SELECT {} IS NULL, array_ndims({}) FROM {} LIMIT 1;", postgres_column, postgres_column, postgres_table))};
 
@@ -290,9 +312,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             int dimensions = result[0][1].as<int>();
 
             /// It is always 1d array if it is in recheck.
-            DataTypePtr type = assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType();
-            while (dimensions--)
-                type = std::make_shared<DataTypeArray>(type);
+            DataTypePtr type = wrapInArrays(assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType(), dimensions);
 
             columns[i] = NameAndTypePair(name_and_type.name, type);
         }
@@ -363,13 +383,13 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "attnum as att_num, "
            "{} as generated " /// if column has GENERATED
            "FROM pg_attribute "
-           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}){}"
-           " AND NOT attisdropped AND attnum > 0 "
+           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) {}"
+           "AND NOT attisdropped AND attnum > 0 "
            "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
     auto postgres_table_with_schema = postgres_schema.empty()
-        ? doubleQuoteStringPostgreSQL(postgres_table)
-        : doubleQuoteStringPostgreSQL(postgres_schema) + '.' + doubleQuoteStringPostgreSQL(postgres_table);
+        ? doubleQuoteString(postgres_table)
+        : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
     /// How the relation is named in diagnostics. Deliberately the spelling this function used before
     /// the table identifier was quoted for the empty-schema branch, so that no error message
     /// changes: the schema-qualified form has always been shown quoted, the bare one unquoted.
