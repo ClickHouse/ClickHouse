@@ -1,0 +1,8 @@
+--- Statements other than SELECT are rejected
+--- What the database reads differently from ClickHouse is rejected
+--- {condition} in quotes is rejected
+--- Every way to create a dictionary from a definition is checked
+0
+--- A source replaced by Null is not checked
+1	0
+--- SELECT is accepted

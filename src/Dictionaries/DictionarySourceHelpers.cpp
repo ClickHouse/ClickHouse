@@ -1,4 +1,5 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
+#include <Databases/removeWhereConditionPlaceholder.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IdentifierQuotingStyle.h>
@@ -133,6 +135,26 @@ void checkExternalDatabaseQueryIsSelect(const String & query, const String & sou
     }
 }
 
+/// The source replaces the first `{condition}` in `query` with a condition on the keys, which contains quoted names and values.
+/// Inside a string literal or a quoted identifier, the quotes of this condition would end the quoted token, so the condition
+/// would be read as a part of the query: `SELECT '{condition}' AS id` becomes `SELECT '("id"=' AS ... ')' AS id`.
+/// Comments are rejected anyway, so outside quotes the placeholder is replaced by an expression of quoted names and escaped
+/// values, which stays one expression.
+void checkConditionPlaceholderIsNotQuoted(const String & query, const String & description)
+{
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
+    {
+        if ((token.type == TokenType::StringLiteral || token.type == TokenType::QuotedIdentifier)
+            && std::string_view(token.begin, token.size()).contains(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE))
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} cannot contain {} in a string literal or a quoted identifier, because it is replaced by a condition with quotes",
+                description,
+                CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    }
+}
+
 }
 
 bool isExternalDatabaseDictionarySource(const String & source_type)
@@ -171,6 +193,7 @@ void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguratio
         dict_struct, /* db_ */ "", /* schema_ */ "", /* table_ */ query.empty() ? "table" : "", query, where, IdentifierQuotingStyle::Backticks);
 
     static constexpr auto source_error = "Only SELECT query can be used as a dictionary source";
+    checkConditionPlaceholderIsNotQuoted(query, "Query for " + source_type + " dictionary");
     checkExternalDatabaseQueryIsSelect(query_builder.composeLoadAllQuery(), source_type, "Query for " + source_type + " dictionary", source_error);
 
     if (!update_field.empty())
@@ -179,6 +202,25 @@ void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguratio
             source_type,
             "Update query for " + source_type + " dictionary",
             source_error);
+
+    /// The lookups of a `direct` or a `cache` layout replace `{condition}` with a condition on the requested keys instead.
+    /// The keys are values of the lookup, so one key with default values stands for them: it is quoted and escaped the same way.
+    /// A `query` without `{condition}` is put in a subquery, which is checked as the load query already.
+    const bool lookup_inserts_condition = query.empty() || query.contains(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    String lookup_query;
+    if (lookup_inserts_condition && dict_struct.id)
+    {
+        lookup_query = query_builder.composeLoadIdsQuery({0});
+    }
+    else if (lookup_inserts_condition && dict_struct.key)
+    {
+        Columns key_columns;
+        for (const auto & key : *dict_struct.key)
+            key_columns.push_back(key.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst());
+        lookup_query = query_builder.composeLoadKeysQuery(key_columns, {0}, ExternalQueryBuilder::AND_OR_CHAIN);
+    }
+    if (!lookup_query.empty())
+        checkExternalDatabaseQueryIsSelect(lookup_query, source_type, "Lookup query for " + source_type + " dictionary", source_error);
 
     if (!invalidate_query.empty())
         checkExternalDatabaseQueryIsSelect(
