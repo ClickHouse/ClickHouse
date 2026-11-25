@@ -48,6 +48,7 @@
 #include <Core/IdentifierName.h>
 #include <Core/Settings.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -293,10 +294,15 @@ IdentifierPartQuote cteDefinitionNameQuote(const QueryTreeNodePtr & node)
     return node->getAliasQuote();
 }
 
-/// Whether the definitions registered under one CTE name are double-quoted, i.e. pinned under `standard` matching.
+/// Whether every definition registered under one CTE name is double-quoted, i.e. pinned under `standard` matching.
+/// With `analyzer_compatibility_allow_cte_redefinition` one name can have definitions with different quotes;
+/// the name stays reachable by a foldable reference while at least one of them is not pinned.
 bool isPinnedCTEDefinition(const String &, const QueryTreeNodes & definitions)
 {
-    return !definitions.empty() && cteDefinitionNameQuote(definitions.front()) == IdentifierPartQuote::DoubleQuoted;
+    return !definitions.empty() && std::ranges::all_of(definitions, [](const QueryTreeNodePtr & definition)
+    {
+        return cteDefinitionNameQuote(definition) == IdentifierPartQuote::DoubleQuoted;
+    });
 }
 
 /// A double-quoted window definition is pinned to exact-spelling lookups; a foldable
@@ -354,9 +360,15 @@ struct HiddenExpressionArguments
 
 /// Returns true if `name` binds to something other than a lambda argument in `scope` itself.
 /// A non-lambda scope owning `name` as an expression argument counts as such a binding.
-bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope, bool allow_to_check_aliases)
+bool canBindNameInScope(const std::string & name, bool name_is_pinned, IdentifierResolveScope & scope, bool allow_to_check_aliases)
 {
     IdentifierLookup lookup{Identifier{name}, IdentifierLookupContext::EXPRESSION};
+
+    /// Under `standard` matching an argument that is not double-quoted captures every reference folding to its
+    /// name, so the probe has to find the outer bindings through the same folded namespace as the resolution.
+    if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard
+        && lookup.identifier.getPartsSize() == 1)
+        lookup.identifier_name = IdentifierName({IdentifierPart{name, name_is_pinned ? IdentifierPartQuote::DoubleQuoted : IdentifierPartQuote::Unquoted}});
 
     /// An alias whose expression is being resolved right now is not a usable binding:
     /// `tryResolveIdentifierFromAliases` rejects it to break the alias cycle, so it must not
@@ -393,6 +405,7 @@ bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope
   */
 bool hasToHideLambdaArgument(
     const std::string & name,
+    bool name_is_pinned,
     IdentifierResolveScope & referencing_scope,
     const std::unordered_set<IdentifierResolveScope *> & lambda_scopes_to_hide,
     bool allow_to_resolve_niladic_functions)
@@ -417,7 +430,7 @@ bool hasToHideLambdaArgument(
             && !current_scope->hidden_expression_arguments.contains(name))
             return false;
 
-        if (canBindNameInScope(name, *current_scope, allow_to_check_aliases))
+        if (canBindNameInScope(name, name_is_pinned, *current_scope, allow_to_check_aliases))
             return true;
 
         /// `tryResolveIdentifierInParentScopes` does not look at aliases above a query boundary
@@ -479,7 +492,8 @@ void hideLambdaArgumentsShadowingAliasExpression(
     {
         for (const auto & [argument_name, _] : lambda_scope->expression_argument_name_to_node)
         {
-            if (hasToHideLambdaArgument(argument_name, referencing_scope, lambda_scopes, allow_to_resolve_niladic_functions))
+            bool argument_is_pinned = lambda_scope->pinned_expression_argument_names.contains(argument_name);
+            if (hasToHideLambdaArgument(argument_name, argument_is_pinned, referencing_scope, lambda_scopes, allow_to_resolve_niladic_functions))
                 hidden_arguments.hide(*lambda_scope, argument_name);
         }
     }
@@ -1558,6 +1572,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     QueryTreeNodePtr alias_node = *it;
 
+    /// Under `standard` matching the alias found can be spelled differently from the reference. The check for
+    /// multiple expressions with the same alias looks at the spelling of the definition, so record that one.
+    const String used_alias_name = alias_node->hasAlias() ? alias_node->getAlias() : identifier_bind_part;
+
     if (!alias_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Node with alias {} is not valid. In scope {}",
@@ -1674,7 +1692,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */,
                 getFoldableIdentifierSuffix(identifier_lookup, 1 /*qualifier_parts*/, scope.context->getSettingsRef()[Setting::column_and_query_name_matching])))
             {
-                scope.used_alias_names.insert(identifier_bind_part);
+                scope.used_alias_names.insert(used_alias_name);
                 return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
             }
             return {};
@@ -1693,7 +1711,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     /// (used by the check for multiple expressions with the same alias, see resolveQuery).
     /// Tentative lookups that fall back to another resolution path return earlier and are not recorded.
     if (alias_node)
-        scope.used_alias_names.insert(identifier_bind_part);
+        scope.used_alias_names.insert(used_alias_name);
 
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
@@ -1757,8 +1775,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     /// Every site that marks a scope-map CTE node as being resolved updates both sets. With one definition keep the
     /// structural check: the materialized-CTE expression site inserts a clone, which only identity would miss.
     const bool several_definitions = cte_nodes.size() > 1;
-    auto cte_node_it = std::find_if(cte_nodes.rbegin(), cte_nodes.rend(), [this, several_definitions](const QueryTreeNodePtr & node)
+    /// A foldable reference does not see the pinned (double-quoted) definitions of the name.
+    const bool skip_pinned_definitions = !foldable_name.empty();
+    auto cte_node_it = std::find_if(cte_nodes.rbegin(), cte_nodes.rend(), [this, several_definitions, skip_pinned_definitions](const QueryTreeNodePtr & node)
     {
+        if (skip_pinned_definitions && cteDefinitionNameQuote(node) == IdentifierPartQuote::DoubleQuoted)
+            return false;
         if (several_definitions)
             return !cte_definitions_in_resolve_process.contains(node.get());
         return !ctes_in_resolve_process.contains(node);
@@ -2075,8 +2097,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
+        /// The catalog lookup takes the quotes of the name from the table identifier AST. A table lookup made
+        /// for an expression identifier (the right side of `IN`) has none, so build it from the structured name.
+        ASTPtr table_identifier_ast = identifier_lookup.original_ast_node;
+        if (!table_identifier_ast && identifier_lookup.identifier_name.size() == identifier_lookup.identifier.getPartsSize())
+            table_identifier_ast = make_intrusive<ASTTableIdentifier>(identifier_lookup.identifier_name);
+
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier_lookup.identifier, scope.context, identifier_lookup.original_ast_node, replaced_storage);
+            identifier_lookup.identifier, scope.context, table_identifier_ast, replaced_storage);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -3076,7 +3104,25 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     /// `join_use_nulls` and the PREWHERE rollback map `join_columns_with_changed_types` live on the query scope.
                     QueryTreeNodePtr matched_column_node = createProjectionForUsing(
                         join_using_column_node, join_node->getKind(), *nearest_query_scope, semi_anti_star_checker.preservedSideOrNone());
-                    matched_column_node->setAlias(join_using_column_name);
+                    /// The merged key keeps the pin of the key columns it is made of, so that an enclosing
+                    /// query does not reach a double-quoted name by a folded reference.
+                    bool join_using_column_is_pinned = false;
+                    if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+                    {
+                        for (const auto & key_column : join_using_column_nodes)
+                        {
+                            const auto * key_column_node = key_column->as<ColumnNode>();
+                            if (!key_column_node)
+                                continue;
+                            auto key_data_it = nearest_query_scope->table_expression_node_to_data.find(key_column_node->getColumnSourceOrNull());
+                            if (key_data_it != nearest_query_scope->table_expression_node_to_data.end()
+                                && key_data_it->second.pinned_column_names.contains(key_column_node->getColumnName()))
+                                join_using_column_is_pinned = true;
+                        }
+                    }
+                    matched_column_node->setAlias(
+                        join_using_column_name,
+                        join_using_column_is_pinned ? IdentifierPartQuote::DoubleQuoted : IdentifierPartQuote::Unquoted);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
 
@@ -3363,8 +3409,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         Names matched_names;
         matched_names.reserve(matched_expression_nodes_with_names.size());
-        for (const auto & [_, matched_name] : matched_expression_nodes_with_names)
+        /// Matched columns defined double-quoted in their source: a foldable target does not reach them.
+        NameSet pinned_matched_names;
+        const auto * pins_scope = scope.getNearestQueryScope();
+        for (const auto & [matched_node, matched_name] : matched_expression_nodes_with_names)
+        {
             matched_names.push_back(matched_name);
+
+            if (matched_node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)
+            {
+                pinned_matched_names.insert(matched_name);
+                continue;
+            }
+
+            const auto * matched_column_node = matched_node->as<ColumnNode>();
+            if (!matched_column_node || !pins_scope)
+                continue;
+            auto data_it = pins_scope->table_expression_node_to_data.find(matched_column_node->getColumnSourceOrNull());
+            if (data_it != pins_scope->table_expression_node_to_data.end()
+                && data_it->second.pinned_column_names.contains(matched_column_node->getColumnName()))
+                pinned_matched_names.insert(matched_name);
+        }
 
         auto resolve_transformer_targets = [&](const IColumnTransformerNode * transformer, const Names & target_names, const std::vector<IdentifierPartQuote> & target_quotes)
         {
@@ -3376,7 +3441,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             for (size_t i = 0; i < target_names.size(); ++i)
             {
                 IdentifierName target_name({IdentifierPart{target_names[i], target_quotes[i]}});
-                auto matches = collectFoldedNameMatchesInNames(matched_names, target_name);
+                auto matches = collectFoldedNameMatchesInNames(matched_names, target_name, pinned_matched_names);
                 if (matches.size() > 1)
                     throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                         "Column '{}' in {} transformer is ambiguous under standard name matching. Candidates: {}. In scope {}",
@@ -4464,6 +4529,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 scope.scope_node,
                                 /*throw_on_mismatch=*/ true);
                         }
+
+                        mat_table_node->setPinnedColumnNames(collectPinnedProjectionNames(mat_subquery));
                     }
                     else if (isTableExpressionNodeType(resolved_identifier_node->getNodeType()))
                     {
@@ -4887,6 +4954,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     for (auto & node : node_list_typed.getNodes())
     {
         auto node_to_resolve = node;
+
+        /// Resolution replaces many nodes (an identifier with its column, a constant expression with a constant)
+        /// and the replacement does not carry the alias quote, so remember the pinned projection aliases now.
+        if (is_top_level_projection && node->hasAlias() && node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)
+            scope.pinned_projection_alias_names.insert(node->getAlias());
+
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection);
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
@@ -5369,13 +5442,20 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
             for (const auto & projection_column : projection_columns)
                 projection_names.push_back(projection_column.name);
 
-            auto matches = collectFoldedNameMatchesInNames(projection_names, target_identifier_name);
+            auto matches = collectFoldedNameMatchesInNames(projection_names, target_identifier_name, scope.pinned_projection_alias_names);
             if (matches.size() == 1)
             {
                 canonical_target_name = matches.front();
                 interpolate_node_typed.setExpressionName(canonical_target_name);
             }
         }
+
+        /// Differently spelled targets can fold to one projection column: check the destination itself too.
+        if (canonical_target_name != column_to_interpolate_name && !interpolate_column_names.emplace(canonical_target_name).second)
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "Column '{}' can't be an INTERPOLATE output more than once. In scope {}",
+                canonical_target_name,
+                scope.scope_node->formatASTForErrorMessage());
 
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
@@ -6445,6 +6525,11 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
     std::unordered_set<String> array_join_column_names;
 
+    /// Under `standard` matching the aliases that are not double-quoted share one case-folded namespace:
+    /// folded alias -> the spelling registered first.
+    const bool standard_name_matching = scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard;
+    std::unordered_map<String, String> folded_array_join_aliases;
+
     /// Wrap array join expressions into column nodes, where array join expression is inner expression
 
     auto & array_join_nodes = array_join_node_typed.getJoinExpressions().getNodes();
@@ -6568,6 +6653,21 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
                     array_join_column_name,
                     scope.scope_node->formatASTForErrorMessage());
             array_join_column_names.emplace(array_join_column_name);
+
+            if (standard_name_matching && !array_join_expression_alias.empty()
+                && array_join_expression_alias_quote != IdentifierPartQuote::DoubleQuoted)
+            {
+                auto [sibling_it, inserted] = folded_array_join_aliases.emplace(
+                    foldIdentifierCaseASCII(array_join_expression_alias), array_join_expression_alias);
+                if (!inserted)
+                    throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                        "ARRAY JOIN {} alias {} differs only in character case from alias {}. "
+                        "Double-quote the aliases to distinguish them. In scope {}",
+                        array_join_node_typed.formatASTForErrorMessage(),
+                        backQuoteIfNeed(array_join_expression_alias),
+                        backQuoteIfNeed(sibling_it->second),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
 
             NameAndTypePair array_join_column(array_join_column_name, result_type);
             auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), expression, static_pointer_cast<ITableExpressionNode>(array_join_node));
@@ -6882,15 +6982,33 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     "NATURAL JOIN: cannot determine columns of right table expression in {}",
                     join_node_typed.formatASTForErrorMessage());
 
+            /// Columns defined double-quoted in a subquery are pinned: they have no folded class and are
+            /// common only with a column of exactly the same spelling.
+            auto collect_pinned_columns = [&scope](const TableExpressionNodePtr & join_side)
+            {
+                NameSet pinned;
+                for (const auto & table_expression : extractTableExpressions(join_side))
+                {
+                    auto data_it = scope.table_expression_node_to_data.find(table_expression);
+                    if (data_it != scope.table_expression_node_to_data.end())
+                        pinned.insert(data_it->second.pinned_column_names.begin(), data_it->second.pinned_column_names.end());
+                }
+                return pinned;
+            };
+
+            NameSet left_pinned = collect_pinned_columns(join_node_typed.getLeftTableExpressionNodeTyped());
+            NameSet right_pinned = collect_pinned_columns(join_node_typed.getRightTableExpressionNodeTyped());
+            NameSet right_cols(right_cols_ordered.begin(), right_cols_ordered.end());
+
             /// Standard matching: intersect by folded class; a class with several spellings
             /// on either side makes the join key ambiguous.
-            auto group_by_folded_class = [](const Names & cols)
+            auto group_by_folded_class = [](const Names & cols, const NameSet & pinned)
             {
                 std::unordered_map<String, Names> classes;
                 for (const auto & col_name : cols)
                 {
                     /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-                    if (col_name.contains('.'))
+                    if (col_name.contains('.') || pinned.contains(col_name))
                         continue;
 
                     auto & members = classes[foldIdentifierCaseASCII(col_name)];
@@ -6900,14 +7018,24 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 return classes;
             };
 
-            auto left_classes = group_by_folded_class(left_cols);
-            auto right_classes = group_by_folded_class(right_cols_ordered);
+            auto left_classes = group_by_folded_class(left_cols, left_pinned);
+            auto right_classes = group_by_folded_class(right_cols_ordered, right_pinned);
 
             NameSet seen;
+            NameSet seen_exact;
             for (const auto & col_name : left_cols)
             {
                 if (col_name.contains('.'))
                     continue;
+
+                /// A name pinned on either side: the key is this exact spelling, double-quoted to resolve exactly.
+                if (left_pinned.contains(col_name) || right_pinned.contains(col_name))
+                {
+                    if (right_cols.contains(col_name) && seen_exact.emplace(col_name).second)
+                        using_nodes.push_back(std::make_shared<IdentifierNode>(
+                            IdentifierName({IdentifierPart{col_name, IdentifierPartQuote::DoubleQuoted}})));
+                    continue;
+                }
 
                 auto folded_key = foldIdentifierCaseASCII(col_name);
                 if (!seen.emplace(folded_key).second)
@@ -7772,6 +7900,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         true /*create_for_global_subquery*/);
 
                     table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
+                    /// The materialized table keeps the pins of the double-quoted projection names, like an inlined CTE.
+                    table_node->setPinnedColumnNames(collectPinnedProjectionNames(subquery));
                 }
                 else
                 {
@@ -7807,6 +7937,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         materialized_cte_ptr->cte_name,
                         scope.scope_node,
                         /*throw_on_mismatch=*/ true);
+                    table_node->setPinnedColumnNames(collectPinnedProjectionNames(subquery));
                 }
             }
 
@@ -8575,7 +8706,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         /// so it also keeps the pin of that name in the source, e.g. `SELECT * FROM (SELECT 1 AS "Foo")`
         /// or `SELECT "Foo" FROM (SELECT 1 AS "Foo")`. An explicit alias defines a new name instead.
         std::unordered_map<const IQueryTreeNode *, Names> source_pinned_names;
-        auto is_pinned_in_source = [&](const QueryTreeNodePtr & projection_node, const String & projection_name)
+        std::function<bool(const QueryTreeNodePtr &, const String &)> is_pinned_in_source
+            = [&](const QueryTreeNodePtr & projection_node, const String & projection_name)
         {
             if (!projection_node->getAlias().empty())
                 return false;
@@ -8585,6 +8717,20 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto column_source = column_node->getColumnSourceOrNull();
             if (!column_source)
                 return false;
+
+            /// The key of `JOIN ... USING` is a column of the join made from the key columns of both sides:
+            /// it is pinned when one of them is.
+            if (column_source->as<JoinNode>())
+            {
+                const auto * key_columns = column_node->hasExpression() ? column_node->getExpression()->as<ListNode>() : nullptr;
+                if (!key_columns)
+                    return false;
+                return std::ranges::any_of(key_columns->getNodes(), [&](const QueryTreeNodePtr & key_column)
+                {
+                    const auto * key_column_node = key_column->as<ColumnNode>();
+                    return key_column_node && is_pinned_in_source(key_column, key_column_node->getColumnName());
+                });
+            }
 
             auto [it, inserted] = source_pinned_names.try_emplace(column_source.get());
             if (inserted)
@@ -8600,6 +8746,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         for (size_t i = 0; i < projection_nodes.size() && i < projection_columns.size(); ++i)
             if (projection_nodes[i]->getAliasQuote() == IdentifierPartQuote::DoubleQuoted
+                || scope.pinned_projection_alias_names.contains(projection_columns[i].name)
                 || is_pinned_in_source(projection_nodes[i], projection_columns[i].name))
                 pinned_projection_names.push_back(projection_columns[i].name);
         std::sort(pinned_projection_names.begin(), pinned_projection_names.end());

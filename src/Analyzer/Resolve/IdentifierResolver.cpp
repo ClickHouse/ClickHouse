@@ -1787,6 +1787,22 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 2 arguments for USING projection, but got {}", arguments.size());
 
+    /// Under `standard` matching the merged key keeps the pin of the double-quoted key columns it is made of.
+    bool using_column_is_pinned = false;
+    if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+    {
+        for (const auto & argument : arguments)
+        {
+            const auto * argument_column = argument->as<ColumnNode>();
+            if (!argument_column)
+                continue;
+            auto data_it = scope.table_expression_node_to_data.find(argument_column->getColumnSourceOrNull());
+            if (data_it != scope.table_expression_node_to_data.end()
+                && data_it->second.pinned_column_names.contains(argument_column->getColumnName()))
+                using_column_is_pinned = true;
+        }
+    }
+
     /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, the
       * visible `USING` key must keep the preserved side's own type: widening it to the `USING`
       * supertype would expose the type of a table that is not part of the result at all.
@@ -1823,7 +1839,9 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 
     auto merge_function = FunctionFactory::instance().get(function_name, scope.context);
     function_node->resolveAsFunction(merge_function->build(function_node->getArgumentColumns()));
-    function_node->setAlias(using_column_node.getColumnName());
+    function_node->setAlias(
+        using_column_node.getColumnName(),
+        using_column_is_pinned ? IdentifierPartQuote::DoubleQuoted : IdentifierPartQuote::Unquoted);
 
     return function_node;
 }

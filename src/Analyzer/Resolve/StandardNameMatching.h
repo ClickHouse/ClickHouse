@@ -62,6 +62,23 @@ std::vector<String> collectFoldedNameMatchesInNames(const Range & names, const I
     return matches;
 }
 
+/// The same, excluding the names in `pinned_names` (defined double-quoted) unless `name` is double-quoted as a whole:
+/// a pinned definition is reached only by an exact reference.
+template <typename Range, typename PinnedSet>
+std::vector<String> collectFoldedNameMatchesInNames(const Range & names, const IdentifierName & name, const PinnedSet & pinned_names)
+{
+    bool any_part_foldable = false;
+    for (const auto & part : name.parts)
+        any_part_foldable |= part.isCaseFoldable();
+
+    std::vector<String> matches;
+    for (const auto & candidate : names)
+        if (name.matchesFolded(candidate) && !(any_part_foldable && pinned_names.contains(candidate)))
+            matches.push_back(candidate);
+    std::sort(matches.begin(), matches.end());
+    return matches;
+}
+
 /// Sorted canonical names of map entries matching `name` under `standard` folding; more than one
 /// means the reference is ambiguous. `is_pinned` excludes double-quoted definitions.
 template <typename Map, typename IsPinnedFn>

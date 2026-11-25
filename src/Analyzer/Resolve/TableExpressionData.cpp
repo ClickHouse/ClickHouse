@@ -218,6 +218,27 @@ AnalysisTableExpressionData::tryMatchColumnOrSubcolumnStandard(const IdentifierN
         result.candidates.clear();
     }
 
+    /// A backticked or double-quoted part can contain dots: `Data.Name` written as one part also names the
+    /// subcolumn `Name` of the column `Data`, like in the exact mode (`Nested::getAllColumnAndSubcolumnPairs`).
+    /// Split such parts at the dots, each segment keeping the quote of its part, and match again.
+    IdentifierName split_name;
+    for (const auto & part : name.parts)
+    {
+        size_t segment_begin = 0;
+        while (true)
+        {
+            size_t dot_pos = part.spelling.find('.', segment_begin);
+            split_name.push_back(IdentifierPart{part.spelling.substr(segment_begin, dot_pos - segment_begin), part.quote});
+            if (dot_pos == String::npos)
+                break;
+            segment_begin = dot_pos + 1;
+        }
+    }
+
+    bool has_empty_segment = std::ranges::any_of(split_name.parts, [](const IdentifierPart & part) { return part.spelling.empty(); });
+    if (split_name.size() > name.size() && !has_empty_segment)
+        return tryMatchColumnOrSubcolumnStandard(split_name);
+
     return result;
 }
 

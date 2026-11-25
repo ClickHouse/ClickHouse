@@ -1,0 +1,33 @@
+-- CTE redefinition: the quote of each definition is checked, not only of the first one
+2
+1
+2
+11
+-- ARRAY JOIN aliases differing only in case collide, double-quoted ones do not
+2	1
+-- A folded reference to an alias with conflicting definitions is still rejected
+-- INTERPOLATE targets folding to one column
+0	10
+1	12
+2	20
+-- NATURAL JOIN over pinned columns
+1
+2	1	1
+1	2	3
+-- The merged USING key keeps the pin of its columns
+1
+1
+-- A lambda argument does not capture a folded name of an alias expression written outside of the lambda
+[101]
+['b']
+-- A one-part dotted name is a column and its subcolumn
+1	1	1
+-- Explicit double-quoted projection aliases stay pinned when the expression is replaced during resolution
+0
+-- Materialized CTE keeps the pins of its projection
+1
+-- A foldable EXCEPT target does not reach a pinned column
+1	2
+2
+-- The right side of IN keeps the quotes of a table name
+1	1

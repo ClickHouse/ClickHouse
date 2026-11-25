@@ -149,6 +149,10 @@ struct IdentifierResolveScope
     /// recursive CTE name); under `standard` matching they are excluded from folded lookups.
     std::unordered_set<std::string> pinned_expression_argument_names;
 
+    /// Aliases of the top-level projection expressions written double-quoted. The resolved projection
+    /// nodes do not always keep the alias, so the pins of the projection columns are taken from here.
+    std::unordered_set<std::string> pinned_projection_alias_names;
+
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.
       * Set while an expression bound to an alias of an outer scope is resolved through this
       * lambda scope, so that a lambda argument does not capture an identifier of an expression
