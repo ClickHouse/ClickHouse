@@ -14,6 +14,7 @@
 #include <Common/checkStackSize.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 
 namespace DB
@@ -130,20 +131,52 @@ void checkNoMoreStatements(const char * begin, const char * next, const char * e
 namespace
 {
 
-/// The string literals that are passed to `.ch.sql`: the queries in SQL embedded into the program.
-void collectEmbeddedQueries(const QNodePtr & node, std::vector<const QNode *> & out)
+/// What a program has to do with the queries in SQL embedded into it (`.ch.sql`).
+struct EmbeddedQueries
+{
+    /// Every string literal of the program. `.ch.sql` takes a string that is a literal, directly or through a variable,
+    /// a parameter of a function, or another name of `.ch.sql`, so every embedded query is one of them.
+    std::vector<const QNode *> strings;
+    /// The ones that are passed to `.ch.sql` in place: `.ch.sql "SELECT ..."`.
+    std::unordered_set<const QNode *> direct;
+    /// The program mentions `.ch.sql`.
+    bool mentioned = false;
+    /// And it mentions it other than by applying it to a string literal: `.ch.sql s`, `f:.ch.sql`.
+    /// Then any string literal of the program can be an embedded query.
+    bool indirect = false;
+};
+
+bool isStringLiteral(const QNodePtr & node)
+{
+    return node && node->kind == QNodeKind::Literal && node->type == QType::Char && node->atoms.size() == 1
+        && node->atoms.front().value.getType() == Field::Types::String;
+}
+
+void collectEmbeddedQueries(const QNodePtr & node, EmbeddedQueries & out)
 {
     checkStackSize();
     if (!node)
         return;
 
-    if (node->kind == QNodeKind::Apply && node->children.size() == 2 && node->children[0] && node->children[1]
-        && node->children[0]->kind == QNodeKind::Name && node->children[0]->name == ".ch.sql"
-        && node->children[1]->kind == QNodeKind::Literal && node->children[1]->type == QType::Char && !node->children[1]->atoms.empty())
-        out.push_back(node->children[1].get());
+    bool applied_to_literal = node->kind == QNodeKind::Apply && node->children.size() == 2 && node->children[0]
+        && node->children[0]->kind == QNodeKind::Name && node->children[0]->name == ".ch.sql" && isStringLiteral(node->children[1]);
+    if (applied_to_literal)
+    {
+        out.mentioned = true;
+        out.direct.insert(node->children[1].get());
+    }
+    else if (node->kind == QNodeKind::Name && node->name == ".ch.sql")
+    {
+        out.mentioned = true;
+        out.indirect = true;
+    }
 
-    for (const auto & child : node->children)
-        collectEmbeddedQueries(child, out);
+    if (isStringLiteral(node))
+        out.strings.push_back(node.get());
+
+    /// The name in `.ch.sql "..."` is not another mention.
+    for (size_t i = applied_to_literal ? 1 : 0; i < node->children.size(); ++i)
+        collectEmbeddedQueries(node->children[i], out);
     for (const auto * columns : {&node->columns, &node->key_columns})
         for (const auto & column : *columns)
             collectEmbeddedQueries(column.expression, out);
@@ -179,38 +212,40 @@ String quoteQString(std::string_view value)
 ///
 /// A query in SQL can hold credentials, like the keys in `.ch.sql "SELECT * FROM s3('...', 'key', 'secret')"`.
 /// When the program is compiled, they are parts of the generated query, which is logged without them as every query is.
-/// But the text of the program itself is logged if the compilation fails, so it needs a form without the secrets as well:
-/// every embedded query that has secrets is replaced with its form for logging, and one that does not parse is hidden
-/// as a whole, because it is not known what is secret in it. An embedded query over the limits of the parser (the depth,
-/// the backtracks) is an exception for the whole program here, as it would be at its compilation.
+/// But the text of the program itself is logged if the compilation fails, or if the embedded query does not get to
+/// the generated query, so it needs a form without the secrets as well.
+///
+/// An embedded query is a string literal of the program: the one that `.ch.sql` is applied to, or, when the program
+/// uses `.ch.sql` in another way (`s:"SELECT ..."; .ch.sql s`, `f:.ch.sql; f "SELECT ..."`), any of them. So in a program
+/// that mentions `.ch.sql`, every string literal that is a query with secrets is replaced with its form for logging.
+/// One that does not parse is hidden as a whole if it can be an embedded query, because it is not known what is
+/// secret in it. A string literal over the limits of the parser (the depth, the backtracks) is an exception for
+/// the whole program.
 String hideSecretsOfEmbeddedQueries(
     const String & text, const QProgram & program, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
-    std::vector<const QNode *> literals;
+    EmbeddedQueries queries;
     for (const auto & statement : program.statements)
-        collectEmbeddedQueries(statement, literals);
-    if (literals.empty())
+        collectEmbeddedQueries(statement, queries);
+    if (!queries.mentioned)
         return {};
 
     /// From the last one to the first one, so that the offsets of the remaining ones stay valid.
+    auto & literals = queries.strings;
     std::sort(literals.begin(), literals.end(), [](const QNode * left, const QNode * right) { return left->offset > right->offset; });
 
     String result = text;
     bool changed = false;
     for (const QNode * literal : literals)
     {
-        /// The literal in the text: from its opening quote to the closing one.
-        size_t begin = literal->offset;
-        if (begin >= result.size() || result[begin] != '"')
-            continue;
-        size_t end = begin + 1;
-        while (end < result.size() && result[end] != '"')
-            end += result[end] == '\\' ? 2 : 1;
-        if (end >= result.size())
-            continue;
-        ++end;
-
         const String & embedded_text = literal->atoms.front().value.safeGet<String>();
+        bool is_direct = queries.direct.contains(literal);
+
+        /// A credential in a query is a string literal of SQL: in quotes or a heredoc. A text without them has none,
+        /// and is not parsed, unless it is certainly an embedded query.
+        if (!is_direct && embedded_text.find_first_of("'$") == String::npos)
+            continue;
+
         const char * embedded_pos = embedded_text.data();
         const char * embedded_end = embedded_pos + embedded_text.size();
         ParserQuery parser(embedded_end);
@@ -219,12 +254,32 @@ String hideSecretsOfEmbeddedQueries(
             max_query_size, max_parser_depth, max_parser_backtracks, /*skip_insignificant=*/ true);
 
         String shown;
-        if (!embedded)
-            shown = "[HIDDEN]";
-        else if (embedded->hasSecretParts())
+        if (embedded)
+        {
+            if (!embedded->hasSecretParts())
+                continue;
             shown = embedded->formatForLogging();
+        }
         else
-            continue;
+        {
+            /// Not a query. It is hidden if the program can pass it to `.ch.sql`.
+            if (!is_direct && !queries.indirect)
+                continue;
+            shown = "[HIDDEN]";
+        }
+
+        /// The literal in the text: from its opening quote to the closing one.
+        /// If it is not where the parser said, nothing of the text is shown.
+        size_t begin = literal->offset;
+        if (begin >= result.size() || result[begin] != '"')
+            return "[HIDDEN]";
+        size_t end = begin + 1;
+        while (end < result.size() && result[end] != '"')
+            end += result[end] == '\\' ? 2 : 1;
+        if (end >= result.size())
+            return "[HIDDEN]";
+        ++end;
+
         result.replace(begin, end - begin, quoteQString(shown));
         changed = true;
     }
