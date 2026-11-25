@@ -98,7 +98,8 @@ ASTPtr cloneForQuery(const ASTPtr & ast)
             if (++copy_budget.copied_elements > copy_budget.max_elements)
                 throwTooBigExpansion(copy_budget.max_elements);
             for (const auto & child : node->children)
-                pending.push_back(child.get());
+                if (child)
+                    pending.push_back(child.get());
         }
     }
     return ast->clone();
@@ -651,7 +652,8 @@ void QCompiler::checkExpandedSize(const ASTPtr & ast)
         {
             ++size;
             for (const auto & child : node->children)
-                pending.push_back(child.get());
+                if (child)
+                    pending.push_back(child.get());
         }
         if (size > max_expanded_elements)
             throwTooBigExpansion(max_expanded_elements);
@@ -1281,9 +1283,10 @@ QValue QCompiler::applyFunction(const QFunctionPtr & function, QValues args, QEn
             if (bound)
                 merged.push_back(*bound);
             else if (next < args.size())
-                merged.push_back(std::move(args[next++]));
+                merged.push_back(args[next++]);     /// A copy: the arguments are used again below if a slot remains empty.
             else
             {
+                /// Not all the slots are filled, like in `g:f[1]; h:g[2]`: the result is a projection again.
                 auto projection = std::make_shared<QFunction>(*function);
                 size_t bound_index = 0;
                 for (auto & slot : projection->bound)
