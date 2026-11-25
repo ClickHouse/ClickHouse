@@ -67,6 +67,13 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
+        {
+            // The parent keeps this node active after `updateConstraints` lowers the limit below the in-flight amount
+            std::unique_lock lock(mutex);
+            if (!satisfied())
+                return {nullptr, false};
+        }
+
         // Dequeue request from the child
         auto [request, child_now_active] = child->dequeueRequest();
 
@@ -119,7 +126,7 @@ public:
 
     /// Update limits.
     /// Should be called from the scheduler thread because it could lead to activation or deactivation
-    void updateConstraints(const SchedulerNodePtr & self, Int64 new_max_requests, UInt64 new_max_cost)
+    void updateConstraints(Int64 new_max_requests, UInt64 new_max_cost)
     {
         std::unique_lock lock(mutex);
         bool was_active = active();
@@ -131,18 +138,11 @@ public:
             // Activate on transition from inactive state
             if (!was_active && active())
                 castParent().activateChild(*this);
-            // Deactivate on transition into inactive state
+            // Deactivate on transition into inactive state.
+            // The parent drops this node on its next `dequeueRequest`, which returns nothing while the limit is exceeded.
             else if (was_active && !active())
             {
-                // Node deactivation is usually done in dequeueRequest(), but we do not want to
-                // do extra call to active() on every request just to make sure there was no update().
-                // There is no interface method to do deactivation, so we do the following trick.
-                // removeChild(this) nulls our `parent` (via setParentNode), so re-attach through a saved local.
-                ISchedulerNode * parent_node = parent;
-                parent_node->removeChild(this);
-                parent_node->attachChild(self); // This call is the only reason we have `recursive_mutex`
-                // Drop any activation a concurrent finishRequest queued under the old limit; otherwise it
-                // would re-activate us under the new (lower) limit and admit one request over the bound.
+                // Drop any activation a concurrent finishRequest queued under the old limit
                 cancelActivation();
                 flushThroughputOnDeactivation();
             }
