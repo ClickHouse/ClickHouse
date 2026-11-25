@@ -4,6 +4,8 @@
 check, the user can write a backup to (and read one from) any bucket the server can reach.
 """
 
+import re
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -481,3 +483,53 @@ def test_on_cluster_is_authorized_on_the_initiator(started_cluster):
         f"BACKUP TABLE d67785.secrets ON CLUSTER one_shard TO {s3(ALLOWED + '/b4')} FORMAT Null",
         user=USER,
     )
+
+
+def test_restore_on_cluster_refuses_a_cyclic_base_backup_chain(started_cluster):
+    # The initiator opens the whole base chain to authorize it, and the metadata is writable by
+    # whoever can write the backup, while each level only checks the UUID its parent recorded. So
+    # a -> b -> a passes every per-level check and must be refused instead of being walked forever.
+    # The comment change keeps `.sql` in each backup, so no file of `cyc_a` needs its crafted base:
+    # without the walk this RESTORE succeeds.
+    node.query("DROP TABLE IF EXISTS d67785.cyclic SYNC")
+    node.query(
+        "CREATE TABLE d67785.cyclic (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "COMMENT 'a comment long enough that dropping it shrinks the .sql file'"
+    )
+    node.query("INSERT INTO d67785.cyclic VALUES (5)")
+    node.query("BACKUP TABLE d67785.cyclic TO File('cyc_a') FORMAT Null")
+    node.query("ALTER TABLE d67785.cyclic MODIFY COMMENT ''")
+    node.query(
+        "BACKUP TABLE d67785.cyclic TO File('cyc_b') "
+        "SETTINGS base_backup = File('cyc_a') FORMAT Null"
+    )
+
+    metadata_b = node.exec_in_container(
+        ["cat", "/var/lib/clickhouse/backups/cyc_b/.backup"], user="root"
+    )
+    uuid_b = re.search(r"<uuid>([^<]+)</uuid>", metadata_b).group(1)
+    base_of_a = (
+        f"<base_backup>File('cyc_b')</base_backup><base_backup_uuid>{uuid_b}</base_backup_uuid>"
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"sed -i \"s#</uuid>#</uuid>{base_of_a}#\" /var/lib/clickhouse/backups/cyc_a/.backup",
+        ],
+        user="root",
+    )
+    assert base_of_a in node.exec_in_container(
+        ["cat", "/var/lib/clickhouse/backups/cyc_a/.backup"], user="root"
+    )
+
+    error = node.query_and_get_error(
+        "RESTORE TABLE d67785.cyclic AS d67785.r_cyc ON CLUSTER one_shard FROM File('cyc_b')",
+        timeout=60,
+    )
+    assert "WRONG_BASE_BACKUP" in error, error
+    assert (
+        node.query("SELECT count() FROM system.tables WHERE database = 'd67785' AND name = 'r_cyc'")
+        == "0\n"
+    )
+    node.query("DROP TABLE d67785.cyclic SYNC")

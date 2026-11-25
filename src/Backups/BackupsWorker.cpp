@@ -96,6 +96,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int UNFINISHED;
     extern const int WRONG_BACKUP_SETTINGS;
+    extern const int WRONG_BASE_BACKUP;
 }
 
 using OperationID = BackupOperationID;
@@ -199,6 +200,18 @@ namespace
             backup_info.copyS3CredentialsTo(effective_base_backup_info, context);
 
         BackupFactory::instance().checkSourceAccess(effective_base_backup_info, context, IBackup::OpenMode::READ);
+    }
+
+    /// The hosts of `RESTORE ON CLUSTER` open the base backups with no user, so the initiator opens the chain, authorizing each base.
+    void checkAccessToBaseBackupChain(const BackupPtr & backup)
+    {
+        std::unordered_set<UUID> seen_uuids{backup->getUUID()};
+        for (auto base_backup = backup->getBaseBackup(); base_backup; base_backup = base_backup->getBaseBackup())
+        {
+            if (!seen_uuids.insert(base_backup->getUUID()).second)
+                throw Exception(ErrorCodes::WRONG_BASE_BACKUP, "Backup {}: Its chain of base backups returns to {}",
+                    backup->getNameForLogging(), base_backup->getNameForLogging());
+        }
     }
 
     /// We use slightly different read and write settings for backup/restore
@@ -1341,6 +1354,8 @@ void BackupsWorker::doRestore(
             RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
+
+        checkAccessToBaseBackupChain(backup);
     }
 
     /// Do RESTORE.
