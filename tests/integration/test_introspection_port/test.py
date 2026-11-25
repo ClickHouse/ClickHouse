@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import pytest
@@ -7,17 +8,22 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 node = cluster.add_instance(
     "node",
     main_configs=["configs/introspection.xml", "configs/startup_scripts.xml"],
 )
 node_reload = cluster.add_instance(
-    "node_reload", main_configs=["configs/introspection.xml"]
+    "node_reload", main_configs=["configs/introspection.xml", "configs/node_reload.xml"]
 )
 
 INTROSPECTION_PORT = 9010
 INTROSPECTION_CONFIG = "/etc/clickhouse-server/config.d/introspection.xml"
+NODE_RELOAD_CONFIG = "/etc/clickhouse-server/config.d/node_reload.xml"
+RESTART_WARNING = "which is not reconfigured on config reload"
+with open(os.path.join(SCRIPT_DIR, "configs/introspection.xml")) as f:
+    INTROSPECTION_CONFIG_CONTENT = f.read()
 
 
 @pytest.fixture(scope="module")
@@ -95,26 +101,59 @@ def test_introspection_port(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
 
-def test_reload_after_unmarking_introspection_endpoint(started_cluster):
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        # The introspection flag is removed from the running endpoint.
+        "introspection_native",
+        # The introspection endpoint is replaced by a regular one on its port.
+        "native_on_introspection_port",
+    ],
+)
+def test_reload_with_regular_endpoint_on_introspection_port(started_cluster, endpoint):
     client = Client(
         node_reload.ip_address, INTROSPECTION_PORT, command=cluster.client_bin_path
     )
+    warnings = int(node_reload.count_in_log(RESTART_WARNING))
     try:
-        node_reload.replace_in_config(
+        node_reload.replace_config(
             INTROSPECTION_CONFIG,
-            "<introspection>true</introspection>",
-            "<introspection>false</introspection>",
+            f"<clickhouse><protocols><{endpoint}><type>tcp</type><port>{INTROSPECTION_PORT}</port></{endpoint}></protocols></clickhouse>",
         )
-        # The introspection listener is not reconfigured on reload and keeps the port until restart.
-        node_reload.query("SYSTEM RELOAD CONFIG")
-        node_reload.query("SYSTEM START LISTEN CUSTOM 'introspection_native'")
+        # The introspection listener is not reconfigured on reload and keeps its address until restart.
+        for query in [
+            "SYSTEM RELOAD CONFIG",
+            f"SYSTEM START LISTEN CUSTOM '{endpoint}'",
+        ]:
+            node_reload.query(query)
+            warnings_after = int(node_reload.count_in_log(RESTART_WARNING))
+            assert warnings_after > warnings, query
+            warnings = warnings_after
         assert "QUERY_IS_PROHIBITED" in client.query_and_get_error(
             "CREATE TABLE t (a UInt8) ENGINE = Memory"
         )
     finally:
+        node_reload.replace_config(INTROSPECTION_CONFIG, INTROSPECTION_CONFIG_CONTENT)
+        node_reload.query("SYSTEM RELOAD CONFIG")
+
+
+def test_reload_marking_regular_endpoint_as_introspection(started_cluster):
+    warning = "Protocol 'regular_native' is marked as introspection"
+    warnings_before = int(node_reload.count_in_log(warning))
+    try:
         node_reload.replace_in_config(
-            INTROSPECTION_CONFIG,
-            "<introspection>false</introspection>",
-            "<introspection>true</introspection>",
+            NODE_RELOAD_CONFIG,
+            "<type>tcp</type>",
+            "<type>tcp</type><introspection>true</introspection>",
+        )
+        # Introspection listeners are created only at startup, so the running regular listener is kept.
+        node_reload.query("SYSTEM RELOAD CONFIG")
+        assert int(node_reload.count_in_log(warning)) > warnings_before
+        Client(node_reload.ip_address, 9011, command=cluster.client_bin_path).query(
+            "INSERT INTO FUNCTION null('a UInt8') SELECT 1"
+        )
+    finally:
+        node_reload.replace_in_config(
+            NODE_RELOAD_CONFIG, "<introspection>true</introspection>", ""
         )
         node_reload.query("SYSTEM RELOAD CONFIG")

@@ -786,6 +786,22 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
     return listen_try;
 }
 
+/// Whether listeners on the same port and these hosts conflict: the same address, or a wildcard that covers the other one.
+/// An IPv6 wildcard socket is dual-stack.
+bool listenHostsOverlap(const std::string & lhs, const std::string & rhs)
+{
+    Poco::Net::IPAddress lhs_address;
+    Poco::Net::IPAddress rhs_address;
+    if (!Poco::Net::IPAddress::tryParse(lhs, lhs_address) || !Poco::Net::IPAddress::tryParse(rhs, rhs_address))
+        return lhs == rhs;
+
+    const auto covers = [](const Poco::Net::IPAddress & wildcard, const Poco::Net::IPAddress & address)
+    {
+        return wildcard.isWildcard() && (wildcard.family() == address.family() || wildcard.family() == Poco::Net::IPAddress::IPv6);
+    };
+    return lhs_address == rhs_address || covers(lhs_address, rhs_address) || covers(rhs_address, lhs_address);
+}
+
 #if USE_GRPC || USE_ARROWFLIGHT
 bool isWildcardListenHost(const std::string & listen_host)
 {
@@ -822,6 +838,28 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
+    /// An introspection listener keeps its address until restart, so a reload or `SYSTEM START LISTEN` must not bind it again.
+    if (introspection_servers_ptr && global_context->isServerCompletelyStarted() && !config.getString(port_name, "").empty())
+    {
+        const auto port = config.getInt(port_name);
+        const auto overlaps = [&](const ProtocolServerAdapter & server)
+        {
+            return !server.isStopping() && server.portNumber() == port && listenHostsOverlap(server.getListenHost(), listen_host);
+        };
+        const auto is_listening = [&](const ProtocolServerAdapter & server)
+        {
+            return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name;
+        };
+        const auto it = std::ranges::find_if(*introspection_servers_ptr, overlaps);
+        if (it != introspection_servers_ptr->end() && std::ranges::none_of(servers, is_listening))
+        {
+            LOG_WARNING(&logger(), "Not listening on [{}]:{} for {}: the address is used by the introspection listener for {}, "
+                "which is not reconfigured on config reload. Restart the server to apply the configuration",
+                listen_host, port, port_name, it->getPortName());
+            return;
+        }
+    }
+
     if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger())
         && (start_server || !servers.back().bindsOnStart()))
     {
@@ -3752,8 +3790,7 @@ try
             /* start_servers= */ true,
             ServerType(ServerType::Type::QUERIES_ALL),
             /* only_introspection_protocols= */ true);
-        for (const auto & server : introspection_servers)
-            introspection_port_names.insert(server.getPortName());
+        introspection_servers_ptr = &introspection_servers;
     }
 
     try
@@ -4562,7 +4599,7 @@ void Server::createServers(
     for (const auto & protocol : protocols)
     {
         const bool is_introspection = isIntrospectionProtocol(config, protocol);
-        if (is_introspection != only_introspection_protocols)
+        if (!is_introspection && only_introspection_protocols)
             continue;
 
         if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
@@ -4577,11 +4614,24 @@ void Server::createServers(
         if (!config.has(prefix + "port"))
             continue;
 
-        if (!only_introspection_protocols && introspection_port_names.contains(port_name))
+        if (!only_introspection_protocols)
         {
-            LOG_WARNING(&logger(), "Protocol '{}' is served by an introspection listener, which is not reconfigured on config reload. "
-                "Restart the server to apply its configuration", protocol);
-            continue;
+            /// Whether an endpoint is an introspection one is fixed at startup.
+            const bool has_introspection_server = introspection_servers_ptr
+                && std::ranges::any_of(*introspection_servers_ptr, [&](const auto & server) { return server.getPortName() == port_name; });
+            if (has_introspection_server && !is_introspection)
+            {
+                LOG_WARNING(&logger(), "Protocol '{}' is served by an introspection listener, which is not reconfigured on config reload. "
+                    "Restart the server to apply its configuration", protocol);
+                continue;
+            }
+            if (is_introspection)
+            {
+                if (!has_introspection_server && global_context->isServerCompletelyStarted())
+                    LOG_WARNING(&logger(), "Protocol '{}' is marked as introspection, but introspection listeners are created only at startup. "
+                        "Restart the server to apply its configuration", protocol);
+                continue;
+            }
         }
 
         std::vector<std::string> hosts;

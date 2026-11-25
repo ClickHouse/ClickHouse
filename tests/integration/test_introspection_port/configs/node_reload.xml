@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- The failed bind on reload is an error only with `listen_try` off, and `listen_try` is on implicitly without `listen_host`. -->
+    <listen_host>0.0.0.0</listen_host>
+    <listen_try>0</listen_try>
+    <protocols>
+        <regular_native>
+            <type>tcp</type>
+            <port>9011</port>
+        </regular_native>
+    </protocols>
+</clickhouse>

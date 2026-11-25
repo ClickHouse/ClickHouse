@@ -54,3 +54,5 @@ The stack must end in a `tcp` layer, because the semantics below are implemented
 - Connections are accepted even when the server refuses regular connections because of CPU overload.
 - Full normal authentication and authorization apply: connecting to this port grants no extra access rights. It does lift the concurrency limits above, so bind it to an address that only operators can reach.
 - These ports are not subject to `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (including `ALL` and `CUSTOM`) and are not reconfigured on config reload.
+- Adding or removing `<introspection>true</introspection>` on a running endpoint takes effect only after a restart, and every config reload logs a warning until then. An endpoint that loses the flag stays introspection-only. An endpoint that gets the flag keeps its regular listener until that listener is stopped, for example by `SYSTEM STOP LISTEN`.
+- A config reload does not open a regular listener on the address of an introspection port. It logs a warning instead.
