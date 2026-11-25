@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
+#include <Databases/removeWhereConditionPlaceholder.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/Lexer.h>
@@ -77,6 +78,25 @@ void checkExternalDictionaryQueryIsSelect(const String & query, const String & d
     const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
     if (hasSettings(*ast) || (query_with_output && (query_with_output->out_file || query_with_output->format_ast)))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+}
+
+void checkExternalDictionaryLoadQueryIsSelect(const String & query, const String & load_all_query, const String & source_name)
+{
+    const String description = "Query for " + source_name + " dictionary";
+
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
+    {
+        if ((token.type == TokenType::StringLiteral || token.type == TokenType::QuotedIdentifier)
+            && std::string_view(token.begin, token.size()).contains(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE))
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} cannot contain {} in a string literal or a quoted identifier, because it is replaced by a condition with quotes",
+                description,
+                CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    }
+
+    checkExternalDictionaryQueryIsSelect(load_all_query, description, "Only SELECT query can be used as a dictionary source");
 }
 
 /// For simple key

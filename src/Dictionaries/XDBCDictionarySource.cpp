@@ -89,6 +89,8 @@ XDBCDictionarySource::XDBCDictionarySource(
     , bridge_url(bridge_helper->getMainURI())
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryLoadQueryIsSelect(configuration.query, load_all_query, "ODBC");
 }
 
 /// copy-constructor is provided in order to support cloneability
@@ -136,6 +138,8 @@ BlockIO XDBCDictionarySource::loadAll()
 BlockIO XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(load_query_update, "Update query for ODBC dictionary", "Only SELECT query can be used as a dictionary source");
 
     LOG_TRACE(log, fmt::runtime(load_query_update));
     BlockIO io;
@@ -200,6 +204,9 @@ bool XDBCDictionarySource::isModified() const
 
 std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request) const
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for ODBC dictionary", "Only SELECT query can be used as a dictionary invalidate query");
+
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
@@ -213,10 +220,6 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 
 QueryPipeline XDBCDictionarySource::loadFromQuery(const Block & required_sample_block, const std::string & query) const
 {
-    /// Also the invalidate query.
-    if (configuration.check_queries_are_select)
-        checkExternalDictionaryQueryIsSelect(query, "Query for ODBC dictionary", "Only SELECT query can be used as a dictionary source or invalidate query");
-
     bridge_helper->startBridgeSync();
 
     Poco::URI request_uri(bridge_url);

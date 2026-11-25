@@ -39,6 +39,13 @@ void checkDictionaryQueryIsSelect(const String & query, const String & descripti
 /// `FORMAT` and `SETTINGS`, which are a part of a `SELECT` only for ClickHouse.
 void checkExternalDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
 
+/// Checks the load query of a source of an external database, see `checkExternalDictionaryQueryIsSelect`. It is checked once,
+/// when the source is created: the lookups of `direct` and `cache` layouts add to it only a condition on the requested keys,
+/// whose values are escaped in the style of the database, which the ClickHouse parser may read differently. Such a condition
+/// replaces `{condition}` in `query`, so `{condition}` cannot be in a string literal or a quoted identifier: there, the quotes
+/// of the condition would end the quoted token, and a key could be read as SQL.
+void checkExternalDictionaryLoadQueryIsSelect(const String & query, const String & load_all_query, const String & source_name);
+
 /** A stream, adds additional columns to each block that it will read from inner stream.
      *
      *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.

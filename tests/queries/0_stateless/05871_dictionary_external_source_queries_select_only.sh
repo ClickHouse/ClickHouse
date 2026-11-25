@@ -24,9 +24,11 @@ function cleanup()
     $CLICKHOUSE_CLIENT --multiquery --query "
         DROP DICTIONARY IF EXISTS dict_invalidate;
         DROP DICTIONARY IF EXISTS dict_nc;
+        DROP DICTIONARY IF EXISTS dict_keys;
         DROP USER IF EXISTS $user;
         DROP USER IF EXISTS $backend_user;
-        DROP NAMED COLLECTION IF EXISTS $nc;"
+        DROP NAMED COLLECTION IF EXISTS $nc;
+        DROP NAMED COLLECTION IF EXISTS ${nc}_query;"
 }
 trap cleanup EXIT
 cleanup
@@ -46,17 +48,38 @@ $CLICKHOUSE_CLIENT --multiquery --query "
         LAYOUT(FLAT()) LIFETIME(MIN 1 MAX 1);
     SELECT dictGet(dict_invalidate, 'value', toUInt64(1));"
 
-for _ in {1..120}; do
+# The loader checks the dictionaries every few seconds.
+rejected=0
+while [ "$rejected" != "1" ] && [ $SECONDS -lt 120 ]; do
     rejected=$($CLICKHOUSE_CLIENT --multiquery --query "
         SYSTEM FLUSH LOGS text_log;
         SELECT count() > 0 FROM system.text_log
         WHERE event_date >= yesterday()
             AND message LIKE '%Could not check if dictionary%${CLICKHOUSE_DATABASE}.dict_invalidate%Only SELECT query can be used as a dictionary invalidate query%'")
-    [ "$rejected" = "1" ] && break
-    sleep 0.5
+    [ "$rejected" = "1" ] || sleep 0.5
 done
 echo "rejected: $rejected"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'canary'"
+
+echo '--- Lookups with any key are sent'
+# The lookups of a `direct` layout add the keys to the checked load query, escaped in the style of MySQL: a quote or a backslash
+# in a key is not a part of the query for the database.
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE TABLE src_keys (k String, v String) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO src_keys VALUES ('O''Brien', 'quote'), ('a\\\\b', 'backslash');
+    CREATE DICTIONARY dict_keys (k String, v String) PRIMARY KEY k
+        SOURCE(MYSQL(HOST '127.0.0.1' PORT ${CLICKHOUSE_PORT_MYSQL} USER '$backend_user' PASSWORD 'p' DB '${CLICKHOUSE_DATABASE}' TABLE 'src_keys'))
+        LAYOUT(COMPLEX_KEY_DIRECT());
+    SELECT dictGet(dict_keys, 'v', tuple('O''Brien')), dictGet(dict_keys, 'v', tuple('a\\\\b'));
+    DROP DICTIONARY dict_keys;"
+
+echo '--- The queries held by a named collection are checked'
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE NAMED COLLECTION ${nc}_query AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd', query = 'DROP TABLE t';
+    CREATE DICTIONARY dict_nc (id UInt64, value String) PRIMARY KEY id
+        SOURCE(MYSQL(NAME ${nc}_query)) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);"
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY dict_nc" 2>&1 | grep -q "Only SELECT query can be used as a dictionary source" && echo 1 || echo 0
+$CLICKHOUSE_CLIENT --query "DROP DICTIONARY dict_nc"
 
 echo '--- A named collection requires the privilege NAMED COLLECTION'
 $CLICKHOUSE_CLIENT --multiquery --query "

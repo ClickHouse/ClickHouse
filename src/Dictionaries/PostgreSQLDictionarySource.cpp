@@ -102,6 +102,8 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryLoadQueryIsSelect(configuration.query, load_all_query, "PostgreSQL");
 }
 
 
@@ -132,6 +134,8 @@ BlockIO PostgreSQLDictionarySource::loadAll()
 BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(load_update_query, "Update query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary source");
     LOG_TRACE(log, fmt::runtime(load_update_query));
     BlockIO io;
     io.pipeline = loadBase(load_update_query);
@@ -177,9 +181,6 @@ String PostgreSQLDictionarySource::getCustomQueryStructureHint() const
 
 QueryPipeline PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    if (configuration.check_queries_are_select)
-        checkExternalDictionaryQueryIsSelect(query, "Query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary source");
-
     return QueryPipeline(
         std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size, getCustomQueryStructureHint()));
 }

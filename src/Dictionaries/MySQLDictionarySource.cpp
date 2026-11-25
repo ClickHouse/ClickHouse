@@ -434,6 +434,8 @@ MySQLDictionarySource::MySQLDictionarySource(
     , load_all_query(query_builder.composeLoadAllQuery())
     , settings(settings_)
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryLoadQueryIsSelect(configuration.query, load_all_query, "MySQL");
 }
 
 /// copy-constructor is provided in order to support cloneability
@@ -467,9 +469,6 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
 
 QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
 {
-    if (configuration.check_queries_are_select)
-        checkExternalDictionaryQueryIsSelect(query, "Query for MySQL dictionary", "Only SELECT query can be used as a dictionary source");
-
     return QueryPipeline(std::make_shared<MySQLWithFailoverSource>(
             pool, query, sample_block, settings));
 }
@@ -485,6 +484,8 @@ BlockIO MySQLDictionarySource::loadAll()
 BlockIO MySQLDictionarySource::loadUpdatedAll()
 {
     std::string load_update_query = getUpdateFieldAndDate();
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(load_update_query, "Update query for MySQL dictionary", "Only SELECT query can be used as a dictionary source");
     LOG_TRACE(log, fmt::runtime(load_update_query));
     BlockIO io;
     io.pipeline = loadFromQuery(load_update_query);

@@ -1,3 +1,4 @@
 --- Statements other than SELECT are rejected
 --- What the database reads differently from ClickHouse is rejected
+--- The load query of a lookup is checked
 --- SELECT is sent

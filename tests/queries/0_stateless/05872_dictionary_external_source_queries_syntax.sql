@@ -54,6 +54,20 @@ CREATE DICTIONARY d (id UInt64, value String) PRIMARY KEY id
 SYSTEM RELOAD DICTIONARY d; -- { serverError INCORRECT_QUERY }
 DROP DICTIONARY d;
 
+SELECT '--- The load query of a lookup is checked';
+-- A `direct` layout never loads all, its lookups add a condition on the keys to the load query.
+CREATE DICTIONARY d (id UInt64, value String) PRIMARY KEY id
+    SOURCE(MYSQL(HOST '127.0.0.1' PORT 1 USER 'u' PASSWORD 'p' DB 'd' QUERY 'DELETE FROM t WHERE {condition}'))
+    LAYOUT(DIRECT());
+SELECT dictGet(d, 'value', toUInt64(1)); -- { serverError INCORRECT_QUERY }
+DROP DICTIONARY d;
+-- In a string literal, the quotes of the condition on the keys would end the literal, and a key would be read as SQL.
+CREATE DICTIONARY d (id String, value String) PRIMARY KEY id
+    SOURCE(POSTGRESQL(HOST '127.0.0.1' PORT 1 USER 'u' PASSWORD 'p' DB 'd' QUERY 'SELECT ''{condition}'' AS id, '''' AS value'))
+    LAYOUT(COMPLEX_KEY_DIRECT());
+SELECT dictGet(d, 'value', tuple('x')); -- { serverError INCORRECT_QUERY }
+DROP DICTIONARY d;
+
 SELECT '--- SELECT is sent';
 CREATE DICTIONARY d (id UInt64, value String) PRIMARY KEY id
     SOURCE(MYSQL(HOST '127.0.0.1' PORT 1 USER 'u' PASSWORD 'p' DB 'd' QUERY 'SELECT id, value FROM t WHERE {condition}' INVALIDATE_QUERY 'SELECT max(updated) FROM t'))
