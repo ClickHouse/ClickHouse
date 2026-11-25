@@ -80,9 +80,9 @@ read -r first_port second_port < "${work_dir}/ports"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ORC METADATA CACHE"
 for port in "$first_port" "$second_port"; do
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
 done
 
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
 cp "${work_dir}/large.orc" "${work_dir}/weak.orc"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
