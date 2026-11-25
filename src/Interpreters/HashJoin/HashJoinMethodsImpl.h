@@ -802,9 +802,17 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                     {
                         if (filter_flags[replicated_row])
                         {
-                            any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it);
-                            total_added_rows += 1;
+                            /// `ANY INNER JOIN` joins a key once: the first left row with a passing pair claims it.
+                            if constexpr (join_features.is_any_join && join_features.inner)
+                                any_matched = used_flags.template setUsedOnce<join_features.need_flags, false>(find_results[find_result_index]);
+                            else
+                                any_matched = true;
+
+                            if (any_matched)
+                            {
+                                added_columns.appendFromBlock(*selected_right_row_it);
+                                total_added_rows += 1;
+                            }
                             selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
                             break;
                         }
@@ -832,8 +840,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                 }
                 else
                 {
-                    if (!flag_per_row)
-                        used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
                     if (need_filter)
                         setUsed<true>(added_columns.filter, i, added_columns.matched_rows);
                 }
