@@ -25,8 +25,7 @@ namespace DeltaLake
 
 size_t SnapshotDataFiles::getFileWeight(const ScannedDataFile & file)
 {
-    return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity()
-        + (file.statistics ? file.statistics->allocatedBytes() : 0);
+    return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity();
 }
 
 SnapshotDataFilesCollector::SnapshotDataFilesCollector(size_t max_weight_)

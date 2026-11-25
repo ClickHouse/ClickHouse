@@ -10,7 +10,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DataFileStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
@@ -120,7 +119,6 @@ private:
         /// Partition columns list (not stored in read schema)
         DB::Names partition_columns;
         std::unordered_set<String> timestamp_ntz_paths;
-        StatisticsColumns statistics_columns;
     };
     mutable std::optional<SchemaInfo> schema;
 
