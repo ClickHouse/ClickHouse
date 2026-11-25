@@ -891,6 +891,93 @@ def test_rabbitmq_insert(rabbitmq_cluster, db, unique):
     rabbitmq_check_result(result, True)
 
 
+def test_rabbitmq_insert_reuses_producer_connection(rabbitmq_cluster, db, unique):
+    # With rabbitmq_max_idle_producer_connections an insert publishes over the connection and channel of a previous
+    # insert instead of connecting to RabbitMQ again. A dedicated vhost isolates the connections of this table.
+    def rabbitmqctl(*args):
+        return rabbitmq_cluster.exec_in_container(
+            rabbitmq_cluster.rabbitmq_docker_id,
+            ["env", f"RABBITMQ_ERLANG_COOKIE={rabbitmq_cluster.rabbitmq_cookie}", "rabbitmqctl", *args],
+        )
+
+    def list_in_vhost(command, *columns):
+        # The vhost is the first column and the name, which contains spaces, the last one.
+        rows = [line.split(None, len(columns)) for line in rabbitmqctl("-q", command, "vhost", *columns).splitlines()]
+        return [tuple(row[1:]) for row in rows if row and row[0] == unique]
+
+    def connections():
+        return {name for (name,) in list_in_vhost("list_connections", "name")}
+
+    def confirm_channels():
+        # A channel name consists of the connection name and the channel number.
+        return {name for confirm, name in list_in_vhost("list_channels", "confirm", "name") if confirm == "true"}
+
+    def queued_messages():
+        out = rabbitmqctl("-q", "list_queues", "-p", unique, "name", "messages")
+        rows = [line.split() for line in out.splitlines() if line.strip()]
+        return sum(int(messages) for name, messages in rows if name == queue_name)
+
+    def wait_for(condition, description):
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        while not condition():
+            assert time.monotonic() < deadline, description
+            time.sleep(0.1)
+
+    def insert(key):
+        instance.query(f"INSERT INTO {db}.rabbitmq VALUES ({key})")
+
+    queue_name = f"{unique}_out"
+    rabbitmqctl("add_vhost", unique)
+    try:
+        rabbitmqctl("set_permissions", "-p", unique, "root", ".*", ".*", ".*")
+        instance.query(
+            f"""
+            CREATE TABLE {db}.rabbitmq (key UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_vhost = '{unique}',
+                         rabbitmq_exchange_name = '{unique}',
+                         rabbitmq_exchange_type = 'direct',
+                         rabbitmq_routing_key_list = 'insert',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_max_idle_producer_connections = 2
+            """
+        )
+
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, unique, credentials)
+        )
+        channel = connection.channel()
+        channel.queue_declare(queue=queue_name)
+        channel.queue_bind(exchange=unique, queue=queue_name, routing_key="insert")
+        connection.close()
+
+        # The table keeps its own connection for consumers.
+        connections_before = connections()
+
+        insert(0)
+        producer_connections = connections() - connections_before
+        assert len(producer_connections) == 1, f"expected one idle producer connection, got {producer_connections}"
+        producer_channels = confirm_channels()
+        assert len(producer_channels) == 1, f"expected one idle producer channel, got {producer_channels}"
+
+        for key in range(1, 6):
+            insert(key)
+        assert connections() - connections_before == producer_connections
+        assert confirm_channels() == producer_channels
+
+        # The broker closes the idle connection, the next insert must not fail on it.
+        rabbitmqctl("close_all_connections", "-p", unique, "test")
+        insert(6)
+        wait_for(lambda: queued_messages() == 7, "not all messages are in the queue")
+
+        instance.query(f"DROP TABLE {db}.rabbitmq SYNC")
+        wait_for(lambda: not connections(), "connections are left after the table is dropped")
+    finally:
+        rabbitmqctl("delete_vhost", unique)
+
+
 def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster, db, unique):
     instance.query(
         f"""
@@ -973,6 +1060,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster, db, unique):
                      rabbitmq_routing_key_list = 'insert2',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
+                     rabbitmq_max_idle_producer_connections = 4,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE {db}.rabbitmq_consume (key UInt64, value UInt64)
@@ -2121,6 +2209,73 @@ def test_rabbitmq_vhost(rabbitmq_cluster, db, unique):
         )
 
 
+def test_rabbitmq_trickle_does_not_spin_event_loop(rabbitmq_cluster, db, unique):
+    # A trickle of messages must not keep a core busy: the event loop blocks in the poller.
+    if instance.is_built_with_sanitizer():
+        pytest.skip("CPU-tick bound is meaningless under sanitizers; covered by gtest LoopingTaskBlocksAndStops")
+    instance.query(
+        f"""
+        CREATE TABLE {db}.trickle (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_trickle',
+                     rabbitmq_queue_base = '{unique}_trickle',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 2000,
+                     rabbitmq_max_block_size = 1000;
+        CREATE TABLE {db}.view (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT * FROM {db}.trickle;
+        """
+    )
+
+    def server_cpu_ticks():
+        # utime + stime of the whole server, in clock ticks (100/s).
+        return int(instance.exec_in_container(
+            ["bash", "-c", "pid=$(awk '/^PID:/{print $2}' /var/lib/clickhouse/status); "
+             "sed 's/.*) //' /proc/$pid/stat | awk '{print $12+$13}'"],
+            user="root",
+        ))
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    def publish(key):
+        channel.basic_publish(
+            exchange=f"{unique}_trickle", routing_key="", body=json.dumps({"key": key, "value": key})
+        )
+
+    # One message first, so the measurement starts with streaming already active.
+    publish(0)
+    check_expected_result_polling(1, f"SELECT count() FROM {db}.view")
+
+    # Idle window first: only the difference counts, so a slow (sanitizer) build does not fail the test.
+    before = server_cpu_ticks()
+    time.sleep(10)
+    idle = server_cpu_ticks() - before
+
+    before = server_cpu_ticks()
+    for key in range(1, 51):
+        publish(key)
+        time.sleep(0.2)
+    busy = server_cpu_ticks() - before
+    connection.close()
+
+    check_expected_result_polling(51, f"SELECT count() FROM {db}.view")
+
+    # ~10 s window: a spinning loop adds most of a core (~1000 ticks).
+    logging.info(f"CPU ticks in 10 s: {idle} idle, {busy} while consuming")
+    assert busy - idle < 300, (
+        f"the server used {busy} CPU ticks while consuming 50 messages over 10 s and {idle} idle; "
+        "the event loop is spinning instead of blocking in the poller"
+    )
+
+
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     instance.query(
         f"""
@@ -2972,6 +3127,21 @@ def test_max_rows_per_message(rabbitmq_cluster, db, unique):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
+def test_max_rows_per_message_zero(rabbitmq_cluster, db, unique):
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbit (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_exchange_name = '{unique}_zero',
+                     rabbitmq_max_rows_per_message = 0;
+        """
+    )
+
+    assert "BAD_ARGUMENTS" in instance.query_and_get_error(f"INSERT INTO {db}.rabbit VALUES (1, 2)", timeout=60)
+
+
 def test_row_based_formats(rabbitmq_cluster, db, unique):
     num_rows = 10
 
@@ -3460,6 +3630,41 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster, db, unique):
 
     expected = "".join(sorted(expected))
     assert broken_messages == expected
+
+
+def test_rabbitmq_handle_error_mode_stream_enum_type_default(rabbitmq_cluster, db, unique):
+    # The row of a message that fails to parse gets the type default: the smallest element of an Enum without 0.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbit (key UInt64, e Enum8('a' = 1, 'b' = 2))
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_exchange_name = '{unique}_enum',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n',
+                     rabbitmq_handle_error_mode = 'stream';
+
+        CREATE TABLE {db}.data (key UInt64, e Enum8('a' = 1, 'b' = 2), failed UInt8)
+             ENGINE = MergeTree()
+             ORDER BY key;
+
+        CREATE MATERIALIZED VIEW {db}.view TO {db}.data AS
+                SELECT key, e, isNotNull(_error) AS failed FROM {db}.rabbit;
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    for message in [json.dumps({"key": 1, "e": "b"}), "not json"]:
+        channel.basic_publish(exchange=f"{unique}_enum", routing_key="", body=message)
+    connection.close()
+
+    check_expected_result_polling(2, f"SELECT count() FROM {db}.data")
+    assert instance.query(f"SELECT key, e, failed FROM {db}.data ORDER BY key") == "0\ta\t1\n1\tb\t0\n"
 
 
 def test_attach_broken_table(rabbitmq_cluster, db, unique):
@@ -4137,3 +4342,226 @@ def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
     # Read in parallel, a message waits about one flush interval (1 s). Read one after another, about half of them
     # waited longer than 5 s.
     assert int(late) < messages_num // 20, f"{late} messages inserted more than 5 s after publishing (max {max_delay} s)"
+
+
+def test_rabbitmq_insert_into_missing_exchange(rabbitmq_cluster, db, unique):
+    # With rabbitmq_queue_consume = 1 the table declares nothing, so `never_declared` has no exchange.
+    # `deleted` declares its exchange at CREATE; it is deleted below.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.never_declared (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_never_declared',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{unique}_never_declared',
+                     rabbitmq_queue_consume = 1;
+        CREATE TABLE {db}.deleted (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_deleted',
+                     rabbitmq_format = 'JSONEachRow';
+        """
+    )
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+    connection.channel().exchange_delete(exchange=f"{unique}_deleted")
+    connection.close()
+
+    # The last INSERT has more messages than fit in the producer's queue.
+    for table, source in [
+        ("never_declared", "VALUES (1)"),
+        ("deleted", "VALUES (1)"),
+        ("deleted", "SELECT number FROM numbers(100000)"),
+    ]:
+        error = instance.query_and_get_error(f"INSERT INTO {db}.{table} {source}", timeout=30)
+        assert f"no exchange '{unique}_{table}'" in error, error
+
+    # The INSERT reports the error of its SELECT, not the failed publish of the rows produced before it.
+    error = instance.query_and_get_error(
+        f"INSERT INTO {db}.deleted SELECT throwIf(number = 1) FROM numbers(2) SETTINGS max_block_size = 1", timeout=30
+    )
+    assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in error, error
+
+
+@pytest.mark.parametrize("async_insert, rows", [(0, 1), (1, 1), (0, 100000)])
+def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert, rows):
+    # The queue rejects every message, so the producer republishes until the query is killed.
+    # 100000 messages do not fit in the producer's queue, so that INSERT is killed while it waits for room in it.
+    exchange = f"{unique}_full_{async_insert}_{rows}"
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+    # A queue left by an earlier run with other arguments would fail the declaration below.
+    try:
+        cleanup = connection.channel()
+        cleanup.queue_delete(queue=exchange)
+        cleanup.exchange_delete(exchange=exchange)
+        cleanup.close()
+    except pika.exceptions.ChannelClosedByBroker:
+        pass
+    channel = connection.channel()
+    channel.exchange_declare(exchange=exchange, exchange_type="fanout")
+    channel.queue_declare(queue=exchange, arguments={"x-max-length": 0, "x-overflow": "reject-publish"})
+    channel.queue_bind(exchange=exchange, queue=exchange)
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{unique}_unused',
+                     rabbitmq_queue_consume = 1;
+        """
+    )
+
+    query_id = f"{unique}_{uuid.uuid4().hex}"
+    source = "VALUES (1)" if rows == 1 else f"SELECT number FROM numbers({rows})"
+    # An asynchronous insert is published by its flush, a query of its own.
+    if async_insert:
+        producing_query = f"query_kind = 'AsyncInsertFlush' AND query LIKE '%{db}.rabbitmq%'"
+    else:
+        producing_query = f"query_id = '{query_id}'"
+    errors = []
+    insert = threading.Thread(
+        target=lambda: errors.append(
+            instance.query_and_get_error(
+                f"INSERT INTO {db}.rabbitmq {source}",
+                query_id=query_id,
+                settings={"async_insert": async_insert},
+                timeout=120,
+            )
+        ),
+        daemon=True,
+    )
+    insert.start()
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    # A KILL while the producer is still connecting ends the INSERT before it publishes anything.
+    while instance.query(f"SELECT count() FROM system.processes WHERE {producing_query} AND written_rows > 0").strip() == "0":
+        assert time.monotonic() < deadline, "the INSERT did not start publishing"
+        time.sleep(0.1)
+    instance.query(f"KILL QUERY WHERE {producing_query} SYNC", timeout=30)
+    insert.join(timeout=30)
+    assert errors and "QUERY_WAS_CANCELLED" in errors[0], errors
+
+    channel.queue_delete(queue=exchange)
+    channel.exchange_delete(exchange=exchange)
+    connection.close()
+
+
+def test_rabbitmq_insert_reconnects(rabbitmq_cluster, db, unique):
+    # The queue holds one message and rejects the rest, so the INSERT is still publishing when the broker closes its
+    # connection. A lost connection is restored, it does not fail the INSERT.
+    suffix = uuid.uuid4().hex
+    queue = f"{unique}_{suffix}"
+    table = f"rabbitmq_{suffix}"
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.confirm_delivery()
+    channel.exchange_declare(exchange=queue, exchange_type="fanout")
+    channel.queue_declare(queue=queue, arguments={"x-max-length": 1, "x-overflow": "reject-publish"})
+    channel.queue_bind(exchange=queue, queue=queue)
+    channel.basic_publish(exchange=queue, routing_key="", body="filler")
+    connection.close()
+    instance.query(
+        f"""
+        CREATE TABLE {db}.{table} (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{queue}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{unique}_unused',
+                     rabbitmq_queue_consume = 1;
+        """
+    )
+
+    errors = []
+
+    def insert():
+        try:
+            instance.query(f"INSERT INTO {db}.{table} VALUES (1)", settings={"async_insert": 0}, timeout=120)
+        except Exception as e:
+            errors.append(e)
+
+    thread = threading.Thread(target=insert, daemon=True)
+    thread.start()
+    instance.wait_for_log_line(f"\\({db}.{table}\\): Producer's channel .* is ready")
+    requests.delete(
+        f"http://{rabbitmq_cluster.rabbitmq_ip}:{rabbitmq_cluster.rabbitmq_management_port}/api/connections/username/root",
+        auth=("root", "clickhouse"),
+        headers={"X-Reason": "test"},
+        timeout=30,
+    ).raise_for_status()
+    instance.wait_for_log_line(f"\\({db}.{table}\\): Producer's channel .* error")
+
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_purge(queue=queue)
+    thread.join(timeout=60)
+    assert not thread.is_alive() and not errors, errors
+    method, _, body = channel.basic_get(queue=queue, auto_ack=True)
+    assert method is not None and json.loads(body) == {"key": 1}, body
+
+    channel.queue_delete(queue=queue)
+    channel.exchange_delete(exchange=queue)
+    connection.close()
+
+
+def test_rabbitmq_insert_racing_drop(rabbitmq_cluster, db, unique):
+    # The queue rejects every message, so the producer republishes until the table is shut down.
+    # 100000 messages do not fit in the producer's queue together with the unconfirmed ones (at most 50000).
+    exchange = f"{unique}_full"
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+    channel = connection.channel()
+    channel.exchange_declare(exchange=exchange, exchange_type="fanout")
+    channel.queue_declare(queue=exchange, arguments={"x-max-length": 0, "x-overflow": "reject-publish"})
+    channel.queue_bind(exchange=exchange, queue=exchange)
+
+    def insert_and_shut_down(ddl, rows):
+        table = f"{ddl.lower()}_{rows}"
+        instance.query(f"""
+            CREATE TABLE {db}.{table} (key UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_exchange_name = '{exchange}',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_queue_base = '{unique}_unused',
+                         rabbitmq_queue_consume = 1;
+            """)
+        query_id = f"{unique}_{uuid.uuid4().hex}"
+        errors = []
+        insert = threading.Thread(
+            target=lambda: errors.append(
+                instance.query_and_get_error(
+                    f"INSERT INTO {db}.{table} SELECT number FROM numbers({rows})", query_id=query_id, timeout=120
+                )
+            ),
+            daemon=True,
+        )
+        insert.start()
+        # Wait until the sink has rows, so the INSERT already holds the table.
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        written_rows = f"SELECT sum(written_rows) FROM system.processes WHERE query_id = '{query_id}'"
+        while instance.query(written_rows).strip() == "0":
+            assert time.monotonic() < deadline, "the INSERT did not start"
+            time.sleep(0.1)
+        instance.query(f"{ddl} TABLE {db}.{table}")
+        insert.join(timeout=30)
+        assert errors and "Table is detached" in errors[0] and "(ABORTED)" in errors[0], (ddl, rows, errors)
+
+    for ddl in ["DROP", "DETACH"]:
+        for rows in [1, 100000]:
+            insert_and_shut_down(ddl, rows)
+
+    channel.queue_delete(queue=exchange)
+    channel.exchange_delete(exchange=exchange)
+    connection.close()

@@ -219,8 +219,6 @@ std::map<String, Documentation> ParserGrantQuery::getDocumentation() const
     documentation["GRANT"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 - Grants [privileges](#privileges) to ClickHouse user accounts or roles.
 - Assigns roles to user accounts or to the other roles.
 
@@ -448,6 +446,11 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `DROP VIEW`
   - `DROP RESOURCE`
   - `DROP WORKLOAD`
+  - `HANDLER ADMIN`
+    - `ALTER HANDLER`
+    - `CREATE HANDLER`
+    - `DROP HANDLER`
+    - `SHOW HANDLERS`
   - [`INSERT`](#insert)
   - [`INTROSPECTION`](#introspection)
     - `addressToLine`

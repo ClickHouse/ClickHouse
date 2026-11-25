@@ -1,0 +1,22 @@
+DateTime keys in different time zones
+1
+1
+1
+1
+2024-01-01 09:00:00	DateTime(\'Asia/Tokyo\')
+2024-01-01 00:00:00	DateTime(\'UTC\')
+DateTime64 keys in different time zones
+1
+1
+Bool and UInt8 keys
+1
+1
+Cross-type keys whose supertype differs from a key only in the time zone or the name
+1
+1
+1
+1
+Number of tables the predicate filters: identical key types, then different time zones
+1
+2
+1

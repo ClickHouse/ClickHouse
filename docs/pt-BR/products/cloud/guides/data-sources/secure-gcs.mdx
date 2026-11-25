@@ -7,12 +7,10 @@ keywords: ['GCS']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este guia mostra como se autenticar com segurança no Google Cloud Storage (GCS) e acessar seus dados no ClickHouse Cloud.
 
 <div id="introduction">
-  ## Introdução
+  ## Introdução {#introduction}
 </div>
 
 O ClickHouse Cloud se conecta ao GCS usando chaves HMAC (Hash-based Message Authentication Code) associadas a uma conta de serviço do Google Cloud.
@@ -28,7 +26,7 @@ Como funciona:
 Essa abordagem permite gerenciar todo o acesso aos buckets do GCS por meio de políticas do IAM na conta de serviço, facilitando conceder ou revogar acesso sem modificar políticas individuais de bucket.
 
 <div id="prerequisites">
-  ## Pré-requisitos
+  ## Pré-requisitos {#prerequisites}
 </div>
 
 Para seguir este guia, você precisará de:
@@ -38,18 +36,26 @@ Para seguir este guia, você precisará de:
 * Permissões para criar contas de serviço e gerar chaves HMAC no seu projeto do GCP
 
 <div id="setup">
-  ## Setup
+  ## Setup {#setup}
 </div>
 
 <Steps>
   <Step title="Criar uma conta de serviço do Google Cloud" id="create-gcs-account">
     1. No Google Cloud Console, navegue até IAM &amp; Admin → Service Accounts
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+      </Frame>
+    </div>
 
     2. No menu à esquerda, clique em `Service accounts` e depois em `Create service account`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_service_account.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+      </Frame>
+    </div>
 
     Insira um nome e uma descrição para sua conta de serviço, por exemplo:
 
@@ -60,11 +66,19 @@ Para seguir este guia, você precisará de:
 
     Clique em `Create and continue`
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_and_continue.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+      </Frame>
+    </div>
 
     Conceda à conta de serviço o papel `Storage Object User`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/storage_object_user.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+      </Frame>
+    </div>
 
     Esse papel fornece acesso de leitura e gravação aos objetos do GCS
 
@@ -77,13 +91,17 @@ Para seguir este guia, você precisará de:
 
     Anote o endereço de e-mail da conta de serviço:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Conceda à conta de serviço acesso ao bucket" id="grant-bucket-access-to-service-account">
     Você pode conceder acesso no nível do projeto ou no nível de buckets individuais.
 
-    #### Opção 1: Conceder acesso a buckets específicos (recomendado)
+#### Opção 1: Conceder acesso a buckets específicos (recomendado) {#option-1}
 
     1. Navegue até `Cloud Storage` → `Buckets`
     2. Clique no bucket ao qual você deseja conceder acesso
@@ -98,7 +116,7 @@ Para seguir este guia, você precisará de:
     7. Clique em `Save`
     8. Repita o processo para quaisquer buckets adicionais
 
-    #### Opção 2: Conceder acesso no nível do projeto
+#### Opção 2: Conceder acesso no nível do projeto {#option-2}
 
     1. Navegue até `IAM & Admin` → `IAM`
     2. Clique em `Grant access`
@@ -116,19 +134,31 @@ Para seguir este guia, você precisará de:
   <Step title="Gere chaves HMAC para a conta de serviço" id="generate-hmac-keys-for-service-account">
     Navegue até `Cloud Storage` → `Settings` → `Interoperability`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+      </Frame>
+    </div>
 
     Se você não vir uma seção &quot;Access keys&quot;, clique em `Enable interoperability access`
 
     Em &quot;Access keys for service accounts&quot;, clique em `Create a key for a service account`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+      </Frame>
+    </div>
 
     Selecione a conta de serviço que você criou anteriormente (por exemplo, clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
     Clique em `Create key`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_a_key.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+      </Frame>
+    </div>
 
     A chave HMAC será exibida.
     Salve imediatamente a Access Key e a Secret — você não poderá visualizar a secret novamente.
@@ -144,11 +174,11 @@ Para seguir este guia, você precisará de:
       **Importante**
 
       Armazene essas credenciais em segurança.
-      O segredo n&#39;o poderá ser recuperado depois que esta tela for fechada.
+      O segredo não poderá ser recuperado depois que esta tela for fechada.
       Você precisará gerar novas chaves se perder o segredo.
     </Danger>
 
-    ## Use chaves HMAC com ClickHouse Cloud
+## Use chaves HMAC com ClickHouse Cloud {#use-hmac-keys-with-clickhouse-cloud}
 
     Agora você pode usar as credenciais HMAC para acessar o GCS no ClickHouse Cloud.
     Para isso, use a função de tabela do GCS:
@@ -175,7 +205,7 @@ Para seguir este guia, você precisará de:
     );
     ```
 
-    ## Autenticação HMAC no ClickPipes para GCS
+## Autenticação HMAC no ClickPipes para GCS {#hmac-authentication-clickpipes-for-gcs}
 
     O ClickPipes usa chaves HMAC (Hash-based Message Authentication Code) para se autenticar no Google Cloud Storage.
 
@@ -184,7 +214,11 @@ Para seguir este guia, você precisará de:
     1. Selecione `Credentials` em `Authentication method` durante a configuração do ClickPipe
     2. Informe as credenciais HMAC obtidas nas etapas anteriores
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+      </Frame>
+    </div>
 
     <Note>
       No momento, a autenticação com conta de serviço não é compatível - você deve usar chaves HMAC
@@ -199,11 +233,11 @@ Para seguir este guia, você precisará de:
 </Steps>
 
 <div id="best-practices">
-  ## Boas práticas
+  ## Boas práticas {#best-practices}
 </div>
 
 <div id="separate-service-accounts">
-  ### Use contas de serviço separadas para ambientes diferentes
+  ### Use contas de serviço separadas para ambientes diferentes {#separate-service-accounts}
 </div>
 
 Crie contas de serviço separadas para os ambientes de desenvolvimento, staging e produção. Por exemplo:
@@ -215,7 +249,7 @@ Crie contas de serviço separadas para os ambientes de desenvolvimento, staging 
 Isso permite revogar com facilidade o acesso de um ambiente específico sem afetar os demais.
 
 <div id="apply-least-privilege-access">
-  ### Aplique o princípio do menor privilégio
+  ### Aplique o princípio do menor privilégio {#apply-least-privilege-access}
 </div>
 
 Conceda apenas as permissões mínimas necessárias:
@@ -225,7 +259,7 @@ Conceda apenas as permissões mínimas necessárias:
 * Considere usar condições no nível do bucket para restringir o acesso a caminhos específicos
 
 <div id="rotate-hmac-keys">
-  ### Faça a rotação regular das chaves HMAC
+  ### Faça a rotação regular das chaves HMAC {#rotate-hmac-keys}
 </div>
 
 Implemente um cronograma de rotação de chaves:
@@ -240,7 +274,7 @@ Implemente um cronograma de rotação de chaves:
 </Tip>
 
 <div id="monitor-access">
-  ### Monitore o acesso com os Cloud Audit Logs
+  ### Monitore o acesso com os Cloud Audit Logs {#monitor-access}
 </div>
 
 Ative e monitore os Cloud Audit Logs do Cloud Storage:

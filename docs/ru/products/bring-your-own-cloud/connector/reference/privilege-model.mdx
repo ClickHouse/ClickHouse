@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -15,16 +14,20 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 ## Identities {#identities}
 
-<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="Модель идентичностей коннектора ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Модель идентичностей коннектора ClickHouse](/images/cloud/reference/byoc-connector-identity-model.svg)
+  </Frame>
+</div>
 
 * **Клиентский сертификат mTLS коннектора**, в котором в качестве common name указан ваш Organization ID, аутентифицирует каждый демон на вашей конечной точке коннектора. Команда `clicklink clctl instances create` использует тот же сертификат и HMAC key при обращении к конечной точке.
-* **`pcm_scraper` и `pcm_troubleshooter`** — это ClickHouse users только для чтения, под которыми подключаются scraper и средство диагностики. У исполнителя нет ClickHouse user.
-* **ServiceAccounts для средства диагностики**, по одному на каждое подготовленное развертывание, дают доступ к представлениям Kubernetes только для чтения, которые может использовать сеанс поддержки.
-* **`pcm-executor`** — это Kubernetes ServiceAccount исполнителя для управления жизненным циклом managed services. ValidatingAdmissionPolicy ограничивает его запись пространствами имен сервисов.
+* **`pcm_scraper` и `pcm_troubleshooter`** — это пользователи ClickHouse только для чтения, под которыми подключаются scraper и средство устранения неполадок. У исполнителя нет пользователя ClickHouse.
+* **ServiceAccounts для средства устранения неполадок**, по одному на каждое подготовленное развертывание, дают доступ к представлениям Kubernetes только для чтения, которые может использовать сеанс поддержки.
+* **`pcm-executor`** — это Kubernetes ServiceAccount исполнителя для управления жизненным циклом управляемых сервисов. ValidatingAdmissionPolicy ограничивает его запись пространствами имен сервисов.
 * **`pcm-platform`** — это идентичность исполнителя для обновлений платформы. Ваша команда `clicklink clctl platform approve` выпускает для него токен на 2 часа и никогда его не продлевает; между подтверждениями у исполнителя нет доступа на запись к платформенному слою.
 * **Роль IAM для каждого сервиса** (по умолчанию `CH-S3-<service>-<region>-00-Role`) создается командой `clicklink clctl executor prepare` с вашими учётными данными. Она ограничена бакетами данных и backup этого сервиса, и доверие к ней есть только у Kubernetes ServiceAccount этого сервиса, поэтому ни исполнитель, ни ClickHouse не могут ее assume.
-* **Instance profile EC2-виртуальной машины коннектора** выполняет assume роли ECR puller только для чтения в вашей среде для прямого доступа к платформе — как для входа для загрузки чарта, так и для проверок image. CLI подтверждения использует тот же путь через instance profile; AWS-профили на workstation или SSO учётные данные его не заменяют. Другие чарт-реестры ECR используют ambient AWS учётные данные. Image pulls выполняются на ваших узлах под их собственной pull-ролью. Исполнитель не хранит учётные данные для ваших бакетов или IAM и не выполняет вызовов S3 или IAM. См. [registry credentials](/ru/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
-* **Ваши собственные учётные данные** применяют каждый grant: grant доступа для исполнителя при `init --managed`, бакеты и роль при `prepare`, половина разрешений для каждого обновления платформы при `approve` и очистка при `teardown`.
+* **Instance profile EC2-виртуальной машины коннектора** выполняет assume роли ECR puller только для чтения в вашей среде для прямого доступа к платформе — как для входа для загрузки чарта, так и для проверок образов. CLI подтверждения использует тот же путь через instance profile; AWS-профили на workstation или SSO учётные данные его не заменяют. Другие чарт-реестры ECR используют учётные данные AWS из окружения. Загрузка образов выполняется на ваших узлах под их собственной pull-ролью. Исполнитель не хранит учётные данные для ваших бакетов или IAM и не выполняет вызовов S3 или IAM. См. [registry credentials](/ru/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
+* **Ваши собственные учётные данные** применяют каждый grant: grant доступа для исполнителя при `init --managed`, бакеты и роль при `prepare`, часть с разрешениями для каждого обновления платформы при `approve` и очистка при `teardown`.
 
 ## Возможности коннектора {#what-the-connector-can-do}
 

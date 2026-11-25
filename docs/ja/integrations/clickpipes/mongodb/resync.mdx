@@ -10,10 +10,8 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="what-mongodb-resync-do">
-  ### 再同期では何が行われますか？
+  ### 再同期では何が行われますか？ {#what-mongodb-resync-do}
 </div>
 
 再同期では、次の操作が順番に実行されます。
@@ -30,15 +28,17 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   再同期時にはソースデータベースへの負荷を考慮してください。
 </Note>
 
-<div id="guide-mongodb-resync">
-  ### ClickPipe 再同期ガイド
-</div>
+### ClickPipe 再同期ガイド {#guide-mongodb-resync}
 
 1. **Data Sources** タブで、再同期する MongoDB ClickPipe をクリックします。
 2. **Settings** タブに移動します。
 3. **再同期** ボタンをクリックします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
+  </Frame>
+</div>
 
 4. 確認ダイアログが表示されるので、再度 **再同期** をクリックします。
 5. **Metrics** タブに移動します。

@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/managed-getting-started
-title: 'Начало работы с Управляемым ClickStack'
-description: 'Разверните OpenTelemetry Collector для Управляемого ClickStack и настройте сквозную инструментализацию приложения'
+title: 'Начало работы с самостоятельно управляемым ClickHouse Observability'
+description: 'Разверните OpenTelemetry Collector для самостоятельно управляемого ClickHouse Observability и настройте сквозную инструментализацию приложения'
 doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', 'collector', 'instrumentation', 'managed', 'observability', 'gateway', 'nodejs', 'sdk']
 unlisted: true
@@ -9,11 +9,11 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import GatherCredentials from '/snippets/ru/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.mdx';
 
-Это руководство проведёт вас путь от пустого сервиса Управляемый ClickStack до логов, метрик, трассировок и воспроизведения сеансов из реального приложения. Вы развернёте новый OpenTelemetry Collector (или адаптируете существующий, если он у вас уже есть) для своего сервиса, проинструментируете тестовое приложение Node.js без изменений его бизнес-логики, а затем изучите телеметрию в интерфейсе ClickStack.
+Это руководство проведёт вас путь от пустого сервиса Самостоятельно управляемый ClickHouse Observability до журналов, метрик, трассировок и воспроизведения сеансов из реального приложения. Вы развернёте новый OpenTelemetry Collector (или адаптируете существующий, если он у вас уже есть) для своего сервиса, проинструментируете тестовое приложение Node.js без изменений его бизнес-логики, а затем изучите телеметрию в интерфейсе ClickStack.
 
 <Note>
   Если вы настраиваете новый OpenTelemetry Collector или используете собственный, он должен работать как **шлюз**: единая конечная точка OTLP, в которую отправляют данные ваши приложения, SDK и коллекторы-агенты. Шлюз группирует события в батчи, применяет настроенную вами обработку и записывает их в ClickHouse через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
@@ -22,10 +22,10 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 Приложение, которое мы будем инструментировать, — [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), приложение на Node.js, выполняющее запросы к набору данных HackerNews, размещённому в публичной демо-среде ClickHouse. Каждый график, таблица и поисковое поле работают на основе реального запроса к ClickHouse, поэтому каждое взаимодействие создаёт трассировку, основной спан которой — HTTPS-вызов от бэкенда к ClickHouse.
 
 <div id="prerequisites">
-  ## Требования
+  ## Требования {#prerequisites}
 </div>
 
-* **Управляемый ClickStack** в [ClickHouse Cloud](https://console.clickhouse.cloud).
+* **Сервис «Самостоятельно управляемый ClickHouse Observability»** в [ClickHouse Cloud](https://console.clickhouse.cloud).
 * **Node 18+ и npm** для запуска примера приложения.
 * **Docker**, если у вас ещё нет коллектора и вы хотите воспользоваться приведённым ниже вариантом с новым коллектором.
 
@@ -49,7 +49,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 
     <Tabs>
       <Tab title="У меня нет коллектора">
-        Разверните **дистрибутив ClickStack для OpenTelemetry Collector**, предварительно настроенный для Управляемого ClickStack. В примере ниже для простоты OpenTelemetry Collector запускается локально.
+        Разверните **дистрибутив ClickStack для OpenTelemetry Collector**, предварительно настроенный для самостоятельно управляемого ClickHouse Observability. В примере ниже для простоты OpenTelemetry Collector запускается локально.
 
         <Note>
           В продакшне OpenTelemetry Collector обычно развёртывают в кластере Kubernetes или на виртуальной машине, доступной для ваших OpenTelemetry SDKs, агентов и других коллекторов. Это позволяет централизованно собирать телеметрию со всей вашей среды и пересылать её в ClickStack.
@@ -83,12 +83,12 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
         <Info>
           **Продакшн-развертывания**
 
-          Для продакшн мы рекомендуем включить TLS для конечной точки OTLP. См. [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector).
+          Для продакшн мы рекомендуем включить TLS для конечной точки OTLP. См. [Защита коллектора](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
         </Info>
       </Tab>
 
       <Tab title="У меня есть коллектор">
-        Расширьте существующую конфигурацию коллектора, чтобы записывать данные в Управляемый ClickStack через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+        Расширьте существующую конфигурацию коллектора, чтобы записывать данные в самостоятельно управляемый ClickHouse Observability через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
         <Info>
           **Требуется ClickHouse exporter**
@@ -188,7 +188,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 
         Перезагрузите коллектор с новой конфигурацией. Держите под рукой конечную точку OTLP и заголовок аутентификации, который ожидает ваша конфигурация, — на следующих шагах вы укажете их в приложении.
 
-        Дополнительные сведения о настройке коллекторов OpenTelemetry для Управляемого ClickStack см. в разделе [Ингестия с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+        Дополнительные сведения о настройке коллекторов OpenTelemetry для самостоятельно управляемого ClickHouse Observability см. в разделе [Ингестия с OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#self-managed).
       </Tab>
     </Tabs>
   </Step>
@@ -211,7 +211,11 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 
     Откройте [http://localhost:5001](http://localhost:5001). Вы увидите выбор года, сводную статистику, диаграмму активности, таблицы с топом пользователей и доменов, а также поле поиска. Осмотритесь: переключайте годы, открывайте отдельные истории.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="Приложение HackerNews Analyzer, запущенное локально" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Приложение HackerNews Analyzer, запущенное локально](/images/clickstack/getting-started/hackernews_main.webp)
+      </Frame>
+    </div>
 
     На этом этапе приложение запущено, но в него еще не добавлен сбор телеметрии. ClickStack не показывает данных: он ждет телеметрии. Это состояние &quot;до&quot;.
   </Step>
@@ -236,7 +240,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
   <Step title="Настройте инструментирование приложения" id="instrument-the-application">
     Инструментирование включает три этапа: установку SDK, изменение команды запуска и включение браузерного SDK. Ничто из этого не меняет бизнес-логику приложения.
 
-    ### Установите SDK
+### Установите SDK {#install-sdks}
 
     Установите OpenTelemetry SDK как для backend, так и для браузера:
 
@@ -244,7 +248,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
     npm install @hyperdx/node-opentelemetry @hyperdx/browser
     ```
 
-    ### Используйте CLI opentelemetry-instrument
+### Используйте CLI opentelemetry-instrument {#use-open-telemetry-cli}
 
     Приложение запускается с помощью `run.sh`. Внизу файла есть две строки `exec`: одна активная, другая закомментирована. Поменяйте активную строку, чтобы Node запускался через `opentelemetry-instrument`:
 
@@ -260,7 +264,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 
     Это всё, что нужно изменить в серверной части. Автоинструментирование загружается через `opentelemetry-instrument` при запуске процесса.
 
-    ### Включите Browser SDK
+### Включите Browser SDK {#enable-browser-sdk}
 
     Чтобы собирать распределённые трассировки (из браузера в серверную часть) и воспроизведения сеансов, включите Browser SDK в `src/web/telemetry.ts`. Раскомментируйте импорт и блок `HyperDX.init({...})`:
 
@@ -300,31 +304,55 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
   <Step title="Запустите ClickStack и изучите свою телеметрию" id="launch-clickstack">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud), выберите **ClickStack** в меню слева, затем **Start Ingestion**.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Запуск ClickStack" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+      </Frame>
+    </div>
 
     Следующий шаг можно пропустить, так как вы уже настроили коллектор. Чтобы продолжить, нажмите **Launch ClickStack**.
 
     ClickStack откроется в новой вкладке, и вы должны автоматически перейти на страницу **Getting Started**. Если этого не произошло, выберите **Getting Started** в меню слева, затем нажмите **Start Ingestion**, а после этого — **Next**.
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
+      </Frame>
+    </div>
 
     ClickStack должен автоматически обнаружить ваши таблицы и телеметрию, чтобы вы могли продолжить. Чтобы начать изучение данных, выберите **Start Exploring**.
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
+      </Frame>
+    </div>
 
     Теперь посмотрите, какие данные генерирует приложение:
 
     1. Перейдите в **Search** и отфильтруйте данные за последние 5 минут. Журналы для `hn-analyzer-api` начнут поступать в интерфейс.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Журналы ClickStack" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Журналы ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+      </Frame>
+    </div>
 
     2. Откройте запрос и поднимитесь вверх по трейсу. Вы увидите span обработчика Express, дочерний HTTP span, указывающий на кластер ClickHouse с реальной длительностью сетевого запроса, а также коррелированные записи `console.log` в том же трейсе.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Трассировки ClickStack" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Трассировки ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+      </Frame>
+    </div>
 
     3. Откройте **Session Replay**, чтобы воспроизвести видео сеанса браузера с возможностью перемотки, синхронизированное с временной шкалой трейса.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Сеансы ClickStack" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Сеансы ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+      </Frame>
+    </div>
 
     Журналы, метрики, трассировки и воспроизведения сеансов отображаются в одном интерфейсе, используют один и тот же язык запросов и автоматически коррелируются.
 
@@ -336,12 +364,10 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
   </Step>
 </Steps>
 
-<div id="further-reading">
-  ## Дополнительные материалы
-</div>
+## Дополнительные материалы {#further-reading}
 
-* [Мониторинг Kubernetes](/ru/clickstack/managed-onboarding/monitoring-kubernetes): собирайте журналы, инфраструктурные метрики и события Kubernetes из кластера.
-* [Мониторинг журналов AWS CloudWatch](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): пересылайте журналы CloudWatch через приёмник CloudWatch OpenTelemetry.
-* [Тонкая настройка Управляемого ClickStack](/ru/clickstack/managed-onboarding/tuning-clickstack-schema): настройте схему для повышения производительности запросов и эффективности хранения.
-* [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с TLS на конечной точке OTLP и пользователями для ингестии с минимально необходимыми привилегиями.
-* [Переход в продакшн](/ru/clickstack/managing/production) — рекомендации по переходу в продакшн.
+* [Мониторинг Kubernetes](/ru/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): сбор журналов, метрик инфраструктуры и событий Kubernetes из кластера.
+* [Мониторинг журналов AWS CloudWatch](/ru/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): пересылка журналов CloudWatch с помощью приёмника CloudWatch для OpenTelemetry.
+* [Тонкая настройка самостоятельно управляемого ClickHouse Observability](/ru/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema): оптимизация схемы для повышения производительности запросов и эффективности хранения.
+* [Защита коллектора](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured): TLS на конечной точке OTLP и пользователи для ингестии с минимально необходимыми привилегиями.
+* [Переход к промышленной эксплуатации](/ru/clickstack/self-configured/managing/production): рекомендации по подготовке к развертыванию в продакшн.

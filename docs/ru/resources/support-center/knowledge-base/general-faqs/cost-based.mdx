@@ -1,13 +1,37 @@
 ---
-title: 'Есть ли в ClickHouse оптимизатор, основанный на стоимости'
+title: 'Есть ли в ClickHouse оптимизатор на основе стоимости?'
+sidebarTitle: 'Оптимизатор на основе стоимости'
 toc_hidden: true
 toc_priority: 10
 slug: /faq/general/cost-based
-description: 'В ClickHouse есть отдельные механизмы оптимизации, основанной на стоимости'
+description: 'В ClickHouse есть оптимизатор на основе стоимости, который выбирает порядок соединений, сторону построения JOIN и порядок условий PREWHERE на основе автоматически собираемой статистики столбцов'
 doc_type: 'reference'
-keywords: ['CBE', 'optimizer']
+keywords: ['CBO', 'оптимизатор на основе стоимости', 'оптимизатор', 'статистика', 'изменение порядка соединений']
 ---
 
-В ClickHouse есть отдельные механизмы оптимизации, основанной на стоимости. Например, порядок чтения столбцов определяется стоимостью чтения сжатых диапазонов данных с диска.
+Да. В ClickHouse есть оптимизатор на основе стоимости (CBO). По статистике столбцов он оценивает, сколько строк возвращает каждый шаг запроса, и на основе этих оценок выбирает один из эквивалентных планов запроса.
 
-ClickHouse также меняет порядок JOIN на основе статистики столбцов, однако это (по состоянию на 2025 год) пока далеко не так развито, как CBE в Postgres, Oracle и MS SQL Server.
+На основе стоимости принимаются следующие решения:
+
+* **Порядок соединений.** Для запроса, соединяющего несколько таблиц, планировщик ищет порядок соединений с наименьшей оценочной стоимостью. По умолчанию используется алгоритм динамического программирования `dpsub`, который перебирает все допустимые порядки соединений, в том числе с JOIN `LEFT`, `RIGHT`, `FULL`, `SEMI` и `ANTI`. Поиск охватывает группы до 10 таблиц — это значение задаётся настройкой `query_plan_optimize_join_order_limit`. Запрос, соединяющий больше таблиц, разбивается на группы, которые оптимизируются по отдельности. Если увеличить лимит выше 12, план для групп из более чем 12 таблиц строится жадным алгоритмом. См. [`query_plan_optimize_join_order_algorithm`](/ru/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) и [`query_plan_optimize_join_order_limit`](/ru/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit).
+* **Сторона построения JOIN.** При хеш-JOIN планировщик помещает в хеш-таблицу входные данные с меньшим оценочным размером независимо от того, в каком порядке таблицы указаны в запросе. См. [`query_plan_join_swap_table`](/ru/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+* **Алгоритм JOIN.** Если соединяемые таблицы можно читать в порядке ключа JOIN, планировщик по стоимости выбирает между хеш-JOIN и `full_sorting_merge` и отдаёт предпочтение планам, отсортированный вывод которых может использовать последующий JOIN. См. [`query_plan_join_order_use_interesting_orders`](/ru/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders).
+* **Порядок фильтров.** Условия из предложения `WHERE` переносятся в [`PREWHERE`](/ru/optimize/prewhere) и упорядочиваются так, чтобы дешёвые и селективные условия вычислялись первыми. При этом учитываются размер сжатых данных столбцов и оценочная селективность каждого условия.
+
+## Откуда берутся оценки? {#where-do-the-estimates-come-from}
+
+Таблицы `MergeTree` автоматически собирают статистику столбцов для каждой части данных при слиянии частей, а также при вставке в таблицы, размер которых меньше [`materialize_statistics_on_insert_max_table_size`](/ru/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size) (по умолчанию 25 GiB), поэтому выполнять `ANALYZE` или поддерживать статистику вручную не нужно. Типы статистики задаются настройкой таблицы [`auto_statistics_types`](/ru/reference/settings/merge-tree-settings/other#auto_statistics_types), которая по умолчанию включает `basic` (минимум и максимум, количество значений по умолчанию и значений `NULL`, общая длина строк) и `uniq_v2` (количество уникальных значений). Дополнительные типы, например `tdigest` (распределение значений) и `countmin` (частоты отдельных значений), повышают точность оценок для условий диапазона и равенства на неравномерно распределённых данных. См. раздел [Статистика столбцов](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+
+Статистика используется, если включена настройка [`use_statistics`](/ru/reference/settings/session-settings/use-statistics#use_statistics) (по умолчанию она включена). Помимо статистики столбцов, оптимизатор порядка соединений JOIN может использовать размеры хеш-таблиц, полученные при предыдущих выполнениях того же JOIN ([`use_hash_table_stats_for_join_reordering`](/ru/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering)), а также статистику из файлов манифеста Iceberg ([`use_datalake_metadata_statistics`](/ru/reference/settings/session-settings/use)).
+
+## Как узнать, что сделал оптимизатор? {#how-can-i-see-what-the-optimizer-did}
+
+Используйте [`EXPLAIN`](/ru/reference/statements/explain), чтобы посмотреть выбранный план, и [`EXPLAIN ANALYZE`](/ru/reference/statements/explain#explain-analyze), чтобы выполнить запрос и получить фактические метрики каждого шага. Для этапов соединения эта команда также [сравнивает оценочное количество строк с фактическим](/ru/reference/statements/explain#explain-analyze-join-estimation).
+
+## Когда важен оптимизатор? {#when-does-the-optimizer-matter}
+
+Высокая производительность ClickHouse во многом не зависит от оптимизатора: первичный ключ, индексы пропуска данных, отсечение партиций и векторизованное выполнение делают запрос быстрым даже без перебора планов. Оптимизатор на основе стоимости играет наибольшую роль в запросах, соединяющих множество таблиц, например в рабочих нагрузках TPC-H, TPC-DS и Join Order Benchmark.
+
+<Tip>
+  Полный список настроек, управляющих планированием соединений (JOIN), см. в разделе [Настройки JOIN](/ru/concepts/features/operations/select/join-settings).
+</Tip>

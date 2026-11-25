@@ -26,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
 }
@@ -122,6 +123,20 @@ void SerializationString::serializeBinary(const IColumn & column, size_t row_num
 }
 
 
+void SerializationString::deserializeBinary(std::string_view & value, std::string_view & input, const FormatSettings & settings) const
+{
+    UInt64 size = 0;
+    const char * data = readVarUInt(size, input.data(), input.size());
+    checkStringSize(size, settings);
+
+    const size_t remaining = input.size() - (data - input.data());
+    if (size > remaining)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read a string of {} bytes, only {} bytes are left", size, remaining);
+
+    value = std::string_view(data, size);
+    input.remove_prefix(input.size() - remaining + size);
+}
+
 void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ColumnString & column_string = assert_cast<ColumnString &>(column);
@@ -164,7 +179,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ? offset + limit
         : size;
 
-    ColumnString::Offset prev_string_offset = offsets[offset - 1];
+    ColumnString::Offset prev_string_offset = offsets[static_cast<ssize_t>(offset) - 1];
     for (size_t i = offset; i < end; ++i)
     {
         ColumnString::Offset next_string_offset = offsets[i];
@@ -888,7 +903,7 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
         return;
 
     size_t end = limit && (offset + limit < size) ? offset + limit : size;
-    UInt64 prev_offset = offset_values[offset - 1];
+    UInt64 prev_offset = offset_values[static_cast<ssize_t>(offset) - 1];
     if constexpr (std::endian::native == std::endian::big)
     {
         for (size_t i = offset; i < end; ++i)
@@ -917,7 +932,7 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
 
 void serializeStringOffsets(const ColumnString::Offsets & offsets, WriteBuffer & ostr, size_t offset, size_t limit)
 {
-    const ColumnString::Offset base = offsets[offset - 1];
+    const ColumnString::Offset base = offsets[static_cast<ssize_t>(offset) - 1];
     if (base == 0)
     {
         SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, ostr, offset, limit);
@@ -1043,8 +1058,8 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
         throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
 
     /// Serialize string data
-    size_t begin = (offset == 0) ? 0 : offsets[offset - 1];
-    size_t end = offsets[offset + limit - 1];
+    size_t begin = (offset == 0) ? 0 : offsets[static_cast<ssize_t>(offset) - 1];
+    size_t end = offsets[static_cast<ssize_t>(offset + limit) - 1];
     size_t bytes = end - begin;
     stream->write(reinterpret_cast<const char *>(&column_string.getChars()[begin]), bytes);
     settings.path.pop_back();
