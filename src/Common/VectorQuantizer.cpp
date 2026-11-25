@@ -763,8 +763,118 @@ VectorQuantizer::QueryPtr VectorQuantizer::prepareQuery(std::string_view method,
     return QueryPtr(query.release());
 }
 
+namespace
+{
+
+/// Rows per step of `VectorQuantizer::distances` for `int8` and `prefix`: each row keeps its own sums in the single-row
+/// order, so the results equal `distance`; these sums must not be split or reordered.
+constexpr size_t FLAT_CODE_ROWS_PER_STEP = 4;
+
+template <size_t R>
+void int8Distances(const Int8Query & iq, const char * code, size_t stride, float * out)
+{
+    /// Reconstruct the data direction from the codes (LloydMax::dequantize(code_i) ~ sqrt(d) * data_dir_i) and
+    /// take its inner product with the unit-normalized query direction; the rotation is orthogonal, so this
+    /// inner product estimates cos(data, query).
+    float dot[R] = {};
+    for (size_t i = 0; i < iq.dimensions; ++i)
+    {
+        const float q = iq.q_dir[i];
+        for (size_t r = 0; r < R; ++r)
+            dot[r] += LloydMax::dequantize(static_cast<Int8>(code[r * stride + i])) * q;
+    }
+    for (size_t r = 0; r < R; ++r)
+    {
+        float ip = std::clamp(dot[r] * iq.inv_sqrt_d, -1.0f, 1.0f);
+
+        float norm_x = 0.0f;
+        std::memcpy(&norm_x, code + r * stride + iq.dimensions, sizeof(float));
+
+        if (iq.is_l2)
+            out[r] = iq.q_norm_sq + norm_x * norm_x - 2.0f * iq.q_norm * norm_x * ip;
+        else
+            out[r] = 1.0f - ip;
+    }
+}
+
+/// Decode the stored prefix and compute L2 (squared, monotone for ranking) or cosine distance against the
+/// query's prefix.
+template <size_t R, bool is_int8, bool is_l2>
+void prefixDistances(const VectorQuantizer::Query & query, const char * code, size_t stride, float * out)
+{
+    const size_t n = query.mrl_query.size();
+    const float * q = query.mrl_query.data();
+
+    float scale[R] = {};
+    if constexpr (is_int8)
+        for (size_t r = 0; r < R; ++r)
+            std::memcpy(&scale[r], code + r * stride + n, sizeof(float));
+
+    auto decoded = [&](size_t r, size_t i) -> float
+    {
+        const char * row = code + r * stride;
+        if constexpr (is_int8)
+        {
+            return static_cast<float>(static_cast<Int8>(row[i])) * scale[r] / 127.0f;
+        }
+        else
+        {
+            UInt16 b = 0;
+            std::memcpy(&b, row + i * 2, sizeof(UInt16));
+            UInt32 u = static_cast<UInt32>(b) << 16;
+            float f = 0.0f;
+            std::memcpy(&f, &u, sizeof(float));
+            return f;
+        }
+    };
+
+    if constexpr (is_l2)
+    {
+        float d[R] = {};
+        for (size_t i = 0; i < n; ++i)
+            for (size_t r = 0; r < R; ++r)
+            {
+                const float e = q[i] - decoded(r, i);
+                d[r] += e * e;
+            }
+        for (size_t r = 0; r < R; ++r)
+            out[r] = d[r]; /// squared L2 over the prefix; monotone in the true prefix distance for ranking
+    }
+    else
+    {
+        float dot[R] = {};
+        float xn2[R] = {};
+        for (size_t i = 0; i < n; ++i)
+            for (size_t r = 0; r < R; ++r)
+            {
+                const float x = decoded(r, i);
+                dot[r] += q[i] * x;
+                xn2[r] += x * x;
+            }
+        for (size_t r = 0; r < R; ++r)
+        {
+            const float denom = query.mrl_query_norm * std::sqrt(xn2[r]);
+            const float cosine = (denom > 0.0f) ? std::clamp(dot[r] / denom, -1.0f, 1.0f) : 0.0f;
+            out[r] = 1.0f - cosine;
+        }
+    }
+}
+
+template <size_t R>
+void prefixDistancesFor(const VectorQuantizer::Query & query, const char * code, size_t stride, float * out)
+{
+    const bool is_int8 = query.codec == QuantizationMethod::PrefixInt8;
+    if (is_int8)
+        query.is_l2 ? prefixDistances<R, true, true>(query, code, stride, out) : prefixDistances<R, true, false>(query, code, stride, out);
+    else
+        query.is_l2 ? prefixDistances<R, false, true>(query, code, stride, out) : prefixDistances<R, false, false>(query, code, stride, out);
+}
+
+}
+
 float VectorQuantizer::distance(const Query & query, const char * code)
 {
+    float result = 0.0f;
     switch (query.codec)
     {
         case QuantizationMethod::RaBitQ:
@@ -773,70 +883,41 @@ float VectorQuantizer::distance(const Query & query, const char * code)
             return turboQuantDistance(query.turbo, code);
         case QuantizationMethod::PrefixInt8:
         case QuantizationMethod::PrefixBf16:
-        {
-            /// Decode the stored prefix and compute L2 (squared, monotone for ranking) or cosine distance against the
-            /// query's prefix.
-            const size_t n = query.mrl_query.size();
-            auto decoded = [&](size_t i) -> float
-            {
-                if (query.codec == QuantizationMethod::PrefixInt8)
-                {
-                    float scale = 0.0f;
-                    std::memcpy(&scale, code + n, sizeof(float));
-                    return static_cast<float>(static_cast<Int8>(code[i])) * scale / 127.0f;
-                }
-                UInt16 b = 0;
-                std::memcpy(&b, code + i * 2, sizeof(UInt16));
-                UInt32 u = static_cast<UInt32>(b) << 16;
-                float f = 0.0f;
-                std::memcpy(&f, &u, sizeof(float));
-                return f;
-            };
-
-            if (query.is_l2)
-            {
-                float d = 0.0f;
-                for (size_t i = 0; i < n; ++i)
-                {
-                    const float e = query.mrl_query[i] - decoded(i);
-                    d += e * e;
-                }
-                return d; /// squared L2 over the prefix; monotone in the true prefix distance for ranking
-            }
-
-            float dot = 0.0f;
-            float xn2 = 0.0f;
-            for (size_t i = 0; i < n; ++i)
-            {
-                const float x = decoded(i);
-                dot += query.mrl_query[i] * x;
-                xn2 += x * x;
-            }
-            const float denom = query.mrl_query_norm * std::sqrt(xn2);
-            const float cosine = (denom > 0.0f) ? std::clamp(dot / denom, -1.0f, 1.0f) : 0.0f;
-            return 1.0f - cosine;
-        }
+            prefixDistancesFor<1>(query, code, 0, &result);
+            return result;
         case QuantizationMethod::Int8:
-        {
-            const Int8Query & iq = query.int8;
-            const Int8 * codes = reinterpret_cast<const Int8 *>(code);
-            /// Reconstruct the data direction from the codes (LloydMax::dequantize(code_i) ~ sqrt(d) * data_dir_i) and
-            /// take its inner product with the unit-normalized query direction; the rotation is orthogonal, so this
-            /// inner product estimates cos(data, query).
-            float dot = 0.0f;
-            for (size_t i = 0; i < iq.dimensions; ++i)
-                dot += LloydMax::dequantize(codes[i]) * iq.q_dir[i];
-            float ip = std::clamp(dot * iq.inv_sqrt_d, -1.0f, 1.0f);
-
-            float norm_x = 0.0f;
-            std::memcpy(&norm_x, code + iq.dimensions, sizeof(float));
-
-            if (iq.is_l2)
-                return iq.q_norm_sq + norm_x * norm_x - 2.0f * iq.q_norm * norm_x * ip;
-            return 1.0f - ip;
-        }
+            int8Distances<1>(query.int8, code, 0, &result);
+            return result;
     }
-    return 0.0f;
+    return result;
+}
+
+void VectorQuantizer::distances(const Query & query, const char * codes, size_t stride, size_t rows, float * out)
+{
+    auto by_steps = [&](auto && kernel)
+    {
+        size_t row = 0;
+        for (; row + FLAT_CODE_ROWS_PER_STEP <= rows; row += FLAT_CODE_ROWS_PER_STEP)
+            kernel.template operator()<FLAT_CODE_ROWS_PER_STEP>(codes + row * stride, out + row);
+        for (; row < rows; ++row)
+            kernel.template operator()<1>(codes + row * stride, out + row);
+    };
+
+    switch (query.codec)
+    {
+        case QuantizationMethod::Int8:
+            by_steps([&]<size_t R>(const char * code, float * res) { int8Distances<R>(query.int8, code, stride, res); });
+            return;
+        case QuantizationMethod::PrefixInt8:
+        case QuantizationMethod::PrefixBf16:
+            by_steps([&]<size_t R>(const char * code, float * res) { prefixDistancesFor<R>(query, code, stride, res); });
+            return;
+        case QuantizationMethod::RaBitQ:
+        case QuantizationMethod::TurboQuant:
+            break;
+    }
+    for (size_t row = 0; row < rows; ++row)
+        out[row] = distance(query, codes + row * stride);
 }
 
 }

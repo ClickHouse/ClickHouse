@@ -54,6 +54,10 @@ struct VectorQuantizer
 
     /// Calculates the approximate distance between the prepared query and one encoded vector (`code` is `bytesPerVector` bytes).
     static float distance(const Query & query, const char * code);
+
+    /// Calculates the approximate distances between the prepared query and `rows` encoded vectors, `stride` bytes apart
+    /// starting at `codes`, into `out`. Each result equals what `distance` returns for that vector.
+    static void distances(const Query & query, const char * codes, size_t stride, size_t rows, float * out);
 };
 
 }
