@@ -7,6 +7,7 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -15,6 +16,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTimeWindow.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Common/IntervalKind.h>
 #include <base/arithmeticOverflow.h>
 
@@ -136,6 +138,9 @@ class FunctionTimeWindow final : public IFunction
 public:
     static constexpr auto name = TimeWindowImpl<type>::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeWindow>(); }
+
+    explicit FunctionTimeWindow(bool is_monotonic_ = false) : is_monotonic(is_monotonic_) {}
+
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
@@ -145,14 +150,15 @@ public:
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    /// The bounds of a hopping window are non-decreasing in the time: the end is the start of the hop interval plus the hop,
-    /// and the start is the end minus the window. The `hop` tuple is then non-decreasing in lexicographic order.
-    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return type == HOP || type == HOP_START || type == HOP_END; }
+    /// The bounds of a hopping window are non-decreasing in the time if the start of the hop interval is:
+    /// the end is the start of the hop interval plus the hop, and the start is the end minus the window.
+    /// The `hop` tuple is then non-decreasing in lexicographic order. Whether the start of the hop interval is
+    /// non-decreasing depends on the interval and the time zone, see `isHopMonotonic`.
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return is_monotonic; }
 
-    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & argument_type, const Field &, const Field &) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        /// `hopStart(window)` and `hopEnd(window)` only extract an element of a window tuple.
-        if (isTuple(argument_type))
+        if (!is_monotonic)
             return {};
         return {.is_monotonic = true, .is_always_monotonic = true};
     }
@@ -172,14 +178,124 @@ public:
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;
+
+private:
+    const bool is_monotonic;
+};
+
+/// Whether `toStartOfHourInterval(t, hours)` is non-decreasing in `t` over the range of `DateTime`.
+/// Multi-hour intervals are counted from the local midnight in the hour numbers after an offset change,
+/// so on a day when the clocks go back the start of the interval can move backwards: in `Pacific/Chatham`
+/// the clocks go from 03:45 back to 02:45, and with three-hour intervals the start moves from 03:00 to 00:00.
+/// Walks all the days of `DateTime`, so it is called once per function, not per row.
+bool isStartOfHourIntervalMonotonic(const DateLUTImpl & time_zone, UInt64 hours)
+{
+    /// One-hour intervals are rounded on a fixed grid or from the local midnight, without a jump.
+    if (hours <= 1)
+        return true;
+
+    /// The time of an offset change and its amount are multiples of 15 minutes from the local midnight.
+    static constexpr Int64 step = 900;
+    static constexpr Int64 max_time = std::numeric_limits<UInt32>::max();
+
+    /// On a day without an offset change the time since the local midnight is rounded down, and the result always
+    /// lies between the midnight and the time, so the days are ordered and only the days with a change are checked.
+    Int64 day_begin = time_zone.fromDayNum(ExtendedDayNum(0));
+    for (Int32 day = 0; day_begin <= max_time; ++day)
+    {
+        const Int64 day_end = time_zone.fromDayNum(ExtendedDayNum(day + 1));
+        if (day_end - day_begin != 86400)
+        {
+            Int64 prev = 0;
+            for (Int64 time = std::max<Int64>(day_begin, 0); time < day_end && time <= max_time; time += step)
+            {
+                const Int64 start = time_zone.toStartOfHourInterval(static_cast<UInt32>(time), hours);
+                if (start < prev)
+                    return false;
+                prev = start;
+            }
+        }
+        day_begin = day_end;
+    }
+
+    return true;
+}
+
+/// Whether the bounds of the hopping window are non-decreasing functions of the time, for the given arguments.
+bool isHopMonotonic(const ColumnsWithTypeAndName & arguments)
+{
+    /// `hopStart(window)` and `hopEnd(window)` only extract an element of a window tuple.
+    if (arguments.size() < 3)
+        return false;
+
+    /// The arguments may still be wrapped into `Nullable` and `LowCardinality` here.
+    auto nested_arguments = createBlockWithNestedColumns(arguments);
+    for (auto & argument : nested_arguments)
+    {
+        argument.type = recursiveRemoveLowCardinality(argument.type);
+        argument.column = recursiveRemoveLowCardinality(argument.column);
+    }
+
+    const auto * hop_interval_type = checkAndGetDataType<DataTypeInterval>(nested_arguments[1].type.get());
+    if (!hop_interval_type)
+        return false;
+
+    /// The calendar intervals round the number of the local day, which is non-decreasing in the time.
+    /// One-hour and shorter intervals are rounded on a fixed grid or from the local midnight, without a jump.
+    if (hop_interval_type->getKind() != IntervalKind::Kind::Hour)
+        return true;
+
+    /// Multi-hour intervals are counted from the local midnight in the hour numbers after an offset change,
+    /// so the start of the interval can move backwards when the clocks go back.
+    const auto * hop_interval_column = checkAndGetColumnConst<ColumnInt64>(nested_arguments[1].column.get());
+    if (!hop_interval_column)
+        return false;
+
+    const Int64 hop_num_units = hop_interval_column->getValue<Int64>();
+    if (hop_num_units <= 0)
+        return false;
+
+    const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(nested_arguments, 3, 0);
+    return isStartOfHourIntervalMonotonic(time_zone, static_cast<UInt64>(hop_num_units));
+}
+
+/// Builds the hopping window functions with the information about monotonicity,
+/// which depends on the hop interval and the time zone.
+template <TimeWindowFunctionName type>
+class HopOverloadResolver final : public IFunctionOverloadResolver
+{
+public:
+    static constexpr auto name = TimeWindowImpl<type>::name;
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<HopOverloadResolver>(); }
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return TimeWindowImpl<type>::getReturnType(arguments, name);
+    }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        auto function = std::make_shared<FunctionTimeWindow<type>>(isHopMonotonic(arguments));
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
+    }
 };
 
 using FunctionTumble = FunctionTimeWindow<TUMBLE>;
 using FunctionTumbleStart = FunctionTimeWindow<TUMBLE_START>;
 using FunctionTumbleEnd = FunctionTimeWindow<TUMBLE_END>;
-using FunctionHop = FunctionTimeWindow<HOP>;
-using FunctionHopStart = FunctionTimeWindow<HOP_START>;
-using FunctionHopEnd = FunctionTimeWindow<HOP_END>;
+using FunctionHop = HopOverloadResolver<HOP>;
+using FunctionHopStart = HopOverloadResolver<HOP_START>;
+using FunctionHopEnd = HopOverloadResolver<HOP_END>;
 
 
 template <>

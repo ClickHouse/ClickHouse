@@ -43,3 +43,51 @@ SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 WEEK, INTERVAL 2
 SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 QUARTER, toIntervalQuarter(toInt64(6148914691236517205)), 'UTC'); -- { serverError BAD_ARGUMENTS }
 SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 QUARTER, toIntervalQuarter(toInt64(6148914691236517206)), 'UTC'); -- { serverError BAD_ARGUMENTS }
 SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 QUARTER, INTERVAL 2 QUARTER, 'UTC');
+
+SELECT '--- multi-hour hops across a time zone rollback';
+-- Multi-hour intervals are counted from the local midnight, so when the clocks go back the window can move backwards:
+-- in `Pacific/Chatham` the clocks go from 03:45 back to 02:45, and a three-hour window moves from 03:00 back to 00:00.
+-- The functions are not monotonic for such a combination of the interval and the time zone.
+DROP TABLE IF EXISTS hop_rollback;
+
+CREATE TABLE hop_rollback (t DateTime('UTC')) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1;
+INSERT INTO hop_rollback SELECT toDateTime('2026-04-04 00:00:00', 'UTC') + number * 60 FROM numbers(2880);
+
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT t FROM hop_rollback ORDER BY hopStart(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham') LIMIT 1
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+WHERE explain LIKE '%Read type: InOrder%';
+
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT t FROM hop_rollback ORDER BY hopEnd(t, INTERVAL 2 HOUR, INTERVAL 4 HOUR, 'Antarctica/Troll') LIMIT 1
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+WHERE explain LIKE '%Read type: InOrder%';
+
+-- The rollback of a usual daylight saving time does not break the order of three-hour windows, and one-hour hops are always ordered.
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT t FROM hop_rollback ORDER BY hopStart(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Europe/Berlin') LIMIT 1
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+WHERE explain LIKE '%Read type: InOrder%';
+
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT t FROM hop_rollback ORDER BY hopStart(t, INTERVAL 1 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham') LIMIT 1
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+WHERE explain LIKE '%Read type: InOrder%';
+
+-- The results are the same with and without the optimizations.
+SELECT t FROM hop_rollback WHERE t >= '2026-04-04 13:15:00' ORDER BY hopStart(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham'), t LIMIT 1
+SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, max_threads = 1;
+SELECT t FROM hop_rollback WHERE t >= '2026-04-04 13:15:00' ORDER BY hopStart(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham'), t LIMIT 1
+SETTINGS optimize_read_in_order = 0, query_plan_read_in_order = 0, max_threads = 1;
+
+SELECT t FROM hop_rollback WHERE t >= '2026-04-04 13:15:00' ORDER BY hopEnd(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham'), t LIMIT 1
+SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, max_threads = 1;
+SELECT t FROM hop_rollback WHERE t >= '2026-04-04 13:15:00' ORDER BY hopEnd(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham'), t LIMIT 1
+SETTINGS optimize_read_in_order = 0, query_plan_read_in_order = 0, max_threads = 1;
+
+SELECT w, count() FROM (SELECT hop(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham') AS w FROM hop_rollback WHERE t >= '2026-04-04 10:00:00' AND t < '2026-04-04 18:00:00') GROUP BY w ORDER BY w
+SETTINGS optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1, max_threads = 1;
+SELECT w, count() FROM (SELECT hop(t, INTERVAL 3 HOUR, INTERVAL 3 HOUR, 'Pacific/Chatham') AS w FROM hop_rollback WHERE t >= '2026-04-04 10:00:00' AND t < '2026-04-04 18:00:00') GROUP BY w ORDER BY w
+SETTINGS optimize_aggregation_in_order = 0, query_plan_aggregation_in_order = 0, max_threads = 1;
+
+DROP TABLE hop_rollback;
