@@ -27,9 +27,13 @@ def started_cluster():
 
 
 @pytest.mark.parametrize(
-    "layout", ["COMPLEX_KEY_DIRECT()", "COMPLEX_KEY_CACHE(SIZE_IN_CELLS 16)"]
+    "layout,lifetime",
+    [
+        ("COMPLEX_KEY_DIRECT()", ""),
+        ("COMPLEX_KEY_CACHE(SIZE_IN_CELLS 16)", " LIFETIME(30)"),
+    ],
 )
-def test_remote_source_user_profile(layout):
+def test_remote_source_user_profile(layout, lifetime):
     assert (
         initiator.query(
             "SELECT value FROM system.settings WHERE name = 'in_null_as_unknown'"
@@ -44,7 +48,7 @@ def test_remote_source_user_profile(layout):
             "PRIMARY KEY k, part "
             f"SOURCE(CLICKHOUSE(HOST '{source.ip_address}' PORT 9000 "
             "USER 'squality_reader' PASSWORD '' DB 'default' TABLE 'squality_source')) "
-            f"LAYOUT({layout})"
+            f"LAYOUT({layout}){lifetime}"
         )
         assert (
             initiator.query(
