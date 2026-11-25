@@ -145,56 +145,6 @@ namespace
         }
     }
 
-    /// Merges a patch into the text form of a stored row as mergeObjects does, except for a value stored at both `x` and
-    /// `x.y`, which is two members named `x`, a literal and an object: the member of the other kind than the patch value is dropped.
-    void mergeIntoStoredRow(TrackedValue & dest, const TrackedValue & src, TrackedPoolAllocator & allocator)
-    {
-        for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
-        {
-            const bool is_object = it->value.IsObject();
-
-            auto target = dest.MemberEnd();
-            for (auto member = dest.MemberBegin(); member != dest.MemberEnd(); ++member)
-            {
-                if (!(member->name == it->name))
-                    continue;
-                if (member->value.IsObject() == is_object)
-                {
-                    target = member;
-                    break;
-                }
-                if (target == dest.MemberEnd())
-                    target = member;
-            }
-
-            if (target == dest.MemberEnd())
-            {
-                TrackedValue key(it->name, allocator);
-                TrackedValue value(it->value, allocator);
-                dest.AddMember(key, value, allocator);
-                continue;
-            }
-
-            if (is_object && target->value.IsObject())
-            {
-                mergeIntoStoredRow(target->value, it->value, allocator);
-            }
-            else
-            {
-                TrackedValue value(it->value, allocator);
-                target->value = value;
-            }
-
-            for (auto member = dest.MemberBegin(); member != dest.MemberEnd();)
-            {
-                if (member->name == it->name && member->value.IsObject() != is_object)
-                    member = dest.EraseMember(member);
-                else
-                    ++member;
-            }
-        }
-    }
-
     void writeJSONDocument(const TrackedValue & value, ColumnString & column)
     {
         TrackedStringBuffer buffer;
@@ -743,6 +693,66 @@ namespace
             return isObject(nested_type) || isMap(nested_type) || isTuple(nested_type) || isDynamic(nested_type) || isVariant(nested_type);
         }
 
+        /// Merges a patch into the text form of a stored row as mergeObjects does, except for a value stored at both `x`
+        /// and `x.y`, which is two members named `x`, a literal and an object: the member of the other kind than the patch
+        /// value is dropped. The value of a typed path is merged by mergeObjects.
+        void mergeIntoStoredRow(TrackedValue & dest, const TrackedValue & src, String & path, bool is_root, TrackedPoolAllocator & allocator) const
+        {
+            for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
+            {
+                const bool is_object = it->value.IsObject();
+
+                auto target = dest.MemberEnd();
+                for (auto member = dest.MemberBegin(); member != dest.MemberEnd(); ++member)
+                {
+                    if (!(member->name == it->name))
+                        continue;
+                    if (member->value.IsObject() == is_object)
+                    {
+                        target = member;
+                        break;
+                    }
+                    if (target == dest.MemberEnd())
+                        target = member;
+                }
+
+                if (target == dest.MemberEnd())
+                {
+                    TrackedValue key(it->name, allocator);
+                    TrackedValue value(it->value, allocator);
+                    dest.AddMember(key, value, allocator);
+                    continue;
+                }
+
+                if (is_object && target->value.IsObject())
+                {
+                    const size_t parent_size = path.size();
+                    if (!is_root)
+                        path += '.';
+                    String key(it->name.GetString(), it->name.GetStringLength());
+                    path += escape_dots_in_keys ? escapeDotInJSONKey(key) : key;
+                    if (typed_paths.contains(path))
+                        mergeObjects(target->value, it->value, allocator);
+                    else
+                        mergeIntoStoredRow(target->value, it->value, path, false, allocator);
+                    path.resize(parent_size);
+                }
+                else
+                {
+                    TrackedValue value(it->value, allocator);
+                    target->value = value;
+                }
+
+                for (auto member = dest.MemberBegin(); member != dest.MemberEnd();)
+                {
+                    if (member->name == it->name && member->value.IsObject() != is_object)
+                        member = dest.EraseMember(member);
+                    else
+                        ++member;
+                }
+            }
+        }
+
         template <typename GetOps>
         [[nodiscard]] ColumnString::MutablePtr mergeFallbackRows(
             const ColumnPtr & column, const GetOps & get_ops, const ColumnString & patches, bool patch_is_const, size_t rows) const
@@ -766,6 +776,7 @@ namespace
             const auto & texts = assert_cast<const ColumnString &>(*texts_column);
             result->reserve(num_fallback_rows);
             size_t next_text = 0;
+            String path;
             for (size_t i = 0; i < rows; ++i)
             {
                 if (!filter[i])
@@ -775,7 +786,7 @@ namespace
                 parseJSONDocument(texts.getDataAt(next_text++), merged);
                 TrackedDocument patch;
                 parseJSONDocument(patches.getDataAt(patch_is_const ? 0 : i), patch);
-                mergeIntoStoredRow(merged, patch, merged.GetAllocator());
+                mergeIntoStoredRow(merged, patch, path, /* is_root = */ true, merged.GetAllocator());
                 writeJSONDocument(merged, *result);
             }
             return result;
