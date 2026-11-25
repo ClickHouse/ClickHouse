@@ -5,6 +5,12 @@ JSONEachRow null	1900-01-01
 CSV \\N	1900-01-01
 defaultValueOfTypeName	1900-01-01
 assumeNotNull of NULL	1900-01-01
+toDate32 of a NULL Variant	1900-01-01
+toDate32 of a Variant, one type and NULL	['1900-01-01','2000-01-01']
+toDate32 of a Variant, two types and NULL	['1900-01-01','2000-01-01','2000-01-02']
+toDate32 of a NULL Dynamic	1900-01-01
+CAST of a NULL Variant	1900-01-01
+CAST of a NULL Dynamic	1900-01-01
 LEFT JOIN, hash	1900-01-01
 LEFT JOIN, full_sorting_merge	1900-01-01
 LEFT JOIN, inequality	1900-01-01

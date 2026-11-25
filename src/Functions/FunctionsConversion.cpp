@@ -290,7 +290,7 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
                 "Cannot convert NULL value to non-Nullable type");
         auto res = result_type->createColumn();
-        res->insertManyDefaults(input_rows_count);
+        result_type->insertManyDefaultsInto(*res, input_rows_count);
         return res;
     }
 
@@ -333,7 +333,7 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         if (!nested_result)
         {
             auto res = result_type->createColumn();
-            res->insertManyDefaults(input_rows_count);
+            result_type->insertManyDefaultsInto(*res, input_rows_count);
             return res;
         }
 
@@ -345,6 +345,14 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         /// assumeMutable() which would expand the shared subcolumn in place and corrupt the source.
         auto mutable_result = IColumn::mutate(std::move(nested_result));
         mutable_result->expand(filter, false);
+        if (!result_type->isDefaultInsertTrivial() && !isColumnNullable(*mutable_result))
+        {
+            auto default_row = mutable_result->cloneEmpty();
+            result_type->insertDefaultInto(*default_row);
+            for (size_t i = 0; i != input_rows_count; ++i)
+                if (!filter[i])
+                    mutable_result->updateAt(*default_row, i, 0);
+        }
         return mutable_result;
     }
 
@@ -390,6 +398,7 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
     if (!res)
         res = result_type->createColumn();
     res->reserve(input_rows_count);
+    auto insert_default = makeDefaultInserter(*res, *result_type);
     for (size_t i = 0; i != input_rows_count; ++i)
     {
         auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
@@ -398,7 +407,7 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
             if (throw_on_null)
                 throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
                     "Cannot convert NULL value to non-Nullable type");
-            res->insertDefault();
+            insert_default();
         }
         else
         {
@@ -409,7 +418,7 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
             }
             else
             {
-                res->insertDefault();
+                insert_default();
             }
         }
     }

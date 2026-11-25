@@ -19,6 +19,12 @@ DROP TABLE t_05876;
 
 SELECT 'defaultValueOfTypeName', defaultValueOfTypeName('Date32');
 SELECT 'assumeNotNull of NULL', assumeNotNull(NULL::Nullable(Date32));
+SELECT 'toDate32 of a NULL Variant', toDate32(NULL::Variant(String, UInt64));
+SELECT 'toDate32 of a Variant, one type and NULL', groupArray(toDate32(v)) FROM (SELECT arrayJoin([NULL, '2000-01-01'::Variant(String, UInt64)]) AS v);
+SELECT 'toDate32 of a Variant, two types and NULL', groupArray(toDate32(v)) FROM (SELECT arrayJoin([NULL, '2000-01-01'::Variant(String, UInt64), 10958::UInt64::Variant(String, UInt64)]) AS v);
+SELECT 'toDate32 of a NULL Dynamic', toDate32(NULL::Dynamic);
+SELECT 'CAST of a NULL Variant', CAST(NULL::Variant(String, UInt64) AS Date32);
+SELECT 'CAST of a NULL Dynamic', CAST(NULL::Dynamic AS Date32);
 
 DROP TABLE IF EXISTS l_05876;
 DROP TABLE IF EXISTS r_05876;
