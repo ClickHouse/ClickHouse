@@ -66,14 +66,19 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsDouble offset;
     extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
 }
 
 namespace ServerSetting
@@ -222,6 +227,16 @@ namespace
         reject_break_mode(
             query_settings[Setting::max_execution_time].totalMicroseconds() != 0,
             query_settings[Setting::timeout_overflow_mode], "timeout_overflow_mode");
+        reject_break_mode(
+            query_settings[Setting::max_rows_to_read_leaf] != 0 || query_settings[Setting::max_bytes_to_read_leaf] != 0,
+            query_settings[Setting::read_overflow_mode_leaf], "read_overflow_mode_leaf");
+        reject_break_mode(
+            query_settings[Setting::max_execution_time_leaf].totalMicroseconds() != 0,
+            query_settings[Setting::timeout_overflow_mode_leaf], "timeout_overflow_mode_leaf");
+
+        /// The other ways to stop the read early (`DISTINCT` that has got all its rows, `GROUP BY` or `DISTINCT` with
+        /// the overflow mode `break`, etc.) do not need the rest of the source for the result, and cannot be listed
+        /// exhaustively. For them, the source of the refresh is read to the end anyway, see `ReadToEndTransform`.
 
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)

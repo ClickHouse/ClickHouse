@@ -1,6 +1,7 @@
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/KafkaStreamSource.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Transforms/ReadToEndTransform.h>
 
 #include <Columns/IColumn.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -573,7 +574,12 @@ void StorageKafka2::readStream(
         std::move(params), storage_snapshot, modified_context, column_names, stream_settings, log);
     source->setStorageLimits(query_info.storage_limits);
 
-    auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    Pipe pipe(std::move(source));
+    /// An incremental refresh of a materialized view: the source reports the cursor only when it reaches the end.
+    if (modified_context->getStreamingCursor())
+        pipe.addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ReadToEndTransform>(header); });
+
+    auto step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     step->setStepDescription("Read from Kafka STREAM");
     query_plan.addStep(std::move(step));
 }

@@ -31,6 +31,10 @@ CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_
     AS SELECT k FROM lim_src SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
     AS SELECT k FROM lim_src SETTINGS max_execution_time = 100, timeout_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
+    AS SELECT k FROM lim_src SETTINGS max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break'; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
+    AS SELECT k FROM lim_src SETTINGS max_execution_time_leaf = 100, timeout_overflow_mode_leaf = 'break'; -- { serverError NOT_IMPLEMENTED }
 
 -- The same limits with an error are allowed.
 CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY

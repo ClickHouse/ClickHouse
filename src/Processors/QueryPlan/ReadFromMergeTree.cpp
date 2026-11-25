@@ -63,6 +63,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Processors/Transforms/ReadToEndTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -5337,7 +5338,11 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     }
 
     data.triggerStreamingSubscriptionEnrichment();
-    return Pipe::unitePipes(std::move(pipes));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    /// An incremental refresh of a materialized view: the sources report the cursor only when they reach the end.
+    if (context->getStreamingCursor())
+        pipe.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<ReadToEndTransform>(stream_header); });
+    return pipe;
 #endif
 }
 
