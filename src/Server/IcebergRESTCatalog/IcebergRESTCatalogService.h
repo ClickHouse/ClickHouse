@@ -35,7 +35,6 @@ struct IcebergRESTResponse
 };
 
 /// The logic of the Iceberg REST catalog v1 API (RFC: issue #114697).
-/// TODO: Call it directly from `catalog_type = 'clickhouse'`, without HTTP.
 class IcebergRESTCatalogService : private WithContext
 {
 public:
@@ -43,6 +42,10 @@ public:
 
     /// Runs one request of an external client. The catalog checks the user of `user_context`.
     [[nodiscard]] IcebergRESTResponse handleExternalRequest(const IcebergRESTRequest & request, const Context & user_context) const;
+
+    /// Runs one request of a caller inside the server, such as a database with `catalog_type = 'clickhouse'`.
+    /// The catalog checks no user. ClickHouse has already checked the query that caused the request.
+    [[nodiscard]] IcebergRESTResponse handleInternalRequest(const IcebergRESTRequest & request) const;
 
     static IcebergRESTResponse makeIcebergError(Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message);
 
@@ -57,14 +60,17 @@ private:
         const IcebergRESTRouteMatch & match;
         const Poco::URI & uri;
         const String & body;
-        const Context & user_context;
+        /// Null for an internal request.
+        const Context * user_context;
 
         /// Names from the URL path: `/v1/{prefix}/namespaces/{namespace}/tables/{table}`.
         [[nodiscard]] IcebergNamespaceName namespaceFromURL() const;
         [[nodiscard]] const String & tableFromURL() const;
     };
 
-    [[nodiscard]] IcebergRESTResponse handleExternalRequestImpl(const IcebergRESTRequest & request, const Context & user_context) const;
+    /// `user_context` is null for an internal request.
+    [[nodiscard]] IcebergRESTResponse handleRequest(const IcebergRESTRequest & request, const Context * user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleRequestImpl(const IcebergRESTRequest & request, const Context * user_context) const;
 
     /// Config.
     [[nodiscard]] IcebergRESTResponse handleGetConfig(const Poco::URI & uri) const;
@@ -88,12 +94,12 @@ private:
     [[nodiscard]] IcebergRESTResponse handleReportMetrics(const RoutedRequest & request) const;
 
     /// Warehouse management API (issue #127488).
-    [[nodiscard]] IcebergRESTResponse handleCreateWarehouse(const String & body, const Context & user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleCreateWarehouse(const String & body, const Context * user_context) const;
     [[nodiscard]] IcebergRESTResponse handleListWarehouses() const;
     [[nodiscard]] IcebergRESTResponse handleGetWarehouse(const IcebergRESTRouteMatch & match) const;
     [[nodiscard]] IcebergRESTResponse handleReplaceWarehouseCredential(
-        const IcebergRESTRouteMatch & match, const String & body, const Context & user_context) const;
-    [[nodiscard]] IcebergRESTResponse handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const;
+        const IcebergRESTRouteMatch & match, const String & body, const Context * user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context * user_context) const;
 
     /// Finishes a stage-create: a commit with `assert-create` to a table that does not exist yet.
     [[nodiscard]] IcebergRESTResponse handleStagedCreateCommit(
@@ -142,5 +148,7 @@ private:
 };
 
 using IcebergRESTCatalogServicePtr = std::shared_ptr<const IcebergRESTCatalogService>;
+
+IcebergRESTCatalogServicePtr createIcebergRESTCatalogService(ContextPtr global_context);
 
 }

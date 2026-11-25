@@ -31,6 +31,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/ClickHouseCatalog.h>
 #include <Databases/DataLake/UnityV2Catalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
@@ -149,6 +150,7 @@ namespace DataLakeStorageSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool enable_iceberg_rest_catalog;
     extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
@@ -371,6 +373,15 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
+                Context::getGlobalContextInstance(),
+                snapshot_loading_mode);
+            break;
+        }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE:
+        {
+            catalog_impl = std::make_shared<DataLake::ClickHouseCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
                 snapshot_loading_mode);
@@ -672,6 +683,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
         case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+        case DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE:
         {
             switch (type)
             {
@@ -2126,7 +2138,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         ///
         ///  NOTE: it's still possible to provide endpoint argument for Glue. It's used for fake
         ///  mock glue catalog in tests only.
-        bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE;
+        bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE;
 
         const ASTFunction * function_define = database_engine_define->engine;
 
@@ -2141,13 +2154,18 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             engine_args = function_define->arguments->children;
             if (requires_arguments && engine_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
+            if (catalog_type == DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE && !engine_args.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Engine `{}` with catalog_type = 'clickhouse' takes no arguments: "
+                    "the catalog is this server, so it has no address", database_engine_name);
         }
 
         if (database_engine_name == "Iceberg"
             && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST
             && catalog_type != DatabaseDataLakeCatalogType::S3_TABLES
             && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
-            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Engine `Iceberg` must use `rest`, `s3tables`, `biglake`, or `onelake` catalog type only");
@@ -2177,6 +2195,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+            case DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE:
             {
                 if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
@@ -2184,6 +2203,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
                                     "To allow its usage, enable setting allow_database_iceberg");
+                }
+
+                if (!is_stored_definition && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE
+                    && !args.context->getServerSettings()[ServerSetting::enable_iceberg_rest_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "The catalog type `clickhouse` uses the experimental Iceberg REST catalog of this server. "
+                                    "To allow its usage, enable the server setting `enable_iceberg_rest_catalog`");
                 }
 
                 if (!is_stored_definition && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)

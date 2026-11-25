@@ -293,7 +293,7 @@ DB::HTTPHeaderEntries extractSigV4AuthHeaders(DB::HTTPHeaderEntries && all_signe
 
 }
 
-DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
+std::unique_ptr<DB::ReadBuffer> S3TablesCatalog::createReadBuffer(
     const CatalogState & /* catalog_state */,
     const std::string & endpoint,
     const Poco::URI::QueryParameters & params,

@@ -704,15 +704,23 @@ def test_survives_server_restart(started_cluster):
     ns = f"restart_{uuid.uuid4().hex[:8]}"
     create_namespace([ns], properties={"owner": "asya"})
     create_namespace([ns, "eu"])
+    create_table(ns, "events")
+    node.query(clickhouse_catalog_database_query("ch_restart_db"))
 
-    # A full restart drops all server state, so the namespaces must come back from Keeper.
-    restart_node()
+    try:
+        # A full restart drops all server state, so the namespaces must come back from Keeper.
+        restart_node()
 
-    assert [ns] in list_namespaces()
-    assert list_namespaces(parent=ns) == [[ns, "eu"]]
+        assert [ns] in list_namespaces()
+        assert list_namespaces(parent=ns) == [[ns, "eu"]]
 
-    response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}%1Feu"))
-    assert response.status_code == 204, response.text
+        response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}%1Feu"))
+        assert response.status_code == 204, response.text
+
+        # The database loads from its stored definition and reaches the catalog again.
+        assert node.query(f"SELECT count() FROM ch_restart_db.`{ns}.events`") == "0\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS ch_restart_db")
 
 
 def test_authentication(started_cluster):
@@ -900,6 +908,72 @@ def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
         )
     finally:
         node.query("DROP DATABASE IF EXISTS rest_client_location_db")
+
+
+def clickhouse_catalog_database_query(name):
+    return f"""
+        DROP DATABASE IF EXISTS {name};
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE {name}
+        ENGINE = DataLakeCatalog
+        SETTINGS catalog_type = 'clickhouse', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}',
+            vended_credentials = 0,
+            aws_access_key_id = '{minio_access_key}',
+            aws_secret_access_key = '{minio_secret_key}'
+        """
+
+
+def test_clickhouse_catalog_type(started_cluster):
+    """A database with `catalog_type = 'clickhouse'` calls the catalog of this server without HTTP."""
+    ns = f"chclient_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    db = "ch_catalog_db"
+    table = f"{db}.`{ns}.events`"
+
+    node.query(clickhouse_catalog_database_query(db))
+    try:
+        # Requests without a body.
+        assert f"{ns}.events" in node.query(f"SHOW TABLES FROM {db}").splitlines()
+        assert node.query(f"SELECT count() FROM {table}") == "0\n"
+
+        # Requests with a body: a commit, a create and a drop.
+        node.query(f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a'), (2, 'b')")
+        assert node.query(f"SELECT count() FROM {table}") == "2\n"
+
+        node.query(
+            f"CREATE TABLE {db}.`{ns}.created` (id Int64, name String) ENGINE = IcebergS3",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+        # An external client sees the same catalog state.
+        assert table_exists(ns, "created")
+
+        node.query(f"DROP TABLE {db}.`{ns}.created`")
+        assert not table_exists(ns, "created")
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def test_clickhouse_catalog_type_uses_database_grants(started_cluster):
+    """The catalog checks no user for a request from a database, so the grants on the database decide."""
+    ns = f"chgrants_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+
+    node.query(clickhouse_catalog_database_query("ch_grants_db"))
+    node.query("DROP USER IF EXISTS catalog_reader")
+    node.query("CREATE USER catalog_reader IDENTIFIED WITH no_password")
+    try:
+        select = f"SELECT count() FROM ch_grants_db.`{ns}.events`"
+        error = node.query_and_get_error(select, user="catalog_reader")
+        assert "ACCESS_DENIED" in error, error
+
+        node.query("GRANT SELECT ON ch_grants_db.* TO catalog_reader")
+        assert node.query(select, user="catalog_reader") == "0\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS ch_grants_db")
+        node.query("DROP USER IF EXISTS catalog_reader")
 
 
 def test_clickhouse_client_creates_table(started_cluster):

@@ -1,5 +1,6 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogService.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -33,6 +34,11 @@ namespace Setting
     extern const SettingsBool allow_ddl;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 readonly;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_iceberg_rest_catalog;
 }
 
 namespace ErrorCodes
@@ -73,7 +79,7 @@ CompressionMethod getMetadataCompressionMethod(const Poco::JSON::Object & metada
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, codec);
 }
 
-/// Tables of the namespace go under `location`. `handleExternalRequest` maps `BAD_ARGUMENTS` to a 400 response.
+/// Tables of the namespace go under `location`. `handleRequest` maps `BAD_ARGUMENTS` to a 400 response.
 void validateNamespaceLocation(const IcebergRESTCatalogWarehouse & warehouse, const std::map<String, String> & properties)
 {
     if (const auto it = properties.find("location"); it != properties.end())
@@ -329,16 +335,22 @@ std::vector<TableChange> parseTableChanges(const String & body)
     return changes;
 }
 
-void checkNotReadonly(const Context & user_context, const String & action)
+void checkNotReadonly(const Context * user_context, const String & action)
 {
-    if (user_context.getSettingsRef()[Setting::readonly])
+    /// An internal request has no user. ClickHouse has already checked the query that caused it.
+    if (!user_context)
+        return;
+    if (user_context->getSettingsRef()[Setting::readonly])
         throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
 }
 
-void checkDDLAllowed(const Context & user_context, const String & action)
+void checkDDLAllowed(const Context * user_context, const String & action)
 {
+    /// An internal request has no user. ClickHouse has already checked the query that caused it.
+    if (!user_context)
+        return;
     checkNotReadonly(user_context, action);
-    if (!user_context.getSettingsRef()[Setting::allow_ddl])
+    if (!user_context->getSettingsRef()[Setting::allow_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Cannot {}. DDL queries are prohibited for the user", action);
 }
 
@@ -363,9 +375,19 @@ const String & IcebergRESTCatalogService::RoutedRequest::tableFromURL() const
 
 IcebergRESTResponse IcebergRESTCatalogService::handleExternalRequest(const IcebergRESTRequest & request, const Context & user_context) const
 {
+    return handleRequest(request, &user_context);
+}
+
+IcebergRESTResponse IcebergRESTCatalogService::handleInternalRequest(const IcebergRESTRequest & request) const
+{
+    return handleRequest(request, /* user_context */ nullptr);
+}
+
+IcebergRESTResponse IcebergRESTCatalogService::handleRequest(const IcebergRESTRequest & request, const Context * user_context) const
+{
     try
     {
-        return handleExternalRequestImpl(request, user_context);
+        return handleRequestImpl(request, user_context);
     }
     catch (...)
     {
@@ -374,8 +396,8 @@ IcebergRESTResponse IcebergRESTCatalogService::handleExternalRequest(const Icebe
     }
 }
 
-IcebergRESTResponse IcebergRESTCatalogService::handleExternalRequestImpl(
-    const IcebergRESTRequest & request, const Context & user_context) const
+IcebergRESTResponse IcebergRESTCatalogService::handleRequestImpl(
+    const IcebergRESTRequest & request, const Context * user_context) const
 {
     Poco::URI uri;
     std::vector<std::string> segments;
@@ -986,7 +1008,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleStagedCreateCommit(
     }
     catch (const Exception & e)
     {
-        /// Other errors are not caused by the client. `handleExternalRequest` reports them as internal errors.
+        /// Other errors are not caused by the client. `handleRequest` reports them as internal errors.
         if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
             throw;
         return makeCommitRequestError(e.code(), e.message());
@@ -1183,7 +1205,7 @@ std::expected<IcebergRESTCatalogService::PreparedTableCommit, IcebergRESTRespons
         /// The request was based on metadata that another commit has since replaced. The client retries after reloading.
         if (e.code() == ErrorCodes::METADATA_MISMATCH)
             return std::unexpected(makeConflictError("CommitFailedException", e.message()));
-        /// Other errors are not caused by the client. `handleExternalRequest` reports them as internal errors.
+        /// Other errors are not caused by the client. `handleRequest` reports them as internal errors.
         if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
             throw;
         return std::unexpected(makeCommitRequestError(e.code(), e.message()));
@@ -1289,7 +1311,7 @@ std::optional<IcebergRESTResponse> IcebergRESTCatalogService::commitPreparedTabl
     return std::nullopt;
 }
 
-IcebergRESTResponse IcebergRESTCatalogService::handleCreateWarehouse(const String & body, const Context & user_context) const
+IcebergRESTResponse IcebergRESTCatalogService::handleCreateWarehouse(const String & body, const Context * user_context) const
 {
     checkDDLAllowed(user_context, "create warehouse");
 
@@ -1327,7 +1349,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleGetWarehouse(const IcebergR
 }
 
 IcebergRESTResponse IcebergRESTCatalogService::handleReplaceWarehouseCredential(
-    const IcebergRESTRouteMatch & match, const String & body, const Context & user_context) const
+    const IcebergRESTRouteMatch & match, const String & body, const Context * user_context) const
 {
     checkDDLAllowed(user_context, "replace warehouse credential");
 
@@ -1348,7 +1370,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleReplaceWarehouseCredential(
     UNREACHABLE();
 }
 
-IcebergRESTResponse IcebergRESTCatalogService::handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const
+IcebergRESTResponse IcebergRESTCatalogService::handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context * user_context) const
 {
     checkDDLAllowed(user_context, "drop warehouse");
 
@@ -1365,6 +1387,17 @@ IcebergRESTResponse IcebergRESTCatalogService::handleDeleteWarehouse(const Icebe
             return makeConflictError("WarehouseNotEmptyException", fmt::format("Warehouse {} is not empty. Drop its namespaces first", name));
     }
     UNREACHABLE();
+}
+
+IcebergRESTCatalogServicePtr createIcebergRESTCatalogService(ContextPtr global_context)
+{
+    if (!global_context->getServerSettings()[ServerSetting::enable_iceberg_rest_catalog])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The Iceberg REST catalog of this server is experimental. "
+            "To allow its usage, enable the server setting `enable_iceberg_rest_catalog`");
+
+    auto warehouses = std::make_shared<IcebergRESTCatalogWarehouseRegistry>(global_context);
+    return std::make_shared<const IcebergRESTCatalogService>(global_context, std::move(warehouses));
 }
 
 }

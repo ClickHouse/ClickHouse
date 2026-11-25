@@ -1272,7 +1272,7 @@ std::optional<StorageType> RestCatalog::getStorageType() const
     return parseStorageTypeFromLocation(state_snapshot->config.default_base_location);
 }
 
-DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
+std::unique_ptr<DB::ReadBuffer> RestCatalog::createReadBuffer(
     const CatalogState & catalog_state,
     const std::string & endpoint,
     const Poco::URI::QueryParameters & params,
