@@ -105,11 +105,6 @@ time_t MetadataStorageFromCacheObjectStorage::getLastChanged(const std::string &
     return underlying->getLastChanged(path);
 }
 
-bool MetadataStorageFromCacheObjectStorage::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
 bool MetadataStorageFromCacheObjectStorage::supportsStat() const
 {
     return underlying->supportsStat();
@@ -150,14 +145,13 @@ std::string MetadataStorageFromCacheObjectStorage::readInlineDataToString(const 
     return underlying->readInlineDataToString(path);
 }
 
+/// The underlying metadata storage belongs to the wrapped disk, which starts it up and shuts it down itself.
 void MetadataStorageFromCacheObjectStorage::startup()
 {
-    underlying->startup();
 }
 
 void MetadataStorageFromCacheObjectStorage::shutdown()
 {
-    underlying->shutdown();
 }
 
 void MetadataStorageFromCacheObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
@@ -382,16 +376,6 @@ void MetadataStorageFromCacheObjectStorageTransaction::writeInlineDataToFile(con
 void MetadataStorageFromCacheObjectStorageTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
     underlying->setLastModified(path, timestamp);
-}
-
-bool MetadataStorageFromCacheObjectStorageTransaction::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
-void MetadataStorageFromCacheObjectStorageTransaction::chmod(const String & path, mode_t mode)
-{
-    underlying->chmod(path, mode);
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::setReadOnly(const std::string & path)

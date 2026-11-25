@@ -9,7 +9,15 @@ endif ()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
-    add_compile_options(-fno-sanitize=undefined)
+    # `unsigned-integer-overflow` is not a part of the `undefined` group and has to be listed
+    # separately. Header-only third-party code, which is compiled as a part of our own translation
+    # units and therefore is not affected by these options, is excluded in `tests/ubsan_ignorelist.txt`.
+    # Only C/C++ (and GNU-style ASM handled by clang) understand these; scope them away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler reads `-fno-sanitize=undefined`
+    # as `-f no-sanitize=undefined`, an output format, and fails with `unrecognised output format`.
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=undefined>
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=unsigned-integer-overflow>)
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
@@ -144,7 +152,6 @@ if (ENABLE_RUST AND OS_FREEBSD)
     message(STATUS "Rust build is disabled for FreeBSD because we use old sysroot files")
 elseif (ENABLE_RUST)
     add_contrib (prql-cmake)
-    add_contrib (skim-cmake)
     add_contrib (polyglot-cmake)
     add_contrib (pcodec-cmake)
     add_contrib (vortex-cmake)
@@ -350,6 +357,9 @@ add_contrib (librtcx-cmake librtcx)
 # No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
 add_contrib (nvcomp-cmake)
 add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
+
+# Must come after every member of the Rust workspace.
+add_contrib (rust-contrib-workspace)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

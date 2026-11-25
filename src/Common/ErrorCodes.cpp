@@ -682,6 +682,7 @@
     M(785, NOTHING_TO_KILL) \
     M(786, BAD_FUNCTION_SIGNATURE) \
     M(787, UNKNOWN_DISTRIBUTED_ASYNC_INSERT_FORMAT_VERSION) \
+    M(788, CANNOT_CONNECT_PULSAR) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -721,6 +722,7 @@
     M(1024, BUZZHOUSE_ORACLE) \
     M(1025, GPU_ERROR) \
     M(1026, ICEBERG_CATALOG_CONCURRENT_UPDATE) \
+    M(1027, AMBER_ERROR) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
