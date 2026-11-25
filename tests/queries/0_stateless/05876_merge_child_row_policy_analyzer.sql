@@ -53,6 +53,7 @@ CREATE ROW POLICY p_rpa ON t_rpa_a USING arrayExists(tenant -> tenant = t_rpa_a.
 SELECT 'lambda', count() FROM m_rpa_a;
 DROP ROW POLICY p_rpa ON t_rpa_a;
 
+-- A correlated subquery in a policy is not supported on a direct read either.
 CREATE ROW POLICY p_rpa ON t_rpa_a USING EXISTS (SELECT 1 FROM system.one WHERE tenant = 'a') TO ALL;
 SELECT count() FROM m_rpa_a; -- { serverError NOT_IMPLEMENTED }
 DROP ROW POLICY p_rpa ON t_rpa_a;
@@ -66,6 +67,7 @@ CREATE ROW POLICY p_rpa ON t_rpa_a USING tenant IN (WITH c AS MATERIALIZED (SELE
 SELECT 'materialized cte', count() FROM m_rpa_a SETTINGS enable_materialized_cte = 1;
 DROP ROW POLICY p_rpa ON t_rpa_a;
 
+-- A direct read of the `Log` table throws here; the expected value is the one without `MATERIALIZED`.
 CREATE TABLE t_rpa_l (tenant String, payload String) ENGINE = Log;
 INSERT INTO t_rpa_l VALUES ('a', '20'), ('b', 'secret'), ('a', '30');
 CREATE TABLE m_rpa_l AS t_rpa_l ENGINE = Merge(currentDatabase(), '^t_rpa_l$');
