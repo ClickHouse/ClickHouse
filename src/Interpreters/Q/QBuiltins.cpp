@@ -1197,6 +1197,21 @@ bool isDateTimeType(std::optional<QType> type)
     return type == QType::Timestamp || type == QType::Datetime;
 }
 
+/// The count of seconds of a temporal value as a decimal with nine digits after the point. It is exact for every
+/// temporal type, while a `Float64` cannot tell two adjacent nanoseconds of a present-day timestamp apart.
+ASTPtr exactSeconds(ASTPtr value, std::optional<QType> type)
+{
+    auto scale = [] { return lit(Field(static_cast<UInt64>(9))); };
+    /// `DateTime` or `DateTime64` of any scale.
+    if (isDateTimeType(type))
+        return fn("toDecimal128", fn("toDateTime64", std::move(value), scale()), scale());
+    /// `Time` is a count of whole seconds.
+    if (type == QType::Minute || type == QType::Second)
+        return fn("toDecimal128", fn("toInt64", std::move(value)), scale());
+    /// `Time64` of any scale.
+    return fn("toDecimal128", std::move(value), scale());
+}
+
 /// Arithmetic of times of day and durations, which ClickHouse does not have for `Time` and `Time64`:
 /// `10:30:00.000 + 00:00:01.500`, and the difference of two timestamps, which is a timespan.
 std::optional<QValue> clockArithmetic(Call & call, const String & function)
@@ -1213,8 +1228,16 @@ std::optional<QValue> clockArithmetic(Call & call, const String & function)
     else
         return std::nullopt;
     String type = qTypeToClickHouseType(*result_type);
+    /// The result in `Time` is a count of whole seconds; in `Time64` it is converted from the decimal as it is.
+    bool whole_seconds = result_type == QType::Minute || result_type == QType::Second;
     QValue result = binary(call,
-        [&](ASTPtr a, ASTPtr b) { return fn("CAST", fn(function, fn("toFloat64", a), fn("toFloat64", b)), lit(Field(type))); },
+        [&](ASTPtr a, ASTPtr b)
+        {
+            ASTPtr seconds = fn(function, exactSeconds(std::move(a), left), exactSeconds(std::move(b), right));
+            if (whole_seconds)
+                seconds = fn("toInt64", std::move(seconds));
+            return fn("CAST", std::move(seconds), lit(Field(type)));
+        },
         result_type);
     return result;
 }
