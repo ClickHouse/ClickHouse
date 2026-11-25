@@ -1844,10 +1844,10 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
-    [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
+    [[maybe_unused]] auto heap_should_skip = [&](size_t row) ALWAYS_INLINE -> bool
     {
         /// Without a typed key `shouldSkipTyped` always falls through to `shouldSkip`; calling it directly keeps the numeric
-        /// dispatch out of the loop, so the check stays small enough to be inlined.
+        /// dispatch out of the loop.
         if constexpr (top_k && has_typed_key)
             return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
         else if constexpr (top_k)
