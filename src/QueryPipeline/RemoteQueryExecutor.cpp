@@ -999,10 +999,11 @@ void RemoteQueryExecutor::throwIfColumnLessResultFromOldServer() const
     /// The result of the remote query has no columns, so its rows can travel only as the row count of
     /// a column-less block. An older server drops such blocks instead, and the rows of its part of the
     /// result would be lost silently. Every replica that contributes to the result answers at least with
-    /// the end of the stream, so checking the sender of each `Data` and `EndOfStream` packet refuses such
-    /// a query. Only the sender matters: with hedged requests, a losing replica is cancelled and sends
-    /// nothing more, so an old one must not fail the query that a newer replica answers. Only a header
-    /// that is known to describe the result can tell that the result has no columns.
+    /// the end of its data and of the stream, so checking the sender of each block of rows, of the last
+    /// block of each replica and of each `EndOfStream` packet refuses such a query. Only the sender
+    /// matters: with hedged requests, a losing replica is cancelled and sends nothing more, so an old one
+    /// must not fail the query that a newer replica answers. Only a header that is known to describe the
+    /// result can tell that the result has no columns.
     if (header_describes_result && header->columns() == 0
         && connections->getServerRevisionOfLastPacket() < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
         throw Exception(
@@ -1042,7 +1043,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// Note: `packet.block.rows() > 0` means it's a header block.
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
-            throwIfColumnLessResultFromOldServer();
+
+            /// The sender is not checked for a header - a block with columns and no rows: with hedged
+            /// requests a replica becomes the sender of the data only with its first block of rows, so the
+            /// header of an older replica must not fail the query that a newer replica can still answer.
+            /// It is checked for a block of rows, and for the block with neither columns nor rows that
+            /// ends the data of a replica: unlike at `EndOfStream`, its connection is still known then.
+            if (packet.block.rows() > 0 || packet.block.empty())
+                throwIfColumnLessResultFromOldServer();
 
             /// A block with rows and no columns is data too: its rows carry no values.
             if (packet.block.rows() > 0)
