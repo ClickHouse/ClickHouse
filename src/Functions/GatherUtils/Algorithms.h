@@ -700,11 +700,13 @@ inline size_t rangeBytes(const IColumn & column, size_t begin, size_t end)
 {
     if (column.valuesHaveFixedSize())
         return (end - begin) * column.sizeOfValueIfFixed();
+    const ssize_t before_begin = static_cast<ssize_t>(begin) - 1;
+    const ssize_t before_end = static_cast<ssize_t>(end) - 1;
     if (const auto * strings = typeid_cast<const ColumnString *>(&column))
-        return (end - begin) * sizeof(ColumnString::Offset) + strings->getOffsets()[end - 1] - strings->getOffsets()[begin - 1];
+        return (end - begin) * sizeof(ColumnString::Offset) + strings->getOffsets()[before_end] - strings->getOffsets()[before_begin];
     if (const auto * array = typeid_cast<const ColumnArray *>(&column))
         return (end - begin) * sizeof(ColumnArray::Offset)
-            + rangeBytes(array->getData(), array->getOffsets()[begin - 1], array->getOffsets()[end - 1]);
+            + rangeBytes(array->getData(), array->getOffsets()[before_begin], array->getOffsets()[before_end]);
     return wrappedRangeBytes(column, begin, end);
 }
 
