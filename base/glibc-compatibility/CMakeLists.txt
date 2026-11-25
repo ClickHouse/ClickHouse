@@ -57,7 +57,8 @@ if (GLIBC_COMPATIBILITY)
         add_library(glibc-compatibility-crt1 OBJECT crt/aarch64/crt1.c)
         # Runs before the sanitizer runtimes are initialized. Not LTO: `__libc_csu_init` and `__libc_csu_fini` are
         # referenced only from the inline assembly of `_start`, which LTO does not see (as for musl's startup objects).
-        target_compile_options(glibc-compatibility-crt1 PRIVATE -fno-sanitize=all -fno-stack-protector -fno-lto -fno-whole-program-vtables)
+        # `-fno-whole-program-vtables` only because ThinLTO builds pass `-fwhole-program-vtables`, which requires LTO.
+        target_compile_options(glibc-compatibility-crt1 PRIVATE -fno-sanitize=all -fno-lto -fno-whole-program-vtables)
         set_target_properties(glibc-compatibility-crt1 PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
         add_custom_command(
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
