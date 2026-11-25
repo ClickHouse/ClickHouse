@@ -646,10 +646,14 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     if (!alter_command || !alter_command->predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The DELETE mutation command has no predicate");
 
+    /// Bound to a local: `getInMemoryMetadataPtr` returns a `StorageMetadataHandle` whose `operator->`
+    /// is deleted on an rvalue, so the handle must outlive the member access.
+    const auto metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+
     /// The predicate is translated in full or the query fails: see `transformMutationPredicateForExternalDatabase`.
     const String where = transformMutationPredicateForExternalDatabase(
         *alter_command->predicate,
-        getInMemoryMetadataPtr()->getColumns().getAllPhysical(),
+        metadata->getColumns().getAllPhysical(),
         IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
         LiteralEscapingStyle::PostgreSQL,
         local_context);
@@ -657,10 +661,13 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     auto connection_holder = pool->get();
     auto & connection = connection_holder->get();
 
-    const auto table_path = remote_table_schema.empty()
-        ? pqxx::table_path({remote_table_or_query.getTableName()})
-        : pqxx::table_path({remote_table_schema, remote_table_or_query.getTableName()});
-    const String query = fmt::format("DELETE FROM {} WHERE {}", connection.quote_table(table_path), where);
+    /// `pqxx::table_path` is a `std::initializer_list`, whose backing array is destroyed at the end
+    /// of the full-expression; passing the braced list straight to `quote_table` keeps it alive for
+    /// the call, where storing it in a variable first would dangle (`-Wdangling`).
+    const String quoted_table = remote_table_schema.empty()
+        ? connection.quote_table({remote_table_or_query.getTableName()})
+        : connection.quote_table({remote_table_schema, remote_table_or_query.getTableName()});
+    const String query = fmt::format("DELETE FROM {} WHERE {}", quoted_table, where);
     LOG_TRACE(log, "Query: {}", query);
 
     /// The statement is executed in a single transaction and the function returns only after

@@ -1953,7 +1953,9 @@ def test_postgres_delete(started_cluster):
     node1.query("DELETE FROM test.pg_delete WHERE id < 10")
     cursor.execute(f"SELECT count(*), min(id) FROM {table_name}")
     assert cursor.fetchall() == [(90, 10)]
-    assert node1.contains_in_log('Query: DELETE FROM "test_delete" WHERE "id" < 10')
+    # `contains_in_log` wraps the pattern in a double-quoted shell string, so the double quotes
+    # PostgreSQL uses to quote identifiers must be backslash-escaped to survive to `zgrep`.
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete\\" WHERE \\"id\\" < 10')
 
     # The ALTER syntax, with a predicate over both columns.
     node1.query("ALTER TABLE test.pg_delete DELETE WHERE value = 'name_10' OR id = 11")
@@ -1964,7 +1966,7 @@ def test_postgres_delete(started_cluster):
     node1.query("ALTER TABLE test.pg_delete DELETE WHERE id = 90 + 9")
     cursor.execute(f"SELECT count(*) FROM {table_name} WHERE id = 99")
     assert cursor.fetchall() == [(0,)]
-    assert node1.contains_in_log('Query: DELETE FROM "test_delete" WHERE "id" = 99')
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete\\" WHERE \\"id\\" = 99')
 
     # A predicate matching no rows succeeds as a no-op.
     node1.query("DELETE FROM test.pg_delete WHERE id = 100500")
