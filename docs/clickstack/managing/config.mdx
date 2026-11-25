@@ -63,7 +63,7 @@ Configure the database connection used by your sources in Team Settings.
 | `Host` | ClickHouse HTTP(S) endpoint, including its port. This is separate from the collector's export endpoint. |
 | `Username` | ClickHouse username; defaults to `default`. |
 | `Password` | ClickHouse password; defaults to empty. |
-| `Query Log Setting Prefix` | Optional prefix for a custom ClickHouse setting that records the current user's email in query logs. Include the same prefix in ClickHouse's `custom_settings_prefixes` configuration or queries will be rejected. |
+| `Query Log Setting Prefix` | Optional prefix for a custom ClickHouse setting that records the current user's email in query logs. Include the same prefix in ClickHouse's `custom_settings_prefixes` configuration or queries will be rejected. To see which dashboard, alert, or other ClickStack feature issued a query, without user identifiers, see [Find what drives query load](/clickstack/managing/performance-tuning#query-attribution). |
 | `Prometheus compatible` | When available, treats Host as a Prometheus-compatible API endpoint for proxied PromQL queries. This connection can't be used for ClickHouse-backed logs, traces, or OTel metric sources. |
 
 ### Data source settings {#datasource-settings}
@@ -190,7 +190,7 @@ The following settings are available for each source:
 | `Exponential Histogram Table` | Table storing exponential histogram-type metrics.                                       | No | Yes                     | `otel_metrics_exponential_histogram` |
 | `Correlated Log Source`| Optional. Linked log source (e.g. ClickStack UI logs).                                               | No       | No                          | –                           |
 | `Summary Table` | Table storing summary metrics. Summary and exponential histogram support is not yet complete. | No | Yes | `otel_metrics_summary` |
-| `Minimum auto granularity` | Minimum bucket size for automatically selected chart granularity. Does not override explicit chart granularity. | No | No | No minimum |
+| `Minimum auto granularity` | Minimum bucket size for automatically selected chart granularity. Does not override explicit chart granularity. Applies to charts in the UI, such as dashboard tiles. Alerts, charts queried through the external API, and the MCP query tools don't apply it yet. | No | No | No minimum |
 
 A metric source also stores its timestamp and resource-attribute mappings (normally `TimeUnix` and `ResourceAttributes`). A unified `series Table` field is shown only for teams with metrics-series-table support enabled.
 

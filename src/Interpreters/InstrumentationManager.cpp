@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/randomSeed.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
@@ -173,6 +174,8 @@ void InstrumentationManager::ensureInitialization()
 {
     callOnce(initialized, [this]()
     {
+        /// Lives as long as the process, not the query that first needs it (the map takes about 170 MiB).
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
         __xray_init();
         parseInstrumentationMap();
         if (__xray_set_handler(&InstrumentationManager::dispatchHandler) == 0)

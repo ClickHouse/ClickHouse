@@ -167,6 +167,9 @@ NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
 /// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
+    /// an alias may be named like a key column while computing something else, e.g. `Time AS Path` in a subquery
+    if (node->type == ActionsDAG::ActionType::ALIAS)
+        return isNodeOverSortingKey(node->children.front(), sorting_key_set);
     if (sorting_key_set.contains(node->result_name))
         return true;
     if (node->type == ActionsDAG::ActionType::COLUMN)
@@ -872,9 +875,12 @@ Pipe ReadFromMergeTree::readFromPool(
     if (block_size.max_block_size_rows && !data.canUseAdaptiveGranularity())
     {
         size_t fixed_index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
+        /// Computed in `UInt128` so that a huge `min_marks_for_concurrent_read` does not wrap into a tiny task size.
+        const UInt128 block_rows = block_size.max_block_size_rows;
+        const UInt128 min_rows = static_cast<UInt128>(pool_settings.min_marks_for_concurrent_read) * fixed_index_granularity;
+        const UInt128 rounded_marks = (min_rows + block_rows - 1) / block_rows * block_rows / fixed_index_granularity;
         pool_settings.min_marks_for_concurrent_read
-            = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
-            / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
+            = static_cast<size_t>(std::min<UInt128>(rounded_marks, std::numeric_limits<size_t>::max()));
     }
 
     bool all_parts_are_remote = true;
@@ -1606,7 +1612,6 @@ Pipe ReadFromMergeTree::readByLayers(
                     /*limit=*/ 0,
                     /*always_read_till_end=*/ false,
                     /*out_row_sources_buf=*/ nullptr,
-                    /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions=*/ false);
 
@@ -2057,10 +2062,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             The new info.min_marks_for_concurrent_read `info.min_marks_for_concurrent_read / increase_num_streams_ratio` should be larger than 8.
             https://github.com/ClickHouse/ClickHouse/pull/53867
             */
-            if ((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read > parts_with_ranges.size())
+            /// The ceiling division is written without `sum_marks + min_marks_for_concurrent_read - 1`,
+            /// which overflows for huge `merge_tree_min_read_task_size`.
+            if (info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0) > parts_with_ranges.size())
             {
                 const size_t prev_num_streams = num_streams;
-                num_streams = (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read;
+                num_streams = info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0);
                 const size_t increase_num_streams_ratio = std::min(prev_num_streams / num_streams, info.min_marks_for_concurrent_read / 8);
                 if (increase_num_streams_ratio > 1)
                 {
@@ -2244,7 +2251,7 @@ static ActionsDAG createProjection(const Block & header)
 static MarkRanges splitRangesToAvoidLargeReads(const MarkRanges & ranges, int direction, size_t rows_granularity, size_t max_block_size)
 {
     MarkRanges new_ranges;
-    const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+    const size_t max_marks_in_range = max_block_size / rows_granularity + (max_block_size % rows_granularity != 0);
     size_t marks_in_range = 1;
 
     if (direction == 1)
@@ -2330,7 +2337,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             num_streams = std::max(
-                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+                info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0), parts_with_ranges.size());
         }
     }
 
@@ -2424,7 +2431,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 {
                     ranges_to_get_from_part = part.ranges;
 
-                    need_marks -= marks_in_part;
+                    need_marks -= std::min(need_marks, marks_in_part);
                     info.sum_marks_in_parts.pop_back();
                 }
                 else
@@ -2696,7 +2703,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     /*limit=*/ 0,
                     /*always_read_till_end=*/ false,
                     /*out_row_sources_buf=*/ nullptr,
-                    /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions*/ false);
 
@@ -3434,15 +3440,16 @@ static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & 
     return !columns.has("_part_offset") && !columns.has("_part_starting_offset");
 }
 
-void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index)
+void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
+    const auto & column_name = descriptor.key_column_name;
+    const auto & filter_id = descriptor.filter_id;
     const auto & metadata = *storage_snapshot->metadata;
-    if (is_global_row_index)
+    if (descriptor.is_global_row_index)
     {
         if (!isRuntimeFilterGlobalRowIndexUsable(metadata))
             return;
-        join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type, /*is_global_row_index=*/true});
+        join_runtime_filters_for_index_analysis.push_back(descriptor);
         LOG_DEBUG(log, "Registered join runtime filter {} on {}", filter_id, column_name);
         return;
     }
@@ -3467,7 +3474,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
     if (!is_primary_key_column && !has_applicable_skip_index)
         return;
 
-    join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
+    join_runtime_filters_for_index_analysis.push_back(descriptor);
     LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
 }
@@ -3475,7 +3482,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
 void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
 {
     for (const auto & descr : replaced_step.join_runtime_filters_for_index_analysis)
-        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
 }
 
 void ReadFromMergeTree::buildPartitionPruningIndexes(
@@ -3911,6 +3918,10 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         auto node_name_to_input = query_info.buildNodeNameToInputNodeColumn();
         auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input);
         filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
+
+        filter_actions_dag_conditions.clear();
+        for (const auto * node : added_filter_nodes.nodes)
+            filter_actions_dag_conditions.insert(node->result_name);
 
         /// NOTE: Currently we store two DAGs for analysis:
         /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure they are consistent.
@@ -7294,18 +7305,24 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
         return data.getColumnSizes(columns, calculate_subcolumn_sizes);
 
     IStorage::ColumnSizeByName result;
-    for (const auto & part : parts)
+    if (calculate_subcolumn_sizes)
     {
-        for (const auto & column_name : columns)
+        MergeTreeData::DataPartsVector data_parts;
+        data_parts.reserve(parts.size());
+        for (const auto & part : parts)
+            data_parts.push_back(part.data_part);
+        MergeTreeData::addColumnSizesOfParts(
+            data_parts, columns, /* with_columns = */ true, getContext()->getSettingsRef()[Setting::max_threads], result);
+    }
+    else
+    {
+        for (const auto & part : parts)
         {
-            const auto column = part.data_part->tryGetColumn(column_name);
-            if (!column)
-                continue;
-
-            const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
-                ? part.data_part->getSubcolumnSize(column_name)
-                : part.data_part->getColumnSize(column->getNameInStorage());
-            result[column_name].add(size);
+            for (const auto & column_name : columns)
+            {
+                if (const auto column = part.data_part->tryGetColumn(column_name))
+                    result[column_name].add(part.data_part->getColumnSize(column->getNameInStorage()));
+            }
         }
     }
 
