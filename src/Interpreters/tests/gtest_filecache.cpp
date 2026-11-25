@@ -132,6 +132,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
+    extern const FileCacheSettingsBool lru_batch_priority_increase;
 }
 
 void printRanges(const auto & segments)
@@ -479,6 +480,9 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// The test checks the exact eviction order right after hits. A buffered hit is applied only by the next insert, after
+    /// the eviction which it would have changed, so this order holds only when every hit moves its segment at once.
+    settings[FileCacheSetting::lru_batch_priority_increase] = false;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
