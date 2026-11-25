@@ -38,8 +38,17 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
 
-        if (!readCompressedData(size_decompressed, size_compressed_without_checksum, false))
+        bool read_to_destination = false;
+        if (!readCompressedData(
+                size_decompressed, size_compressed_without_checksum, false, to + bytes_read, n - bytes_read, &read_to_destination))
             return bytes_read;
+
+        if (read_to_destination)
+        {
+            bytes_read += size_decompressed;
+            bytes += size_decompressed;
+            continue;
+        }
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 

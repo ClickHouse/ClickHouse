@@ -135,10 +135,24 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             bytes += offset();
             resetWorkingBuffer();
             size_compressed = 0;
-            size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+            bool read_to_destination = false;
+            size_t new_size_compressed = readCompressedData(
+                size_decompressed,
+                size_compressed_without_checksum,
+                false,
+                nextimpl_working_buffer_offset == 0 ? to + bytes_read : nullptr,
+                n - bytes_read,
+                &read_to_destination);
 
             if (!new_size_compressed)
                 return bytes_read;
+
+            if (read_to_destination)
+            {
+                bytes_read += size_decompressed;
+                bytes += size_decompressed;
+                continue;
+            }
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
