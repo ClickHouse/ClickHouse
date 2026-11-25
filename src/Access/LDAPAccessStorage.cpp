@@ -398,8 +398,11 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
 void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const
 {
     // Map and grant the roles from scratch only if the list of external role has changed.
+    // While role changes are pending after a failed reconciliation (see `processRoleChanges`), the roles granted
+    // to the user can be outdated even if the list of external roles is the same, e.g. the user can still have
+    // a role which is renamed or dropped. So the names are resolved again on every login until the changes are reconciled.
     const auto it = users_external_roles.find(user_name);
-    if (it != users_external_roles.end() && it->second == external_roles)
+    if (pending_role_ids.empty() && it != users_external_roles.end() && it->second == external_roles)
         return;
 
     auto update_func = [this, &external_roles] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr

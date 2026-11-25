@@ -431,6 +431,13 @@ def test_partially_applied_role_reconciliation_is_reverted(ldap_cluster):
             "SELECT role_name FROM system.current_roles", user=user, password=password
         )
 
+    def granted_roles():
+        return instance1.query(
+            "SELECT user_name, granted_role_name FROM system.role_grants"
+            " WHERE user_name IN ('janedoe', 'johndoe') ORDER BY ALL",
+            **admin,
+        )
+
     try:
         for user, password in ldap_users:
             assert current_roles(user, password) == ""
@@ -442,15 +449,50 @@ def test_partially_applied_role_reconciliation_is_reverted(ldap_cluster):
         instance1.wait_for_log_line(
             "Injected failure of the reconciliation of LDAP role changes after the update of the first user"
         )
-        assert current_roles("janedoe", "qwerty") == TSV([["partial_role"]])
-        assert current_roles("johndoe", "qwertz") == ""
+        # The users do not log in while the changes are pending: a login resolves the mapped names again,
+        # so it would hide the partially applied state.
+        assert granted_roles() == TSV([["janedoe", "partial_role"]])
 
         instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
         instance1.query("ALTER ROLE partial_role RENAME TO partial_role_renamed", **admin)
 
+        assert granted_roles() == ""
         for user, password in ldap_users:
             assert current_roles(user, password) == ""
     finally:
         instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
         instance1.query("DROP ROLE IF EXISTS partial_role, partial_role_renamed", **admin)
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
+
+
+def test_login_during_pending_role_reconciliation_resolves_roles_again(ldap_cluster):
+    # Two users are mapped to a role, and the role is renamed, so it must be revoked from both of them.
+    # The reconciliation keeps failing after the first user is updated, so the second user still has the role.
+    # When that user logs in again with the same LDAP groups, the mapped name must be resolved again
+    # instead of keeping the outdated role until the pending changes are reconciled.
+    admin = {"user": "common_user", "password": "qwerty"}
+    failpoint = "ldap_access_storage_fail_role_reconciliation_after_first_user"
+    group_cn = "clickhouse-stale_role"
+    ldap_users = [("janedoe", "qwerty"), ("johndoe", "qwertz")]
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn=[name for name, _ in ldap_users])
+
+    def current_roles(user, password):
+        return instance1.query(
+            "SELECT role_name FROM system.current_roles", user=user, password=password
+        )
+
+    try:
+        instance1.query("CREATE ROLE stale_role", **admin)
+        for user, password in ldap_users:
+            assert current_roles(user, password) == TSV([["stale_role"]])
+
+        # The notification is delivered before the query returns, and the users are updated in the order of their names.
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE stale_role RENAME TO stale_role_renamed", **admin)
+
+        for user, password in reversed(ldap_users):
+            assert current_roles(user, password) == ""
+    finally:
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("DROP ROLE IF EXISTS stale_role, stale_role_renamed", **admin)
         delete_ldap_group(ldap_cluster, group_cn=group_cn)
