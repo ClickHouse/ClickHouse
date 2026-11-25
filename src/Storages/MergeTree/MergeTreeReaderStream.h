@@ -44,13 +44,13 @@ public:
         /// The bytes of the ranges not counted yet that become counted: those merged, and those extending the last
         /// merged range. Clears the ranges. `capacity_grown` is how many ranges the memory kept for them grew by.
         size_t add(CompressedBlockRanges & ranges, size_t & capacity_grown);
-        /// Merges the appended ranges into the merged ones and returns the bytes they add. Never throws.
-        size_t merge();
+        /// Merges the appended ranges into the merged ones and returns the bytes they add.
+        size_t merge() noexcept;
         /// Frees the ranges, once the counting stopped.
-        void release();
+        void release() noexcept;
 
     private:
-        size_t mergeLocked() TSA_REQUIRES(mutex);
+        size_t mergeLocked() noexcept TSA_REQUIRES(mutex);
 
         std::mutex mutex;
         /// Up to `merged`: sorted by their begin, neither overlapping nor touching. After it: appended since the last merge.

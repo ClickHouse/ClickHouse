@@ -424,20 +424,20 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges, size_
     return bytes;
 }
 
-size_t ReadRangesRegistry::ReadRanges::merge()
+size_t ReadRangesRegistry::ReadRanges::merge() noexcept
 {
     std::lock_guard lock(mutex);
     return mergeLocked();
 }
 
-size_t ReadRangesRegistry::ReadRanges::mergeLocked()
+size_t ReadRangesRegistry::ReadRanges::mergeLocked() noexcept
 {
     if (merged == united_ranges.size())
         return 0;
 
     const auto appended = united_ranges.begin() + merged;
     std::sort(appended, united_ranges.end());
-    /// Never throws: without the memory for a buffer, it merges without one.
+    /// Without the memory for a buffer, it merges without one.
     std::inplace_merge(united_ranges.begin(), appended, united_ranges.end());
 
     size_t last = 0;
@@ -498,7 +498,7 @@ void ReadRangesRegistry::commit(const Batch & batch)
         (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(batch.bytes, std::memory_order_relaxed);
 }
 
-void ReadRangesRegistry::ReadRanges::release()
+void ReadRangesRegistry::ReadRanges::release() noexcept
 {
     std::lock_guard lock(mutex);
     CompressedBlockRanges().swap(united_ranges);
