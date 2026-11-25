@@ -3956,13 +3956,10 @@ static constexpr size_t max_coalesced_value_bytes = 8;
 /// Like `column->expand(null_map, /*inverted*/ true)`, but NULL rows get the default of `null_default_type` if it is set.
 static void expandNullRows(MutableColumnPtr & column, const PaddedPODArray<UInt8> & null_map, const DataTypePtr & null_default_type)
 {
-    if (!null_default_type)
-    {
-        column->expand(null_map, /*inverted*/ true);
-        return;
-    }
-
     column->expand(null_map, /*inverted*/ true);
+    if (!null_default_type)
+        return;
+
     auto default_row = null_default_type->createColumn();
     null_default_type->insertDefaultInto(*default_row);
     for (size_t i = 0; i < null_map.size(); ++i)

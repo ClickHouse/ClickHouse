@@ -171,7 +171,7 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
-        /// Set when NULL rows keep the decoded values and the type default is not the column zero.
+        /// Set when the output keeps the decoded values, at most wrapped in LowCardinality, and the type default is not the column zero.
         DataTypePtr null_default_type;
         /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
         /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
