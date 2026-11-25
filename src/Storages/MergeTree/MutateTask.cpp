@@ -1592,6 +1592,10 @@ getColumnsForNewDataPart(
             MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
     }
 
+    const bool rechoose_kinds = commands_for_interpreter.hasRewritePartsCommand();
+    SerializationInfo::Settings rechoose_settings = settings;
+    rechoose_settings.choose_kind = true;
+
     SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
     {
@@ -1648,6 +1652,15 @@ getColumnsForNewDataPart(
         auto new_info = new_type->createSerializationInfo(settings);
         if (!old_info->structureEquals(*new_info))
         {
+            new_serialization_infos.emplace(new_name, std::move(new_info));
+            continue;
+        }
+
+        /// The rows are unchanged, so the counts of the source part choose the kinds, as in a merge.
+        if (rechoose_kinds && old_type->equals(*new_type))
+        {
+            new_info = new_type->createSerializationInfo(rechoose_settings);
+            new_info->add(*old_info);
             new_serialization_infos.emplace(new_name, std::move(new_info));
             continue;
         }

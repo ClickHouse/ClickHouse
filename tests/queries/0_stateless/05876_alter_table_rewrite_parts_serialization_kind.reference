@@ -1,0 +1,71 @@
+-- { echo }
+
+SELECT table, count(), groupUniqArray(part_type) FROM system.parts WHERE database = currentDatabase() AND active GROUP BY table ORDER BY table;
+t_compact	1	['Compact']
+t_no_counts	1	['Wide']
+t_wide	1	['Wide']
+-- Wide part: inserted with ratio 0.9.
+SELECT column, serialization_kind, subcolumns.serializations[indexOf(subcolumns.names, 'a')] AS a, subcolumns.serializations[indexOf(subcolumns.names, 'b')] AS b
+FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_wide' AND active AND column IN ('s', 'u', 't') ORDER BY column;
+s	Default		
+t	Default	Default	Sparse
+u	Sparse		
+SELECT count(), countIf(s != ''), sum(u), sum(t.a), countIf(t.b != '') FROM t_wide;
+10000	2000	495000	9995000	100
+ALTER TABLE t_wide MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_wide REWRITE PARTS SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind, subcolumns.serializations[indexOf(subcolumns.names, 'a')] AS a, subcolumns.serializations[indexOf(subcolumns.names, 'b')] AS b
+FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_wide' AND active AND column IN ('s', 'u', 't') ORDER BY column;
+s	Sparse		
+t	Default	Sparse	Sparse
+u	Sparse		
+SELECT count(), countIf(s != ''), sum(u), sum(t.a), countIf(t.b != '') FROM t_wide;
+10000	2000	495000	9995000	100
+ALTER TABLE t_wide MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.995;
+ALTER TABLE t_wide REWRITE PARTS SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind, subcolumns.serializations[indexOf(subcolumns.names, 'a')] AS a, subcolumns.serializations[indexOf(subcolumns.names, 'b')] AS b
+FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_wide' AND active AND column IN ('s', 'u', 't') ORDER BY column;
+s	Default		
+t	Default	Default	Default
+u	Default		
+SELECT count(), countIf(s != ''), sum(u), sum(t.a), countIf(t.b != '') FROM t_wide;
+10000	2000	495000	9995000	100
+CHECK TABLE t_wide SETTINGS check_query_single_value_result = 1;
+1
+DETACH TABLE t_wide;
+ATTACH TABLE t_wide;
+SELECT column, serialization_kind, subcolumns.serializations[indexOf(subcolumns.names, 'a')] AS a, subcolumns.serializations[indexOf(subcolumns.names, 'b')] AS b
+FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_wide' AND active AND column IN ('s', 'u', 't') ORDER BY column;
+s	Default		
+t	Default	Default	Default
+u	Default		
+SELECT count(), countIf(s != ''), sum(u), sum(t.a), countIf(t.b != '') FROM t_wide;
+10000	2000	495000	9995000	100
+-- Compact part.
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_compact' AND active AND column IN ('s', 'u') ORDER BY column;
+s	Default
+u	Sparse
+ALTER TABLE t_compact MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_compact REWRITE PARTS SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_compact' AND active AND column IN ('s', 'u') ORDER BY column;
+s	Sparse
+u	Sparse
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_compact' AND active;
+Compact
+SELECT count(), countIf(s != ''), sum(u) FROM t_compact;
+10000	2000	495000
+-- A part written with ratio 1 stores no counts: the first rewrite records them, the second one chooses from them.
+ALTER TABLE t_no_counts MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_no_counts REWRITE PARTS SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_no_counts' AND active AND column IN ('s', 'u') ORDER BY column;
+s	Default
+u	Default
+ALTER TABLE t_no_counts REWRITE PARTS SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_no_counts' AND active AND column IN ('s', 'u') ORDER BY column;
+s	Sparse
+u	Sparse
+SELECT count(), countIf(s != ''), sum(u) FROM t_no_counts;
+10000	2000	495000
+DROP TABLE t_wide;
+DROP TABLE t_compact;
+DROP TABLE t_no_counts;
