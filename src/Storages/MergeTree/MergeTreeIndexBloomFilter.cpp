@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/Utils.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
@@ -1085,8 +1084,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             ColumnPtr set_contains_missing_key_value;
             try
             {
+                auto missing_key_column = missing_key_type->createColumn();
+                missing_key_type->insertDefaultInto(*missing_key_column);
                 set_contains_missing_key_value = prepared_set->execute(
-                    {ColumnWithTypeAndName{createColumnWithInsertedDefault(*missing_key_type), missing_key_type, ""}}, false /*negative*/);
+                    {ColumnWithTypeAndName{std::move(missing_key_column), missing_key_type, ""}}, false /*negative*/);
             }
             catch (const Exception &)
             {

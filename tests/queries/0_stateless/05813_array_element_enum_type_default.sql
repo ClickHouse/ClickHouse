@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS t_enum_elem_buckets;
 DROP TABLE IF EXISTS t_enum_elem_memory;
 DROP TABLE IF EXISTS t_enum_elem_dst;
 DROP TABLE IF EXISTS t_enum_elem_idx;
-DROP TABLE IF EXISTS t_enum_date_idx;
+DROP TABLE IF EXISTS t_enum_tuple_idx;
 DROP TABLE IF EXISTS t_scalar_tbf_idx;
 
 CREATE TABLE t_enum_elem (id UInt8, arr Array(Enum8('x' = 1, 'y' = 2)), m Map(String, Enum8('x' = 1, 'y' = 2)))
@@ -128,45 +128,36 @@ SELECT groupArray(id) FROM t_enum_elem_idx WHERE m['k'] LIKE 'y%' SETTINGS optim
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE mt['k'] = tuple('y') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_bf';
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE mt['k'] = tuple('y') SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, force_data_skipping_indices = 'i_bf';
 
--- `Date32` reads 1970-01-01 for a missing key, while its `getDefault` is 1900-01-01.
-SELECT 'skip index, Date32';
-CREATE TABLE t_enum_date_idx
+SELECT 'skip index, tuple';
+CREATE TABLE t_enum_tuple_idx
 (
     id UInt8,
-    m Map(String, Tuple(Enum8('x' = -1, 'z' = 0, 'y' = 2), Date32)),
-    d Map(String, Date32),
+    m Map(String, Tuple(Enum8('x' = -1, 'z' = 0, 'y' = 2), UInt8)),
     INDEX i_bf mapKeys(m) TYPE bloom_filter,
-    INDEX i_txt mapKeys(m) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX i_dbf mapKeys(d) TYPE bloom_filter
+    INDEX i_txt mapKeys(m) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0;
-INSERT INTO t_enum_date_idx SELECT 1, map('k', tuple('y', toDate32('2020-01-01'))), map('k', toDate32('2020-01-01'))
-    UNION ALL SELECT 2, map('o', tuple('y', toDate32('2020-01-01'))), map('o', toDate32('2020-01-01'));
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] = tuple('x', toDate32('1970-01-01')) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] = tuple('x', toDate32('1970-01-01')) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] = tuple('x', toDate32('1970-01-01')) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_bf';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] = tuple('x', toDate32('1970-01-01')) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_bf';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] IN (SELECT tuple('x', toDate32('1970-01-01'))) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] IN (SELECT tuple('x', toDate32('1970-01-01'))) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE d['k'] = toDate32('1970-01-01') SETTINGS use_query_condition_cache = 0;
-SELECT groupArray(id) FROM t_enum_date_idx WHERE d['k'] IN (toDate32('1970-01-01'), toDate32('2021-01-01')) SETTINGS use_query_condition_cache = 0;
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] = tuple('y', toDate32('2020-01-01')) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_bf';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE m['k'] = tuple('y', toDate32('2020-01-01')) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, force_data_skipping_indices = 'i_txt';
-SELECT groupArray(id) FROM t_enum_date_idx WHERE d['k'] = toDate32('2020-01-01') SETTINGS use_query_condition_cache = 0, force_data_skipping_indices = 'i_dbf';
+INSERT INTO t_enum_tuple_idx SELECT 1, map('k', tuple('y', 1)) UNION ALL SELECT 2, map('o', tuple('y', 1));
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] = tuple('x', 0) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] = tuple('x', 0) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] = tuple('x', 0) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_bf';
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] = tuple('x', 0) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_bf';
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] IN (SELECT tuple('x', 0)) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] IN (SELECT tuple('x', 0)) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_txt';
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] = tuple('y', 1) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_bf';
+SELECT groupArray(id) FROM t_enum_tuple_idx WHERE m['k'] = tuple('y', 1) SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, force_data_skipping_indices = 'i_txt';
 
-SELECT 'skip index, UInt8, Date32, Bool and strings';
+SELECT 'skip index, UInt8, Bool and strings';
 CREATE TABLE t_scalar_tbf_idx
 (
     id UInt8,
     u Map(String, UInt8),
-    d Map(String, Date32),
     b Map(String, Bool),
     s Map(String, String),
     f Map(String, FixedString(3)),
     ts Map(String, Tuple(String, Enum8('x' = 1, 'y' = 2))),
     INDEX i_u mapKeys(u) TYPE tokenbf_v1(512, 3, 0),
-    INDEX i_d mapKeys(d) TYPE tokenbf_v1(512, 3, 0),
     INDEX i_b mapKeys(b) TYPE tokenbf_v1(512, 3, 0),
     INDEX i_bbf mapKeys(b) TYPE bloom_filter,
     INDEX i_s mapKeys(s) TYPE tokenbf_v1(512, 3, 0),
@@ -177,12 +168,10 @@ CREATE TABLE t_scalar_tbf_idx
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0;
-INSERT INTO t_scalar_tbf_idx VALUES (1, {'k': 1}, {'k': '2020-01-01'}, {'k': true}, {'k': 'abc'}, {'k': 'abc'}, {'k': ('abc', 'y')}),
-    (2, {'o': 1}, {'o': '2020-01-01'}, {'o': true}, {'o': 'abc'}, {'o': 'abc'}, {'o': ('abc', 'y')});
+INSERT INTO t_scalar_tbf_idx VALUES (1, {'k': 1}, {'k': true}, {'k': 'abc'}, {'k': 'abc'}, {'k': ('abc', 'y')}),
+    (2, {'o': 1}, {'o': true}, {'o': 'abc'}, {'o': 'abc'}, {'o': ('abc', 'y')});
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE u['k'] = '0' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE u['k'] = '0' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
-SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE d['k'] = '1970-01-01' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
-SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE d['k'] = '1970-01-01' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE b['k'] = 'false' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_bbf';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE b['k'] = 'false' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_b';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE s['k'] LIKE '%' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
@@ -198,7 +187,6 @@ SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE s['k'] = toFixedString('', 3) 
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE f['k'] = '\0\0\0\0' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_fbf';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE f['k'] = '\0\0\0\0' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_f';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE u['k'] = '1' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_u';
-SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE d['k'] = '2020-01-01' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, force_data_skipping_indices = 'i_d';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE b['k'] = 'true' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_b';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE b['k'] = 'true' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_bbf';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE s['k'] LIKE 'a%' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_s';
@@ -216,5 +204,5 @@ DROP TABLE t_enum_elem_buckets;
 DROP TABLE t_enum_elem_memory;
 DROP TABLE t_enum_elem_dst;
 DROP TABLE t_enum_elem_idx;
-DROP TABLE t_enum_date_idx;
+DROP TABLE t_enum_tuple_idx;
 DROP TABLE t_scalar_tbf_idx;

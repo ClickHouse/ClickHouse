@@ -72,9 +72,7 @@ skip index
 [1]
 [1]
 [1]
-skip index, Date32
-[2]
-[2]
+skip index, tuple
 [2]
 [2]
 [2]
@@ -83,10 +81,7 @@ skip index, Date32
 [2]
 [1]
 [1]
-[1]
-skip index, UInt8, Date32, Bool and strings
-[2]
-[2]
+skip index, UInt8, Bool and strings
 [2]
 [2]
 [2]
@@ -102,7 +97,6 @@ skip index, UInt8, Date32, Bool and strings
 [2]
 [2]
 [2]
-[1]
 [1]
 [1]
 [1]

@@ -6,16 +6,15 @@
 namespace DB
 {
 
-/// One row of the value `insertDefaultInto` inserts, which a missing `Map` key reads; for `Date32` it is not `getDefault`.
-MutableColumnPtr createColumnWithInsertedDefault(const IDataType & type);
-
 /// The default of `type` as a `ColumnType::ValueType`; for an `Enum` it is the first value, not zero.
 template <typename ColumnType>
 typename ColumnType::ValueType getTypeDefaultValue(const IDataType & type)
 {
     if (type.isDefaultInsertTrivial())
         return {};
-    return assert_cast<const ColumnType &>(*createColumnWithInsertedDefault(type)).getData()[0];
+    auto column = type.createColumn();
+    type.insertDefaultInto(*column);
+    return assert_cast<const ColumnType &>(*column).getData()[0];
 }
 
 /** Returns true if from_type can be safely cast to to_type.

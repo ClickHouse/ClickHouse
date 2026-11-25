@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Utils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -220,8 +219,10 @@ bool missingMapKeyMatches(
     try
     {
         const auto value_type = removeLowCardinality(map_value_type);
+        auto missing_key_value = value_type->createColumn();
+        value_type->insertDefaultInto(*missing_key_value);
         ColumnsWithTypeAndName arguments{
-            {ColumnConst::create(createColumnWithInsertedDefault(*value_type), 1), value_type, ""},
+            {ColumnConst::create(std::move(missing_key_value), 1), value_type, ""},
             {constant_type->createColumnConst(1, constant), constant_type, ""}};
         const auto function = FunctionFactory::instance().get(function_name, context)->build(arguments);
         return function->execute(arguments, function->getResultType(), 1, /*dry_run=*/ false)->getBool(0);
