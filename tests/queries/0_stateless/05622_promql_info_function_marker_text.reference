@@ -1,0 +1,5 @@
+-- the label value is the text, not the instance
+[('__name__','metric'),('data','@@instance@@'),('instance','a'),('job','1')]	1970-01-01 00:00:00.000	1
+-- no series has this value
+-- a regexp matcher
+[('__name__','metric'),('data','@@instance@@'),('instance','a'),('job','1')]	1970-01-01 00:00:00.000	1
