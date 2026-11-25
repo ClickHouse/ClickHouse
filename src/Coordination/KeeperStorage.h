@@ -199,7 +199,7 @@ public:
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 
-    bool containsWatch(const String & path, Coordination::CheckWatchRequest::CheckWatchType check_type) const;
+    bool containsWatch(const String & path, Coordination::CheckWatchRequest::CheckWatchType check_type, int64_t session_id) const;
     void addPersistentWatch(const String & path, Coordination::AddWatchRequest::AddWatchMode mode, int64_t session_id);
 
     bool removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
