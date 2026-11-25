@@ -167,6 +167,9 @@ NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
 /// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
+    /// an alias may be named like a key column while computing something else, e.g. `Time AS Path` in a subquery
+    if (node->type == ActionsDAG::ActionType::ALIAS)
+        return isNodeOverSortingKey(node->children.front(), sorting_key_set);
     if (sorting_key_set.contains(node->result_name))
         return true;
     if (node->type == ActionsDAG::ActionType::COLUMN)
@@ -1609,7 +1612,6 @@ Pipe ReadFromMergeTree::readByLayers(
                     /*limit=*/ 0,
                     /*always_read_till_end=*/ false,
                     /*out_row_sources_buf=*/ nullptr,
-                    /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions=*/ false);
 
@@ -2701,7 +2703,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     /*limit=*/ 0,
                     /*always_read_till_end=*/ false,
                     /*out_row_sources_buf=*/ nullptr,
-                    /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions*/ false);
 
@@ -3439,15 +3440,16 @@ static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & 
     return !columns.has("_part_offset") && !columns.has("_part_starting_offset");
 }
 
-void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index)
+void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
+    const auto & column_name = descriptor.key_column_name;
+    const auto & filter_id = descriptor.filter_id;
     const auto & metadata = *storage_snapshot->metadata;
-    if (is_global_row_index)
+    if (descriptor.is_global_row_index)
     {
         if (!isRuntimeFilterGlobalRowIndexUsable(metadata))
             return;
-        join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type, /*is_global_row_index=*/true});
+        join_runtime_filters_for_index_analysis.push_back(descriptor);
         LOG_DEBUG(log, "Registered join runtime filter {} on {}", filter_id, column_name);
         return;
     }
@@ -3472,7 +3474,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
     if (!is_primary_key_column && !has_applicable_skip_index)
         return;
 
-    join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
+    join_runtime_filters_for_index_analysis.push_back(descriptor);
     LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
 }
@@ -3480,7 +3482,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
 void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
 {
     for (const auto & descr : replaced_step.join_runtime_filters_for_index_analysis)
-        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
 }
 
 void ReadFromMergeTree::buildPartitionPruningIndexes(

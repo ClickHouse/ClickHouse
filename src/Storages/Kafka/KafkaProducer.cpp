@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
@@ -23,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
 namespace
@@ -52,18 +54,28 @@ bool isStringArray(const DataTypePtr & type)
 }
 
 KafkaProducer::KafkaProducer(
-    ProducerPtr producer_,
+    cppkafka::Configuration conf,
     const std::string & topic_,
     std::chrono::milliseconds poll_timeout,
     std::atomic<bool> & shutdown_called_,
     const Block & header,
     bool map_virtual_columns_on_write)
     : IMessageProducer(getLogger("KafkaProducer"))
-    , producer(producer_)
     , topic(topic_)
     , timeout(poll_timeout)
     , shutdown_called(shutdown_called_)
 {
+    conf.set("delivery.report.only.error", "true");
+    conf.set_delivery_report_callback([this](cppkafka::Producer &, const cppkafka::Message & message)
+    {
+        if (!message.get_error())
+            return;
+        ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
+        if (failed_deliveries++ == 0)
+            first_delivery_error = message.get_error();
+    });
+    producer = std::make_shared<cppkafka::Producer>(std::move(conf));
+
     key_column_index = findSpecialColumn(header, "_key", [](const DataTypePtr & t) { return isString(t); });
     timestamp_column_index = findSpecialColumn(header, "_timestamp", [](const DataTypePtr & t) { return isDateTime(t); });
 
@@ -137,7 +149,9 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
         {
             if (e.get_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL)
             {
+                CurrentThread::checkIfNotCancelled();
                 producer->poll(timeout);
+                throwIfDeliveryFailed();
                 continue;
             }
             ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
@@ -163,6 +177,7 @@ void KafkaProducer::finish()
             {
                 if (shutdown_called)
                     throw Exception(ErrorCodes::ABORTED, "Table is detached");
+                CurrentThread::checkIfNotCancelled();
                 continue;
             }
 
@@ -173,6 +188,15 @@ void KafkaProducer::finish()
         ProfileEvents::increment(ProfileEvents::KafkaProducerFlushes);
         break;
     }
+
+    throwIfDeliveryFailed();
+}
+
+void KafkaProducer::throwIfDeliveryFailed()
+{
+    if (size_t failed = std::exchange(failed_deliveries, 0))
+        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "Failed to deliver {} message(s) to Kafka topic '{}': {}", failed, topic, first_delivery_error.to_string());
 }
 
 void KafkaProducer::cancel() noexcept

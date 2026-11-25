@@ -1,0 +1,13 @@
+range query: one series without labels, every step carries its own timestamp as the value
+[]	[(100000,100),(150000,150),(200000,200)]
+a sub-second step keeps the fractional seconds
+[]	[(100000,100),(150250,150.25),(200500,200.5)]
+instant query: a single evaluation time
+[]	200000	200
+an argument that is empty by construction gives an empty result
+0
+0
+an empty inner evaluation range gives an empty result
+0
+a non-empty one returns the last inner evaluation time
+[]	200000	180

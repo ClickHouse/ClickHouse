@@ -1485,7 +1485,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     /// Convert indexes to UInt64 in case of overflow.
     auto nested_indexes_column = ColumnUInt64::create();
     PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
-    nested_indexes.reserve_exact(getOffsets().back());
+    size_t nested_size = 0;
+    for (size_t i = 0; i < limit; ++i)
+        nested_size += sizeAt(indexes[i]);
+    nested_indexes.reserve_exact(nested_size);
 
     auto res_offsets_column = ColumnOffsets::create(limit);
     Offsets & res_offsets = res_offsets_column->getData();
@@ -1611,6 +1614,11 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
     if (replicate_offsets.empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
+
+    /// All arrays are empty, as in a default value materialized from a `ColumnConst`: the result is `replicate_offsets.back()`
+    /// empty arrays and no element is copied. The size check keeps a mismatch on the path below, which reports it.
+    if (size() == replicate_offsets.size() && data->empty())
+        return ColumnArray::create(data->cloneEmpty(), ColumnOffsets::create(replicate_offsets.back(), 0));
 
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
         return replicateNumber<UInt8>(replicate_offsets);
