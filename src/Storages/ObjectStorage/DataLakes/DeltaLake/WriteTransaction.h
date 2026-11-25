@@ -48,9 +48,9 @@ public:
     [[nodiscard]] const std::unordered_set<String> & getTimestampNtzPaths() const;
 
 private:
-    using KernelTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveTransaction, ffi::free_transaction>;
-    using KernelWriteContext = DeltaLake::KernelPointerWrapper<ffi::SharedWriteContext, ffi::free_write_context>;
-    using KernelEngineData = DeltaLake::KernelPointerWrapper<ffi::ExclusiveEngineData, ffi::free_engine_data>;
+    using KernelTransaction = DeltaLake::KernelPointerWrapper<::ExclusiveTransaction, ::free_transaction>;
+    using KernelWriteContext = DeltaLake::KernelPointerWrapper<::SharedWriteContext, ::free_write_context>;
+    using KernelEngineData = DeltaLake::KernelPointerWrapper<::ExclusiveEngineData, ::free_engine_data>;
 
     const DeltaLake::KernelHelperPtr kernel_helper;
     /// Table logical schema, provided at construction. Used to create the table and, for partitioned

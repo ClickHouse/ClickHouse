@@ -33,9 +33,9 @@ public:
     static TableChangesVersionRange getVersionRange(int64_t start_version, int64_t end_version);
 
 private:
-    using KernelTableChanges = KernelPointerWrapper<ffi::ExclusiveTableChanges, ffi::free_table_changes>;
-    using KernelTableChangesScan = KernelPointerWrapper<ffi::SharedTableChangesScan, ffi::free_table_changes_scan>;
-    using KernelTableChangesScanIterator = KernelPointerWrapper<ffi::SharedScanTableChangesIterator, ffi::free_scan_table_changes_iter>;
+    using KernelTableChanges = KernelPointerWrapper<::ExclusiveTableChanges, ::free_table_changes>;
+    using KernelTableChangesScan = KernelPointerWrapper<::SharedTableChangesScan, ::free_table_changes_scan>;
+    using KernelTableChangesScanIterator = KernelPointerWrapper<::SharedScanTableChangesIterator, ::free_scan_table_changes_iter>;
 
     KernelTableChanges & getTableChanges() const;
     KernelTableChangesScanIterator & getTableChangesScanIterator() const;
