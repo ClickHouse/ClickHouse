@@ -10,24 +10,35 @@
 namespace Silk
 {
 
+bool FiberSemaphore::hasFreePermit() const noexcept
+{
+    const size_t current_limit = getLimit();
+    return current_limit == 0 || held < current_limit;
+}
+
 void FiberSemaphore::acquire() noexcept
 {
     chassert(isInsideFiber());
 
     std::unique_lock lock(mutex);
-    auto has_free_permit = [this]
-    {
-        const size_t current_limit = getLimit();
-        return current_limit == 0 || held < current_limit;
-    };
-
-    while (!has_free_permit())
+    while (!hasFreePermit())
         permit_released.wait(lock);
     ++held;
 
     /// A release wakes one fiber. When the limit was raised, more permits may be free: wake the next fiber too.
-    if (has_free_permit())
+    if (hasFreePermit())
         permit_released.notify_one();
+}
+
+std::optional<FiberSemaphore::Permit> FiberSemaphore::tryTakePermit() noexcept
+{
+    chassert(isInsideFiber());
+
+    std::lock_guard lock(mutex);
+    if (!hasFreePermit())
+        return {};
+    ++held;
+    return Permit(*this, Permit::Taken{});
 }
 
 void FiberSemaphore::release() noexcept

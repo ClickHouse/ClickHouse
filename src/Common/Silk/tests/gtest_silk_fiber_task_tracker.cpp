@@ -298,7 +298,9 @@ TEST_F(SilkFiberTaskTrackerTest, SharedLimitBoundsTasksOfAllTrackers)
     EXPECT_LE(max_active, 2);
 }
 
-/// With a limit of one permit, the next task can start only if the permit of a task that never ran came back.
+/// With a limit of one permit, the next task can start only if the permit of a task that never ran came back. A fiber that
+/// ends before running its task returns its permit when the caller waits for it, so `add` waits for that fiber, which
+/// holds the only permit, and rethrows its error, while the tracker has free slots.
 TEST_F(SilkFiberTaskTrackerTest, PermitOfTaskThatDidNotRunIsReleased)
 {
     Silk::FiberSemaphore limit;
@@ -325,7 +327,7 @@ TEST_F(SilkFiberTaskTrackerTest, PermitOfTaskThatDidNotRunIsReleased)
         tracker.add([] {});
         try
         {
-            tracker.waitAll();
+            tracker.add([] {});
         }
         catch (const DB::Exception & e)
         {

@@ -85,18 +85,18 @@ int FiberTaskTracker::runTask(Slot & slot) noexcept
 void FiberTaskTracker::add(Callback && callback)
 {
     if (free_slots.empty())
-    {
-        /// Every slot is busy, so every future belongs to a started task.
-        const size_t index = silk::FiberFuture::waitForMultiple(futures.data(), futures.size());
-        if (auto exception = finish(index))
-            std::rethrow_exception(exception);
-    }
+        waitForAnyTask();
+
+    /// Taken before the slot is chosen: waiting for a permit may finish a task and free its slot.
+    std::optional<FiberSemaphore::Permit> permit;
+    if (limit)
+        permit.emplace(takePermit());
 
     const size_t index = free_slots.back();
     Slot & slot = slots[index];
 
-    if (limit)
-        slot.permit.emplace(*limit);
+    if (permit)
+        slot.permit.emplace(std::move(*permit));
 
     slot.callback = std::move(callback);
     slot.thread_group = thread_group;
@@ -128,6 +128,29 @@ void FiberTaskTracker::add(Callback && callback)
 
     slot.started = true;
     free_slots.pop_back();
+}
+
+void FiberTaskTracker::waitForAnyTask()
+{
+    chassert(free_slots.size() < slot_count);
+
+    /// The futures of free slots are not set, so the future that is set belongs to a started task.
+    const size_t index = silk::FiberFuture::waitForMultiple(futures.data(), futures.size());
+    if (auto exception = finish(index))
+        std::rethrow_exception(exception);
+}
+
+FiberSemaphore::Permit FiberTaskTracker::takePermit()
+{
+    /// A fiber that ends before running its task returns its permit only in `finish`, which runs in the caller. While
+    /// tasks of this tracker are started, the caller waits for them instead, as their permits may be the only ones left.
+    while (free_slots.size() < slot_count)
+    {
+        if (auto permit = limit->tryTakePermit())
+            return std::move(*permit);
+        waitForAnyTask();
+    }
+    return FiberSemaphore::Permit(*limit);
 }
 
 std::exception_ptr FiberTaskTracker::finish(size_t index)
