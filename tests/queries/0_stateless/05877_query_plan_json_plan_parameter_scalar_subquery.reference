@@ -1,0 +1,4 @@
+aggregate_parameter	2	Scalar	['Aggregating']
+window_frame	2	Scalar	['Window']
+window_function_parameter	2	Scalar	['Window']
+with_fill	2	Scalar	['Filling']

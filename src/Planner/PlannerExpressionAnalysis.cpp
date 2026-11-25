@@ -330,6 +330,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     aggregation_analysis_result.aggregate_descriptions = std::move(aggregates_descriptions);
     aggregation_analysis_result.grouping_sets_parameters_list = std::move(grouping_sets_parameters_list);
     aggregation_analysis_result.group_by_with_constant_keys = group_by_with_constant_keys;
+    for (const auto & aggregate_function_node : aggregate_function_nodes)
+        collectConstantScalarSubqueryIds(
+            aggregate_function_node->as<FunctionNode &>().getParametersNode(), aggregation_analysis_result.parameter_scalar_subquery_ids);
 
     return aggregation_analysis_result;
 }

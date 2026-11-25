@@ -1027,4 +1027,27 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     return step;
 }
 
+void collectConstantScalarSubqueryIds(const QueryTreeNodePtr & node, std::vector<size_t> & ids)
+{
+    if (!node)
+        return;
+
+    /// A constant already carries the ids of everything folded into it.
+    if (const auto * constant = node->as<ConstantNode>())
+    {
+        const auto & constant_ids = constant->getScalarSubqueryIds();
+        ids.insert(ids.end(), constant_ids.begin(), constant_ids.end());
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        collectConstantScalarSubqueryIds(child, ids);
+}
+
+void addConsumedSubqueryIds(IQueryPlanStep & step, const std::vector<size_t> & ids)
+{
+    for (size_t id : ids)
+        step.addConsumedSubqueryId(id);
+}
+
 }

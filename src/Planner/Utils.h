@@ -157,4 +157,15 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
 
+/// Appends to `ids` the ids of the scalar subqueries whose values went into the constants under `node`.
+///
+/// A step that keeps such a value as a plain field rather than in an `ActionsDAG` -- a window frame
+/// bound, an aggregate function parameter, a `WITH FILL` bound -- cannot be linked to the subquery
+/// by `QueryPlanLogCapture::recordConsumedSubqueries`, which only looks inside the DAGs. The planner
+/// collects the ids from the query tree and puts them on the step instead.
+void collectConstantScalarSubqueryIds(const QueryTreeNodePtr & node, std::vector<size_t> & ids);
+
+/// Marks `step` as reading the scalar subqueries `ids`.
+void addConsumedSubqueryIds(IQueryPlanStep & step, const std::vector<size_t> & ids);
+
 }

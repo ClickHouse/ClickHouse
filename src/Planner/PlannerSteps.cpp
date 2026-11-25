@@ -24,6 +24,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
@@ -851,6 +852,7 @@ void addAggregationStep(QueryPlan & query_plan,
     if (!query_analysis_result.aggregate_final)
         applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
 
+    addConsumedSubqueryIds(*aggregating_step, aggregation_analysis_result.parameter_scalar_subquery_ids);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -1009,6 +1011,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::max_block_size],
         settings[Setting::aggregation_in_order_max_block_bytes],
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
+    addConsumedSubqueryIds(*merging_aggregated, aggregation_analysis_result.parameter_scalar_subquery_ids);
     query_plan.addStep(std::move(merging_aggregated));
 
     /// Reconstruct the canonical aggregated layout the rest of the plan expects: all original aggregation keys first,
@@ -1444,6 +1447,17 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         query_analysis_result.sort_description,
         interpolate_description,
         settings[Setting::use_with_fill_by_sorting_prefix]);
+    /// `WITH FILL` bounds, step and staleness are kept as values in the sort description.
+    std::vector<size_t> fill_scalar_subquery_ids;
+    for (const auto & sort_node : query_node.getOrderBy().getNodes())
+    {
+        const auto & sort_node_typed = sort_node->as<const SortNode &>();
+        collectConstantScalarSubqueryIds(sort_node_typed.getFillFrom(), fill_scalar_subquery_ids);
+        collectConstantScalarSubqueryIds(sort_node_typed.getFillTo(), fill_scalar_subquery_ids);
+        collectConstantScalarSubqueryIds(sort_node_typed.getFillStep(), fill_scalar_subquery_ids);
+        collectConstantScalarSubqueryIds(sort_node_typed.getFillStaleness(), fill_scalar_subquery_ids);
+    }
+    addConsumedSubqueryIds(*filling_step, fill_scalar_subquery_ids);
     query_plan.addStep(std::move(filling_step));
 }
 
@@ -1819,6 +1833,7 @@ void addWindowSteps(QueryPlan & query_plan,
         auto window_step
             = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window_description, window_description.window_functions, streams_fan_out, sort_settings);
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'", max_step_description_length);
+        addConsumedSubqueryIds(*window_step, window_description.scalar_subquery_ids);
         query_plan.addStep(std::move(window_step));
     }
 }

@@ -39,6 +39,10 @@ struct AggregationAnalysisResult
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
+    /// Ids of the scalar subqueries whose values became parameters of the aggregate functions, as in
+    /// `quantile((SELECT 0.5))(x)`. `AggregateDescription` keeps parameters as values, so the steps
+    /// that aggregate are linked to the subqueries through these.
+    std::vector<size_t> parameter_scalar_subquery_ids;
 };
 
 struct WindowAnalysisResult

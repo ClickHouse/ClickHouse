@@ -105,6 +105,11 @@ struct WindowDescription
     // The window functions that are calculated for this window.
     VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
 
+    /// Ids of the scalar subqueries whose values became the frame bounds or the parameters of the
+    /// window functions. Those are kept as values, not expressions, so the step that computes the
+    /// window is linked to the subqueries through these.
+    std::vector<size_t> scalar_subquery_ids;
+
     [[nodiscard]] std::string dump() const;
 
     void checkValid() const;

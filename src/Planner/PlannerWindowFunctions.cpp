@@ -49,6 +49,10 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
 
     /// WINDOW frame is validated during query analysis stage
     window_description.frame = window_node.getWindowFrame();
+    if (window_node.hasFrameBeginOffset())
+        collectConstantScalarSubqueryIds(window_node.getFrameBeginOffsetNode(), window_description.scalar_subquery_ids);
+    if (window_node.hasFrameEndOffset())
+        collectConstantScalarSubqueryIds(window_node.getFrameEndOffsetNode(), window_description.scalar_subquery_ids);
 
     const auto & query_context = planner_context.getQueryContext();
     const auto & query_context_settings = query_context->getSettingsRef();
@@ -106,6 +110,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
         {
             /// Function parameters constness validated during analysis stage
             window_function.function_parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
+            collectConstantScalarSubqueryIds(parameter_node, window_description.scalar_subquery_ids);
         }
 
         const auto & arguments_nodes = window_function_node_typed.getArguments().getNodes();
