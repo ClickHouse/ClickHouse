@@ -18,6 +18,12 @@ unassigned, private use and noncharacter code points
 Cannot parse string '1\xCD\xB8' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
 Cannot parse string '1\xEE\x80\x80' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
 Cannot parse string '1\xEF\xBF\xBE' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Unicode spaces and Hangul fillers
+Cannot parse string '765870\xC2\xA0' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\xE3\x80\x80' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '765870\xE3\x85\xA4' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+the ASCII space is kept
+Cannot parse string '1 2' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
 invalid UTF-8
 Cannot parse string '765870\xFF' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
 Cannot parse string '1\x80' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
