@@ -99,8 +99,10 @@ SELECT id, r.u FROM (SELECT id, JSONMergePatch(c, '{"u":{"a":9}}') AS r FROM t_m
 SELECT id, r.m FROM (SELECT id, JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM t_map) ORDER BY id SETTINGS output_format_json_map_as_array_of_tuples = 1;
 SELECT JSONAllPathsWithTypes(r)['t'] FROM (SELECT JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM (SELECT CAST('{"t":"2020-01-01 10:00:00","m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c)) SETTINGS date_time_output_format = 'unix_timestamp';
 SELECT JSONAllPathsWithTypes(CAST(c, 'JSON(b UInt32)'))['a'] FROM (SELECT '{"a":0.5,"b":1}'::JSON AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_64bit_floats = 1;
-SELECT JSONAllPathsWithTypes(JSONMergePatch('{"a":1}'::JSON, CAST('{"k":1.5}', 'JSON(k Decimal(10, 2))')))['k'] SETTINGS output_format_json_quote_decimals = 1;
-SELECT JSONAllPathsWithTypes(CAST(c, 'JSON(b UInt32)'))['k'] FROM (SELECT CAST('{"k":1.5,"b":1}', 'JSON(k Decimal(10, 2))') AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_decimals = 1;
+SELECT r.d, r.d = o.d FROM (SELECT JSONMergePatch(c, '{"m":{"y":2}}') AS r, JSONMergePatch(c::String, '{"m":{"y":2}}')::JSON(d Decimal(30, 2), m Map(String, UInt8)) AS o FROM (SELECT CAST('{"d":"9007199254740993.01","m":{"x":1}}', 'JSON(d Decimal(30, 2), m Map(String, UInt8))') AS c)) SETTINGS output_format_json_quote_decimals = 1;
+SELECT JSONMergePatch(CAST('{}', 'JSON(d Decimal(30, 2))'), CAST('{"d":"9007199254740993.01"}', 'JSON(d Decimal(30, 2))')).d SETTINGS output_format_json_quote_decimals = 1;
+SELECT CAST(c, 'JSON(d Decimal(30, 2), x UInt8)').d, CAST(c, 'JSON(d Decimal(38, 4))').d FROM (SELECT CAST('{"d":"9007199254740993.01"}', 'JSON(d Decimal(30, 2))') AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_decimals = 1;
+SELECT CAST(c, 'JSON(d Decimal(30, 2), x UInt8)').d, CAST(c, 'JSON(d Decimal(38, 4))').d FROM (SELECT CAST('{"d":"9007199254740993.01"}', 'JSON(d Decimal(30, 2))') AS c) SETTINGS json_use_optimized_type_conversion = 1, output_format_json_quote_decimals = 1;
 SELECT hex(r.s) FROM (SELECT JSONMergePatch(CAST('{}', 'JSON(s String)'), CAST('{"s":"x"}', 'JSON(s FixedString(2))')) AS r) SETTINGS output_format_trim_fixed_string = 1;
 SELECT hex(r.s) FROM (SELECT JSONMergePatch(CAST('{}', 'JSON(s String)'), CAST('{"s":"x"}', 'JSON(s FixedString(2))')) AS r) SETTINGS output_format_trim_fixed_string = 0;
 SELECT hex(CAST(c, 'JSON').s::String) FROM (SELECT CAST('{"s":"x"}', 'JSON(s FixedString(2))') AS c) SETTINGS output_format_trim_fixed_string = 1;

@@ -544,14 +544,14 @@ UInt64 getFormatSettingsHash(const Settings & settings)
 }
 
 /// Settings for writing values as JSON text that is parsed back right away: numbers unquoted (inf and nan
-/// quoted, JSON has no number for them), maps and named tuples as objects.
+/// quoted, JSON has no number for them), maps and named tuples as objects. Decimals keep the user's quoting:
+/// an unquoted decimal is read back through Float64.
 FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
 {
     FormatSettings result = format_settings;
     result.json.quote_64bit_integers = false;
     result.json.quote_denormals = true;
     result.json.quote_64bit_floats = false;
-    result.json.quote_decimals = false;
     result.json.write_named_tuples_as_objects = true;
     result.json.skip_null_value_in_named_tuples = false;
     result.json.write_map_as_array_of_tuples = false;
