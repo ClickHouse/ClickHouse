@@ -7555,7 +7555,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New experimental setting to let the query condition cache serve conditions with bounds that change from query to query (e.g. `WHERE time >= now() - INTERVAL 10 DAY`, literal bounds moved by a dashboard refresh, or another threshold of a numeric condition) by reusing the entries of earlier variants with other bounds; disabled by default."}) \
+        {"26.12", false, false, "New experimental setting to let the query condition cache serve conditions with bounds that change from query to query (e.g. `WHERE time >= now() - INTERVAL 10 DAY`, literal bounds moved by a dashboard refresh, or another threshold of a numeric condition) by reusing the entries of earlier variants with other bounds; disabled by default."}) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -12192,10 +12192,10 @@ Enable table function `eval`.
         {"26.11", 100, 100, "Obsolete setting: there is no queue between Iceberg manifest parsing and the query any more."}, \
         {"26.9", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."}) \
     MAKE_OBSOLETE(M, Bool, use_query_condition_cache_for_time_conditions, false, \
-        {"26.11", false, false, "Obsolete setting: the derivation of a deterministic condition by rounding the current time onto a grid was removed. Conditions involving the current time are served by `use_query_condition_cache_for_changing_bounds`."}, \
+        {"26.12", false, false, "Obsolete setting: the derivation of a deterministic condition by rounding the current time onto a grid was removed. Conditions involving the current time are served by `use_query_condition_cache_for_changing_bounds`."}, \
         {"26.10", false, false, "New experimental setting to let the query condition cache serve conditions that involve the current time (e.g. `WHERE time >= now() - INTERVAL 10 DAY`) by deriving a deterministic condition with the time constant rounded onto a grid; disabled by default."}) \
     MAKE_OBSOLETE(M, Float, query_condition_cache_time_condition_grid_factor, 1.0, \
-        {"26.11", 1., 1., "Obsolete setting: the derivation of a deterministic condition by rounding the current time onto a grid was removed."}, \
+        {"26.12", 1., 1., "Obsolete setting: the derivation of a deterministic condition by rounding the current time onto a grid was removed."}, \
         {"26.10", 1., 1., "New experimental setting: the grid step used when deriving deterministic conditions from conditions involving the current time for the query condition cache, as a fraction of the distance between the time constant and the current time."})
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
