@@ -1070,6 +1070,24 @@ std::optional<QValue> QCompiler::resolveTable(const String & name)
     }
     checkNoReservedNames(columns);
 
+    /// `SELECT *` does not return the `MATERIALIZED` and `ALIAS` columns, and the query layers that are put between
+    /// a table and the result use it (to number the rows, to add a column). So a table with such columns is read
+    /// through a subquery that names its columns: for the layers they are the columns of that subquery, like any other.
+    /// The columns that the program does not use are not read, so they need no grant, as before.
+    NameSet ordinary_columns;
+    for (const auto & column : metadata->getColumns().getOrdinary())
+        ordinary_columns.insert(column.name);
+    bool has_computed_columns = std::any_of(columns.begin(), columns.end(),
+        [&](const NameAndTypePair & column) { return !ordinary_columns.contains(column.name); });
+    if (has_computed_columns)
+    {
+        QSelectBuilder named;
+        named.from = table_expression;
+        for (const auto & column : columns)
+            named.select.push_back(makeIdentifier(column.name));
+        table_expression = makeSubqueryTableExpression(named.build());
+    }
+
     auto result_table = std::make_shared<QTable>();
     result_table->table_expression = table_expression;
     result_table->columns = std::move(columns);
