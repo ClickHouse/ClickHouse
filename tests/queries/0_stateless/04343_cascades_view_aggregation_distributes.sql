@@ -18,7 +18,6 @@ INSERT INTO dims VALUES (1, 'a');
 CREATE VIEW agg_view AS SELECT key AS k, sum(val) AS total FROM facts GROUP BY key;
 
 SET explain_query_plan_default = 'legacy';
-SET allow_experimental_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
@@ -40,7 +39,7 @@ SET param__internal_join_table_stat_hints = '{
 EXPLAIN SELECT d.name, total FROM dims AS d, agg_view WHERE d.key = k ORDER BY d.name;
 
 -- The distributed plan returns the same result as a single-node plan.
-SELECT d.name, total FROM dims AS d, agg_view WHERE d.key = k ORDER BY d.name;
+SELECT d.name, total FROM dims AS d, agg_view WHERE d.key = k ORDER BY d.name SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP VIEW agg_view;
 DROP TABLE facts;

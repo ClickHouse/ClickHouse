@@ -16,6 +16,8 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 
 이 명령은 메타데이터만 변경하므로 비교적 가벼운 작업입니다. 데이터 파트의 행이 정렬 키 표현식 순서대로 정렬된 상태를 유지해야 하므로, 기존 컬럼을 포함하는 표현식은 정렬 키에 추가할 수 없습니다(동일한 `ALTER` 쿼리의 `ADD COLUMN` 명령으로 추가되었고 기본 컬럼 값이 없는 컬럼만 예외적으로 허용됨).
 
+같은 이유로 `new_expression`에서 유지되는 정렬 키 컬럼의 정렬 방향(`ASC` 또는 `DESC`)도 변경할 수 없습니다. 기존 파트는 기록 당시 컬럼의 정렬 방향으로 물리적으로 정렬된 상태로 유지되며, 일반 데이터 파트에는 해당 방향이 기록되지 않습니다. 다른 방향을 사용하려면 원하는 `ORDER BY`로 새 테이블을 만들고 `INSERT ... SELECT`를 사용해 데이터를 복사하십시오.
+
 <Note>
   이 기능은 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열의 테이블([복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블 포함)에서만 작동합니다.
 </Note>

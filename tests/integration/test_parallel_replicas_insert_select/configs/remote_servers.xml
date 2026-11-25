@@ -34,6 +34,19 @@
                 </replica>
             </shard>
         </test_1_shard_3_replicas_1_unavailable>
+        <test_1_shard_2_replicas_1_unavailable>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>1234</port>
+                </replica>
+            </shard>
+        </test_1_shard_2_replicas_1_unavailable>
     </remote_servers>
 </clickhouse>
 

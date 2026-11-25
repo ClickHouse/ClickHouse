@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
-  ## type_json_allow_duplicated_key_with_literal_and_nested_object
-</div>
+## type_json_allow_duplicated_key_with_literal_and_nested_object {#type_json_allow_duplicated_key_with_literal_and_nested_object}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Cuando está habilitado, se permite analizar JSON como `{"a" : 42, "a" : {"b" : 42}}`, en los que alguna clave está duplicada, pero una de ellas es un objeto anidado.
 
-<div id="type_json_skip_duplicated_paths">
-  ## type_json_skip_duplicated_paths
-</div>
+## type_json_skip_duplicate_key_detection {#type_json_skip_duplicate_key_detection}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Si está habilitado, al analizar un objeto JSON en el tipo JSON se ignorarán las rutas duplicadas y solo se insertará la primera en lugar de una excepció
+Cuando está habilitado, al analizar un objeto JSON en el tipo `JSON` se omite la detección de claves duplicadas en cada objeto, lo que acelera el análisis de objetos con muchas claves. Actívelo solo cuando se sepa que los objetos tienen claves únicas. Garantizarlo es responsabilidad del usuario: si realmente existe una clave duplicada, el valor no se corrompe (las rutas que colisionan se siguen rechazando u omitiendo como duplicadas y la fila se revierte), pero una clave duplicada que combina un literal y un objeto anidado ya no se fusiona de forma especial, independientemente del valor de `type_json_allow_duplicated_key_with_literal_and_nested_object`.
 
-<div id="type_json_skip_invalid_typed_paths">
-  ## type_json_skip_invalid_typed_paths
-</div>
+## type_json_skip_duplicated_paths {#type_json_skip_duplicated_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Si está habilitado, al analizar un objeto JSON en el tipo JSON se ignorarán las rutas duplicadas y solo se insertará la primera en lugar de una excepción
+
+## type_json_skip_invalid_typed_paths {#type_json_skip_invalid_typed_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +43,18 @@ Valores posibles:
 * 0 — Deshabilitar (generar un error en caso de incompatibilidad de tipo).
 * 1 — Habilitar (omitir el campo en caso de incompatibilidad de tipo).
 
-<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
-  ## type_json_use_partial_match_to_skip_paths_by_regexp
-</div>
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Cuando está habilitado, las rutas tipadas de las columnas JSON con valores NULL se tratan como ausentes, igual que ocurre con las rutas dinámicas. Esto afecta a la salida de la serialización JSON, a las funciones de introspección como `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has`, y a las comprobaciones `empty`/`notEmpty`.
+
+Valores posibles:
+
+* 0 — Deshabilitar (las rutas tipadas siempre están presentes, incluso con valores NULL).
+* 1 — Habilitar (las rutas tipadas con NULL se tratan como ausentes).
+
+## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

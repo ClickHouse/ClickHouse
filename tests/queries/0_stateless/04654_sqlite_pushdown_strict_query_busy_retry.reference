@@ -1,0 +1,4 @@
+Strict pushdown query over a locked database succeeds after the lock is released:
+42
+Query sent to SQLite retains the pushed-down filter:
+Query: SELECT `x` FROM `t` WHERE `x` = 42

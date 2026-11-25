@@ -97,6 +97,8 @@ ORDER BY event_time_microseconds;
 If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
 </Tip>
 
+What a query runs under the identity of a `SQL SECURITY DEFINER` or `NONE` view or materialized view is logged as a child row of the query: a read of the view, a read through the materialized view, an insert into it, or its query run on `INSERT` into its source table. In such a row, `is_initial_query = 0`, `initial_query_id` is the query, `user` is the definer (empty for `NONE`), `query` is what ran (the view's query, or the read or write of the materialized view's target), and `tables`, `columns`, `partitions`, `projections` and `used_row_policies` are what it accessed. There is one row per distinct body and place it ran, with the type of the query's final row and no metrics.
+
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
 1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created.
@@ -378,7 +380,7 @@ Contains stack traces collected by the [sampling query profiler](/concepts/featu
 ClickHouse creates this table when the [trace_log](/reference/settings/server-settings/settings/other#trace_log) server configuration section is set. Also see settings: [query_profiler_real_time_period_ns](/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns), [query_profiler_cpu_time_period_ns](/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns), [memory_profiler_step](/reference/settings/session-settings/memory-profiler#memory_profiler_step),
 [memory_profiler_sample_probability](/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability), [trace_profile_events](/reference/settings/session-settings/trace-profile-events#trace_profile_events).
 
-When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so you can analyze the logs directly without introspection functions. The `symbolize` setting applies to profiler-collected trace types; rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. Function names in `symbols` come from the binary's symbol table and are available by default, while source locations in `lines` are best-effort: they require debug info (a `.dSYM` bundle on macOS) and, on ELF platforms, are resolved only for frames inside the main ClickHouse binary; unresolved frames have empty `lines` entries.
+When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so you can analyze the logs directly without introspection functions. The `symbolize` setting applies to profiler-collected trace types; rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. Function names in `symbols` come from the binary's symbol table and are available by default, while source locations in `lines` are best-effort: they require debug info (a `.dSYM` bundle on macOS) and are resolved for whichever loaded object (the main ClickHouse binary or a shared library) contains the frame's address; unresolved frames have empty `lines` entries.
 If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` introspection functions. These functions are available on the same platforms as symbolization (ELF platforms such as Linux, and macOS); on FreeBSD they are not compiled in either, so the addresses in `trace` have to be resolved outside the server.
 
 ## Converting to Chrome Event Trace Format {#chrome-event-trace-format}
@@ -569,19 +571,25 @@ CurrentMetric_DistributedFilesToInsert:                          0
 ```
 
 **Schema**
-This table can be configured with different schema types using the XML tag `<schema_type>`. The default schema type is `wide`, where each metric or profile event is stored as a separate column. This schema is the most performant and efficient for single-column reads.
+This table can be configured with different schema types using the XML tag `<schema_type>`. The default schema type is `bucketed`. The example above shows the `wide` schema.
 
-The `bucketed` schema stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)), so the table consists of a few columns instead of thousands. The `Map` uses the bucketed serialization (`map_serialization_version = 'with_buckets'`) with a constant number of 128 buckets, so reading a single metric reads only one of the 128 buckets. Zero values are not stored: reading a missing key returns `0`. Every metric is also exposed through an `ALIAS` column named as the metric itself (for example, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), so all queries written for the `wide` schema continue to work. Profile events are stored as increments during the collection interval, and current metrics are stored as values at the moment of collection.
+The `bucketed` schema stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)), so the table consists of a few columns instead of thousands. The `Map` uses the bucketed serialization (`map_serialization_version = 'with_buckets'`) with a constant number of 128 buckets, so reading a single metric reads only one of the 128 buckets. Zero values are not stored: reading a missing key returns `0`. Every metric is also exposed through an `ALIAS` column named as the metric itself (for example, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), so all queries written for the `wide` schema continue to work. Profile events are stored as increments during the collection interval, and current metrics are stored as values at the moment of collection. `ALIAS` columns are excluded from `SELECT *` unless `asterisk_include_alias_columns = 1`.
+
+The `wide` schema stores each metric or profile event in a separate column. It is the most efficient for single-column reads, but the table has thousands of columns, which makes merges and `SELECT *` expensive. It remains the default when `system_tables.skip_alias_columns` is enabled or when `metric_log` has an explicit `engine`, because the `bucketed` schema needs both the alias columns and its default table definition.
 
 ```xml
 <clickhouse>
     <metric_log>
-        <schema_type>bucketed</schema_type>
+        <schema_type>wide</schema_type>
     </metric_log>
 </clickhouse>
 ```
 
+Because the per-metric columns of this schema are `ALIAS` columns, it cannot be used together with a configuration that skips alias columns in system log tables (`system_tables.skip_alias_columns`, or a table engine which does not support them): the server refuses to start instead of creating a table without the `ProfileEvent_*` and `CurrentMetric_*` columns. The engine settings of the bucketed `Map` serialization are part of the default table definition, so they are not applied when the configuration specifies `<engine>` explicitly.
+
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
+
+Changing `schema_type` for a table that already exists renames the existing table to `metric_log_0` (or the next free number) and creates a new one, the same way as for any other change of the structure of a system log table. The built-in dashboards read `merge('system', '^metric_log')`, so they keep showing the data collected before the change.
 
 **Histograms**
 
@@ -609,6 +617,13 @@ LIMIT 1;
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_ERROR_LOG[] = R"DOCS_MD(
 .description
 Contains history of error values from table `system.errors`, periodically flushed to disk.
+
+.columns_notes
+<Note>
+`last_error_symbols` and `last_error_lines` are resolved from the binary's symbol table and debug info.
+`last_error_symbols` is populated wherever the symbol table is available (Linux and macOS builds).
+`last_error_lines` additionally requires DWARF debug info - read directly from the binary on Linux, or from a co-located `.dSYM` bundle on macOS - so it is empty when that debug info is not available. Both arrays are empty on platforms without introspection support (for example FreeBSD).
+</Note>
 
 .examples
 ```sql
@@ -733,7 +748,7 @@ operation_name:   DB::Block DB::InterpreterSelectQuery::getSampleBlockImpl()
 kind:             INTERNAL
 start_time_us:    1612374594529090
 finish_time_us:   1612374594529108
-finish_date:      2021-02-03
+event_date:       2021-02-03
 attribute.names:  []
 attribute.values: []
 ```
@@ -1021,6 +1036,60 @@ Here you can see:
 - `ExpressionTransform` was executing `sleep(1)` function, so it `work` will takes 1e6, and so `elapsed_us` > 1e6.
 - `SourceFromSingleChunk` need to wait, because `ExpressionTransform` does not accept any data during execution of `sleep(1)`, so it will be in `PortFull` state for 1e6 us, and so `output_wait_elapsed_us` > 1e6.
 - `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` need to wait until `ExpressionTransform` will execute `sleep(1)` to process the result, so `input_wait_elapsed_us` > 1e6.
+
+### Profiling a join {#profiling-a-join}
+
+When a query reads from several tables, every table has its own read pipeline, and rows pass through many processors on their way to the result.
+Summing `input_rows` or `output_rows` over all processors therefore counts the same rows several times and does not tell how much was read from each table.
+The following example uses two `MergeTree` tables of different sizes on a single server.
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+`EXPLAIN PIPELINE` shows one read pipeline for each side of the join (`ReadFromMergeTree`, with `MergeTreeSelect` sources below it), connected by the join processors. `join_algorithm = 'hash'` and `enable_join_runtime_filters = 0` make this example reproducible: a join runtime filter cannot prune `big` before its source emits rows.
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+To interpret the result:
+
+- Look at the source processors, whose `name` is `MergeTreeSelect(...)` (or `MergeTreeSource`) and whose `plan_step_name` is `ReadFromMergeTree`. Their `output_rows` is the number of rows each source produced. Sum it per read step (`plan_step`), not over the whole query. The value is the number of rows that the read step passed on to the rest of the pipeline.
+- Each side of the join has its own `ReadFromMergeTree` step with a different `plan_step`. In the rows from this execution, `parent_ids` lists the IDs of downstream processors. Starting from a source, recursively match every `parent_ids` value to an `id` in the same `query_id` to follow the branch towards the join. This identifies, for example, the branch that feeds `FillingRightJoinSide`.
+- Processors above the sources (for example `ExpressionTransform`, `FillingRightJoinSide`, `ConcatProcessor`, or the join transform itself) consume and produce rows derived from the sources. Do not add their counters to the source counters, because that counts the same rows again.
+- The step information is not always enough to identify a source. `EXPLAIN PIPELINE` is a separate plan: it helps compare processor names and branch shapes, but its plain-text output has neither the logged `id` values nor `parent_ids`. If both tables have similar step descriptions, use the graph from the executed query and the known row counts. In this example, the read sources for `big` sum to 1,000,000 rows and those for `small` sum to 1,000 rows.
+- The row and byte counters of processors describe the data passing through the pipeline, not physical storage reads. They do not include granules or marks that were read and then filtered out, they are affected by the primary key and other index filtering, `PREWHERE`, and column pruning, and they do not reflect compressed bytes read from disk. `SelectedRows`, `SelectedBytes`, and `SelectedMarks` in `system.query_log` are logical selection statistics: they can be nonzero when all data comes from cache. To investigate file reads, use `ReadBufferFromFileDescriptorReadBytes`, which includes reads served by the OS page cache. To investigate local disk or block-device reads that exclude the OS page cache, use `OSReadBytes`.
 
 .see_also
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
@@ -1614,7 +1683,7 @@ protected:
 class ParserStorageWithComment : public IParserBase
 {
 protected:
-    const char * getName() const override { return "storage definition with comment"; }
+    [[nodiscard]] const char * getName() const override { return "storage definition with comment"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
@@ -1707,17 +1776,28 @@ public:
 #undef DECLARE_PUBLIC_MEMBERS
 
 private:
-    std::vector<ISystemLog *> getAllLogs() const;
+    [[nodiscard]] std::vector<ISystemLog *> getAllLogs() const;
 
     void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
+
+#if CLICKHOUSE_CLOUD
+struct CloudLogDescriptor;
+#endif
 
 struct SystemLogSettings
 {
     SystemLogQueueSettings queue_settings;
 
     String engine;
+    UInt64 flush_overcommit_wait_time_microseconds = 0;
     bool symbolize_traces = false;
+
+#if CLICKHOUSE_CLOUD
+    /// Default keys of the `SharedMergeTree` table of the log pipeline, overridable per log in the config.
+    String pipeline_default_partition_by;
+    String pipeline_default_order_by;
+#endif
 
     /// Settings of the `all_...` union table over the log table, its rotated versions and/or
     /// the same tables across a cluster. See the `create_union_system_log_tables` section
@@ -1766,9 +1846,14 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() const { return table_id; }
+    [[nodiscard]] const StorageID & getTableID() const { return table_id; }
 
     ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
+
+#if CLICKHOUSE_CLOUD
+    /// Describes the log to the SharedMergeTree log pipeline.
+    [[nodiscard]] CloudLogDescriptor makePipelineDescriptor() const;
+#endif
 
     void setManualFlushTargetIndex(ISystemLog::Index target_index) override
     {
@@ -1780,7 +1865,7 @@ protected:
 
     using Base::queue;
 
-    StoragePtr getStorage() const;
+    [[nodiscard]] StoragePtr getStorage() const;
 
     /// Some tables can override settings for internal queries
     virtual void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const;
@@ -1794,6 +1879,9 @@ private:
     const String storage_def;
     const bool union_table_merge_rotated_tables;
     const String union_table_cluster;
+    const UInt64 flush_overcommit_wait_time_microseconds;
+    /// Outlives the flush thread group, whose memory tracker keeps only a pointer to it.
+    const String flush_memory_tracker_description;
     std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
     String create_query;
     String old_create_query;
@@ -1803,11 +1891,31 @@ private:
     /// Whether the definition of the union table has to be verified against the expected one.
     /// This is done at the first flush and after each rotation of the log table; on other
     /// flushes the union table is only recreated if it went missing (e.g. dropped by a user).
+    /// Also cleared when the name is occupied by a table that was not created by this feature:
+    /// such a table is left intact until it is dropped or renamed by the user.
     bool union_table_check_pending = true;
     /// Set when the union table cannot be created (e.g. the configured cluster does not exist)
     /// or the database engine does not support it, to avoid retrying the creation and polluting
     /// the log on every flush. Reset on rotation of the log table.
     bool union_table_broken = false;
+
+#if CLICKHOUSE_CLOUD
+    String pipeline_default_partition_by;
+    String pipeline_default_order_by;
+    /// Rate limits the recreation of the queue and the view of this log when they went missing.
+    time_t last_consumer_bootstrap_time = 0;
+    /// After a failure `system.<log>` is prepared again at a flush after this time.
+    time_t union_table_retry_time = 0;
+    /// The last table seen under the name `system.<log>`. A table of another UUID is verified again.
+    UUID union_table_checked_uuid = UUIDHelpers::Nil;
+    /// The generation written last. The columns of `system.<log>` follow the generation, so a change
+    /// of it re-arms the check of that table with a definition built from the current columns.
+    String last_generation_hash;
+
+    /// With the log pipeline the table is owned by the bootstrap. A flush reconciles the pipeline of the log
+    /// once per generation and server start, and when the queue or the view consuming its files is missing.
+    void preparePipeline();
+#endif
 
     void savingThreadFunction() override;
 

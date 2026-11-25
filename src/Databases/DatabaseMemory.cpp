@@ -8,6 +8,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Storages/IStorage.h>
@@ -20,6 +22,13 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
+}
+
+static ASTPtr parseCreateQuery(std::string_view query)
+{
+    ParserCreateQuery parser;
+    return parseQueryFromText(parser, query);
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
@@ -41,6 +50,12 @@ void DatabaseMemory::createTable(
 {
     ensurePopulated();
     std::lock_guard lock{mutex};
+
+    /// A detached table keeps its definition and dependencies under its name, only a short `ATTACH` may reuse it.
+    const auto * create_query = query ? query->as<ASTCreateQuery>() : nullptr;
+    if (!create_query || !create_query->attach_short_syntax)
+        checkMetadataFilenameAvailabilityUnlocked(table_name);
+
     attachTableUnlocked(table_name, table);
 
     /// Clean the query from temporary flags.
@@ -54,7 +69,7 @@ void DatabaseMemory::createTable(
         cleanupObjectDefinitionFromTemporaryFlags(*create);
     }
 
-    create_queries.emplace(table_name, query_to_store);
+    create_queries.emplace(table_name, query_to_store ? query_to_store->formatWithSecretsOneLine<SecretString>() : SecretString());
 }
 
 void DatabaseMemory::dropTable(
@@ -117,13 +132,27 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     ensurePopulated();
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
-    if (it == create_queries.end() || !it->second)
+    if (it == create_queries.end() || it->second.empty())
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
         return {};
     }
-    return it->second->clone();
+    return parseCreateQuery(it->second);
+}
+
+void DatabaseMemory::checkMetadataFilenameAvailability(const String & table_name) const
+{
+    ensurePopulated();
+    std::lock_guard lock{mutex};
+    checkMetadataFilenameAvailabilityUnlocked(table_name);
+}
+
+void DatabaseMemory::checkMetadataFilenameAvailabilityUnlocked(const String & table_name) const
+{
+    if (snapshot_detached_tables.contains(table_name))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
+                        backQuote(database_name), backQuote(table_name));
 }
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
@@ -166,10 +195,10 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
 
         auto it_query = create_queries.find(table_id.table_name);
-        if (it_query == create_queries.end() || !it_query->second)
+        if (it_query == create_queries.end() || it_query->second.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-        create_query = it_query->second->clone();
+        create_query = parseCreateQuery(it_query->second);
     }
 
     /// Apply metadata changes to the cloned AST without holding a lock to avoid possible deadlock
@@ -178,12 +207,12 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
 
     {
         std::lock_guard lock{mutex};
-        create_queries[table_id.table_name] = create_query;
+        create_queries[table_id.table_name] = create_query->formatWithSecretsOneLine<SecretString>();
     }
 
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
@@ -250,7 +279,7 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Memory", create_fn, {}, Documentation{
+    factory.registerDatabase("Memory", create_fn, SecretArgumentsSpec{}, {}, Documentation{
         .description = R"DOCS_MD(
 The `Memory` database engine keeps its metadata and table definitions only in memory. It is intended for temporary databases: the database and its tables are lost when the server stops or restarts.
 
