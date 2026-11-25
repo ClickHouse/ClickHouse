@@ -1593,8 +1593,9 @@ void pushOrderByIntoView(
     try
     {
         auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
-        /// A view body is read as written.
-        view_context->setAllowCompoundTableIdentifierQualification(false);
+        /// As in `getViewContext`: only the query of a table function such as `view` is not a stored definition.
+        view_context->setAllowCompoundTableIdentifierQualification(
+            storage->getStorageID().database_name == ITableFunction::getDatabaseName());
 
         /// The injected inner `ORDER BY`/`LIMIT` is analyzed and executed under the
         /// view's effective context (`getSQLSecurityOverriddenContext`), not the outer
@@ -2510,9 +2511,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// StorageView::readImpl path enforces them in the correct namespace.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
 
-                        /// A view body is read as written.
+                        /// A stored view body is read as written, the query of a table function such as `view` is not.
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
-                        options.allowCompoundTableIdentifierQualification(false);
+                        options.allowCompoundTableIdentifierQualification(view->getStorageID().database_name == ITableFunction::getDatabaseName());
                         InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.

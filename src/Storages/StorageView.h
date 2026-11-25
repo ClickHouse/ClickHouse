@@ -80,9 +80,6 @@ public:
 
     static ContextPtr getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot);
 
-    /// A copy of the query of a table function such as `view`, rewritten like a stored view body: table names get the current database.
-    static ASTPtr qualifyQueryOfTableFunction(const ASTPtr & query, const ContextPtr & context);
-
 protected:
     bool is_parameterized_view;
 };

@@ -2496,10 +2496,9 @@ You can also spell out every part with dots:
 - SQL stored in definitions (view and materialized view bodies, row policy
   conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS`
   expressions, `ClickHouse` dictionary source queries executed on the same
-  server) always reads `a.b` as database `a`, table `b`. So does the query
-  argument of table functions `view`, `viewIfPermitted` and `eval`; the query
-  argument of `obfuscate` and `explain` keeps the two-part rule. In a stored
-  definition and in these table functions, reference a catalog table as
+  server) always reads `a.b` as database `a`, table `b`; the query argument of
+  table functions `view`, `viewIfPermitted`, `eval`, `obfuscate` and `explain`
+  keeps the two-part rule. In a stored definition, reference a catalog table as
   ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` in a table expression is stored as
   the quoted name. As the right operand of `IN` (`x IN catalog_name.ns.t`) and as a column qualifier
   (`catalog_name.ns.t.x`) it is stored as written and needs the setting whenever the definition is

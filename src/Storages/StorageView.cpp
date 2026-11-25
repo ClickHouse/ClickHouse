@@ -3,8 +3,6 @@
 #include <Access/User.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -28,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
@@ -83,7 +82,6 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
-    extern const SettingsUInt64 max_expanded_ast_elements;
 }
 
 namespace ErrorCodes
@@ -365,8 +363,9 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
-    /// A view body is read as written; a table function qualifies its query before it creates the view.
-    view_context->setAllowCompoundTableIdentifierQualification(false);
+    /// The query of a table function such as `view` is a part of the query that calls it, not a stored definition.
+    view_context->setAllowCompoundTableIdentifierQualification(
+        view->getStorageID().database_name == ITableFunction::getDatabaseName());
     return view_context;
 }
 
@@ -590,14 +589,14 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     {
         inner_query_tree = buildQueryTree(inner_query_ast->clone(), context);
         QueryTreePassManager pass_manager(context);
-        /// A view body is read as written.
+        /// A stored view body reads table names as written; the query of a table function such as `view` does not.
         addQueryTreePasses(
             pass_manager,
             /*only_analyze=*/ false,
             /*positional_arguments_already_resolved=*/ false,
             /*replaced_storage=*/ nullptr,
             /*view_source_in_subqueries=*/ false,
-            /*allow_compound_table_identifier_qualification=*/ false);
+            /*allow_compound_table_identifier_qualification=*/ getStorageID().database_name == ITableFunction::getDatabaseName());
         pass_manager.runOnlyResolve(inner_query_tree);
         /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
         if (containsCorrelatedSubquery(inner_query_tree))
@@ -1005,19 +1004,6 @@ Used for implementing views (for more information, see the `CREATE VIEW query`).
 )DOCS_MD",
         .syntax = "CREATE VIEW name AS SELECT ...",
         .related = {"MaterializedView"}});
-}
-
-ASTPtr StorageView::qualifyQueryOfTableFunction(const ASTPtr & query, const ContextPtr & context)
-{
-    ASTPtr res = query->clone();
-    /// Expand common table expressions first, so that their names are not taken for tables.
-    ApplyWithSubqueryVisitor::visit(res, context->getSettingsRef()[Setting::max_expanded_ast_elements].value);
-    if (const String current_database = context->getCurrentDatabase(); !current_database.empty())
-    {
-        AddDefaultDatabaseVisitor visitor(context, current_database);
-        visitor.visit(res);
-    }
-    return res;
 }
 
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)

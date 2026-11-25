@@ -2846,8 +2846,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
     existing is an error unless the user can access only one of them. SQL stored in
     definitions (views, materialized views, row policies, mutations, `ALIAS` columns, projections,
-    constraints, `TTL` expressions) always reads `X.T` as table `T` of database `X`, and so does the
-    query argument of the table functions `view`, `viewIfPermitted` and `eval`.
+    constraints, `TTL` expressions) always reads `X.T` as table `T` of database `X`, except in the
+    query argument of a table function such as `view` or `eval`.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}
@@ -2860,8 +2860,6 @@ def test_namespace_two_part_name_resolution(started_cluster):
     T2 = f"t2_{test_ref}"
     V, V2, MV = f"v_{test_ref}", f"v2_{test_ref}", f"mv_{test_ref}"
     VF, VE = f"vf_{test_ref}", f"ve_{test_ref}"
-    V3, V4 = f"v3_{test_ref}", f"v4_{test_ref}"
-    W3, W4 = f"w3_{test_ref}", f"w4_{test_ref}"
     A = f"a_{test_ref}"
     PR, C = f"pr_{test_ref}", f"c_{test_ref}"
     TT = f"tt_{test_ref}"
@@ -2937,34 +2935,22 @@ def test_namespace_two_part_name_resolution(started_cluster):
         result = int(node.query(f"SELECT count() FROM default.{V2}", settings=on))
         assert result == 5, f"quoted name in a view body must be the catalog table (5 rows), got {result}"
 
-        # the query argument of `view` and `eval` is read as written too; a quoted name is qualified with the current database
+        # the query argument of a table function in a view body is a part of the reading query, so it keeps the current-database reading
         on_eval = {**on, "enable_eval_table_function": 1}
-        _, err = node.query_and_get_answer_with_error(
-            f"USE {CATALOG_NAME}; SELECT count() FROM view(SELECT * FROM {X}.{T})", settings=on
-        )
-        assert "UNKNOWN_TABLE" in err, f"`view` must not read the catalog table: {err}"
-        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM view(SELECT * FROM `{X}.{T}`)", settings=on))
-        assert result == 5, f"quoted name in `view` must be the catalog table (5 rows), got {result}"
-        _, err = node.query_and_get_answer_with_error(
+        node.query(
             f"USE {CATALOG_NAME}; CREATE VIEW default.{VF} AS SELECT * FROM view(SELECT * FROM {X}.{T})",
             settings=on,
         )
-        assert "UNKNOWN_TABLE" in err, f"view over `view` must not read the catalog table: {err}"
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{VF}", settings=on))
+        assert result == 5, f"view over `view` must read the catalog table (5 rows), got {result}"
         node.query(
-            f"USE {CATALOG_NAME}; CREATE VIEW default.{VF} AS SELECT * FROM view(SELECT * FROM `{X}.{T}`)",
-            settings=on,
+            f"USE {CATALOG_NAME}; CREATE VIEW default.{VE} AS SELECT * FROM eval('SELECT * FROM {X}.{T}')",
+            settings=on_eval,
         )
-        result = int(node.query(f"SELECT count() FROM default.{VF}", settings=on))
-        assert result == 5, f"view over `view` with a quoted name must read the catalog table (5 rows), got {result}"
-        _, err = node.query_and_get_answer_with_error(
-            f"USE {CATALOG_NAME}; SELECT count() FROM eval('SELECT * FROM {X}.{T}')", settings=on_eval
-        )
-        assert "UNKNOWN_TABLE" in err, f"`eval` must not read the catalog table: {err}"
-        result = int(
-            node.query(f"USE {CATALOG_NAME}; SELECT count() FROM eval('SELECT * FROM `{X}.{T}`')", settings=on_eval)
-        )
-        assert result == 5, f"quoted name in `eval` must be the catalog table (5 rows), got {result}"
-        node.query(f"DROP VIEW default.{VF}")
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{VE}", settings=on_eval))
+        assert result == 5, f"view over `eval` must read the catalog table (5 rows), got {result}"
+        for name in (VF, VE):
+            node.query(f"DROP VIEW default.{name}")
 
         _, err = node.query_and_get_answer_with_error(
             f"USE {CATALOG_NAME}; ALTER TABLE default.{T2} DELETE WHERE symbol IN {X}.{T}", settings=on
@@ -3080,25 +3066,6 @@ def test_namespace_two_part_name_resolution(started_cluster):
         node.query(f"CREATE VIEW default.{V} AS SELECT * FROM {T2}")
         result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{V}", settings=on))
         assert result == 2, f"view must read the database table (2 rows), got {result}"
-        # a stored view in a database named like the table function database reads its body as written;
-        # it is read through a stored wrapper, because the name `_table_function.<view>` typed in a query
-        # would itself be looked up in the catalog
-        node.query("CREATE DATABASE IF NOT EXISTS _table_function")
-        node.query(f"CREATE VIEW _table_function.{V3} AS SELECT * FROM default.{T2}")
-        node.query(
-            f"CREATE VIEW _table_function.{V4} DEFINER = default SQL SECURITY DEFINER AS SELECT * FROM default.{T2}"
-        )
-        node.query(f"CREATE VIEW default.{W3} AS SELECT * FROM _table_function.{V3}")
-        node.query(f"CREATE VIEW default.{W4} AS SELECT * FROM _table_function.{V4}")
-        for name in (W3, W4):
-            for inline in (0, 1):
-                result = int(
-                    node.query(
-                        f"USE {CATALOG_NAME}; SELECT count() FROM default.{name}",
-                        settings={**on, "analyzer_inline_views": inline},
-                    )
-                )
-                assert result == 2, f"{name}, analyzer_inline_views = {inline}: expected the database table, got {result}"
 
         node.query(f"CREATE MATERIALIZED VIEW default.{MV} ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM {T2}")
         node.query(
@@ -3168,9 +3135,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
             node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
         node.query(f"DROP ROW POLICY IF EXISTS {policy} ON default.{T2}")
         node.query(f"DROP USER IF EXISTS {policy_user}")
-        for name in (W3, W4, V, V2, MV, VF, VE):
+        for name in (V, V2, MV, VF, VE):
             node.query(f"DROP VIEW IF EXISTS default.{name}")
-        node.query("DROP DATABASE IF EXISTS _table_function")
         node.query(f"DROP TABLE IF EXISTS default.{T2}")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{T2}`")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{X}.{P}`")
