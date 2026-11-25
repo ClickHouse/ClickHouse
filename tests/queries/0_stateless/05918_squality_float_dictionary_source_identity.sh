@@ -1,3 +1,14 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+database=$(${CLICKHOUSE_CLIENT} --query "SELECT currentDatabase()")
+
+${CLICKHOUSE_CLIENT} --multiquery <<SQL
 DROP DICTIONARY IF EXISTS squality_float_identity_dict;
 DROP TABLE IF EXISTS squality_float_identity_source;
 
@@ -19,8 +30,8 @@ CREATE DICTIONARY squality_float_identity_dict
     v String DEFAULT 'missing'
 )
 PRIMARY KEY k, part
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' PASSWORD '' DB currentDatabase()
-    QUERY 'SELECT k, part, v FROM squality_float_identity_source WHERE {condition} ORDER BY v LIMIT 1'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' PASSWORD '' DB '$database'
+    QUERY 'SELECT k, part, v FROM \`$database\`.squality_float_identity_source WHERE {condition} ORDER BY v LIMIT 1'))
 LAYOUT(COMPLEX_KEY_DIRECT());
 
 SELECT dictHas('squality_float_identity_dict', (toFloat64(0), toUInt8(1))),
@@ -32,3 +43,4 @@ SELECT dictHas('squality_float_identity_dict',
 
 DROP DICTIONARY squality_float_identity_dict;
 DROP TABLE squality_float_identity_source;
+SQL
