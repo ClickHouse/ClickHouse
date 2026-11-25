@@ -600,6 +600,47 @@ fi
 [ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
 [ -s /test_output/unreadable_row_policy_tables.txt ] || rm -f /test_output/unreadable_row_policy_tables.txt
 
+# `--fake-drop` keeps the `FileLog` table of a test, but the test still deletes its files. Drop such tables, so that the
+# upgraded server does not log the missing path. The checks follow `resolveFileLogPath` and `StorageFileLog::loadFiles`.
+echo "Drop the FileLog tables whose files are gone"
+
+: > /test_output/undropped_filelog_errors.txt
+filelog_drop_failed=0
+filelog_path_re="^FileLog\('([^'\\]+)'"
+if timeout 1m clickhouse-client --query "
+        SELECT base64Encode(database), base64Encode(name), base64Encode(engine_full)
+        FROM system.tables WHERE engine = 'FileLog'
+        FORMAT TSV" > /tmp/filelog_tables.tsv \
+    && user_files_path=$(timeout 1m clickhouse-client --query "SELECT value FROM system.server_settings WHERE name = 'user_files_path'") \
+    && [[ $user_files_path == /* ]]
+then
+    while IFS=$'\t' read -r encoded_database encoded_table encoded_engine
+    do
+        [[ $(base64 -d <<< "$encoded_engine") =~ $filelog_path_re ]] || continue
+        filelog_path=${BASH_REMATCH[1]}
+        [[ $filelog_path == /* ]] || filelog_path="${user_files_path%/}/$filelog_path"
+        [[ $filelog_path == "${user_files_path%/}/"* ]] || continue
+        [ -e "$filelog_path" ] && continue
+        filelog_directory=${filelog_path%/*}
+        [[ $filelog_directory == *[*?{]* && ! -d $filelog_directory ]] && continue
+        [[ ${filelog_path##*/} == *[*?{]* && -d $filelog_directory ]] && continue
+        filelog_database=$(base64 -d <<< "$encoded_database")
+        filelog_table=$(base64 -d <<< "$encoded_table")
+        echo "$filelog_database.$filelog_table $filelog_path" >> /test_output/dropped_filelog_tables.txt
+        timeout 1m clickhouse-client --param_database="$filelog_database" --param_table="$filelog_table" \
+            --query "DROP TABLE {database:Identifier}.{table:Identifier} SYNC" \
+            2>> /test_output/undropped_filelog_errors.txt || filelog_drop_failed=1
+    done < /tmp/filelog_tables.tsv
+else
+    echo -e "Cannot list the FileLog tables left by the stress phase$FAIL" >> /test_output/test_results.tsv
+fi
+
+if [ "$filelog_drop_failed" != 0 ] || [ -s /test_output/undropped_filelog_errors.txt ]
+then
+    echo -e "Cannot drop the FileLog tables whose files are gone (see undropped_filelog_errors.txt)$FAIL$(head_escaped /test_output/undropped_filelog_errors.txt)" >> /test_output/test_results.tsv
+fi
+[ -s /test_output/undropped_filelog_errors.txt ] || rm -f /test_output/undropped_filelog_errors.txt
+
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -860,6 +901,7 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # Row-policy errors are absent for the same reason: the row policies whose filter cannot be applied to a table they
 #       cover are dropped before the upgrade. When a leftover policy's error reaches this scan, it is that drop step
 #       that is wrong.
+# `StorageFileLog` errors about a missing path are absent for the same reason. Do not allow-list them.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
