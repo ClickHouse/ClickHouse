@@ -32,7 +32,10 @@ namespace Silk
 ///
 /// With `limit`, every task also holds a permit of that semaphore, which bounds the tasks of all trackers that share it.
 /// `add` takes the permit before it starts the fiber, so a caller waits instead of starting fibers that would only wait,
-/// and such a tracker is used in a fiber.
+/// and such a tracker is used in a fiber. A fiber that ends before running its task returns its permit only when the
+/// caller waits for it, so while tasks of the tracker are started, `add` waits for them rather than for a permit, and
+/// rethrows their exceptions. A caller that also drives other trackers of the same limit may still wait for the permits
+/// of their fibers that ended before running their tasks.
 class FiberTaskTracker
 {
 public:
@@ -44,8 +47,8 @@ public:
     FiberTaskTracker(const FiberTaskTracker &) = delete;
     FiberTaskTracker & operator=(const FiberTaskTracker &) = delete;
 
-    /// Starts `callback` in a fiber. When every slot is busy, first waits for any task to finish
-    /// and rethrows its exception.
+    /// Starts `callback` in a fiber. When every slot is busy, or with `limit` no permit is free, first waits for any task
+    /// to finish and rethrows its exception.
     void add(Callback && callback);
 
     /// Waits for every started task and rethrows the first exception it observes. `safeWaitAll` waits for the rest.
@@ -68,6 +71,12 @@ private:
     };
 
     static int runTask(Slot & slot) noexcept;
+
+    /// Waits for any started task, frees its slot and rethrows its exception.
+    void waitForAnyTask();
+
+    /// Waits for a free permit of `limit`, or for started tasks of this tracker while they hold permits.
+    FiberSemaphore::Permit takePermit();
 
     /// Waits for the started task in the slot and frees the slot. Returns the exception of the task, if any.
     std::exception_ptr finish(size_t index);
