@@ -527,6 +527,7 @@ void StorageBuffer::read(
             NameSet fill_inputs;
             NameSet fill_support;
             Names fill_closure;
+            String row_count_column;
             if (processed_stage <= QueryProcessingStage::FetchColumns && !destination->isRemote())
             {
                 NameSet visited;
@@ -606,7 +607,8 @@ void StorageBuffer::read(
                 if (columns_intersection.empty())
                 {
                     const auto readable = checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
-                    columns_intersection.push_back(chooseSmallestColumnToReadFromStorage(destination, destination_snapshot, readable).name);
+                    row_count_column = chooseSmallestColumnToReadFromStorage(destination, destination_snapshot, readable).name;
+                    columns_intersection.push_back(row_count_column);
                 }
             }
 
@@ -777,6 +779,17 @@ void StorageBuffer::read(
                             converted_columns,
                             ActionsDAG::MatchColumnsMode::Name,
                             local_context);
+
+                    /// The row-count column is read only for its number of rows, so no default may resolve its name to it.
+                    if (!row_count_column.empty())
+                    {
+                        String row_count_alias = "__buffer_row_count";
+                        for (size_t i = 0; metadata_snapshot->getColumns().has(row_count_alias); ++i)
+                            row_count_alias = "__buffer_row_count_" + std::to_string(i);
+                        for (auto & output : actions_dag.getOutputs())
+                            if (output->result_name == row_count_column)
+                                output = &actions_dag.addAlias(*output, row_count_alias);
+                    }
 
                     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 

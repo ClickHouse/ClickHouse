@@ -58,7 +58,11 @@ SELECT x FROM buf_t;
 7
 SELECT k, t, x FROM buf_t ORDER BY k;
 1	(7,8)	7
-after flush	2	1	1	1	1
+SELECT x FROM buf_a;
+9
+SELECT k, x FROM buf_a;
+row	9
+after flush	2	1	1	1	1	1
 -- { echoOn }
 SELECT count() FROM buf_s;
 2
@@ -118,4 +122,8 @@ SELECT x FROM buf_t;
 7
 SELECT k, t, x FROM buf_t ORDER BY k;
 1	(7,8)	7
+SELECT x FROM buf_a;
+9
+SELECT k, x FROM buf_a;
+row	9
 1	5

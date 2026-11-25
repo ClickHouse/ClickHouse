@@ -15,6 +15,8 @@ DROP TABLE IF EXISTS buf_n;
 DROP TABLE IF EXISTS dst_n;
 DROP TABLE IF EXISTS buf_t;
 DROP TABLE IF EXISTS dst_t;
+DROP TABLE IF EXISTS buf_a;
+DROP TABLE IF EXISTS dst_a;
 
 CREATE TABLE dst_s (k UInt32, arr Array(UInt8), `n.a` Array(UInt8)) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE buf_s
@@ -56,6 +58,11 @@ CREATE TABLE buf_t (k UInt32, t Tuple(a UInt8, b UInt8), x UInt8 DEFAULT t.a)
 ENGINE = Buffer(currentDatabase(), dst_t, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
 INSERT INTO buf_t (k, t) VALUES (1, (7, 8));
 
+CREATE TABLE dst_a (k String, a UInt8) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE buf_a (k String, a UInt8 ALIAS 9, x UInt8 DEFAULT a)
+ENGINE = Buffer(currentDatabase(), dst_a, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+INSERT INTO buf_a (k) VALUES ('row');
+
 SELECT 'before flush';
 
 -- { echoOn }
@@ -84,6 +91,8 @@ SELECT k, n.b, p.b FROM buf_n ORDER BY k;
 SELECT k, n.a, n.b, p.a, p.b FROM buf_n ORDER BY k;
 SELECT x FROM buf_t;
 SELECT k, t, x FROM buf_t ORDER BY k;
+SELECT x FROM buf_a;
+SELECT k, x FROM buf_a;
 -- { echoOff }
 
 OPTIMIZE TABLE buf_s;
@@ -91,8 +100,9 @@ OPTIMIZE TABLE buf_m;
 OPTIMIZE TABLE buf_w;
 OPTIMIZE TABLE buf_n;
 OPTIMIZE TABLE buf_t;
+OPTIMIZE TABLE buf_a;
 SELECT 'after flush', (SELECT count() FROM dst_s), (SELECT count() FROM dst_m), (SELECT count() FROM dst_w),
-    (SELECT count() FROM dst_n), (SELECT count() FROM dst_t);
+    (SELECT count() FROM dst_n), (SELECT count() FROM dst_t), (SELECT count() FROM dst_a);
 
 -- { echoOn }
 SELECT count() FROM buf_s;
@@ -120,6 +130,8 @@ SELECT k, n.b, p.b FROM buf_n ORDER BY k;
 SELECT k, n.a, n.b, p.a, p.b FROM buf_n ORDER BY k;
 SELECT x FROM buf_t;
 SELECT k, t, x FROM buf_t ORDER BY k;
+SELECT x FROM buf_a;
+SELECT k, x FROM buf_a;
 -- { echoOff }
 
 -- The lambda parameter `arr` is not a column the default reads. Without the plan optimizations,
@@ -142,3 +154,5 @@ DROP TABLE buf_n;
 DROP TABLE dst_n;
 DROP TABLE buf_t;
 DROP TABLE dst_t;
+DROP TABLE buf_a;
+DROP TABLE dst_a;
