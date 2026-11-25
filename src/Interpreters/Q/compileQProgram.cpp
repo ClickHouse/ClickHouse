@@ -1610,6 +1610,11 @@ QValue QCompiler::applyDerived(const QFunction & function, QValues args, QEnviro
 
     auto apply_operand = [&](QValues operand_args) { return apply(operand, std::move(operand_args), env, scope, offset); };
 
+    /// A derived function has no arity of its own, so it can be applied to an empty list of arguments: `f:+/; f . ()`.
+    if (args.empty())
+        throwQError(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, offset,
+            fmt::format("The function modified by the adverb '{}' is applied without arguments", adverb));
+
     /// Each: `f'[x;y]`, `f each x`. Each-right: `x f/: y`. Each-left: `x f\: y`.
     if (adverb == "'" || adverb == "/:" || adverb == "\\:")
     {
