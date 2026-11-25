@@ -1747,7 +1747,17 @@ const std::unordered_map<String, Handler> & handlers()
         h["mod"] = [](Call & c) { return binaryFunction(c, "positiveModulo"); };
         h["div"] = [](Call & c)
         {
-            return binary(c, [](ASTPtr x, ASTPtr y) { return fn("toInt64", fn("floor", fn("divide", x, y))); }, QType::Long);
+            /// The quotient rounded down. `intDiv` is exact for the integers and rounds to zero, so one is subtracted
+            /// when there is a remainder and the signs differ. (`floor(x / y)` goes through `Float64`, which does not
+            /// hold the integers above 2^53.)
+            return binary(c,
+                [](ASTPtr x, ASTPtr y)
+                {
+                    ASTPtr zero = lit(Field(static_cast<UInt64>(0)));
+                    ASTPtr rounded_up = fn("and", fn("notEquals", fn("modulo", x, y), zero), fn("notEquals", fn("less", x, zero), fn("less", y, zero)));
+                    return fn("minus", fn("intDiv", x, y), rounded_up);
+                },
+                QType::Long);
         };
         h["xexp"] = [](Call & c) { return binaryFunction(c, "pow", QType::Float); };
         h["xlog"] = [](Call & c)
