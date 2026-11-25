@@ -16,7 +16,7 @@ GROUP BY number WITH ROLLUP
 ORDER BY -1
 SETTINGS group_by_use_nulls = 1, enable_positional_arguments = 1;
 
-SELECT (SELECT (SELECT o.number)) AS k
+SELECT (SELECT o.number) AS k
 FROM numbers(3) AS o
 GROUP BY number WITH ROLLUP
 ORDER BY 1

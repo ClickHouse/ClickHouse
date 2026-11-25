@@ -152,16 +152,11 @@ public:
 
     void setProjectionIndex(size_t projection_index_) { projection_index = projection_index_; }
 
-    void setPositionalProjectionIndex(size_t projection_index_)
-    {
-        projection_index = projection_index_;
-        positional_projection_reference = true;
-    }
+    void setPositionalProjectionIndex(size_t projection_index_) { projection_index = projection_index_; }
 
     void clearProjectionIndex()
     {
         projection_index.reset();
-        positional_projection_reference = false;
         projection_column_name.clear();
     }
 
@@ -192,7 +187,6 @@ private:
     /// Zero-based index of a projection expression referenced by ORDER BY.
     std::optional<size_t> projection_index;
     std::string projection_column_name;
-    bool positional_projection_reference = false;
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;
