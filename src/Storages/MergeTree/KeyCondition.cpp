@@ -1602,11 +1602,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end()
+                /// Only an inversion needs another function; otherwise the relation is cloned below like any other function.
+                if (need_inversion
+                    && it != inverse_relations.end()
                     && canFoldToInverseRelation(name, children)
-                    && !(need_inversion && isFloatComparison(name, children)))
+                    && !isFloatComparison(name, children))
                 {
-                    const auto & func_name = need_inversion ? it->second : it->first;
+                    const auto & func_name = it->second;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
                     res = &inverted_dag.addFunction(function_builder, children, "");
                     /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
