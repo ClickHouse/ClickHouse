@@ -1152,6 +1152,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
+        /// `SHOW COLUMNS` masks credentials, but the copy can evaluate them, so copying them needs `SELECT` as in `setEngine`.
+        auto check_access_to_copied_definition = [&](const IAST & definition)
+        {
+            if (!definition.hasSecretParts())
+                return;
+            getContext()->checkAccess(AccessType::SELECT, as_database_name, create.as_table);
+            if (const auto * alias = as_storage->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SELECT, {}))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Not enough privileges to copy credentials exposed by {}",
+                    StorageID{as_database_name, create.as_table}.getNameForLogs());
+        };
+
         /// Copying subcolumn codecs is a new declaration of them.
         for (const auto & column : properties.columns)
             if (!column.subcolumn_codecs.empty())
@@ -1181,16 +1195,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
                     if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getPrimaryKeyAST());
                         create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
+                    }
 
                     if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getPartitionKeyAST());
                         create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+                    }
 
                     if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getSortingKeyAST());
                         create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+                    }
 
                     if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getSamplingKeyAST());
                         create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
+                    }
                 }
             }
         }
@@ -1201,6 +1227,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        for (const auto & copied :
+             {formatColumns(properties.columns),
+              formatIndices(properties.indices),
+              formatProjections(properties.projections),
+              formatConstraints(properties.constraints)})
+            check_access_to_copied_definition(*copied);
 
         if (create.is_clone_as)
         {
