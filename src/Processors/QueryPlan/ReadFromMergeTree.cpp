@@ -7635,40 +7635,45 @@ ReadFromMergeTree::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & 
     return applyColumnPruning(pruneColumns(unneeded_output_positions));
 }
 
-VectorWithMemoryTracking<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPruning & pruning) const
+ReadFromMergeTree::LazilyReadablePositions ReadFromMergeTree::getLazilyReadablePositions(const ColumnPruning & pruning) const
 {
     const auto & virtuals = getStorageMetadata()->virtuals;
 
     VectorWithMemoryTracking<size_t> positions;
     Names column_names;
-    for (size_t position : pruning.dropped_output_positions)
+    for (size_t position = 0; position < pruning.storage_position_of_output.size(); ++position)
     {
-        const auto storage_position = pruning.storage_position_of_output.at(position);
-        if (storage_position && std::ranges::binary_search(pruning.dropped_storage_positions, *storage_position)
-            && !virtuals.has(all_column_names.at(*storage_position)))
+        const auto storage_position = pruning.storage_position_of_output[position];
+        if (storage_position && !virtuals.has(all_column_names.at(*storage_position)))
         {
             positions.push_back(position);
             column_names.push_back(all_column_names.at(*storage_position));
         }
     }
 
-    /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
-    /// computed from it have.
+    /// A lazy read would fill such a column with values of its own, other than the ones the main read has for it and for
+    /// the columns it computed from it.
     const auto non_deterministic = getNonDeterministicDefaults(
         column_names, storage_snapshot->metadata->getColumns(), [&](const String & column)
         {
             return isFilledFromDefaultInSomePart(column, getParts(), storage_snapshot->metadata, mutations_snapshot, context);
         }, context);
-    VectorWithMemoryTracking<size_t> readable_positions;
+
+    LazilyReadablePositions readable;
     for (size_t i = 0; i < positions.size(); ++i)
     {
-        if (!non_deterministic.contains(column_names[i]))
-            readable_positions.push_back(positions[i]);
+        if (non_deterministic.contains(column_names[i]))
+            continue;
+
+        readable.positions.push_back(positions[i]);
+        const auto storage_position = *pruning.storage_position_of_output[positions[i]];
+        if (!std::ranges::binary_search(pruning.dropped_storage_positions, storage_position))
+            readable.read_twice.push_back(positions[i]);
     }
-    return readable_positions;
+    return readable;
 }
 
-VectorWithMemoryTracking<size_t> ReadFromMergeTree::getLazilyReadablePositions(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
+ReadFromMergeTree::LazilyReadablePositions ReadFromMergeTree::getLazilyReadablePositions(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     if (output_header == nullptr)
         return {};
@@ -7688,7 +7693,7 @@ ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
         return {applyColumnPruning(pruning), nullptr};
 
     /// The lazily readable positions and the lazy ones are both in order, so they are followed at once.
-    const auto readable = getLazilyReadablePositions(pruning);
+    const auto readable = getLazilyReadablePositions(pruning).positions;
     auto next_readable = readable.begin();
     VectorWithMemoryTracking<size_t> lazy_storage_positions;
     for (size_t position : lazy_output_positions)

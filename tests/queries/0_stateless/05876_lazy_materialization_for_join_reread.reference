@@ -1,0 +1,76 @@
+-- a filter in PREWHERE
+199	3	1
+899	3	1
+1599	3	1
+199	3	1
+899	3	1
+1599	3	1
+Lazily read columns: s
+Lazily read columns: rheavy
+0
+-- a filter in WHERE
+199	3	1
+899	3	1
+1599	3	1
+199	3	1
+899	3	1
+1599	3	1
+Lazily read columns: s
+Lazily read columns: rheavy
+0
+-- a JOIN ON condition of the build side
+98	3	1
+198	3	1
+298	3	1
+98	3	1
+198	3	1
+298	3	1
+Lazily read columns: heavy
+Lazily read columns: rs
+0
+-- a join key
+99	1	1	1
+99	6	1	1
+99	11	1	1
+99	1	1	1
+99	6	1	1
+99	11	1	1
+Lazily read columns: heavy
+Lazily read columns: rs
+0
+-- the padded side of a LEFT JOIN
+99		1
+199		1
+299		1
+399		1
+499		1
+99		1
+199		1
+299		1
+399		1
+499		1
+Lazily read columns: heavy
+Lazily read columns: rs
+-- a narrow column, the only one of its table read lazily, crosses the LIMIT
+99	1	1
+99	1	1
+99	1	1
+99	1	1
+99	1	1
+99	1	1
+Lazily read columns: rheavy
+1
+-- a JSON path in PREWHERE and in a join key
+99	4	open	4	1
+99	9	open	4	1
+99	14	open	4	1
+99	4	open	4	1
+99	9	open	4	1
+99	14	open	4	1
+Lazily read columns: doc.status, doc.id
+Lazily read columns: rheavy
+0
+-- a column some parts fill from a non-deterministic default crosses the LIMIT
+5	5
+Lazily read columns: heavy
+Lazily read columns: rheavy

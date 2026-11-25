@@ -9,7 +9,7 @@
 18007	id7	payload18007	v18007
 18005	id5	payload18005	v18005
 17007	id7	payload17007	v17007
-Lazily read columns: payload
+Lazily read columns: id, payload
 Lazily read columns: v
 -- the projection is read with the offsets of the parent part
 19007	id7	payload19007	v19007
@@ -24,7 +24,7 @@ Lazily read columns: v
 17007	id7	payload17007	v17007
 ReadFromMergeTree (p)
 ReadFromMergeTree (default.r)
-Lazily read columns: payload
+Lazily read columns: id, payload
 Lazily read columns: v
 -- the projection is read, and the payload from it
 19007	id7	payload19007	v19007
@@ -39,7 +39,7 @@ Lazily read columns: v
 17007	id7	payload17007	v17007
 ReadFromMergeTree (p)
 ReadFromMergeTree (default.r)
-Lazily read columns: payload
+Lazily read columns: id, payload
 Lazily read columns: v
 -- the projection serves some of the parts
 5	id5	payload5	v5
@@ -66,5 +66,5 @@ Union
 ReadFromMergeTree (default.t_partial)
 ReadFromMergeTree (p)
 ReadFromMergeTree (default.r)
-Lazily read columns: payload
+Lazily read columns: id, payload
 Lazily read columns: v

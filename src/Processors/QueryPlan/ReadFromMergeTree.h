@@ -724,12 +724,19 @@ public:
     /// them: the read keeps more than it is asked to, such as the inputs of PREWHERE and virtual columns.
     Names getLazilyReadColumns(const NameSet & required_outputs) const;
 
-    /// Of `unneeded_output_positions`, the ones whose storage column `removeUnusedColumns` would stop reading, so that a
-    /// lazy read can read it instead. The read keeps the others: FINAL merges by them, PREWHERE or the row policy reads
-    /// them, or they are virtual.
-    VectorWithMemoryTracking<size_t> getLazilyReadablePositions(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
+    /// The output positions a lazy read can read, after `removeUnusedColumns` with `unneeded_output_positions`: the
+    /// storage columns that are not virtual, and that no part fills from a non-deterministic default. Some of them the
+    /// main read reads as well - something below the `LIMIT` needs them, FINAL merges by them, PREWHERE or the row policy
+    /// reads them - so a lazy read reads them a second time, with the same values: those are in `read_twice` as well.
+    struct LazilyReadablePositions
+    {
+        VectorWithMemoryTracking<size_t> positions;
+        VectorWithMemoryTracking<size_t> read_twice;
+    };
+    LazilyReadablePositions getLazilyReadablePositions(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
     /// `removeUnusedColumns`, and a lazy read of the columns at `lazy_output_positions`, which are among the ones
-    /// `getLazilyReadablePositions` returns for `unneeded_output_positions`. Without them, it is `removeUnusedColumns`.
+    /// `getLazilyReadablePositions` returns for `unneeded_output_positions`. The read still outputs the ones it reads twice
+    /// and does not drop as unneeded. Without them, it is `removeUnusedColumns`.
     std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
         const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<size_t> & lazy_output_positions);
 
@@ -815,8 +822,7 @@ private:
         VectorWithMemoryTracking<std::optional<size_t>> storage_position_of_output;
     };
     ColumnPruning pruneColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
-    /// Of the dropped output positions, the ones a lazy read can read: storage columns the read stops reading.
-    VectorWithMemoryTracking<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
+    LazilyReadablePositions getLazilyReadablePositions(const ColumnPruning & pruning) const;
     /// Prunes the filters and the columns of this read as `pruning` says.
     RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
 

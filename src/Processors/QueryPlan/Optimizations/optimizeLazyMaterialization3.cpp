@@ -289,9 +289,9 @@ struct ColumnCopy
 /// the other columns of `read_header`, in their order, so that the columns of the read keep their positions and the
 /// added ones come after them. The columns at `index_positions` are what the index is computed from - for MergeTree the
 /// offset of the part in the read and the offset of the row in its part, for an object storage read the index it
-/// produces itself - and are consumed here unless the read had them before, which `consumed_positions` says. Below a
-/// join that can leave the source unmatched the index is `Nullable`, so that the join stands it at NULL for the rows it
-/// pads.
+/// produces itself - and are consumed here unless the read had them before, which `consumed_positions` says. It also has
+/// the columns the lazy read reads again that nothing below the `LIMIT` needs. Below a join that can leave the source
+/// unmatched the index is `Nullable`, so that the join stands it at NULL for the rows it pads.
 ActionsDAG makeAboveReadDAG(
     const Block & read_header,
     const VectorWithMemoryTracking<size_t> & index_positions,
@@ -528,8 +528,13 @@ public:
                     while (next_unneeded != unneeded.end() && *next_unneeded < position)
                         ++next_unneeded;
 
-                    if (next_unneeded != unneeded.end() && *next_unneeded == position)
+                    /// The main read keeps a column the plan needs, and the lazy read can read it again.
+                    const bool is_unneeded = next_unneeded != unneeded.end() && *next_unneeded == position;
+                    if (is_unneeded || lazy.may_read_twice)
                     {
+                        if (!is_unneeded && !std::ranges::binary_search(lazy.read_twice, position))
+                            lazy.read_twice.insert(std::ranges::upper_bound(lazy.read_twice, position), position);
+
                         lazy.positions[kept_index] = position;
                         lazy.inputs[kept_index] = lazy.inputs[index];
                         ++kept_index;
@@ -759,6 +764,11 @@ private:
         VectorWithMemoryTracking<size_t> positions;
         VectorWithMemoryTracking<const ActionsDAG::Node *> inputs;
 
+        /// For a MergeTree read: whether the lazy read reads again columns the main read reads as well, rather than have
+        /// them cross the `LIMIT` (see `mayReadTwice`), and the positions it does so for, in order, among `positions`.
+        bool may_read_twice = false;
+        VectorWithMemoryTracking<size_t> read_twice;
+
         /// Set by `apply`.
         std::unique_ptr<LazilyReadFromMergeTree> merge_tree_reading;
         std::unique_ptr<LazilyReadFromObjectStorage> object_storage_reading;
@@ -814,29 +824,44 @@ private:
                         unneeded.push_back(position);
                 }
 
-                /// A column meant for the lazy read that the main read reads anyway, such as one FINAL merges by or
-                /// PREWHERE reads, crosses the `LIMIT` instead. Those the read can leave out are some of the unneeded
-                /// ones, in their order, so both lists are followed at once.
+                /// A column meant for the lazy read that the main read reads anyway - something below the `LIMIT` needs it,
+                /// FINAL merges by it, PREWHERE reads it - is read a second time, or crosses the `LIMIT`, see
+                /// `mayReadTwice`. One a lazy read cannot read at all crosses it. The positions are in order, so the lists
+                /// are followed at once.
                 const auto readable = merge_tree->getLazilyReadablePositions(unneeded);
-                auto next_readable = readable.begin();
+                auto next_readable = readable.positions.begin();
+                auto next_read_twice = readable.read_twice.begin();
+                VectorWithMemoryTracking<size_t> read_twice;
                 for (size_t position = 0; position < inputs.size(); ++position)
                 {
-                    const bool is_readable = next_readable != readable.end() && *next_readable == position;
+                    const bool is_readable = next_readable != readable.positions.end() && *next_readable == position;
                     if (is_readable)
                         ++next_readable;
+                    const bool is_read_twice = next_read_twice != readable.read_twice.end() && *next_read_twice == position;
+                    if (is_read_twice)
+                        ++next_read_twice;
 
                     const auto * input = inputs[position];
                     if (!isComputedAbove(frontier.at(input)))
                         continue;
 
-                    if (is_readable)
+                    if (!is_readable)
                     {
-                        lazy.positions.push_back(position);
-                        lazy.inputs.push_back(input);
-                    }
-                    else
                         kept_by_read.insert(input);
+                        continue;
+                    }
+
+                    lazy.positions.push_back(position);
+                    lazy.inputs.push_back(input);
+                    if (is_read_twice)
+                        read_twice.push_back(position);
                 }
+
+                lazy.may_read_twice = mayReadTwice(lazy.inputs);
+                if (lazy.may_read_twice)
+                    lazy.read_twice = std::move(read_twice);
+                else
+                    removeLazyPositions(lazy, read_twice, kept_by_read);
 
                 if (!lazy.inputs.empty())
                     lazy_by_source.emplace(source, std::move(lazy));
@@ -894,6 +919,48 @@ private:
             if (kept == 0)
                 return lazy.inputs.size() == lazily_read.size();
         }
+    }
+
+    /// Whether the lazy read of a MergeTree source reading `inputs` reads again the columns of them its main read reads as
+    /// well, rather than have those cross the `LIMIT`. A join above the source repeats a crossing column for every row it
+    /// outputs, and a hash join stores it for every row of its build side. That is worth a second read where the lazy read
+    /// reads more per row than the row index of the source takes, which crosses the `LIMIT` instead. How much a column
+    /// takes is what its type says, not the data, so that the plan does not depend on the data: a type without a maximum
+    /// size of value takes more than the row index. Where no join is above, carrying a column past a sort costs little.
+    [[nodiscard]] bool mayReadTwice(const VectorWithMemoryTracking<const ActionsDAG::Node *> & inputs) const
+    {
+        if (inputs.empty() || !merged.hasJoinAbove(inputs.front()))
+            return false;
+
+        size_t size_per_row = 0;
+        for (const auto * input : inputs)
+        {
+            const auto & type = input->result_type;
+            if (!type->haveMaximumSizeOfValue())
+                return true;
+            size_per_row += type->getMaximumSizeOfValueInMemory();
+        }
+        return size_per_row > sizeof(UInt64);
+    }
+
+    /// Takes `positions`, which are in order and among `lazy.positions`, away from the lazy read: their columns cross the
+    /// `LIMIT` instead.
+    static void removeLazyPositions(LazySource & lazy, const VectorWithMemoryTracking<size_t> & positions, NodeSet & kept_by_read)
+    {
+        size_t kept_index = 0;
+        for (size_t index = 0; index < lazy.positions.size(); ++index)
+        {
+            if (std::ranges::binary_search(positions, lazy.positions[index]))
+            {
+                kept_by_read.insert(lazy.inputs[index]);
+                continue;
+            }
+            lazy.positions[kept_index] = lazy.positions[index];
+            lazy.inputs[kept_index] = lazy.inputs[index];
+            ++kept_index;
+        }
+        lazy.positions.resize(kept_index);
+        lazy.inputs.resize(kept_index);
     }
 
     [[nodiscard]] bool isAddedColumn(const String & name) const { return added_names.contains(name); }
@@ -1099,26 +1166,37 @@ private:
         const auto lazy_it = lazy_by_source.find(source);
         auto * lazy = lazy_it != lazy_by_source.end() ? &lazy_it->second : nullptr;
         const Block * lazy_header = nullptr;
+        /// The columns the lazy read reads again that the main read outputs, but nothing below the `LIMIT` needs.
+        Names duplicate_names;
 
         if (merge_tree && merge_tree->canRemoveUnusedColumns())
         {
-            /// The read drops what nothing below the `LIMIT` needs, and hands the columns read lazily to a lazy read.
+            /// The read drops what nothing below the `LIMIT` needs, and hands the columns read lazily to a lazy read. It
+            /// still outputs a column the lazy read reads again where the plan needs it below the `LIMIT`.
             static const VectorWithMemoryTracking<size_t> no_positions;
             const auto & lazy_positions = lazy ? lazy->positions : no_positions;
-            /// Both in order, so they are followed at once.
-            auto next_unneeded = unneeded.begin();
+            const auto & read_twice = lazy ? lazy->read_twice : no_positions;
+            const Block former_header = *plan.getCurrentHeader();
             for (size_t position : lazy_positions)
             {
-                while (next_unneeded != unneeded.end() && *next_unneeded < position)
-                    ++next_unneeded;
-                if (next_unneeded == unneeded.end() || *next_unneeded != position)
+                if (!std::ranges::binary_search(unneeded, position) && !std::ranges::binary_search(read_twice, position))
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Column {} of source {} is read lazily, but needed below the LIMIT",
-                        plan.getCurrentHeader()->getByPosition(position).name, source);
+                        former_header.getByPosition(position).name, source);
             }
 
             auto [pruned, lazy_reading] = merge_tree->removeUnusedColumnsAndCreateLazyReadStep(unneeded, lazy_positions);
             result.dropped_positions = std::move(pruned.dropped_output_positions);
+
+            /// A column read twice that nothing below the `LIMIT` needs, but the read still outputs - FINAL merges by it -
+            /// is dropped right above the read, together with the columns the row index is computed from.
+            for (size_t position : read_twice)
+            {
+                if (!std::ranges::binary_search(unneeded, position) || std::ranges::binary_search(result.dropped_positions, position))
+                    continue;
+                duplicate_names.push_back(former_header.getByPosition(position).name);
+                result.dropped_positions.insert(std::ranges::upper_bound(result.dropped_positions, position), position);
+            }
 
             if (lazy)
             {
@@ -1167,6 +1245,11 @@ private:
                 consumed_positions.push_back(offsets.part_starting_offset_position);
             if (offsets.added_part_offset)
                 consumed_positions.push_back(offsets.part_offset_position);
+
+            /// The offsets can be put anywhere in the header, so the duplicates are found by name: the columns of a read are
+            /// storage columns, with unique names.
+            for (const auto & name : duplicate_names)
+                consumed_positions.push_back(plan.getCurrentHeader()->getPositionByName(name));
         }
         else
         {

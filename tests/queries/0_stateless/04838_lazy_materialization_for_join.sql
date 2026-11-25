@@ -73,7 +73,7 @@ SELECT l.k, l.heavy, r.rheavy FROM l JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY 
 SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%'), countIf(explain LIKE '%BuildRuntimeFilter%') FROM (EXPLAIN compact = 0 SELECT l.k, l.heavy, r.rheavy FROM l JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 3 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0);
 SELECT l.k, l.heavy FROM l LEFT ANTI JOIN r ON l.k = r.k AND l.a = r.b WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 3 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
-SELECT '-- a column the read keeps for PREWHERE crosses under the name the plan gives it';
+SELECT '-- a column the read keeps for PREWHERE is read again after the LIMIT';
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 CREATE TABLE t1 (k UInt64, a UInt64, heavy String, payload String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
@@ -82,6 +82,11 @@ INSERT INTO t1 SELECT number, number % 97, toString(number), concat('p', toStrin
 INSERT INTO t2 SELECT number * 3, number % 89, toString(number * 3), concat('q', toString(number * 3)) FROM numbers(4000);
 SELECT t1.k, t1.heavy, t2.heavy, t1.payload, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.heavy != '5' AND t2.heavy != '6' ORDER BY t1.a, t1.k LIMIT 3;
 SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') FROM (EXPLAIN compact = 0 SELECT t1.k, t1.heavy, t2.heavy, t1.payload, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.heavy != '5' AND t2.heavy != '6' ORDER BY t1.a, t1.k LIMIT 3);
+SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1 SELECT t1.k, t1.heavy, t2.heavy, t1.payload, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.heavy != '5' AND t2.heavy != '6' ORDER BY t1.a, t1.k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
+SELECT '-- a narrow column the read keeps for PREWHERE, the only one of its table read lazily, crosses under the name the plan gives it';
+SELECT t1.k, t1.a, t2.heavy, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.a != 5 AND t2.heavy != '6' ORDER BY t1.k LIMIT 3;
+SELECT t1.k, t1.a, t2.heavy, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.a != 5 AND t2.heavy != '6' ORDER BY t1.k LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 0;
+SELECT countIf(explain LIKE '%__lazy_carried_%') > 0 FROM (EXPLAIN header = 1 SELECT t1.k, t1.a, t2.heavy, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.a != 5 AND t2.heavy != '6' ORDER BY t1.k LIMIT 3);
 
 SELECT '-- a random value the filter used is not drawn again after the LIMIT';
 SELECT count(), sum(d) FROM (SELECT x.r - x.r2 AS d, t1.payload FROM t1 JOIN (SELECT k, rand() AS r, r AS r2, payload FROM t2 WHERE rand() % 2 = 0) AS x ON t1.k = x.k ORDER BY t1.a, t1.k LIMIT 3);
