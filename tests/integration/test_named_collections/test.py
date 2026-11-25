@@ -1377,8 +1377,11 @@ def test_startup_keeps_serving_table_with_missing_collection(node_with_database_
     hide_database_collections(node)
     node.start_clickhouse()
 
-    # Pins the behaviour databases are aligned to: with `async_load_databases`, a table's missing
-    # collection is not fatal.
+    # Pins the behaviour databases are aligned to: with `async_load_databases`, only the table's own
+    # load fails and the server keeps serving.
+    assert "NAMED_COLLECTION_DOESNT_EXIST" in node.query_and_get_error(
+        "SELECT * FROM default.table_over_s3"
+    )
     assert "1" == node.query("SELECT 1").strip()
 
 

@@ -139,8 +139,7 @@ static void loadDatabase(
 }
 
 /// Engines holding no local table definitions or data: omitting such a database loses only a
-/// read-through view of a remote catalog. Their metadata lives in metadata/<name>/, not
-/// store/<uuid>/, so an omitted one is out of reach of the unused-store-directory cleanup.
+/// read-through view of a remote catalog.
 static const std::unordered_set<String> skippable_database_engines
     = {"S3", "Remote", "RemoteSecure", "MySQL", "PostgreSQL"};
 
