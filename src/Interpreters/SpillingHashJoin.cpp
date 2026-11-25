@@ -7,6 +7,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Common/FailPoint.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -150,7 +151,8 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
-    if (reachesSpillThreshold(hash_join->getTotalByteCount(), max_bytes_before_external_join))
+    const auto reaches_threshold = [this](size_t bytes) { return reachesSpillThreshold(bytes, max_bytes_before_external_join); };
+    if (reaches_threshold(hash_join->getTotalByteCount()) && !stayInMemoryByHalving(reaches_threshold))
         switchToExternalJoin(context);
 
     /// Re-check: we may have just switched.
@@ -209,6 +211,9 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
 
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
+        if (const size_t freed = freeMemoryByHalving(at_least_bytes))
+            return freed;
+
         size_t before = getTotalByteCount();
         switchToExternalJoin(JoinBuildContext::serial(), /*spill_immediately=*/true);
         size_t after = getTotalByteCount();
@@ -219,6 +224,47 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
     /// The MergeJoin fallback spills by construction, so a pinned join has nothing more to
     /// release here (`grace_join` stays null).
     return grace_join ? grace_join->spill(at_least_bytes) : 0;
+}
+
+bool SpillingHashJoin::stayInMemoryByHalving(absl::FunctionRef<bool(size_t)> too_many_bytes)
+{
+    std::unique_lock lock(switch_mutex);
+    if (state.load(std::memory_order_relaxed) != State::COLLECTING)
+        return false;
+
+    const size_t total_bytes = hash_join->getTotalByteCount();
+    /// Another thread may have halved the hash tables meanwhile.
+    if (!too_many_bytes(total_bytes))
+        return true;
+
+    const size_t halving_frees = hash_join->bytesFreedByHalvingHashTables();
+    if (!halving_frees || too_many_bytes(total_bytes - halving_frees))
+        return false;
+
+    hash_join->halveHashTables();
+    return true;
+}
+
+size_t SpillingHashJoin::freeMemoryByHalving(size_t at_least_bytes)
+{
+    std::unique_lock lock(switch_mutex);
+    if (state.load(std::memory_order_relaxed) != State::COLLECTING)
+        return 0;
+
+    const size_t halving_frees = hash_join->bytesFreedByHalvingHashTables();
+    if (!halving_frees)
+        return 0;
+
+    /// The memory spill scheduler asks for all the bytes of the join, and asks while the memory of the query plus the reserve
+    /// of the join, which is all its bytes too, reaches the hard limit. Halving is enough if they would stay under it.
+    const auto hard_limit = getCurrentQueryHardLimit();
+    const size_t join_bytes = hash_join->getTotalByteCount();
+    const Int64 memory_after = getCurrentQueryMemoryUsage() - static_cast<Int64>(halving_frees);
+    const bool fits_after = hard_limit && memory_after + static_cast<Int64>(join_bytes - halving_frees) < static_cast<Int64>(*hard_limit);
+    if (halving_frees < at_least_bytes && !fits_after)
+        return 0;
+
+    return hash_join->halveHashTables();
 }
 
 void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill_immediately)
@@ -342,8 +388,8 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// fires only on subsequent calls. If the very last block pushed total bytes past
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
-        const size_t total_bytes = hash_join->getTotalByteCount();
-        if (total_bytes >= max_bytes_before_external_join)
+        const auto exceeds_threshold = [this](size_t bytes) { return bytes >= max_bytes_before_external_join; };
+        if (exceeds_threshold(hash_join->getTotalByteCount()) && !stayInMemoryByHalving(exceeds_threshold))
         {
             switchToExternalJoin(JoinBuildContext::serial());
         }
@@ -352,7 +398,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
             LOG_DEBUG(
                 log,
                 "All blocks fit in memory ({} bytes, {} rows), promoting HashJoin",
-                total_bytes,
+                hash_join->getTotalByteCount(),
                 hash_join->getTotalRowCount());
             chosen_join = hash_join;
             state.store(State::IN_MEMORY_JOIN, std::memory_order_release);

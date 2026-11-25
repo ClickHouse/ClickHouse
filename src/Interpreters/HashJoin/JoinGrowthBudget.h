@@ -57,6 +57,9 @@ public:
 
     bool preferSmallerTable(size_t growth_cells, size_t bucket_cells) override;
 
+    /// Answer yes from now on, as after the first yes of `preferSmallerTable`. Called once the hash tables were halved.
+    void latch() { latched.store(true, std::memory_order_relaxed); }
+
     /// How many times a bucket took the smaller table, or was sized for it.
     [[nodiscard]] size_t switches() const { return switch_count.load(std::memory_order_relaxed); }
 

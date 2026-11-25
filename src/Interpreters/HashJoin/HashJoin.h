@@ -871,6 +871,15 @@ public:
     /// Called by `SpillingHashJoin` before the first insert, see `JoinGrowthBudget::setSpillThreshold`.
     void setSpillThreshold(size_t max_bytes_before_external_join) { data->growth_budget.setSpillThreshold(max_bytes_before_external_join); }
 
+    /// The bytes that `halveHashTables` would free now, 0 unless `enable_robin_hood_hash_for_joins` is `'auto'`.
+    /// Call it while no build thread inserts.
+    size_t bytesFreedByHalvingHashTables() const;
+
+    /// Rebuilds in the Robin Hood mode, in half their cells, the buckets whose keys fit there, on up to `getMaxBuildThreads`
+    /// threads, and returns the bytes freed. Every later growth then switches a bucket in place instead of doubling it.
+    /// Call it while no build thread inserts: `SpillingHashJoin` holds its switch lock.
+    size_t halveHashTables();
+
     /// Called once that algorithm can no longer take them - it has settled on this join. A join that
     /// stores only the keys reads nothing from them, so they can go.
     void dropRightBlocksKeptForAnotherAlgorithm();

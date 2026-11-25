@@ -1,0 +1,14 @@
+--- the rows after the last growth take the join over the spill threshold
+result: 400000	919999800000
+mode 0: the same result
+mode 0: spilled 1, halved 0
+mode auto: the same result
+mode auto: spilled 0, halved 1
+--- the memory spill scheduler asks the join to free memory
+100	4950
+mode 0: spilled 1, halved 0
+100	4950
+mode auto: spilled 0, halved 1
+--- the same with four build streams, which halve the buckets in parallel
+1000000	499999500000
+halved 1

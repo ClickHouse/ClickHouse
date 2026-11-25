@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <any>
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <span>
@@ -625,6 +626,18 @@ public:
     /// Clears the buckets of an `ASOF` map in `num_jobs` jobs and passes them to `schedule`.
     /// `schedule` must run them before the table is destroyed.
     void clearInParallel(size_t num_jobs, absl::FunctionRef<void(std::function<void()>)> schedule);
+
+    /// The bytes that `halveInParallel` would free now. Only the buckets of a two-level map with the Robin Hood grower are
+    /// halved, see `HashTable::halveInRobinHoodMode`.
+    size_t bytesFreedByHalving() const;
+
+    /// Halves those buckets in `num_jobs` jobs and passes them to `schedule`, which must run them before the table is destroyed.
+    /// The jobs add the bytes they free and the buckets they halve to `freed_bytes` and `halved_buckets`.
+    void halveInParallel(
+        size_t num_jobs,
+        absl::FunctionRef<void(std::function<void()>)> schedule,
+        std::atomic<size_t> & freed_bytes,
+        std::atomic<size_t> & halved_buckets);
 
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();

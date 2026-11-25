@@ -12,6 +12,8 @@
 #include <Processors/SpillableAdapter.h>
 #include <Common/SharedMutex.h>
 
+#include <absl/functional/function_ref.h>
+
 
 namespace DB
 {
@@ -143,6 +145,11 @@ private:
     /// instead of holding all of it in bucket 0 until the next spill request (MergeJoin always
     /// puts the drained blocks on disk right away).
     void switchToExternalJoin(JoinBuildContext context, bool spill_immediately = false);
+    /// With `enable_robin_hood_hash_for_joins = 'auto'` the hash tables of `hash_join` can be halved instead of spilling.
+    /// Returns whether the join can go on in memory: `too_many_bytes` is false for its bytes, after halving if needed.
+    bool stayInMemoryByHalving(absl::FunctionRef<bool(size_t)> too_many_bytes);
+    /// Halves them if that frees at least `at_least_bytes`. Returns the bytes freed, 0 if it did not halve.
+    size_t freeMemoryByHalving(size_t at_least_bytes);
     /// Every insert into the external join funnels through here: MergeJoin inserts are
     /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts
     /// stay concurrent.

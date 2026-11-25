@@ -176,6 +176,9 @@
     M(HashJoinDestroyThreads, "Number of threads in the thread pool for destroying the right table of a hash join.") \
     M(HashJoinDestroyThreadsActive, "Number of threads in the thread pool for destroying the right table of a hash join running a task.") \
     M(HashJoinDestroyThreadsScheduled, "Number of queued or active jobs in the thread pool for destroying the right table of a hash join.") \
+    M(HashJoinHalvingThreads, "Number of threads in the thread pool for halving the hash tables of a hash join in the Robin Hood mode.") \
+    M(HashJoinHalvingThreadsActive, "Number of threads in the thread pool for halving the hash tables of a hash join in the Robin Hood mode running a task.") \
+    M(HashJoinHalvingThreadsScheduled, "Number of queued or active jobs in the thread pool for halving the hash tables of a hash join in the Robin Hood mode.") \
     M(HashedDictionaryThreads, "Number of threads in the HashedDictionary thread pool.") \
     M(HashedDictionaryThreadsActive, "Number of threads in the HashedDictionary thread pool running a task.") \
     M(HashedDictionaryThreadsScheduled, "Number of queued or active jobs in the HashedDictionary thread pool.") \

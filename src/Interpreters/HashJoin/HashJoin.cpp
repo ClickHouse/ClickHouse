@@ -21,6 +21,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/StackTrace.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 
@@ -61,6 +62,7 @@ namespace ProfileEvents
     extern const Event HashJoinBuiltWithParallelLayout;
     extern const Event HashJoinBuiltWithSerialLayout;
     extern const Event JoinRobinHoodSwitchesOnMemoryPressure;
+    extern const Event JoinRobinHoodHalvedBuckets;
 }
 
 namespace CurrentMetrics
@@ -68,6 +70,9 @@ namespace CurrentMetrics
 extern const Metric HashJoinDestroyThreads;
 extern const Metric HashJoinDestroyThreadsActive;
 extern const Metric HashJoinDestroyThreadsScheduled;
+extern const Metric HashJoinHalvingThreads;
+extern const Metric HashJoinHalvingThreadsActive;
+extern const Metric HashJoinHalvingThreadsScheduled;
 }
 
 namespace DB
@@ -1666,6 +1671,66 @@ HashJoin::RightTableData::~RightTableData()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+size_t HashJoin::bytesFreedByHalvingHashTables() const
+{
+    if (table_join->robinHoodMode() != RobinHoodMode::OnMemoryPressure)
+        return 0;
+    size_t bytes = 0;
+    for (const auto & table : data->tables)
+        bytes += table->bytesFreedByHalving();
+    return bytes;
+}
+
+size_t HashJoin::halveHashTables()
+{
+    Stopwatch watch;
+    std::atomic<size_t> freed_bytes = 0;
+    std::atomic<size_t> halved_buckets = 0;
+    /// Also after an exception: the buckets halved before it stay halved.
+    SCOPE_EXIT({
+        data->subBytes(data->bucket_bytes, freed_bytes.load(std::memory_order_relaxed));
+        ProfileEvents::increment(ProfileEvents::JoinRobinHoodHalvedBuckets, halved_buckets.load(std::memory_order_relaxed));
+    });
+
+    const size_t num_jobs = std::max<size_t>(getMaxBuildThreads(), 1);
+    if (num_jobs == 1)
+    {
+        for (auto & table : data->tables)
+            table->halveInParallel(1, [](std::function<void()> job) { job(); }, freed_bytes, halved_buckets);
+    }
+    else
+    {
+        /// The jobs refer to `freed_bytes` and `halved_buckets`. The pool comes after them, so its destructor waits for the jobs first.
+        ThreadPool pool(
+            CurrentMetrics::HashJoinHalvingThreads,
+            CurrentMetrics::HashJoinHalvingThreadsActive,
+            CurrentMetrics::HashJoinHalvingThreadsScheduled,
+            num_jobs);
+        auto schedule = [&pool, thread_group = CurrentThread::getGroup()](std::function<void()> job)
+        {
+            pool.scheduleOrThrowOnError(
+                [job, thread_group]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_HALVING);
+                    job();
+                });
+        };
+        for (auto & table : data->tables)
+            table->halveInParallel(num_jobs, schedule, freed_bytes, halved_buckets);
+        pool.wait();
+    }
+
+    data->growth_budget.latch();
+    LOG_DEBUG(
+        log,
+        "{}Halved {} buckets of the hash tables in the Robin Hood mode, which freed {}, in {} ms",
+        instance_log_id,
+        halved_buckets.load(std::memory_order_relaxed),
+        ReadableSize(freed_bytes.load(std::memory_order_relaxed)),
+        watch.elapsedMilliseconds());
+    return freed_bytes.load(std::memory_order_relaxed);
 }
 
 void HashJoin::RightTableData::spliceBuildStreamLists()
