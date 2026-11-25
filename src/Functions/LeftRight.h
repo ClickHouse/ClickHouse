@@ -12,6 +12,7 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -101,7 +102,7 @@ public:
                 else
                 {
                     /// Unsigned negation, so INT64_MIN gives 2^63 instead of overflowing; it skips the whole string.
-                    const UInt64 abs_length_value = 0 - static_cast<UInt64>(length_value);
+                    const UInt64 abs_length_value = common::negateIgnoreOverflow(static_cast<UInt64>(length_value));
                     sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), abs_length_value);
                 }
             }
@@ -125,7 +126,7 @@ public:
                         slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
                     else if (length < 0)
                     {
-                        const UInt64 abs_length = 0 - static_cast<UInt64>(length);
+                        const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(length));
                         slice = source.getSliceFromLeft(abs_length);
                     }
                     if (length != 0)
