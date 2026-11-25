@@ -76,7 +76,8 @@ compare()
 EXPECTED=$(run peak "$(mode_setting 0)")
 echo "result: $EXPECTED"
 flush_logs
-LIMIT=$(($(logged peak memory_usage) * 8 / 10))
+PEAK=$(logged peak memory_usage)
+LIMIT=$((PEAK * 8 / 10))
 
 echo "--- the join spills at 0.8 of the peak memory"
 for mode in 0 auto
@@ -96,6 +97,13 @@ do
 done
 flush_logs
 echo "mode auto: switched $(logged memory_auto "ProfileEvents['JoinRobinHoodSwitchesOnMemoryPressure'] > 0")"
+
+# With room for the growth the join must not switch. A bucket that already grew is in the memory usage, so the check must not
+# count its growth again for the buckets that ask after it.
+echo "--- max_memory_usage is at 1.15 of the peak memory"
+echo "mode auto: $(compare "$(run headroom_auto "$(mode_setting auto)" max_memory_usage=$((PEAK * 115 / 100)))")"
+flush_logs
+echo "mode auto: switched $(logged headroom_auto "ProfileEvents['JoinRobinHoodSwitchesOnMemoryPressure'] > 0")"
 
 echo "--- two runs with the hash table statistics on"
 # The second run is sized from the statistics of the first when the server still has them: a join stores them when it is

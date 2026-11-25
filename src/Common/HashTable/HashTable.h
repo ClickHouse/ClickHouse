@@ -381,30 +381,7 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
     }
 
     /// Whether a hash table that grows past `robin_hood_size_degree` switches to the Robin Hood mode.
-    [[nodiscard]] bool robinHoodAllowedNow() const
-    {
-        return robin_hood_mode == RobinHoodMode::Always
-            || (robin_hood_mode == RobinHoodMode::OnMemoryPressure && budget->pressureLatched());
-    }
-
-    void grow(bool ask_budget)
-    {
-        const UInt8 step = (robin_hood || size_degree >= max_size_degree_quadratic) ? 1 : 2;
-
-        bool in_place = false;
-        if (!robin_hood)
-        {
-            if (robin_hood_mode == RobinHoodMode::Always)
-                in_place = size_degree >= robin_hood_size_degree;
-            else if (robin_hood_mode == RobinHoodMode::OnMemoryPressure)
-                in_place = ask_budget ? budget->preferSmallerTable(bufSize() * ((1ULL << step) - 1), bufSize()) : budget->pressureLatched();
-        }
-
-        if (in_place)
-            setSizeDegree(size_degree, true);
-        else
-            increaseSizeDegree(step);
-    }
+    [[nodiscard]] bool robinHoodAllowedNow() const { return robin_hood_mode == RobinHoodMode::Always; }
 
 public:
     [[nodiscard]] UInt8 sizeDegree() const { return size_degree; }
@@ -444,12 +421,25 @@ public:
     [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
-    /// In the mode `OnMemoryPressure` it switches only after an earlier yes of the budget, which is not asked here,
-    /// so a projection of the growth (see `estimateGrowthMemory`) does not change the budget.
-    void increaseSize() { grow(/*ask_budget=*/false); }
+    /// In the mode `OnMemoryPressure` the budget decides, so this is for a hash table that really grows.
+    void increaseSize()
+    {
+        const UInt8 step = (robin_hood || size_degree >= max_size_degree_quadratic) ? 1 : 2;
 
-    /// The same, but in the mode `OnMemoryPressure` the budget decides. Called when the hash table really grows.
-    void increaseSizeAskingBudget() { grow(/*ask_budget=*/true); }
+        bool in_place = false;
+        if (!robin_hood)
+        {
+            if (robin_hood_mode == RobinHoodMode::Always)
+                in_place = size_degree >= robin_hood_size_degree;
+            else if (robin_hood_mode == RobinHoodMode::OnMemoryPressure)
+                in_place = budget->preferSmallerTable(bufSize() * ((1ULL << step) - 1), bufSize());
+        }
+
+        if (in_place)
+            setSizeDegree(size_degree, true);
+        else
+            increaseSizeDegree(step);
+    }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table
     /// and to size it up front. In the mode `OnMemoryPressure` the budget is asked about growing to the size without the Robin Hood mode.
@@ -930,8 +920,6 @@ protected:
             if (new_grower.bufSize() <= old_size)
                 return;
         }
-        else if constexpr (GrowerWithRobinHood<Grower>)
-            new_grower.increaseSizeAskingBudget();
         else
             new_grower.increaseSize();
 

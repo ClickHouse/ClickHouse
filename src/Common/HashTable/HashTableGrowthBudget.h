@@ -24,7 +24,4 @@ struct HashTableGrowthBudget
 
     /// Whether to take the smaller table instead of adding `growth_cells` cells to a bucket that now has `bucket_cells`.
     virtual bool preferSmallerTable(size_t growth_cells, size_t bucket_cells) = 0;
-
-    /// Whether `preferSmallerTable` has already answered yes.
-    [[nodiscard]] virtual bool pressureLatched() const = 0;
 };

@@ -123,12 +123,11 @@ size_t capReserveAtSpillBudget(size_t keys, size_t max_reserve_bytes, size_t cel
 {
     /// `HashTableGrowerWithPrecalculation::set` keeps a buffer at most half full and rounds its size up to a power of two.
     static constexpr size_t max_cells_per_key = 4;
-    /// `SpillingHashJoin` switches to `GraceHashJoin` at half of the budget, so the reserve stays under that half.
-    static constexpr size_t budget_divisor = 2;
 
     if (!keys || !max_reserve_bytes)
         return keys;
-    return std::min(keys, max_reserve_bytes / (budget_divisor * max_cells_per_key * cell_size));
+    /// `SpillingHashJoin` switches to `GraceHashJoin` at a fraction of the budget, so the reserve stays under that fraction.
+    return std::min(keys, max_reserve_bytes / (SPILL_THRESHOLD_DIVISOR * max_cells_per_key * cell_size));
 }
 
 Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sample_block)

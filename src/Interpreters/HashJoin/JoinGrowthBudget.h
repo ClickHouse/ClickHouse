@@ -2,20 +2,31 @@
 
 #include <Common/HashTable/HashTableGrowthBudget.h>
 
+#include <array>
 #include <atomic>
 
 namespace DB
 {
 
+/// `SpillingHashJoin` switches to `GraceHashJoin` once the bytes of the join reach `1 / SPILL_THRESHOLD_DIVISOR` of
+/// `max_bytes_before_external_join`, so that a hash table buffer, which holds 3X while it grows from X to 2X, still fits.
+inline constexpr size_t SPILL_THRESHOLD_DIVISOR = 2;
+
+[[nodiscard]] inline bool reachesSpillThreshold(size_t join_bytes, size_t max_bytes_before_external_join)
+{
+    return join_bytes * SPILL_THRESHOLD_DIVISOR >= max_bytes_before_external_join;
+}
+
 /** Tells the buckets of the hash tables of a `HashJoin` build to stay smaller, in the Robin Hood mode,
   * when growing would take the join over the spill threshold of `SpillingHashJoin` or over the memory limit of the query.
   *
-  * The buckets fill at about the same rate, so they overflow at about the same time. The first bucket to ask therefore
-  * judges the growth of the whole join, and the answer is kept: every later bucket of the build also takes the smaller table.
+  * The buckets fill at about the same rate, so they overflow at about the same time. A bucket therefore judges the growth
+  * of all the buckets that have not grown from its size yet, and a yes is kept: every later bucket of the build also takes
+  * the smaller table. The buckets that already grew are not counted again, because their growth is in the byte counts.
   *
   * The step is judged against two limits:
-  *  - the spill threshold: `SpillingHashJoin` switches to `GraceHashJoin` once the bytes of the join reach half of
-  *    `max_bytes_before_external_join`;
+  *  - the spill threshold: `SpillingHashJoin` switches to `GraceHashJoin` once the bytes of the join reach
+  *    `1 / SPILL_THRESHOLD_DIVISOR` of `max_bytes_before_external_join`;
   *  - the memory that the query can still allocate. `realloc` charges the new buffer before it releases the old one,
   *    and one bucket per build slot can be in it at once, so the check also covers that.
   */
@@ -46,8 +57,6 @@ public:
 
     bool preferSmallerTable(size_t growth_cells, size_t bucket_cells) override;
 
-    [[nodiscard]] bool pressureLatched() const override { return latched.load(std::memory_order_relaxed); }
-
     /// How many times a bucket took the smaller table, or was sized for it.
     [[nodiscard]] size_t switches() const { return switch_count.load(std::memory_order_relaxed); }
 
@@ -65,6 +74,8 @@ private:
 
     std::atomic<bool> latched = false;
     std::atomic<size_t> switch_count = 0;
+    /// How many buckets were told to grow from each size, indexed by the power of two of its cells.
+    std::array<std::atomic<size_t>, 64> grown_from_size{};
 };
 
 }

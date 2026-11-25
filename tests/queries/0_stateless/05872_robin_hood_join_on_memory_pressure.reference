@@ -9,6 +9,9 @@ mode 0: MEMORY_LIMIT_EXCEEDED
 mode 1: MEMORY_LIMIT_EXCEEDED
 mode auto: the same result
 mode auto: switched 1
+--- max_memory_usage is at 1.15 of the peak memory
+mode auto: the same result
+mode auto: switched 0
 --- two runs with the hash table statistics on
 the same result in both runs: 1
 spilled: 0 0

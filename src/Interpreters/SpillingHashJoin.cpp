@@ -150,7 +150,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
-    if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+    if (reachesSpillThreshold(hash_join->getTotalByteCount(), max_bytes_before_external_join))
         switchToExternalJoin(context);
 
     /// Re-check: we may have just switched.

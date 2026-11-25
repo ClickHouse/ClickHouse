@@ -4,6 +4,9 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+#include <bit>
+
 namespace DB
 {
 
@@ -41,20 +44,25 @@ bool JoinGrowthBudget::preferSmallerTable(size_t growth_cells, size_t bucket_cel
         return true;
     }
 
-    /// Every bucket of every table is about to take the same step.
-    const size_t step_bytes = growth_cells * cell_size * buckets;
+    /// `bucket_cells` is a power of two, so its bit width minus one is below 64.
+    auto & grown = grown_from_size[std::bit_width(bucket_cells) - 1];
+    /// Every bucket that has not grown from this size is about to take the same step. Those that did are in the counts already.
+    const size_t step_bytes = growth_cells * cell_size * (buckets - std::min(buckets, grown.load(std::memory_order_relaxed)));
     /// The old buffers stay charged while the new ones are allocated.
     const size_t transient_bytes = bucket_cells * cell_size * num_slots;
 
     const size_t join_bytes = total_bytes->load(std::memory_order_relaxed);
-    const bool crosses_spill_threshold
-        = max_bytes_before_external_join && (join_bytes + futureStoredBytes() + step_bytes) * 2 >= max_bytes_before_external_join;
+    const bool crosses_spill_threshold = max_bytes_before_external_join
+        && reachesSpillThreshold(join_bytes + futureStoredBytes() + step_bytes, max_bytes_before_external_join);
 
     const auto available_memory = getAvailableMemoryForSpilling();
     const bool crosses_memory_limit = available_memory && *available_memory <= step_bytes + transient_bytes;
 
     if (!crosses_spill_threshold && !crosses_memory_limit)
+    {
+        grown.fetch_add(1, std::memory_order_relaxed);
         return false;
+    }
 
     latched.store(true, std::memory_order_relaxed);
     switch_count.fetch_add(1, std::memory_order_relaxed);

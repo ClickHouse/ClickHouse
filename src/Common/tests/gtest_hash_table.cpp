@@ -894,8 +894,6 @@ struct LatchingBudget final : HashTableGrowthBudget
         return latched;
     }
 
-    [[nodiscard]] bool pressureLatched() const override { return latched; }
-
     size_t latch_at_cells;
     size_t asked = 0;
     bool latched = false;
@@ -911,22 +909,14 @@ TEST(HashTableRobinHood, GrowerOnMemoryPressure)
     Grower grower;
     grower.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &budget);
 
-    /// A projection of the growth does not ask the budget.
-    Grower projection = grower;
-    for (size_t i = 0; i < 8; ++i)
-        projection.increaseSize();
-    ASSERT_EQ(budget.asked, 0);
-    ASSERT_FALSE(projection.isRobinHood());
-    ASSERT_EQ(projection.bufSize(), 16 << 16);
-
     /// The budget is asked at every size, also below the size at which the mode `Always` switches. The first answer is no.
-    grower.increaseSizeAskingBudget();
+    grower.increaseSize();
     ASSERT_EQ(budget.asked, 1);
     ASSERT_EQ(grower.bufSize(), 64);
     ASSERT_FALSE(grower.isRobinHood());
 
     /// The second one is yes: the bucket switches in place, to the higher load factor.
-    grower.increaseSizeAskingBudget();
+    grower.increaseSize();
     ASSERT_EQ(budget.asked, 2);
     ASSERT_EQ(grower.bufSize(), 64);
     ASSERT_TRUE(grower.isRobinHood());
@@ -934,15 +924,16 @@ TEST(HashTableRobinHood, GrowerOnMemoryPressure)
     ASSERT_TRUE(grower.overflow(58));
 
     /// A bucket in the Robin Hood mode only doubles, and nobody is asked.
-    grower.increaseSizeAskingBudget();
+    grower.increaseSize();
     ASSERT_EQ(budget.asked, 2);
     ASSERT_EQ(grower.bufSize(), 128);
     ASSERT_TRUE(grower.isRobinHood());
 
-    /// After a yes every other bucket switches at once, even when it does not ask.
+    /// After a yes the budget answers yes at once, so every other bucket switches as soon as it grows.
     Grower later;
     later.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &budget);
     later.increaseSize();
+    ASSERT_EQ(budget.asked, 3);
     ASSERT_EQ(later.bufSize(), 16);
     ASSERT_TRUE(later.isRobinHood());
 
@@ -971,8 +962,8 @@ TEST(HashTableRobinHood, GrowerOnMemoryPressure)
     never.setRobinHoodMode(RobinHoodMode::Never);
     for (size_t i = 0; i < 10; ++i)
     {
-        always.increaseSizeAskingBudget();
-        never.increaseSizeAskingBudget();
+        always.increaseSize();
+        never.increaseSize();
     }
     ASSERT_TRUE(always.isRobinHood());
     ASSERT_FALSE(never.isRobinHood());
