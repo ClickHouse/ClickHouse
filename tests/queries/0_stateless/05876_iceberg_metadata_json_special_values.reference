@@ -1,0 +1,30 @@
+--- escaped as \uXXXX
+c0	Int64
+ключ "q" \\ / é 😀\ttab	String
+1	a
+1	1
+--- raw UTF-8
+c0	Int64
+ключ "q" \\ / é 😀\ttab	String
+1	a
+1	1
+--- written by INSERT
+['c0', '\u043a\u043b\u044e\u0447 "q" \\ / \xe9 \U0001f600\ttab']
+{'escaped': 'a"b\\c/d\x08e\x0cf\ng\rh\ti\x00j\x1f', '\xfcn\xefc\xf8d\xe9 \u043a\u043b\u044e\u0447': '\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \U0001f600'}
+booleans list [True, False]
+double float 1.5e+300
+fraction float 0.1
+max_int64 int 9223372036854775807
+max_uint64 int 18446744073709551615
+min_int64 int -9223372036854775808
+negative_zero int 0
+nested list [[[]], {}, [{'a': [None]}]]
+null NoneType None
+small_double float -2.5e-308
+whole_double int 3
+zero int 0
+c0	Int64
+ключ "q" \\ / é 😀\ttab	String
+1	a
+2	b
+2	2

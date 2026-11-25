@@ -51,6 +51,10 @@
 #include <Interpreters/sortBlock.h>
 #include <Poco/String.h>
 
+#if USE_SIMDJSON
+#include <simdjson.h>
+#endif
+
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
@@ -1102,12 +1106,73 @@ void validateTableMetadata(const Poco::JSON::Object & metadata, const String & m
     }
 }
 
+#if USE_SIMDJSON
+/// The same depth limit as `Poco::JSON::Parser` has.
+static constexpr size_t metadata_json_max_depth = 1000;
+
+/// Builds the same tree `Poco::JSON::Parser` builds: objects without preserved key order, integers as `Int64`,
+/// or as `UInt64` when they do not fit `Int64`, numbers with a fraction or an exponent as `double`, null as empty `Var`.
+static Poco::Dynamic::Var simdjsonToPoco(simdjson::dom::element element)
+{
+    switch (element.type())
+    {
+        case simdjson::dom::element_type::OBJECT:
+        {
+            Poco::JSON::Object::Ptr object = new Poco::JSON::Object;
+            for (const auto [key, value] : element.get_object().value_unsafe())
+                object->set(std::string(key), simdjsonToPoco(value));
+            return object;
+        }
+        case simdjson::dom::element_type::ARRAY:
+        {
+            Poco::JSON::Array::Ptr array = new Poco::JSON::Array;
+            for (const auto value : element.get_array().value_unsafe())
+                array->add(simdjsonToPoco(value));
+            return array;
+        }
+        case simdjson::dom::element_type::STRING:
+            return std::string(element.get_string().value_unsafe());
+        case simdjson::dom::element_type::INT64:
+            return static_cast<Poco::Int64>(element.get_int64().value_unsafe());
+        case simdjson::dom::element_type::UINT64:
+            return static_cast<Poco::UInt64>(element.get_uint64().value_unsafe());
+        case simdjson::dom::element_type::DOUBLE:
+            return element.get_double().value_unsafe();
+        case simdjson::dom::element_type::BOOL:
+            return element.get_bool().value_unsafe();
+        case simdjson::dom::element_type::NULL_VALUE:
+            return Poco::Dynamic::Var();
+        case simdjson::dom::element_type::BIGINT:
+            break;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected simdjson element type {}", static_cast<char>(element.type()));
+}
+#endif
+
 Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str, const String & metadata_file_path)
 {
     ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
     ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
 
+#if USE_SIMDJSON
+    simdjson::dom::parser parser;
+    auto error = parser.allocate(metadata_json_str.size(), metadata_json_max_depth);
+    simdjson::dom::element document;
+    if (!error)
+        error = parser.parse(metadata_json_str.data(), metadata_json_str.size()).get(document);
+    if (error)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot parse Iceberg table metadata file '{}': {}",
+            metadata_file_path, simdjson::error_message(error));
+    if (document.type() != simdjson::dom::element_type::OBJECT)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot parse Iceberg table metadata file '{}': the top-level value is not an object",
+            metadata_file_path);
+    return simdjsonToPoco(document).extract<Poco::JSON::Object::Ptr>();
+#else
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json;
     try
@@ -1122,6 +1187,7 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
             metadata_file_path, e.displayText());
     }
     return json.extract<Poco::JSON::Object::Ptr>();
+#endif
 }
 
 static Poco::Dynamic::Var deepCopyJSONValue(const Poco::Dynamic::Var & value);

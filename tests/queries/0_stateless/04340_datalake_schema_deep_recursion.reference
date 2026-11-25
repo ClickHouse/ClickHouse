@@ -1,2 +1,2 @@
-iceberg_depth: Maximum allowed JSON depth exceeded
+iceberg_depth: The JSON document was too deep
 paimon_depth: Maximum allowed JSON depth exceeded
