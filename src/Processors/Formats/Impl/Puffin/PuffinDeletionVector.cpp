@@ -186,7 +186,7 @@ void PuffinDeletionVectorBuilder::consume(const Chunk & chunk)
         if (positions_array)
         {
             const auto & offsets = positions_array->getOffsets();
-            add_positions(bitmap, positions_array->getData(), offsets[run_begin - 1], offsets[run_end - 1], positions_buffer);
+            add_positions(bitmap, positions_array->getData(), offsets[static_cast<ssize_t>(run_begin) - 1], offsets[run_end - 1], positions_buffer);
         }
         else
         {

@@ -16,8 +16,8 @@ namespace DeltaLake
 
 struct ScannedDataFile
 {
-    using KernelDvInfo = KernelPointerWrapper<ffi::SharedDvInfo, ffi::free_kernel_dv_info>;
-    using KernelExpression = KernelPointerWrapper<ffi::SharedExpression, ffi::free_kernel_expression>;
+    using KernelDvInfo = KernelPointerWrapper<::SharedDvInfo, ::free_kernel_dv_info>;
+    using KernelExpression = KernelPointerWrapper<::SharedExpression, ::free_kernel_expression>;
 
     std::string path;
     int64_t size = 0;

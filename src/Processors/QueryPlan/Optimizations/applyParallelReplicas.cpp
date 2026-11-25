@@ -159,6 +159,11 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.hasPinnedBlockNumbers())
         return false;
 
+    /// A read of a `UNIQUE KEY` table cannot be serialized, see `ReadFromMergeTree::serialize`. Query-based parallel
+    /// replicas does not distribute such a read either (`isStorageEligibleForParallelReplicas`).
+    if (read.getStorageMetadata()->hasUniqueKey())
+        return false;
+
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];

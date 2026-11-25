@@ -77,6 +77,7 @@
 #include <Functions/registerFunctions.h>
 #include <Parsers/registerParsers.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
@@ -1443,6 +1444,7 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
+    registerWindowFunctions();
     registerTableFunctions();
     registerDatabases();
     registerStorages();

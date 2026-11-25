@@ -1520,6 +1520,9 @@ Period in seconds to completely remove snapshot parts for SharedMergeTree. Only 
     DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
 Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
 )", 0) \
+    DECLARE(UInt64, snapshot_cleaner_max_replicas, 3, R"(
+Maximum number of replicas that run the snapshot cleaner for each table under the snapshot registry. Every replica running a cleaner advertises it with the `snapshot_cleaner_enabled` replica flag; the replicas rank the advertising replicas by a rendezvous hash of the table and the replica name, and a replica processes a table only when it is among the top entries, so the cleanup of different tables spreads across the fleet while duplicated work stays bounded. Replicas whose cleaner is disabled (`snapshot_cleaner_period = 0`) never advertise and are never elected. `0` means no limit: every replica processes every table. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
 )", 0) \
@@ -2065,6 +2068,7 @@ At startup, before it starts any thread, the server moves itself into a new [mou
 - The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file, the directories of the included files and of the targets of the symbolic links among the configuration files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, of the certificate and the key of every `distributed_cache_server` section and of the certificate chain of `distributed_cache_client`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable, with its dynamic loader and the shared libraries it needs, as the dynamic loader finds them. The locations of the logs of the bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) are writable.
 - The executable of the server and the shared libraries it is linked with, with the symbolic links next to them that name them (such as `libc.so.6`), and the directory of the heap profiles of jemalloc if its `prof_prefix` option is set.
 - What a program on Linux needs: `/proc` (with `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` and `/proc/irq` and the mounts inside them read-only, as in the containers of Docker), `/sys` (read-only), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, a private instance of `devpts` at `/dev/pts` with `/dev/ptmx` for the pseudoterminals of the web terminal and the SSH server, the network configuration in `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, the time zone database and the CA certificates (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) with the targets of the links inside them, as in a CA directory given in `caConfig`, `/usr/lib/debug` for the symbols in stack traces, the socket of the service manager from the `NOTIFY_SOCKET` environment variable, and `/dev/log` if `logger.use_syslog` is enabled. If `/dev/log` is a symbolic link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target is visible, so that a socket recreated there by a restarted service is seen. A socket directly in `/dev` that the syslog daemon recreates when it restarts is not seen again until the server restarts, because the `/dev` of the host is not visible.
+- The credentials of the clouds, read-only: the secrets that container runtimes mount in `/run/secrets` and `/var/run/secrets`, such as the tokens of the service accounts that Kubernetes projects into a pod, the files named by the environment variables `AWS_WEB_IDENTITY_TOKEN_FILE` (set by EKS for the IAM roles of service accounts), `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` (EKS Pod Identity), `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE` and `AZURE_FEDERATED_TOKEN_FILE` (the workload identity of Azure), and `~/.aws` if it is an accessible directory. The directories of these files and of the targets of the links to them are visible, so that a token that the kubelet rotates is seen, except for a file directly in `/` or in `/tmp`, which is visible on its own.
 - A private empty `/tmp`.
 - The paths listed in the `filesystem_isolation_paths` section of the configuration, with `<read_only>` and `<read_write>` elements.
 
@@ -3421,8 +3425,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 }
                 /// Drop the nodes this fragment removed, preserving the order of the survivors
                 /// (appended nodes sit past `matchable_count` and are never erased here).
-                for (size_t i = matchable_count; i-- > 0;)
+                for (size_t i = matchable_count; i > 0;)
                 {
+                    --i;
                     if (erased[i])
                         merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
                 }
@@ -3960,10 +3965,16 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->configuredMaxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"vector_similarity_index_cache_max_entries", {std::to_string(context->getVectorSimilarityIndexCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_tokens_cache_max_entries", {std::to_string(context->getTextIndexTokensCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_header_cache_max_entries", {std::to_string(context->getTextIndexHeaderCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_postings_cache_max_entries", {std::to_string(context->getTextIndexPostingsCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entries", {std::to_string(context->getQueryResultCache()->maxCount()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entry_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxEntrySizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
@@ -4134,9 +4145,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())
+    {
         changeable_settings.insert(
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"parquet_metadata_cache_max_entries",
+             {std::to_string(context->getParquetMetadataCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 
 #if ENABLE_DISTRIBUTED_CACHE

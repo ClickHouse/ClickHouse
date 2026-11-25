@@ -70,8 +70,8 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
-void tracingCallback(struct ffi::Event event);
-void tracingCallback(struct ffi::Event event)
+void tracingCallback(struct ::Event event);
+void tracingCallback(struct ::Event event)
 {
     /// Do not pollute logs with very long messages
     if (event.message.len > 200)
@@ -85,23 +85,23 @@ void tracingCallback(struct ffi::Event event)
         DeltaLake::KernelUtils::fromDeltaString(event.target));
 
     auto log = getLogger("DeltaKernelTracing");
-    if (event.level == ffi::Level::ERROR)
+    if (event.level == ::Level::ERROR)
     {
         LOG_ERROR(log, "{}", message);
     }
-    else if (event.level == ffi::Level::WARN)
+    else if (event.level == ::Level::WARN)
     {
         LOG_WARNING(log, "{}", message);
     }
-    else if (event.level == ffi::Level::INFO)
+    else if (event.level == ::Level::INFO)
     {
         LOG_INFO(log, "{}", message);
     }
-    else if (event.level == ffi::Level::DEBUG)
+    else if (event.level == ::Level::DEBUG)
     {
         LOG_DEBUG(log, "{}", message);
     }
-    else if (event.level == ffi::Level::TRACE)
+    else if (event.level == ::Level::TRACE)
     {
         LOG_TRACE(log, "{}", message);
     }
@@ -827,6 +827,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
+    StorageMetadataPtr /*metadata_snapshot*/,
     const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
