@@ -2162,7 +2162,7 @@ bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_c
     /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
     /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
     /// would come from other values than the ones the reader compares against it.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
 }
 
 bool ReadFromURL::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
