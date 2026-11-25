@@ -104,7 +104,7 @@ This unified approach allows you to build dashboards across telemetry types usin
 
 Dashboards provide a way to group related visualizations, enabling you to compare metrics and explore patterns side by side to identify potential root causes in your systems. These dashboards can be used for ad-hoc investigations or saved for ongoing monitoring.
 
-Global filters can be applied at the dashboard level, automatically propagating to all visualizations within that dashboard. This allows for consistent drill-down across charts and simplifies correlation of events across services and telemetry types.
+Global filters can be applied at the dashboard level, automatically propagating to the chart builder visualizations within that dashboard. This allows for consistent drill-down across charts and simplifies correlation of events across services and telemetry types.
 
 We create a dashboard with two visualizations below using the log and trace data sources. These steps can be reproduced on [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) or locally by connecting to the dataset hosted on [sql.clickhouse.com](https://sql.clickhouse.com).
 
@@ -265,7 +265,7 @@ Selecting it opens the [Event Deltas](/clickstack/observability/features/event-d
 </Step>
 <Step title="Filter dashboard" id="filter-dashboards">
 
-Lucene or SQL filters, along with the time range, can be applied at the dashboard level and will automatically propagate to all visualizations.
+Lucene or SQL filters, along with the time range, can be applied at the dashboard level and will automatically propagate to all chart builder visualizations. Raw SQL visualizations apply them only where their query uses [query parameters](/clickstack/observability/features/dashboards/sql-visualizations#query-parameters) and [macros](/clickstack/observability/features/dashboards/sql-visualizations#macros).
 
 <div className="ch-image-lg">
 
