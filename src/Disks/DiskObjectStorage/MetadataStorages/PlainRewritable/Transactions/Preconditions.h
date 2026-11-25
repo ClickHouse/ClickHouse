@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
-#include <Disks/NormalizedPath.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
 #include <base/defines.h>
 

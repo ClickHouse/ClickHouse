@@ -1,4 +1,4 @@
-#include <Disks/NormalizedPath.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
 #include <Common/Exception.h>
 
