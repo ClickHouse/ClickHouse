@@ -128,6 +128,26 @@ OPTIMIZE TABLE t_nullable FINAL;
 SELECT groupArray(part_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_nullable' AND active;
 SELECT (SELECT h FROM hashes WHERE c = 'nullable') = sum(cityHash64(toString(tuple(*)))), count(), count(e_n) FROM t_nullable;
 
+SELECT 'TTL recomputing MATERIALIZED columns';
+
+DROP TABLE IF EXISTS t_recompute;
+CREATE TABLE t_recompute (k UInt64, d Date, e_u UInt64, e_m UInt64 MATERIALIZED 0, m UInt64 MATERIALIZED e_u + 5)
+ENGINE = MergeTree ORDER BY k
+TTL d + INTERVAL 1 DAY
+SETTINGS enable_vertical_merge_algorithm = 0, ratio_of_defaults_for_sparse_serialization = 0.9,
+    compute_exact_num_defaults_for_sparse_columns = 1, min_bytes_for_wide_part = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1; -- no background TTL merge before OPTIMIZE
+
+SYSTEM STOP MERGES t_recompute;
+INSERT INTO t_recompute (k, d) VALUES (0, '2000-01-01'), (1, '2100-01-01');
+INSERT INTO t_recompute (k, d) VALUES (2, '2000-01-01'), (3, '2100-01-01');
+-- No part has x, so the merge that applies the TTL recomputes e_m and m from it.
+ALTER TABLE t_recompute ADD COLUMN x UInt64;
+ALTER TABLE t_recompute MODIFY COLUMN e_m UInt64 MATERIALIZED x + 1, MODIFY COLUMN m UInt64 MATERIALIZED x + e_u + 1;
+SYSTEM START MERGES t_recompute;
+OPTIMIZE TABLE t_recompute FINAL;
+SELECT k, e_m, m FROM t_recompute ORDER BY k;
+
 SELECT 'Skipped columns';
 SET max_rows_to_read = 0; -- system.text_log can be big
 SYSTEM FLUSH LOGS text_log;
@@ -149,4 +169,5 @@ DROP TABLE t_replacing;
 DROP TABLE t_ttl;
 DROP TABLE t_text;
 DROP TABLE t_nullable;
+DROP TABLE t_recompute;
 DROP TABLE hashes;

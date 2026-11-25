@@ -2289,6 +2289,10 @@ NamesAndTypesList MergeTask::ExecuteAndFinalizeHorizontalPart::getColumnsOfDefau
     if (metadata.hasAnyGroupByTTL() || metadata.hasAnyColumnTTL())
         return {};
 
+    /// A merge that applies TTL recomputes the `MATERIALIZED` columns that read an expired column from the read data.
+    if (ctx->need_remove_expired_values && !global_ctx->new_data_part->expired_columns.empty())
+        return {};
+
     /// The TTL step and the text index builds evaluate these columns over the read data. Unlike
     /// `global_ctx->storage_columns`, the name set includes the expired columns that a TTL expression may read.
     const auto storage_columns = metadata.getColumns().getAllPhysical().getNameSet();
