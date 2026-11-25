@@ -973,9 +973,6 @@ private:
         if (!params->params.enable_parallel_single_level_merge)
             return {};
 
-        if (num_threads <= 1 || data->size() <= 1)
-            return {};
-
         /// The overflow row lives outside the partitioned cells, and under the `any` overflow mode
         /// the tables hold diverged key sets that the merge must reconcile key by key — both need
         /// the serial merge. Under `throw` and `break` the tables are ordinary, and the partition
@@ -1007,27 +1004,6 @@ private:
         if (scanning_partitions <= 1)
             return {};
 
-        /// The producers of an adaptive aggregation index the cells of their tables (see
-        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of
-        /// scanning every cell of every table, unless `enable_parallel_single_level_merge_by_index` is off.
-        /// The partitions are those of the indexes then, and the workers claim them one by one, so a worker
-        /// beyond the partitions would claim none. The layout of more than 256 producers can have fewer
-        /// partitions than producers when an external-aggregation threshold reduces it. A single worker would
-        /// only rebuild the result into a fresh table, like a single partition.
-        PartitionMergePlan plan;
-        if (params->aggregator.mergesByCellIndex(*data))
-        {
-            plan.partitions = data->at(0)->cellIndex().numPartitions();
-            plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);
-            if (plan.workers <= 1)
-                return {};
-        }
-        else
-        {
-            plan.partitions = scanning_partitions;
-            plan.workers = std::min(num_threads, scanning_partitions);
-        }
-
         /// A worker finalizes the states of the partitions it claimed when it emits them as a chunk. Where finalizing
         /// outweighs merging, as for tables of disjoint keys with large states, the first workers would claim most
         /// partitions and finalize them alone, so a worker emits a chunk once it holds about 4 MiB of states, estimated
@@ -1036,7 +1012,35 @@ private:
         /// partitions, so a chunk exceeds it by up to one partition.
         static constexpr size_t MEMORY_PER_CHUNK = 4 << 20;
         const size_t bytes_per_cell = std::max<size_t>(source_memory / std::max<size_t>(source_cells, 1), 1);
+        PartitionMergePlan plan;
         plan.rows_per_chunk = std::clamp<size_t>(MEMORY_PER_CHUNK / bytes_per_cell, 1, params->params.max_block_size);
+
+        /// The producers of an adaptive aggregation index the cells of their tables (see
+        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of
+        /// scanning every cell of every table, unless `enable_parallel_single_level_merge_by_index` is off.
+        /// The partitions are those of the indexes then, and the workers claim them one by one, so a worker
+        /// beyond the partitions would claim none. The layout of more than 256 producers can have fewer
+        /// partitions than producers when an external-aggregation threshold reduces it. A single worker only
+        /// rebuilds the result into fresh tables, which pays only when the result spans more than one chunk: the
+        /// serial path converts the result whole into one chunk, which holds all the results while all the states
+        /// are still alive. A lone table needs no merge, so splitting it into chunks is all that the merge does.
+        if (params->aggregator.mergesByCellIndex(*data))
+        {
+            plan.partitions = data->at(0)->cellIndex().numPartitions();
+            plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);
+            if (plan.workers <= 1 && source_cells <= plan.rows_per_chunk)
+                return {};
+        }
+        else
+        {
+            /// A scanning merge reads every table for each of its partitions, so it pays only when several workers
+            /// share it over several tables: a single worker would only rebuild the result, and a lone table would
+            /// be read whole for every partition.
+            if (num_threads <= 1 || data->size() <= 1)
+                return {};
+            plan.partitions = scanning_partitions;
+            plan.workers = std::min(num_threads, scanning_partitions);
+        }
 
         /// A worker's table takes the keys of one chunk: the worker's share of the partitions, or the smaller
         /// share at which the fan-out of the output ends the chunk, which is at least one partition (see
@@ -1426,8 +1430,8 @@ private:
 
     void createSourcesForPartitionMerge(const PartitionMergePlan & plan)
     {
-        /// `planPartitionMerge` plans the merge only for more than one worker.
-        chassert(plan.workers > 1 && plan.workers <= plan.partitions);
+        /// `planPartitionMerge` plans the merge for more than one worker, or for one that splits the result into chunks.
+        chassert(plan.workers >= 1 && plan.workers <= plan.partitions);
         for (size_t worker = 0; worker < plan.workers; ++worker)
         {
             auto source = std::make_shared<ConvertingAggregatedToChunksByPartitionMergingSource>(
