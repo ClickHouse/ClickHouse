@@ -20,7 +20,7 @@ public:
     std::string getName() const override { return "SystemProjectionPartsColumns"; }
 
 protected:
-    bool listsProjectionParts() const override { return true; }
+    RowSource getRowSource() const override { return RowSource::ProjectionParts; }
 
     StorageProcessingStatePtr prepareStorage(ContextPtr context, const StoragesInfo & info, const std::vector<UInt8> & columns_mask) override;
 

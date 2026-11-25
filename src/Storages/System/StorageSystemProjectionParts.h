@@ -19,7 +19,7 @@ public:
     std::string getName() const override { return "SystemProjectionParts"; }
 
 protected:
-    bool listsProjectionParts() const override { return true; }
+    RowSource getRowSource() const override { return RowSource::ProjectionParts; }
 
     void processPart(
         ContextPtr context,

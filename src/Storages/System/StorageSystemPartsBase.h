@@ -140,17 +140,25 @@ protected:
         return std::make_unique<StoragesInfoStream>(std::move(filter_by_database), std::move(filter_by_other_columns), context);
     }
 
-    /// Whether the rows describe projection parts rather than data parts.
-    virtual bool listsProjectionParts() const { return false; }
+    /// What the rows of the table describe.
+    enum class RowSource : uint8_t
+    {
+        DataParts,
+        ProjectionParts,
+        /// Entries kept by the storage itself rather than its parts: `processStorage` is called once per storage.
+        Storage,
+    };
 
-    /// Called once per storage before its parts. Returns nullptr to skip the storage
+    virtual RowSource getRowSource() const { return RowSource::DataParts; }
+
+    /// Called once per storage before its rows. Returns nullptr to skip the storage
     /// if the query ran into its time limit in the 'break' mode.
     virtual StorageProcessingStatePtr prepareStorage(ContextPtr /*context*/, const StoragesInfo & /*info*/, const std::vector<UInt8> & /*columns_mask*/)
     {
         return std::make_unique<StorageProcessingState>();
     }
 
-    /// Appends the rows of one part.
+    /// Appends the rows of one part. Required unless the row source is `RowSource::Storage`.
     virtual void processPart(
         ContextPtr context,
         MutableColumns & columns,
@@ -159,7 +167,15 @@ protected:
         const MergeTreeData::DataPartPtr & part,
         MergeTreeData::DataPartState part_state,
         bool has_state_column,
-        StorageProcessingState & storage_state) = 0;
+        StorageProcessingState & storage_state);
+
+    /// Appends all rows of one storage. Required if the row source is `RowSource::Storage`.
+    virtual void processStorage(
+        ContextPtr context,
+        MutableColumns & columns,
+        const std::vector<UInt8> & columns_mask,
+        const StoragesInfo & info,
+        bool has_state_column);
 };
 
 }

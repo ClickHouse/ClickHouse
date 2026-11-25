@@ -439,7 +439,7 @@ protected:
     Chunk generate() override;
 
 private:
-    /// Moves to the next storage that has parts. Returns false at the end of the stream.
+    /// Moves to the next storage that has rows to list. Returns false at the end of the stream.
     bool nextStorage();
     void releaseStorage();
 
@@ -461,6 +461,8 @@ private:
     /// Keeps the parent parts of projection parts alive.
     MergeTreeData::DataPartsVector parent_parts;
     size_t next_part = 0;
+    /// For `RowSource::Storage`: the rows of the current storage are not appended yet.
+    bool storage_rows_pending = false;
     bool is_exhausted = false;
 };
 
@@ -473,7 +475,7 @@ Chunk SystemPartsSource::generate()
 
     while (true)
     {
-        if (next_part == parts.size() && !nextStorage())
+        if (next_part == parts.size() && !storage_rows_pending && !nextStorage())
         {
             is_exhausted = true;
             break;
@@ -489,8 +491,16 @@ Chunk SystemPartsSource::generate()
 
         slowDownSystemPartsEnumeration(info.table);
 
-        const size_t part_index = next_part++;
-        storage->processPart(context, columns, columns_mask, info, parts[part_index], parts_states[part_index], has_state_column, *storage_state);
+        if (storage_rows_pending)
+        {
+            storage_rows_pending = false;
+            storage->processStorage(context, columns, columns_mask, info, has_state_column);
+        }
+        else
+        {
+            const size_t part_index = next_part++;
+            storage->processPart(context, columns, columns_mask, info, parts[part_index], parts_states[part_index], has_state_column, *storage_state);
+        }
 
         const size_t num_rows = columns.at(0)->size();
         if (num_rows == 0)
@@ -537,15 +547,25 @@ bool SystemPartsSource::nextStorage()
         if (!storage_state)
             continue;
 
-        if (storage->listsProjectionParts())
+        switch (storage->getRowSource())
         {
-            auto projection_parts = info.getProjectionParts(parts_states, has_state_column, query_status);
-            parts = std::move(projection_parts.projection_parts);
-            parent_parts = std::move(projection_parts.data_parts);
-        }
-        else
-        {
-            parts = info.getParts(parts_states, has_state_column, query_status);
+            case StorageSystemPartsBase::RowSource::Storage:
+            {
+                storage_rows_pending = true;
+                return true;
+            }
+            case StorageSystemPartsBase::RowSource::ProjectionParts:
+            {
+                auto projection_parts = info.getProjectionParts(parts_states, has_state_column, query_status);
+                parts = std::move(projection_parts.projection_parts);
+                parent_parts = std::move(projection_parts.data_parts);
+                break;
+            }
+            case StorageSystemPartsBase::RowSource::DataParts:
+            {
+                parts = info.getParts(parts_states, has_state_column, query_status);
+                break;
+            }
         }
 
         if (!parts.empty())
@@ -559,6 +579,7 @@ void SystemPartsSource::releaseStorage()
     parts_states.clear();
     parent_parts.clear();
     next_part = 0;
+    storage_rows_pending = false;
     storage_state.reset();
     info = {};
 }
@@ -710,6 +731,29 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
     storage_metadata.setColumns(columns);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+void StorageSystemPartsBase::processPart(
+    ContextPtr /*context*/,
+    MutableColumns & /*columns*/,
+    const std::vector<UInt8> & /*columns_mask*/,
+    const StoragesInfo & /*info*/,
+    const MergeTreeData::DataPartPtr & /*part*/,
+    MergeTreeData::DataPartState /*part_state*/,
+    bool /*has_state_column*/,
+    StorageProcessingState & /*storage_state*/)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not list parts", getName());
+}
+
+void StorageSystemPartsBase::processStorage(
+    ContextPtr /*context*/,
+    MutableColumns & /*columns*/,
+    const std::vector<UInt8> & /*columns_mask*/,
+    const StoragesInfo & /*info*/,
+    bool /*has_state_column*/)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} lists parts, not the rows of a whole storage", getName());
 }
 
 VirtualColumnsDescription StorageSystemPartsBase::createVirtuals()
