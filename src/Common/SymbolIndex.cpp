@@ -373,7 +373,7 @@ void collectSymbolsFromProgramHeaders(
                     const char * sym_name = &strtab[elf_sym[sym_index].name];
                     __msan_unpoison_string(sym_name);
 
-                    if (sym_name[0] == '\0')
+                    if (!sym_name)
                         continue;
 
                     if (!symbolValueIsAddress(elf_sym[sym_index].info, elf_sym[sym_index].shndx))
@@ -490,7 +490,7 @@ void collectSymbolsFromELFSymbolTable(
         /// Find the name in strings table.
         const char * symbol_name = strings + symbol_table_entry->name;
 
-        if (symbol_name[0] == '\0')
+        if (!symbol_name)
             continue;
 
         SymbolIndex::Symbol symbol{};

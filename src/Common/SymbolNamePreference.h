@@ -12,10 +12,15 @@ namespace DB
 {
 
 /// Whether `lhs` is preferred to `rhs` as the name of an address range that both name, as with aliases and
-/// functions merged by identical code folding. The preferred name has fewer leading '_' bytes, then is shorter,
-/// then is smaller in unsigned byte order. A strict total order on names: two distinct names are never equivalent.
+/// functions merged by identical code folding. The preferred name is not empty, then has fewer leading '_' bytes,
+/// then is shorter, then is smaller in unsigned byte order. A strict total order on names: two distinct names are
+/// never equivalent. Readers do not drop empty names, so that they do not read the names of every symbol: an
+/// empty name loses its range to any other one here.
 constexpr bool isPreferredSymbolName(std::string_view lhs, std::string_view rhs)
 {
+    if (lhs.empty() != rhs.empty())
+        return rhs.empty();
+
     size_t lhs_underscores = std::min(lhs.find_first_not_of('_'), lhs.size());
     size_t rhs_underscores = std::min(rhs.find_first_not_of('_'), rhs.size());
     if (lhs_underscores != rhs_underscores)

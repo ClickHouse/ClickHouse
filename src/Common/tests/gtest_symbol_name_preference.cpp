@@ -16,7 +16,14 @@ namespace
 
 TEST(SymbolNamePreference, Precedence)
 {
-    /// Fewer leading underscores first, whatever the size.
+    /// A name first, even one of underscores only.
+    EXPECT_TRUE(isPreferredSymbolName("_", ""));
+    EXPECT_TRUE(isPreferredSymbolName("___", ""));
+    EXPECT_TRUE(isPreferredSymbolName("a", ""));
+    EXPECT_FALSE(isPreferredSymbolName("", "_"));
+    EXPECT_FALSE(isPreferredSymbolName("", "a"));
+
+    /// Then fewer leading underscores, whatever the size.
     EXPECT_TRUE(isPreferredSymbolName("memcpy", "_ZN11__llvm_libc6memcpyEPvPKvm"));
     EXPECT_TRUE(isPreferredSymbolName("newlocale", "__newlocale"));
     EXPECT_TRUE(isPreferredSymbolName("a_very_long_name_without_underscores_in_front", "_x"));
@@ -53,6 +60,8 @@ TEST(SymbolNamePreference, StrictTotalOrder)
     for (auto lhs : names)
     {
         EXPECT_FALSE(isPreferredSymbolName(lhs, lhs)) << lhs;
+        if (!lhs.empty())
+            EXPECT_TRUE(isPreferredSymbolName(lhs, "")) << lhs;
         for (auto rhs : names)
         {
             if (lhs != rhs)
