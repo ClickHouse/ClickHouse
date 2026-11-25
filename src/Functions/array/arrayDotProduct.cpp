@@ -391,6 +391,8 @@ private:
                     Kernel::template combine<ResultType>(state, other_state);
 
                 /// Process the tail
+                /// At most 3 elements are left: a vectorized tail would never run and only slows the main loop down.
+                _Pragma("clang loop vectorize(disable)")
                 for (; i < array_size; ++i)
                     Kernel::template accumulate<ResultType>(
                         state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[current_offset + i]));
