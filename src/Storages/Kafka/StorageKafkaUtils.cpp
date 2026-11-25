@@ -1270,11 +1270,31 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr & context)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, context).empty();
 }
 
+std::vector<StorageID> getStreamingViews(const StorageID & table_id, const ContextPtr & context)
+{
+    auto & catalog = DatabaseCatalog::instance();
+    auto pending = catalog.getReadyDependentViews(table_id, context);
+    std::vector<StorageID> views;
+    while (!pending.empty())
+    {
+        const StorageID view_id = std::move(pending.back());
+        pending.pop_back();
+        const auto view = catalog.tryGetTable(view_id, context);
+        const StorageID id = view ? view->getStorageID() : view_id;
+        if (std::ranges::contains(views, id))
+            continue;
+        views.push_back(id);
+        if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get()))
+            std::ranges::copy(catalog.getDependentViews(materialized_view->getTargetTableId()), std::back_inserter(pending));
+    }
+    return views;
+}
+
 bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StorageID> & views)
 {
-    const auto ready_views = DatabaseCatalog::instance().getReadyDependentViews(table_id, context);
-    return ready_views.size() != views.size()
-        || !std::ranges::all_of(ready_views, [&](const StorageID & view) { return std::ranges::contains(views, view); });
+    const auto current = getStreamingViews(table_id, context);
+    return current.size() != views.size()
+        || !std::ranges::all_of(current, [&](const StorageID & view) { return std::ranges::contains(views, view); });
 }
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)

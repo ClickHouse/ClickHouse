@@ -1335,7 +1335,7 @@ void StorageKafka2::threadFunc(size_t idx)
                 while (!task->stream_cancelled && num_created_consumers > 0)
                 {
                     maybe_stall_reason.reset();
-                    auto views = DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext());
+                    auto views = StorageKafkaUtils::getStreamingViews(table_id, getContext());
                     if (views.empty())
                     {
                         ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);

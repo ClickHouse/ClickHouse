@@ -101,7 +101,11 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
-/// True if the ready dependent views of `table_id` differ from `views`.
+/// The views a streaming insert into `table_id` reaches, by UUID: the ready dependent views and, through each
+/// materialized view's target table, their views. Empty while the dependent views are not ready.
+std::vector<StorageID> getStreamingViews(const StorageID & table_id, const ContextPtr & context);
+
+/// True if getStreamingViews(table_id, context) differs from `views`.
 bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StorageID> & views);
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);

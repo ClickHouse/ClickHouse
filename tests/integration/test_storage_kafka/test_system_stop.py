@@ -1128,11 +1128,15 @@ def test_refresh_survives_unready_dependencies(kafka_cluster):
         assert_dst_count_stable(table, 6, seconds=5)
 
 
-@pytest.mark.parametrize("refresh_while_stopped", [False, True], ids=["streaming", "refresh"])
+@pytest.mark.parametrize(
+    "variant,refresh_while_stopped",
+    [("new", False), ("new", True), ("cascade", False), ("replace", False)],
+    ids=["streaming", "refresh", "cascade", "replace"],
+)
 @pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
-def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, refresh_while_stopped):
-    # A view created while a streaming cycle waits must get the messages that cycle polls,
-    # although its insert pipeline was built without the view.
+def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, variant, refresh_while_stopped):
+    # A view created while a streaming cycle waits (a new view on the table, a view on its target, or a view
+    # re-created under the same name) must get the messages that cycle polls, although its pipeline lacks it.
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_new_view_{k.random_string(6)}"
     failpoint = "kafka_pause_after_building_insert_pipeline"
@@ -1159,15 +1163,18 @@ def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, ref
             if refresh_while_stopped:
                 instance.query(f"SYSTEM REFRESH test.{table}")
             instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+            if variant == "replace":
+                instance.query(f"DROP TABLE test.{table}_mv")
+            view = f"{table}_mv" if variant == "replace" else f"{table}_mv2"
+            source = f"{table}_dst" if variant == "cascade" else table
             instance.query(
-                f"CREATE MATERIALIZED VIEW test.{table}_mv2 TO test.{table}_dst2 AS "
-                f"SELECT key, value FROM test.{table}"
+                f"CREATE MATERIALIZED VIEW test.{view} TO test.{table}_dst2 AS "
+                f"SELECT key, value FROM test.{source}"
             )
             produce(kafka_cluster, table, 1, 100)
         finally:
             instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
-        wait_dst_count(table, 101)
         result = instance.query_with_retry(
             f"SELECT count() FROM test.{table}_dst2",
             check_callback=lambda res: int(res) == 100,
@@ -1175,5 +1182,7 @@ def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, ref
             sleep_time=0.5,
         )
         assert int(result) == 100, f"expected 100 rows in {table}_dst2, got {result!r}"
+        expected_dst = 1 if variant == "replace" else 101
+        wait_dst_count(table, expected_dst)
         assert int(instance.query(f"SELECT uniqExact(key) FROM test.{table}_dst2")) == 100
-        assert_dst_count_stable(table, 101, seconds=3)
+        assert_dst_count_stable(table, expected_dst, seconds=3)

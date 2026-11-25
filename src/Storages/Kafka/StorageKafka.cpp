@@ -639,7 +639,7 @@ void StorageKafka::threadFunc(size_t idx)
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
-                auto views = DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext());
+                auto views = StorageKafkaUtils::getStreamingViews(table_id, getContext());
                 if (views.empty())
                 {
                     ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
@@ -652,9 +652,12 @@ void StorageKafka::threadFunc(size_t idx)
                 bool views_changed = false;
                 // Exit the loop & reschedule if some stream stalled
                 auto some_stream_is_stalled = streamToViews(cycle_epoch, views, views_changed);
-                /// A REFRESH cycle that ended unconsumed on a view change gives its permit back.
+                /// A REFRESH cycle that ended unconsumed on a view change gives its permit back; the next call claims it again.
                 if (views_changed && refresh_cycle)
+                {
                     task->last_seen_refresh_epoch = refresh_epoch;
+                    break;
+                }
 
                 if (some_stream_is_stalled)
                 {
@@ -786,7 +789,7 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch, const std::vector<StorageID
         executor.execute();
     }
 
-    views_changed = std::ranges::any_of(sources, [](const auto & source) { return source->endedOnViewsChange(); });
+    views_changed = rows.load() == 0 && std::ranges::any_of(sources, [](const auto & source) { return source->endedOnViewsChange(); });
 
     bool some_stream_is_stalled = false;
     for (auto & source : sources)

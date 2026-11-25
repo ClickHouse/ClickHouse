@@ -59,7 +59,7 @@ private:
     const Block virtual_header;
     const StreamingHandleErrorMode handle_error_mode;
     const UInt64 cancel_epoch;
-    /// Background streaming only: the ready views the insert pipeline of this cycle was built for.
+    /// Background streaming only: the views (getStreamingViews) the insert pipeline of this cycle was built for.
     const std::optional<std::vector<StorageID>> streaming_views;
     bool ended_on_views_change = false;
 
