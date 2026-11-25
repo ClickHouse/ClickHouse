@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/ExpressionActions.h>
@@ -88,7 +89,24 @@ ActionsDAG addMissingDefaults(
 
     /// Computes explicitly specified values by default and materialized columns.
     if (auto dag = evaluateMissingDefaults(actions.getResultColumns(), required_columns, columns, context, true, null_as_default))
+    {
+        /// An expression may read a subcolumn of a column that has just been filled with the default value of its type
+        /// (`d DEFAULT a.x.y` next to an omitted `a.x`). The subcolumn is taken from that column here: the caller has
+        /// only the columns of the header to extract it from, where it is absent.
+        Block added_columns;
+        for (const auto & column : actions.getResultColumns())
+            if (!header.has(column.name))
+                added_columns.insert(column);
+
+        if (!added_columns.empty())
+        {
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(added_columns, dag->getRequiredColumnsNames(), context, &columns);
+            if (!extracting_subcolumns_dag.getNodes().empty())
+                *dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag));
+        }
+
         actions = ActionsDAG::merge(std::move(actions), std::move(*dag));
+    }
 
     /// Removes unused columns and reorders result.
     actions.removeUnusedActions(required_columns.getNames(), false);

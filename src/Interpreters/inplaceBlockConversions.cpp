@@ -71,6 +71,27 @@ namespace ErrorCodes
 
 namespace
 {
+/// Replace the identifiers `name` with `getSubcolumn(column_name, 'subcolumn_name')`.
+void replaceIdentifierWithSubcolumnExtraction(ASTPtr & ast, const String & name, const String & column_name, const String & subcolumn_name)
+{
+    checkStackSize();
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name() == name)
+        {
+            auto alias = ast->tryGetAlias();
+            ast = makeASTFunction("getSubcolumn", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(subcolumn_name));
+            if (!alias.empty())
+                ast->setAlias(alias);
+        }
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceIdentifierWithSubcolumnExtraction(child, name, column_name, subcolumn_name);
+}
+
 /// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(
     const Block & block,
@@ -104,6 +125,29 @@ void addDefaultRequiredExpressionsRecursively(
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
+
+        /// The expression may read a subcolumn of a column that is not in the block and is calculated here as well
+        /// (`d DEFAULT a.x.y` next to an omitted `a.x`). The subcolumn is taken from that calculated column:
+        /// left as it is, the name would be looked up in the block, where another column may offer a subcolumn with
+        /// the same name (the path `x.y` of a `JSON` column `a`).
+        for (const auto & name : columns_context.requiredColumns())
+        {
+            if (block.has(name) || columns.has(name))
+                continue;
+
+            auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+            if (!subcolumn || !subcolumn->isSubcolumn())
+                continue;
+
+            auto column_name = subcolumn->getNameInStorage();
+            if (block.has(column_name))
+                continue;
+
+            replaceIdentifierWithSubcolumnExtraction(column_default_expr, name, column_name, subcolumn->getSubcolumnName());
+            required_columns_names.erase(name);
+            required_columns_names.insert(column_name);
+        }
+
         auto required_type = make_intrusive<ASTLiteral>(columns.get(required_column_name).type->getName());
 
         auto expr = makeASTFunction("_CAST", column_default_expr, required_type);

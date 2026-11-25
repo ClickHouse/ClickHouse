@@ -6,3 +6,15 @@
 3	66	66	66
 -- INSERT through a materialized view
 4	77	77	77
+-- omitted column: INSERT ... VALUES
+-- omitted column: INSERT ... SELECT
+-- omitted column: defaults of the fields omitted in the input format
+-- omitted column: INSERT through a materialized view
+1	0	0	0
+2	0	0	0
+3	0	0	0
+4	0	0	0
+1	44	44	44
+2	44	44	44
+3	44	44	44
+4	44	44	44

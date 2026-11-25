@@ -29,7 +29,9 @@ ActionsDAG createSubcolumnsExtractionActions(
 
         auto column_and_subcolumn_pairs = Nested::getAllColumnAndSubcolumnPairs(required_column);
 
-        /// The column that the table gives the subcolumn goes first.
+        /// The column that the table gives the subcolumn is the only one to take it from. If it is not available
+        /// (the `INSERT` omitted it), the subcolumn is not extracted from another column that happens to offer
+        /// the same name: its values would not be the values of the subcolumn of the table.
         String column_name_in_table;
         String subcolumn_name_in_table;
         if (table_columns)
@@ -39,7 +41,8 @@ ActionsDAG createSubcolumnsExtractionActions(
             {
                 column_name_in_table = column_in_table->getNameInStorage();
                 subcolumn_name_in_table = column_in_table->getSubcolumnName();
-                column_and_subcolumn_pairs.emplace(column_and_subcolumn_pairs.begin(), column_name_in_table, subcolumn_name_in_table);
+                column_and_subcolumn_pairs.clear();
+                column_and_subcolumn_pairs.emplace_back(column_name_in_table, subcolumn_name_in_table);
             }
         }
 
