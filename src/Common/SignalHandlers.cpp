@@ -354,6 +354,14 @@ void HandledSignals::addSignalHandler(
         if (sigaction(signal, &sa, &previous))
             throw Poco::Exception("Cannot set signal handler.");
 
+        /// An asynchronous signal goes back to SIG_DFL: in a restarted watchdog child,
+        /// its previous action is the watchdog's forwarding handler.
+        if (std::ranges::contains(asynchronousHandledSignals(), signal))
+        {
+            previous = {};
+            previous.sa_handler = SIG_DFL;
+        }
+
         if (register_signal)
             handled_signals.emplace_back(signal, previous);
     }
@@ -893,7 +901,7 @@ void HandledSignals::reset(bool close_pipe)
 {
     handled_signals_were_reset.test_and_set();
 
-    /// Give back the actions our handlers replaced, to avoid trying to write to the signal_pipe that will be closed after.
+    /// Restore the recorded actions, to avoid trying to write to the signal_pipe that will be closed after.
     /// Nothing was ever installed where there are no signals, so this loop is compiled out there.
 #if defined(OS_HAS_SIGNAL_HANDLERS)
     for (auto it = handled_signals.rbegin(); it != handled_signals.rend(); ++it)

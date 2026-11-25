@@ -156,7 +156,7 @@ private:
 struct HandledSignals
 {
 #if defined(OS_HAS_SIGNAL_HANDLERS)
-    /// Each registered signal with the action its handler replaced, given back by `reset` in reverse order.
+    /// Each registered signal with the action `reset` restores, in reverse order.
     std::vector<std::pair<int, struct sigaction>> handled_signals;
 #endif
     DB::PipeFDs signal_pipe;
