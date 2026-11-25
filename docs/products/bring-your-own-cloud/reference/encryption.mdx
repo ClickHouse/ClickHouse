@@ -32,8 +32,6 @@ TDE encrypts table data and the backups taken from it. Database metadata, such a
 1. **Turn on TDE for your BYOC infrastructure.** Contact ClickHouse support. Your onboarding stack must include the TDE permissions: set `include_tde_permissions` in the Terraform module, or `IncludeTDEPermissions` in the AWS CloudFormation template. If your infrastructure is already onboarded, update the stack with this setting first. ClickHouse then creates the default KEK and the TDE delegate.
 2. **Create the service with TDE.** In the ClickHouse Cloud console, open **Enterprise features** during service creation and turn on **Enable Transparent Data Encryption (TDE)**. With the Cloud API, set `hasTransparentDataEncryption` to `true` when you create the service.
 
-On AWS, TDE requires ClickHouse 26.7 or later. Until the regular release channel provides it, create TDE services on AWS through the Cloud API with `releaseChannel` set to `fast`.
-
 TDE can only be turned on when a service is created, and it can't be turned off. To encrypt the data of an existing service, create a new service with TDE and copy the data into it.
 
 ## Customer-managed encryption keys (CMEK) {#cmek}
