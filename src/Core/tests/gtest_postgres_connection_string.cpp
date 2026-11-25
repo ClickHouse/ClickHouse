@@ -17,7 +17,7 @@ String connectionString(const ConnectionSSLParams & ssl_params)
 
 bool disablesClientCert(const ConnectionSSLParams & ssl_params)
 {
-    return connectionString(ssl_params).find("sslcertmode=disable") != String::npos;
+    return connectionString(ssl_params).contains("sslcertmode=disable");
 }
 }
 
@@ -61,13 +61,13 @@ TEST(PostgresConnectionString, CompleteClientCredentialIsSent)
     from_paths.ssl_cert = "/etc/clickhouse/client.crt";
     from_paths.ssl_key = "/etc/clickhouse/client.key";
     const auto with_paths = connectionString(from_paths);
-    EXPECT_EQ(with_paths.find("sslcertmode=disable"), String::npos);
-    EXPECT_NE(with_paths.find("sslcert='/etc/clickhouse/client.crt'"), String::npos);
+    EXPECT_FALSE(with_paths.contains("sslcertmode=disable"));
+    EXPECT_TRUE(with_paths.contains("sslcert='/etc/clickhouse/client.crt'"));
 
     ConnectionSSLParams from_pems;
     from_pems.ssl_cert_pem = "-----BEGIN CERTIFICATE-----\nZHVtbXk=\n-----END CERTIFICATE-----\n";
     from_pems.ssl_key_pem = "-----BEGIN PRIVATE KEY-----\nZHVtbXk=\n-----END PRIVATE KEY-----\n";
-    EXPECT_EQ(connectionString(from_pems).find("sslcertmode=disable"), String::npos);
+    EXPECT_FALSE(connectionString(from_pems).contains("sslcertmode=disable"));
 }
 
 #endif
