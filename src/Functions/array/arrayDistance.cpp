@@ -720,8 +720,7 @@ void executeDistanceConstMixed(
 template <typename T>
 using DistanceLanes = T __attribute__((ext_vector_type(distance_unroll_count)));
 
-/// `lanes` is an output parameter: returning a vector wider than 128 bits from this helper, which has no target
-/// attribute, to the `_x86_64_v3`/`_x86_64_v4` bodies is rejected by clang (`-Wpsabi`, it changes the ABI).
+/// An output parameter: returning a vector wider than 128 bits to the `_x86_64_v*` bodies fails with `-Wpsabi`.
 template <typename ResultType, typename T>
 ALWAYS_INLINE inline void loadDistanceLanes(DistanceLanes<ResultType> & lanes, const T * __restrict data)
 {
@@ -741,8 +740,7 @@ ALWAYS_INLINE inline void loadDistanceLanes(DistanceLanes<ResultType> & lanes, c
     }
 }
 
-/// `CosineDistance` against a constant `x`, for floating-point elements only: `x_squared` is computed once per call,
-/// and the partial sums are vector lanes, combined in the same order as in `executeDistanceConstImpl`.
+/// `CosineDistance` against a constant `x` with floating-point elements; lanes combine in the order of `executeDistanceConstImpl`.
 MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
     template <typename ResultType, typename LeftType, typename RightType>
