@@ -1,0 +1,30 @@
+--- TableMetadataV1Valid
+exception
+--- TableMetadataV2Valid
+exception
+--- TableMetadataV2ValidMinimal
+x	Int64
+y	Int64
+z	Int64
+--- TableMetadataV3ValidMinimal
+x	Int64
+y	Int64
+z	Int64
+--- TableMetadataStatisticsFiles
+x	Int64
+--- TableMetadataPartitionStatisticsFiles
+x	Int64
+--- TableMetadataUnsupportedVersion
+exception
+--- TableMetadataV1MissingSchemaType
+exception
+--- TableMetadataV2CurrentSchemaNotFound
+exception
+--- TableMetadataV2MissingLastPartitionId
+exception
+--- TableMetadataV2MissingPartitionSpecs
+exception
+--- TableMetadataV2MissingSchemas
+exception
+--- TableMetadataV2MissingSortOrder
+exception

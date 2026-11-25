@@ -65,8 +65,8 @@ static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const Stri
     /// Between 20.7 and 22.7 metadata/db_name.sql was created in this case as well.
     /// Since 20.7 `default` database is created with Atomic engine on the very first server run.
     /// The problem is that if server crashed during the very first run and metadata/db_name/ -> store/whatever symlink was created
-    /// then it's considered as Ordinary database. And it even works somehow
-    /// until background task tries to remove unused dir from store/...
+    /// then it's considered as Ordinary database. And it even worked somehow
+    /// until the background task (which no longer exists) tried to remove the unused dir from store/...
     throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE,
                     "Metadata directory {} for Ordinary database {} is a symbolic link to {}. "
                     "It may be a result of manual intervention, crash on very first server start or a bug. "

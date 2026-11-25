@@ -856,7 +856,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Una nueva configuración para usar columnas geo en un archivo Parquet"}]}]} />
 
-Al leer archivos Parquet, decodifica las columnas de geometría como tipos geométricos de ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` o `Geometry`). Se aplica a las columnas descritas por la metadata `geo` de GeoParquet y a las columnas anotadas con el tipo lógico `GEOMETRY` o `GEOGRAPHY` de Parquet. Si está deshabilitado, dichas columnas se leen como `String` con los bytes WKB (o WKT) sin procesar, salvo que se solicite explícitamente un tipo geográfico.
+Al leer archivos Parquet, decodifica las columnas de geometría como tipos geométricos de ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` o `Geometry`). Se aplica a las columnas descritas por la metadata `geo` de GeoParquet y a las columnas anotadas con el tipo lógico `GEOMETRY` o `GEOGRAPHY` de Parquet. Si está deshabilitado, dichas columnas se leen como `String` con los bytes WKB (o WKT) sin procesar, salvo que se solicite explícitamente un tipo geográfico. En ese caso, además, las columnas con una codificación nativa (GeoArrow) de GeoParquet 1.1 se leen con los tipos anidados subyacentes `Array` y `Tuple`.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -1219,6 +1219,22 @@ Para el formato Values: si el campo no puede analizarse con el analizador de str
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Para el formato Values: si el campo no puede analizarse con el analizador de streaming, ejecute el analizador de SQL e intente interpretarlo como una expresión SQL.
+
+## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para delegar al escaneo del formato Vortex las partes traducibles de las condiciones WHERE sobre columnas top-level de tipo integer, de coma flotante, cadena\/binary, `Bool`, `Date`, `Date32` y `DateTime64`, lo que puede reducir el número de filas decodificadas; una condición que solo es parcialmente traducible se amplía a otra que conserva, como mínimo, todas las filas coincidentes, y ClickHouse vuelve a aplicar el filtro completo después del escaneo."}]}]} />
+
+Al leer archivos Vortex, delega al escaneo las partes traducibles de las condiciones WHERE sobre columnas top-level de tipo integer, de coma flotante, cadena/binary, `Bool`, `Date`, `Date32` y `DateTime64`, de modo que una consulta selectiva lea y decodifique menos datos. Dentro del escaneo solo se aplica la parte traducida de la condición: una condición que solo es parcialmente traducible se amplía a otra que conserva, como mínimo, todas las filas coincidentes, por lo que es posible que se sigan leyendo y decodificando filas que no coinciden. ClickHouse vuelve a aplicar el filtro completo después del escaneo.
+
+## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para devolver las filas de un archivo Vortex en el orden en que aparecen en el archivo; de forma predeterminada, el archivo se decodifica en paralelo y no se garantiza el orden de las filas."}]}]} />
+
+Devuelve las filas de un archivo Vortex en el orden en que aparecen en el archivo. De forma predeterminada, las divisiones de filas de un archivo se decodifican en paralelo (consulte `max_parsing_threads`) y se devuelven en cuanto están listas, por lo que no se garantiza el orden de las filas; con este parámetro de configuración, una división lenta retiene las que vienen detrás. No se recomienda, ya que, por lo general, el orden de las filas no está garantizado y otras partes del pipeline de ejecución de consultas pueden alterarlo.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 

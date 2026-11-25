@@ -74,13 +74,9 @@ La configuración de AWS Glue Schema Registry está disponible a través de la c
 En el asistente para crear un ClickPipe, habilite **Registro de esquemas** en el paso de conexión de Kafka o Kinesis y establezca **Tipo de registro** en **AWS Glue**:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Panel de registro de esquemas con AWS Glue seleccionado](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
-
-</Frame>
-
+  <Frame>
+    ![Panel de registro de esquemas con AWS Glue seleccionado](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
+  </Frame>
 </div>
 
 | Campo               | Obligatorio | Descripción                                                                                                                                                                                             | Ejemplo                                                    |
@@ -121,10 +117,10 @@ Para la autenticación basada en roles, no es necesario modificar la política d
 
 #### Opción B: usar un rol dedicado para el registro {#glue-iam-option-b}
 
-Use esta opción si su broker no se autentica con IAM (SASL/SCRAM, SASL/PLAIN, mTLS) o si el registro se encuentra en una cuenta de AWS distinta de la del broker.
+Use esta opción si su bróker no se autentica con IAM (SASL/SCRAM, SASL/PLAIN, mTLS) o si el registro se encuentra en una cuenta de AWS distinta de la del bróker.
 
 <Note>
-  **Solo para implementaciones en AWS.** Esta opción requiere un servicio de ClickHouse Cloud desplegado en AWS, ya que depende del rol de AWS IAM del servicio. Si su servicio se ejecuta en GCP o Azure y el broker no usa autenticación de IAM, no podrá configurar un rol dedicado para el registro.
+  **Solo para implementaciones en AWS.** Esta opción requiere un servicio de ClickHouse Cloud desplegado en AWS, ya que depende del rol de AWS IAM del servicio. Si su servicio se ejecuta en GCP o Azure y el bróker no usa autenticación de IAM, no podrá configurar un rol dedicado para el registro.
 </Note>
 
 <Steps>
@@ -132,13 +128,9 @@ Use esta opción si su broker no se autentica con IAM (SASL/SCRAM, SASL/PLAIN, m
     Abra el servicio, seleccione la pestaña **Settings**, desplácese hasta la sección **Network security information** y copie el valor de **Service role ID (IAM)**, un ARN con el formato `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. En adelante, se hará referencia a este valor como `{ClickHouse_IAM_ARN}`. Cada servicio de ClickHouse desplegado en AWS tiene su propio rol, por lo que este valor es distinto para cada servicio.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ID del rol de servicio (IAM)](/images/cloud/security/secures3_arn.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ID del rol de servicio (IAM)](/images/cloud/security/secures3_arn.webp)
+      </Frame>
     </div>
   </Step>
 
