@@ -201,3 +201,30 @@ ALTER TABLE ttl_04839 MODIFY COLUMN j JSON(a UInt32, SHARED REGEXP '^zzz$');
 OPTIMIZE TABLE ttl_04839 FINAL;
 SELECT 'subcolumn ttl', count() FROM ttl_04839;
 DROP TABLE ttl_04839;
+
+-- A lambda parameter named like the column is not a read of it.
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), m Array(UInt64) MATERIALIZED arrayMap(j -> j + 1, xs)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO lambda_04839 (id, j, xs) VALUES (1, '{"x":1}', [1, 2]);
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$');
+SELECT 'lambda materialized', toTypeName(j), m FROM lambda_04839;
+DROP TABLE lambda_04839;
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), INDEX ix concat(toTypeName(arrayMap(j -> j + 1, xs)), toString(id)) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY id;
+INSERT INTO lambda_04839 VALUES (1, '{"x":1}', [1, 2]);
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$');
+SELECT 'lambda index', toTypeName(j), id FROM lambda_04839 WHERE concat(toTypeName(arrayMap(j -> j + 1, xs)), toString(id)) = 'Array(UInt64)1';
+DROP TABLE lambda_04839;
+CREATE TABLE lambda_04839 (id UInt64, d Date, j JSON, xs Array(UInt64)) ENGINE = MergeTree ORDER BY id TTL d + toIntervalDay(arraySum(arrayMap(j -> j, xs)));
+INSERT INTO lambda_04839 VALUES (1, '2100-01-01', '{"x":1}', [1, 2]);
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$');
+SELECT 'lambda ttl', toTypeName(j), id FROM lambda_04839;
+DROP TABLE lambda_04839;
+-- A lambda body that reads the column still reads it.
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), m Array(UInt64) MATERIALIZED arrayMap(x -> x + length(toString(j)), xs)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE lambda_04839;
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), INDEX ix concat(toTypeName(arrayMap(x -> j, xs)), toString(id)) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE lambda_04839;
+CREATE TABLE lambda_04839 (id UInt64, d Date, j JSON, xs Array(UInt64)) ENGINE = MergeTree ORDER BY id TTL d + toIntervalDay(arraySum(arrayMap(x -> length(toString(j)), xs)));
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE lambda_04839;

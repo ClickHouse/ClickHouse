@@ -23,3 +23,6 @@ materialized	JSON	4
 materialized subcolumn	6
 subcolumn key	1
 subcolumn ttl	24
+lambda materialized	JSON(SHARED REGEXP \'^x$\')	[2,3]
+lambda index	JSON(SHARED REGEXP \'^x$\')	1
+lambda ttl	JSON(SHARED REGEXP \'^x$\')	1

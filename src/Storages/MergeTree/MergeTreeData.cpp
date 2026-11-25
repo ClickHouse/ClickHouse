@@ -6279,22 +6279,25 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     return {};
 }
 
-bool queryTreeReadsColumn(const IQueryTreeNode & node, const String & column)
+bool queryTreeReadsColumn(const IQueryTreeNode & node, const String & column, const ITableExpressionNode & table)
 {
-    if (const auto * column_node = node.as<ColumnNode>(); column_node && column_node->getColumnName() == column)
+    /// A lambda parameter named like the column has the lambda as its source, so it is not a read of the column.
+    if (const auto * column_node = node.as<ColumnNode>();
+        column_node && column_node->getColumnName() == column && column_node->getColumnSourceOrNull().get() == &table)
         return true;
     /// A function folded into a constant, such as `toTypeName(j)`, keeps the expression it was computed from.
     if (const auto * constant_node = node.as<ConstantNode>(); constant_node && constant_node->hasSourceExpression()
-        && queryTreeReadsColumn(*constant_node->getSourceExpression(), column))
+        && queryTreeReadsColumn(*constant_node->getSourceExpression(), column, table))
         return true;
-    return std::ranges::any_of(node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumn(*child, column); });
+    return std::ranges::any_of(node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumn(*child, column, table); });
 }
 
-bool queryTreeReadsColumnInConstant(const IQueryTreeNode & node, const String & column)
+bool queryTreeReadsColumnInConstant(const IQueryTreeNode & node, const String & column, const ITableExpressionNode & table)
 {
     if (const auto * constant_node = node.as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
-        return queryTreeReadsColumn(*constant_node->getSourceExpression(), column);
-    return std::ranges::any_of(node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumnInConstant(*child, column); });
+        return queryTreeReadsColumn(*constant_node->getSourceExpression(), column, table);
+    return std::ranges::any_of(
+        node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumnInConstant(*child, column, table); });
 }
 
 /// Whether an expression reads the whole `column`, directly, through an ALIAS column or inside a folded constant.
@@ -6311,7 +6314,8 @@ bool expressionReadsColumn(
     auto table_node = std::make_shared<TableNode>(storage, analysis_context);
     QueryAnalyzer analyzer(/*only_analyze=*/ true);
     analyzer.resolve(expression, table_node, analysis_context);
-    return only_in_constants ? queryTreeReadsColumnInConstant(*expression, column) : queryTreeReadsColumn(*expression, column);
+    return only_in_constants ? queryTreeReadsColumnInConstant(*expression, column, *table_node)
+                             : queryTreeReadsColumn(*expression, column, *table_node);
 }
 
 }
