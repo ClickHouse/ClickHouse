@@ -59,6 +59,7 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -196,6 +197,7 @@
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
 #include <base/scope_guard.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <atomic>
@@ -337,6 +339,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold;
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold_for_remote_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsUInt64 delay_merges_after_startup_seconds;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
@@ -1160,6 +1163,9 @@ MergeTreeData::MergeTreeData(
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
 
+    merges_can_be_delayed_after_startup = isLoadingFromExistingMetadata(mode)
+        && getContext()->getApplicationType() == Context::ApplicationType::SERVER;
+
     try
     {
         settings->sanityCheck(
@@ -1546,6 +1552,21 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::Coalescing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
+}
+
+bool MergeTreeData::supportsSubcolumnOptimizationWithFinal() const
+{
+    /// Safe only for whole-row-selecting merges: the surviving row's subcolumn equals the subcolumn
+    /// of its full row. Value-combining merges recompute column values, breaking that equality.
+    switch (merging_params.mode)
+    {
+        case MergingParams::Replacing:
+        case MergingParams::Collapsing:
+        case MergingParams::VersionedCollapsing:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool MergeTreeData::hasBucketedMapSerialization() const
@@ -4026,7 +4047,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 = !is_static_storage && !is_table_readonly && !p->isStoredOnReadonlyDisk();
             unique_key_dense_index_ops->ensureValidDenseIndex(p, part_storage_is_writable);
             if (const auto bytes_on_disk_after = p->getBytesOnDisk(); bytes_on_disk_after != bytes_on_disk_before)
-                increaseDataVolume(static_cast<ssize_t>(bytes_on_disk_after - bytes_on_disk_before), 0, 0);
+                increaseDataVolume(static_cast<ssize_t>(common::subIgnoreOverflow(bytes_on_disk_after, bytes_on_disk_before)), 0, 0);
         }
         catch (...)
         {
@@ -6054,6 +6075,12 @@ void MergeTreeData::dropAllData()
 
         if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
+
+        if ((*settings_ptr)[MergeTreeSetting::table_disk])
+        {
+            LOG_INFO(log, "dropAllData: the table directory is the root of disk {}, it is kept", disk->getName());
+            continue;
+        }
 
         try
         {
@@ -9229,6 +9256,37 @@ std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartition() c
 }
 
 
+void MergeTreeData::delayMergesAfterStartup()
+{
+    if (merges_can_be_delayed_after_startup)
+        startup_time_ns.store(clock_gettime_ns(CLOCK_MONOTONIC), std::memory_order_relaxed);
+}
+
+
+void MergeTreeData::stopDelayingMergesAfterStartup()
+{
+    if (startup_time_ns.exchange(0, std::memory_order_relaxed))
+        background_operations_assignee.trigger();
+}
+
+
+bool MergeTreeData::areMergesDelayedAfterStartup() const
+{
+    const UInt64 startup_ns = startup_time_ns.load(std::memory_order_relaxed);
+    if (!startup_ns)
+        return false;
+
+    const auto settings = getSettings();
+    if ((clock_gettime_ns(CLOCK_MONOTONIC) - startup_ns) / 1'000'000'000 >= (*settings)[MergeTreeSetting::delay_merges_after_startup_seconds])
+        return false;
+
+    /// Do not delay merges once inserts start to be slowed down because of too many parts.
+    const UInt64 parts_to_delay_insert = (*settings)[MergeTreeSetting::parts_to_delay_insert];
+    return !parts_to_delay_insert || getActivePartsCount() < parts_to_delay_insert
+        || getMaxPartsCountAndSizeForPartition().first < parts_to_delay_insert;
+}
+
+
 size_t MergeTreeData::getMaxOutdatedPartsCountForPartition() const
 {
     return getMaxPartsCountAndSizeForPartitionWithState(DataPartState::Outdated).first;
@@ -10187,11 +10245,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
+            /// An incorrect subtraction is logged and kept modular, so that adding the same size back restores the total.
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect column size subtraction: {} - {} = {}, column: {}, field: {}",
-                    from, value, from - value, column.name, field);
+                    from, value, common::subIgnoreOverflow(from, value), column.name, field);
 
-            from -= value;
+            from = common::subIgnoreOverflow(from, value);
         };
 
         log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
@@ -10208,11 +10267,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
+            /// An incorrect subtraction is logged and kept modular, so that adding the same size back restores the total.
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
-                    from, value, from - value, secondary_index_name, field);
+                    from, value, common::subIgnoreOverflow(from, value), secondary_index_name, field);
 
-            from -= value;
+            from = common::subIgnoreOverflow(from, value);
         };
 
         log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
@@ -12779,7 +12839,8 @@ void MergeTreeData::optimizeDryRun(
             /*require_checksums=*/ true,
             is_broken_projection,
             /*is_cancelled=*/ [] { return false; },
-            /*throw_on_broken_projection=*/ true);
+            /*throw_on_broken_projection=*/ true,
+            /*allow_direct_io=*/ false);
 
         LOG_INFO(log, "OPTIMIZE DRY RUN: part {} passed checkDataPart", new_part->name);
     }
@@ -13541,9 +13602,12 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
             data.updateSerializationHints(precommitted_parts, total_covered_parts, acquired_parts_lock);
 
-            ssize_t diff_bytes = add_bytes - reduce_bytes;
-            ssize_t diff_rows = add_rows - reduce_rows;
-            ssize_t diff_parts  = add_parts - reduce_parts;
+            /// The covered parts may outweigh the added ones, so the differences are negative then. They are computed
+            /// modulo 2^64 and converted to signed afterwards: the counters of a part are read from its files, so a cast
+            /// before the subtraction could overflow signed arithmetic. The totals are updated modulo 2^64 as well.
+            ssize_t diff_bytes = static_cast<ssize_t>(common::subIgnoreOverflow(add_bytes, reduce_bytes));
+            ssize_t diff_rows = static_cast<ssize_t>(common::subIgnoreOverflow(add_rows, reduce_rows));
+            ssize_t diff_parts = static_cast<ssize_t>(common::subIgnoreOverflow(add_parts, reduce_parts));
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
     }
@@ -14431,11 +14495,11 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
         for (const auto & part : parts)
         {
             if (part->getDataPartStorage().getDiskName() == data_part->getDataPartStorage().getDiskName())
-                broken_part_callback(part->name);
+                broken_part_callback(part->name, /* after_read_error */ false);
         }
     }
     else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
+        broken_part_callback(data_part->name, /* after_read_error */ true);
     else
         LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
@@ -15443,7 +15507,11 @@ void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
+    /// Negated modulo 2^64 and converted afterwards: negating a converted counter read from the part could overflow.
+    increaseDataVolume(
+        static_cast<ssize_t>(common::negateIgnoreOverflow(part->getBytesOnDisk())),
+        static_cast<ssize_t>(common::negateIgnoreOverflow(part->rows_count)),
+        -1);
 }
 
 void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
@@ -16064,8 +16132,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     const String & new_part_name,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeTransactionPtr & txn,
-    std::optional<PatchPartIndex> patch_part_index,
-    bool precommit_storage) const
+    std::optional<PatchPartIndex> patch_part_index) const
 {
     auto settings = getSettings();
 
@@ -16178,10 +16245,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     out.finalizeIndexGranularity();
     out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert);
 
-    /// Sealing the storage closes the packed archive, so a caller with a sidecar still to write
-    /// defers it -- the same build/seal split `MergeTreeTemporaryPart::finalize` gives the insert path.
-    if (precommit_storage)
-        new_data_part_storage->precommitTransaction();
+    new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));
 }
 

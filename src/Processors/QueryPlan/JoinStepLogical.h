@@ -153,6 +153,7 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+    void setRuntimeFilterKeepsMatchingRows() { runtime_filter_keeps_matching_rows = true; }
 
     /// Whether the runtime filter pass installed `BuildRuntimeFilterStep` / `__applyFilter` for this join.
     /// The physical `JoinStep` inherits it and refuses `clone` because of it, see `JoinStep::clone`.
@@ -312,6 +313,14 @@ protected:
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
 
+    /// The runtime filter pass of this host added a filter that passes mostly the rows which match.
+    /// Not serialized: a host adds its own.
+    bool runtime_filter_keeps_matching_rows = false;
+
+    /// The sender estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`. Set only on a step taken
+    /// over the wire, which has no row estimate. A host with no row estimate of its own follows it.
+    bool sender_estimated_small_right_side = false;
+
     /// Whether the runtime filter pass added runtime filters for this join. Travels with the step, so that
     /// the physical step built from a copy also knows that its plan carries runtime filter identities.
     bool has_runtime_filters = false;
@@ -378,13 +387,13 @@ private:
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
 
-/// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
+/// Whether the InequalityJoin algorithm is preferred for this join: `inequality` is listed first in
 /// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
 /// For optimization passes that would otherwise claim the join for a hash-family algorithm
 /// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
-/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
+/// physical step applies, so `true` means InequalityJoin takes the join unless the right side is a
 /// prepared `Join` storage (which those passes exclude on their own).
-bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
+bool isInequalityJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 
 }

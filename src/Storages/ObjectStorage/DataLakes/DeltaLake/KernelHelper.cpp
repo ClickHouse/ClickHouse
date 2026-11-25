@@ -57,13 +57,13 @@ namespace DeltaLake
 namespace
 {
 
-/// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
+/// Forwards to `::set_builder_option`, translating a kernel error into a `DB::Exception`.
 /// The Rust FFI decodes the `(ptr, len)` slices as `&str`. Validate the value up front so a
 /// user supplied credential, region, endpoint or SAS token that is not valid UTF-8 (e.g. raw
 /// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
 /// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
 /// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
-void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, std::string_view value)
+void setBuilderOption(::EngineBuilder * builder, const std::string & name, std::string_view value)
 {
     if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
         throw DB::Exception(
@@ -73,24 +73,24 @@ void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, st
             name);
 
     KernelUtils::unwrapResult(
-        ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
+        ::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
         "set_builder_option");
 }
 
 /// RAII guard that frees an `EngineBuilder` unless released.
-/// `ffi::builder_build` consumes the builder on success; if configuring the builder throws before
+/// `::builder_build` consumes the builder on success; if configuring the builder throws before
 /// that (invalid option, unsupported auth, malformed connection string), the builder must be freed
-/// via `ffi::free_engine_builder` to avoid leaking it.
+/// via `::free_engine_builder` to avoid leaking it.
 class BuilderGuard
 {
 public:
-    explicit BuilderGuard(ffi::EngineBuilder * builder_) : builder(builder_) {}
-    ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
+    explicit BuilderGuard(::EngineBuilder * builder_) : builder(builder_) {}
+    ~BuilderGuard() { if (builder) ::free_engine_builder(builder); }
     BuilderGuard(const BuilderGuard &) = delete;
     BuilderGuard & operator=(const BuilderGuard &) = delete;
-    ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
+    ::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
 private:
-    ffi::EngineBuilder * builder = nullptr;
+    ::EngineBuilder * builder = nullptr;
 };
 
 /// The kernel parses the location as a URL, where `#` would start a fragment.
@@ -184,10 +184,10 @@ public:
         return object_storage->tryRefreshCredentialsViaCallback();
     }
 
-    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ::EngineBuilder * createBuilder() const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
+        ::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
@@ -553,10 +553,10 @@ public:
         return key.substr(prefix.size());
     }
 
-    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ::EngineBuilder * createBuilder() const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
+        ::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
@@ -653,10 +653,10 @@ public:
         return DB::unescapeForFileName(std::string(file_path));
     }
 
-    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ::EngineBuilder * createBuilder() const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
+        ::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");

@@ -15,7 +15,7 @@
  * Thus, it's allowed to call functions inside these namespaces only after
  * checking platform in runtime (see isArchSupported() below).
  *
- * If compiler is not gcc/clang or target isn't x86_64/AArch64 or ENABLE_MULTITARGET_CODE
+ * If target isn't x86_64/AArch64 or ENABLE_MULTITARGET_CODE
  * was set to OFF in cmake, all code inside these macros will be removed and both
  * USE_X86_64_MULTITARGET_CODE and USE_ARM_MULTITARGET_CODE will be set to 0.
  *
@@ -138,7 +138,7 @@ String toString(TargetArch arch);
 #   define ENABLE_MULTITARGET_CODE 0
 #endif
 
-#if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+#if ENABLE_MULTITARGET_CODE && defined(__x86_64__)
 
 
 #define USE_X86_64_MULTITARGET_CODE 1
@@ -236,7 +236,7 @@ END_TARGET_SPECIFIC_CODE
  */
 #define DECLARE_ARM_SVE_SPECIFIC_CODE(...)
 
-#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
+#elif ENABLE_MULTITARGET_CODE && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
 
 #define USE_X86_64_MULTITARGET_CODE 0
 #define USE_ARM_MULTITARGET_CODE 1
@@ -365,7 +365,7 @@ DECLARE_ARM_SVE_SPECIFIC_CODE(
 /// Function body
 #define MULTITARGET_FUNCTION_BODY(...) __VA_ARGS__
 
-#if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+#if ENABLE_MULTITARGET_CODE && defined(__x86_64__)
 
 #define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
@@ -413,7 +413,7 @@ DECLARE_ARM_SVE_SPECIFIC_CODE(
 
 #define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE MULTITARGET_FUNCTION_X86_V4_V3
 
-#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
+#elif ENABLE_MULTITARGET_CODE && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
 
 #define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
 FUNCTION_HEADER \
