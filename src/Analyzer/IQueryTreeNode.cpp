@@ -7,6 +7,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -89,6 +90,17 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
 
+    /** Column sources are compared by content, and they are not necessary part of the compared trees.
+      * The correspondence between the column sources of the two trees must be one-to-one:
+      * if a column source of one tree was compared with a column source of the other tree,
+      * every other reference to one of them must be paired with the same counterpart.
+      * Otherwise `f(a.x, a.x)` is equal to `f(a.x, b.x)` when `a` and `b` have the same content.
+      * This is also what `getTreeHash` does: it hashes the content of a column source on the first reference
+      * and the identifier of the column source on the subsequent references.
+      */
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> lhs_source_to_rhs_source;
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> rhs_source_to_lhs_source;
+
     nodes_to_process.emplace_back(this, &rhs);
 
     while (!nodes_to_process.empty())
@@ -150,7 +162,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
                 return false;
 
             if (lhs_source && rhs_source)
-                nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+            {
+                auto [lhs_it, lhs_inserted] = lhs_source_to_rhs_source.emplace(lhs_source.get(), rhs_source.get());
+                auto [rhs_it, rhs_inserted] = rhs_source_to_lhs_source.emplace(rhs_source.get(), lhs_source.get());
+
+                if (lhs_it->second != rhs_source.get() || rhs_it->second != lhs_source.get())
+                    return false;
+
+                if (lhs_inserted)
+                    nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+            }
         }
 
         equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
