@@ -140,3 +140,35 @@ echo '--- Consumers are created for the accepted properties'
 echo '--- A property that is added after the table is created'
 alter_collection_of_existing_table 'kafka.future_option' kafka_altered_table
 alter_collection_of_existing_table 'kafka.ssl_key_location\0suffix' kafka_altered_null_table
+
+echo '--- A stored table is loaded at server startup, and its consumers and producers are refused'
+# Each `clickhouse-local` run over the same path loads the stored tables as a server start does.
+local_path="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "$local_path"
+
+function run_local()
+{
+    local output
+    local message
+    if output=$($CLICKHOUSE_LOCAL --path="$local_path" -q "$1" 2>&1 < /dev/null)
+    then
+        echo "OK${output:+ $output}"
+    else
+        message=$(grep -o 'Kafka property .*(BAD_ARGUMENTS)' <<< "$output" | sed 's/: While executing [A-Za-z]*\././' | head -1)
+        echo "${message:-$output}"
+    fi
+}
+
+run_local "
+    CREATE NAMED COLLECTION nc_path AS ${required_keys};
+    CREATE NAMED COLLECTION nc_null AS ${required_keys};
+    CREATE DATABASE d ENGINE = Atomic;
+    CREATE TABLE d.kafka_path (x UInt64) ENGINE = Kafka(nc_path) ${table_settings};
+    CREATE TABLE d.kafka_null (x UInt64) ENGINE = Kafka(nc_null) ${table_settings};
+    ALTER NAMED COLLECTION nc_path SET \`kafka.ssl_key_location\` = '/etc/passwd';
+    ALTER NAMED COLLECTION nc_null SET \`kafka.ssl_key_location\\0suffix\` = '/etc/passwd';"
+run_local "SELECT arrayStringConcat(groupArray(name), ',') FROM (SELECT name FROM system.tables WHERE database = 'd' ORDER BY name)"
+run_local "SELECT count() FROM d.kafka_path SETTINGS stream_like_engine_allow_direct_select = 1"
+run_local "INSERT INTO d.kafka_null VALUES (1)"
+run_local "DROP TABLE d.kafka_path; DROP TABLE d.kafka_null; SELECT count() FROM system.tables WHERE database = 'd'"
+rm -rf "$local_path"
