@@ -337,6 +337,45 @@ def test_failed_directory_sync_fails_the_ddl():
         node.restart_clickhouse()
 
 
+def test_create_whose_commit_sync_fails_leaves_nothing_behind():
+    """
+    A create whose directory sync fails after its rename has already committed the file. It is
+    reported as failed and its object is not loaded, so the file must not stay: otherwise a retried
+    create fails on it or reports success for an object that is not there, a drop finds no object to
+    remove, and the next start loads an object no statement reported as created.
+
+    `directory_sync_after_rename_fail` fails only the sync after the rename, so the store directory
+    is persisted as usual and the failure comes after the commit.
+    """
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT directory_sync_after_rename_fail")
+        for i, (create, _, retried_drop, count_loaded, committed_file) in enumerate(FAILING_SYNC_CASES):
+            for name in (f"cs_retried_{i}", f"cs_dropped_{i}"):
+                with pytest.raises(QueryRuntimeException, match="Injected failure to fsync the directory"):
+                    node.query(create.format(n=name), settings={"fsync_metadata": 1})
+                assert not _exists(committed_file.format(n=name)), f"{name}: the failed create left its file"
+                assert not _exists(committed_file.format(n=name) + ".tmp"), f"{name}: a temporary file was left"
+                assert node.query(count_loaded.format(n=name)).strip() == "0", f"{name}: loaded, but its create failed"
+        node.query("SYSTEM DISABLE FAILPOINT directory_sync_after_rename_fail")
+
+        for i, (create, _, retried_drop, count_loaded, _) in enumerate(FAILING_SYNC_CASES):
+            name = f"cs_retried_{i}"
+            node.query(create.format(n=name), settings={"fsync_metadata": 1})
+            assert node.query(count_loaded.format(n=name)).strip() == "1", f"{name}: the retried create did not load it"
+            node.query(retried_drop.format(n=f"cs_dropped_{i}"), settings={"fsync_metadata": 1})
+
+        node.restart_clickhouse()
+        for i, (_, drop, _, count_loaded, _) in enumerate(FAILING_SYNC_CASES):
+            assert node.query(count_loaded.format(n=f"cs_dropped_{i}")).strip() == "0", (
+                f"cs_dropped_{i}: loaded at startup, although its create failed and it was then dropped"
+            )
+            node.query(drop.format(n=f"cs_retried_{i}"))
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT directory_sync_after_rename_fail")
+        for directory in SQL_OBJECT_DIRS:
+            node.exec_in_container(["bash", "-c", f"rm -f {directory}/*cs_retried_* {directory}/*cs_dropped_*"])
+
+
 def test_failed_store_directory_creation_is_rolled_back():
     """
     A store directory is created lazily on first use, and its own entry in its parent has to

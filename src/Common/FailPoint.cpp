@@ -278,6 +278,7 @@ static struct InitFiu
     REGULAR(keeper_shutdown_throw_after_flag) \
     REGULAR(lazy_pipe_fds_fail_close) \
     REGULAR(directory_sync_fail) \
+    REGULAR(directory_sync_after_rename_fail) \
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \

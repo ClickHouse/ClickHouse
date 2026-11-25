@@ -4,7 +4,6 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 
 #include <Common/StringUtils.h>
-#include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -229,20 +228,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
             out.sync();
         out.close();
 
-        /// Opened before the rename, so a directory that cannot be opened does not leave the
-        /// rename committed, and synced after it, so the object is not reported as created
-        /// until its new directory entry is durable.
-        std::optional<CheckedDirectorySync> dir_sync;
-        if (fsync)
-            dir_sync.emplace(fs::path(file_path).parent_path().string());
-
-        if (replace_if_exists)
-            fs::rename(temp_file_path, file_path);
-        else
-            renameNoReplace(temp_file_path, file_path);
-
-        if (dir_sync)
-            dir_sync->sync();
+        renameAndSync(temp_file_path, file_path, replace_if_exists, fsync);
     }
     catch (...)
     {

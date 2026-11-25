@@ -6,6 +6,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/atomicRename.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -33,6 +34,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char directory_sync_fail[];
+    extern const char directory_sync_after_rename_fail[];
     extern const char local_directory_sync_fail[];
 }
 
@@ -293,5 +295,41 @@ void createDirectoriesAndSync(const String & dir, bool fsync, const String & exi
     createDirectoriesAndSync(dir, fsync, ec, existing_root);
     if (ec)
         throw fs::filesystem_error("Cannot create directory", dir, ec);
+}
+
+void renameAndSync(const String & from, const String & to, bool replace, bool fsync)
+{
+    /// Opened before the rename, so a directory that cannot be opened leaves nothing committed.
+    std::optional<CheckedDirectorySync> dir_sync;
+    if (fsync)
+        dir_sync.emplace(fs::path(to).parent_path().string());
+
+    const bool overwrites = dir_sync && replace && fs::exists(to);
+    if (replace)
+        fs::rename(from, to);
+    else
+        renameNoReplace(from, to);
+
+    if (!dir_sync)
+        return;
+
+    try
+    {
+        fiu_do_on(FailPoints::directory_sync_after_rename_fail,
+        {
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected failure to fsync the directory of {}", to);
+        });
+        dir_sync->sync();
+    }
+    catch (...)
+    {
+        /// A file this rename created is not left for the next start to load.
+        if (!overwrites)
+        {
+            std::error_code remove_ec;
+            fs::remove(to, remove_ec);
+        }
+        throw;
+    }
 }
 }

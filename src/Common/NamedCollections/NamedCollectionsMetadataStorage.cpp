@@ -210,18 +210,7 @@ public:
                 out.sync();
             out.close();
 
-            /// Opened before the rename, so a directory that cannot be opened does not leave the
-            /// rename committed, and synced after it, so the collection is not reported as created
-            /// until its new directory entry is durable.
-            const auto final_path = getPath(file_name);
-            std::optional<CheckedDirectorySync> dir_sync;
-            if (fsync)
-                dir_sync.emplace(fs::path(final_path).parent_path().string());
-
-            fs::rename(tmp_path, final_path);
-
-            if (dir_sync)
-                dir_sync->sync();
+            renameAndSync(tmp_path, getPath(file_name), replace, fsync);
         }
         catch (...)
         {
