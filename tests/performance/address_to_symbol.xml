@@ -1,7 +1,9 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: the table only holds the addresses, and its `UInt64` column would become `Int64`, which `addressToSymbol` does not accept. -->
     <!-- Resolving symbol names for a set of addresses that repeats, as the frames of stack traces do.
-         Release builds resolve the names from the compact symbol table (the `.clickhouse.symbols`
-         section) through a cache of decoded names, so the queries measure lookups in that cache. -->
+         A binary that keeps `.symtab`, as the one of the performance comparison in CI, resolves them from it.
+         A binary with only the compact symbol table (the `.clickhouse.symbols` section, as in the packages)
+         resolves them through a cache of decoded names, and the queries measure lookups in that cache. -->
     <settings>
         <allow_introspection_functions>1</allow_introspection_functions>
     </settings>
