@@ -1,5 +1,7 @@
 
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
+#include <Common/NetException.h>
 #include <Common/QueryScope.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
@@ -27,6 +29,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Storages/IStorage.h>
 
+#include <Poco/Net/NetException.h>
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
@@ -71,6 +74,11 @@ namespace Setting
     extern const SettingsBool implicit_transaction;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInt32 dns_cache_update_period;
 }
 
 namespace ErrorCodes
@@ -1331,6 +1339,8 @@ void DDLWorker::runMainThread()
     DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_INFO(log, "Starting DDLWorker thread");
     auto component_guard = Coordination::setCurrentComponent("DDLWorker::runMainThread");
+    const Int32 dns_cache_update_period = context->getServerSettings()[ServerSetting::dns_cache_update_period];
+    const long release_non_local_host_ids_period_ms = std::max(1, dns_cache_update_period) * 1000L;
     while (!stop_flag)
     {
         try
@@ -1361,7 +1371,8 @@ void DDLWorker::runMainThread()
             subsequent_errors_count = 0;
 
             LOG_DEBUG(log, "Waiting for queue updates");
-            queue_updated_event->wait();
+            while (!queue_updated_event->tryWait(release_non_local_host_ids_period_ms))
+                releaseNonLocalHostIDs();
         }
         catch (const Coordination::Exception & e)
         {
@@ -1582,6 +1593,71 @@ void DDLWorker::markReplicasActive(bool reinitialized)
     {
         std::lock_guard lock{checked_host_id_set_mutex};
         checked_host_id_set = checking_host_ids;
+    }
+}
+
+void DDLWorker::releaseNonLocalHostIDs()
+{
+    if (active_node_holders.empty())
+        return;
+
+    const auto maybe_secure_port = context->getTCPPortSecure();
+    const auto port = context->getTCPPort();
+    const String own_fqdn = getFQDNOrHostName();
+    const String active_id = toString(ServerUUID::get());
+    auto & resolver = DNSResolver::instance();
+    auto zookeeper = getZooKeeper();
+
+    for (auto it = active_node_holders.begin(); it != active_node_holders.end();)
+    {
+        const String & host_id = it->first;
+        HostID host = HostID::fromString(host_id);
+        if (host.host_name == own_fqdn || host.isLoopbackHost())
+        {
+            ++it;
+            continue;
+        }
+
+        Poco::Net::SocketAddress address;
+        try
+        {
+            resolver.removeHostFromCache(host.host_name);
+            address = resolver.resolveAddress(host.host_name, host.port);
+        }
+        catch (const NetException & e)
+        {
+            LOG_WARNING(log, "Cannot resolve claimed host ID {}, keeping it: {}", host_id, e.displayText());
+            ++it;
+            continue;
+        }
+        catch (const Poco::Net::NetException & e)
+        {
+            LOG_WARNING(log, "Cannot resolve claimed host ID {}, keeping it: {}", host_id, e.displayText());
+            ++it;
+            continue;
+        }
+
+        if ((maybe_secure_port && isLocalAddress(address, *maybe_secure_port)) || isLocalAddress(address, port))
+        {
+            ++it;
+            continue;
+        }
+
+        /// Remove the node only if it is still ours.
+        String active_path = fs::path(replicas_dir) / host_id / "active";
+        String content;
+        Coordination::Stat stat;
+        if (zookeeper->tryGet(active_path, content, &stat) && content == active_id)
+        {
+            auto code = zookeeper->tryRemove(active_path, stat.version);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE && code != Coordination::Error::ZBADVERSION)
+                throw Coordination::Exception::fromPath(code, active_path);
+        }
+
+        LOG_INFO(log, "Host ID {} resolves to {}, which is not local any more. Released its active node", host_id, address.toString());
+        if (auto & holder = it->second.second)
+            holder->setAlreadyRemoved();
+        it = active_node_holders.erase(it);
     }
 }
 
