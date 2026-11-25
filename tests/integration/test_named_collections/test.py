@@ -87,6 +87,7 @@ def cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/named_collections_for_databases.xml",
+                "configs/config.d/async_load_databases.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -1376,7 +1377,8 @@ def test_startup_keeps_serving_table_with_missing_collection(node_with_database_
     hide_database_collections(node)
     node.start_clickhouse()
 
-    # Pins the behaviour databases are aligned to: a table's missing collection was never fatal.
+    # Pins the behaviour databases are aligned to: with `async_load_databases`, a table's missing
+    # collection is not fatal.
     assert "1" == node.query("SELECT 1").strip()
 
 
