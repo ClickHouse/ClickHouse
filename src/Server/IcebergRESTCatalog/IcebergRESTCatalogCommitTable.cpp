@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
@@ -14,6 +15,8 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <expected>
@@ -280,24 +283,38 @@ void removeSnapshots(Poco::JSON::Object & metadata, const Poco::JSON::Object & u
     }
 
     /// Remove snapshots.
+    VectorWithMemoryTracking<Int64> removed_ids;
     Poco::JSON::Array::Ptr kept_snapshots = new Poco::JSON::Array;
     for (const auto & snapshot : *getArray(metadata, f_snapshots))
     {
-        if (!ids_to_remove.contains(getInteger(*snapshot.extract<Poco::JSON::Object::Ptr>(), f_metadata_snapshot_id)))
+        const auto snapshot_id = getInteger(*snapshot.extract<Poco::JSON::Object::Ptr>(), f_metadata_snapshot_id);
+        if (ids_to_remove.contains(snapshot_id))
+            removed_ids.push_back(snapshot_id);
+        else
             kept_snapshots->add(snapshot);
     }
     metadata.set(f_snapshots, kept_snapshots);
 
     /// Remove history up to the last removed snapshot. A gap in snapshot-log would make time travel pick a wrong snapshot.
+    const auto snapshot_log = getArray(metadata, f_snapshot_log);
     Poco::JSON::Array::Ptr kept_snapshot_log = new Poco::JSON::Array;
-    for (const auto & entry : *getArray(metadata, f_snapshot_log))
+    for (const auto & entry : *snapshot_log)
     {
         if (ids_to_remove.contains(getInteger(*entry.extract<Poco::JSON::Object::Ptr>(), f_metadata_snapshot_id)))
             kept_snapshot_log->clear();
         else
             kept_snapshot_log->add(entry);
     }
+    const auto removed_log_entries = snapshot_log->size() - kept_snapshot_log->size();
     metadata.set(f_snapshot_log, kept_snapshot_log);
+
+    /// Commit can still be rejected after this point.
+    LOG_DEBUG(
+        getLogger("IcebergRESTCatalogCommitTable"),
+        "Removing snapshots [{}] and {} snapshot-log entries from table with uuid {}",
+        fmt::join(removed_ids, ", "),
+        removed_log_entries,
+        getString(metadata, f_table_uuid));
 
     /// TODO: remove statistics files of removed snapshots, once `set-statistics` is supported.
 }
