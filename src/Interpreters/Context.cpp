@@ -9016,6 +9016,13 @@ const AzureSettingsByEndpoint & Context::getStorageAzureSettings() const
     return *shared->storage_azure_settings;
 }
 
+static thread_local size_t force_drop_flag_consumptions_in_current_thread = 0;
+
+size_t Context::getForceDropFlagConsumptionsInCurrentThread()
+{
+    return force_drop_flag_consumptions_in_current_thread;
+}
+
 void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
 {
     if (!max_size_to_drop || size <= max_size_to_drop)
@@ -9028,8 +9035,14 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     {
         try
         {
-            fs::remove(force_file);
-            return;
+            /// The flag permits a single drop: only the check that actually removed the file may pass.
+            if (fs::remove(force_file))
+            {
+                ++force_drop_flag_consumptions_in_current_thread;
+                return;
+            }
+            /// A concurrent check has consumed the flag.
+            force_file_exists = false;
         }
         catch (...)
         {

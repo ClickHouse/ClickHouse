@@ -2052,6 +2052,9 @@ public:
     size_t getMaxPartitionSizeToDrop() const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const;
+    /// How many size checks on the current thread have passed by consuming the `force_drop_table` flag.
+    /// Comparing the value before and after a check tells whether that particular check consumed the flag.
+    static size_t getForceDropFlagConsumptionsInCurrentThread();
     /// Only for system.server_settings, actual value is stored in ConfigReloader
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;

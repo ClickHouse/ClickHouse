@@ -667,15 +667,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                         tables_to_check_size.push_back(std::move(table));
                 }
                 /// Last, because it may consume the `force_drop_table` flag.
-                const fs::path force_drop_file = fs::path(table_context->getFlagsPath()) / "force_drop_table";
                 for (const auto & table : tables_to_check_size)
                 {
-                    bool force_drop_file_existed = fs::exists(force_drop_file);
+                    size_t flag_consumptions_before = Context::getForceDropFlagConsumptionsInCurrentThread();
                     table->checkTableCanBeDropped(table_context);
                     /// A table under the limit is checked again in `executeToTableImpl`, after `prepare_tables`, so that
                     /// an `INSERT` in between cannot make it exceed the limit unnoticed. A table that consumed the flag
-                    /// cannot be checked again, because the flag is gone.
-                    if (force_drop_file_existed && !fs::exists(force_drop_file))
+                    /// cannot be checked again, because the flag is gone. The check runs on this thread and reports
+                    /// its own consumption, so a flag consumed by a concurrent query is not attributed to this table.
+                    if (Context::getForceDropFlagConsumptionsInCurrentThread() != flag_consumptions_before)
                         tables_with_checked_size.insert(resolveStorageProxy(table));
                 }
             };
