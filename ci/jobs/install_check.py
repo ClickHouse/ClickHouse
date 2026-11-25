@@ -88,19 +88,14 @@ for i in {1..5}; do
     exec 13>&-
 done
 exec 13>&-"""
-    # The release builds keep the symbols for self-symbolization in the `.clickhouse.symbols`
-    # section instead of `.symtab` (`SYMBOL_SECTIONS=compact`). Without the debug symbols
-    # package it is the only source of symbol names, so check that the server resolves them.
-    # The image has no `readelf`, so the section names are read from the ELF header directly.
-    symbols_test = r"""#!/bin/bash
+    # Prints the names of the sections of a 64-bit little-endian ELF file, one per line.
+    # The images have no `readelf`, so the names are read from the ELF header directly.
+    elf_sections = r"""#!/bin/bash
 set -e
-trap "bash -ex /packages/preserve_logs.sh" ERR
-[ ! -e /usr/lib/debug/usr/bin/clickhouse.debug ]
-binary=$(readlink -f /usr/bin/clickhouse)
+file=$1
 read_uint() {
-    dd if="$binary" bs=1 skip="$1" count="$2" status=none | od -An -v -t "u$2" | tr -d " "
+    dd if="$file" bs=1 skip="$1" count="$2" status=none | od -An -v -t "u$2" | tr -d " "
 }
-# 64-bit little-endian ELF.
 [ "$(read_uint 4 1)" = 2 ]
 [ "$(read_uint 5 1)" = 1 ]
 section_headers=$(read_uint 40 8)
@@ -110,10 +105,19 @@ names_section=$(read_uint 62 2)
 names_offset=$(read_uint $((section_headers + names_section * section_header_size + 24)) 8)
 for ((i = 0; i < sections; ++i)); do
     name=$(read_uint $((section_headers + i * section_header_size)) 4)
-    dd if="$binary" bs=1 skip=$((names_offset + name)) count=64 status=none | tr '\0' '\n' | head -n 1
-done > /root/sections.txt
+    dd if="$file" bs=1 skip=$((names_offset + name)) count=64 status=none | tr '\0' '\n' | head -n 1
+done"""
+    # The release builds keep the symbols for self-symbolization in the `.clickhouse.symbols`
+    # section instead of `.symtab` (`SYMBOL_SECTIONS=compact`). Without the debug symbols
+    # package it is the only source of symbol names, so check that the server resolves them.
+    # `! grep` would not stop the script under `set -e`, so the absence is checked by a count.
+    symbols_test = r"""#!/bin/bash
+set -e
+trap "bash -ex /packages/preserve_logs.sh" ERR
+[ ! -e /usr/lib/debug/usr/bin/clickhouse.debug ]
+bash /packages/elf_sections.sh "$(readlink -f /usr/bin/clickhouse)" > /root/sections.txt
 grep -qx '.clickhouse.symbols' /root/sections.txt
-! grep -qx '.symtab' /root/sections.txt
+[ "$(grep -cx '.symtab' /root/sections.txt)" = 0 ]
 # Both `system.symbols` and `addressToSymbol` have to resolve a known internal symbol.
 resolved=$(clickhouse-client -q "
     SELECT count()
@@ -141,6 +145,59 @@ lookup_cost=$(clickhouse-client -q "
         LIMIT 1
     )")
 [ "$lookup_cost" = 1 ]"""
+    # The same binary takes the symbol names from the separate debug symbols file when the
+    # debug symbols package is installed, and from `.clickhouse.symbols` otherwise. Several
+    # symbols can share one address range, and both sources have to report the same name for
+    # every range. The script asserts which source the process reads and writes the number of
+    # rows and a fingerprint of `system.symbols` to the file given as the second argument;
+    # `check_symbol_names` compares the fingerprints of the two sources. `address_begin` and
+    # `address_end` are offsets inside the executable, so the fingerprint does not depend on
+    # the address the executable is loaded at, and a sum of per-row hashes does not depend on
+    # the order of the rows.
+    symbol_names_test = r"""#!/bin/bash
+set -e
+trap "bash -ex /packages/preserve_logs.sh" ERR
+binary=$(readlink -f /usr/bin/clickhouse)
+debug_symbols=/usr/lib/debug$binary.debug
+# `SymbolIndex` looks for the debug symbols next to the binary before `/usr/lib/debug`.
+[ ! -e "$binary.debug" ]
+# `addressToLine` falls back to the name of the file the symbols were read from when it
+# finds no line, and the binary has no lines. When the build id of the debug symbols does
+# not match the binary, `SymbolIndex` reads the binary instead.
+object=$(clickhouse local -q "
+    SELECT addressToLine(address_begin)
+    FROM system.symbols
+    WHERE symbol LIKE '%StorageSystemSymbols%'
+        AND demangle(symbol) LIKE 'DB::StorageSystemSymbols::StorageSystemSymbols(%'
+    ORDER BY address_begin
+    LIMIT 1
+    SETTINGS allow_introspection_functions = 1")
+case "$1" in
+    with)
+        [ -s "$debug_symbols" ]
+        bash /packages/elf_sections.sh "$debug_symbols" > /root/debug_symbols_sections.txt
+        grep -qx '.symtab' /root/debug_symbols_sections.txt
+        [ "$(grep -cx '.clickhouse.symbols' /root/debug_symbols_sections.txt)" = 0 ]
+        [ -n "$object" ]
+        [ "$object" != "$binary" ]
+        ;;
+    without)
+        [ ! -e "$debug_symbols" ]
+        bash /packages/elf_sections.sh "$binary" > /root/sections.txt
+        grep -qx '.clickhouse.symbols' /root/sections.txt
+        [ "$(grep -cx '.symtab' /root/sections.txt)" = 0 ]
+        [ "$object" = "$binary" ]
+        ;;
+    *)
+        false
+        ;;
+esac
+clickhouse local -q "
+    SELECT count(), sum(cityHash64(address_begin, address_end, symbol))
+    FROM system.symbols
+    SETTINGS allow_introspection_functions = 1
+    FORMAT TSV" > "$2"
+[ -s "$2" ]"""
     preserve_logs = r"""#!/bin/bash
 journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
 journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
@@ -163,8 +220,50 @@ exit 1
     (TEMP_PATH / "initd_test.sh").write_text(initd_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
+    (TEMP_PATH / "elf_sections.sh").write_text(elf_sections, encoding="utf-8")
     (TEMP_PATH / "symbols_test.sh").write_text(symbols_test, encoding="utf-8")
+    (TEMP_PATH / "symbol_names_test.sh").write_text(symbol_names_test, encoding="utf-8")
     (TEMP_PATH / "preserve_logs.sh").write_text(preserve_logs, encoding="utf-8")
+    for measurement in TEMP_PATH.glob("symbol_names_*.tsv"):
+        measurement.unlink()
+
+
+def symbol_names_file(flavour: str, debug_symbols: bool) -> str:
+    """The path in the container of the fingerprint written by `symbol_names_test.sh`."""
+    mode = "with" if debug_symbols else "without"
+    return f"/packages/symbol_names_{flavour}_{mode}_debug_symbols.tsv"
+
+
+def check_symbol_names(flavour: str) -> Result:
+    """Compare the fingerprints of `system.symbols` with and without the debug symbols.
+
+    The two measurements are taken in the containers of different tests of the flavour,
+    the ones that install the debug symbols package and that do not, so that the job does
+    not install the debug symbols one more time.
+    """
+    measurements = {}
+    for debug_symbols in (True, False):
+        path = TEMP_PATH / Path(symbol_names_file(flavour, debug_symbols)).name
+        text = path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+        rows, _, fingerprint = text.partition("\t")
+        measurements[debug_symbols] = (rows, fingerprint) if fingerprint else None
+
+    def describe(measurement) -> str:
+        if measurement is None:
+            return "not measured"
+        return f"{measurement[0]} rows, fingerprint {measurement[1]}"
+
+    same = measurements[True] is not None and measurements[True] == measurements[False]
+    return Result(
+        name=f"Same symbol names with and without debug symbols in {flavour}",
+        status=Result.Status.OK if same else Result.Status.FAIL,
+        info=(
+            ""
+            if same
+            else f"system.symbols with the debug symbols: {describe(measurements[True])}; "
+            f"without them: {describe(measurements[False])}"
+        ),
+    )
 
 
 def test_install_deb(image: DockerImage) -> List[Result]:
@@ -176,11 +275,17 @@ def test_install_deb(image: DockerImage) -> List[Result]:
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb -y
-bash -ex /packages/server_test.sh""",
+bash -ex /packages/server_test.sh
+bash -ex /packages/symbol_names_test.sh with @WITH@""".replace(
+            "@WITH@", symbol_names_file("deb", debug_symbols=True)
+        ),
         "Run server init.d (proxy to systemd)": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_via_systemd_test.sh
-bash -ex /packages/symbols_test.sh""",
+bash -ex /packages/symbols_test.sh
+bash -ex /packages/symbol_names_test.sh without @WITHOUT@""".replace(
+            "@WITHOUT@", symbol_names_file("deb", debug_symbols=False)
+        ),
         "Run server init.d": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_test.sh""",
@@ -188,7 +293,7 @@ bash -ex /packages/initd_test.sh""",
 apt-get install /packages/clickhouse-{common-static,keeper}_*deb -y
 bash -ex /packages/keeper_test.sh""",
     }
-    return test_install(image, tests)
+    return test_install(image, tests) + [check_symbol_names("deb")]
 
 
 def test_install_rpm(image: DockerImage) -> List[Result]:
@@ -198,12 +303,19 @@ def test_install_rpm(image: DockerImage) -> List[Result]:
         "Install server rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{server,client,common}*rpm
 echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
-bash -ex /packages/server_test.sh""",
+bash -ex /packages/server_test.sh
+bash -ex /packages/symbol_names_test.sh with @WITH@""".replace(
+            "@WITH@", symbol_names_file("rpm", debug_symbols=True)
+        ),
+        # The only rpm test without the debug symbols, so it measures the symbol names too.
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{common-static,keeper}-[0-9]*rpm
-bash -ex /packages/keeper_test.sh""",
+bash -ex /packages/keeper_test.sh
+bash -ex /packages/symbol_names_test.sh without @WITHOUT@""".replace(
+            "@WITHOUT@", symbol_names_file("rpm", debug_symbols=False)
+        ),
     }
-    return test_install(image, tests)
+    return test_install(image, tests) + [check_symbol_names("rpm")]
 
 
 def test_install_binary(image: DockerImage, name: str) -> List[Result]:
@@ -244,7 +356,11 @@ for pkg in /packages/@PACKAGES@; do
     rm -rf "/${package:?}"
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
-bash -ex /packages/server_test.sh""".replace("@PACKAGES@", server_packages),
+bash -ex /packages/server_test.sh
+bash -ex /packages/symbol_names_test.sh @MODE@ @FILE@"""
+        .replace("@PACKAGES@", server_packages)
+        .replace("@MODE@", "with" if debug_symbols else "without")
+        .replace("@FILE@", symbol_names_file("tgz", debug_symbols)),
         f"Install keeper tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/@PACKAGES@; do
@@ -527,6 +643,7 @@ def main():
         # Debian, for which the debug symbols add nothing but two minutes.
         test_results.extend(test_install_tgz(deb_image, debug_symbols=True))
         test_results.extend(test_install_tgz(rpm_image, debug_symbols=False))
+        test_results.append(check_symbol_names("tgz"))
         free_packages("*.tgz*")
 
     # The binary tests need nothing but `/packages/clickhouse`, and they need around 7 GiB
