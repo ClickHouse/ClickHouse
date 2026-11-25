@@ -15,6 +15,14 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
+# Its UDF and workload stores are the data path itself, so a create there persists no directory
+# before its commit rename, and `directory_sync_fail` fails the sync after the rename.
+root_node = cluster.add_instance(
+    "root_node",
+    main_configs=["configs/stores_at_data_root.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
 
 NAMED_COLLECTIONS_DIR = "/var/lib/clickhouse/named_collections"
 USER_DEFINED_DIR = "/var/lib/clickhouse/user_defined"
@@ -270,8 +278,8 @@ FAILING_SYNC_CASES = [
 ]
 
 
-def _exists(path):
-    return node.exec_in_container(
+def _exists(path, instance=node):
+    return instance.exec_in_container(
         ["bash", "-c", f"test -e {path} && echo yes || echo no"]
     ).strip() == "yes"
 
@@ -337,6 +345,33 @@ def test_failed_directory_sync_fails_the_ddl():
         node.restart_clickhouse()
 
 
+# (create, drop if it exists, count of loaded objects, committed file) per store of `root_node`.
+ROOT_STORE_CASES = [
+    (
+        "CREATE FUNCTION {n} AS (x) -> x + 1",
+        "DROP FUNCTION IF EXISTS {n}",
+        "SELECT count() FROM system.functions WHERE name = '{n}'",
+        "/var/lib/clickhouse/function_{n}.sql",
+    ),
+    (
+        "CREATE RESOURCE {n} (WRITE DISK {n}_disk)",
+        "DROP RESOURCE IF EXISTS {n}",
+        "SELECT count() FROM system.resources WHERE name = '{n}'",
+        "/var/lib/clickhouse/resource_{n}.sql",
+    ),
+]
+
+
+def _root_directory_syncs(query_id, query_type):
+    root_node.query("SYSTEM FLUSH LOGS query_log")
+    return int(
+        root_node.query(
+            "SELECT ProfileEvents['DirectorySync'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = '{query_type}'"
+        ).strip()
+    )
+
+
 def test_create_whose_commit_sync_fails_leaves_nothing_behind():
     """
     A create whose directory sync fails after its rename has already committed the file. It is
@@ -344,36 +379,43 @@ def test_create_whose_commit_sync_fails_leaves_nothing_behind():
     create fails on it or reports success for an object that is not there, a drop finds no object to
     remove, and the next start loads an object no statement reported as created.
 
-    `directory_sync_after_rename_fail` fails only the sync after the rename, so the store directory
-    is persisted as usual and the failure comes after the commit.
+    The stores of `root_node` sync no directory before the commit rename, which the control create
+    checks, so a failed create that synced one directory failed after its rename.
     """
     try:
-        node.query("SYSTEM ENABLE FAILPOINT directory_sync_after_rename_fail")
-        for i, (create, _, retried_drop, count_loaded, committed_file) in enumerate(FAILING_SYNC_CASES):
+        for i, (create, drop_if_exists, count_loaded, committed_file) in enumerate(ROOT_STORE_CASES):
+            query_id = str(uuid.uuid4())
+            root_node.query(create.format(n=f"cs_control_{i}"), query_id=query_id, settings={"fsync_metadata": 1})
+            assert _root_directory_syncs(query_id, "QueryFinish") == 1, "a create syncs more than its commit here"
+
+            root_node.query("SYSTEM ENABLE FAILPOINT directory_sync_fail")
             for name in (f"cs_retried_{i}", f"cs_dropped_{i}"):
-                with pytest.raises(QueryRuntimeException, match="Injected failure to fsync the directory"):
-                    node.query(create.format(n=name), settings={"fsync_metadata": 1})
-                assert not _exists(committed_file.format(n=name)), f"{name}: the failed create left its file"
-                assert not _exists(committed_file.format(n=name) + ".tmp"), f"{name}: a temporary file was left"
-                assert node.query(count_loaded.format(n=name)).strip() == "0", f"{name}: loaded, but its create failed"
-        node.query("SYSTEM DISABLE FAILPOINT directory_sync_after_rename_fail")
+                query_id = str(uuid.uuid4())
+                with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
+                    root_node.query(create.format(n=name), query_id=query_id, settings={"fsync_metadata": 1})
+                assert _root_directory_syncs(query_id, "ExceptionBeforeStart") == 1, (
+                    f"{name}: the create did not fail at the sync after its rename"
+                )
+                file = committed_file.format(n=name)
+                assert not _exists(file, root_node), f"{name}: the failed create left its file"
+                assert not _exists(file + ".tmp", root_node), f"{name}: a temporary file was left"
+                assert root_node.query(count_loaded.format(n=name)).strip() == "0", f"{name}: loaded, but its create failed"
+            root_node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
 
-        for i, (create, _, retried_drop, count_loaded, _) in enumerate(FAILING_SYNC_CASES):
-            name = f"cs_retried_{i}"
-            node.query(create.format(n=name), settings={"fsync_metadata": 1})
-            assert node.query(count_loaded.format(n=name)).strip() == "1", f"{name}: the retried create did not load it"
-            node.query(retried_drop.format(n=f"cs_dropped_{i}"), settings={"fsync_metadata": 1})
+            root_node.query(create.format(n=f"cs_retried_{i}"), settings={"fsync_metadata": 1})
+            assert root_node.query(count_loaded.format(n=f"cs_retried_{i}")).strip() == "1", (
+                f"cs_retried_{i}: the retried create did not load it"
+            )
+            root_node.query(drop_if_exists.format(n=f"cs_dropped_{i}"), settings={"fsync_metadata": 1})
 
-        node.restart_clickhouse()
-        for i, (_, drop, _, count_loaded, _) in enumerate(FAILING_SYNC_CASES):
-            assert node.query(count_loaded.format(n=f"cs_dropped_{i}")).strip() == "0", (
+        root_node.restart_clickhouse()
+        for i, (_, _, count_loaded, _) in enumerate(ROOT_STORE_CASES):
+            assert root_node.query(count_loaded.format(n=f"cs_dropped_{i}")).strip() == "0", (
                 f"cs_dropped_{i}: loaded at startup, although its create failed and it was then dropped"
             )
-            node.query(drop.format(n=f"cs_retried_{i}"))
+            assert root_node.query(count_loaded.format(n=f"cs_retried_{i}")).strip() == "1"
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT directory_sync_after_rename_fail")
-        for directory in SQL_OBJECT_DIRS:
-            node.exec_in_container(["bash", "-c", f"rm -f {directory}/*cs_retried_* {directory}/*cs_dropped_*"])
+        root_node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
 
 
 def test_failed_store_directory_creation_is_rolled_back():

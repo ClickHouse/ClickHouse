@@ -1,0 +1,4 @@
+<clickhouse>
+    <user_defined_path>/var/lib/clickhouse/</user_defined_path>
+    <workload_path>/var/lib/clickhouse/</workload_path>
+</clickhouse>

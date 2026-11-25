@@ -34,7 +34,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char directory_sync_fail[];
-    extern const char directory_sync_after_rename_fail[];
     extern const char local_directory_sync_fail[];
 }
 
@@ -315,10 +314,6 @@ void renameAndSync(const String & from, const String & to, bool replace, bool fs
 
     try
     {
-        fiu_do_on(FailPoints::directory_sync_after_rename_fail,
-        {
-            throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected failure to fsync the directory of {}", to);
-        });
         dir_sync->sync();
     }
     catch (...)
