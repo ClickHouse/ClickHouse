@@ -36,6 +36,8 @@
     <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' AND rand() % 2 = 0 SETTINGS enable_lazy_columns_replication = 0</query>
     <!-- only the conjunct above reads the wide payload: the step must not replicate it for each element -->
     <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' AND rand(payload) % 2 = 0</query>
+    <!-- a conjunct that is not cheap but cannot throw is fused too -->
+    <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE startsWith(elem, 'e7') AND rand() % 2 = 0 SETTINGS enable_lazy_columns_replication = 0</query>
     <!-- regression guard: count() carries no passenger, so both paths do the same element comparisons -->
     <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
 
