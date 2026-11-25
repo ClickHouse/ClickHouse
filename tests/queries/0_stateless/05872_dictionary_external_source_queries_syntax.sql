@@ -97,6 +97,30 @@ CREATE DICTIONARY d (id UInt64, value String) PRIMARY KEY id
     SOURCE(POSTGRESQL(HOST '127.0.0.1' PORT 1 USER 'u' PASSWORD 'p' DB 'd' QUERY 'SELECT id, value FROM t WHERE "{condition}"'))
     LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1); -- { serverError INCORRECT_QUERY }
 
+SELECT '--- Quotes in the names that an ODBC source quotes are rejected';
+-- The quoting style of the bridge can escape a quote with a backslash, while SQL Server doubles it: `AS "value\" INTO t; --"`
+-- would end the identifier at the backslash, and the rest would be read as SQL.
+CREATE DICTIONARY d (id UInt64 EXPRESSION '1', `value" INTO dbo.created_by_dictionary; --` UInt64 EXPRESSION '1') PRIMARY KEY id
+    SOURCE(ODBC(CONNECTION_STRING 'DSN=none' SCHEMA 'dbo' TABLE 't'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1); -- { serverError INCORRECT_QUERY }
+CREATE DICTIONARY d (`id\\` UInt64, value String) PRIMARY KEY `id\\`
+    SOURCE(ODBC(CONNECTION_STRING 'DSN=none' TABLE 't'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1); -- { serverError INCORRECT_QUERY }
+CREATE DICTIONARY d (`id``x` String, value String) PRIMARY KEY `id``x`
+    SOURCE(ODBC(CONNECTION_STRING 'DSN=none' TABLE 't'))
+    LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1); -- { serverError INCORRECT_QUERY }
+CREATE DICTIONARY d (id UInt64, value String) PRIMARY KEY id
+    SOURCE(ODBC(CONNECTION_STRING 'DSN=none' TABLE 't" INTO x; --'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1); -- { serverError INCORRECT_QUERY }
+CREATE DICTIONARY d (id UInt64, value String) PRIMARY KEY id
+    SOURCE(ODBC(CONNECTION_STRING 'DSN=none' SCHEMA 'dbo"' TABLE 't'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1); -- { serverError INCORRECT_QUERY }
+-- MySQL and PostgreSQL double the quote, so the same name is accepted for them.
+CREATE DICTIONARY d (id UInt64, `value" x` String) PRIMARY KEY id
+    SOURCE(POSTGRESQL(HOST '127.0.0.1' PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);
+DROP DICTIONARY d;
+
 SELECT '--- Every way to create a dictionary from a definition is checked';
 SET distributed_ddl_output_mode = 'none';
 CREATE DICTIONARY d ON CLUSTER test_shard_localhost (id UInt64, value String) PRIMARY KEY id

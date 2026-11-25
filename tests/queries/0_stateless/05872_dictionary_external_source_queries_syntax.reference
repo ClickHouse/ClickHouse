@@ -1,6 +1,7 @@
 --- Statements other than SELECT are rejected
 --- What the database reads differently from ClickHouse is rejected
 --- {condition} in quotes is rejected
+--- Quotes in the names that an ODBC source quotes are rejected
 --- Every way to create a dictionary from a definition is checked
 0
 --- A source replaced by Null is not checked

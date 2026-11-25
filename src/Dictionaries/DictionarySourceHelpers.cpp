@@ -155,6 +155,38 @@ void checkConditionPlaceholderIsNotQuoted(const String & query, const String & d
     }
 }
 
+/// The quoting style of an ODBC source is reported by the bridge, and `Backticks` and `DoubleQuotes` escape a quote in an identifier
+/// with a backslash. A database that doubles the quote instead, such as SQL Server, reads the backslash literally, so a quote
+/// in a name ends the identifier, and the rest of the name is read as SQL: an attribute `value" INTO t; --` becomes
+/// `AS "value\" INTO t; --"`. The dialect is unknown, so the names that the source quotes cannot contain quotes or backslashes.
+void checkOdbcIdentifiers(const DictionaryStructure & dict_struct, const Poco::Util::AbstractConfiguration & config, const String & source_prefix)
+{
+    auto check = [](const String & name, const char * kind)
+    {
+        if (name.find_first_of("\"`\\") != String::npos)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "The {} {} of an odbc dictionary cannot contain quotes or backslashes, because the database may escape them differently",
+                kind,
+                backQuote(name));
+    };
+
+    if (dict_struct.id)
+        check(dict_struct.id->name, "key");
+    if (dict_struct.key)
+        for (const auto & key : *dict_struct.key)
+            check(key.name, "key");
+    if (dict_struct.range_min)
+        check(dict_struct.range_min->name, "range");
+    if (dict_struct.range_max)
+        check(dict_struct.range_max->name, "range");
+    for (const auto & attribute : dict_struct.attributes)
+        check(attribute.name, "attribute");
+
+    for (const char * setting : {"db", "schema", "table"})
+        check(config.getString(source_prefix + "." + setting, ""), setting);
+}
+
 }
 
 bool isExternalDatabaseDictionarySource(const String & source_type)
@@ -185,10 +217,13 @@ void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguratio
     const String invalidate_query = config.getString(source_prefix + ".invalidate_query", "");
 
     /// The source composes its queries from `query` or `where`, the attribute expressions and `update_field`, which are inserted verbatim,
-    /// and from identifiers, which it quotes in the style of the database. The identifiers do not change the kind of the query,
-    /// so they are replaced here by a placeholder table and quoted in the ClickHouse style, which the ClickHouse parser reads correctly.
+    /// and from identifiers, which it quotes in the style of the database. MySQL and PostgreSQL double a quote in an identifier, so
+    /// an identifier does not change the kind of the query, see `checkOdbcIdentifiers` for ODBC. So the identifiers are replaced
+    /// here by a placeholder table and quoted in the ClickHouse style, which the ClickHouse parser reads correctly.
     /// The table, the database and the schema can also come from a named collection, so they are not used.
     const DictionaryStructure dict_struct(config, config_prefix);
+    if (source_type == "odbc")
+        checkOdbcIdentifiers(dict_struct, config, source_prefix);
     const ExternalQueryBuilder query_builder(
         dict_struct, /* db_ */ "", /* schema_ */ "", /* table_ */ query.empty() ? "table" : "", query, where, IdentifierQuotingStyle::Backticks);
 
