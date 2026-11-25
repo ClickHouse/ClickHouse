@@ -26,7 +26,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 %pip install --quiet jupysql clickhouse_sqlalchemy
 ```
 
-ملاحظة: قد تحتاج إلى إعادة تشغيل الـkernel لاستخدام الحزم المُحدَّثة.
+ملاحظة: قد تحتاج إلى إعادة تشغيل الـkernel لاستخدام الحزم المُحدَّثة.
 
 ```python
 import pandas as pd
@@ -317,7 +317,7 @@ limit 5;
 ```
 
 * clickhouse://default:***@localhost:8123/default
-  اكتمل.
+  تم.
 
 <table>
   <tr>
@@ -384,13 +384,9 @@ WHERE trip_distance < 6.3
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مُدرَّج تكراري يوضح توزيع مسافات الرحلات ضمن 10 فئات من مجموعة بيانات الرحلات القصيرة](/images/integrations/sql-clients/jupysql-plot-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![مُدرَّج تكراري يوضح توزيع مسافات الرحلات ضمن 10 فئات من مجموعة بيانات الرحلات القصيرة](/images/integrations/sql-clients/jupysql-plot-1.webp)
+  </Frame>
 </div>
 
 ```python
@@ -401,11 +397,7 @@ _ = ax.set_xlabel("Trip distance")
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مُدرَّج تكراري يوضح توزيع مسافات الرحلات باستخدام 50 فئة مع شبكة، بعنوان 'Trip distance from trips < 6.3'](/images/integrations/sql-clients/jupysql-plot-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![مُدرَّج تكراري يوضح توزيع مسافات الرحلات باستخدام 50 فئة مع شبكة، بعنوان 'Trip distance from trips \< 6.3'](/images/integrations/sql-clients/jupysql-plot-2.webp)
+  </Frame>
 </div>

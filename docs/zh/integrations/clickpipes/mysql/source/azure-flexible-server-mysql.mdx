@@ -16,7 +16,7 @@ doc_type: 'guide'
 </Warning>
 
 <div id="configure-database-user">
-  ## 配置数据库用户
+  ## 配置数据库用户 {#configure-database-user}
 </div>
 
 以管理员身份连接到你的 Azure Database for MySQL 灵活服务器 实例，并执行以下命令：
@@ -39,9 +39,7 @@ doc_type: 'guide'
    FLUSH PRIVILEGES;
    ```
 
-<div id="configure-network-access">
-  ## 配置网络访问
-</div>
+## 配置网络访问 {#configure-network-access}
 
 <Note>
   ClickPipes 尚不支持 Azure Private Link。要访问不允许公共访问的实例，请使用 SSH 隧道。有关更多信息，请参阅 [ClickPipes 网络](/zh/integrations/clickpipes/networking)。
@@ -58,13 +56,9 @@ doc_type: 'guide'
     3. 在 **防火墙规则** 部分中，添加你的服务所在区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/networking/static-ips)。
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![为公共访问和 IP 允许列表配置网络](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
-
-       </Frame>
-
+         <Frame>
+           ![为公共访问和 IP 允许列表配置网络](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
+         </Frame>
        </div>
 
     4. 点击 **保存**，保存网络安全配置更改。
@@ -83,8 +77,6 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-<div id="whats-next">
-  ## 接下来做什么？
-</div>
+## 接下来做什么？ {#whats-next}
 
 您现在可以[创建 ClickPipe](/zh/integrations/clickpipes/mysql/index)，并开始将 Azure Database for MySQL 灵活服务器实例中的数据摄取到 ClickHouse Cloud。请务必记下您在设置实例时使用的连接信息，因为在创建 ClickPipe 的过程中需要用到这些信息。

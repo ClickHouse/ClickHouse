@@ -28,6 +28,26 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+/// `readonly` is read from the query context: a client `--readonly 1` raises it there only, while a
+/// mid-session `SET readonly = 1` also reaches it because a query context inherits session settings.
+void throwIfReadonlyRestrictsSetRole(const ContextPtr & context, std::string_view statement)
+{
+    if (context->getAccessControl().doesReadonlyRestrictSetRole() && context->getSettingsRef()[Setting::readonly])
+    {
+        throw Exception(
+            ErrorCodes::READONLY,
+            "Cannot execute {} in readonly mode. "
+            "This restriction is enabled by access_control_improvements.readonly_restricts_set_role",
+            statement);
+    }
+}
+
+}
+
+
 BlockIO InterpreterSetRoleQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
@@ -52,14 +72,7 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 {
     auto session_context = getContext()->getSessionContext();
 
-    /// `readonly` is read from the query context: a client `--readonly 1` raises it there only, while a
-    /// mid-session `SET readonly = 1` also reaches it because a query context inherits session settings.
-    if (getContext()->getAccessControl().doesReadonlyRestrictSetRole()
-        && getContext()->getSettingsRef()[Setting::readonly])
-        throw Exception(
-            ErrorCodes::READONLY,
-            "Cannot execute SET ROLE in readonly mode. "
-            "This restriction is enabled by access_control_improvements.readonly_restricts_set_role");
+    throwIfReadonlyRestrictsSetRole(getContext(), "SET ROLE");
 
     /// There are contexts with no user at all - the one the DDL worker executes a distributed query in,
     /// unless `distributed_ddl_use_initial_user_and_roles` is set. There are no current roles to change
@@ -77,6 +90,11 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 
 BlockIO InterpreterSetRoleQuery::setDefaultRole(const ASTPtr & updated_query_ptr, const ASTSetRoleQuery & query)
 {
+    /// The default roles are what the next session of the user starts with, so changing them is a way around the
+    /// restriction of `SET ROLE` if it is not restricted as well. The access check below does not catch it for the
+    /// user's own default roles: `TO CURRENT_USER` requires no grant, so `readonly` has nothing to deny there.
+    throwIfReadonlyRestrictsSetRole(getContext(), "SET DEFAULT ROLE");
+
     getContext()->getAccess()->checkCanAdministerDefaultRoles();
 
     /// The initiator of `SET DEFAULT ROLE ... TO CURRENT_USER ON CLUSTER` replaces the tag with its user name

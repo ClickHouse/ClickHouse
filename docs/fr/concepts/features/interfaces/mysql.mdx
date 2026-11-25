@@ -7,15 +7,15 @@ title: 'Interface MySQL'
 doc_type: 'guide'
 ---
 
-ClickHouse prend en charge le MySQL wire protocol. Cela permet à certains clients qui ne disposent pas de connecteurs ClickHouse natifs d’utiliser le protocole MySQL à la place. Cette compatibilité a été validée avec les outils BI suivants :
+ClickHouse prend en charge le MySQL wire protocol. Cela permet à certains clients qui ne disposent pas de connecteurs ClickHouse natifs d’utiliser le protocole MySQL à la place. Cette compatibilité a été validée avec les outils BI suivants :
 
 * [Looker Studio](/fr/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
 * [Tableau Online](/fr/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)
 * [QuickSight](/fr/integrations/connectors/data-visualization/quicksight-and-clickhouse)
 
-Si vous essayez d’autres clients ou intégrations non testés, gardez à l’esprit les limitations potentielles suivantes :
+Si vous essayez d’autres clients ou intégrations non testés, gardez à l’esprit les limitations potentielles suivantes :
 
-* L’implémentation SSL peut ne pas être entièrement compatible ; des problèmes potentiels liés au [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) peuvent survenir.
+* L’implémentation SSL peut ne pas être entièrement compatible ; des problèmes potentiels liés au [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) peuvent survenir.
 * Un outil donné peut nécessiter des fonctionnalités propres à un dialecte (par exemple, des fonctions ou paramètres spécifiques à MySQL) qui ne sont pas encore implémentées.
 
 Si un driver natif est disponible (par exemple, [DBeaver](/fr/integrations/connectors/sql-clients/dbeaver)), il est toujours préférable de l’utiliser plutôt que l’interface MySQL. De plus, même si la plupart des language clients MySQL devraient fonctionner correctement, l’interface MySQL n’est pas garantie comme remplacement direct pour une codebase contenant déjà des requêtes MySQL.
@@ -27,22 +27,16 @@ Si votre use case implique un outil particulier qui ne dispose pas d’un driver
   Ce comportement ne peut pas être désactivé et peut, dans de rares cas, entraîner une différence de comportement entre les requêtes envoyées à l’interface de requête standard de ClickHouse et à son interface MySQL.
 </Note>
 
-<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
-  ## Activation de l’interface MySQL sur ClickHouse Cloud
-</div>
+## Activation de l’interface MySQL sur ClickHouse Cloud {#enabling-the-mysql-interface-on-clickhouse-cloud}
 
 1. Après avoir créé votre service ClickHouse Cloud, cliquez sur le bouton `Connect`.
 
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Écran des identifiants - Prompt](/images/interfaces/mysql0.webp)
-
-</Frame>
-
+  <Frame>
+    ![Écran des identifiants - Prompt](/images/interfaces/mysql0.webp)
+  </Frame>
 </div>
 
 2. Dans le menu déroulant `Connect with`, sélectionnez `MySQL`.
@@ -50,13 +44,9 @@ Si votre use case implique un outil particulier qui ne dispose pas d’un driver
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Écran des identifiants - MySQL sélectionné](/images/interfaces/mysql1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Écran des identifiants - MySQL sélectionné](/images/interfaces/mysql1.webp)
+  </Frame>
 </div>
 
 3. Basculez l’interrupteur pour activer l’interface MySQL pour ce service. Cela exposera le port `3306` pour ce service et affichera votre écran de connexion MySQL, avec votre nom d’utilisateur MySQL unique. Le mot de passe sera le même que celui de l’utilisateur par défaut du service.
@@ -64,29 +54,21 @@ Si votre use case implique un outil particulier qui ne dispose pas d’un driver
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Écran des identifiants - MySQL activé](/images/interfaces/mysql2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Écran des identifiants - MySQL activé](/images/interfaces/mysql2.webp)
+  </Frame>
 </div>
 
 Copiez la chaîne de connexion MySQL affichée.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Écran des identifiants - Chaîne de connexion](/images/interfaces/mysql3.webp)
-
-</Frame>
-
+  <Frame>
+    ![Écran des identifiants - Chaîne de connexion](/images/interfaces/mysql3.webp)
+  </Frame>
 </div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
-  ## Création de plusieurs utilisateurs MySQL dans ClickHouse Cloud
+  ## Création de plusieurs utilisateurs MySQL dans ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 Par défaut, il existe un utilisateur intégré `mysql4<subdomain>`, qui utilise le même mot de passe que `default`. La partie `<subdomain>` correspond au premier segment du nom d’hôte de votre service ClickHouse Cloud. Ce format est nécessaire pour fonctionner avec les outils qui prennent en charge les connexions sécurisées, mais ne fournissent pas les [informations SNI lors de leur négociation TLS](https://www.cloudflare.com/learning/ssl/what-is-sni), ce qui empêche le routage interne sans indication supplémentaire dans le nom d’utilisateur (le client console MySQL fait partie de ces outils).
@@ -130,7 +112,7 @@ Vous pouvez créer des utilisateurs supplémentaires pour l’interface MySQL si
 4. Utilisez l’utilisateur créé pour vous connecter à votre service ClickHouse Cloud via l’interface MySQL.
 
 <div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
-  ### Troubleshooting de plusieurs utilisateurs MySQL dans ClickHouse Cloud
+  ### Troubleshooting de plusieurs utilisateurs MySQL dans ClickHouse Cloud {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 Si vous avez créé un nouvel utilisateur MySQL et que vous voyez l’erreur suivante lors de la connexion via le client CLI MySQL :
@@ -142,7 +124,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 Dans ce cas, assurez-vous que le nom d’utilisateur suit le format `mysql4<subdomain>_<username>`, comme indiqué ([ci-dessus](#creating-multiple-mysql-users-in-clickhouse-cloud)).
 
 <div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
-  ## Activer l’interface MySQL sur ClickHouse autogéré
+  ## Activer l’interface MySQL sur ClickHouse autogéré {#enabling-the-mysql-interface-on-self-managed-clickhouse}
 </div>
 
 Ajoutez le paramètre [mysql&#95;port](/fr/reference/settings/server-settings/settings/mysql#mysql_port) au fichier de configuration de votre serveur. Par exemple, vous pouvez définir le port dans un nouveau fichier XML dans le [dossier](/fr/concepts/features/configuration/server-config/configuration-files) `config.d/` :
@@ -160,7 +142,7 @@ Démarrez votre serveur ClickHouse et recherchez un message de log similaire à 
 ```
 
 <div id="connect-mysql-to-clickhouse">
-  ## Connecter MySQL à ClickHouse
+  ## Connecter MySQL à ClickHouse {#connect-mysql-to-clickhouse}
 </div>
 
 La commande suivante montre comment connecter le client MySQL `mysql` à ClickHouse :
