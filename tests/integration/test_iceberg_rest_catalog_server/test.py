@@ -1969,6 +1969,76 @@ def test_clickhouse_insert(started_cluster):
         node.query("DROP DATABASE IF EXISTS rest_tables_db")
 
 
+def test_commit_remove_snapshots(started_cluster):
+    ns = f"commit_remove_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    for snapshot_id, sequence_number in [(100, 1), (200, 2), (300, 3)]:
+        commit_table(ns, "events", [], append_updates(fake_snapshot(snapshot_id, sequence_number)))
+    tag = {"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 200}
+    commit_table(ns, "events", [], [tag])
+
+    # A ref keeps its snapshot.
+    for snapshot_id in [200, 300]:
+        update = {"action": "remove-snapshots", "snapshot-ids": [100, snapshot_id]}
+        response = commit_table(ns, "events", [], [update], expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+    response = commit_table(ns, "events", [], [{"action": "remove-snapshots", "snapshot-ids": ["100"]}], expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+    # The ref goes first, in the same commit, as expiration sends it. Snapshot 999 does not exist.
+    metadata = commit_table(
+        ns,
+        "events",
+        assert_main_at(300),
+        [
+            {"action": "remove-snapshot-ref", "ref-name": "v1"},
+            {"action": "remove-snapshots", "snapshot-ids": [200]},
+            {"action": "remove-snapshots", "snapshot-ids": [999]},
+        ],
+    ).json()["metadata"]
+    assert [s["snapshot-id"] for s in metadata["snapshots"]] == [100, 300]
+    assert metadata["refs"] == {"main": {"type": "branch", "snapshot-id": 300}}
+    assert metadata["current-snapshot-id"] == 300
+    assert metadata["last-sequence-number"] == 3
+    # History before the removed snapshot goes too.
+    assert [e["snapshot-id"] for e in metadata["snapshot-log"]] == [300]
+
+    # A commit can append and remove the previous snapshots at once.
+    updates = append_updates(fake_snapshot(400, 4)) + [{"action": "remove-snapshots", "snapshot-ids": [100, 300]}]
+    metadata = commit_table(ns, "events", assert_main_at(300), updates).json()["metadata"]
+    assert [s["snapshot-id"] for s in metadata["snapshots"]] == [400]
+    assert [e["snapshot-id"] for e in metadata["snapshot-log"]] == [400]
+    assert metadata["current-snapshot-id"] == 400
+
+
+def test_clickhouse_expire_snapshots(started_cluster):
+    ns = f"chexpire_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    table = f"rest_tables_db.`{ns}.events`"
+
+    node.query(create_database_query())
+    try:
+        for _ in range(3):
+            node.query(f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a')")
+        snapshots = load_table(ns, "events")["metadata"]["snapshots"]
+        assert len(snapshots) == 3
+
+        expired = ", ".join(str(s["snapshot-id"]) for s in snapshots[:2])
+        node.query(
+            f"ALTER TABLE {table} EXECUTE expire_snapshots(snapshot_ids = [{expired}])",
+            settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
+        )
+
+        metadata = load_table(ns, "events")["metadata"]
+        assert [s["snapshot-id"] for s in metadata["snapshots"]] == [snapshots[2]["snapshot-id"]]
+        assert metadata["current-snapshot-id"] == snapshots[2]["snapshot-id"]
+        assert node.query(f"SELECT count() FROM {table}") == "3\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
 def test_secure_port(started_cluster):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     path = "/v1/config?warehouse=my_warehouse"
