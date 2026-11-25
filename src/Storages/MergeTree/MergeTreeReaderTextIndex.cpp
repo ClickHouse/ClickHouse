@@ -455,6 +455,8 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         settings,
         /*expected_buffer_size=*/ std::nullopt,
         /*use_page_cache_lookahead=*/ false);
+    /// Also without a registry yet: `setReadRangesRegistry` gives the existing streams their sink.
+    positions_ranges_read.file_name = index_read_task.index.index->getFileName() + positions_substream->suffix + positions_substream->extension;
     if (read_ranges_registry)
         positions_stream->setRangesReadSink(&positions_ranges_read.ranges);
 
@@ -655,13 +657,15 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStr
 {
     /// use_page_cache_lookahead: a cursor can skip segments forward (`getPostingsStream`),
     /// and a whole-list read drops the stream at the end of the list (`readAllPostingsForToken`).
+    const auto postings_substream = index_read_task.index.index->getSubstreams()[2];
     auto stream = makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),
-        index_read_task.index.index->getSubstreams()[2],
+        postings_substream,
         settings,
         estimatePostingListBufferSize(token_info),
         /*use_page_cache_lookahead=*/ false);
+    postings_ranges_read.file_name = index_read_task.index.index->getFileName() + postings_substream.suffix + postings_substream.extension;
     if (read_ranges_registry)
         stream->setRangesReadSink(&postings_ranges_read.ranges);
     return stream;
@@ -695,17 +699,17 @@ void MergeTreeReaderTextIndex::registerReadRanges()
         positions_stream->recordBytesConsumed();
 
     size_t bytes = 0;
-    auto register_file = [&](FileRangesRead & file, std::string_view kind)
+    auto register_file = [&](FileRangesRead & file)
     {
         if (file.ranges.empty())
             return;
         if (!file.read_ranges)
-            file.read_ranges = &read_ranges_registry->getReadRanges(fmt::format(
-                "{}/{}.{}", data_part_info_for_read->getDataPartStorage()->getFullPath(), index_read_task.index.index->getFileName(), kind));
+            file.read_ranges = &read_ranges_registry->getReadRanges(
+                data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + file.file_name);
         bytes += read_ranges_registry->registerRanges(*file.read_ranges, file.ranges);
     };
-    register_file(postings_ranges_read, "postings");
-    register_file(positions_ranges_read, "positions");
+    register_file(postings_ranges_read);
+    register_file(positions_ranges_read);
     read_ranges_registry->commit(bytes);
 
     if (read_ranges_registry->stopped())
