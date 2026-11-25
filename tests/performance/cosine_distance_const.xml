@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they cannot store `BFloat16`. -->
     <settings>
         <max_threads>1</max_threads>
     </settings>
