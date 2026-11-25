@@ -1595,11 +1595,9 @@ getColumnsForNewDataPart(
     const bool rechoose_kinds = commands_for_interpreter.hasRewritePartsCommand()
         && std::ranges::all_of(commands_for_interpreter, [](const MutationCommand & command)
         {
-            /// Commands that keep the values of the source part, so its counts still describe them.
+            /// `REWRITE PARTS` with nothing but column reads writes the values of the source part,
+            /// so its counts still describe them.
             return command.type == MutationCommand::REWRITE_PARTS
-                || command.type == MutationCommand::MATERIALIZE_INDEX
-                || command.type == MutationCommand::MATERIALIZE_STATISTICS
-                || command.type == MutationCommand::MATERIALIZE_PROJECTION
                 || (command.type == MutationCommand::READ_COLUMN && !command.read_for_patch);
         });
     SerializationInfo::Settings rechoose_settings = settings;

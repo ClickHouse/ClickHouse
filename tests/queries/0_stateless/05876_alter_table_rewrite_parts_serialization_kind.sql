@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS t_no_counts;
 DROP TABLE IF EXISTS t_batch;
 DROP TABLE IF EXISTS t_patch;
 DROP TABLE IF EXISTS t_index;
+DROP TABLE IF EXISTS t_mat;
 
 CREATE TABLE t_wide (id UInt64, s String, u UInt64, t Tuple(a UInt64, b String))
 ENGINE = MergeTree ORDER BY id
@@ -32,6 +33,10 @@ CREATE TABLE t_index (id UInt64, s String, INDEX idx_s s TYPE bloom_filter GRANU
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.9, compute_exact_num_defaults_for_sparse_columns = 1;
 
+CREATE TABLE t_mat (id UInt64, s String, INDEX idx_s s TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, ratio_of_defaults_for_sparse_serialization = 0.9, compute_exact_num_defaults_for_sparse_columns = 1;
+
 -- s: 80% defaults, u: 99% defaults, t.a: 80% defaults, t.b: 99% defaults.
 INSERT INTO t_wide SELECT number, if(number % 5 = 0, 'x', ''), if(number % 100 = 0, number, 0), (if(number % 5 = 0, number, 0), if(number % 100 = 0, 'y', ''))
 FROM numbers(10000)
@@ -54,6 +59,10 @@ FROM numbers(10000)
 SETTINGS max_block_size = 65505, max_insert_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
 INSERT INTO t_index SELECT number, if(number % 5 = 0, 'x', '')
+FROM numbers(10000)
+SETTINGS max_block_size = 65505, max_insert_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+
+INSERT INTO t_mat SELECT number, if(number % 5 = 0, 'x', '')
 FROM numbers(10000)
 SETTINGS max_block_size = 65505, max_insert_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
@@ -121,9 +130,16 @@ ALTER TABLE t_index REWRITE PARTS SETTINGS mutations_sync = 2;
 SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_index' AND active AND column = 's';
 SELECT count(), countIf(s != '') FROM t_index;
 
+-- Materializing an index in the same mutation: the kinds of the source part are kept.
+ALTER TABLE t_mat MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_mat (MATERIALIZE INDEX idx_s), (REWRITE PARTS) SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_mat' AND active AND column = 's';
+SELECT count(), countIf(s != '') FROM t_mat;
+
 DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_no_counts;
 DROP TABLE t_batch;
 DROP TABLE t_patch;
 DROP TABLE t_index;
+DROP TABLE t_mat;

@@ -4,6 +4,7 @@ SELECT table, count(), groupUniqArray(part_type) FROM system.parts WHERE databas
 t_batch	1	['Wide']
 t_compact	1	['Compact']
 t_index	1	['Wide']
+t_mat	1	['Compact']
 t_no_counts	1	['Wide']
 t_patch	1	['Wide']
 t_wide	1	['Wide']
@@ -93,9 +94,17 @@ SELECT column, serialization_kind FROM system.parts_columns WHERE database = cur
 s	Sparse
 SELECT count(), countIf(s != '') FROM t_index;
 10000	2000
+-- Materializing an index in the same mutation: the kinds of the source part are kept.
+ALTER TABLE t_mat MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_mat (MATERIALIZE INDEX idx_s), (REWRITE PARTS) SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_mat' AND active AND column = 's';
+s	Default
+SELECT count(), countIf(s != '') FROM t_mat;
+10000	2000
 DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_no_counts;
 DROP TABLE t_batch;
 DROP TABLE t_patch;
 DROP TABLE t_index;
+DROP TABLE t_mat;
