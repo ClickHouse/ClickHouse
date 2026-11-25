@@ -143,7 +143,8 @@ public:
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
         bool skip_object_metadata = false,
-        bool with_tags = false);
+        bool with_tags = false,
+        const std::optional<FormatSettings> & format_settings = std::nullopt);
 
     /// For a data lake configuration, returns the metadata with `datalake_table_state` set: the given
     /// one if it already has the state, otherwise a copy with the current snapshot of the table.
@@ -335,7 +336,8 @@ public:
         bool throw_on_zero_files_match_,
         bool skip_hidden_files_,
         bool with_tags,
-        std::function<void(FileProgress)> file_progress_callback_ = {});
+        std::function<void(FileProgress)> file_progress_callback_ = {},
+        const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     ~GlobIterator() override = default;
 
@@ -352,6 +354,7 @@ private:
     const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_columns;
+    const std::optional<FormatSettings> format_settings;
     const bool throw_on_zero_files_match;
     /// Skip objects with a path segment starting with '_' or '.' (and not containing '=') below
     /// the non-glob prefix, the way every other reader of Hive-layout data does (Hive, Spark, Trino):
@@ -404,7 +407,8 @@ public:
         NamesAndTypesList hive_columns_ = {},
         String object_namespace_ = {},
         ContextPtr context_ = {},
-        String archive_member_path_ = {});
+        String archive_member_path_ = {},
+        std::optional<FormatSettings> format_settings_ = std::nullopt);
 
     ~KeysIterator() override = default;
 
@@ -427,6 +431,7 @@ private:
     /// already runs and the set is ready, before the object metadata is fetched.
     const ExpressionActionsPtr deferred_filter_actions;
     const NamesAndTypesList hive_columns;
+    const std::optional<FormatSettings> format_settings;
     const String object_namespace;
     const ContextPtr context;
     /// A known archive member is part of the user-visible `_path` / `_file` value, although the

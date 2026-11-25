@@ -23,6 +23,10 @@ ClickHouse は [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight
 * `PollFlightInfo` による段階的な結果取得。
 * `CancelFlightInfo` によるクエリのキャンセル。
 
+<Note>
+  ClickHouse Cloud では、Arrow Flight インターフェイスはデフォルトで無効になっており、利用するにはサービスで Cloud の機能フラグを有効にする必要があります。以下のサーバー構成例は、自己管理型 ClickHouse を対象としています。
+</Note>
+
 ## Arrow Flight Server を有効にする {#enabling-server}
 
 Arrow Flight Server を有効にするには、ClickHouse サーバー設定に `arrowflight_port` 設定を追加します。

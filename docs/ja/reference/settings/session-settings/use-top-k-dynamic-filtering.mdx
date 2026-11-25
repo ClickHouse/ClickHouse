@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="use_top_k_dynamic_filtering">
-  ## use_top_k_dynamic_filtering
-</div>
+## use_top_k_dynamic_filtering {#use_top_k_dynamic_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,22 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="use_top_k_dynamic_filtering_for_variable_length_types">
-  ## use_top_k_dynamic_filtering_for_variable_length_types
-</div>
+## use_top_k_dynamic_filtering_for_single_string_sort_column {#use_top_k_dynamic_filtering_for_single_string_sort_column}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新しい設定: `MergeTree` テーブルの単一の `String` 型 `ORDER BY` カラムに対する TopN 動的フィルタリング。"}]}]} />
+
+`ORDER BY` が単一の `String` カラム (`Nullable` でラップされたものも含む) で構成される場合、`use_top_k_dynamic_filtering_for_variable_length_types` が `0` であっても、`MergeTree` テーブルに `use_top_k_dynamic_filtering` を適用します。
+
+このようなカラムでは、ブロック内の大半の行がしきい値と等しくなると (例: 大半が空文字列のカラム) 、フィルタはしきい値と等しい行も破棄します。各しきい値のチェックは 1 つのブロック、すなわち大半の行がフィルタを通過する最初のブロックでのみ行われます。Parquetファイルなど、その他のソースには影響しません。
+
+設定可能な値:
+
+* 0 - 無効。
+* 1 - 有効。
+
+## use_top_k_dynamic_filtering_for_variable_length_types {#use_top_k_dynamic_filtering_for_variable_length_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,6 +54,8 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 このような型では、動的フィルタが各行に対して行うしきい値比較のコストが、その効果を上回ることがあります。特に、カラムの辞書順での最小値が大半を占める場合 (例: ほとんどが空文字列) や、スキップできる granule が少ない場合に起こります。その場合、動的フィルタはクエリのレイテンシを改善するどころか、かえって悪化させます。
 
 この設定が `0` の場合、動的フィルタリングは、メモリ内で値の最大サイズが固定されているカラム (数値、`Date`、`DateTime`、`FixedString`、`Enum`、それらの型の `Nullable`、それらの型の `Tuple`) に制限されます。`1` に設定すると、動的フィルタリングは可変長の型にも適用されます。
+
+この設定が `0` の場合でも、Parquetファイルの読み取りでは、`String` 型のソートカラムの統計情報に基づいて行グループ全体がスキップされます。この設定が制御するのは行単位のフィルタのみです。
 
 設定可能な値:
 

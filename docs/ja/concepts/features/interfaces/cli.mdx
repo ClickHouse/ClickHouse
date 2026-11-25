@@ -16,7 +16,7 @@ doc_type: 'reference'
 * ClickHouse Cloud サービスの作成、設定、スケーリング、バックアップ、クエリ実行
 * [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) サービスの作成、監視、設定、復元
 * オブジェクトストレージ、Kafka、Kinesis、Pub/Sub、Postgres、MySQL、MongoDB、BigQuery をソースとする ClickPipes の作成と運用
-* [Managed ClickStack](/ja/clickstack/deployment/managed) サービス上のソース、ダッシュボード、アラート、Webhook、保存済み検索、ロールの管理
+* [Self-managed ClickHouse Observability](/ja/clickstack/self-configured/deployment/managed) サービス上のソース、ダッシュボード、アラート、Webhook、保存済み検索、ロールの管理
 * 実行可能 UDF のローカル開発と ClickHouse Cloud へのデプロイ
 * 組織のメンバー、招待、APIキー、ロールの管理
 * 公式の ClickHouse agent skills のコーディングエージェントへのインストール
@@ -430,7 +430,7 @@ CDC パイプは、`update` の前に `Paused` 状態にしておく必要があ
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack` は、既存の [Managed ClickStack](/ja/clickstack/deployment/managed) サービスのソース、ダッシュボード、アラート、Webhook、保存済み検索、ロールを管理します。リソースはJSONファイルで指定します (`--file` を使用するか、stdin から読み込む場合は `-` を指定) 。読み取りは OAuth 認証に対応していますが、書き込みにはAPIキーが必要です。
+`cloud clickstack` は、既存の [Self-managed ClickHouse Observability](/ja/clickstack/self-configured/deployment/managed) サービスのソース、ダッシュボード、アラート、Webhook、保存済み検索、ロールを管理します。リソースはJSONファイルで指定します (`--file` を使用するか、stdin から読み込む場合は `-` を指定) 。読み取りは OAuth 認証に対応していますが、書き込みにはAPIキーが必要です。
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

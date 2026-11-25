@@ -1,0 +1,46 @@
+---
+slug: /clickstack/observability/service-maps
+title: '服务拓扑图'
+sidebarTitle: '服务拓扑图'
+description: '借助 ClickHouse Observability 服务拓扑图，直观呈现服务间的依赖关系与请求流向。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '服务拓扑图', '拓扑', '链路追踪', '依赖项', '分布式链路追踪', '可观测性', '请求图']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+服务拓扑图以可视化方式展示服务之间的交互关系。ClickHouse Observability 会在同一 trace 中将客户端跨度 (出站请求) 与服务端跨度 (入站请求) 相匹配，据此构建拓扑图，还原服务之间的请求路径。
+
+在左侧导航面板中点击 **服务地图**，即可打开完整的拓扑图。通过 OpenTelemetry [摄取链路追踪数据](/zh/clickstack/observability/ingesting-data/overview)后，各服务便会显示在图中。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![服务地图，展示各服务节点及其之间的请求流向](/images/clickstack/observability-service-map-overview.png)
+  </Frame>
+</div>
+
+## 探索服务地图 {#exploring-the-service-map}
+
+每个节点代表一个服务，由 `service.name` 资源属性标识。当一个服务中的客户端跨度与另一个服务中的服务端跨度相匹配时，两者之间会以边 (虚线) 相连。节点大小反映相对流量大小。在 **Error rate** 模式下，红色节点表示在所选时间范围内出现错误的服务。可通过右上角的图例在 **Latency**、**Error rate** 和 **Throughput** 之间切换。
+
+地图上方的工具栏可用于过滤和调整视图。
+
+**数据源选择器** — 选择用于构建地图的链路追踪数据源，例如 **Traces**。
+
+**采样滑块** — 调整采样率，在性能与准确性之间取得平衡。在数据量较大的集群上，采样率越低，加载速度越快。
+
+**日期范围选择器** — 设置用于构建地图的链路追踪数据的时间窗口。
+
+点击地图左下角的 **+/-** 按钮或滚动鼠标滚轮即可放大或缩小。
+
+## Trace 级服务拓扑图 {#trace-level-service-maps}
+
+查看单个 trace 时，选择 **服务地图** 选项卡，即可查看该请求在各服务之间的流转路径。切换回 **Trace** 选项卡即可返回瀑布图。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![针对单个 trace，从链路追踪瀑布图切换到服务地图](/images/clickstack/observability-trace-service-map.gif)
+  </Frame>
+</div>

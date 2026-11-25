@@ -2979,6 +2979,61 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
+def test_kafka_engine_put_errors_to_stream_enum_type_default(
+    kafka_cluster, create_query_generator
+):
+    # The row of a message that fails to parse gets the type default: the smallest element of an Enum without 0.
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    topic_name = "kafka_engine_put_errors_to_stream_enum" + k.get_topic_postfix(
+        create_query_generator
+    )
+    create_query = create_query_generator(
+        kafka_table,
+        "i Int64, e Enum8('a' = 1, 'b' = 2)",
+        topic_list=topic_name,
+        consumer_group=topic_name,
+        settings={"kafka_handle_error_mode": "stream"},
+    )
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.{kafka_table};
+        DROP TABLE IF EXISTS test.{kafka_table}_data;
+        {create_query};
+        CREATE MATERIALIZED VIEW test.{kafka_table}_data (i Int64, e Enum8('a' = 1, 'b' = 2), failed UInt8)
+            ENGINE = MergeTree
+            ORDER BY i
+            AS SELECT i, e, length(_error) > 0 AS failed FROM test.{kafka_table};
+
+        DETACH TABLE test.{kafka_table} SYNC;
+        ATTACH TABLE test.{kafka_table};
+        """
+    )
+
+    k.kafka_produce(kafka_cluster, topic_name, [json.dumps({"i": 1, "e": "b"}), "not json"])
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_data",
+            retry_count=120,
+            sleep_time=1,
+            check_callback=lambda x: int(x) == 2,
+        )
+        assert (
+            instance.query(f"SELECT i, e, failed FROM test.{kafka_table}_data ORDER BY i")
+            == "0\ta\t1\n1\tb\t0\n"
+        )
+
+        instance.query(f"""
+            DROP TABLE test.{kafka_table};
+            DROP TABLE test.{kafka_table}_data;
+        """)
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
 def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
     kafka_cluster, create_query_generator
 ):
