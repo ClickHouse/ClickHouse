@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -145,12 +146,13 @@ private:
     /// instead of holding all of it in bucket 0 until the next spill request (MergeJoin always
     /// puts the drained blocks on disk right away).
     void switchToExternalJoin(JoinBuildContext context, bool spill_immediately = false);
-    /// Unless `enable_robin_hood_hash_for_joins` is set, the hash tables of `hash_join` can be halved instead of spilling.
+    /// Unless `enable_robin_hood_hash_for_joins` is set, the hash tables of `hash_join` can be halved instead of spilling, when
+    /// the new bucket buffers that halving allocates before it frees the old ones fit in memory.
     /// Returns whether the join can go on in memory: `too_many_bytes` is false for its bytes, after halving if needed.
     bool stayInMemoryByHalving(absl::FunctionRef<bool(size_t)> too_many_bytes);
     /// Halves them if that frees at least `at_least_bytes`, or if the query memory plus the reserve of the join would then stay
-    /// under the hard limit. Returns the bytes freed, 0 if it did not halve.
-    size_t freeMemoryByHalving(size_t at_least_bytes);
+    /// under the hard limit. Returns the bytes freed, or none if the join should spill.
+    std::optional<size_t> freeMemoryByHalving(size_t at_least_bytes);
     /// Every insert into the external join funnels through here: MergeJoin inserts are
     /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts
     /// stay concurrent.
@@ -183,6 +185,9 @@ private:
     bool keep_left_block_order = false;
 
     std::atomic<State> state{State::COLLECTING};
+
+    /// Whether the hash tables were halved. Guarded by `switch_mutex`.
+    bool halved = false;
 
     /// The error of the failed switch, written before `state` becomes `FAILED`.
     int switch_error_code = 0;

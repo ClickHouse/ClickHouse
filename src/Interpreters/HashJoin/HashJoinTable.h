@@ -627,9 +627,15 @@ public:
     /// `schedule` must run them before the table is destroyed.
     void clearInParallel(size_t num_jobs, absl::FunctionRef<void(std::function<void()>)> schedule);
 
-    /// The bytes that `halveInParallel` would free now. Only the buckets of a two-level map with the Robin Hood grower are
-    /// halved, see `HashTable::halveInRobinHoodMode`.
-    size_t bytesFreedByHalving() const;
+    /// What `halveInParallel` would do now: the bytes it would free, and the size of the largest new bucket buffer, which a job
+    /// allocates before it frees the old one. Only the buckets of a two-level map with the Robin Hood grower are halved, see
+    /// `HashTable::halveInRobinHoodMode`.
+    struct Halving
+    {
+        size_t freed_bytes = 0;
+        size_t largest_new_bucket_bytes = 0;
+    };
+    Halving estimateHalving() const;
 
     /// Halves those buckets in `num_jobs` jobs and passes them to `schedule`, which must run them before the table is destroyed.
     /// The jobs add the bytes they free and the buckets they halve to `freed_bytes` and `halved_buckets`.

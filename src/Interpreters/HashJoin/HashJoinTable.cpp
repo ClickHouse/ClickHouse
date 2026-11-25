@@ -513,18 +513,23 @@ void HashJoinTable::clearInParallel(size_t num_jobs, absl::FunctionRef<void(std:
     });
 }
 
-size_t HashJoinTable::bytesFreedByHalving() const
+HashJoinTable::Halving HashJoinTable::estimateHalving() const
 {
-    size_t bytes = 0;
+    Halving halving;
     visitMapWithRobinHoodBuckets(
         maps,
         key_type,
         [&]<typename Table>(const Table & map)
         {
             for (const auto & bucket : map.impls)
-                bytes += bucket.bytesFreedByHalving();
+            {
+                /// The new buffer has half the cells, so it is as large as the bytes freed.
+                const size_t freed = bucket.bytesFreedByHalving();
+                halving.freed_bytes += freed;
+                halving.largest_new_bucket_bytes = std::max(halving.largest_new_bucket_bytes, freed);
+            }
         });
-    return bytes;
+    return halving;
 }
 
 void HashJoinTable::halveInParallel(

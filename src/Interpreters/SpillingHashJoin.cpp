@@ -211,8 +211,8 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
 
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        if (const size_t freed = freeMemoryByHalving(at_least_bytes))
-            return freed;
+        if (const auto freed = freeMemoryByHalving(at_least_bytes))
+            return *freed;
 
         size_t before = getTotalByteCount();
         switchToExternalJoin(JoinBuildContext::serial(), /*spill_immediately=*/true);
@@ -226,6 +226,18 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
     return grace_join ? grace_join->spill(at_least_bytes) : 0;
 }
 
+namespace
+{
+
+/// Halving allocates the new bucket buffers before it frees the old ones, so near the memory limit it fails where a spill would not.
+bool fitsInMemory(size_t bytes)
+{
+    const auto available_memory = getAvailableMemoryForSpilling();
+    return !available_memory || *available_memory > bytes;
+}
+
+}
+
 bool SpillingHashJoin::stayInMemoryByHalving(absl::FunctionRef<bool(size_t)> too_many_bytes)
 {
     std::unique_lock lock(switch_mutex);
@@ -237,35 +249,45 @@ bool SpillingHashJoin::stayInMemoryByHalving(absl::FunctionRef<bool(size_t)> too
     if (!too_many_bytes(total_bytes))
         return true;
 
-    const size_t halving_frees = hash_join->bytesFreedByHalvingHashTables();
-    if (!halving_frees || too_many_bytes(total_bytes - halving_frees))
+    const auto halving = hash_join->estimateHalvingHashTables();
+    if (!halving.freed_bytes || too_many_bytes(total_bytes - halving.freed_bytes) || !fitsInMemory(halving.peak_bytes))
         return false;
 
     hash_join->halveHashTables();
+    halved = true;
     return true;
 }
 
-size_t SpillingHashJoin::freeMemoryByHalving(size_t at_least_bytes)
+std::optional<size_t> SpillingHashJoin::freeMemoryByHalving(size_t at_least_bytes)
 {
     std::unique_lock lock(switch_mutex);
     if (state.load(std::memory_order_relaxed) != State::COLLECTING)
-        return 0;
-
-    const size_t halving_frees = hash_join->bytesFreedByHalvingHashTables();
-    if (!halving_frees)
-        return 0;
+        return {};
 
     /// `MemorySpillScheduler` asks for all the bytes of the join while the query memory plus the largest reserve of any processor
     /// reaches the hard limit. The reserve of the join is all its bytes, so halving is also enough if the query memory plus
     /// that reserve, both after halving, stay under the limit.
     const auto hard_limit = getCurrentQueryHardLimit();
     const size_t join_bytes = hash_join->getTotalByteCount();
-    const Int64 memory_after = getCurrentQueryMemoryUsage() - static_cast<Int64>(halving_frees);
-    const bool fits_after = hard_limit && memory_after + static_cast<Int64>(join_bytes - halving_frees) < static_cast<Int64>(*hard_limit);
-    if (halving_frees < at_least_bytes && !fits_after)
-        return 0;
+    const Int64 memory = getCurrentQueryMemoryUsage();
+    const auto fits_after = [&](size_t freed)
+    { return hard_limit && memory - static_cast<Int64>(freed) + static_cast<Int64>(join_bytes - freed) < static_cast<Int64>(*hard_limit); };
 
-    return hash_join->halveHashTables();
+    const auto halving = hash_join->estimateHalvingHashTables();
+    if (!halving.freed_bytes)
+    {
+        /// A request for more bytes than the join holds was made before another build stream halved the hash tables. It needs
+        /// no spill if that freed enough.
+        if (halved && at_least_bytes > join_bytes && fits_after(0))
+            return 0;
+        return {};
+    }
+    if ((halving.freed_bytes < at_least_bytes && !fits_after(halving.freed_bytes)) || !fitsInMemory(halving.peak_bytes))
+        return {};
+
+    const size_t freed = hash_join->halveHashTables();
+    halved = true;
+    return freed;
 }
 
 void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill_immediately)

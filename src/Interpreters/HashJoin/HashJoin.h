@@ -870,9 +870,14 @@ public:
 
     void setSpillThreshold(size_t max_bytes_before_external_join) { data->growth_budget.setSpillThreshold(max_bytes_before_external_join); }
 
-    /// The bytes that `halveHashTables` would free now, 0 with `enable_robin_hood_hash_for_joins = 1`.
-    /// Call it while no build thread inserts.
-    size_t bytesFreedByHalvingHashTables() const;
+    /// What `halveHashTables` would do now: the bytes it would free, and the most it would allocate at once, a new bucket
+    /// buffer per thread. Both are 0 with `enable_robin_hood_hash_for_joins = 1`. Call it while no build thread inserts.
+    struct Halving
+    {
+        size_t freed_bytes = 0;
+        size_t peak_bytes = 0;
+    };
+    Halving estimateHalvingHashTables() const;
 
     /// Rebuilds in the Robin Hood mode, in half their cells, the buckets whose keys fit there, on up to `getMaxBuildThreads`
     /// threads, and returns the bytes freed. A halved bucket doubles at its next growth, and every other bucket switches in place.
@@ -887,6 +892,9 @@ private:
 
     /// The key type of the maps of every table.
     Type keyType() const;
+
+    /// How many jobs `halveHashTables` runs at once.
+    size_t halvingJobs() const;
 
     /// The maps flavour this join runs on. All the dispatch entry points take it.
     JoinMapsKind getMapsKind() const;

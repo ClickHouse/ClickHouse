@@ -10,5 +10,7 @@ full_switched: the same result, spilled 0, switched 1, halved 0
 anti_switched: the same result, spilled 0, switched 1, halved 0
 packed_string_switched: the same result, spilled 0, switched 1, halved 0
 string_switched: the same result, spilled 0, switched 1, halved 0
---- two disjuncts, so two hash tables, at a memory limit of 0.75 of the peak memory
+--- two disjuncts, so two hash tables that grow together, at a memory limit of 0.75 of the peak memory
 or: the same result, spilled 0, switched 1, halved 0
+--- two disjuncts, one with 10 keys, at a memory limit of 1.25 of the peak memory
+or_few_keys: the same result, spilled 0, switched 0, halved 0

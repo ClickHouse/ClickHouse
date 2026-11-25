@@ -1058,3 +1058,65 @@ TEST(HashTableRobinHood, HalveInRobinHoodMode)
     ASSERT_FALSE(full.isRobinHoodMode());
     full.checkInvariants();
 }
+
+TEST(HashTableRobinHood, OnMemoryPressureLeavesACellForUndoingAnInsert)
+{
+    /// In the Robin Hood mode, an insert that overflows the hash table takes a cell before `resize`, and undoing it when
+    /// `resize` throws needs an empty cell. The budget says yes at every size, so the hash table switches at the first size
+    /// where that mode holds more elements, 8 cells.
+    using Grower = HashTableGrowerWithPrecalculationAndRobinHood<1, 1>;
+    LatchingBudget yes(1);
+    Grower grower;
+    grower.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &yes);
+    while (grower.bufSize() < 1024)
+    {
+        if (grower.isRobinHood())
+        {
+            size_t overflowing = 0;
+            while (!grower.overflow(overflowing))
+                ++overflowing;
+            ASSERT_LT(overflowing, grower.bufSize());
+        }
+        else
+            ASSERT_LE(grower.bufSize(), 8);
+        grower.increaseSize();
+    }
+    ASSERT_TRUE(grower.isRobinHood());
+}
+
+TEST(HashTableRobinHood, OnMemoryPressureMovesCellsThatOwnMemory)
+{
+    /// The cells of an `ASOF` map own their lookup vectors.
+    struct Map : HashTableWithInvariantsCheck<HashMap<UInt64, std::unique_ptr<UInt64>, CollidingHash, RobinHoodTestGrower>>
+    {
+        void setMode(RobinHoodMode mode, HashTableGrowthBudget * budget) { this->grower.setRobinHoodMode(mode, budget); }
+    };
+    const auto check = [](const Map & map, UInt64 keys)
+    {
+        map.checkInvariants();
+        ASSERT_EQ(map.size(), keys);
+        for (UInt64 key = 0; key < keys; ++key)
+        {
+            const auto * it = map.find(key);
+            ASSERT_TRUE(it);
+            ASSERT_EQ(*it->getMapped(), key * 10);
+        }
+    };
+
+    LatchingBudget latches_at_64(64);
+    Map switched;
+    switched.setMode(RobinHoodMode::OnMemoryPressure, &latches_at_64);
+    for (UInt64 key = 0; key < 1000; ++key)
+        switched[key] = std::make_unique<UInt64>(key * 10);
+    ASSERT_TRUE(switched.isRobinHoodMode());
+    check(switched, 1000);
+
+    LatchingBudget never_latches(size_t(1) << 40);
+    Map halved;
+    halved.setMode(RobinHoodMode::OnMemoryPressure, &never_latches);
+    for (UInt64 key = 0; key < 300; ++key)
+        halved[key] = std::make_unique<UInt64>(key * 10);
+    ASSERT_GT(halved.halveInRobinHoodMode(), 0);
+    ASSERT_TRUE(halved.isRobinHoodMode());
+    check(halved, 300);
+}

@@ -370,11 +370,15 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
     size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
     HashTableGrowthBudget * budget = nullptr;
 
+    /// An insert takes a cell before `resize`, and undoing it when `resize` throws needs an empty cell, so in the Robin Hood mode
+    /// at most all cells but two are filled before the hash table grows.
     static constexpr size_t maxFill(UInt8 size_degree_, bool robin_hood_)
     {
         const size_t cells = 1ULL << size_degree_;
-        return robin_hood_ ? cells / 100 * robin_hood_max_load_factor_percent + cells % 100 * robin_hood_max_load_factor_percent / 100
-                           : cells / 2;
+        if (!robin_hood_)
+            return cells / 2;
+        return std::min(
+            cells - 2, cells / 100 * robin_hood_max_load_factor_percent + cells % 100 * robin_hood_max_load_factor_percent / 100);
     }
 
     void setSizeDegree(UInt8 size_degree_, bool robin_hood_)

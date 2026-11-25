@@ -80,16 +80,32 @@ do
     with_spill_threshold "string_$variant" $percent "$STRING_QUERY" "enable_packed_string_keys_in_hash_join = 0"
 done
 
-echo "--- two disjuncts, so two hash tables, at a memory limit of 0.75 of the peak memory"
-# A join with `OR` does not spill.
-QUERY="SELECT count(), sum(cityHash64(l.k, r.v)) FROM (SELECT intHash64(number) AS k, number AS k2 FROM numbers(75000, 2000)) AS l
+# Runs a query at a memory limit of `percent` of its peak memory when nothing switches, and prints whether it returns the
+# result of the query without a limit. A join with `OR` does not spill.
+with_memory_limit()
+{
+    local label=$1 percent=$2 query=$3
+    local settings="$SETTINGS, max_bytes_before_external_join = 0, max_memory_usage_for_user = 0"
+    local expected peak result
+    expected=$($CLICKHOUSE_CLIENT --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${label}_peak" --query "$query SETTINGS $settings,
+        enable_robin_hood_hash_for_joins = 1")
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    peak=$($CLICKHOUSE_CLIENT --query "SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase()
+        AND query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_${label}_peak' AND type = 'QueryFinish'")
+    result=$($CLICKHOUSE_CLIENT --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${label}" --query "$query SETTINGS $settings,
+        enable_robin_hood_hash_for_joins = 0, max_memory_usage = $((peak * percent / 100))" 2>&1 \
+        | grep -oE 'MEMORY_LIMIT_EXCEEDED|^[0-9]+\s+[0-9]+')
+    echo "$label: $([ "$result" = "$expected" ] && echo 'the same result' || echo "$result"), $(events "$label")"
+}
+
+echo "--- two disjuncts, so two hash tables that grow together, at a memory limit of 0.75 of the peak memory"
+with_memory_limit or 75 "SELECT count(), sum(cityHash64(l.k, r.v))
+    FROM (SELECT intHash64(number) AS k, number AS k2 FROM numbers(75000, 2000)) AS l
     INNER JOIN $(right 300000 300000) AS r ON l.k = r.k OR l.k2 = r.k2 + 7"
-SETTINGS="$SETTINGS, max_bytes_before_external_join = 0, max_memory_usage_for_user = 0"
-EXPECTED=$($CLICKHOUSE_CLIENT --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_or_peak" --query "$QUERY SETTINGS $SETTINGS,
-    enable_robin_hood_hash_for_joins = 1")
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-PEAK=$($CLICKHOUSE_CLIENT --query "SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase()
-    AND query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_or_peak' AND type = 'QueryFinish'")
-result=$($CLICKHOUSE_CLIENT --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_or" --query "$QUERY SETTINGS $SETTINGS,
-    enable_robin_hood_hash_for_joins = 0, max_memory_usage = $((PEAK * 3 / 4))" 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED|^[0-9]+\s+[0-9]+')
-echo "or: $([ "$result" = "$EXPECTED" ] && echo 'the same result' || echo "$result"), $(events or)"
+
+echo "--- two disjuncts, one with 10 keys, at a memory limit of 1.25 of the peak memory"
+# Only the hash table of `k` grows, and it fits: the hash table of `k2` must not be counted as growing with it.
+with_memory_limit or_few_keys 125 "SELECT count(), sum(cityHash64(l.k, r.v))
+    FROM (SELECT intHash64(number) AS k, number % 10 + 100 AS k2 FROM numbers(75000, 2000)) AS l
+    INNER JOIN (SELECT intHash64(number) AS k, number % 10 AS k2, number AS v FROM numbers(300000)) AS r
+    ON l.k = r.k OR l.k2 = r.k2"

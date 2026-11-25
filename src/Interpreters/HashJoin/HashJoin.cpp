@@ -444,6 +444,8 @@ HashJoin::HashJoin(
     const auto maps_kind = getMapsKind();
     data->tables.reserve(disjuncts_num);
     for (auto & clause_key_sizes : key_sizes)
+    {
+        auto & table_budget = data->growth_budget.addTable();
         data->tables.push_back(
             std::make_unique<HashJoinTable>(
                 *selected_join_method,
@@ -453,7 +455,8 @@ HashJoin::HashJoin(
                 maps_kind,
                 build_layout,
                 table_join->enableRobinHoodHashForJoins() ? RobinHoodMode::Always : RobinHoodMode::OnMemoryPressure,
-                &data->growth_budget));
+                &table_budget));
+    }
     chassert(std::ranges::all_of(data->tables, [&](const auto & table) { return table->type() == keyType(); }));
 
     LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, keyType());
@@ -489,7 +492,7 @@ HashJoin::HashJoin(
         data->rows_to_join,
         expected_right_rows,
         data->tables.front()->cellSize(),
-        NUM_HASH_TABLE_BUCKETS * data->tables.size(),
+        NUM_HASH_TABLE_BUCKETS,
         build_layout.num_slots);
     const size_t keys_to_reserve
         = capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), data->tables.front()->cellSize());
@@ -1671,14 +1674,25 @@ HashJoin::RightTableData::~RightTableData()
     }
 }
 
-size_t HashJoin::bytesFreedByHalvingHashTables() const
+HashJoin::Halving HashJoin::estimateHalvingHashTables() const
 {
     if (table_join->enableRobinHoodHashForJoins())
-        return 0;
-    size_t bytes = 0;
+        return {};
+    Halving halving;
+    size_t largest_new_bucket_bytes = 0;
     for (const auto & table : data->tables)
-        bytes += table->bytesFreedByHalving();
-    return bytes;
+    {
+        const auto table_halving = table->estimateHalving();
+        halving.freed_bytes += table_halving.freed_bytes;
+        largest_new_bucket_bytes = std::max(largest_new_bucket_bytes, table_halving.largest_new_bucket_bytes);
+    }
+    halving.peak_bytes = halvingJobs() * largest_new_bucket_bytes;
+    return halving;
+}
+
+size_t HashJoin::halvingJobs() const
+{
+    return std::max<size_t>(getMaxBuildThreads(), 1);
 }
 
 size_t HashJoin::halveHashTables()
@@ -1692,7 +1706,7 @@ size_t HashJoin::halveHashTables()
         ProfileEvents::increment(ProfileEvents::JoinRobinHoodHalvedBuckets, halved_buckets.load(std::memory_order_relaxed));
     });
 
-    const size_t num_jobs = std::max<size_t>(getMaxBuildThreads(), 1);
+    const size_t num_jobs = halvingJobs();
     if (num_jobs == 1)
     {
         for (auto & table : data->tables)

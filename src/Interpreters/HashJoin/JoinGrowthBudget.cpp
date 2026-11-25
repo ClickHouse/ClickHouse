@@ -42,19 +42,51 @@ size_t JoinGrowthBudget::futureStoredBytes() const
     return stored_bytes->load(std::memory_order_relaxed) / rows * (expected_rows - rows);
 }
 
-bool JoinGrowthBudget::preferSmallerTable(size_t growth_cells, size_t bucket_cells)
+namespace
 {
-    if (latched.load(std::memory_order_relaxed))
+
+void raiseTo(std::atomic<size_t> & value, size_t to)
+{
+    size_t current = value.load(std::memory_order_relaxed);
+    while (current < to && !value.compare_exchange_weak(current, to, std::memory_order_relaxed))
+    {
+    }
+}
+
+}
+
+size_t JoinGrowthBudget::bucketsToGrowFrom(size_t size_degree) const
+{
+    size_t result = 0;
+    for (const auto & table : tables)
+        if (table.largest_size_degree.load(std::memory_order_relaxed) >= size_degree)
+            result += buckets - std::min(buckets, table.grown_from_size[size_degree].load(std::memory_order_relaxed));
+    return result;
+}
+
+bool JoinGrowthBudget::Table::preferSmallerTable(size_t growth_cells, size_t bucket_cells)
+{
+    if (join.latched.load(std::memory_order_relaxed))
     {
         ProfileEvents::increment(ProfileEvents::JoinRobinHoodSwitchesOnMemoryPressure);
         return true;
     }
 
-    /// `bucket_cells` is a power of two, so its bit width minus one is below 64.
-    auto & grown = grown_from_size[std::bit_width(bucket_cells) - 1];
-    const size_t step_bytes = growth_cells * cell_size * (buckets - std::min(buckets, grown.load(std::memory_order_relaxed)));
-    const size_t transient_bytes = bucket_cells * cell_size * num_slots;
+    /// The sizes are powers of two, so their bit widths minus one are below 64.
+    const size_t size_degree = std::bit_width(bucket_cells) - 1;
+    raiseTo(largest_size_degree, size_degree);
+    const size_t step_bytes = growth_cells * join.cell_size * join.bucketsToGrowFrom(size_degree);
+    const size_t transient_bytes = bucket_cells * join.cell_size * join.num_slots;
+    if (join.crossesLimits(step_bytes, transient_bytes))
+        return true;
 
+    grown_from_size[size_degree].fetch_add(1, std::memory_order_relaxed);
+    raiseTo(largest_size_degree, std::bit_width(bucket_cells + growth_cells) - 1);
+    return false;
+}
+
+bool JoinGrowthBudget::crossesLimits(size_t step_bytes, size_t transient_bytes)
+{
     const size_t join_bytes = total_bytes->load(std::memory_order_relaxed);
     const bool crosses_spill_threshold = max_bytes_before_external_join
         && reachesSpillThreshold(join_bytes + futureStoredBytes() + step_bytes, max_bytes_before_external_join);
@@ -63,10 +95,7 @@ bool JoinGrowthBudget::preferSmallerTable(size_t growth_cells, size_t bucket_cel
     const bool crosses_memory_limit = available_memory && *available_memory <= step_bytes + transient_bytes;
 
     if (!crosses_spill_threshold && !crosses_memory_limit)
-    {
-        grown.fetch_add(1, std::memory_order_relaxed);
         return false;
-    }
 
     latched.store(true, std::memory_order_relaxed);
     ProfileEvents::increment(ProfileEvents::JoinRobinHoodSwitchesOnMemoryPressure);
