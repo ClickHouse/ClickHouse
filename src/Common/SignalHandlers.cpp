@@ -347,6 +347,7 @@ void HandledSignals::addSignalHandler(
             throw Poco::Exception("Cannot set signal handler.");
 #endif
 
+    const auto & asynchronous_signals = asynchronousHandledSignals();
     handled_signals.reserve(handled_signals.size() + signals.size());
     for (auto signal : signals)
     {
@@ -356,7 +357,7 @@ void HandledSignals::addSignalHandler(
 
         /// An asynchronous signal goes back to SIG_DFL: in a restarted watchdog child,
         /// its previous action is the watchdog's forwarding handler.
-        if (std::ranges::contains(asynchronousHandledSignals(), signal))
+        if (std::ranges::contains(asynchronous_signals, signal))
         {
             previous = {};
             previous.sa_handler = SIG_DFL;
