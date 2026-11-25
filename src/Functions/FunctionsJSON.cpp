@@ -231,7 +231,7 @@ public:
 
             size_t num_index_arguments = TImpl<DummyJSONParser>::getNumberOfIndexArguments(arguments);
 
-            /// The subcolumn of a path is the value of the key lookup only for non-empty keys without `.`, `%` or a backtick.
+            /// The subcolumn of a path is the value of the key lookup only for non-empty, non-special keys without `.`, `%` or a backtick.
             bool use_subcolumn = num_index_arguments != 0 && !case_insensitive && std::string_view(TName::name) != "JSONKey";
             Strings keys;
             for (size_t i = 1; use_subcolumn && i <= num_index_arguments; ++i)
@@ -239,7 +239,8 @@ public:
                 const auto * key_column = typeid_cast<const ColumnConst *>(arguments[i].column.get());
                 if (!key_column || !isString(arguments[i].type))
                     use_subcolumn = false;
-                else if (String key = key_column->getValue<String>(); key.empty() || key.find_first_of(".%`") != String::npos)
+                else if (String key = key_column->getValue<String>(); key.empty() || key.find_first_of(".%`") != String::npos
+                         || key == DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
                     use_subcolumn = false;
                 else
                     keys.push_back(std::move(key));

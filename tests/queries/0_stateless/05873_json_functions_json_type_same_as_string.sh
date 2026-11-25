@@ -222,6 +222,23 @@ INSERT INTO tf SELECT id, s, s FROM tf_0;
     for p in "'f'" "'f32'" "'fx'"; do printf 'JSONExtract|, %s|Dynamic\n' "$p"; done
 } | build_queries tf "" j_x o_x | $CLICKHOUSE_CLIENT
 
+# A key named like the internal subcolumn of the distinct paths is looked up like any other key.
+K=__special_subcolumn_name_for_distinct_paths_calculation
+$CLICKHOUSE_CLIENT -q "
+CREATE TABLE tk_0 (id UInt32, s String, j_dyn JSON, j_shared JSON(max_dynamic_paths = 0), j_typed JSON($K.b Int64)) ENGINE = Memory;
+INSERT INTO tk_0 SELECT id, s, s, s, s FROM (SELECT number + 1 AS id, ['{\"$K\":{\"b\":7}}', '{\"$K\":{\"c\":\"q\"},\"y\":2}', '{\"x\":1}'][id] AS s
+    FROM numbers(3));
+CREATE TABLE tk (id UInt32, j_dyn JSON, j_shared JSON(max_dynamic_paths = 0), j_typed JSON($K.b Int64), o_dyn String, o_typed String)
+    ENGINE = Memory;
+INSERT INTO tk SELECT id, j_dyn, j_shared, j_typed, s, j_typed::String FROM tk_0;
+"
+{
+    for f in JSONHas JSONLength JSONType JSONExtractInt JSONExtractString JSONExtractRaw JSONExtractKeys; do
+        for p in "'$K'" "'$K', 'b'" "'$K', 'c'" "materialize('$K'), 'b'" "'$K', materialize('c')"; do printf '%s|, %s|\n' "$f" "$p"; done
+    done
+    for ty in Int64 String Dynamic; do printf 'JSONExtract|, %s|%s\n' "'$K', 'b'" "$ty"; done
+} | build_queries tk "" "j_dyn j_shared j_typed" "o_dyn o_dyn o_typed" | $CLICKHOUSE_CLIENT
+
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- comparisons, calls, distinct String results, mismatches';
 SELECT tbl, count(), uniqExact(call), uniqExact(e), countIf(r != e) FROM res GROUP BY tbl ORDER BY tbl;
