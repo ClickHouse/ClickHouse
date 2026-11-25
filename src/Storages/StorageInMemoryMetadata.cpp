@@ -197,6 +197,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// this view's inner query. So must the mark of the automatic mode's plan with parallel replicas.
     new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
     new_context->setIsAutomaticParallelReplicasProbe(context->isAutomaticParallelReplicasProbe());
+    /// Provenance, not invoker identity: the body still reads without the received query plan's filters.
+    if (context->isReadFromReceivedQueryPlan())
+        new_context->setReadFromReceivedQueryPlan();
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());

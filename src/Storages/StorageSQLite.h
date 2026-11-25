@@ -37,6 +37,8 @@ public:
 
     std::string getName() const override { return "SQLite"; }
 
+    bool readRequiresAnalyzedQuery() const override { return true; }
+
     static VirtualColumnsDescription createVirtuals();
 
     using StorageWithCommonVirtualColumns::read;

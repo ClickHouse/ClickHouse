@@ -1690,6 +1690,7 @@ ContextData::ContextData(const ContextData &o) :
     normalized_query_hash(o.normalized_query_hash),
     insertion_table_info(o.insertion_table_info),
     is_distributed(o.is_distributed),
+    read_from_received_query_plan(o.read_from_received_query_plan),
     default_format(o.default_format),
     insert_format(o.insert_format),
     http_combined_filter(o.http_combined_filter),

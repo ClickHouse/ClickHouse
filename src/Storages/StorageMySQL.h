@@ -49,6 +49,8 @@ public:
 
     bool isExternalDatabase() const override { return true; }
 
+    bool readRequiresAnalyzedQuery() const override { return true; }
+
     static VirtualColumnsDescription createVirtuals();
 
     void readImpl(

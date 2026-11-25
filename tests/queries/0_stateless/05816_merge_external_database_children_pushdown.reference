@@ -1,0 +1,36 @@
+MergeTree and SQLite:
+5	l5
+5	s5
+Query: SELECT `id`, `v` FROM `src` WHERE `id` = 5
+Two SQLite tables:
+Query: SELECT `id`, `v` FROM `src2` WHERE `id` = 5
+Query: SELECT `id`, `v` FROM `src` WHERE `id` = 5
+Strict mode, a filter SQLite cannot evaluate:
+1
+Strict mode, a table without STRICT:
+1
+Strict mode, a query-backed table:
+1
+MergeTree and MySQL:
+Query: SELECT `id`, `v` FROM `default`.`t_l` WHERE `id` = 5
+MergeTree and PostgreSQL:
+Query: SELECT "id", "v" FROM "t_l" WHERE "id" = 5
+Serialized query plan:
+5	s5
+Serialized query plan, strict mode:
+1
+Serialized query plan, strict mode, a filter SQLite evaluates:
+1
+Serialized query plan, strict mode of the remote user:
+1
+1
+1
+Serialized query plan, strict mode of the remote user, no filter:
+1
+Serialized query plan, strict mode, a materialized view with SQL SECURITY DEFINER or NONE:
+1
+1
+Serialized query plan through two servers, strict mode of the last user:
+1
+Serialized query plan through two servers, strict mode of the first user:
+1

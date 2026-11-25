@@ -90,7 +90,6 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
-#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
@@ -1494,9 +1493,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             ///  - the non-analyzer path: getModifiedQueryInfo rewrites _table and _database
             ///    directly into the cloned AST, so sharing it across tables is incorrect;
             ///  - tables with row policies (they extend real_column_names differently);
-            ///  - Merge/Distributed/View storages (they interpret table_expression for
-            ///    query routing and nested plan building, so sharing a representative's
-            ///    table_expression would route reads to the wrong table);
+            ///  - storages whose read uses the query tree (`readRequiresAnalyzedQuery`: Merge,
+            ///    remote and external database storages, wrappers over them) and views: the
+            ///    shared query tree references the representative table;
             ///  - when processed_stage > FetchColumns, because createPlanForTable will
             ///    either convert query_tree->toAST() (analyzer path, referencing the wrong
             ///    table) or call replaceDatabaseAndTable on the shared AST (non-analyzer
@@ -1507,8 +1506,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             bool can_cache = query_info.table_expression
                 && !row_policy_data_opt
                 && common_processed_stage == QueryProcessingStage::FetchColumns
-                && !std::dynamic_pointer_cast<StorageMerge>(storage)
-                && !std::dynamic_pointer_cast<StorageDistributed>(storage)
+                && !storage->readRequiresAnalyzedQuery()
                 && !storage->isView();
             auto structure_key = can_cache
                 ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
