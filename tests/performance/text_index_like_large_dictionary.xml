@@ -64,7 +64,8 @@
   <query>SELECT count() FROM tab WHERE startsWith(message, 'toxx12')</query>
   <query>SELECT count() FROM tab WHERE endsWith(message, 'toxx12')</query>
 
-  <!-- Served as LIKE '%toxx12%' (ILIKE for positionCaseInsensitive), i.e. by the same dictionary scan -->
+  <!-- use_text_index_for_substring_search is off by default, so these search the column as on master: served as
+       LIKE '%toxx12%' (ILIKE for positionCaseInsensitive), they would pay the dictionary scan the LIKE queries above do -->
   <query>SELECT count() FROM tab WHERE position(message, 'toxx12') > 0</query>
   <query>SELECT count() FROM tab WHERE countSubstrings(message, 'toxx12') > 0</query>
   <query>SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'TOXX12') > 0</query>

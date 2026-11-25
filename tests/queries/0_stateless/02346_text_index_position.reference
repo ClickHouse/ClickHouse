@@ -82,6 +82,8 @@ empty needle count	[]
 empty needle count	[]
 empty needle count	[]
 empty needle count uses no index	0
+setting off	[1,3,4]
+setting off uses no index	0
 position > 1	[1,3]
 position > 1	[1,3]
 position > 1	[1,3]

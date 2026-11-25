@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the EXPLAIN output below differs with parallel replicas.
--- `position(s, 'x') > 0` must use the text index like `s LIKE '%x%'`.
+-- With `use_text_index_for_substring_search`, `position(s, 'x') > 0` must use the text index like `s LIKE '%x%'`.
 -- Every query must return the same rows with and without the index.
 
 SET enable_analyzer = 1;
@@ -9,6 +9,7 @@ SET use_query_condition_cache = 0;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SET text_index_like_min_pattern_length = 4;
 SET query_plan_text_index_add_hint = 1;
+SET use_text_index_for_substring_search = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -144,6 +145,9 @@ SELECT 'empty needle count', arraySort(groupArray(id)) FROM tab WHERE countSubst
 SELECT 'empty needle count', arraySort(groupArray(id)) FROM tab WHERE countSubstrings(message, '') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'empty needle count', arraySort(groupArray(id)) FROM tab WHERE countSubstrings(message, '') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT 'empty needle count uses no index', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE countSubstrings(message, '') > 0 SETTINGS use_skip_indexes = 1) WHERE explain LIKE '%Name: idx%';
+
+SELECT 'setting off', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, use_text_index_for_substring_search = 0;
+SELECT 'setting off uses no index', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, use_text_index_for_substring_search = 0) WHERE explain LIKE '%Name: idx%';
 
 SELECT 'position > 1', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 1 SETTINGS use_skip_indexes = 0;
 SELECT 'position > 1', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 1 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;

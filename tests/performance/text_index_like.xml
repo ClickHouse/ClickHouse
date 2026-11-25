@@ -38,9 +38,9 @@
   <query>SELECT count() FROM tab WHERE endsWith(message, 'system')</query>
 
   <!-- Served as LIKE '%clickhouse%' (ILIKE for positionCaseInsensitive) -->
-  <query>SELECT count() FROM tab WHERE position(message, 'clickhouse') > 0</query>
-  <query>SELECT count() FROM tab WHERE countSubstrings(message, 'clickhouse') > 0</query>
-  <query>SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'CLICKHOUSE') > 0</query>
+  <query>SELECT count() FROM tab WHERE position(message, 'clickhouse') > 0 SETTINGS use_text_index_for_substring_search = 1</query>
+  <query>SELECT count() FROM tab WHERE countSubstrings(message, 'clickhouse') > 0 SETTINGS use_text_index_for_substring_search = 1</query>
+  <query>SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'CLICKHOUSE') > 0 SETTINGS use_text_index_for_substring_search = 1</query>
 
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>

@@ -839,7 +839,8 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 
 #### `position` and `countSubstrings` {#functions-example-position}
 
-`position(col, 'value') > 0` ([position](/reference/functions/regular-functions/string-search-functions#position)) is true exactly when `col LIKE '%value%'` is, so it uses the text index the same way as that `LIKE` query, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
+`position(col, 'value') > 0` ([position](/reference/functions/regular-functions/string-search-functions#position)) is true exactly when `col LIKE '%value%'` is, so with the setting `use_text_index_for_substring_search` it uses the text index the same way as that `LIKE` query, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
+The setting is disabled by default: when most rows have a token of their own, such as a unique id, scanning the dictionary is slower than searching the column.
 The same holds for `!= 0`, `>= 1` and the mirrored comparisons such as `0 < position(col, 'value')`, and for [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8) and [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings).
 [positionCaseInsensitive](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive) (alias `instr`), [positionCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitiveUTF8), [countSubstringsCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive) and [countSubstringsCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitiveUTF8) use the index like `col ILIKE '%value%'`.
 `positionCaseInsensitive` and `countSubstringsCaseInsensitive` fold the case of ASCII letters only, so unlike `ILIKE` they also use the index with the `array` tokenizer for a needle with non-ASCII characters.
@@ -850,7 +851,7 @@ These functions search bytes, while the other tokenizers decode UTF-8 and could 
 Example:
 
 ```sql
-SELECT count() FROM table WHERE position(comment, 'clickhouse') > 0;
+SELECT count() FROM table WHERE position(comment, 'clickhouse') > 0 SETTINGS use_text_index_for_substring_search = 1;
 ```
 
 #### `hasToken` {#functions-example-hastoken}

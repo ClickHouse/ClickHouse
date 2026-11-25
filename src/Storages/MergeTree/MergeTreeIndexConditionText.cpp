@@ -74,6 +74,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
     extern const SettingsBool use_index_for_in_with_subqueries;
+    extern const SettingsBool use_text_index_for_substring_search;
 }
 
 TextSearchQuery::TextSearchQuery(
@@ -1997,6 +1998,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 /// functions). Returns false if it is not such a comparison, or if the index cannot serve that `LIKE`.
 bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
+    /// Opt-in: with about one distinct token per row, the dictionary scan is slower than searching the column.
+    if (!getContext()->getSettingsRef()[Setting::use_text_index_for_substring_search])
+        return false;
+
     const auto comparison_name = function_node.getFunctionName();
     if (function_node.getArgumentsSize() != 2
         || (comparison_name != "notEquals" && comparison_name != "greater" && comparison_name != "less"
