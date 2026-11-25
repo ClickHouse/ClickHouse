@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: the test reads the global counters of system.events.
+# no-fasttest: the slow source makes the test too slow for the fast test.
 # Many concurrent queries miss the same keys of CACHE and SSD_CACHE dictionaries with one update thread and a slow source,
 # so the update queue holds several units and they are updated in batches. Every value must be correct.
 

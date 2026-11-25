@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: the test reads the global counters of system.events.
+# no-fasttest: the slow source makes the test too slow for the fast test.
 # Checks how CACHE and SSD_CACHE dictionaries count the keys of batched updates, with one update thread and a slow source.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
