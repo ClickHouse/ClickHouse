@@ -9,23 +9,13 @@ keywords: ['ClickStack', 'URL parameters', 'query parameters', 'deep linking', '
 
 ClickStack pages can be opened with deep links using URL query parameters, so you can jump straight into a specific search, dashboard, or panel from an external system (an alert notification, a runbook, a CI job, a chat message, and so on).
 
-The examples on this page use `<YOUR_CLICKSTACK_URL>`. Replace this with your ClickStack URL — for example `http://localhost:8080` for a local Open Source deployment, or the base URL of your observability UI for ClickHouse Observability.
+The examples on this page use `<YOUR_CLICKSTACK_URL>`. Replace this with your ClickStack URL — for example `http://localhost:8080` for a local Open Source deployment.
 
 <Note>
 The examples show query parameters without URL encoding for readability. When constructing links programmatically, URL-encode each query parameter value.
 </Note>
 
-<Info>
-**ClickHouse Observability service ID parameter**
-
-When using ClickHouse Observability, links should include a `?chcServiceId=` parameter to identify which ClickHouse Cloud service should be loaded if the authenticated user following the link is authorized to use more than one ClickHouse Cloud service.
-
-Example: Open Search against a specific Cloud service
-
-```text
-<YOUR_CLICKSTACK_URL>/search?chcServiceId=abc123
-```
-</Info>
+For Cloud service parameters and notebook links, see [ClickHouse Observability deep links](/clickstack/observability/url-parameters).
 
 ## Search — `/search` {#search}
 
@@ -258,18 +248,4 @@ Per-service HTTP, database, and error dashboards.
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
-```
-
-## Notebooks — `/notebook/<notebookId>` {#notebooks}
-
-<Info>
-**ClickHouse Observability only**
-
-Notebooks are only available in ClickHouse Observability. See [AI Notebooks](/clickstack/notebooks) for feature details.
-</Info>
-
-### Example: Open a specific notebook in a given Cloud service {#example-notebook-open}
-
-```text
-<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
 ```

@@ -34,7 +34,7 @@ import { HyperDXRum } from '@hyperdx/otel-react-native';
 HyperDXRum.init({
   url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
-  apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for self-managed ClickHouse Observability
+  apiKey: '<YOUR_INGESTION_API_KEY>',
   tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
