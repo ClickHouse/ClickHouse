@@ -379,6 +379,20 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
             "during AST JSON deserialization",
             list_of_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
 
+    /// The normalizing visitors skip a normalized node, so nothing lowers its `INTERSECT` / `EXCEPT`
+    /// to binary `ASTSelectIntersectExceptQuery` nodes any more, and `union_mode` reaches the planner
+    /// as is. The only normalized form with such a mode is the one `UnionNode::toAST` writes for a
+    /// binary set operation: the planner builds an `IntersectOrExceptStep` for it, which takes
+    /// exactly two inputs. More operands would be an internal invariant violation there.
+    const bool is_union = union_mode == SelectUnionMode::UNION_DEFAULT
+        || union_mode == SelectUnionMode::UNION_ALL
+        || union_mode == SelectUnionMode::UNION_DISTINCT;
+    if (is_normalized && !is_union && list_of_selects->children.size() > 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A normalized `SelectWithUnionQuery` AST with 'union_mode' {} requires exactly 2 selects, got {}, "
+            "during AST JSON deserialization",
+            toString(union_mode), list_of_selects->children.size());
+
     restoreSetOfModes(*this);
 
     /// Restore output options (`INTO OUTFILE` / `FORMAT` / `SETTINGS` / compression and flags)
