@@ -2750,6 +2750,9 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
+    /// The text of a program in the `q` dialect with the secrets of its embedded queries (`.ch.sql "..."`) hidden,
+    /// if it has them. The program is logged in this form.
+    String q_text_without_secrets;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
@@ -2859,6 +2862,16 @@ static BlockIO executeQueryImpl(
                 /// the result, the logging without secrets, and the limits apply to it in the usual way.
                 if (ASTPtr q_ast = out_ast; const auto * q_query = q_ast->as<ASTQQuery>())
                 {
+                    /// An embedded query (`.ch.sql "..."`) can hold credentials. The compiled query hides them when it is
+                    /// logged, but it is the text of the program that is logged when the compilation fails, and when
+                    /// the embedded query does not get to the compiled query (the value of a variable that is not used).
+                    /// So the text is logged without the secrets, and it is ready before the compilation can fail.
+                    if (q_ast->hasSecretParts())
+                    {
+                        q_text_without_secrets = q_ast->formatForLogging();
+                        query = q_text_without_secrets;
+                    }
+
                     /// The compilation analyzes the queries that it generates for their structure, and the analysis folds
                     /// the constants: a list of ten million numbers takes its memory already here. The memory limit of
                     /// the query is set when the query is put to the process list, which is later, so it is set for
@@ -2866,18 +2879,7 @@ static BlockIO executeQueryImpl(
                     if (auto thread_group = CurrentThread::getGroup(); thread_group && settings[Setting::max_memory_usage])
                         thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
 
-                    try
-                    {
-                        out_ast = compileQProgram(*q_query, context);
-                    }
-                    catch (...)
-                    {
-                        /// The text of the program is logged with the exception. An embedded query (`.ch.sql "..."`)
-                        /// can hold credentials: they are hidden in the compiled query, but there is none.
-                        if (q_ast->hasSecretParts())
-                            query = q_ast->formatForLogging();
-                        throw;
-                    }
+                    out_ast = compileQProgram(*q_query, context);
                 }
             }
         }
@@ -3102,6 +3104,16 @@ static BlockIO executeQueryImpl(
                 query_end = insert_query->data;
         }
 
+        /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+        /// A program in the `q` dialect is copied without the secrets of its embedded queries.
+        auto copy_query_text = [&]
+        {
+            if (q_text_without_secrets.empty())
+                query.assign(begin, query_end);
+            else
+                query = q_text_without_secrets;
+        };
+
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
         /// The visitor handles parameterized views internally: it substitutes parameters in
@@ -3115,12 +3127,11 @@ static BlockIO executeQueryImpl(
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();
             else
-                query.assign(begin, query_end);
+                copy_query_text();
         }
         else
         {
-            /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-            query.assign(begin, query_end);
+            copy_query_text();
         }
 
         /// Wipe any sensitive information (e.g. passwords) from the query.
