@@ -563,6 +563,7 @@ void authorizeBackupChain(BackupInfo backup_info, const ContextPtr & context)
 {
     BackupFactory::CreateParams params;
     params.open_mode = IBackup::OpenMode::READ;
+    params.for_authorization_only = true;
     params.context = context;
     params.backup_info = std::move(backup_info);
     auto backup = BackupFactory::instance().createBackup(params);

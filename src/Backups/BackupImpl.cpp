@@ -839,6 +839,9 @@ void BackupImpl::readBackupMetadata()
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
+        if (params.for_authorization_only)
+            return;
+
         auto req = [&](const Poco::XML::XMLString & key) -> const String &
         {
             auto it = f.find(key);

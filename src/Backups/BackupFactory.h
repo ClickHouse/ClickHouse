@@ -61,6 +61,9 @@ public:
         /// with a given name, or with a given size and checksum, and for the size and checksum of a file. So it doesn't
         /// keep the rest of the information about its files, and can't be read from.
         bool for_file_lookups_only = false;
+        /// The backup and its base backups are opened only to authorize them, so they keep no information about their files
+        /// and can't be read from.
+        bool for_authorization_only = false;
         ReadSettings read_settings;
         WriteSettings write_settings;
 #if CLICKHOUSE_CLOUD
