@@ -1,6 +1,5 @@
 import datetime
 import json
-import uuid
 
 import pytest
 import requests
@@ -182,59 +181,6 @@ def test_declared_json_column():
         node.query(f"SELECT toTypeName(doc.id), doc.id, doc FROM {table_function} ORDER BY doc.id FORMAT TSV")
         == expected
     )
-
-
-def test_source_filter():
-    create_index_with_documents(
-        "source_filter",
-        [
-            {"a": {"b": 1, "c": 2}, "padding": "x" * 100000},
-            {"a.b": 3, "a.c": 4},
-            {"items": [{"sku": 1}, {"qty": 2}]},
-            {"items": []},
-            {"a": {"b": None}},
-            {"z": 1},
-        ],
-    )
-    table_function = elasticsearch_table_function("source_filter")
-
-    node.query("DROP TABLE IF EXISTS es_source_filter_local")
-    node.query(f"CREATE TABLE es_source_filter_local ENGINE = Memory AS SELECT _id, document FROM {table_function}")
-
-    for columns in [
-        "document.a.b",
-        "document.a.b, document.a.c",
-        "document.^a",
-        "document.@a",
-        "document.items",
-        "document.items[].sku",
-        "document.z",
-    ]:
-        query = "SELECT _id, {} FROM {} ORDER BY _id FORMAT TSV"
-        assert node.query(query.format(columns, table_function)) == node.query(
-            query.format(columns, "es_source_filter_local")
-        ), columns
-
-    query = "SELECT _id FROM {} WHERE document.a.b::Nullable(Int64) = 3 FORMAT TSV"
-    assert node.query(query.format(table_function)) == node.query(query.format("es_source_filter_local")) == "2\n"
-
-    query_id_path = f"source_filter_path_{uuid.uuid4()}"
-    query_id_whole = f"source_filter_whole_{uuid.uuid4()}"
-    node.query(f"SELECT document.a.b FROM {table_function} FORMAT Null", query_id=query_id_path)
-    node.query(f"SELECT document FROM {table_function} FORMAT Null", query_id=query_id_whole)
-    node.query("SYSTEM FLUSH LOGS query_log")
-    bytes_path, bytes_whole = (
-        int(
-            node.query(
-                "SELECT ProfileEvents['ReadWriteBufferFromHTTPBytes'] FROM system.query_log "
-                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-            )
-        )
-        for query_id in [query_id_path, query_id_whole]
-    )
-    assert bytes_whole - bytes_path > 100000, (bytes_path, bytes_whole)
-
-    node.query("DROP TABLE es_source_filter_local")
 
 
 def test_empty_index():

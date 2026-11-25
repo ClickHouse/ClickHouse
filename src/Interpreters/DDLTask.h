@@ -53,15 +53,15 @@ struct HostID
 
     static HostID fromString(const String & host_port_str);
 
-    [[nodiscard]] String toString() const
+    String toString() const
     {
         return Cluster::Address::toString(host_name, port);
     }
 
-    [[nodiscard]] String readableString() const;
+    String readableString() const;
 
-    [[nodiscard]] bool isLocalAddress(UInt16 clickhouse_port) const;
-    [[nodiscard]] bool isLoopbackHost() const;
+    bool isLocalAddress(UInt16 clickhouse_port) const;
+    bool isLoopbackHost() const;
 
     static String applyToString(const HostID & host_id)
     {
@@ -72,7 +72,8 @@ struct HostID
 
 struct DDLLogEntry
 {
-    /// The oldest supported version.
+    static constexpr const UInt64 OLDEST_VERSION = 1;
+    static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
     static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
     static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
     static constexpr const UInt64 PRESERVE_INITIAL_QUERY_ID_VERSION = 5;
@@ -84,8 +85,7 @@ struct DDLLogEntry
     /// Remember to update the value below once new version is added
     static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 8;
 
-    /// Servers that wrote version 3 as 2 reject version 3 in a mixed-version cluster.
-    UInt64 version = OPENTELEMETRY_ENABLED_VERSION;
+    UInt64 version = 1;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
@@ -101,7 +101,7 @@ struct DDLLogEntry
     Strings initiator_user_roles;
 
     void setSettingsIfRequired(ContextPtr context);
-    [[nodiscard]] String toString() const;
+    String toString() const;
     void parse(const String & data);
     void assertVersion() const;
 };
@@ -125,8 +125,6 @@ struct DDLTaskBase
 
     /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
     ContextPtr submitting_user_context;
-
-    QueryExecutionStartedCallback query_execution_started_callback;
 
     Coordination::Requests ops;
     ExecutionStatus execution_status;
@@ -199,12 +197,6 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
     void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
-
-    /// The node that `SYSTEM STOP REPLICATED DDL QUERIES` creates in the replica path of every `Replicated` database
-    /// to fence the initial DDL entries of this server that are already queued. It is located in the replica path,
-    /// because it belongs to this server, and the server already has write access to it, while it may have no access
-    /// to other paths in Keeper.
-    static String getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database);
 
     DatabaseReplicated * database;
 };

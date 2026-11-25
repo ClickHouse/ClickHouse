@@ -100,9 +100,9 @@ public:
         : polygon(polygon_) {}
 
     /// True if bound box is empty.
-    [[nodiscard]] bool hasEmptyBound() const { return false; }
+    bool hasEmptyBound() const { return false; }
 
-    [[nodiscard]] UInt64 getAllocatedBytes() const { return 0; }
+    UInt64 getAllocatedBytes() const { return 0; }
 
     bool contains(CoordinateType x, CoordinateType y) const
     {
@@ -135,7 +135,7 @@ public:
             has_empty_bound = true;
     }
 
-    [[nodiscard]] bool hasEmptyBound() const { return has_empty_bound; }
+    bool hasEmptyBound() const { return has_empty_bound; }
 
     inline bool contains(CoordinateType x, CoordinateType y) const
     {
@@ -147,7 +147,7 @@ public:
         return boost::geometry::covered_by(point, polygon, strategy);
     }
 
-    [[nodiscard]] UInt64 getAllocatedBytes() const { return sizeof(*this); }
+    UInt64 getAllocatedBytes() const { return sizeof(*this); }
 
 private:
     const Polygon & polygon;
@@ -183,7 +183,7 @@ public:
     }
 
     /// O(log N + K) where K = polygons that contain the point.
-    [[nodiscard]] bool contains(CoordinateType x, CoordinateType y) const
+    bool contains(CoordinateType x, CoordinateType y) const
     {
         if (has_empty_bound || !isFinite(x) || !isFinite(y))
             return false;
@@ -197,9 +197,9 @@ public:
         return false;
     }
 
-    [[nodiscard]] bool hasEmptyBound() const { return has_empty_bound; }
+    bool hasEmptyBound() const { return has_empty_bound; }
 
-    [[nodiscard]] UInt64 getAllocatedBytes() const
+    UInt64 getAllocatedBytes() const
     {
         UInt64 size = sizeof(*this) + polygon_impls.capacity() * sizeof(PointInPolygonImpl) + rtree.size() * sizeof(PolyBox);
 
@@ -279,9 +279,9 @@ public:
     }
 
     /// True if bound box is empty.
-    [[nodiscard]] bool hasEmptyBound() const { return has_empty_bound; }
+    bool hasEmptyBound() const { return has_empty_bound; }
 
-    [[nodiscard]] UInt64 getAllocatedBytes() const;
+    UInt64 getAllocatedBytes() const;
 
     bool contains(CoordinateType x, CoordinateType y) const;
 
@@ -317,7 +317,7 @@ private:
         }
 
         /// Inner part of the HalfPlane is the left side of initialized vector.
-        [[nodiscard]] bool contains(CoordinateType x, CoordinateType y) const { return dx * (y - y0) - dy * (x - x0) >= 0; }
+        bool contains(CoordinateType x, CoordinateType y) const { return dx * (y - y0) - dy * (x - x0) >= 0; }
     };
 
     struct Cell
@@ -358,7 +358,7 @@ private:
     void calcGridAttributes(Box & box);
 
     template <typename T>
-    [[nodiscard]] T getCellIndex(T row, T col) const { return row * grid_size + col; }
+    T getCellIndex(T row, T col) const { return row * grid_size + col; }
 
     /// Complex case. Will check intersection directly.
     inline void addComplexPolygonCell(size_t index, const Box & box);
@@ -637,8 +637,6 @@ bool PointInPolygonWithGrid<CoordinateType>::isInside(const Polygon & poly, Coor
     auto inside_ring = [x, y](const Ring & ring)
     {
         bool inside = false;
-        if (ring.empty())
-            return inside;
         for (size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
         {
             const Point & a = ring[i];

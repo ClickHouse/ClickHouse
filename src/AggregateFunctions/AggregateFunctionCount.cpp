@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -98,9 +97,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        /// The merged count is the modular `UInt64` sum of the partial counts (see `getMergedValueBound`), e.g. for a
-        /// state multiplied by a large number with repeated merges.
-        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
+        data(place).count += data(rhs).count;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -128,9 +125,6 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
-    /// The merged count of non-nulls is the modular `UInt64` sum of the partial counts, which
-    /// never exceeds their saturating sum - see `MergedValueBound::Subadditive`.
-    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -305,9 +299,9 @@ The default is the [uniqExact](/reference/functions/aggregate-functions/uniqExac
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree.
 If you need to use row-level security, disable optimization using the [`optimize_trivial_count_query`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) setting.
 
-`SELECT count(nullable_column) FROM table` can read only the [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data, as long as `nullable_column` isn't used anywhere else in the query.
+However `SELECT count(nullable_column) FROM table` query can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting.
+With `optimize_functions_to_subcolumns = 1` the function reads only [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data.
 The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
-This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 
 <Tip title="Improving COUNT(DISTINCT expr) performance">
 If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/reference/statements/select/group-by) clause as this improves parallelization.

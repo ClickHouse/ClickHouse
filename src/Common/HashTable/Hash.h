@@ -3,7 +3,6 @@
 #include <city.h>
 #include <base/StringViewHash.h>
 #include <Core/Types.h>
-#include <base/sanitizer_defs.h>
 #include <Core/UUID.h>
 #include <base/PackedStringRef.h>
 #include <base/types.h>
@@ -27,7 +26,7 @@
 /** Taken from MurmurHash. This is Murmur finalizer.
   * Faster than intHash32 when inserting into the hash table UInt64 -> UInt64, where the key is the visitor ID.
   */
-inline UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW intHash64(UInt64 x)
+inline UInt64 intHash64(UInt64 x)
 {
     x ^= x >> 33;
     x *= 0xff51afd7ed558ccdULL;
@@ -66,13 +65,13 @@ inline UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW intHash64(UInt64 x)
 inline UInt64 intHashCRC32(UInt64 x)
 {
 #ifdef __SSE4_2__
-    return _mm_crc32_u64(~0ULL, x);
+    return _mm_crc32_u64(static_cast<uint64_t>(-1ULL), x);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-    return __crc32cd(~0U, x);
+    return __crc32cd(-1U, x);
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    return crc32_ppc(~0U, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
+    return crc32_ppc(static_cast<uint64_t>(-1U), reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return s390x_crc32c(~0U, x);
+    return s390x_crc32c(static_cast<uint64_t>(-1U), x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     /// NOTE: consider using intHash32()
@@ -366,7 +365,7 @@ struct UInt128HashCRC32
 {
     size_t operator()(UInt128 x) const
     {
-        UInt64 crc = ~0ULL;
+        UInt64 crc = -1ULL;
         crc = _mm_crc32_u64(crc, x.items[0]);
         crc = _mm_crc32_u64(crc, x.items[1]);
         return crc;
@@ -379,7 +378,7 @@ struct UInt128HashCRC32
 {
     size_t operator()(UInt128 x) const
     {
-        UInt64 crc = ~0ULL;
+        UInt64 crc = -1ULL;
         crc = __crc32cd(static_cast<UInt32>(crc), x.items[0]);
         crc = __crc32cd(static_cast<UInt32>(crc), x.items[1]);
         return crc;
@@ -392,7 +391,7 @@ struct UInt128HashCRC32
 {
     size_t operator()(UInt128 x) const
     {
-        UInt64 crc = ~0ULL;
+        UInt64 crc = -1ULL;
         crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(0)]);
         crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(1)]);
         return crc;
@@ -432,7 +431,7 @@ struct UInt256HashCRC32
 {
     size_t operator()(UInt256 x) const
     {
-        UInt64 crc = ~0ULL;
+        UInt64 crc = -1ULL;
         crc = _mm_crc32_u64(crc, x.items[0]);
         crc = _mm_crc32_u64(crc, x.items[1]);
         crc = _mm_crc32_u64(crc, x.items[2]);
@@ -447,7 +446,7 @@ struct UInt256HashCRC32
 {
     size_t operator()(UInt256 x) const
     {
-        UInt64 crc = ~0ULL;
+        UInt64 crc = -1ULL;
         crc = __crc32cd(static_cast<UInt32>(crc), x.items[0]);
         crc = __crc32cd(static_cast<UInt32>(crc), x.items[1]);
         crc = __crc32cd(static_cast<UInt32>(crc), x.items[2]);
@@ -461,7 +460,7 @@ struct UInt256HashCRC32
 {
     size_t operator()(UInt256 x) const
     {
-        UInt64 crc = ~0ULL;
+        UInt64 crc = -1ULL;
         crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(0)]);
         crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(1)]);
         crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(2)]);
@@ -499,7 +498,7 @@ struct TrivialHash
 
 /** A relatively good non-cryptographic hash function from UInt64 to UInt32.
   * But worse (both in quality and speed) than just cutting intHash64.
-  * Taken from here: https://web.archive.org/web/20071223173210/http://www.concentric.net/~Ttwang/tech/inthash.htm
+  * Taken from here: http://www.concentric.net/~ttwang/tech/inthash.htm
   *
   * Slightly changed compared to the function by link: shifts to the right are accidentally replaced by a cyclic shift to the right.
   * This change did not affect the smhasher test results.
@@ -515,7 +514,7 @@ struct TrivialHash
   * But occasionally, it is faster, when written in a loop and loop is vectorized.
   */
 template <UInt64 salt>
-inline UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW intHash32(UInt64 key)
+inline UInt32 intHash32(UInt64 key)
 {
     key ^= salt;
 

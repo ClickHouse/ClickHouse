@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -43,7 +42,7 @@ JoinExpressionActions makeExpressionActions(const Block & left_header, const Blo
     return expression_actions;
 }
 
-std::unique_ptr<JoinStepLogical> makeStep(const JoinSettings & join_settings)
+std::unique_ptr<JoinStepLogical> makeStep()
 {
     auto left_header = makeHeader("l");
     auto right_header = makeHeader("r");
@@ -55,14 +54,8 @@ std::unique_ptr<JoinStepLogical> makeStep(const JoinSettings & join_settings)
         JoinOperator{},
         makeExpressionActions(*left_header, *right_header),
         ActionsDAG::NodeRawConstPtrs{},
-        join_settings,
+        JoinSettings(settings, current_version),
         SortingStep::Settings(settings));
-}
-
-std::unique_ptr<JoinStepLogical> makeStep()
-{
-    QueryPlanSerializationSettings settings;
-    return makeStep(JoinSettings(settings, current_version));
 }
 
 String serializeStep(const IQueryPlanStep & step, UInt64 version)
@@ -75,11 +68,13 @@ String serializeStep(const IQueryPlanStep & step, UInt64 version)
     return out.str();
 }
 
-/// The plan settings are what `QueryPlan::deserialize` hands each step: the DECLARE defaults, unless the plan carries some.
-std::unique_ptr<JoinStepLogical> deserializeStep(const String & bytes, UInt64 version, const QueryPlanSerializationSettings & settings = {})
+/// The QueryPlanSerializationSettings object is left at its DECLARE defaults, which is what
+/// QueryPlan::deserialize hands each step.
+std::unique_ptr<JoinStepLogical> deserializeStep(const String & bytes, UInt64 version)
 {
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
+    QueryPlanSerializationSettings settings;
     SharedHeaders input_headers{makeHeader("l"), makeHeader("r")};
     SharedHeader output_header = makeHeader("l");
     ContextPtr context = getContext().context;
@@ -189,42 +184,4 @@ TEST(JoinStepLogicalDecisions, PreVersionCarriesNothing)
     auto restored = deserializeStep(serializeStep(*decided, pre_decision_version), pre_decision_version);
     EXPECT_FALSE(restored->isOptimized());
     EXPECT_FALSE(restored->isRuntimeFilterDeclinedForSmallProbe());
-}
-
-/// A step that came over the wire has no row estimate, so it has to pass on the small right side bit it received. Without it, the
-/// next receiver would be told that the right side is large, and would pack the keys that the first sender wanted compared exactly.
-TEST(JoinStepLogicalDecisions, SmallRightSideDecisionSurvivesSeveralHops)
-{
-    const Settings query_settings;
-    const JoinSettings join_settings(query_settings);
-    ASSERT_TRUE(join_settings.enable_packed_string_keys_in_hash_join);
-
-    /// The plan settings of the sender, which the receivers read the join settings from.
-    QueryPlanSerializationSettings plan_settings;
-    join_settings.updatePlanSettings(plan_settings, current_version, JoinOperator{});
-
-    auto make_step_with_right_rows = [&](UInt64 right_rows)
-    {
-        auto step = makeStep(join_settings);
-        step->setInputRelations({.name = "l", .estimated_rows = 10}, {.name = "r", .estimated_rows = right_rows});
-        return step;
-    };
-    const String small_bytes
-        = serializeStep(*make_step_with_right_rows(join_settings.min_rows_for_packed_string_keys_in_hash_join - 1), current_version);
-    const String large_bytes
-        = serializeStep(*make_step_with_right_rows(join_settings.min_rows_for_packed_string_keys_in_hash_join), current_version);
-
-    /// Without this the assertions below hold for a serializer that writes the same bytes either way.
-    ASSERT_NE(small_bytes, large_bytes);
-
-    for (const auto & bytes : {small_bytes, large_bytes})
-    {
-        auto first_receiver = deserializeStep(bytes, current_version, plan_settings);
-        EXPECT_EQ(serializeStep(*first_receiver, current_version), bytes);
-
-        /// A clone between two hops is the copy a replica ships on.
-        auto cloned = first_receiver->clone();
-        auto second_receiver = deserializeStep(serializeStep(*cloned, current_version), current_version, plan_settings);
-        EXPECT_EQ(serializeStep(*second_receiver, current_version), bytes);
-    }
 }

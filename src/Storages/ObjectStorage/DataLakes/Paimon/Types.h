@@ -4,7 +4,7 @@
 #include <utility>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -12,11 +12,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTime.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <base/types.h>
-#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Logger.h>
@@ -84,7 +82,6 @@ struct DataType
     RootDataType root_type{};
     String raw_type;
     DataTypePtr clickhouse_data_type;
-    UInt32 time_precision = 0;
     static DataType parse(const Poco::JSON::Object::Ptr & json_object, const String & key)
     {
         DataType type;
@@ -215,13 +212,12 @@ struct DataType
             else if (real_type == "DATE")
             {
                 type.root_type = RootDataType::DATE;
-                type.clickhouse_data_type = std::make_shared<DataTypeDate32>();
+                type.clickhouse_data_type = std::make_shared<DataTypeDate>();
             }
             else if (real_type.starts_with("TIME") && !real_type.starts_with("TIMESTAMP"))
             {
                 type.root_type = RootDataType::TIME_WITHOUT_TIME_ZONE;
                 type.clickhouse_data_type = std::make_shared<DataTypeInt64>();
-                type.time_precision = has_precision(real_type) ? static_cast<UInt32>(parse_precision(real_type)[0]) : 0;
             }
             else if (real_type.starts_with("TIMESTAMP"))
             {
@@ -270,7 +266,9 @@ struct DataType
             auto inner_json_object = json_object->getObject(key);
             String inner_type = inner_json_object->getValue<String>("type");
             // check nullable
-            const String real_type = check_and_remove_nullable(inner_type).second;
+            auto result = check_and_remove_nullable(inner_type);
+            bool nullable = result.first;
+            const String & real_type = result.second;
             if (real_type == "ARRAY")
             {
                 type.root_type = RootDataType::ARRAY;
@@ -284,28 +282,16 @@ struct DataType
                 auto value_type = parse(inner_json_object, "value");
                 type.clickhouse_data_type = std::make_shared<DataTypeMap>(key_type.clickhouse_data_type, value_type.clickhouse_data_type);
             }
-            else if (real_type == "ROW")
-            {
-                type.root_type = RootDataType::ROW;
-                const auto fields = inner_json_object->getArray("fields");
-                DataTypes element_types;
-                Strings element_names;
-                element_types.reserve(fields->size());
-                element_names.reserve(fields->size());
-                for (unsigned i = 0; i < fields->size(); ++i)
-                {
-                    const auto field = fields->getObject(i);
-                    element_names.push_back(field->getValue<String>("name"));
-                    element_types.push_back(parse(field, "type").clickhouse_data_type);
-                }
-                type.clickhouse_data_type = std::make_shared<DataTypeTuple>(element_types, element_names);
-            }
             else
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported Paimon type: {}", real_type);
             }
-            /// A nullable composite is not wrapped in Nullable, as in Iceberg and Delta Lake: a NULL ARRAY or
-            /// MAP is read as an empty one and a NULL ROW as a tuple of the fields' default values.
+            /// ClickHouse forbids Nullable(Array) and Nullable(Map), so a nullable composite is kept
+            /// unwrapped; the reader maps a NULL composite to an empty one.
+            if (nullable)
+            {
+                type.clickhouse_data_type = makeNullableSafe(type.clickhouse_data_type);
+            }
             return type;
         }
     }

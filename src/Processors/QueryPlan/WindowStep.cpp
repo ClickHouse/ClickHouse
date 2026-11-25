@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
@@ -16,7 +15,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -44,7 +42,7 @@ static ITransformingStep::Traits getTraits(bool preserves_sorting)
 }
 
 static Block addWindowFunctionResultColumns(const Block & block,
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions)
+    std::vector<WindowFunctionDescription> window_functions)
 {
     auto result = block;
 
@@ -52,7 +50,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
     {
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
-        column_with_type.type = f.getResultType();
+        column_with_type.type = f.aggregate_function->getResultType();
         column_with_type.column = column_with_type.type->createColumn();
 
         result.insert(column_with_type);
@@ -64,7 +62,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
 WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
-    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
+    const std::vector<WindowFunctionDescription> & window_functions_,
     bool streams_fan_out_,
     const SortingStep::Settings & sort_settings_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
@@ -251,7 +249,7 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
 }
 
 static void serializeWindowFunctions(
-    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
+    const std::vector<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
 {
     WriteBuffer & out = ctx.out;
     writeVarUInt(window_functions.size(), out);
@@ -274,7 +272,7 @@ static void serializeWindowFunctions(
         for (const auto & argument_name : func.argument_names)
             ctx.writeColumnName(argument_name);
 
-        writeStringBinary(func.getFunctionName(), out);
+        writeStringBinary(func.aggregate_function->getName(), out);
 
         /// Serialize the parameters the planner preserved, not `aggregate_function->getParameters()`:
         /// some parametric aggregates (e.g. `groupArrayMovingSum`, `groupArrayMovingAvg`,
@@ -287,13 +285,13 @@ static void serializeWindowFunctions(
     }
 }
 
-static VectorWithMemoryTracking<WindowFunctionDescription>
+static std::vector<WindowFunctionDescription>
 deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
 
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions(num_functions);
+    std::vector<WindowFunctionDescription> window_functions(num_functions);
     for (auto & func : window_functions)
     {
         readStringBinary(func.column_name, in);
@@ -329,25 +327,14 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
         for (auto & param : func.function_parameters)
             param = readFieldBinary(in);
 
-        if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
-        {
-            func.general_function = WindowFunctionFactory::instance().get(
-                function_name,
-                NullsAction::EMPTY,
-                func.argument_types,
-                func.function_parameters);
-        }
-        else
-        {
-            AggregateFunctionProperties properties;
-            func.aggregate_function = AggregateFunctionFactory::instance().get(
-                function_name,
-                NullsAction::EMPTY,
-                func.argument_types,
-                func.function_parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
-        }
+        AggregateFunctionProperties properties;
+        func.aggregate_function = AggregateFunctionFactory::instance().get(
+            function_name,
+            NullsAction::EMPTY,
+            func.argument_types,
+            func.function_parameters,
+            properties,
+            AggregateFunctionStateVariant::Window);
     }
 
     return window_functions;

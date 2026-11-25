@@ -25,7 +25,6 @@
 #include <ranges>
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
-#include <Databases/IDatabase.h>
 
 namespace ProfileEvents
 {
@@ -1246,9 +1245,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
         auto entries = zookeeper->tryGet(entry_paths);
 
-        /// Not `ReplicatedMergeTreeMutationEntryPtr`: the partitions of the scoped commands are
-        /// resolved on the entries below, before they are published to the queue's state.
-        std::vector<std::shared_ptr<ReplicatedMergeTreeMutationEntry>> new_mutations;
+        std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
             const auto & maybe_response = entries[i];
@@ -1264,25 +1261,11 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
         }
 
-        /** Resolve the partitions of the commands that name some, so that the per-part selection of the
-          * on-the-fly commands can keep such a command out of the partitions it does not name. Done here,
-          * once per entry, and not while a storage snapshot is built: a partition expression is arbitrary
-          * user SQL and must not be evaluated on the read path.
-          *
-          * The submitting replica already replaced every partition expression of an entry with the
-          * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
-          * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
-          * the same partitions. Only an entry created by an older version may still carry an expression;
-          * it is left unresolved and not evaluated here.
-          */
-        for (const auto & entry : new_mutations)
-            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext(), /* only_pinned = */ true);
-
         bool some_mutations_are_probably_done = false;
         {
             std::lock_guard state_lock(state_mutex);
 
-            for (const std::shared_ptr<ReplicatedMergeTreeMutationEntry> & entry : new_mutations)
+            for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
                 incrementMutationsCounters(mutation_counters, entry->commands);
@@ -1694,7 +1677,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
     const CommittingBlocks & committing_blocks,
-    bool merges_delayed_after_startup,
     std::unique_lock<SharedMutex> & state_lock) const
 {
     if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
@@ -1797,13 +1779,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
             LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
-            return false;
-        }
-
-        if (entry.type == LogEntry::MERGE_PARTS && merges_delayed_after_startup)
-        {
-            constexpr auto fmt_string = "Not executing log entry {} for part {} because merges are delayed after the table startup (delay_merges_after_startup_seconds).";
-            LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name);
             return false;
         }
 
@@ -2222,8 +2197,6 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, partition_ids_hint, /*with_data=*/ true);
     }
 
-    const bool merges_delayed_after_startup = data.areMergesDelayedAfterStartup();
-
     std::unique_lock lock(state_mutex);
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -2231,7 +2204,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if ((*it)->currently_executing)
             continue;
 
-        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, merges_delayed_after_startup, lock))
+        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
         {
             entry = *it;
             /// We gave a chance for the entry, move it to the tail of the queue, after that
@@ -2467,13 +2440,6 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
         }
     }
 
-    /** A command that names a partition applies to that partition alone, but the queue keys a mutation
-      * entry by the partitions of *all* of its commands: `ALTER TABLE ... CLEAR COLUMN c IN PARTITION
-      * '1', CLEAR COLUMN d` is a single entry, and the unscoped `CLEAR COLUMN d` puts it in every
-      * partition, which used to hand the scoped `CLEAR COLUMN c` to their parts as well.
-      */
-    filterCommandsOutsidePartition(result, partition_id);
-
     std::reverse(result.begin(), result.end());
     return result;
 }
@@ -2481,7 +2447,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
 NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
+    if (!hasDataMutations() && !hasAlterMutations())
         return res;
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
@@ -2936,16 +2902,9 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
     return result;
 }
 
-/// Lock ownership is transferred to the caller via the returned QueueLocks, which the
-/// thread-safety analysis cannot model.
-ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue() TSA_NO_THREAD_SAFETY_ANALYSIS
+ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
 {
-    QueueLocks locks{
-        std::unique_lock(state_mutex, std::defer_lock),
-        std::unique_lock(pull_logs_to_queue_mutex, std::defer_lock),
-        std::unique_lock(update_mutations_mutex, std::defer_lock)};
-    std::lock(locks.state_lock, locks.pull_logs_to_queue_lock, locks.update_mutations_lock);
-    return locks;
+    return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler

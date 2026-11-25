@@ -18,7 +18,7 @@ namespace DB
   */
 
 class QueryNode;
-class ITableExpressionNode;
+class TableNode;
 class UnionNode;
 
 struct FiltersForTableExpression
@@ -39,7 +39,7 @@ class GlobalPlannerContext
 public:
     GlobalPlannerContext(
         const QueryNode * parallel_replicas_node_,
-        const ITableExpressionNode * parallel_replicas_table_,
+        const TableNode * parallel_replicas_table_,
         const UnionNode * parallel_replicas_table_union_,
         FiltersForTableExpressionMap filters_for_table_expressions_)
         : parallel_replicas_node(parallel_replicas_node_)
@@ -73,15 +73,14 @@ public:
       const PlannerContextPtr & planner_context);
 
     RawTableExpressionDataMap & getTableExpressionDataMap() noexcept { return shared_table_expression_data; }
-    [[nodiscard]] const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
+    const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
 
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
     const QueryNode * const parallel_replicas_node = nullptr;
     /// Table which is used with parallel replicas reading.
     /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
-    /// It's either a table, or a table function that is only a reference to a table.
-    const ITableExpressionNode * const parallel_replicas_table = nullptr;
+    const TableNode * const parallel_replicas_table = nullptr;
     /// UNION node whose every child query reads from a table eligible for parallel replicas.
     /// When set, each branch retains parallel replicas reading instead of having it disabled.
     const UnionNode * const parallel_replicas_table_union = nullptr;
@@ -114,13 +113,13 @@ public:
     PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_);
 
     /// Get planner context query context
-    [[nodiscard]] ContextPtr getQueryContext() const
+    ContextPtr getQueryContext() const
     {
         return query_context;
     }
 
     /// Get planner context mutable query context
-    [[nodiscard]] const ContextMutablePtr & getMutableQueryContext() const
+    const ContextMutablePtr & getMutableQueryContext() const
     {
         return query_context;
     }
@@ -132,7 +131,7 @@ public:
     }
 
     /// Get global planner context
-    [[nodiscard]] const GlobalPlannerContextPtr & getGlobalPlannerContext() const
+    const GlobalPlannerContextPtr & getGlobalPlannerContext() const
     {
         return global_planner_context;
     }
@@ -149,7 +148,7 @@ public:
     /** Get table expression data.
       * Exception is thrown if there are no table expression data for table expression node.
       */
-    [[nodiscard]] const TableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const;
+    const TableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const;
 
     /** Get table expression data.
       * Exception is thrown if there are no table expression data for table expression node.
@@ -159,7 +158,7 @@ public:
     /** Get table expression data.
       * Null is returned if there are no table expression data for table expression node.
       */
-    [[nodiscard]] const TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node) const;
+    const TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node) const;
 
     /** Get table expression data.
       * Null is returned if there are no table expression data for table expression node.
@@ -167,7 +166,7 @@ public:
     TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node);
 
     /// Get table expression node to data map
-    [[nodiscard]] const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
+    const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
     {
         return table_expression_node_to_data;
     }
@@ -183,14 +182,14 @@ public:
       * If table expression data is not registered exception is thrown.
       * In table expression data get column node identifier using column name.
       */
-    [[nodiscard]] const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const QueryTreeNodePtr & column_node) const;
+    const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const QueryTreeNodePtr & column_node) const;
 
     /** Get column node identifier.
       * For column node source check if table expression data is registered.
       * If table expression data is not registered null is returned.
       * In table expression data get column node identifier or null using column name.
       */
-    [[nodiscard]] const ColumnIdentifier * getColumnNodeIdentifierOrNull(const QueryTreeNodePtr & column_node) const;
+    const ColumnIdentifier * getColumnNodeIdentifierOrNull(const QueryTreeNodePtr & column_node) const;
 
     using SetKey = std::string;
 
@@ -202,25 +201,24 @@ public:
     /// Returns false if any of following conditions met:
     /// 1. Query is executed on a follower node.
     /// 2. ignore_ast_optimizations is set.
-    [[nodiscard]] bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
+    bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
     /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
-    /// logical plan built for a shard under `serialize_query_plan`, a local plan from which
+    /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
     /// plan-based parallel replicas (`parallel_replicas_plan_based`) later cut a fragment for the
-    /// replicas, or a plan (or a subquery plan inside one) built under `make_distributed_plan`, also
-    /// when only the query-level context has it. Everything materialized while planning must then
-    /// survive serialization, which rules out a JIT-compiled expression: a compiled function has no
-    /// name in `FunctionFactory`, so the receiving node cannot resolve it.
-    [[nodiscard]] bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
+    /// replicas. Everything materialized while planning must then survive serialization, which rules
+    /// out a JIT-compiled expression: a compiled function has no name in `FunctionFactory`, so the
+    /// receiving node cannot resolve it.
+    bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
 
     /// See `SelectQueryOptions::view_source_in_subqueries`.
-    [[nodiscard]] bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
+    bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
 
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
 
-    [[nodiscard]] const RawTableExpressionDataMap & getSharedTableExpressionDataMap() const noexcept { return global_planner_context->getTableExpressionDataMap(); }
+    const RawTableExpressionDataMap & getSharedTableExpressionDataMap() const noexcept { return global_planner_context->getTableExpressionDataMap(); }
 
     /// Query context
     ContextMutablePtr query_context;

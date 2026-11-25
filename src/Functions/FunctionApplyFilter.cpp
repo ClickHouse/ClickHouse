@@ -24,6 +24,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
 }
 
@@ -45,10 +47,10 @@ public:
     static constexpr auto name = "__applyFilter";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionApplyFilter>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return false; }
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isVariadic() const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
     /// A runtime filter's result is not a pure function of its arguments — it depends on the
     /// dynamically built filter, which differs between executions of the same plan (e.g. recursive
@@ -57,26 +59,37 @@ public:
     /// otherwise serve a stale per-granule result to a later execution with different keys). We
     /// keep `isDeterministicInScopeOfQuery() == true` so the filter can still be pushed into
     /// PREWHERE: within a single read the built filter is fixed, so the predicate is stable there.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String, Any) -> UInt8";
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                            "Number of arguments for function {} can't be {}, should be 2",
+                            getName(), arguments.size());
+
+        if (!WhichDataType(arguments[0]).isString())
+            throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument of function '{}' must be a String filter id",
+                    getName());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// The rendezvous id is the VALUE of the const first argument (set at plan build, the same id
         /// the build side registers under). An empty id means an inert/placeholder filter: all rows pass.
@@ -108,7 +121,6 @@ public:
         if (!filter->isReady())
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFilterLookupsBeforeBuildFinished);
-            filter->recordLookupBeforeReady(input_rows_count);
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
         }
 

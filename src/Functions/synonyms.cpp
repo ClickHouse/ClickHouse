@@ -27,6 +27,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -51,25 +52,28 @@ public:
     explicit FunctionSynonyms(SynonymsExtensions & extensions_)
         : extensions(extensions_) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// The extension name (argument 0) is always constant: it is listed in
-        /// `getArgumentsThatAreAlwaysConstant` and `executeImpl` rejects anything but a
-        /// `ColumnConst` before reading it once.
-        return "(const String, String) -> Array(String)";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+        if (!isString(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & extcolumn = arguments[0].column;
         const auto & strcolumn = arguments[1].column;
@@ -102,7 +106,7 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[static_cast<ssize_t>(i) - 1]), offsets[i] - offsets[static_cast<ssize_t>(i) - 1]);
+            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
 
             const auto * synset = extension->getSynonyms(word);
 

@@ -4,7 +4,6 @@
 #include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <base/arithmeticOverflow.h>
 
 #include <limits>
 #include <type_traits>
@@ -184,7 +183,6 @@ inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, siz
     return istr;
 }
 
-NO_SANITIZE_UNSIGNED_OVERFLOW
 inline Int64 decodeZigZag(UInt64 n)
 {
     return static_cast<Int64>((n >> 1) ^ -(n & 1));
@@ -197,7 +195,7 @@ inline UInt32 encodeZigZag32(Int32 value)
 
 inline Int32 decodeZigZag32(UInt32 n)
 {
-    return static_cast<Int32>((n >> 1) ^ common::negateIgnoreOverflow(n & 1));
+    return static_cast<Int32>((n >> 1) ^ -(n & 1));
 }
 
 template <typename InBuf>

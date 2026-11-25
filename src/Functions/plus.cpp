@@ -12,7 +12,7 @@ namespace Setting
 extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
-FormatSettingsEnums::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
+FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
 {
     if (context)
         return context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
@@ -26,18 +26,6 @@ struct PlusImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
     static const constexpr bool is_commutative = true;
-    /// Addition and subtraction of 256-bit integers are a carry chain over four 64-bit limbs
-    /// (`wide::integer::add_sub`), which compiles to `adds`/`adcs` on AArch64 and `add`/`adc` on x86-64. clang 23
-    /// vectorizes the row loop of `BinaryOperation::process` with two rows per iteration, interleaved loads and
-    /// stores, and the carries rebuilt from vector comparisons, which is up to 1.5 times slower than the scalar
-    /// chain (`wide_integer_add_sub`). Other operations on 256-bit integers, such as the bitwise ones, vectorize well.
-    static constexpr bool no_vectorize = sizeof(ResultType) > 16;
-
-    /// Documentation-only — accepts numerics (with the usual promotion rule),
-    /// Date / DateTime / DateTime64 + Interval, Array of numerics (broadcast),
-    /// and decimals with scale arithmetic. The full promotion matrix isn't
-    /// expressible in the current DSL.
-    static constexpr auto signature_documentation = "(Any, Any) -> Any";
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b)

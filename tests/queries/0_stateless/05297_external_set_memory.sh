@@ -39,8 +39,7 @@ SQL
 # the query in memory. On disk, the table and the memory to write it stay below the threshold, but the resize
 # would not, so the projected growth of the table spills the set before the resize.
 QUERY="SELECT count() FROM numbers(10) WHERE toUInt128(number) IN (SELECT toUInt128(number) FROM numbers(589824))"
-memory_case query_limit_memory "${QUERY}" --max_memory_usage 64M --max_bytes_before_external_set 0 \
-    --max_bytes_ratio_before_external_set 0
+memory_case query_limit_memory "${QUERY}" --max_memory_usage 64M --max_bytes_before_external_set 0
 memory_case query_limit_disk "${QUERY}" --max_memory_usage 64M --max_bytes_before_external_set 48M
 
 # The ratio applies to the memory left under the limit of the user.

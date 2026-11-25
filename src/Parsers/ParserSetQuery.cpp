@@ -106,7 +106,7 @@ class ParserLiteralOrMap : public IParserBase
 {
 public:
 protected:
-    [[nodiscard]] const char * getName() const override { return "literal or map"; }
+    const char * getName() const override { return "literal or map"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         {

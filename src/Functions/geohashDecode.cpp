@@ -27,18 +27,25 @@ public:
     static constexpr auto name = "geohashDecode";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashDecode>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(StringOrFixedString) -> Tuple(longitude Float64, latitude Float64)";
+        FunctionArgumentDescriptors args{
+            {"encoded", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"longitude", "latitude"});
     }
 
     template <typename ColumnTypeEncoded>
@@ -68,7 +75,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * encoded = arguments[0].column.get();
         ColumnPtr res_column;

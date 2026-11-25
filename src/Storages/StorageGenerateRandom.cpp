@@ -66,7 +66,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -193,7 +192,7 @@ T fuzzyRandomInteger(pcg64 & rng)
     {
         UInt64 low_mask = num_bits == 64 ? ~UInt64(0) : (UInt64(1) << num_bits) - 1;
         UInt64 u_number = static_cast<UInt64>(static_cast<std::make_unsigned_t<T>>(number));
-        UInt64 sign = common::negateIgnoreOverflow(u_number >> (sizeof(T) * 8 - 1));
+        UInt64 sign = -(u_number >> (sizeof(T) * 8 - 1));
         return static_cast<T>((u_number & low_mask) | (sign & ~low_mask));
     }
     else
@@ -913,7 +912,7 @@ private:
 
     /// Repeats `SerializationObject::shouldSkipPath`: a path that the serialization of the type would
     /// drop must not be generated at all, otherwise its values would silently disappear on insertion.
-    [[nodiscard]] bool shouldSkipPath(const String & path) const
+    bool shouldSkipPath(const String & path) const
     {
         if (object_type.getTypedPaths().contains(path))
             return true;
@@ -933,7 +932,7 @@ private:
         return false;
     }
 
-    [[nodiscard]] bool hasTypedChildren(const String & path) const
+    bool hasTypedChildren(const String & path) const
     {
         const String prefix = path + ".";
         for (const auto & [typed_path, _] : object_type.getTypedPaths())
@@ -975,7 +974,7 @@ public:
         return schemas;
     }
 
-    [[nodiscard]] const DynamicSchema & dynamic(UInt64 seed) const
+    const DynamicSchema & dynamic(UInt64 seed) const
     {
         auto it = dynamic_schemas.find(seed);
         if (it == dynamic_schemas.end())
@@ -983,7 +982,7 @@ public:
         return it->second;
     }
 
-    [[nodiscard]] const JSONSchema & json(UInt64 seed) const
+    const JSONSchema & json(UInt64 seed) const
     {
         auto it = json_schemas.find(seed);
         if (it == json_schemas.end())
@@ -1112,17 +1111,17 @@ struct GenerateRandomContext
     pcg64 & rng;                     /// The value generator of one stream.
     UInt64 schema_seed = 0;          /// Identifies the position in the type tree.
 
-    [[nodiscard]] GenerateRandomContext child(UInt64 salt) const
+    GenerateRandomContext child(UInt64 salt) const
     {
         return GenerateRandomContext{options, schemas, rng, deriveSeed(schema_seed, salt)};
     }
 
-    [[nodiscard]] GenerateRandomContext nestedChild(UInt64 salt) const
+    GenerateRandomContext nestedChild(UInt64 salt) const
     {
         return GenerateRandomContext{nestedOptions(options), schemas, rng, deriveSeed(schema_seed, salt)};
     }
 
-    [[nodiscard]] GenerateRandomContext nestedChild(std::string_view name) const
+    GenerateRandomContext nestedChild(std::string_view name) const
     {
         return GenerateRandomContext{nestedOptions(options), schemas, rng, deriveSeed(schema_seed, name)};
     }
@@ -1465,7 +1464,7 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
                 fillBufferWithRandomNumbers<UInt32>(reinterpret_cast<char *>(column->getData().data()), limit, rng, fuzzy);
             else
                 for (size_t i = 0; i < limit; ++i)
-                    column->getData()[i] = static_cast<Int32>(static_cast<Int64>(rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH);
+                    column->getData()[i] = (rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH;
 
             return column;
         }
@@ -2125,7 +2124,7 @@ Pipe StorageGenerateRandom::read(
     }
 
     UInt64 query_limit = query_info.trivial_limit;
-    if (query_limit)
+    if (query_limit && num_streams * max_block_size > query_limit)
     {
         /// We want to avoid spawning more streams than necessary
         num_streams = std::min(

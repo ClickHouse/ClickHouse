@@ -17,12 +17,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <IO/WriteBufferFromString.h>
-#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Common/assert_cast.h>
 
 #include <algorithm>
+#include <vector>
 
 namespace DB
 {
@@ -98,8 +96,7 @@ size_t maxRowsForVariant(
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes,
-    const FormatSettings * variant_json_settings)
+    UInt64 max_batch_bytes)
 {
     const size_t num_rows = end - begin;
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
@@ -111,8 +108,8 @@ size_t maxRowsForVariant(
     /// Within a contiguous row range the offsets of each alternative are contiguous too (see
     /// `ColumnVariant::updateHashWithValueRange`), so [begin, end) maps to the range
     /// [nested_begin, nested_begin + nested_rows) of every alternative.
-    VectorWithMemoryTracking<size_t> nested_begin(num_variants, 0);
-    VectorWithMemoryTracking<size_t> nested_rows(num_variants, 0);
+    std::vector<size_t> nested_begin(num_variants, 0);
+    std::vector<size_t> nested_rows(num_variants, 0);
     for (size_t row = begin; row != end; ++row)
     {
         const auto local_discr = local_discriminators[row];
@@ -123,7 +120,7 @@ size_t maxRowsForVariant(
         ++nested_rows[local_discr];
     }
 
-    VectorWithMemoryTracking<size_t> nested_rows_that_fit(num_variants);
+    std::vector<size_t> nested_rows_that_fit(num_variants);
     bool all_fit = true;
     for (size_t local_discr = 0; local_discr != num_variants; ++local_discr)
     {
@@ -134,14 +131,14 @@ size_t maxRowsForVariant(
             variant_type.getVariant(global_discr),
             nested_begin[local_discr],
             nested_begin[local_discr] + nested_rows[local_discr],
-            fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
+            fixed_string_as_fixed_byte_array, max_batch_bytes);
         all_fit &= nested_rows_that_fit[local_discr] == nested_rows[local_discr];
     }
     if (all_fit)
         return num_rows;
 
     /// Some alternative cannot take all of its rows: cut at the row where it runs out.
-    VectorWithMemoryTracking<size_t> nested_rows_taken(num_variants, 0);
+    std::vector<size_t> nested_rows_taken(num_variants, 0);
     for (size_t row = begin; row != end; ++row)
     {
         const auto local_discr = local_discriminators[row];
@@ -154,32 +151,6 @@ size_t maxRowsForVariant(
     return num_rows;
 }
 
-/// A `Variant` written with `output_format_arrow_variant_as_json_string` is one `Utf8` column with the JSON text of
-/// each value, made valid UTF-8, as `RecordBatchEncoder::encodeVariantAsJSONText` writes it. Measure the same text.
-/// A NULL value is counted as the text `null`, which only overestimates when it is written as an Arrow null.
-size_t maxRowsForVariantAsJSONText(
-    const IColumn & column,
-    const DataTypePtr & type,
-    size_t begin,
-    size_t end,
-    UInt64 max_batch_bytes,
-    const FormatSettings & json_settings)
-{
-    const auto serialization = type->getDefaultSerialization();
-    WriteBufferFromOwnString value;
-    String valid_utf8_scratch;
-    UInt64 total = 0;
-    for (size_t row = begin; row != end; ++row)
-    {
-        value.restart();
-        serialization->serializeTextJSON(column, row, value, json_settings);
-        total += makeValidUTF8View(value.stringView(), valid_utf8_scratch).size();
-        if (total > max_batch_bytes)
-            return row - begin;
-    }
-    return end - begin;
-}
-
 }
 
 size_t maxRowsFittingOneArrowBatch(
@@ -188,8 +159,7 @@ size_t maxRowsFittingOneArrowBatch(
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes,
-    const FormatSettings * variant_json_settings)
+    UInt64 max_batch_bytes)
 {
     const size_t num_rows = end - begin;
     if (num_rows == 0)
@@ -201,11 +171,8 @@ size_t maxRowsFittingOneArrowBatch(
     if (type->lowCardinality())
         return maxRowsForLowCardinality(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes);
 
-    if (isVariant(type) && variant_json_settings)
-        return maxRowsForVariantAsJSONText(column, type, begin, end, max_batch_bytes, *variant_json_settings);
-
     if (isVariant(type))
-        return maxRowsForVariant(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
+        return maxRowsForVariant(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes);
 
     /// A null row is written as a zero-length slot, so measuring the nested column only overestimates.
     if (type->isNullable())
@@ -215,7 +182,7 @@ size_t maxRowsFittingOneArrowBatch(
             removeNullable(type),
             begin,
             end,
-            fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
+            fixed_string_as_fixed_byte_array, max_batch_bytes);
     }
 
     switch (WhichDataType(type).idx)
@@ -241,7 +208,7 @@ size_t maxRowsFittingOneArrowBatch(
                 assert_cast<const DataTypeArray &>(*type).getNestedType(),
                 nested_begin,
                 offsets[end - 1],
-                fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
+                fixed_string_as_fixed_byte_array, max_batch_bytes);
             return maxRowsByOffsets(offsets, begin, end, std::min<UInt64>(nested_rows, max_batch_bytes));
         }
         case TypeIndex::Map:
@@ -252,7 +219,7 @@ size_t maxRowsFittingOneArrowBatch(
                 assert_cast<const DataTypeMap &>(*type).getNestedType(),
                 begin,
                 end,
-                fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
+                fixed_string_as_fixed_byte_array, max_batch_bytes);
         }
         case TypeIndex::Tuple:
         {
@@ -264,8 +231,7 @@ size_t maxRowsFittingOneArrowBatch(
                 rows = std::min(
                     rows,
                     maxRowsFittingOneArrowBatch(
-                        tuple.getColumn(i), elements[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes,
-                        variant_json_settings));
+                        tuple.getColumn(i), elements[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes));
             }
             return rows;
         }
@@ -318,8 +284,7 @@ size_t maxRowsFittingOneArrowBatch(
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes,
-    const FormatSettings * variant_json_settings)
+    UInt64 max_batch_bytes)
 {
     chassert(columns.size() == types.size());
     const size_t num_rows = end - begin;
@@ -341,8 +306,7 @@ size_t maxRowsFittingOneArrowBatch(
             rows = std::min(
                 rows,
                 maxRowsFittingOneArrowBatch(
-                    *columns[i], types[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes,
-                    variant_json_settings));
+                    *columns[i], types[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes));
 
         if (rows < window || window == num_rows)
             return rows;

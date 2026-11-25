@@ -32,11 +32,11 @@ public:
     void makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header);
     std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query);
 
-    [[nodiscard]] const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
+    const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
 
-    [[nodiscard]] bool isLeftTableSubquery() const;
-    [[nodiscard]] bool isLeftTableFunction() const;
-    [[nodiscard]] size_t tablesCount() const { return table_expressions.size(); }
+    bool isLeftTableSubquery() const;
+    bool isLeftTableFunction() const;
+    size_t tablesCount() const { return table_expressions.size(); }
 
     void rewriteDistributedInAndJoins(ASTPtr & query);
 

@@ -14,7 +14,6 @@
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
 #include <base/extended_types.h>
-#include <base/sanitizer_defs.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -76,7 +75,7 @@ struct AggregateFunctionGroupBitAndData
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::Constant::getAllOnesValue(type), value_ptr)->setAlignment(llvm::Align(alignof(T)));
+        builder.CreateStore(llvm::ConstantInt::get(type, -1), value_ptr)->setAlignment(llvm::Align(alignof(T)));
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
@@ -132,7 +131,7 @@ private:
 
     static void addMany(Data & data, const T * __restrict ptr, size_t row_begin, size_t row_end)
     {
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(data, ptr, row_begin, row_end);
@@ -146,7 +145,7 @@ private:
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <bool add_if_zero>
-    static void NO_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW
+    static void NO_INLINE
     ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
     {
         /// The flag is applied as an arithmetic all-ones/all-zeros mask: unlike a branch or a
@@ -177,7 +176,7 @@ private:
     template <bool add_if_zero>
     static void addManyConditional(Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
@@ -193,14 +192,14 @@ public:
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}, createResultType())
     {}
 
-    [[nodiscard]] String getName() const override { return Data::name(); }
+    String getName() const override { return Data::name(); }
 
     static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<T>>();
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -277,7 +276,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    [[nodiscard]] bool isCompilable() const override
+    bool isCompilable() const override
     {
         auto return_type = this->getResultType();
         return canBeNativeType(*return_type);
@@ -401,7 +400,7 @@ SELECT groupBitOr(num) FROM t;
     FunctionDocumentation::Category category_or = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_or = {description_or, syntax_or, arguments_or, parameters_or, returned_value_or, examples_or, introduced_in_or, category_or};
 
-    factory.registerFunction("groupBitOr", {createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>, documentation_or, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("groupBitOr", {createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>, documentation_or});
 
     FunctionDocumentation::Description description = R"(
 Applies bitwise AND for series of numbers.
@@ -439,7 +438,7 @@ SELECT groupBitAnd(num) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupBitAnd", {createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("groupBitAnd", {createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>, documentation});
 
     FunctionDocumentation::Description description_xor = R"(
 Applies bitwise XOR for series of numbers.
@@ -477,7 +476,7 @@ SELECT groupBitXor(num) FROM t;
     FunctionDocumentation::Category category_xor = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_xor = {description_xor, syntax_xor, arguments_xor, parameters_xor, returned_value_xor, examples_xor, introduced_in_xor, category_xor};
 
-    factory.registerFunction("groupBitXor", {createAggregateFunctionBitwise<AggregateFunctionGroupBitXorData>, documentation_xor, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("groupBitXor", {createAggregateFunctionBitwise<AggregateFunctionGroupBitXorData>, documentation_xor});
 
     /// Aliases for compatibility with MySQL.
     factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);

@@ -25,7 +25,7 @@ public:
 class KeeperParser : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "Keeper client query"; }
+    const char * getName() const override { return "Keeper client query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

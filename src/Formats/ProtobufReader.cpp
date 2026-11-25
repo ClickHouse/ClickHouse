@@ -2,7 +2,6 @@
 
 #if USE_PROTOBUF
 #   include <IO/ReadHelpers.h>
-#   include <limits>
 
 
 namespace DB
@@ -40,15 +39,6 @@ ProtobufReader::ProtobufReader(ReadBuffer & in_)
 {
 }
 
-Int64 ProtobufReader::addLengthToCursor(UInt64 length) const
-{
-    /// The length comes from the input, so it can be any 64-bit value. Reject a length which does not fit
-    /// into the signed domain of `cursor` before adding it, instead of letting the sum wrap around.
-    if (unlikely(length > static_cast<UInt64>(std::numeric_limits<Int64>::max() - cursor)))
-        throwUnknownFormat();
-    return cursor + static_cast<Int64>(length);
-}
-
 void ProtobufReader::resetState()
 {
     root_message_has_length_delimiter = false;
@@ -68,8 +58,8 @@ void ProtobufReader::startMessage(bool with_length_delimiter_)
     root_message_has_length_delimiter = with_length_delimiter_;
     if (root_message_has_length_delimiter)
     {
-        UInt64 size_of_message = readVarint();
-        current_message_end = addLengthToCursor(size_of_message);
+        size_t size_of_message = readVarint();
+        current_message_end = cursor + size_of_message;
     }
     else
     {
@@ -207,8 +197,8 @@ bool ProtobufReader::readFieldNumber(int & field_number_)
         }
         case LENGTH_DELIMITED:
         {
-            UInt64 length = readVarint();
-            field_end = addLengthToCursor(length);
+            size_t length = readVarint();
+            field_end = cursor + length;
             return true;
         }
         case VARINT:
@@ -280,28 +270,13 @@ template UInt64 ProtobufReader::readFixed<UInt64>();
 template Float32 ProtobufReader::readFixed<Float32>();
 template Float64 ProtobufReader::readFixed<Float64>();
 
-namespace
-{
-
-/// The length of a field is declared by the input: the destination grows as the bytes arrive (geometrically), so that a
-/// huge length without the bytes fails on the missing data instead of allocating for it first.
-constexpr size_t max_string_chunk_size = 1 << 20;
-
-}
-
 void ProtobufReader::readString(String & str)
 {
     if (unlikely(cursor > field_end))
         throwUnknownFormat();
     size_t length = field_end - cursor;
-    str.clear();
-    while (str.size() < length)
-    {
-        const size_t old_size = str.size();
-        const size_t chunk_size = std::min(max_string_chunk_size, length - old_size);
-        str.resize(old_size + chunk_size);
-        readBinary(str.data() + old_size, chunk_size);
-    }
+    str.resize(length);
+    readBinary(reinterpret_cast<char*>(str.data()), length);
 }
 
 void ProtobufReader::readStringAndAppend(PaddedPODArray<UInt8> & str)
@@ -309,14 +284,9 @@ void ProtobufReader::readStringAndAppend(PaddedPODArray<UInt8> & str)
     if (unlikely(cursor > field_end))
         throwUnknownFormat();
     size_t length = field_end - cursor;
-    const size_t end_size = str.size() + length;
-    while (str.size() < end_size)
-    {
-        const size_t old_size = str.size();
-        const size_t chunk_size = std::min(max_string_chunk_size, end_size - old_size);
-        str.resize(old_size + chunk_size);
-        readBinary(reinterpret_cast<char*>(str.data() + old_size), chunk_size);
-    }
+    size_t old_size = str.size();
+    str.resize(old_size + length);
+    readBinary(reinterpret_cast<char*>(str.data() + old_size), length);
 }
 
 void ProtobufReader::readBinary(void* data, size_t size)

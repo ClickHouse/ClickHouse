@@ -14,7 +14,7 @@ class ManualMergeSelector : public IMergeSelector
 public:
     explicit ManualMergeSelector(StorageID storage_id_);
 
-    [[nodiscard]] PartsRanges select(
+    PartsRanges select(
         const PartsRanges & parts_ranges,
         const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;

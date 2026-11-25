@@ -25,9 +25,9 @@ DROP TABLE IF EXISTS t_plan_based_baseline;
 -- Pinned layout: the cost model works off estimated bytes, and leaving granularity or part format to
 -- randomization changes whether the optimization runs at all.
 CREATE TABLE t_plan_based_big   (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 CREATE TABLE t_plan_based_small (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_plan_based_big   SELECT number, number FROM numbers(300000);
 INSERT INTO t_plan_based_small SELECT number, number FROM numbers(3000);
@@ -37,6 +37,7 @@ OPTIMIZE TABLE t_plan_based_small FINAL;
 
 CREATE TABLE t_plan_based_baseline (c UInt64) ENGINE = Memory;
 
+SET enable_analyzer = 1;
 -- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
 -- would change how many bytes are read.
 SET enable_join_runtime_filters = 0;

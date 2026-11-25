@@ -172,10 +172,6 @@ public:
     /// Space available for reservation (available space minus reserved space).
     virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
-    /// Reserves like `reserve`, and also sets `unreserved_space` to the unreserved space of the disk after the attempt.
-    virtual ReservationPtr reserveAndGetUnreservedSpace(
-        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space);
-
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
 
@@ -488,9 +484,6 @@ public:
     /// Whether removing a directory with `removeSharedRecursive` is cheaper than removing its files one by one.
     virtual bool prefersRecursiveRemoval() const { return false; }
 
-    /// Whether a new file written by `writeFile` appears at once: a reader sees either no file or the complete one.
-    virtual bool supportsAtomicFileCreation() const { return false; }
-
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
@@ -579,6 +572,9 @@ public:
     virtual bool supportsStat() const { return false; }
     virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
 
+    virtual bool supportsChmod() const { return false; }
+    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
+
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
     UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
@@ -666,17 +662,17 @@ class IReservation : boost::noncopyable
 {
 public:
     /// Get reservation size.
-    [[nodiscard]] virtual UInt64 getSize() const = 0;
+    virtual UInt64 getSize() const = 0;
 
     /// Space available for reservation
     /// (with this reservation already take into account).
-    [[nodiscard]] virtual std::optional<UInt64> getUnreservedSpace() const = 0;
+    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 
     /// Get all disks, used in reservation
-    [[nodiscard]] virtual Disks getDisks() const = 0;
+    virtual Disks getDisks() const = 0;
 
     /// Changes amount of reserved space.
     virtual void update(UInt64 new_size) = 0;
