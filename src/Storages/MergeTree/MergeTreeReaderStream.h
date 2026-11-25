@@ -74,6 +74,7 @@ public:
 
 private:
     /// A file takes about as much memory as 8 ranges: its `ReadRanges`, its slot in the map and the `unique_ptr`.
+    /// Charged against the limit when a new file entry is created.
     static constexpr size_t units_per_file = 8;
 
     /// Reserves `units` of the limit; past it, stops the counting instead.
