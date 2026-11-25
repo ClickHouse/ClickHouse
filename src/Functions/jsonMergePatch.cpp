@@ -659,8 +659,9 @@ namespace
             return true;
         }
 
-        /// A path the patch sets twice (a duplicate key, or a key with a dot and the same nested key) is left to
-        /// the text form, which applies the members in order.
+        /// A path the patch sets twice (a duplicate key, or a key with a dot and the same nested key), or a value it
+        /// replaces together with a path below it (a key with a dot), is left to the text form, which applies the
+        /// members in order.
         static bool sortAndCheck(PatchOps & ops)
         {
             std::sort(ops.replaced.begin(), ops.replaced.end());
@@ -678,6 +679,20 @@ namespace
                 else if (*dropped_it < *replaced_it)
                     ++dropped_it;
                 else
+                    return false;
+            }
+
+            StringWithMemoryTracking prefix;
+            auto has_path_below = [&](const auto & paths)
+            {
+                auto it = std::lower_bound(paths.begin(), paths.end(), prefix);
+                return it != paths.end() && it->starts_with(prefix);
+            };
+            for (const auto & replaced_path : ops.replaced)
+            {
+                prefix = replaced_path;
+                prefix += '.';
+                if (has_path_below(ops.replaced) || has_path_below(ops.dropped))
                     return false;
             }
             return true;

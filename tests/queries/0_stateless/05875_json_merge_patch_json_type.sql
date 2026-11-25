@@ -149,6 +149,9 @@ SELECT JSONMergePatch(c, '{"a.c":{"e":null,"d":1},"m":{"x.y":3}}') AS r, toStrin
 FROM (SELECT CAST('{"a":{"b":1,"c":{"e":2}},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c);
 SELECT JSONAllPathsWithTypes(r), toString(r) = toString(CAST(JSONMergePatch(c::String, '{"m.k":3,"m":{"y":2}}'), toTypeName(c)))
 FROM (SELECT c, JSONMergePatch(c, '{"m.k":3,"m":{"y":2}}') AS r FROM (SELECT CAST('{"a":{"b":1},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c));
+SELECT p, JSONMergePatch(c, p), JSONMergePatch(c, replaceOne(p, '{', '{"m":{"y":2},'))
+FROM (SELECT CAST('{"a":{"c":1},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c) AS src,
+    (SELECT arrayJoin(['{"a.b":6,"a":5}', '{"a":5,"a.b":6}']) AS p) AS patches ORDER BY p;
 
 SELECT 'literal and nested object under the same key';
 SELECT JSONMergePatch(c, '{"a":{"b":"x"}}') AS r, JSONMergePatch(c, '{"c":1}') AS r2,
