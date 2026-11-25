@@ -26,7 +26,7 @@ function s3_disk()
 function as_user()
 {
     $CLICKHOUSE_CLIENT --user "${USER_NAME}" "${@:2}" -q "$1" 2>&1 \
-        | grep -o -m1 -E "Not enough privileges. To execute this query, it's necessary to have the grant [^.]*" \
+        | grep -o -m1 -E "Not enough privileges. To execute this query, it's necessary to have the grant [^.:]*" \
         | sed -E 's/.*necessary to have the grant //' \
         | grep . || echo "allowed"
 }
