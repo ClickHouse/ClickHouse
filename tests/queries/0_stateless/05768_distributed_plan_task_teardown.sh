@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# A distributed query that ends, normally or by a kill, ends its tasks on the workers and drops its query controllers there.
+# A distributed query that ends, normally or by a kill, ends its tasks on the workers and drops its query controllers there,
+# with one request per worker for each of the polls, the cancel and the forget.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -53,16 +54,21 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
 echo "-- finished: a query with persisted exchanges runs its tasks in three waves, keeps one query controller for all of them and"
 echo "-- drops it at its end (both worker addresses of the test cluster are this server, so one controller); the result equals local."
+echo "-- It polls the workers, cancels nothing and sends one forget_tasks per worker address at its end."
 $CLICKHOUSE_CLIENT --query "
     SELECT ProfileEvents['DistributedPlanRemoteTasks'] AS tasks, ProfileEvents['DistributedPlanHostsUsed'] AS workers,
         (SELECT controllers_created FROM (SELECT $(controller_counts "$FINISHED_UID"))) AS controllers_created,
         (SELECT controllers_dropped FROM (SELECT $(controller_counts "$FINISHED_UID"))) AS controllers_dropped,
-        $([[ $FINISHED_RESULT == "$EXPECTED" ]] && echo 1 || echo 0) AS result_same
+        $([[ $FINISHED_RESULT == "$EXPECTED" ]] && echo 1 || echo 0) AS result_same,
+        ProfileEvents['DistributedPlanTaskStatusRequests'] > 0 AS polled,
+        ProfileEvents['DistributedPlanTaskCancelRequests'] AS cancel_requests,
+        ProfileEvents['DistributedPlanTaskForgetRequests'] AS forget_requests
     FROM system.query_log WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$FINISHED_ID' AND type = 'QueryFinish'
     SETTINGS output_format_pretty_row_numbers = 0
     FORMAT PrettyCompactMonoBlock"
 echo "-- killed: the kill ends the query's tasks (some readers end on their own before it, so only that some end after it is"
-echo "-- shown), none of the tasks that end after the kill reports a success, and the query controller is dropped."
+echo "-- shown), none of the tasks that end after the kill reports a success, and the query controller is dropped. Each worker"
+echo "-- address gets at most one cancel_tasks (none if its tasks had all ended) and one forget_tasks."
 $CLICKHOUSE_CLIENT --query "
     SELECT ProfileEvents['DistributedPlanRemoteTasks'] AS tasks, ProfileEvents['DistributedPlanHostsUsed'] AS workers,
         (SELECT count() > 0 FROM system.query_log WHERE $RECENT AND query_id != '$KILLED_ID' AND type != 'QueryStart'
@@ -70,7 +76,10 @@ $CLICKHOUSE_CLIENT --query "
         (SELECT countIf(type = 'QueryFinish') FROM system.query_log WHERE $RECENT AND query_id != '$KILLED_ID' AND type != 'QueryStart'
             AND event_time_microseconds >= '$KILLED_AT' AND initial_query_id = '$KILLED_ID') AS succeeded_after_kill,
         (SELECT controllers_created FROM (SELECT $(controller_counts "$KILLED_UID"))) AS controllers_created,
-        (SELECT controllers_dropped FROM (SELECT $(controller_counts "$KILLED_UID"))) AS controllers_dropped
+        (SELECT controllers_dropped FROM (SELECT $(controller_counts "$KILLED_UID"))) AS controllers_dropped,
+        ProfileEvents['DistributedPlanTaskStatusRequests'] > 0 AS polled,
+        ProfileEvents['DistributedPlanTaskCancelRequests'] <= ProfileEvents['DistributedPlanHostsUsed'] AS cancels_at_most_one_per_worker,
+        ProfileEvents['DistributedPlanTaskForgetRequests'] AS forget_requests
     FROM system.query_log WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$KILLED_ID' AND type != 'QueryStart'
     SETTINGS output_format_pretty_row_numbers = 0
     FORMAT PrettyCompactMonoBlock"
