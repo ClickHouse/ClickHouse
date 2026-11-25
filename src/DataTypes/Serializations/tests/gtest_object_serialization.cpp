@@ -19,6 +19,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Common/CoroutineStack.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -26,6 +27,7 @@
 #include <Common/MemoryStatisticsOS.h>
 #endif
 #include <Common/Scheduler/MemoryReservation.h>
+#include <Common/StackfulCoroutine.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
@@ -1406,6 +1408,62 @@ TEST(ObjectSerialization, CumulativeSubThresholdPrefixesObserveCancellation)
 
         FAIL() << "40 consecutive sub-threshold prefix reads were never interrupted, i.e. the "
                   "checkpoint's throttle restarts for each prefix";
+    });
+}
+
+/// A remote read deserializes in a coroutine that suspends on a socket refill and can be resumed by another
+/// executor thread, so a check after the resume must use that thread's throttle, not the constructing thread's.
+TEST(ObjectSerialization, PrefixReadResumedOnAnotherThreadUsesThatThreadsThrottle)
+{
+    runInFreshThread([]
+    {
+        ThreadStatus thread_status;
+        CancellableQueryFixture query;
+
+        WriteBufferFromOwnString name_bytes;
+        writeStringBinary(std::string("abc"), name_bytes);
+
+        std::exception_ptr error;
+        StackfulCoroutine coroutine(CoroutineStack(), [&](auto & suspend)
+        {
+            /// One byte per refill; the refill serving the second byte of the name suspends.
+            SlowReadBuffer buf(name_bytes.str(), 1, std::chrono::microseconds(0), {}, 0, [&](size_t served)
+            {
+                if (served == 3)
+                    suspend();
+            });
+            PrefixReadCancellationChecker checker;
+            String name;
+            try
+            {
+                readStringBinaryGrowingCancellable(name, buf, checker);
+            }
+            catch (...)
+            {
+                error = std::current_exception();
+            }
+        });
+        coroutine.resume();
+        ASSERT_TRUE(coroutine);
+
+        std::thread([&]
+        {
+            ThreadStatus other_thread_status;
+            CurrentThread::attachToGroupIfDetached(query.thread_group);
+            query.cancel();
+
+            /// Leaves this thread's throttle past its period and 10 bytes short of the 4 KiB clock read.
+            PrefixReadCancellationChecker other_prefix;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            other_prefix.check(4070);
+
+            coroutine.resume();
+            CurrentThread::detachFromGroupIfNotDetached();
+        }).join();
+
+        ASSERT_FALSE(coroutine);
+        ASSERT_TRUE(error) << "the read resumed on another thread did not account on that thread's throttle";
+        EXPECT_TRUE(isPrefixReadCancelled(error));
     });
 }
 

@@ -5,8 +5,10 @@
 namespace DB
 {
 
-PrefixReadCancellationChecker::ThrottleState & PrefixReadCancellationChecker::throttleState()
+/// Opaque to the optimizer: inlined, one thread's address could be reused after a coroutine resumes on another.
+__attribute__((noinline)) PrefixReadCancellationChecker::ThrottleState & PrefixReadCancellationChecker::throttleState()
 {
+    __asm__ __volatile__("" ::: "memory");
     static thread_local ThrottleState state;
     return state;
 }

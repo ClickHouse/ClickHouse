@@ -44,14 +44,16 @@ public:
     /// Touching the throttle starts this thread's clock here rather than at the first `check`, and leaves
     /// the elapsed period alone, so a later prefix does not restart it.
     PrefixReadCancellationChecker()
-        : throttle(throttleState())
     {
+        static_cast<void>(throttleState());
     }
 
     /// Throws the thread group's cancellation cause, if it has one, once the period has elapsed.
     /// `processed_bytes` is the work done since the previous call, such as one name's length.
     void check(size_t processed_bytes = clock_read_bytes)
     {
+        /// Looked up per call: a read in a coroutine can suspend and resume on another thread.
+        ThrottleState & throttle = throttleState();
         throttle.unclocked_bytes += processed_bytes + min_call_bytes;
         if (throttle.unclocked_bytes < clock_read_bytes)
             return;
@@ -92,8 +94,6 @@ private:
     /// The clock is read once the work accounted since the last read reaches 4 KiB, a call counting at least 16 bytes.
     static constexpr size_t clock_read_bytes = 4096;
     static constexpr size_t min_call_bytes = 16;
-
-    ThrottleState & throttle;
 };
 
 /// Chunked `readStringBinary`: the READ is chunked, and so is the value-initialization `resize` performs
