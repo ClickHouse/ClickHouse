@@ -1125,6 +1125,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::FileStreams::getOrCreate(const Stri
     std::lock_guard lock(mutex);
     auto [it, inserted] = streams.try_emplace(stream_name, std::move(stream));
     chassert(inserted);
+    if (count_ranges)
+        it->second->setRangesReadSink(&ranges_read[stream_name].ranges);
     return *it->second;
 }
 
@@ -1166,19 +1168,35 @@ void MergeTreeReaderWide::FileStreams::forEach(const std::function<void(const St
         callback(stream_name, *stream);
 }
 
-CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream_name)
+void MergeTreeReaderWide::FileStreams::attachRangesSinks()
 {
-    std::lock_guard lock(ranges_read_mutex);
-    return ranges_read[stream_name].ranges;
+    std::lock_guard lock(mutex);
+    count_ranges = true;
+    for (const auto & [stream_name, stream] : streams)
+        stream->setRangesReadSink(&ranges_read[stream_name].ranges);
+}
+
+void MergeTreeReaderWide::FileStreams::detachRangesSinks()
+{
+    std::lock_guard lock(mutex);
+    count_ranges = false;
+    for (const auto & [_, stream] : streams)
+        stream->setRangesReadSink(nullptr);
+    ranges_read.clear();
+}
+
+void MergeTreeReaderWide::FileStreams::forEachRangesRead(const std::function<void(const String & stream_name, RangesRead & ranges_read)> & callback)
+{
+    std::lock_guard lock(mutex);
+    for (auto & [stream_name, stream_ranges_read] : ranges_read)
+        callback(stream_name, stream_ranges_read);
 }
 
 void MergeTreeReaderWide::setReadRangesRegistry(ReadRangesRegistryPtr registry)
 {
     IMergeTreeReader::setReadRangesRegistry(std::move(registry));
-    if (!read_ranges_registry)
-        return;
-    /// The streams created later get their sink in `getOrAddStream`.
-    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setRangesReadSink(&getRangesRead(stream_name)); });
+    if (read_ranges_registry)
+        streams.attachRangesSinks();
 }
 
 void MergeTreeReaderWide::registerReadRanges()
@@ -1187,30 +1205,23 @@ void MergeTreeReaderWide::registerReadRanges()
         return;
 
     ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
+    size_t bytes = 0;
+    streams.forEachRangesRead([&](const String & stream_name, FileStreams::RangesRead & stream_ranges)
     {
-        size_t bytes = 0;
-        std::lock_guard lock(ranges_read_mutex);
-        for (auto & [stream_name, stream_ranges] : ranges_read)
-        {
-            if (stream_ranges.ranges.empty())
-                continue;
-            /// By the file the stream reads, as the other readers name theirs: a stream name can be that of another file.
-            if (!stream_ranges.read_ranges)
-                stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
-                    data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name + DATA_FILE_EXTENSION);
-            bytes += read_ranges_registry->registerRanges(*stream_ranges.read_ranges, stream_ranges.ranges);
-        }
-        read_ranges_registry->commit(bytes);
-    }
+        if (stream_ranges.ranges.empty())
+            return;
+        if (!stream_ranges.read_ranges)
+            stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
+                data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
+        bytes += read_ranges_registry->registerRanges(*stream_ranges.read_ranges, stream_ranges.ranges);
+    });
+    read_ranges_registry->commit(bytes);
 
     if (read_ranges_registry->stopped())
     {
         /// The streams created later get no sink either.
         read_ranges_registry.reset();
-        /// Without `ranges_read_mutex`, which `setReadRangesRegistry` takes under the lock of the streams.
-        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setRangesReadSink(nullptr); });
-        std::lock_guard lock(ranges_read_mutex);
-        ranges_read.clear();
+        streams.detachRangesSinks();
     }
 }
 
@@ -1274,8 +1285,6 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
-            if (read_ranges_registry)
-                stream->setRangesReadSink(&getRangesRead(stream_name));
             return stream;
         };
 

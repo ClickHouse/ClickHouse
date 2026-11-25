@@ -95,10 +95,27 @@ private:
         void unmarkPrefetched(const String & stream_name);
         void clearPrefetched();
 
+        /// Read by stream since the last `registerReadRanges`, see `CompressedReadBufferBase::setRangesReadSink`. Like the
+        /// streams, only the map is guarded: the ranges of a stream are appended to by its buffer, on the task that owns
+        /// the stream, and registered once the tasks are joined. A released stream leaves its ranges to be registered.
+        struct RangesRead
+        {
+            CompressedBlockRanges ranges;
+            /// Of `read_ranges_registry`, looked up at the first flush.
+            ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
+        };
+        /// Gives the streams, and those created later, a sink for the ranges they read.
+        void attachRangesSinks();
+        /// Takes the sinks away and drops the ranges.
+        void detachRangesSinks();
+        void forEachRangesRead(const std::function<void(const String & stream_name, RangesRead & ranges_read)> & callback);
+
     private:
         mutable std::mutex mutex;
         std::map<String, std::unique_ptr<MergeTreeReaderStream>> streams;
         std::unordered_set<String> prefetched;
+        std::unordered_map<String, RangesRead> ranges_read TSA_GUARDED_BY(mutex);
+        bool count_ranges TSA_GUARDED_BY(mutex) = false;
     };
 
     FileStreams streams;
@@ -138,18 +155,6 @@ private:
     /// The slot of the average value size hint of `resolved`, or nullptr when the part has no file for it.
     /// Called on the reading thread only, see the body.
     double * avgValueSizeHintSlot(const ResolvedSubstream & resolved);
-
-    /// Read by stream since the last `registerReadRanges`, see `CompressedReadBufferBase::setRangesReadSink`. The buffer
-    /// of each stream appends to the ranges of its own stream; the map is guarded.
-    struct StreamRangesRead
-    {
-        CompressedBlockRanges ranges;
-        /// Of `read_ranges_registry`, looked up at the first flush.
-        ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
-    };
-    std::mutex ranges_read_mutex;
-    std::unordered_map<String, StreamRangesRead> ranges_read;
-    CompressedBlockRanges & getRangesRead(const String & stream_name);
 
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.
