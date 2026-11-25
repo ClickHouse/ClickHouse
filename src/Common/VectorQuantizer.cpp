@@ -766,8 +766,7 @@ VectorQuantizer::QueryPtr VectorQuantizer::prepareQuery(std::string_view method,
 namespace
 {
 
-/// Rows per step of `VectorQuantizer::distances` for `int8` and `prefix`: each row keeps its own sums in the single-row
-/// order, so the results equal `distance`; these sums must not be split or reordered.
+/// Each row keeps its own sums in the single-row order, so `distances` equals `distance`; never split or reorder them.
 constexpr size_t FLAT_CODE_ROWS_PER_STEP = 4;
 
 template <size_t R>
