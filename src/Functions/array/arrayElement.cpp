@@ -1561,13 +1561,16 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
     const IColumn & array_elements = col_array->getData();
     size_t array_size = array_elements.size();
 
-    auto source = result_type->createColumn();
-    source->insertRangeFrom(array_elements, 0, array_size);
-    source->insertDefault();
-    const size_t default_position = array_size;
+    if (rows == 0)
+        return result_type->createColumn();
 
+    const bool copy_all_elements = array_elements.byteSize() <= rows * sizeof(UInt64);
+
+    static constexpr UInt64 no_element = std::numeric_limits<UInt64>::max();
+    const UInt64 default_marker = copy_all_elements ? array_size : no_element;
     auto positions_column = ColumnUInt64::create(rows);
     auto & positions = positions_column->getData();
+    size_t num_defaults = 0;
 
     for (size_t i = 0; i < rows; ++i)
     {
@@ -1586,11 +1589,50 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         }
         else
         {
-            positions[i] = default_position;
+            positions[i] = default_marker;
+            ++num_defaults;
             builder.update();
         }
     }
 
+    if (num_defaults == 0)
+        return array_elements.index(*positions_column, rows);
+
+    if (num_defaults == rows)
+    {
+        auto res = result_type->createColumn();
+        res->insertManyDefaults(rows);
+        return res;
+    }
+
+    MutableColumnPtr source;
+    if (copy_all_elements)
+    {
+        source = result_type->createColumn();
+        source->insertRangeFrom(array_elements, 0, array_size);
+    }
+    else
+    {
+        auto selected_column = ColumnUInt64::create();
+        auto & selected = selected_column->getData();
+        selected.reserve(rows - num_defaults);
+        const UInt64 default_position = rows - num_defaults;
+        for (auto & position : positions)
+        {
+            if (position == no_element)
+            {
+                position = default_position;
+            }
+            else
+            {
+                selected.push_back(position);
+                position = selected.size() - 1;
+            }
+        }
+        source = IColumn::mutate(array_elements.index(*selected_column, selected.size()));
+    }
+
+    source->insertDefault();
     return source->index(*positions_column, rows);
 }
 

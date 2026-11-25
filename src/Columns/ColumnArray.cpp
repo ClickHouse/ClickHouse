@@ -65,6 +65,8 @@ namespace
   */
 static constexpr size_t max_array_size_as_field = 1000000;
 
+static constexpr size_t max_average_array_size_to_gather = 16;
+
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
@@ -1482,24 +1484,34 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     if (limit == 0)
         return ColumnArray::create(data->cloneEmpty());
 
-    /// Convert indexes to UInt64 in case of overflow.
-    auto nested_indexes_column = ColumnUInt64::create();
-    PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
-    size_t nested_size = 0;
-    for (size_t i = 0; i < limit; ++i)
-        nested_size += sizeAt(indexes[i]);
-    nested_indexes.reserve_exact(nested_size);
-
     auto res_offsets_column = ColumnOffsets::create(limit);
     Offsets & res_offsets = res_offsets_column->getData();
-    size_t current_offset = 0;
-
+    Offset total_size = 0;
     for (size_t i = 0; i < limit; ++i)
     {
-        for (size_t j = 0; j < sizeAt(indexes[i]); ++j)
-            nested_indexes.push_back(offsetAt(indexes[i]) + j);
-        current_offset += sizeAt(indexes[i]);
-        res_offsets[i] = current_offset;
+        total_size += sizeAt(indexes[i]);
+        res_offsets[i] = total_size;
+    }
+    const size_t current_offset = total_size;
+
+    if (current_offset > limit * max_average_array_size_to_gather)
+    {
+        auto res_data = data->cloneEmpty();
+        res_data->reserve(current_offset);
+        for (size_t i = 0; i < limit; ++i)
+            res_data->insertRangeFrom(*data, offsetAt(indexes[i]), sizeAt(indexes[i]));
+        return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+    }
+
+    auto nested_indexes_column = ColumnUInt64::create(current_offset);
+    UInt64 * nested_indexes = nested_indexes_column->getData().data();
+    for (size_t i = 0; i < limit; ++i)
+    {
+        const size_t offset = offsetAt(indexes[i]);
+        const size_t size = sizeAt(indexes[i]);
+        for (size_t j = 0; j < size; ++j)
+            nested_indexes[j] = offset + j;
+        nested_indexes += size;
     }
 
     /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
@@ -1821,15 +1833,16 @@ ColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return cloneEmpty();
 
-    PaddedPODArray<UInt64> indexes;
-    indexes.reserve_exact(replicate_offsets.back());
+    PaddedPODArray<UInt64> indexes(replicate_offsets.back());
+    UInt64 * out = indexes.data();
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - prev_offset;
         prev_offset = replicate_offsets[i];
-        indexes.resize_fill(indexes.size() + size_to_replicate, i);
+        std::fill_n(out, size_to_replicate, i);
+        out += size_to_replicate;
     }
 
     return indexImpl(indexes, indexes.size());
