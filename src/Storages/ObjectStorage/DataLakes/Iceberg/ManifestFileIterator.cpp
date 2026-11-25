@@ -179,7 +179,7 @@ namespace
 
         if (const auto type_id = column_type->getTypeId();
             type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
-            || type_id == DB::TypeIndex::Variant)
+            || type_id == DB::TypeIndex::Variant || type_id == DB::TypeIndex::Dynamic)
             return std::nullopt;
 
         if (DB::removeNullable(column_type)->getTypeId() == DB::TypeIndex::UUID)
@@ -563,7 +563,9 @@ ManifestFileIterator::ManifestFileIterator(
             continue;
 
         entry_first_row_ids[row_index] = next_row_id;
-        next_row_id += static_cast<UInt64>(parsed_entry->record_count);
+        /// Row ids are modulo 2^64, like the inherited ones of `_row_id`: the declared `first_row_id` and `record_count`
+        /// need not keep the block representable.
+        next_row_id = common::addIgnoreOverflow(next_row_id, static_cast<UInt64>(parsed_entry->record_count));
     }
 }
 
@@ -731,7 +733,13 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
         return it->second.get();
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
-        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), partition_key_description.get(), context);
+        *schema_processor_ptr,
+        table_snapshot_schema_id,
+        schema_id,
+        filter_dag.get(),
+        partition_key_description.get(),
+        *common_partition_specification,
+        context);
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
