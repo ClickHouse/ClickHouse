@@ -1,0 +1,279 @@
+---
+slug: /clickstack/managed-onboarding/instrument-application-serverless
+title: '使用 OpenTelemetry 对应用进行插桩'
+sidebarTitle: '对应用进行插桩'
+description: '使用 OpenTelemetry 对一个 Node.js 演示应用进行插桩，并将其日志、链路追踪和指标直接发送到 ClickHouse Observability，无需采集器。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '插桩', 'OpenTelemetry', 'OTLP', 'Node.js', 'TypeScript', '会话回放', '入门指南']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **TL;DR**
+
+  运行一个小型演示应用，使用服务“入门指南”页面中的 AI 提示词或手动修改两处代码对其进行插桩，然后即可看到日志、链路追踪和指标陆续进入 ClickHouse Observability。
+
+  所需时间：约 10 分钟
+</Info>
+
+您已创建好 ClickHouse Observability 服务。本指南将带您从一个空服务开始，直到接收来自运行中应用的遥测数据。
+
+ClickHouse Observability 提供托管的 OpenTelemetry 端点，您的应用可将遥测数据直接发送到该端点。无需运行采集器，无需创建 schema，也无需规划数据库容量。摄取、schema、存储、优化和扩缩容均由平台为您处理。
+
+## 演示应用 {#the-demo-application}
+
+为了提供一个贴近真实场景的插桩对象，本指南使用 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)，这是我们专为此用途提供的演示应用。它是一个基于 Node.js 和 TypeScript 的小型应用，用于查询托管在 ClickHouse 公共演示环境中的 HackerNews 数据集。应用中的每个图表、表格和搜索框背后都对应着一个发往后端的真实请求。未命中应用缓存的请求还会查询 ClickHouse，从而在每个 trace 中增加一个出站 HTTPS 跨度。
+
+该演示应用提供两个版本：
+
+* **未插桩**版本位于 `main` 分支。在本指南中，您将借助 AI 智能体或手动方式自行添加插桩，且无需修改应用的业务逻辑。相同的步骤同样适用于您自己的服务。
+* **已插桩**版本位于 `instrumented` 分支。如果您只想快速让遥测数据流转起来并探索 UI，请检出此分支。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务。如果尚未创建，请参阅[入门指南](/zh/clickstack/observability/getting-started)。
+* Node.js 18 或更高版本，以及 npm。
+* 运行演示的机器和您的浏览器均可通过网络访问该服务的遥测数据端点。
+
+## 为演示应用插桩 {#instrument-the-demo-application}
+
+<Steps>
+  <Step title="打开入门指南页面" id="open-getting-started">
+    打开您的 ClickHouse Observability 服务。在收到数据之前，该服务会显示 **Start sending telemetry** 页面，并提供三种连接方式。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Start sending telemetry 页面，显示当前服务尚无数据，并提供三个选项：Use an existing OpenTelemetry setup、Instrument with AI 和 Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    本指南使用 **Instrument with AI**，由编程智能体完成这些工作；如果您希望自行修改，也可以使用 **View connection details**。请保持此页面打开，稍后还需回到此页面确认数据已到达。
+  </Step>
+
+  <Step title="克隆并运行演示应用" id="clone-and-run-the-demo-application">
+    克隆代码仓库，安装依赖项，然后复制 env 模板文件：
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    启动演示应用。ClickHouse 数据源默认指向公共只读演示集群，因此无需额外配置即可直接运行：
+
+    ```bash
+    ./run.sh
+    ```
+
+    打开 [http://localhost:5001](http://localhost:5001)，你会看到年份选择器、汇总统计信息、活动图表、热门用户表和热门域名表，以及一个搜索框。可以随意点击体验：切换年份，或深入查看各条帖子。
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="在本地运行的 HackerNews Analyzer 演示应用" />
+    </Frame>
+
+    此时演示应用已在运行，但尚未插桩，因此你的服务中还看不到来自它的任何数据。继续之前，请按 Ctrl-C 停止该应用。
+  </Step>
+
+  <Step title="为演示应用插桩" id="instrument">
+    任选一种方式即可。三种方式最终都会得到同一个已插桩的演示应用。
+
+    <Tabs>
+      <Tab title="使用 AI 插桩" id="instrument-with-ai">
+        在 **Start sending telemetry** 页面上，点击 **Instrument with AI** 下的 **Copy prompt**。随即会打开 **Set it up with an AI agent** 对话框，其中包含供编程智能体使用的提示词，以及插桩后的应用所需的两项机密信息。
+
+        <div className="ch-image-md">
+          <Frame>
+            ![Set it up with an AI agent 对话框，显示插桩提示词以及已遮盖的 CLICKSTACK_OTLP_ENDPOINT 和 CLICKSTACK_API_KEY 值](/images/clickstack/getting-started/observability-ai-agent-prompt.png)
+          </Frame>
+        </div>
+
+        首先，将这两项机密信息复制到 `hn-news-analyzer` 目录下的 `.env` 文件中。点击 **Reveal key** 显示完整的 API key，然后使用旁边的复制按钮进行复制：
+
+        ```bash
+        CLICKSTACK_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        CLICKSTACK_API_KEY=<your-api-key>
+        ```
+
+        该提示词会指示 agent 从环境变量中读取这些值，切勿将其硬编码。在演示代码仓库中，`.env` 已被排除在版本控制之外。对于您自己的应用，请使用已加入 gitignore 的 `.env` 文件或您的 Secret 存储。
+
+        接下来，复制该提示词，并**在 `hn-news-analyzer` 目录下**将其粘贴到您的编程智能体 (例如 Claude Code、Cursor 或 Copilot) 中。agent 会自动检测语言、框架和入口点，安装 OpenTelemetry SDK，根据上述两个变量配置导出器，并通过 OTLP/HTTP 将日志、链路追踪和指标导出到您的服务。
+
+        在应用 agent 提出的更改之前，请先仔细审查。完成后，运行 `./run.sh` 重新启动演示应用。
+
+        <Warning>
+          浏览器 SDK 会将端点和 API key 嵌入浏览器打包文件中，任何人只要查看 Network 选项卡即可读取。请使用专用于测试的服务，并确保 `.env` 不纳入版本控制。
+        </Warning>
+      </Tab>
+
+      <Tab title="手动插桩" id="instrument-manually">
+        在 **Start sending telemetry** 页面上，点击 **Use an existing OpenTelemetry setup** 下的 **View connection details**，然后打开 **Env vars** 选项卡。该选项卡会以演示应用所需的环境变量格式列出您的 OTLP 端点和 API key。
+
+        <div className="ch-image-md">
+          <Frame>
+            ![Set up OpenTelemetry 对话框，包含 URL、Collector config 和 Env vars 选项以及已遮蔽的连接详情](/images/clickstack/getting-started/observability-connection-details.png)
+          </Frame>
+        </div>
+
+### 将演示应用指向您的服务 {#configure-environment}
+
+        打开 `.env` 并设置以下配置值，将其中的端点和 API key 替换为对话框中显示的值：
+
+        ```bash
+        OTEL_SERVICE_NAME=hn-analyzer-api
+        OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+        OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-api-key>
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_METRICS_EXPORTER=otlp
+        OTEL_LOGS_EXPORTER=otlp
+        ```
+
+        这些都是标准的 OpenTelemetry 导出器变量，应用程序源代码中没有任何硬编码的内容。
+
+        保留 `OTEL_EXPORTER_OTLP_ENDPOINT` 中的 `https://` 前缀，不要在末尾追加 `/v1/logs`、`/v1/traces` 或 `/v1/metrics`，SDK 会自动添加各信号对应的路径。将 `OTEL_EXPORTER_OTLP_HEADERS` 设置为 `authorization=<your-api-key>`，无需添加 `Bearer` 前缀。
+
+        接下来的插桩工作分为三步：安装 SDK、切换启动命令，以及启用浏览器 SDK。整个过程都不会改动应用程序的业务逻辑。
+
+### 安装 Node SDK {#install-node-sdk}
+
+        ```bash
+        npm install @hyperdx/node-opentelemetry
+        ```
+
+### 在 run.sh 中启用包装器 {#enable-run-sh-wrapper}
+
+        `run.sh` 末尾有两行 `exec`。将直接运行 `node` 的那一行注释掉，并取消注释已插桩的那一行：
+
+        ```diff
+         # BEFORE: plain node, no instrumentation:
+        -exec node scripts/entrypoint.js
+        +# exec node scripts/entrypoint.js
+
+         # AFTER: same source, wrapped by opentelemetry-instrument:
+        -# exec npx opentelemetry-instrument scripts/entrypoint.js
+        +exec npx opentelemetry-instrument scripts/entrypoint.js
+        ```
+
+        请继续通过 `scripts/entrypoint.js` 启动应用。该 shim 会调用 `require('console')`，使控制台捕获能够包装 `console.log`。如果直接将 `opentelemetry-instrument` 指向 `dist/server/index.js`，虽然仍能发送链路追踪数据，但日志会被静默丢弃。
+
+### 启用浏览器 SDK {#enable-browser-sdk}
+
+        ```bash
+        npm install @hyperdx/browser
+        ```
+
+        在 `src/web/telemetry.ts` 中，取消注释 import 语句、`HyperDX.init` 代码块以及 `recordAction` 中的 `HyperDX.addAction`：
+
+        ```diff
+        -// import HyperDX from '@hyperdx/browser';
+        +import HyperDX from '@hyperdx/browser';
+
+         export function initTelemetry(): void {
+        -  // HyperDX.init({
+        -  //   url: __OTLP_ENDPOINT__,
+        -  //   apiKey: __OTLP_AUTH_TOKEN__,
+        -  //   service: 'hn-analyzer-web',
+        -  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        -  //   consoleCapture: true,
+        -  //   advancedNetworkCapture: true,
+        -  // });
+        +  HyperDX.init({
+        +    url: __OTLP_ENDPOINT__,
+        +    apiKey: __OTLP_AUTH_TOKEN__,
+        +    service: 'hn-analyzer-web',
+        +    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        +    consoleCapture: true,
+        +    advancedNetworkCapture: true,
+        +  });
+         }
+        ```
+
+        `__OTLP_ENDPOINT__` 和 `__OTLP_AUTH_TOKEN__` 是由 `vite.config.ts` 注入的编译时常量，其值取自后端所用的同一组 `OTEL_EXPORTER_OTLP_*` 配置值。
+
+        <Warning>
+          浏览器 SDK 会将端点和 API key 嵌入浏览器打包产物中，任何人只要在 Network 选项卡中查看即可读取。请使用专门用于测试的服务，并确保 `.env` 不纳入版本控制。
+        </Warning>
+
+        使用 `./run.sh` 重新启动演示应用。
+      </Tab>
+
+      <Tab title="使用已完成插桩的分支" id="use-the-instrumented-branch">
+        如需跳过插桩步骤、直接使用已完成插桩的演示应用，请按照“手动插桩”选项卡中的说明，在 `.env` 中设置 `OTEL_EXPORTER_OTLP_*` 变量，然后检出 [`instrumented` 分支](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented)：
+
+        ```bash
+        git checkout instrumented
+        npm install
+        ./run.sh
+        ```
+
+        除非您打算移除这些 SDK，否则请勿在此分支上运行 `./reset.sh`。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="生成流量并确认数据正常传入" id="confirm-data-is-arriving">
+    插桩后的演示应用运行起来后，重新加载 [http://localhost:5001](http://localhost:5001)，让浏览器加载更新后的代码包。切换年份并点击进入新闻条目，以生成流量。
+
+    如果您使用的是手动方式或预先插桩的分支，启动横幅会针对 `/v1/traces`、`/v1/metrics` 和 `/v1/logs` 打印三行 `Health check passed`。这些检查直接从演示应用发往您的服务，因此检查通过即表示您的端点和 API key 配置正确。
+
+    返回服务中的 **Start sending telemetry** 页面，然后选择 **Check for data**。遥测数据到达后，服务状态将变为 **Data received**，**Start exploring** 也将变为可用状态。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Start sending telemetry 页面，显示服务状态为 Data received、已可开始探索的确认信息，以及已启用的 Start exploring 按钮](/images/clickstack/getting-started/observability-data-received.png)
+      </Frame>
+    </div>
+
+    选择 **Start exploring**，打开 **Search** 页面。
+  </Step>
+
+  <Step title="探索您的遥测数据" id="explore-your-telemetry">
+    1. 在 **搜索** 中，选择 **Logs** source，并将时间范围设置为 **Last 15 minutes**。将 `ServiceName` 筛选为 `hn-analyzer-api`，即可找到后端日志。
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-logs.png" alt="ClickHouse 可观测性搜索界面，显示已筛选为 hn-analyzer-api 的后端日志" />
+    </Frame>
+
+    2. 选择 **Traces** source，并打开一个来自 `hn-analyzer-api` 的请求。您将看到 Express 处理器跨度、一个指向 `sql-clickhouse.clickhouse.com` 且带有真实网络耗时的 HTTP 子跨度，以及同一 trace 中关联的 `console.log` 记录。
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-traces.png" alt="ClickHouse 可观测性 trace 视图，显示浏览器请求、后端 span、关联的日志以及发往 ClickHouse 的 HTTP 请求" />
+    </Frame>
+
+    3. 打开 **Client Sessions**，选择一个来自 `hn-analyzer-web` 的会话，然后打开 **Session Replay**，对照查看浏览器交互及其触发的请求。
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-sessions.png" alt="ClickHouse 可观测性会话回放，显示 HackerNews Analyzer 演示中的仪表盘刷新和搜索事件" />
+    </Frame>
+
+    4. 打开 **Chart Explorer**，选择 **Time Series** 和 **Metrics** source，然后选择演示应用发出的某个指标。按 `ResourceAttributes.service.name:"hn-analyzer-api"` 进行筛选，选择覆盖测试期间的时间范围，然后点击 **运行**，确认已有指标数据。
+
+    日志、链路追踪、指标和会话回放汇集于同一处，共用同一套搜索语法，并会自动关联。
+  </Step>
+</Steps>
+
+## 如果没有显示任何内容 {#if-nothing-shows-up}
+
+* 检查 `.env` 中的配置值。端点必须以 `https://` 开头、以端口 `4318` 结尾，且不能带有 `/v1/...` 后缀。API key 必须填写完整值，可在点击 **Reveal key** 后复制。
+* 如果您采用的是手动方式，请确认 `OTEL_EXPORTER_OTLP_HEADERS` 的值为 `authorization=<your-api-key>`，且不带 `Bearer` 前缀；同时确认启动横幅中显示了全部三行 `Health check passed`。
+* 确认您在完成插桩后已重启演示应用，并已刷新浏览器选项卡。只有在加载插桩后的 bundle 之后，会话回放才会开始。
+* 在 **搜索** 中扩大时间范围，并移除所有筛选条件。默认 source 可能被设置为 **链路追踪** 而非 **日志**。
+* 如需排除服务本身的问题，请前往 **团队设置 → Managed Telemetry**，然后使用 **Send a Test Log**。如果该日志出现在 **搜索** 中，则说明服务能够正常接收数据，问题出在演示应用的配置上。
+
+## 后续步骤 {#next-steps}
+
+您的服务现已包含来自真实应用程序的遥测数据。如需对您自己的服务进行插桩，可复用服务中的 **Instrument with AI** 提示词，或使用[已支持的语言 SDK](/zh/clickstack/observability/ingesting-data/sdks/index)，并配合相同的端点和 API key。
+
+如需从基础设施 (而非应用程序代码) 采集数据：
+
+* [监控 Kubernetes](/zh/clickstack/observability/example-datasets/kubernetes)：采集集群日志和指标，并探索 Kubernetes 仪表板。
+* [本地日志和指标](/zh/clickstack/observability/example-datasets/local-data)：在 macOS 或 Linux 上采集本地文件和系统指标。
+
+深入了解 UI：
+
+* [搜索](/zh/clickstack/observability/features/search)：使用 Lucene 风格语法或 SQL 查询日志和链路追踪。
+* [会话回放](/zh/clickstack/observability/features/session-replay)：功能概览、SDK 选项和隐私控制。
+* [示例数据集](/zh/clickstack/observability/example-datasets)：更丰富的数据集和引导式调查。

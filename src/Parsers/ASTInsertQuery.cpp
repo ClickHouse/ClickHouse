@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
@@ -267,9 +268,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (columns)
     {
-        ostr << " (";
-        columns->format(ostr, settings, state, frame);
-        ostr << ")";
+        ostr << " ";
+        formatASTListInParentheses(*columns, ostr, settings, state, frame);
     }
 
     if (returning)

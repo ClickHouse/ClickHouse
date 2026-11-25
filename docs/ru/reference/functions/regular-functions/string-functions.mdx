@@ -1094,6 +1094,82 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+Добавлено в: v26.11.0
+
+Вычисляет нормализованную меру сходства двух байтовых строк на основе [расстояния редактирования](https://en.wikipedia.org/wiki/Edit_distance):
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+Возвращает значение от `0` (расстояние редактирования равно длине более длинной строки, как для `'ab'` и `'ba'`) до `1` (строки совпадают). Две пустые строки считаются равными.
+
+**Синтаксис**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**Псевдонимы**: `levenshteinRatio`
+
+**Аргументы**
+
+* `s1` — первая входная строка. [`String`](/ru/reference/data-types/string)
+* `s2` — вторая входная строка. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает нормализованную меру сходства двух строк на основе расстояния редактирования. [`Float64`](/ru/reference/data-types/float)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+Добавлено в: v26.11.0
+
+Аналогична [`editDistanceRatio`](#editDistanceRatio), но предназначена для строк в кодировке UTF-8: расстояние редактирования и длины измеряются в кодовых точках.
+
+**Синтаксис**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**Псевдонимы**: `levenshteinRatioUTF8`
+
+**Аргументы**
+
+* `s1` — первая входная строка в кодировке UTF8. [`String`](/ru/reference/data-types/string)
+* `s2` — вторая входная строка в кодировке UTF8. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает нормализованную меру сходства двух строк в кодировке UTF8 на основе расстояния редактирования. [`Float64`](/ru/reference/data-types/float)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 Добавленный в: v24.6.0
@@ -1322,7 +1398,7 @@ SELECT endsWithUTF8('данных', 'ых');
 Эта функция удаляет HTML-теги, комментарии и элементы script/style, оставляя только текст. Она выполняет:
 
 * Удаление всех HTML/XML-тегов
-* Удаление комментариев (`{/* */}`)
+* Удаление комментариев (`<!-- -->`)
 * Удаление элементов script и style вместе с их содержимым
 * Обработку секций CDATA (копируются дословно)
 * Корректную обработку и нормализацию пробельных символов
@@ -1341,7 +1417,7 @@ extractTextFromHTML(html)
 
 **Возвращаемое значение**
 
-Возвращает извлечённый текст с нормализованными пробелами. [`String`](/ru/reference/data-types/string)
+Возвращает извлечённый текст с нормализованными пробельными символами. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 
@@ -3164,6 +3240,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+Добавлено в: v26.11.0
+
+Вычисляет нормализованную меру сходства indel между двумя байтовыми строками — то же значение, что возвращает `Levenshtein.ratio` в Python:
+`2 * LCS / (length(s1) + length(s2))`, где `LCS` — длина [наибольшей общей подпоследовательности](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+Эквивалентная формула: `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+Возвращает значение от `0` (ничего общего) до `1` (строки совпадают). Две пустые строки считаются равными.
+
+**Синтаксис**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**Аргументы**
+
+* `s1` — первая входная строка. [`String`](/ru/reference/data-types/string)
+* `s2` — вторая входная строка. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает нормализованную меру сходства двух строк на основе indel-расстояния. [`Float64`](/ru/reference/data-types/float)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**Нечеткое сопоставление имен**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+Добавлено в: v26.11.0
+
+Аналогична [`stringSimilarityRatio`](#stringSimilarityRatio), но работает со строками в кодировке UTF-8: длины считаются в кодовых точках.
+
+**Синтаксис**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**Аргументы**
+
+* `s1` — первая входная строка в кодировке UTF8. [`String`](/ru/reference/data-types/string)
+* `s2` — вторая входная строка в кодировке UTF8. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает нормализованную меру сходства indel для двух строк в кодировке UTF8. [`Float64`](/ru/reference/data-types/float)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## substring {#substring}

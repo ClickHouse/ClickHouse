@@ -53,6 +53,18 @@ Usa el tipo Arrow FIXED&#95;SIZE&#95;BINARY en lugar de Binary para las columnas
 
 Habilita el tipo LowCardinality de salida como tipo Diccionario de Arrow
 
+## output_format_arrow_max_record_batch_size_bytes {#output_format_arrow_max_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="2147483646" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2147483646"},{"label": "Nueva configuración que limita el tamaño de un batch de registros en la salida `Arrow` y `ArrowStream`. El valor predeterminado es el propio límite de direccionamiento de Arrow, por lo que no cambia el comportamiento."}]}]} />
+
+Cota superior para los búferes `Utf8`, `Binary` y `List` de un único batch de registros en los formatos de salida `Arrow` y `ArrowStream`, así como en los batches de registros de Arrow a partir de los cuales se escribe el formato de salida `Vortex`. Un bloque cuyas cadenas, valores binarios o elementos de lista superen este valor se escribe en varios batches de registros.
+
+A diferencia de [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/es/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes), que es un objetivo que agrupa bloques pequeños, este es un límite que divide los grandes. El valor predeterminado es el mayor valor que Arrow puede direccionar, ya que representa los desplazamientos de esos búferes con enteros de 32 bits; un valor mayor no tiene ningún efecto.
+
+Solo se limitan los búferes mencionados anteriormente: una columna de un tipo de ancho fijo no tiene desplazamientos que puedan desbordarse y permanece en un único batch. Una fila individual tampoco se divide nunca, por lo que una fila que supere el límite sigue generando un batch que lo excede.
+
 ## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -141,9 +153,18 @@ Usa siempre enteros de 64 bits para los índices de diccionario en formato Arrow
 
 Usar enteros con signo para los índices de diccionario en formato Arrow
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para escribir UUID como FixedSizeBinary(16) simple, sin el tipo de extensión `arrow.uuid`."}]}]} />
+
+Escribe los valores `UUID` como `FixedSizeBinary(16)` simple de Arrow, sin el tipo de extensión `arrow.uuid` en la metadata del campo.
+Úsela con lectores de Arrow que no admitan el tipo de extensión `arrow.uuid`.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
-Códec de compresión utilizado para la salida. Valores posibles: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;.
+Códec de compresión utilizado para la salida. Valores posibles: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;.
 
 ## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
@@ -1202,6 +1223,14 @@ Si se establece como true, el final de línea en formato TSV será \r\n en lugar
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Si es true, se escapa ' como ''; de lo contrario, se entrecomilla con \\'"}]}]} />
 
 Si es true, se escapa &#39; como &#39;&#39;; de lo contrario, se entrecomilla con \&#39;
+
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para escribir las columnas `String` del formato `Vortex` como `Utf8`, que Vortex comprime mejor que `Binary`."}]}]} />
+
+Escribe las columnas `String` del formato `Vortex` como `Utf8` en lugar de `Binary`. Vortex comprime mejor `Utf8`. Un valor `Utf8` debe ser UTF-8 válido y el escritor de Vortex no lo comprueba, por lo que ClickHouse verifica cada valor y lanza una excepción si alguno no es UTF-8 válido; desactive este parámetro de configuración para escribir esos datos como `Binary`. Las columnas `FixedString` siempre se escriben como `Binary`. Ambos tipos se vuelven a leer como `String`.
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

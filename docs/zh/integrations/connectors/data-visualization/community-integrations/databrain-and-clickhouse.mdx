@@ -16,13 +16,9 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 [Databrain](https://usedatabrain.com) 是一个嵌入式分析平台，可让您构建并与客户共享交互式仪表盘、指标和数据可视化内容。Databrain 通过 HTTPS 接口连接到 ClickHouse，让您能够借助现代化、易于使用的界面，轻松可视化和分析 ClickHouse 数据。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![显示 ClickHouse 数据可视化的 Databrain 仪表盘界面](/images/integrations/data-visualization/databrain_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![显示 ClickHouse 数据可视化的 Databrain 仪表盘界面](/images/integrations/data-visualization/databrain_01.webp)
+  </Frame>
 </div>
 
 <br />
@@ -30,16 +26,14 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 本指南将逐步介绍如何将 Databrain 连接到您的 ClickHouse 实例。
 
 <div id="pre-requisites">
-  ## 前提条件
+  ## 前提条件 {#pre-requisites}
 </div>
 
 * 一个部署在您自有基础设施上或 [ClickHouse Cloud](https://clickhouse.com/) 上的 ClickHouse 数据库。
 * 一个 [Databrain 账户](https://app.usedatabrain.com/users/sign-up)。
 * 一个用于连接数据源的 Databrain 工作区。
 
-<div id="steps-to-connect-databrain-to-clickhouse">
-  ## 将 Databrain 连接到 ClickHouse 的步骤
-</div>
+## 将 Databrain 连接到 ClickHouse 的步骤 {#steps-to-connect-databrain-to-clickhouse}
 
 <Steps>
   <Step title="收集连接信息" id="1-gather-your-connection-details">
@@ -63,47 +57,35 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
   <Step title="在 Databrain 中将 ClickHouse 添加为数据源" id="3-add-clickhouse-as-a-data-source">
     1. 登录 Databrain 账户，并进入要添加数据源的工作区。
 
-    2. 在导航菜单中点击 **Data Sources**。
+    2. 在导航菜单中点击 **数据源**。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Databrain 数据源菜单](/images/integrations/data-visualization/databrain_02.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Databrain 数据源菜单](/images/integrations/data-visualization/databrain_02.webp)
+      </Frame>
     </div>
 
-    3. 点击 **Add a Data Source** 或 **Connect Data Source**。
+    3. 点击 **Add a 数据源** 或 **Connect 数据源**。
 
     4. 在可用连接器列表中选择 **ClickHouse**。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![显示 ClickHouse 选项的 Databrain 连接器选择界面](/images/integrations/data-visualization/databrain_03.webp)
-
-    </Frame>
-
+      <Frame>
+        ![显示 ClickHouse 选项的 Databrain 连接器选择界面](/images/integrations/data-visualization/databrain_03.webp)
+      </Frame>
     </div>
 
     5. 填写连接信息：
        * **Destination Name**：为此连接输入一个便于识别的名称 (例如：&quot;Production ClickHouse&quot; 或 &quot;Analytics DB&quot;)
        * **Host**：输入 ClickHouse 主机 URL (例如：`https://your-instance.region.aws.clickhouse.cloud`)
-       * **Port**：输入 `8443` (ClickHouse 默认的 HTTPS 端口)
-       * **Username**：输入 ClickHouse 用户名
-       * **Password**：输入 ClickHouse 密码
+       * **端口**：输入 `8443` (ClickHouse 默认的 HTTPS 端口)
+       * **用户名**：输入 ClickHouse 用户名
+       * **密码**：输入 ClickHouse 密码
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Databrain ClickHouse 连接表单，显示配置字段](/images/integrations/data-visualization/databrain_04.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Databrain ClickHouse 连接表单，显示配置字段](/images/integrations/data-visualization/databrain_04.webp)
+      </Frame>
     </div>
 
     6. 点击 **Test Connection**，验证 Databrain 是否可以连接到您的 ClickHouse 实例。
@@ -127,31 +109,25 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 </Steps>
 
 <div id="using-databrain-with-clickhouse">
-  ## 将 Databrain 与 ClickHouse 配合使用
+  ## 将 Databrain 与 ClickHouse 配合使用 {#using-databrain-with-clickhouse}
 </div>
 
-<div id="explore-your-data">
-  ### 探索您的数据
-</div>
+### 探索您的数据 {#explore-your-data}
 
 1. 连接后，前往 Databrain 中的工作区。
 
 2. 您会在数据浏览器中看到列出的 ClickHouse 表。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![显示 ClickHouse 表的 Databrain 数据浏览器](/images/integrations/data-visualization/databrain_05.webp)
-
-</Frame>
-
+  <Frame>
+    ![显示 ClickHouse 表的 Databrain 数据浏览器](/images/integrations/data-visualization/databrain_05.webp)
+  </Frame>
 </div>
 
 3. 点击某个表以查看其 schema 并预览数据。
 
 <div id="create-metrics-and-visualizations">
-  ### 创建指标和可视化
+  ### 创建指标和可视化 {#create-metrics-and-visualizations}
 </div>
 
 1. 点击 **Create Metric**，开始基于 ClickHouse 数据构建可视化。
@@ -166,9 +142,7 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
 4. 保存指标，以便在各个仪表盘中重复使用。
 
-<div id="build-dashboards">
-  ### 创建仪表盘
-</div>
+### 创建仪表盘 {#build-dashboards}
 
 1. 点击 **Create Dashboard** 开始创建仪表盘。
 
@@ -177,19 +151,15 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 3. 自定义仪表盘的布局和外观。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![包含多个 ClickHouse 可视化图表的 Databrain 仪表盘](/images/integrations/data-visualization/databrain_06.webp)
-
-</Frame>
-
+  <Frame>
+    ![包含多个 ClickHouse 可视化图表的 Databrain 仪表盘](/images/integrations/data-visualization/databrain_06.webp)
+  </Frame>
 </div>
 
 4. 与团队共享仪表盘，或将其嵌入到应用程序中。
 
 <div id="advanced-features">
-  ### 高级功能
+  ### 高级功能 {#advanced-features}
 </div>
 
 Databrain 在与 ClickHouse 配合使用时提供多项高级功能：
@@ -202,11 +172,11 @@ Databrain 在与 ClickHouse 配合使用时提供多项高级功能：
 * **语义层**：创建可复用的数据模型和业务逻辑
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="connection-fails">
-  ### 连接失败
+  ### 连接失败 {#connection-fails}
 </div>
 
 如果您无法连接到 ClickHouse：
@@ -218,7 +188,7 @@ Databrain 在与 ClickHouse 配合使用时提供多项高级功能：
 5. **用户权限**：确认该用户对 `information_schema` 和目标数据库具有 SELECT 权限
 
 <div id="slow-query-performance">
-  ### 慢查询性能
+  ### 慢查询性能 {#slow-query-performance}
 </div>
 
 如果查询运行较慢：
@@ -229,7 +199,7 @@ Databrain 在与 ClickHouse 配合使用时提供多项高级功能：
 4. **索引优化**：利用 ClickHouse 的主键和跳数索引
 
 <div id="learn-more">
-  ## 了解更多
+  ## 了解更多 {#learn-more}
 </div>
 
 如需进一步了解 Databrain 的功能以及如何构建强大的分析能力，请参阅：
