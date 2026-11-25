@@ -1557,13 +1557,15 @@ TEST(IOTestAwsS3Client, WebIdentityStsRegionFollowsS3RegionThroughCredentialsCha
     const auto web_identity_provider_for = [&](const std::string & s3_region)
     {
         auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
-        /// What `updateSchemeAndRegion` leaves in the configuration of an S3 client.
-        client_configuration.region = s3_region;
 
         DB::S3::S3CredentialsProviderChain chain(
             client_configuration,
             Aws::Auth::AWSCredentials(),
-            DB::S3::CredentialsConfiguration{.use_environment_credentials = true, .forbid_implicit_credentials = false});
+            DB::S3::CredentialsConfiguration{
+                .use_environment_credentials = true,
+                .forbid_implicit_credentials = false,
+                /// What `ClientFactory::create` passes for an S3 client: its region after `updateSchemeAndRegion`.
+                .s3_client_region = s3_region});
         return chain.GetProviders().at(0);
     };
 
@@ -1707,6 +1709,105 @@ TEST(IOTestAwsS3Client, WebIdentityStsProvidersAreNotSharedBetweenRemoteHostFilt
     /// S3 clients with the same filter share a provider, as before.
     EXPECT_EQ(provider_for(restricted_filter), restricted_provider);
     EXPECT_EQ(provider_for(unrestricted_filter), unrestricted_provider);
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionIsTheRegionOfS3Client)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_of_s3_client");
+    /// An S3 client asks its credentials providers for credentials when it is created. The token file does not exist,
+    /// so the web identity provider stops before it sends a request to STS.
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/nonexistent/clickhouse_web_identity_token_for_gtest_sts_region_of_s3_client");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+    /// Keep the providers which send requests, the EC2 metadata and the ECS ones, out of the chain.
+    ScopedEnvVarForAwsS3ClientTests imds_env("AWS_EC2_METADATA_DISABLED", "true");
+    ScopedEnvVarForAwsS3ClientTests ecs_relative_uri_env("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "");
+    ScopedEnvVarForAwsS3ClientTests ecs_full_uri_env("AWS_CONTAINER_CREDENTIALS_FULL_URI", "");
+    /// The AWS SDK takes the region of a new client configuration from `AWS_REGION`. An S3 client replaces it
+    /// with the region from the `region` setting or from the endpoint, so STS is never called there.
+    ScopedEnvVarForAwsS3ClientTests sdk_region_env("AWS_REGION", "ap-southeast-2");
+
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("");
+
+    const auto sts_endpoint_of_s3_client = [&](const std::string & region_setting, const std::string & url) -> std::string
+    {
+        DB::S3::URI uri(url);
+        auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+            region_setting,
+            remote_host_filter,
+            /* s3_max_redirects = */ 100,
+            DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+            /* s3_slow_all_threads_after_network_error = */ true,
+            /* s3_slow_all_threads_after_retryable_error = */ true,
+            /* enable_s3_requests_logging = */ false,
+            /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+            /* opt_disk_name = */ {},
+            /* request_throttler = */ {});
+        client_configuration.endpointOverride = uri.endpoint;
+
+        std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+            client_configuration,
+            DB::S3::ClientSettings{
+                .use_virtual_addressing = uri.is_virtual_hosted_style,
+                .gcs_issue_compose_request = false,
+                .is_s3express_bucket = false,
+            },
+            /* access_key_id = */ "",
+            /* secret_access_key = */ "",
+            /* server_side_encryption_customer_key_base64 = */ "",
+            {},
+            {},
+            DB::S3::CredentialsConfiguration{.use_environment_credentials = true, .forbid_implicit_credentials = false});
+
+        auto chain = std::dynamic_pointer_cast<DB::S3::S3CredentialsProviderChain>(client->getCredentialsProviderForTesting());
+        if (!chain)
+            return "the S3 client has no credentials provider chain";
+        auto provider = std::dynamic_pointer_cast<Provider>(chain->GetProviders().at(0));
+        if (!provider)
+            return "the first provider of the chain is not the web identity one";
+        return std::string(std::string_view(provider->getStsEndpoint()));
+    };
+
+    /// The region from the endpoint.
+    EXPECT_EQ(sts_endpoint_of_s3_client("", "https://s3.eu-west-1.amazonaws.com/bucket/key"), "https://sts.eu-west-1.amazonaws.com");
+    /// The region from the `region` setting.
+    EXPECT_EQ(sts_endpoint_of_s3_client("eu-central-1", "https://storage.example.org/bucket/key"), "https://sts.eu-central-1.amazonaws.com");
+    /// No region in the endpoint, and no `region` setting.
+    EXPECT_EQ(sts_endpoint_of_s3_client("", "https://storage.example.org/bucket/key"), "https://sts.us-east-1.amazonaws.com");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionIsNotTakenFromOtherUsersOfCredentialsChain)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// The token file is only read on the first request, which this test does not make.
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_of_other_users");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_region_of_other_users");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+    /// Keep the EC2 metadata provider out of the chain.
+    ScopedEnvVarForAwsS3ClientTests imds_env("AWS_EC2_METADATA_DISABLED", "true");
+    /// The AWS SDK takes the region of a new client configuration from `AWS_REGION`.
+    ScopedEnvVarForAwsS3ClientTests sdk_region_env("AWS_REGION", "ap-southeast-2");
+
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("");
+
+    /// The way the Glue and S3 Tables catalogs and `AWS_MSK_IAM` for Kafka build the configuration for the credentials chain:
+    /// their region (`eu-west-1`) is only in `force_region`, and `region` is what the AWS SDK picked.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    ASSERT_EQ(std::string_view(client_configuration.region), "ap-southeast-2");
+
+    DB::S3::S3CredentialsProviderChain chain(
+        client_configuration,
+        Aws::Auth::AWSCredentials(),
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = true, .forbid_implicit_credentials = false});
+    auto provider = std::dynamic_pointer_cast<Provider>(chain.GetProviders().at(0));
+    ASSERT_TRUE(provider);
+
+    /// Neither of the two is the region of an S3 client, so STS is called in `us-east-1`, as before.
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
 }
 
 TEST(IOTestAwsS3Client, HttpResponseCodeToString)

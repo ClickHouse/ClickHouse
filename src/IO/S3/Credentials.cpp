@@ -778,7 +778,9 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
     LOG_DEBUG(logger, "Resolved role_arn from profile_config or environment variable to be {}", role_arn);
 
 
-    /// The caller's region is in `force_region`: `createClientConfiguration` leaves `region` at the AWS SDK default.
+    /// `S3CredentialsProviderChain` puts the region of the S3 client into `force_region`, and leaves it empty if the
+    /// credentials are not for an S3 client. It is not in `region`: `createClientConfiguration` leaves there what
+    /// the AWS SDK picks, such as `AWS_REGION` or the region of the EC2 instance.
     const bool sts_region_is_from_s3_client = tmp_region.empty();
     tmp_region = resolveStsRegion(tmp_region, aws_client_configuration.force_region);
     LOG_DEBUG(logger, "Resolved STS region to be {}", tmp_region);
@@ -1135,8 +1137,11 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         //  additionally, plain EC2/IMDS setups avoid extra warning
         if (AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(credentials_configuration.kms_role_arn))
         {
+            /// The provider takes the region of the S3 client from here. Not `configuration.region`: this chain is also
+            /// used for the Glue and S3 Tables catalogs and for `AWS_MSK_IAM`, and there it is not a region of theirs,
+            /// see `CredentialsConfiguration::s3_client_region`.
             DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-                configuration.region,
+                credentials_configuration.s3_client_region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
                 configuration.retry_strategy,

@@ -154,6 +154,7 @@ public:
 
     /// The region of the STS endpoint: the region from `AWS_DEFAULT_REGION` or from the AWS profile if it is set,
     /// otherwise the region of the S3 client if it has the form of a region name, otherwise `us-east-1`.
+    /// `client_region` is empty if the credentials are not for an S3 client, see `CredentialsConfiguration::s3_client_region`.
     static Aws::String resolveStsRegion(std::string_view configured_region, std::string_view client_region);
 
     explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
@@ -269,6 +270,15 @@ struct CredentialsConfiguration
     /// be refused. Set only when loading a persistent table from existing metadata (so it becomes inaccessible
     /// rather than aborting startup); never for user-issued queries, which must still be rejected.
     bool anonymous_fallback_for_server_credentials = false;
+
+    /// The region of the S3 client: its `region` setting, or the region from its endpoint. Only `ClientFactory::create`
+    /// sets it. If neither `AWS_DEFAULT_REGION` nor the AWS profile sets a region, the web identity credentials
+    /// provider calls STS in this region instead of `us-east-1`.
+    ///
+    /// The other users of the credentials providers (the Glue and S3 Tables catalogs, `AWS_MSK_IAM` for Kafka) leave it
+    /// empty, so STS is called in `us-east-1` for them. The `region` of their client configuration cannot be used
+    /// instead: they do not set it, and it is what the AWS SDK picks, such as `AWS_REGION` or the region of the EC2 instance.
+    std::string s3_client_region{};
 };
 
 class GeneralHTTPCredentialsProvider : public Aws::Auth::GeneralHTTPCredentialsProvider
