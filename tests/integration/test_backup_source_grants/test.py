@@ -275,6 +275,8 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
         ],
         user="root",
     )
+    # The preflight opens the embedded backup to authorize its base backups, so it must exist.
+    node.query(f"BACKUP DATABASE d67785 TO {s3(DENIED + '/b10')} FORMAT Null")
 
     # The target database exists on the initiator, which is what used to skip the check.
     assert node.query("SELECT count() FROM system.databases WHERE name = 'dbembedded'") == "1\n"

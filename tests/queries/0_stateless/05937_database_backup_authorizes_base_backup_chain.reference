@@ -1,0 +1,17 @@
+--- without READ ON FILE, the base backup itself is refused
+Code: 497 grant READ ON FILE
+--- without READ ON FILE, so is a backup whose base it is: CREATE, CREATE ON CLUSTER, RESTORE, RESTORE ON CLUSTER
+Code: 497 grant READ ON FILE
+Code: 497 grant READ ON FILE
+Code: 497 grant READ ON FILE
+Code: 497 grant READ ON FILE
+0
+--- with READ ON FILE, the row stored only in the base is read
+created
+created
+restored
+restored
+7
+7
+7
+7

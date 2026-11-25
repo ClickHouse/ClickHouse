@@ -10,6 +10,8 @@
 namespace DB
 {
 class IBackup;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class AccessRightsElements;
 class ASTCreateQuery;
 class DDLRenamingMap;
@@ -46,6 +48,10 @@ void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements
 /// `system.named_collections` table requires the rights to read the collections' values (see
 /// `BackupSettings`). A selection excluding the table's data requires none of those rights.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, std::optional<bool> backup_named_collections);
+
+/// Opens every base backup of `backup`, so each is authorized against the context `backup` was opened with.
+/// Throws `WRONG_BASE_BACKUP` for a chain that returns to a backup already seen.
+void checkAccessToBaseBackupChain(const std::shared_ptr<const IBackup> & backup, const QueryStatusPtr & process_list_element);
 
 /// Checks the definition of a restored table - it must correspond to the definition from the backup.
 bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context);

@@ -44,6 +44,7 @@
 
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupUtils.h>
 
 #include <Disks/DiskBackup.h>
 #include <Disks/SingleDiskVolume.h>
@@ -557,6 +558,17 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
     return result;
 }
 
+/// The database reads its backup with no user, so whoever introduces it must be allowed to read every backup of the chain.
+void authorizeBackupChain(BackupInfo backup_info, const ContextPtr & context)
+{
+    BackupFactory::CreateParams params;
+    params.open_mode = IBackup::OpenMode::READ;
+    params.context = context;
+    params.backup_info = std::move(backup_info);
+    auto backup = BackupFactory::instance().createBackup(params);
+    BackupUtils::checkAccessToBaseBackupChain(backup, context->getProcessListElement());
+}
+
 }
 
 void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
@@ -575,7 +587,7 @@ void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextP
       * not be echoed.
       */
     auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
-    BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), query_context, IBackup::OpenMode::READ);
+    authorizeBackupChain(BackupInfo::fromString(config.backup_info), query_context);
 }
 
 namespace
@@ -838,7 +850,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
 
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
         if (has_real_user && !from_existing_metadata)
-            BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), args.context, IBackup::OpenMode::READ);
+            authorizeBackupChain(BackupInfo::fromString(config.backup_info), args.context);
 
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
