@@ -47,7 +47,7 @@ function print_result()
 import json, sys
 d = json.load(open(sys.argv[1]))
 print(d["status"], sys.argv[2] in d.get("error", ""))' "$OUT" "$error_text"
-    for _ in {1..60}; do
+    for _ in {1..10}; do
         result=$($CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS query_log;
 SELECT type, exception_code FROM system.query_log
@@ -70,13 +70,18 @@ wait
 print_result "$query_id" "Query was cancelled"
 
 echo "--- the execution time limit of the request stops its running probe"
-query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_timeout"
-$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
-request -H "X-ClickHouse-Query-Id: ${query_id}" --data-urlencode "log_comment=${query_id}" --data-urlencode "max_execution_time=1" &
-timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE"
-sleep 1.5
-$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
-wait
+# A slow build can use up the limit before the probe pauses, so such an attempt is dropped and retried with a larger one.
+paused=
+for limit in 1 3 10 30; do
+    query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_timeout_${limit}"
+    $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
+    request -H "X-ClickHouse-Query-Id: ${query_id}" --data-urlencode "log_comment=${query_id}" --data-urlencode "max_execution_time=${limit}" &
+    # The request started before the probe paused, so its limit runs out during the sleep.
+    timeout "$limit" $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE" && paused=1 && sleep "${limit}.5"
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
+    wait
+    [ -n "$paused" ] && break
+done
 print_result "$query_id" "Timeout exceeded"
 
 rm -f "$OUT"
