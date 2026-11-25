@@ -102,6 +102,9 @@ void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_avg = R"(
 Calculates the arithmetic mean.
+
+For integer arguments, the sum is accumulated in an integer of the same signedness (`Int64` for `Int8`..`Int64`, `UInt64` for `UInt8`..`UInt64`, the argument type for wider integers) and can overflow, which produces a wrong result, for example for `Int64` values close to the limits of the type.
+To avoid it, cast the argument to a wider type: `avg(toInt128(x))` gives an exact result, `avg(toFloat64(x))` an approximate one.
     )";
     FunctionDocumentation::Syntax syntax_avg = R"(
 avg(x)
