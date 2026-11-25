@@ -163,6 +163,10 @@ private:
     int depth = 0;
     QTokens tokens;
 
+    /// The text before this position is known to hold only blank and comment-only lines up to a continuation of
+    /// the statement, see `handleNewline`.
+    size_t continuation_until = 0;
+
     [[nodiscard]] bool atLineStart(size_t at) const
     {
         return at == 0 || text[at - 1] == '\n';
@@ -220,6 +224,12 @@ private:
         if (depth > 0 || tokens.empty() || tokens.back().type == QTokenType::StatementBreak)
             return;
 
+        /// The lookahead from a previous line break of the same run of blank and comment-only lines has already found
+        /// that the statement continues after them. Without this, every line break of the run would scan the rest of it:
+        /// quadratic work for an expression with a hundred thousand blank lines inside.
+        if (pos <= continuation_until)
+            return;
+
         /// Lines with nothing but whitespace and comments (of every kind that the dialect accepts) do not count.
         const char * data = text.data();
         const char * end = data + text.size();
@@ -237,7 +247,10 @@ private:
             next = after;
         }
         if (next >= end || !atLineStart(static_cast<size_t>(next - data)))
+        {
+            continuation_until = static_cast<size_t>(next - data);
             return;
+        }
 
         QToken token;
         token.type = QTokenType::StatementBreak;
