@@ -23,15 +23,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --table_engine_read_through_distributed_cache 0"
+
 RUN_ID="${CLICKHOUSE_DATABASE}_03988_$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")"
 FILE="${RUN_ID}.parquet"
 ROWS=50000
 
+# `sipHash128` rather than `MD5`: `MD5` throws `SUPPORT_IS_DISABLED` in OpenSSL FIPS builds.
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO FUNCTION s3(s3_conn, filename = '$FILE', format = Parquet)
     SELECT
         hex(SHA256(toString(number))) AS a,
-        substring(hex(MD5(toString(number))), 1, 16) AS b,
+        substring(hex(sipHash128(toString(number))), 1, 16) AS b,
         substring(hex(SHA256(toString(number + 1))), 1, 40) AS c
     FROM numbers($ROWS)
     SETTINGS
@@ -44,7 +48,7 @@ $CLICKHOUSE_CLIENT -q "
 EXPECTED=$($CLICKHOUSE_CLIENT -q "
     SELECT
         sum(cityHash64(hex(SHA256(toString(number))))),
-        sum(cityHash64(substring(hex(MD5(toString(number))), 1, 16))),
+        sum(cityHash64(substring(hex(sipHash128(toString(number))), 1, 16))),
         sum(cityHash64(substring(hex(SHA256(toString(number + 1))), 1, 40)))
     FROM numbers($ROWS)
 ")

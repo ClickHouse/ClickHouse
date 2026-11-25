@@ -8,6 +8,7 @@
 --     would wrap the disk in a second encryption layer, which is not what this test targets.
 --   no-parallel-replicas: distributed reading does not take the observed local read path.
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_reader_executor_encrypted;
 
 CREATE TABLE t_reader_executor_encrypted
@@ -54,7 +55,7 @@ SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT count() > 0
 FROM system.text_log
-WHERE logger_name = 'ReadPipeline'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'ReadPipeline'
   AND message LIKE '%using ReaderExecutor%'
   AND query_id IN (
       SELECT query_id

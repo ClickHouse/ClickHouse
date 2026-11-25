@@ -1,10 +1,10 @@
 {
-  "icon": "/images/icons/icon-clickpipes.svg",
   "item": "ClickPipes",
+  "root": "es/integrations/clickpipes/home",
   "pages": [
     "es/integrations/clickpipes/home",
     {
-      "group": "ClickPipes para streaming",
+      "group": "ClickPipes for Streaming",
       "pages": [
         {
           "group": "Kafka",
@@ -37,7 +37,7 @@
       ]
     },
     {
-      "group": "ClickPipes para almacenamiento de objetos",
+      "group": "ClickPipes for Object Storage",
       "pages": [
         {
           "group": "Amazon S3",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "ClickPipes para CDC",
+      "group": "ClickPipes for CDC",
       "pages": [
         {
           "group": "Postgres",
@@ -87,7 +87,7 @@
             "es/integrations/clickpipes/postgres/lifecycle",
             "es/integrations/clickpipes/postgres/auth",
             {
-              "group": "Operaciones",
+              "group": "Operations",
               "pages": [
                 "es/integrations/clickpipes/postgres/add-table",
                 "es/integrations/clickpipes/postgres/pause-and-resume",
@@ -99,7 +99,7 @@
               ]
             },
             {
-              "group": "Fuente",
+              "group": "Source",
               "pages": [
                 "es/integrations/clickpipes/postgres/source/managed-postgres",
                 "es/integrations/clickpipes/postgres/source/alloydb",
@@ -128,7 +128,7 @@
             "es/integrations/clickpipes/mysql/schema-changes",
             "es/integrations/clickpipes/mysql/lifecycle",
             {
-              "group": "Operaciones",
+              "group": "Operations",
               "pages": [
                 "es/integrations/clickpipes/mysql/add-table",
                 "es/integrations/clickpipes/mysql/pause-and-resume",
@@ -140,7 +140,7 @@
               ]
             },
             {
-              "group": "Fuente",
+              "group": "Source",
               "pages": [
                 "es/integrations/clickpipes/mysql/source/rds",
                 "es/integrations/clickpipes/mysql/source/aurora",
@@ -163,7 +163,7 @@
             "es/integrations/clickpipes/mongodb/lifecycle",
             "es/integrations/clickpipes/mongodb/faq",
             {
-              "group": "Operaciones",
+              "group": "Operations",
               "pages": [
                 "es/integrations/clickpipes/mongodb/add-table",
                 "es/integrations/clickpipes/mongodb/remove-table",
@@ -175,7 +175,7 @@
               ]
             },
             {
-              "group": "Fuente",
+              "group": "Source",
               "pages": [
                 "es/integrations/clickpipes/mongodb/source/atlas",
                 "es/integrations/clickpipes/mongodb/source/generic",
@@ -189,13 +189,14 @@
           "icon": "/images/logo-bigquery.svg",
           "pages": [
             "es/integrations/clickpipes/bigquery/overview",
-            "es/integrations/clickpipes/bigquery/get-started"
+            "es/integrations/clickpipes/bigquery/get-started",
+            "es/integrations/clickpipes/bigquery/faq"
           ]
         }
       ]
     },
     {
-      "group": "Acceso programático",
+      "group": "Programmatic access",
       "icon": "code",
       "pages": [
         "es/integrations/clickpipes/programmatic-access/openapi",
@@ -203,7 +204,15 @@
       ]
     },
     {
-      "group": "Redes",
+      "group": "Security and access",
+      "icon": "shield-check",
+      "pages": [
+        "es/integrations/clickpipes/security/aws-iam-role",
+        "es/integrations/clickpipes/security/gcp-workload-identity"
+      ]
+    },
+    {
+      "group": "Networking",
       "icon": "network-wired",
       "pages": [
         "es/integrations/clickpipes/networking/index",
@@ -215,6 +224,5 @@
     },
     "es/integrations/clickpipes/monitoring",
     "es/integrations/clickpipes/dynamodb"
-  ],
-  "root": "es/integrations/clickpipes/home"
+  ]
 }

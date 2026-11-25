@@ -19,7 +19,7 @@ public:
         DB::NamesAndTypesList table_schema_,
         std::unordered_set<String> table_timestamp_ntz_paths_);
 
-    const std::string & getDataPath() const;
+    [[nodiscard]] const std::string & getDataPath() const;
 
     /// Create a transaction for the target table using the schema passed at construction; see the
     /// implementation for how partitioned vs unpartitioned tables derive the write context.
@@ -42,22 +42,22 @@ public:
 
     /// True after a failed kernel commit call when it cannot be told whether the log entry exists,
     /// so the files it listed must not be deleted.
-    bool isCommitOutcomeUnknown() const { return commit_outcome_unknown; }
+    [[nodiscard]] bool isCommitOutcomeUnknown() const { return commit_outcome_unknown; }
 
     /// Validate if schema is consistent with the write schema of the transaction.
     void validateSchema(const DB::Block & header) const;
 
     /// The Delta table's write schema (authoritative types and nullability, one entry per
     /// column). Nullable Delta columns are wrapped in `DataTypeNullable`.
-    const DB::NamesAndTypesList & getWriteSchema() const;
+    [[nodiscard]] const DB::NamesAndTypesList & getWriteSchema() const;
 
-    const std::unordered_set<String> & getTimestampNtzPaths() const;
+    [[nodiscard]] const std::unordered_set<String> & getTimestampNtzPaths() const;
 
 private:
-    using KernelTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveTransaction, ffi::free_transaction>;
-    using KernelExternEngine = DeltaLake::KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
-    using KernelWriteContext = DeltaLake::KernelPointerWrapper<ffi::SharedWriteContext, ffi::free_write_context>;
-    using KernelEngineData = DeltaLake::KernelPointerWrapper<ffi::ExclusiveEngineData, ffi::free_engine_data>;
+    using KernelTransaction = DeltaLake::KernelPointerWrapper<::ExclusiveTransaction, ::free_transaction>;
+    using KernelExternEngine = DeltaLake::KernelPointerWrapper<::SharedExternEngine, ::free_engine>;
+    using KernelWriteContext = DeltaLake::KernelPointerWrapper<::SharedWriteContext, ::free_write_context>;
+    using KernelEngineData = DeltaLake::KernelPointerWrapper<::ExclusiveEngineData, ::free_engine_data>;
 
     const DeltaLake::KernelHelperPtr kernel_helper;
     /// Table logical schema, provided at construction. Used to create the table and, for partitioned

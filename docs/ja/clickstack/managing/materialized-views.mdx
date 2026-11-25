@@ -8,12 +8,11 @@ keywords: ['clickstack', 'オブザーバビリティ', 'materialized views', '�
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
 <div id="introduction">
-  ## はじめに
+  ## はじめに {#introduction}
 </div>
 
 ClickStack では、[インクリメンタルmaterialized view (IMV) ](/ja/concepts/features/materialized-views/incremental-materialized-view) を活用することで、たとえば時間の経過に沿って 1 分ごとの平均リクエスト所要時間を算出するような、集約負荷の高いクエリに依存する可視化を高速化できます。この機能によりクエリ性能を大幅に向上でき、通常は 1 日あたり約 10 TB 以上を扱う大規模なデプロイメントで特に効果を発揮します。また、1 日あたり PB 規模までのスケーリングも可能になります。インクリメンタルmaterialized view はベータのため、注意して使用してください。
@@ -24,41 +23,43 @@ ClickStack では、[インクリメンタルmaterialized view (IMV) ](/ja/conce
   実行時間の短縮は、応答性とリソース消費の両面で有効です。
 </Note>
 
-<div id="what-are-incremental-materialized-views">
-  ## インクリメンタルmaterialized VIEW とは
+## インクリメンタルmaterialized ビュー とは {#what-are-incremental-materialized-views}
+
+インクリメンタルmaterialized ビュー を使用すると、計算コストをクエリ実行時から挿入時へ移せるため、`SELECT` クエリを大幅に高速化できます。
+
+Postgres のようなトランザクションデータベースとは異なり、ClickHouse の materialized ビュー は保存されたスナップショットではありません。代わりに、ソーステーブルにデータブロックが挿入されるたびに、そのブロックに対してクエリを実行するトリガーとして機能します。このクエリの出力は、別のターゲットテーブルに書き込まれます。さらにデータが挿入されると、新しい部分結果が追記され、ターゲットテーブル内でマージされます。マージ後の結果は、元のデータセット全体に対して集約を実行した結果と同等です。
+
+materialized ビュー を使う主な目的は、ターゲットテーブルに書き込まれるデータが、集約、フィルタリング、または変換の結果になることです。ClickStack では、これらは集約専用に使用されます。こうした結果は通常、生の入力データよりもはるかに小さく、多くの場合は部分集約状態を表します。さらに、事前集約済みのターゲットテーブルはシンプルにクエリできるため、生データに対してクエリ実行時に同じ計算を行う場合と比べて、クエリレイテンシを大幅に低減できます。
+
+ClickHouse の materialized ビュー は、データがソーステーブルに流入するのに合わせて継続的に更新され、常に最新の索引のように振る舞います。これは、多くの他のデータベースにおける materialized ビュー が静的なスナップショットであり、ClickHouse の [リフレッシュ可能なマテリアライズドビュー](/ja/concepts/features/materialized-views/refreshable-materialized-view) と同様に定期的な更新が必要なのとは異なります。
+
+<div className="ch-image-md">
+  <Frame>
+    ![materialized ビュー の図](/images/materialized-view/materialized-view-diagram.webp)
+  </Frame>
 </div>
 
-インクリメンタルmaterialized VIEW を使用すると、計算コストをクエリ時から挿入時へ移せるため、`SELECT` クエリを大幅に高速化できます。
+インクリメンタルmaterialized ビュー は、新しいデータが到着した際に ビュー への変更分だけを計算し、計算を挿入時に寄せます。ClickHouse はインジェスト向けに高度に最適化されているため、挿入される各ブロックに対して ビュー を維持する増分コストは、クエリ実行時に得られる削減効果に比べて小さく抑えられます。集約計算のコストは、読み取りのたびに毎回支払うのではなく、挿入全体に分散されます。そのため、事前集約済みの結果をクエリする方が再計算するよりもはるかに低コストであり、結果として、ペタバイト規模であっても下流の可視化に対して低い運用コストとほぼリアルタイムの性能を実現できます。
 
-Postgres のようなトランザクションデータベースとは異なり、ClickHouse の materialized VIEW は保存されたスナップショットではありません。代わりに、ソーステーブルにデータブロックが挿入されるたびに、そのブロックに対してクエリを実行するトリガーとして機能します。このクエリの出力は、別のターゲットテーブルに書き込まれます。さらにデータが挿入されると、新しい部分結果が追記され、ターゲットテーブル内でマージされます。マージ後の結果は、元のデータセット全体に対して集計を実行した結果と同等です。
+このモデルは、更新のたびに ビュー 全体を再計算するシステムや、スケジュールされた更新に依存するシステムとは根本的に異なります。materialized ビュー の仕組みや作成方法についてさらに詳しく知りたい場合は、上記のリンク先ガイドを参照してください。
 
-materialized VIEW を使う主な目的は、ターゲットテーブルに書き込まれるデータが、集計、フィルタリング、または変換の結果になることです。ClickStack では、これらは集計専用に使用されます。こうした結果は通常、生の入力データよりもはるかに小さく、多くの場合は部分集計状態を表します。さらに、事前集計済みのターゲットテーブルはシンプルにクエリできるため、生データに対してクエリ時に同じ計算を行う場合と比べて、クエリレイテンシを大幅に低減できます。
-
-ClickHouse の materialized VIEW は、データがソーステーブルに流入するのに合わせて継続的に更新され、常に最新の索引のように振る舞います。これは、多くの他のデータベースにおける materialized VIEW が静的なスナップショットであり、ClickHouse の [リフレッシュ可能なマテリアライズドビュー](/ja/concepts/features/materialized-views/refreshable-materialized-view) と同様に定期的な更新が必要なのとは異なります。
-
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized VIEW の図" />
-
-インクリメンタルmaterialized VIEW は、新しいデータが到着した際に VIEW への変更分だけを計算し、計算を挿入時に寄せます。ClickHouse はインジェスト向けに高度に最適化されているため、挿入される各ブロックに対して VIEW を維持する増分コストは、クエリ実行時に得られる削減効果に比べて小さく抑えられます。集計計算のコストは、読み取りのたびに毎回支払うのではなく、挿入全体に分散されます。そのため、事前集計済みの結果をクエリする方が再計算するよりもはるかに低コストであり、結果として、ペタバイト規模であっても下流の可視化に対して低い運用コストとほぼリアルタイムの性能を実現できます。
-
-このモデルは、更新のたびに VIEW 全体を再計算するシステムや、スケジュールされた更新に依存するシステムとは根本的に異なります。materialized VIEW の仕組みや作成方法についてさらに詳しく知りたい場合は、上記のリンク先ガイドを参照してください。
-
-materialized VIEW を追加するごとに挿入時のオーバーヘッドも増えるため、使用は慎重に選ぶ必要があります。
+materialized ビュー を追加するごとに insert-time のオーバーヘッドも増えるため、使用は慎重に選ぶ必要があります。
 
 <Tip>
-  VIEW は、最も一般的なダッシュボードと可視化のためにのみ作成してください。
-  機能がベータの間は、利用を 20 個未満の VIEW に抑えてください。
+  ビュー は、最も一般的なダッシュボードと可視化のためにのみ作成してください。
+  機能がベータの間は、利用を 20 個未満の ビュー に抑えてください。
   このしきい値は、今後のリリースで引き上げられる見込みです。
 </Tip>
 
 <Note>
-  1 つの materialized VIEW で、異なるグルーピングに対する複数のメトリクスを計算できます。たとえば、1 分単位のバケットごとに、サービス名単位で最小値、最大値、p95 の duration を計算できます。これにより、1 つの VIEW で 1 つだけでなく、多くの可視化に対応できます。したがって、各 VIEW の価値を最大化し、ダッシュボードやワークフロー全体で再利用されるようにするには、メトリクスを共通の VIEW に集約することが重要です。
+  1 つの materialized ビュー で、異なるグルーピングに対する複数のメトリクスを計算できます。たとえば、1 分単位のバケットごとに、サービス名単位で最小値、最大値、p95 の 所要時間 を計算できます。これにより、1 つの ビュー で 1 つだけでなく、多くの可視化に対応できます。したがって、各 ビュー の価値を最大化し、ダッシュボードやワークフロー全体で再利用されるようにするには、メトリクスを共通の ビュー に集約することが重要です。
 </Note>
 
-先に進む前に、ClickHouse の materialized VIEW について、より深く理解しておくことをお勧めします。
-詳細は、[インクリメンタルmaterialized VIEW](/ja/concepts/features/materialized-views/incremental-materialized-view) に関するガイドを参照してください。
+先に進む前に、ClickHouse の materialized ビュー について、より深く理解しておくことをお勧めします。
+詳細は、[インクリメンタルmaterialized ビュー](/ja/concepts/features/materialized-views/incremental-materialized-view) に関するガイドを参照してください。
 
 <div id="selecting-visualizatons-for-acceleration">
-  ## 高速化の対象とする可視化の選定
+  ## 高速化の対象とする可視化の選定 {#selecting-visualizatons-for-acceleration}
 </div>
 
 materialized view を作成する前に、どの可視化を高速化したいのか、またどのワークフローがユーザーにとって最も重要かを把握しておくことが重要です。
@@ -68,21 +69,21 @@ ClickStack では、materialized view は**集約負荷の高い可視化を高�
 一般的には、次を推奨します。
 
 <div id="identify-high-impact-visualizations">
-  ### 効果の高い可視化を特定する
+  ### 効果の高い可視化を特定する {#identify-high-impact-visualizations}
 </div>
 
 高速化の有力な候補は、一般に次のいずれかのカテゴリに当てはまります。
 
 * 頻繁に更新され、常時表示されるダッシュボードの可視化。たとえば、壁面ディスプレイに表示する概要レベルの監視ダッシュボードです。
 * ランブックで使われる診断ワークフロー。インシデント対応中に特定のチャートを繰り返し参照し、すばやく結果を返す必要があるものです。
-* HyperDX の中核的な機能。具体的には次のようなものです。
+* ClickStack UI の中核的な機能。具体的には次のようなものです。
   * 検索ページのヒストグラム表示。
   * APM、Services、Kubernetes ビューなど、プリセットされたダッシュボードで使われる可視化。
 
-これらの可視化は、ユーザーや時間範囲をまたいで繰り返し実行されることが多いため、計算処理をクエリ時から挿入時へ移す対象として最適です。
+これらの可視化は、ユーザーや時間範囲をまたいで繰り返し実行されることが多いため、計算処理をクエリ実行時から挿入時へ移す対象として最適です。
 
 <div id="balance-benefit-against-insert-time-cost">
-  ### 効果と挿入時コストのバランスを取る
+  ### 効果と挿入時コストのバランスを取る {#balance-benefit-against-insert-time-cost}
 </div>
 
 materialized view は挿入時に追加の処理負荷をもたらすため、必要なものだけを慎重に作成する必要があります。すべての可視化が事前集約の恩恵を受けるわけではなく、利用頻度の低いグラフを高速化しても、通常はそのオーバーヘッドに見合いません。materialized view の総数は 20 未満に抑えるべきです。
@@ -94,7 +95,7 @@ materialized view は挿入時に追加の処理負荷をもたらすため、�
 重要度の高い可視化を特定したら、次のステップは統合です。
 
 <div id="consolidate-visualizations-into-shared-views">
-  ### 可視化を共有ビューに集約する
+  ### 可視化を共有ビューに集約する {#consolidate-visualizations-into-shared-views}
 </div>
 
 ClickStack のすべての materialized view では、[`toStartOfMinute`](/ja/reference/functions/regular-functions/date-time-functions#toStartOfMinute) などの関数を使って、データを時間間隔ごとにグループ化する必要があります。ただし、多くの可視化では、サービス名、スパン名、ステータスコードなど、追加の grouping key も共通して使用されます。複数の可視化で同じグループ化の次元を使う場合は、多くの場合、1 つの materialized view で対応できます。
@@ -118,26 +119,28 @@ GROUP BY time, ServiceName, StatusCode
 
 この段階では、**まずはクエリに注目してください**。具体的には、高速化したい可視化で実行されるクエリです。次のセクションでは、複数の集計クエリを 1 つの materialized view にまとめる例を示します。
 
-<div id="creating-a-materialized-view">
-  ## materialized view の作成
+## materialized view の作成 {#creating-a-materialized-view}
+
+高速化したい可視化、または可視化のセットを特定したら、次にその基になるクエリを洗い出します。実際には、可視化の設定を確認し、生成された SQL をレビューして、使用されている集約メトリクスや適用されている関数を重点的に確認することになります。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![生成された SQL](/images/clickstack/materialized_views/generated_sql.webp)
+  </Frame>
 </div>
 
-高速化したい可視化、または可視化のセットを特定したら、次にその基になるクエリを洗い出します。実際には、可視化の設定を確認し、生成された SQL をレビューして、使用されている集計メトリクスや適用されている関数を重点的に確認することになります。
-
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="生成された SQL" />
-
 <Note>
-  HyperDX 内のコンポーネントでデバッグパネルを利用できない場合は、ブラウザーのコンソールを確認できます。そこにはすべてのクエリが記録されています。
+  ClickStack UI 内のコンポーネントでデバッグパネルを利用できない場合は、ブラウザーのコンソールを確認できます。そこにはすべてのクエリが記録されています。
 </Note>
 
-必要なクエリを整理したら、次に ClickHouse の[**集計状態関数**](/ja/reference/data-types/aggregatefunction)について理解しておく必要があります。materialized view は、計算を クエリ時 から 挿入時 に移すために、これらの関数を利用します。materialized view は最終的な集計値を保存するのではなく、**中間的な集計状態** を計算して保存し、それらは後で クエリ時 にマージおよび確定されます。通常、これらは元のテーブルより大幅に小さくなります。これらの状態には専用のデータ型があり、ターゲットテーブルのスキーマ内で明示的に表現する必要があります。
+必要なクエリを整理したら、次に ClickHouse の[**集約状態関数**](/ja/reference/data-types/aggregatefunction)について理解しておく必要があります。materialized view は、計算を クエリ実行時 から 挿入時 に移すために、これらの関数を利用します。materialized view は最終的な集約値を保存するのではなく、**中間的な集約状態** を計算して保存し、それらは後で クエリ実行時 にマージおよび確定されます。通常、これらは元のテーブルより大幅に小さくなります。これらの状態には専用のデータ型があり、ターゲットテーブルのスキーマ内で明示的に表現する必要があります。
 
-参考までに、ClickHouse のドキュメントでは、集計状態関数と、それらの保存に使用されるテーブルエンジン `AggregatingMergeTree` について、詳しい概要と例を提供しています。
+参考までに、ClickHouse のドキュメントでは、集約状態関数と、それらの保存に使用されるテーブルエンジン `AggregatingMergeTree` について、詳しい概要と例を提供しています。
 
-* [集計関数と状態](/ja/reference/functions/aggregate-functions/index)
+* [集約関数と状態](/ja/reference/functions/aggregate-functions/index)
 * [AggregatingMergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree)
 
-以下の動画では、AggregatingMergeTree と集計関数の使い方の例を確認できます。
+以下の動画では、AggregatingMergeTree と集約関数の使い方の例を確認できます。
 
 <div class="vimeo-container">
   <Frame>
@@ -148,7 +151,7 @@ GROUP BY time, ServiceName, StatusCode
 先に進む前に、これらの概念を理解しておくことを**強く推奨**します。
 
 <div id="example-materialized-view">
-  ### materialized view の例
+  ### materialized view の例 {#example-materialized-view}
 </div>
 
 以下の元のクエリは、サービス名とステータスコードごとにグループ化し、1 分ごとの平均 duration、最大 duration、イベント数、およびパーセンタイルを計算します。
@@ -214,60 +217,78 @@ GROUP BY
 その結果、サービス名とステータスコードごとに 1 分単位の集約状態を保存するコンパクトなテーブルが得られます。このテーブルのサイズは時間とカーディナリティに応じて予測可能に増加し、バックグラウンドマージ後は、生データに対して元の集約を実行した場合と同じ結果を表します。このテーブルをクエリするコストは、ソースの traces テーブルから直接集約する場合よりも大幅に低く、大規模環境でも高速で一貫した可視化パフォーマンスを実現できます。
 
 <div id="materialized-view-usage-in-clickstack">
-  ## ClickStack で materialized view を使用する
+  ## ClickStack で materialized view を使用する {#materialized-view-usage-in-clickstack}
 </div>
 
 ClickHouse で materialized view を作成したら、可視化、ダッシュボード、アラートで自動的に利用できるようにするために、ClickStack に登録する必要があります。
 
-<div id="registering-a-view">
-  ### 使用するための materialized VIEW の登録
-</div>
+### 使用するための materialized VIEW の登録 {#registering-a-view}
 
-materialized VIEW は、ビューの派生元である**元のソーステーブル**に対応する HyperDX の**ログソース**に登録する必要があります。
+materialized VIEW は、ビューの派生元である**元のソーステーブル**に対応する ClickStack UI の**ログソース**に登録する必要があります。
 
 <Steps>
   <Step title="ログソースを編集する" id="edit-the-source">
-    HyperDX で該当する**ログソース**に移動し、**設定を編集**ダイアログを開きます。materialized VIEW のセクションまでスクロールします。
+    ClickStack UI で該当する**ログソース**に移動し、**設定を編集**ダイアログを開きます。materialized VIEW のセクションまでスクロールします。
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="ログソースを編集" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ログソースを編集](/images/clickstack/materialized_views/edit_source.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="materialized VIEW を追加する" id="add-the-materialized-view">
     **Add materialized view** を選択し、続いて materialized VIEW の基盤となるデータベースとターゲットテーブルを選択します。
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="ログソースを編集" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ログソースを編集](/images/clickstack/materialized_views/add_view.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="メトリクスを選択する" id="select-metrics">
-    ほとんどの場合、timestamp、dimension、メトリクスのカラムは自動的に推測されます。そうでない場合は、手動で指定してください。
+    ほとんどの場合、タイムスタンプ、次元、メトリクスのカラムは自動的に推測されます。そうでない場合は、手動で指定してください。
 
     メトリクスでは、以下を対応付ける必要があります。
 
     * 元のカラム名 (例: `Duration`)
     * materialized VIEW 内の対応する集約カラム (例: `avg__Duration`)
 
-    次元では、timestamp を除き、ビューがグループ化に使用するすべてのカラムを指定します。
+    次元では、タイムスタンプ を除き、ビューがグループ化に使用するすべてのカラムを指定します。
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="メトリクスを選択" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![メトリクスを選択](/images/clickstack/materialized_views/select_metrics.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="時間粒度を選択する" id="select-time-granularity">
     materialized VIEW の**時間粒度**を選択します。たとえば 1 分です。
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="時間粒度を選択" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![時間粒度を選択](/images/clickstack/materialized_views/select_time_granularity.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="最小日付を選択する" id="specify-the-minimum-date">
-    materialized VIEW にデータが含まれている最小日時を指定します。これはビュー内で利用可能な最も早い timestamp を表し、インジェストが継続していることを前提とすると、通常はビューが作成された時刻です。
+    materialized VIEW にデータが含まれている最小日時を指定します。これはビュー内で利用可能な最も早い タイムスタンプ を表し、インジェストが継続していることを前提とすると、通常はビューが作成された時刻です。
 
     <Note>
       materialized VIEW は作成時に**自動ではバックフィルされない**ため、作成後に挿入されたデータから生成された行のみが含まれます。
       materialized VIEW のバックフィルに関する完全なガイドは、[&quot;データのバックフィル&quot;](/ja/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables) を参照してください。
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="最小時刻を選択" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![最小時刻を選択](/images/clickstack/materialized_views/select_min_time.webp)
+      </Frame>
+    </div>
 
-    正確な開始時刻が不明な場合は、たとえば次のようにターゲットテーブルから最小 timestamp をクエリして確認できます。
+    正確な開始時刻が不明な場合は、たとえば次のようにターゲットテーブルから最小 タイムスタンプ をクエリして確認できます。
 
     ```sql
     SELECT min(Timestamp) FROM otel_traces_1m
@@ -277,48 +298,54 @@ materialized VIEW は、ビューの派生元である**元のソーステーブ
   <Step title="ログソースを保存する" id="save-the-source">
     ログソース設定を保存します。
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="ログソースを保存" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ログソースを保存](/images/clickstack/materialized_views/save_source.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 materialized VIEW を登録すると、ダッシュボード、可視化、または アラート を変更しなくても、条件を満たすクエリでは ClickStack が自動的にそれを使用します。ClickStack は実行時に各クエリを評価し、materialized VIEW を適用できるかどうかを判断します。
 
-<div id="verifying-acceleration-in-dashboards-and-visualizations">
-  ### ダッシュボードと可視化で高速化を確認する
-</div>
+### ダッシュボードと可視化で高速化を確認する {#verifying-acceleration-in-dashboards-and-visualizations}
 
-インクリメンタルmaterialized VIEW には、**VIEW の作成後に挿入された**データしか含まれないことを覚えておくことが重要です。これらは自動的にバックフィルされないため、軽量でメンテナンスコストも低く抑えられます。そのため、ユーザーは VIEW を登録する際に、その VIEW が有効な時間範囲を明示的に指定する必要があります。
+インクリメンタルmaterialized ビュー には、**ビュー の作成後に挿入された**データしか含まれないことを覚えておくことが重要です。これらは自動的にバックフィルされないため、軽量でメンテナンスコストも低く抑えられます。そのため、ユーザーは ビュー を登録する際に、その ビュー が有効な時間範囲を明示的に指定する必要があります。
 
 <Note>
-  ClickStack は、materialized VIEW の最小タイムスタンプがクエリの時間範囲の開始時刻以下である場合にのみ、その materialized VIEW を使用します。これにより、その VIEW に必要なデータがすべて含まれていることが保証されます。クエリは内部的に時間ベースのサブクエリへ分割されますが、materialized VIEW はクエリ全体に適用されるか、まったく適用されないかのいずれかです。今後の改善により、条件を満たすサブクエリに対してのみ VIEW を選択的に使用できるようになる可能性があります。
+  ClickStack は、materialized ビュー の最小タイムスタンプがクエリの時間範囲の開始時刻以下である場合にのみ、その materialized ビュー を使用します。これにより、その ビュー に必要なデータがすべて含まれていることが保証されます。クエリは内部的に時間ベースのサブクエリへ分割されますが、materialized ビュー はクエリ全体に適用されるか、まったく適用されないかのいずれかです。今後の改善により、条件を満たすサブクエリに対してのみ ビュー を選択的に使用できるようになる可能性があります。
 </Note>
 
-ClickStack には、materialized VIEW が使用されているかどうかを確認するための分かりやすい視覚的インジケーターが用意されています。
+ClickStack には、materialized ビュー が使用されているかどうかを確認するための分かりやすい視覚的インジケーターが用意されています。
 
 1. **最適化ステータスを確認する** ダッシュボードまたは可視化を表示しているときに、稲妻または `Accelerated` アイコンを探してください。
 
-* **緑色の稲妻** は、そのクエリが materialized VIEW によって高速化されていることを示します。
+* **緑色の稲妻** は、そのクエリが materialized ビュー によって高速化されていることを示します。
 * **オレンジ色の稲妻** は、そのクエリがソーステーブルに対して実行されていることを示します。
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="高速化された可視化" />
+<div className="ch-image-lg">
+  <Frame>
+    ![高速化された可視化](/images/clickstack/materialized_views/accelerated_visual.webp)
+  </Frame>
+</div>
 
-2. **最適化の詳細を確認する** 稲妻アイコンをクリックすると、次の内容を示す詳細パネルが開きます。
+2. **最適化の詳細を確認する**  稲妻アイコンをクリックすると、次の内容を示す詳細パネルが開きます。
 
-* **使用中の materialized VIEW**: クエリに対して選択された VIEW。推定行数も含まれます。
-* **スキップされた materialized VIEW**: 互換性はあるものの選択されなかった VIEW。推定スキャンサイズも表示されます。
-* **互換性のない materialized VIEW**: 使用できなかった VIEW と、その具体的な理由。
+* **使用中の materialized ビュー**: クエリに対して選択された ビュー。推定行数も含まれます。
+* **スキップされた materialized ビュー**: 互換性はあるものの選択されなかった ビュー。推定スキャンサイズも表示されます。
+* **互換性のない materialized ビュー**: 使用できなかった ビュー と、その具体的な理由。
 
-3. **よくある非互換の理由を理解する** 次の場合、materialized VIEW は使用されないことがあります。
+3. **よくある非互換の理由を理解する** 次の場合、materialized ビュー は使用されないことがあります。
 
-* **クエリの時間範囲** の開始時刻が、VIEW の最小タイムスタンプより前である。
-* **可視化の粒度** が、VIEW の粒度の倍数ではない。
-* クエリで要求されている **集約関数** が、その VIEW に存在しない。
-* クエリで `count(if(...))` のような **カスタムの count 式** を使用しており、それを VIEW の集約状態から導出できない。
+* **クエリの時間範囲** の開始時刻が、ビュー の最小タイムスタンプより前である。
+* **可視化の粒度** が、ビュー の粒度の倍数ではない。
+* クエリで要求されている **集約関数** が、その ビュー に存在しない。
+* クエリで `count(if(...))` のような **カスタムの count 式** を使用しており、それを ビュー の集約状態から導出できない。
 
-これらのインジケーターにより、可視化が高速化されているかどうかを簡単に確認し、特定の VIEW が選択された理由を理解し、VIEW が適用対象にならなかった理由を診断できます。
+これらのインジケーターにより、可視化が高速化されているかどうかを簡単に確認し、特定の ビュー が選択された理由を理解し、ビュー が適用対象にならなかった理由を診断できます。
 
 <div id="how-views-are-selected">
-  ### 可視化に対して materialized view がどのように選択されるか
+  ### 可視化に対して materialized view がどのように選択されるか {#how-views-are-selected}
 </div>
 
 可視化の実行時、ClickStack では、基となるテーブルや複数の materialized view を含む複数の候補を利用できる場合があります。最適なパフォーマンスを確保するため、ClickStack は ClickHouse の [`EXPLAIN ESTIMATE`](/ja/reference/statements/explain#explain-estimate) の仕組みを使って、最も効率のよい選択肢を自動的に評価して選択します。
@@ -348,7 +375,7 @@ ClickStack には、materialized VIEW が使用されているかどうかを確
 必要なすべての次元がビューに含まれている限り、可視化にフィルター、検索制約、または時間バケット化が含まれていても、materialized view は引き続き利用できます。これにより、可視化定義を変更することなく、ダッシュボード、ヒストグラム、フィルター付きチャートをビューで高速化できます。
 
 <div id="example-of-choosing-materialized-view">
-  #### materialized view の選択例
+  #### materialized view の選択例 {#example-of-choosing-materialized-view}
 </div>
 
 同じトレースソース上に作成された 2 つの materialized view を考えてみましょう。
@@ -407,13 +434,13 @@ ORDER BY hour DESC
 どちらの materialized view も基となるテーブルを直接クエリするより高性能ですが、要件を満たす中で最も小さい view を選ぶことで、最高のパフォーマンスが得られます。
 
 <div id="alerts">
-  ### アラート
+  ### アラート {#alerts}
 </div>
 
 アラートクエリでは、互換性がある場合、自動的に materialized view が使用されます。同じ最適化ロジックが適用されるため、アラートの評価が高速化されます。
 
 <div id="backfilling-a-materialized-view">
-  ## materialized view のバックフィル
+  ## materialized view のバックフィル {#backfilling-a-materialized-view}
 </div>
 
 前述のとおり、インクリメンタルmaterialized view に含まれるのは、**ビューの作成後に挿入された**データのみであり、自動的にバックフィルされることはありません。この設計により、ビューは軽量で、維持コストも低く抑えられますが、その一方で、ビューの最小タイムスタンプより前のデータを必要とするクエリには使用できません。
@@ -433,7 +460,7 @@ ORDER BY hour DESC
 要するに、バックフィルは多くの場合、コストや運用リスクに見合いません。検討すべきなのは、履歴データの高速化が極めて重要な例外的ケースに限られます。実施する場合は、パフォーマンス、コスト、本番環境への影響のバランスを取るため、以下で説明する管理されたアプローチに従うことを推奨します。
 
 <div id="backfilling-approaches">
-  ### バックフィルのアプローチ
+  ### バックフィルのアプローチ {#backfilling-approaches}
 </div>
 
 <Info>
@@ -463,7 +490,7 @@ GROUP BY
 前述のとおり、インクリメンタルmaterialized view は自動ではバックフィルされません。新しいデータに対するインクリメンタルな動作を維持しつつ履歴データを安全にバックフィルするには、以下の方法を推奨します。
 
 <div id="direct-backfill">
-  #### `INSERT INTO SELECT` を使用した直接バックフィル
+  #### `INSERT INTO SELECT` を使用した直接バックフィル {#direct-backfill}
 </div>
 
 この方法は、**小規模なデータセット**や**比較的軽い集計クエリ**に最適です。つまり、クラスターのリソースを枯渇させることなく、妥当な時間内にバックフィル全体を完了できる場合に適しています。一般的には、バックフィルクエリが数分、長くても数時間以内で完了し、一時的な CPU 使用率や I/O 使用量の増加を許容できる場合に向いています。より大規模なデータセットや、より負荷の高い集計では、代わりに以下の増分バックフィル方式またはブロックベースのバックフィル方式を検討してください。
@@ -524,7 +551,7 @@ GROUP BY
 </Steps>
 
 <div id="incremental-backfill-null-table">
-  #### Null テーブルを使ったインクリメンタルバックフィル
+  #### Null テーブルを使ったインクリメンタルバックフィル {#incremental-backfill-null-table}
 </div>
 
 より大規模なデータセットや、より多くのリソースを要する集計クエリでは、単一の `INSERT INTO SELECT` を使った直接的なバックフィルは現実的でなかったり、安全でなかったりすることがあります。このような場合は、**インクリメンタルバックフィル**のアプローチを推奨します。この方法は、インクリメンタルmaterialized view の通常の動作により近く、履歴データセット全体を一度に集計するのではなく、扱いやすいブロック単位でデータを処理します。
@@ -606,34 +633,34 @@ GROUP BY
 </Steps>
 
 <div id="recommendations">
-  ## 推奨事項
+  ## 推奨事項 {#recommendations}
 </div>
 
 以下の推奨事項は、ClickStack で materialized view を設計・運用する際のベストプラクティスをまとめたものです。これらのガイドラインに従うことで、materialized view を効果的かつ予測可能で、コスト効率よく運用しやすくなります。
 
 <div id="granularity-selection-and-alignment">
-  ### 粒度の選択と整合性
+  ### 粒度の選択と整合性 {#granularity-selection-and-alignment}
 </div>
 
-materialized view が使用されるのは、可視化またはアラートの粒度が、その VIEW の粒度の**正確な整数倍**である場合に限られます。この粒度の決まり方は、チャートの種類によって異なります。
+materialized ビュー が使用されるのは、可視化またはアラートの粒度が、その ビュー の粒度の**正確な整数倍**である場合に限られます。この粒度の決まり方は、チャートの種類によって異なります。
 
-* **時系列チャート** (x 軸が時刻の line または bar chart) :
-  チャートで明示的に指定した粒度は、materialized view の粒度の倍数である必要があります。
-  たとえば、10 分粒度のチャートでは、10 分、5 分、2 分、1 分粒度の materialized view は使用できますが、20 分や 3 分粒度の VIEW は使用できません。
+* **時系列チャート** (x 軸が時刻の 線 または 棒グラフ) :
+  チャートで明示的に指定した粒度は、materialized ビュー の粒度の倍数である必要があります。
+  たとえば、10 分粒度のチャートでは、10 分、5 分、2 分、1 分粒度の materialized ビュー は使用できますが、20 分や 3 分粒度の ビュー は使用できません。
 
-* **非時系列チャート** (number、table、または summary chart) :
-  実効粒度は `(time range / 80)` から算出され、HyperDX がサポートする最も近い粒度に切り上げられます。この算出された粒度も、materialized view の粒度の倍数である必要があります。
+* **時間軸を使用しないチャート** (数値、table、または summary chart) :
+  実効粒度は `(time range / 80)` から算出され、ClickStack UI がサポートする最も近い粒度に切り上げられます。この算出された粒度も、materialized ビュー の粒度の倍数である必要があります。
 
 これらのルールにより、次のことが言えます。
 
-* **10 分粒度の materialized view は作成しないでください**。
-  ClickStack はチャートとアラートで 15 分粒度をサポートしていますが、10 分粒度はサポートしていません。そのため、10 分粒度の materialized view は、一般的な 15 分粒度の可視化やアラートと互換性がありません。
+* **10 分粒度の materialized ビュー は作成しないでください**。
+  ClickStack はチャートとアラートで 15 分粒度をサポートしていますが、10 分粒度はサポートしていません。そのため、10 分粒度の materialized ビュー は、一般的な 15 分粒度の可視化やアラートと互換性がありません。
 * **1 分**または**1 時間**粒度を推奨します。これらは、ほとんどのチャートおよびアラート設定と無理なく組み合わせられます。
 
-粒度が大きいほど (たとえば 1 時間) 、VIEW は小さくなり、ストレージのオーバーヘッドも低くなります。一方、粒度が小さいほど (たとえば 1 分) 、より細かな分析に柔軟に対応できます。重要なワークフローを支えられる範囲で、できるだけ小さい粒度を選択してください。
+粒度が大きいほど (たとえば 1 時間) 、ビュー は小さくなり、ストレージのオーバーヘッドも低くなります。一方、粒度が小さいほど (たとえば 1 分) 、より細かな分析に柔軟に対応できます。重要なワークフローを支えられる範囲で、できるだけ小さい粒度を選択してください。
 
 <div id="limit-and-consolidate-materialized-views">
-  ### materialized view を制限して集約する
+  ### materialized view を制限して集約する {#limit-and-consolidate-materialized-views}
 </div>
 
 materialized view を追加するたびに、insert 時のオーバーヘッドが増え、part と merge にかかる負荷も高まります。
@@ -646,7 +673,7 @@ materialized view を追加するたびに、insert 時のオーバーヘッド�
 可能であれば、同じ materialized view で複数のメトリクスを計算し、複数のチャートに対応できるようにしてください。
 
 <div id="choose-dimensions-carefully">
-  ### 次元は慎重に選択する
+  ### 次元は慎重に選択する {#choose-dimensions-carefully}
 </div>
 
 グループ化やフィルタリングによく使われる次元だけを含めてください。
@@ -662,7 +689,7 @@ materialized view を追加するたびに、insert 時のオーバーヘッド�
 </Info>
 
 <div id="naming-conventions-for-aggregation-columns">
-  ### 集約カラムの命名規則
+  ### 集約カラムの命名規則 {#naming-conventions-for-aggregation-columns}
 </div>
 
 materialized view の集約カラムは、自動推論を可能にするため、厳密な命名規則に従う必要があります。
@@ -676,7 +703,7 @@ materialized view の集約カラムは、自動推論を可能にするため�
 ClickStack は、この規則に基づいてクエリを materialized view のカラムに正しくマッピングします。
 
 <div id="quantiles-and-sketch-selection">
-  ### 分位点とスケッチの選択
+  ### 分位点とスケッチの選択 {#quantiles-and-sketch-selection}
 </div>
 
 分位点関数によって、性能面とストレージ面の特性は異なります。
@@ -687,7 +714,7 @@ ClickStack は、この規則に基づいてクエリを materialized view の�
 両方の関数で、挿入時にスケッチサイズを指定できます (たとえば `quantile(0.5)`) 。生成されたスケッチは、後から別の分位点の値 (たとえば `quantile(0.95)`) で引き続きクエリできます。ご自身のワークロードに最適なバランスを見つけるには、実際に試してみることをおすすめします。
 
 <div id="validate-effectiveness-continously">
-  ### 効果を継続的に検証する
+  ### 効果を継続的に検証する {#validate-effectiveness-continously}
 </div>
 
 materialized view が実際に効果を発揮していることを、常に確認してください。
@@ -699,7 +726,7 @@ materialized view が実際に効果を発揮していることを、常に確�
 materialized view は、クエリパターンの変化に応じて定期的に見直しと調整が必要なパフォーマンス最適化として扱うべきです。
 
 <div id="advanced-configurations">
-  ### 高度な設定
+  ### 高度な設定 {#advanced-configurations}
 </div>
 
 より複雑なワークロードでは、異なるアクセスパターンに対応するために複数の materialized VIEW を使用できます。たとえば、次のようなものがあります。
@@ -712,32 +739,32 @@ materialized view は、クエリパターンの変化に応じて定期的に�
 これらの推奨事項に従うことで、materialized VIEW の有効性と保守性を維持しながら、ClickStack の実行モデルとの整合性も保ちやすくなります。
 
 <div id="limitations">
-  ## 制限事項
+  ## 制限事項 {#limitations}
 </div>
 
 <div id="common-incompatibility-reasons">
-  ### 一般的な非互換の理由
+  ### 一般的な非互換の理由 {#common-incompatibility-reasons}
 </div>
 
-次のいずれかの条件に当てはまる場合、materialized view は**使用されません**。
+次のいずれかの条件に当てはまる場合、materialized ビュー は**使用されません**。
 
 * **クエリの時間範囲**
-  クエリの時間範囲の開始時刻が materialized view の最小タイムスタンプより前の場合。VIEW は自動的にバックフィルされないため、完全にカバーしている時間範囲のクエリにしか対応できません。
+  クエリの時間範囲の開始時刻が materialized ビュー の最小タイムスタンプより前の場合。ビュー は自動的にバックフィルされないため、完全にカバーしている時間範囲のクエリにしか対応できません。
 
 * **粒度の不一致**
-  可視化の実効粒度は、materialized view の粒度の整数倍である必要があります。具体的には次のとおりです。
+  可視化の実効粒度は、materialized ビュー の粒度の整数倍である必要があります。具体的には次のとおりです。
 
-  * **時系列チャート** (x 軸が時間の折れ線グラフまたは棒グラフ) の場合、チャートで選択した粒度は VIEW の粒度の倍数である必要があります。たとえば、10 分粒度のチャートでは、10 分、5 分、2 分、1 分の materialized view は使用できますが、20 分や 3 分粒度の VIEW は使用できません。
-  * **時系列以外のチャート** (数値チャートまたはテーブルチャート) の場合、実効粒度は `(time range / 80)` として計算し、HyperDX がサポートする最も近い粒度に切り上げたうえで、これも VIEW の粒度の倍数である必要があります。
+  * **時系列チャート** (x 軸が時間の線グラフまたは棒グラフ) の場合、チャートで選択した粒度は ビュー の粒度の倍数である必要があります。たとえば、10 分粒度のチャートでは、10 分、5 分、2 分、1 分の materialized ビュー は使用できますが、20 分や 3 分粒度の ビュー は使用できません。
+  * **時間軸を使用しないチャート** (数値チャートまたはテーブルチャート) の場合、実効粒度は `(time range / 80)` として計算し、ClickStack UI がサポートする最も近い粒度に切り上げたうえで、これも ビュー の粒度の倍数である必要があります。
 
-* **未対応の集計関数**
-  クエリが materialized view に含まれていない集計を要求している場合。使用できるのは、VIEW で明示的に計算・保存されている集計だけです。
+* **未対応の集約関数**
+  クエリが materialized ビュー に含まれていない集約を要求している場合。使用できるのは、ビュー で明示的に計算・保存されている集約だけです。
 
 * **カスタム count 式**
-  `count(if(...))` などの式や、その他の条件付きカウントを使用するクエリは、標準的な集計状態から導出できないため、materialized view は使用できません。
+  `count(if(...))` などの式や、その他の条件付きカウントを使用するクエリは、標準的な集約状態から導出できないため、materialized ビュー は使用できません。
 
 <div id="design-and-operational-constraints">
-  ### 設計上および運用上の制約
+  ### 設計上および運用上の制約 {#design-and-operational-constraints}
 </div>
 
 * **自動バックフィルなし**
@@ -755,11 +782,11 @@ materialized view は、クエリパターンの変化に応じて定期的に�
 これらの制約を理解しておくことで、materialized view を実際に効果のある場面に適用し、気付かないうちに低速なソーステーブルへのクエリにフォールバックする構成を避けやすくなります。
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="materialied-view-not-being-used">
-  ### materialized view が使用されていない
+  ### materialized view が使用されていない {#materialied-view-not-being-used}
 </div>
 
 **確認 1: 日付範囲**
@@ -784,7 +811,7 @@ materialized view は、クエリパターンの変化に応じて定期的に�
 * 最適化モーダルの「Available group/filter columns」を確認します。
 
 <div id="slow-mv-queries">
-  ### 遅い materialized view クエリ
+  ### 遅い materialized view クエリ {#slow-mv-queries}
 </div>
 
 **問題 1: materialized view の粒度が細かすぎる**
@@ -803,7 +830,7 @@ materialized view は、クエリパターンの変化に応じて定期的に�
 * 解決策: ほとんど使われない MV や、常にスキップされる MV を削除します。
 
 <div id="config-errors">
-  ### 設定エラー
+  ### 設定エラー {#config-errors}
 </div>
 
 **エラー: &quot;少なくとも1つの集計カラムが必要です&quot;**

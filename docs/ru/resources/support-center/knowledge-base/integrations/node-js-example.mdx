@@ -6,9 +6,7 @@ tags: ['Клиенты для языков программирования']
 keywords: ['NodeJS']
 ---
 
-<div id="use-nodejs-with-clickhouseclient">
-  ## Использование NodeJS с @clickhouse/client
-</div>
+## Использование NodeJS с @clickhouse/client {#use-nodejs-with-clickhouseclient}
 
 Ниже приведён базовый пример кода в файле `main.ts`.
 
@@ -56,8 +54,8 @@ interface Count {
   c: number;
 }
 
-//Замените параметры подключения клиента, такие как `host`,
-//`username`, `password`, `database`, при необходимости.
+//Please replace client connection parameters like`host`
+//`username`, `password`, `database` as needed.
 
 const initClickHouseClient = async (): Promise<ClickHouseClient> => {
   const client = createClient({

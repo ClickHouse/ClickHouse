@@ -17,7 +17,6 @@
 -- stay readable under any profile (the pure-QCC learned-index case, checked at the end).
 
 SET allow_experimental_full_text_index = 1;
-SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 

@@ -29,7 +29,7 @@ struct MultiEnum
     MultiEnum(const MultiEnum & other) = default;
     MultiEnum & operator=(const MultiEnum & other) = default;
 
-    bool isSet(EnumType value) const
+    [[nodiscard]] bool isSet(EnumType value) const
     {
         return bitset & toBitFlag(value);
     }
@@ -49,7 +49,7 @@ struct MultiEnum
         bitset = 0;
     }
 
-    StorageType getValue() const
+    [[nodiscard]] StorageType getValue() const
     {
         return bitset;
     }

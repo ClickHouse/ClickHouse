@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
@@ -15,6 +16,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -42,7 +44,7 @@ static ITransformingStep::Traits getTraits(bool preserves_sorting)
 }
 
 static Block addWindowFunctionResultColumns(const Block & block,
-    std::vector<WindowFunctionDescription> window_functions)
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions)
 {
     auto result = block;
 
@@ -50,7 +52,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
     {
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
-        column_with_type.type = f.aggregate_function->getResultType();
+        column_with_type.type = f.getResultType();
         column_with_type.column = column_with_type.type->createColumn();
 
         result.insert(column_with_type);
@@ -62,12 +64,14 @@ static Block addWindowFunctionResultColumns(const Block & block,
 WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
-    const std::vector<WindowFunctionDescription> & window_functions_,
-    bool streams_fan_out_)
+    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
+    bool streams_fan_out_,
+    const SortingStep::Settings & sort_settings_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
+    , sort_settings(sort_settings_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -85,6 +89,13 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     // have resized it.
     if (window_description.full_sort_description.empty())
         pipeline.resize(1);
+
+    /// The sorting step before the window sorts only the main stream, but `WindowTransform` also processes the totals,
+    /// which an `arrayJoin` can expand into several unsorted rows.
+    if (!window_description.full_sort_description.empty())
+        SortingStep::fullSortStreams(
+            pipeline, sort_settings, window_description.full_sort_description, /*limit_=*/0,
+            /*skip_partial_sort=*/false, /*threshold_tracker=*/nullptr, /*sort_totals=*/true);
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & /*header*/)
@@ -239,21 +250,31 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
     return frame;
 }
 
-static void serializeWindowFunctions(const std::vector<WindowFunctionDescription> & window_functions, WriteBuffer & out)
+static void serializeWindowFunctions(
+    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
 {
+    WriteBuffer & out = ctx.out;
     writeVarUInt(window_functions.size(), out);
     for (const auto & func : window_functions)
     {
-        writeStringBinary(func.column_name, out);
+        /// `column_name` is the rendered call (`calculateActionNodeName`), not a structural field, and
+        /// normalizing it only erases the table qualifier's index: the shard rewrite also inlines aliases
+        /// and `JOIN USING`, so two equivalent steps can still render it differently. A cache key leaves it
+        /// out and keeps what the call is made of - the arguments, the function and its parameters, all
+        /// written below - which is what the rendered name is a rendering of.
+        if (ctx.for_cache_key)
+            writeStringBinary(String{}, out);
+        else
+            writeStringBinary(func.column_name, out);
 
         /// Argument types are not serialized: they are derived from the input columns on deserialize
         /// (see `deserializeWindowFunctions`), which both avoids trusting client-supplied types and
         /// rebuilds the aggregate exactly as the planner does.
         writeVarUInt(func.argument_names.size(), out);
         for (const auto & argument_name : func.argument_names)
-            writeStringBinary(argument_name, out);
+            ctx.writeColumnName(argument_name);
 
-        writeStringBinary(func.aggregate_function->getName(), out);
+        writeStringBinary(func.getFunctionName(), out);
 
         /// Serialize the parameters the planner preserved, not `aggregate_function->getParameters()`:
         /// some parametric aggregates (e.g. `groupArrayMovingSum`, `groupArrayMovingAvg`,
@@ -266,13 +287,13 @@ static void serializeWindowFunctions(const std::vector<WindowFunctionDescription
     }
 }
 
-static std::vector<WindowFunctionDescription>
+static VectorWithMemoryTracking<WindowFunctionDescription>
 deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
 
-    std::vector<WindowFunctionDescription> window_functions(num_functions);
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions(num_functions);
     for (auto & func : window_functions)
     {
         readStringBinary(func.column_name, in);
@@ -308,17 +329,33 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
         for (auto & param : func.function_parameters)
             param = readFieldBinary(in);
 
-        AggregateFunctionProperties properties;
-        func.aggregate_function = AggregateFunctionFactory::instance().get(
-            function_name,
-            NullsAction::EMPTY,
-            func.argument_types,
-            func.function_parameters,
-            properties,
-            AggregateFunctionStateVariant::Window);
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
+        {
+            func.general_function = WindowFunctionFactory::instance().get(
+                function_name,
+                NullsAction::EMPTY,
+                func.argument_types,
+                func.function_parameters);
+        }
+        else
+        {
+            AggregateFunctionProperties properties;
+            func.aggregate_function = AggregateFunctionFactory::instance().get(
+                function_name,
+                NullsAction::EMPTY,
+                func.argument_types,
+                func.function_parameters,
+                properties,
+                AggregateFunctionStateVariant::Window);
+        }
     }
 
     return window_functions;
+}
+
+void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+{
+    sort_settings.updatePlanSettings(settings);
 }
 
 void WindowStep::serialize(Serialization & ctx) const
@@ -337,14 +374,21 @@ void WindowStep::serialize(Serialization & ctx) const
         flags |= 1;
     writeIntBinary(flags, ctx.out);
 
-    writeStringBinary(window_description.window_name, ctx.out);
+    /// `window_name` is the rendered window definition (`calculateWindowNodeActionName`) and is left out of
+    /// a cache key for the same reason as a window function's rendered name: normalizing it erases only the
+    /// qualifier's index, while the shard rewrite also inlines aliases and `JOIN USING`. What it renders -
+    /// the partition, the order and the frame - is serialized structurally right below, so nothing is lost.
+    if (ctx.for_cache_key)
+        writeStringBinary(String{}, ctx.out);
+    else
+        writeStringBinary(window_description.window_name, ctx.out);
 
-    serializeSortDescription(window_description.partition_by, ctx.out, ctx.version);
-    serializeSortDescription(window_description.order_by, ctx.out, ctx.version);
+    serializeSortDescription(window_description.partition_by, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(window_description.order_by, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     serializeWindowFrame(window_description.frame, ctx.out);
 
-    serializeWindowFunctions(window_functions, ctx.out);
+    serializeWindowFunctions(window_functions, ctx);
 }
 
 QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
@@ -385,7 +429,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(),
         window_description,
         window_description.window_functions,
-        streams_fan_out);
+        streams_fan_out,
+        SortingStep::Settings(ctx.settings));
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);

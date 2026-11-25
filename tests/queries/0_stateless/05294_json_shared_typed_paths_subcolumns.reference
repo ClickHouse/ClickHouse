@@ -1,0 +1,116 @@
+-- every path type: each subcolumn alone, two of one path, with the whole path and the whole column, functions rewritten to subcolumns
+sub [json.arr.size0]	1	1	1	2
+sub [json.n.null]	1	1	1	1
+sub [json.t.p]	1	1	1	2
+sub [json.t.q]	1	1	1	q2
+sub [json.m.keys]	1	1	1	[\'k0\']
+sub [json.m.values]	1	1	1	[2]
+sub [json.m.size0]	1	1	1	1
+sub [json.d.:Int64]	1	1	1	\N
+sub [json.d.String]	1	1	1	d2
+sub [json.v.UInt64]	1	1	1	2
+sub [json.v.String]	1	1	1	\N
+sub [json.lc]	1	1	1	lc2
+sub [json.d]	1	1	1	d2
+sub [json.v]	1	1	1	2
+sub [json.lcn]	1	1	1	n2
+sub [json.lcn.null]	1	1	1	
+sub [(json.t.p, json.t.q)]	1	1	1	(2,\'q2\')
+sub [(json.arr, json.arr.size0)]	1	1	1	([0,1],2)
+sub [(json.arr.size0, json.arr)]	1	1	1	(2,[0,1])
+sub [(json.t, json.t.p)]	1	1	1	((2,\'q2\'),2)
+sub [(json.t.p, json.t)]	1	1	1	(2,(2,\'q2\'))
+sub [(json, json.arr.size0)]	1	1	1	(\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\',2)
+sub [(json.arr.size0, json)]	1	1	1	(2,\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\')
+sub [(json, json.d.:Int64)]	1	1	1	(\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\',NULL)
+sub [(json.v.String, json)]	1	1	1	(NULL,\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\')
+sub [length(json.arr)]	1	1	1	2
+sub [isNull(json.n)]	1	1	1	1
+sub [mapKeys(json.m)]	1	1	1	[\'k0\']
+sub [empty(json.arr)]	1	1	1	0
+sub [json]	1	1	1	{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}
+sub [(json.t.p, json.arr.size0, json.d.:Int64)] max_block_size = 5	1	1	1	(2,2,NULL)
+sub [(json.m.values, json)] max_block_size = 5	1	1	1	([2],\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\')
+sub [json.d] max_block_size = 5	1	1	1	d2
+sub [(json.d, json.lc)] max_block_size = 5	1	1	1	(\'d2\',\'lc2\')
+sub [(json.lcn.null, json.lcn, json)] max_block_size = 5	1	1	1	(NULL,\'n2\',\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\')
+sub [(json.t.p, json.arr.size0, json.d.:Int64)] max_block_size = 7	1	1	1	(2,2,NULL)
+sub [(json.m.values, json)] max_block_size = 7	1	1	1	([2],\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\')
+sub [json.d] max_block_size = 7	1	1	1	d2
+sub [(json.d, json.lc)] max_block_size = 7	1	1	1	(\'d2\',\'lc2\')
+sub [(json.lcn.null, json.lcn, json)] max_block_size = 7	1	1	1	(NULL,\'n2\',\'{"arr":[0,1],"d":"d2","lc":"lc2","lcn":"n2","m":{"k0":2},"n":null,"t":{"p":2,"q":"q2"},"v":2}\')
+sub [length(json.arr)] optimize_functions_to_subcolumns = 1	1	1	1	2
+sub [isNull(json.n)] optimize_functions_to_subcolumns = 1	1	1	1	1
+sub [mapKeys(json.m)] optimize_functions_to_subcolumns = 1	1	1	1	[\'k0\']
+sub [empty(json.arr)] optimize_functions_to_subcolumns = 1	1	1	1	0
+-- the JSON inside a Tuple column
+tc [c.json.a]	1	1	1	2
+tc [c.json.a] max_block_size = 5	1	1	1	2
+tc [c.json.arr.size0]	1	1	1	2
+tc [c.json.arr.size0] max_block_size = 5	1	1	1	2
+tc [(c.json, c.json.a)]	1	1	1	(\'{"a":2,"arr":[0,1]}\',2)
+tc [(c.json, c.json.a)] max_block_size = 5	1	1	1	(\'{"a":2,"arr":[0,1]}\',2)
+tc [(c.json.a, c.json)]	1	1	1	(2,\'{"a":2,"arr":[0,1]}\')
+tc [(c.json.a, c.json)] max_block_size = 5	1	1	1	(2,\'{"a":2,"arr":[0,1]}\')
+tc [(c, c.json.arr.size0)]	1	1	1	((\'{"a":2,"arr":[0,1]}\'),2)
+tc [(c, c.json.arr.size0)] max_block_size = 5	1	1	1	((\'{"a":2,"arr":[0,1]}\'),2)
+tc [c]	1	1	1	(\'{"a":2,"arr":[0,1]}\')
+tc [c] max_block_size = 5	1	1	1	(\'{"a":2,"arr":[0,1]}\')
+-- nested paths: a sub-subcolumn alone, beside the sub-object in both orders, beside the other paths
+nes [json.a.arr.size0]	1	1	1	2
+nes [json.a.arr.size0] max_block_size = 7	1	1	1	2
+nes [(json.^a, json.a.arr.size0)]	1	1	1	(\'{"arr":[0,1],"x":2}\',2)
+nes [(json.^a, json.a.arr.size0)] max_block_size = 7	1	1	1	(\'{"arr":[0,1],"x":2}\',2)
+nes [(json.a.arr.size0, json.^a)]	1	1	1	(2,\'{"arr":[0,1],"x":2}\')
+nes [(json.a.arr.size0, json.^a)] max_block_size = 7	1	1	1	(2,\'{"arr":[0,1],"x":2}\')
+nes [(json.a.arr.size0, json.a.x, json.b)]	1	1	1	(2,2,4)
+nes [(json.a.arr.size0, json.a.x, json.b)] max_block_size = 7	1	1	1	(2,2,4)
+nes [(json.b, json.^a, json.a.arr)]	1	1	1	(4,\'{"arr":[0,1],"x":2}\',[0,1])
+nes [(json.b, json.^a, json.a.arr)] max_block_size = 7	1	1	1	(4,\'{"arr":[0,1],"x":2}\',[0,1])
+nes [json.^a]	1	1	1	{"arr":[0,1],"x":2}
+nes [json.^a] max_block_size = 7	1	1	1	{"arr":[0,1],"x":2}
+nes [toTypeName(json.^a)]	JSON(SHARED arr Array(UInt8), SHARED x UInt64)	JSON(SHARED arr Array(UInt8), SHARED x UInt64)	JSON(SHARED arr Array(UInt8), SHARED x UInt64)	JSON(arr Array(UInt8), x UInt64)
+-- a prefix mixing own and SHARED paths
+mix [json.^a]	1	1	1	{"x":2,"y":"y2","z":[0,1]}
+mix [json.^a] max_block_size = 5	1	1	1	{"x":2,"y":"y2","z":[0,1]}
+mix [(json.^a, json.a.y, json.a.x)]	1	1	1	(\'{"x":2,"y":"y2","z":[0,1]}\',\'y2\',2)
+mix [(json.^a, json.a.y, json.a.x)] max_block_size = 5	1	1	1	(\'{"x":2,"y":"y2","z":[0,1]}\',\'y2\',2)
+mix [(json.a.y, json.^a)]	1	1	1	(\'y2\',\'{"x":2,"y":"y2","z":[0,1]}\')
+mix [(json.a.y, json.^a)] max_block_size = 5	1	1	1	(\'y2\',\'{"x":2,"y":"y2","z":[0,1]}\')
+mix [(json.b, json.^a, json.a.z.size0)]	1	1	1	(4,\'{"x":2,"y":"y2","z":[0,1]}\',2)
+mix [(json.b, json.^a, json.a.z.size0)] max_block_size = 5	1	1	1	(4,\'{"x":2,"y":"y2","z":[0,1]}\',2)
+mix [json]	1	1	1	{"a":{"x":2,"y":"y2","z":[0,1]},"b":4}
+mix [json] max_block_size = 5	1	1	1	{"a":{"x":2,"y":"y2","z":[0,1]},"b":4}
+mix [toTypeName(json.^a)]	JSON(x UInt64, SHARED y String, z Array(UInt8))	JSON(x UInt64, SHARED y String, z Array(UInt8))	JSON(x UInt64, SHARED y String, z Array(UInt8))	JSON(x UInt64, y String, z Array(UInt8))
+-- deeper chains read from disk
+deep [json.a1.b.c]	1	1	1	2
+deep [json.a1.b]	1	1	1	(2)
+deep [json.a2.b]	1	1	1	[2,3]
+deep [json.a2.size0]	1	1	1	2
+deep [json.a3.values.x]	1	1	1	[4]
+deep [json.a4.`Tuple(b UInt64)`.b]	1	1	1	2
+deep [json.a4.String]	1	1	1	\N
+deep [json.a5.String]	1	1	1	d2
+deep [json.a5.`Array(Int64)`.size0]	1	1	1	0
+deep [(json.a1.b.c, json.a1)]	1	1	1	(2,((2)))
+deep [(json.a2.size0, json.a2.b, json.a2)]	1	1	1	(2,[2,3],[(2),(3)])
+deep [(json, json.a5.String)]	1	1	1	(\'{"a1":{"b":{"c":2}},"a2":[{"b":2},{"b":3}],"a3":{"k":{"x":4}},"a4":{"b":2},"a5":"d2"}\',\'d2\')
+-- containers whose next substream follows the typed shared data in the granule
+sib [t] max_block_size = 5	1	1	1	(\'{"a":2,"b":"b2"}\',\'s2\')
+sib [arr] max_block_size = 5	1	1	1	[(\'{"a":0}\',0),(\'{"a":1}\',1)]
+sib [v] max_block_size = 5	1	1	1	{"a":2}
+sib [d] max_block_size = 5	1	1	1	{"a":2}
+sib [m] max_block_size = 5	1	1	1	{\'k\':\'{"a":102}\'}
+sib [(t, arr, v, d, m)] max_block_size = 5	1	1	1	((\'{"a":2,"b":"b2"}\',\'s2\'),[(\'{"a":0}\',0),(\'{"a":1}\',1)],\'{"a":2}\',\'{"a":2}\',{\'k\':\'{"a":102}\'})
+sib [t.s] max_block_size = 5	1	1	1	s2
+sib [t.j.a] max_block_size = 5	1	1	1	2
+sib [arr.k] max_block_size = 5	1	1	1	[0,1]
+sib [arr.j.a] max_block_size = 5	1	1	1	[0,1]
+sib [v.String] max_block_size = 5	1	1	1	\N
+sib [d.String] max_block_size = 5	1	1	1	\N
+sib [m.values] max_block_size = 5	1	1	1	[\'{"a":102}\']
+sib [m.values.a] max_block_size = 5	1	1	1	[102]
+sib [(t.j, t.s)] max_block_size = 5	1	1	1	(\'{"a":2,"b":"b2"}\',\'s2\')
+sib [(t.s, t.j.b)] max_block_size = 5	1	1	1	(\'s2\',\'b2\')
+sib [(arr.j.a, arr.k, arr)] max_block_size = 5	1	1	1	([0,1],[0,1],[(\'{"a":0}\',0),(\'{"a":1}\',1)])
+sib [(m.values.a, m)] max_block_size = 5	1	1	1	([102],{\'k\':\'{"a":102}\'})

@@ -18,7 +18,6 @@ SET join_algorithm = 'hash';
 SELECT '--- Row store planner decision test ---';
 
  -- Pin planner settings
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET collect_hash_table_stats_during_joins = 0;
@@ -44,25 +43,25 @@ SYSTEM FLUSH LOGS text_log, query_log;
 
 SELECT 'rs_always_enabled', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_always_enabled' AND type = 'QueryFinish');
 
 SELECT 'rs_disabled_by_unknown_statistcs', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabled_by_unknown_statistcs' AND type = 'QueryFinish');
 
 SELECT 'rs_enabled_by_planner', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_enabled_by_planner' AND type = 'QueryFinish');
 
 SELECT 'rs_disabled_by_planner', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabled_by_planner' AND type = 'QueryFinish');
 
@@ -85,13 +84,13 @@ SYSTEM FLUSH LOGS text_log, query_log;
 
 SELECT 'rs_collect_runtime_stats', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_collect_runtime_stats' AND type = 'QueryFinish');
 
 SELECT 'rs_disabed_by_runtime_stats', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabed_by_runtime_stats' AND type = 'QueryFinish');
 

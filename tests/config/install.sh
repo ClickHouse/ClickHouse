@@ -42,12 +42,15 @@ REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 BUILD_TYPE_CONFIGS_ONLY=0
 DEFAULT_COMPRESSION_CODEC=""
+USE_PARALLEL_REPLICAS_PLAN_BASED=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
+        --parallel-rep-plan-based) USE_PARALLEL_REPLICAS_PLAN_BASED=1 ;;
+        --autopr) USE_AUTOMATIC_PARALLEL_REPLICAS=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
         --distributed-cache) USE_DISTRIBUTED_CACHE=1 ;;
@@ -76,6 +79,17 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
+
+# The helper queries below only read `system.build_options`, so they must not touch the persistent
+# default data directory of `clickhouse-local` in the home: a table persisted there by an unrelated
+# invocation, or a concurrent instance holding the directory, would make the probe fail instead of
+# answering. The `--tmp` option asks for a throwaway directory, but the previous-release binary of
+# the upgrade check does not know it (and defaults to a temporary directory anyway), so ask the
+# binary at hand whether it supports the option.
+LOCAL_TMP_OPTION=""
+if clickhouse local --tmp --query "SELECT 1" > /dev/null 2>&1; then
+    LOCAL_TMP_OPTION="--tmp"
+fi
 
 function check_clickhouse_version()
 {
@@ -106,11 +120,11 @@ function is_fast_build()
     # system.build_options; the coverage flags are applied per-directory, so they never
     # reach CXX_FLAGS and cannot be probed from there. An unanswerable probe declines,
     # because CXX_FLAGS cannot distinguish a coverage build.
-    if [[ "$(clickhouse local --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
+    if [[ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
         return 1
     fi
     # sanitizers and debug builds are slow
-    [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value NOT LIKE '%-DSANITIZER%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
 # Print 1 or 0 for a CXX_FLAGS pattern in the installed binary, or fail. An unanswered probe
@@ -119,7 +133,7 @@ function is_fast_build()
 function build_option_flag()
 {
     local description=$1 pattern=$2 value rc=0
-    value=$(clickhouse local --query \
+    value=$(clickhouse local $LOCAL_TMP_OPTION --query \
         "SELECT countIf(name = 'CXX_FLAGS' AND value LIKE '$pattern') > 0 FROM system.build_options") || rc=$?
     if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
         echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
@@ -134,7 +148,7 @@ function build_option_flag()
 function build_option_enabled()
 {
     local description=$1 name=$2 value rc=0
-    value=$(clickhouse local --query \
+    value=$(clickhouse local $LOCAL_TMP_OPTION --query \
         "SELECT multiIf(count() = 0, 'missing', countIf(upper(value) IN ('ON', '1')) > 0, '1', '0') \
          FROM system.build_options WHERE name = '$name'") || rc=$?
     if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
@@ -224,6 +238,7 @@ ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/predicate_statistics_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/collect_connection_metrics.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_catalog_drop_table_concurrency.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
@@ -232,6 +247,7 @@ ln -sf $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite_alternative.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/grpc_protocol.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/arrowflight.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
@@ -246,6 +262,30 @@ if check_clickhouse_version 25.10; then
     ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
+# The server isolates its filesystem in new PID and mount namespaces with a new `/proc` if it has `CAP_SYS_ADMIN`, and
+# in new user and mount namespaces otherwise. A container that is not privileged, such as the one of the fast test,
+# does not allow that, and the setting stays at its default, `disabled`, there. The supervisor outside of the PID
+# namespace has a seccomp filter only on x86_64 and AArch64.
+if check_clickhouse_version 26.11 && command -v unshare >/dev/null \
+    && if unshare --mount --pid --fork --mount-proc true 2>/dev/null; then
+            [[ "$(uname -m)" =~ ^(x86_64|aarch64)$ ]]
+        else
+            unshare --user --map-root-user --mount true 2>/dev/null
+        fi; then
+    ln -sf $SRC_PATH/config.d/filesystem_isolation.xml $DEST_SERVER_PATH/config.d/
+    # Many tests make files in the directory of the tests and in `CLICKHOUSE_TMP` inside it visible to the server,
+    # with symbolic links from `user_files` or by passing their paths, so the directory is kept visible.
+    if [ -d "$SRC_PATH/../queries" ]; then
+        QUERIES_PATH="$(cd "$SRC_PATH/../queries" && pwd -P)"
+        cat > $DEST_SERVER_PATH/config.d/filesystem_isolation_queries_path.xml <<EOF
+<clickhouse>
+    <filesystem_isolation_paths>
+        <read_write>$QUERIES_PATH</read_write>
+    </filesystem_isolation_paths>
+</clickhouse>
+EOF
+    fi
+fi
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
@@ -375,7 +415,7 @@ fi
 # SSH protocol support (not supported with fasttest or OpenSSL FIPS).
 function is_openssl_fips_build()
 {
-    [ "$(clickhouse local --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
 }
 if [ "$FAST_TEST" != "1" ] && ! is_openssl_fips_build; then
     ln -sf $SRC_PATH/config.d/ssh.xml $DEST_SERVER_PATH/config.d/
@@ -385,6 +425,11 @@ fi
 # Not supported with fasttest.
 if [ "$FAST_TEST" != "1" ]; then
    ln -sf "$SRC_PATH/config.d/legacy_geobase.xml" "$DEST_SERVER_PATH/config.d/"
+fi
+
+# The encrypted storage for named collections requires SSL, which fasttest builds without.
+if [ "$FAST_TEST" != "1" ]; then
+    ln -sf $SRC_PATH/config.d/named_collections_storage.xml $DEST_SERVER_PATH/config.d/
 fi
 
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
@@ -405,6 +450,8 @@ ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
+# A marker setting for merges and mutations, which take their settings from the background profile.
+ln -sf $SRC_PATH/users.d/background_profile.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 # The `url_prefix` handler option is introduced by this feature and is not present in any
 # released version before 26.8, so gate on 26.8 (the first version that can contain it) to
@@ -597,11 +644,16 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     fi
     # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
     # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads and
-    # reserve_granularity in 26.7.
+    # reserve_granularity in 26.7. `use_real_disk_size` is introduced by this feature and is not
+    # present in any released version yet: 26.8 was released without it, so gate on 26.9 (the first
+    # version that can contain it) to keep the previous-release server of the upgrade check bootable.
+    # This gate must always be bumped to master's current `VERSION_MINOR` while the feature is
+    # unmerged: the upgrade check boots the previous release, which never has the setting.
     # --remove-destination: an earlier install may have left this path as a symlink to the
     # source; without it cp would follow the link and fail with "same file" under set -e.
     cp --remove-destination $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 25.5 || sed -i "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 26.10 || sed -i "s|<use_real_disk_size>1</use_real_disk_size>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 26.7 || sed -i "s|<keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     # reserve_granularity was added in 26.7: apply the randomized s3_cache value for new-enough
     # servers, strip it entirely (unknown setting) for older ones in the upgrade/bugfix checks.
@@ -635,6 +687,16 @@ ln -sf $SRC_PATH/config.d/storage_conf_local.xml $DEST_SERVER_PATH/config.d/
 if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
+fi
+
+if [[ "$USE_PARALLEL_REPLICAS_PLAN_BASED" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/enable_parallel_replicas_plan_based.xml $DEST_SERVER_PATH/users.d/
+fi
+
+# The `parallel_replicas` cluster this profile points at is defined in config.d/clusters.xml,
+# which is always installed, so no extra cluster config is linked here.
+if [[ "$USE_AUTOMATIC_PARALLEL_REPLICAS" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/enable_automatic_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ "$USE_ASYNC_INSERT" == "1" ]]; then
@@ -689,6 +751,8 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
     rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
     rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
+    # Same for the Arrow Flight port.
+    rm -f $ch_server_1_path/config.d/arrowflight.xml $ch_server_2_path/config.d/arrowflight.xml
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
