@@ -401,6 +401,7 @@ RuntimeDataflowStatisticsCacheUpdater::RuntimeDataflowStatisticsCacheUpdater(
     : block(std::move(block_))
     , duplicated(duplicated_)
     , read_ranges_registry(std::make_shared<ReadRangesRegistry>(block, duplicated))
+    , duplicated_read_ranges_registry(duplicated ? read_ranges_registry : std::make_shared<ReadRangesRegistry>(block, /*duplicated_=*/true))
 {
 }
 

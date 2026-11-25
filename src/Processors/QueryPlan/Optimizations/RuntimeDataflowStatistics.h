@@ -238,6 +238,9 @@ public:
 
     /// See `IMergeTreeReader::setReadRangesRegistry`.
     [[nodiscard]] const ReadRangesRegistryPtr & getReadRangesRegistry() const { return read_ranges_registry; }
+    /// For the files of the read that every replica would read in full, whatever share of the read it takes: their bytes
+    /// go to `duplicated_bytes`. The same as `getReadRangesRegistry` for a duplicated read.
+    [[nodiscard]] const ReadRangesRegistryPtr & getDuplicatedReadRangesRegistry() const { return duplicated_read_ranges_registry; }
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.
@@ -268,6 +271,7 @@ private:
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
     const ReadRangesRegistryPtr read_ranges_registry;
+    const ReadRangesRegistryPtr duplicated_read_ranges_registry;
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

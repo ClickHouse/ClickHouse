@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
@@ -124,9 +125,12 @@ MergeTreeReadTask::MergeTreeReadTask(
         readers.main->setReadRangesRegistry(registry);
         for (auto & reader : readers.prewhere)
             reader->setReadRangesRegistry(registry);
-        /// A replica reading the same granules reads their patches too.
+        /// A replica reading the same granules reads their patches too, so the patch is split between the replicas as the
+        /// read is, if its ranges follow those of the read. Otherwise every replica reads all of it.
+        const auto data_part = info->data_part_info->getDataPart();
         for (auto & patch : readers.patches)
-            patch->getReader()->setReadRangesRegistry(registry);
+            patch->getReader()->setReadRangesRegistry(patchRangesFollowReadRanges(data_part, patch->getPatchPart())
+                ? registry : updater->getDuplicatedReadRangesRegistry());
     }
 }
 

@@ -43,6 +43,10 @@ using MinMaxStats = std::vector<MinMaxStat>;
 using MaybeMinMaxStats = std::optional<MinMaxStats>;
 using PatchStatsMap = absl::node_hash_map<MarkRange, PatchStats, MarkRangeHash>;
 
+/// Whether the ranges read from the patch part follow the ranges read from the original part. Otherwise a read takes
+/// all of the patch, or all of the section of each of its source parts, whatever ranges of the original part it reads.
+bool patchRangesFollowReadRanges(const DataPartPtr & original_part, const PatchPartInfoForReader & patch);
+
 MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name, const MergeTreeReaderSettings & settings);
 MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchStatsMap & patch_stats, const PatchStats & result_stats);
 
