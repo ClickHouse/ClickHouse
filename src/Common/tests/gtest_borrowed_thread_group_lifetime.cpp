@@ -301,6 +301,35 @@ TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesCancelledCallbackInQuery)
     t.join();
 }
 
+/// A task the pool drops on shutdown reports an ordinary error, not a broken promise.
+TEST(ThreadPoolCallbackRunner, LocalRunnerDroppedTaskReportsCannotSchedule)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto pool = makeSingleThreadPool();
+
+        std::promise<void> started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+        pool->scheduleOrThrowOnError([&started, unblock_future]
+        {
+            started.set_value();
+            unblock_future.wait();
+            throw std::runtime_error("shut the pool down");
+        });
+        started.get_future().wait();
+
+        ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto task = runner.enqueueAndGiveOwnership([] {});
+
+        unblock.set_value();
+        EXPECT_THROW(pool->wait(), std::runtime_error);
+        EXPECT_THROW(task->future.get(), Exception);
+    });
+    t.join();
+}
+
 /// The use-after-free regression: async work enqueued from a borrowed `ThreadGroup` scope
 /// (materialized views, async-insert flushes, `EXPLAIN ANALYZE`) may outlive the parent query.
 /// The capture must keep the accounting chain alive, allocations must still charge the owning

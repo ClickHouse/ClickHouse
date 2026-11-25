@@ -221,15 +221,31 @@ private:
         Callback callback;
         ThreadName thread_name;
         std::promise<Result> promise{std::allocator_arg, ServerOwnedAllocator<char>{}};
+        bool was_run = false;
 
         ~JobState()
         {
-            /// Not run (cancelled, or dropped by the pool): what the callback captured is the query's, so release it there,
-            /// unless the thread has no `ThreadStatus` to attach.
-            if (!thread_group || !hasThreadStatus())
+            if (was_run)
                 return;
-            ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
-            callback = {};
+
+            /// Not run (cancelled, dropped by the pool, or not scheduled): what the callback captured is the query's, so
+            /// release it there, unless the thread has no `ThreadStatus` to attach. Then satisfy the promise with an
+            /// ordinary error instead of leaving it broken, like `CallbackRunnerTask` does.
+            try
+            {
+                if (thread_group && hasThreadStatus())
+                {
+                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
+                    callback = {};
+                }
+                callback = {};
+                promise.set_exception(std::make_exception_ptr(
+                    Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Task was dropped before execution (thread pool is shutting down)")));
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Ok: the promise was already satisfied, when scheduling failed.
+            }
         }
     };
 
@@ -339,6 +355,7 @@ public:
                     return;
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, state->thread_name);
             }
+            state->was_run = true;
 
             SCOPE_EXIT_SAFE(
             {
