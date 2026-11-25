@@ -2,6 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
+#include <Common/ServerOwnedAllocator.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -43,12 +44,16 @@ struct CallbackRunnerTask
 {
     std::promise<Result> promise;
     ThreadGroupPtr thread_group;
-    ThreadName thread_name;
     Callback callback;
+    ThreadName thread_name;
     bool was_run = false;
 
+    /// The query thread allocates the promise state and the pool thread may free it after detaching, so it is the server's.
     CallbackRunnerTask(ThreadGroupPtr thread_group_, ThreadName thread_name_, Callback && callback_)
-        : thread_group(std::move(thread_group_)), thread_name(thread_name_), callback(std::move(callback_))
+        : promise(std::allocator_arg, ServerOwnedAllocator<char>{})
+        , thread_group(std::move(thread_group_))
+        , callback(std::move(callback_))
+        , thread_name(thread_name_)
     {
     }
 
@@ -143,7 +148,9 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
         /// otherwise the accounting will be incorrect
         auto thread_group = getCurrentThreadGroup();
 
-        auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
+        /// The pool thread frees the task after detaching from the query, so it is the server's.
+        using Task = detail::CallbackRunnerTask<Result, Callback>;
+        auto task = std::allocate_shared<Task>(ServerOwnedAllocator<Task>{}, std::move(thread_group), thread_name, std::move(callback));
 
         auto future = task->promise.get_future();
 
@@ -204,6 +211,16 @@ private:
         !std::is_same_v<PoolT, GlobalThreadPool>,
         "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool "
         "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
+
+    /// What a job needs, in one block, so that the job fits in the buffer of `std::function` instead of an allocation.
+    struct JobState
+    {
+        std::shared_ptr<Task> task;
+        ThreadGroupPtr thread_group;
+        Callback callback;
+        ThreadName thread_name;
+        std::promise<Result> promise{std::allocator_arg, ServerOwnedAllocator<char>{}};
+    };
 
     PoolT & pool;
     ThreadName thread_name{};
@@ -296,29 +313,33 @@ public:
     /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
     {
-        auto promise = std::make_shared<std::promise<Result>>();
-        auto task = std::make_shared<Task>();
-        task->future = promise->get_future();
+        /// The pool thread may free these after detaching from the query, so they are the server's.
+        auto task = std::allocate_shared<Task>(ServerOwnedAllocator<Task>{});
+        auto state = std::allocate_shared<JobState>(ServerOwnedAllocator<JobState>{}, task, getCurrentThreadGroup(), std::move(callback), thread_name);
+        task->future = state->promise.get_future();
 
-        auto task_func = [this, task, thread_group = getCurrentThreadGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [state]
         {
+            auto & task_state = state->task->state;
             TaskState expected = SCHEDULED;
-            if (!task->state.compare_exchange_strong(expected, RUNNING))
+            if (!task_state.compare_exchange_strong(expected, RUNNING))
             {
                 if (expected == CANCELLED)
                     return;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, thread_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, state->thread_name);
             }
 
             SCOPE_EXIT_SAFE(
             {
                 expected = RUNNING;
-                if (!task->state.compare_exchange_strong(expected, FINISHED))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, thread_name);
+                if (!task_state.compare_exchange_strong(expected, FINISHED))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, state->thread_name);
             });
 
-            executeCallback(*promise, std::move(my_callback), std::move(thread_group), thread_name);
+            executeCallback(state->promise, std::move(state->callback), std::move(state->thread_group), state->thread_name);
         };
+        /// With the vtable pointer, it fits in the buffer of `std::function` in libc++.
+        static_assert(sizeof(task_func) <= 2 * sizeof(void *));
 
         try
         {
@@ -331,7 +352,7 @@ public:
         }
         catch (...)
         {
-            promise->set_exception(std::current_exception());
+            state->promise.set_exception(std::current_exception());
             throw;
         }
 

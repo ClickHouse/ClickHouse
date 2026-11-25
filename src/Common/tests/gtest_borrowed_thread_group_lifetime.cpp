@@ -178,6 +178,62 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerDroppedTaskReleasesGroupBeforeFutureI
     t.join();
 }
 
+/// The runner's own state is allocated on the scheduling thread and usually freed by a detached pool thread, so it must
+/// not be charged to the query, or every task leaves its size charged to the query until the query ends.
+TEST(ThreadPoolCallbackRunner, UnsafeRunnerStateIsNotChargedToQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        constexpr size_t num_tasks = 50000;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        auto runner = threadPoolCallbackRunnerUnsafe<void>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        for (size_t i = 0; i < num_tasks; ++i)
+            runner([] {}, Priority{}).get();
+        pool->wait();
+        /// Detaching flushes the untracked memory of this thread to the group.
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+    });
+    t.join();
+}
+
+TEST(ThreadPoolCallbackRunner, LocalRunnerStateIsNotChargedToQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        constexpr size_t num_tasks = 50000;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            for (size_t i = 0; i < num_tasks; ++i)
+            {
+                runner.enqueueAndKeepTrack([] {});
+                runner.waitForAllToFinishAndRethrowFirstError();
+            }
+        }
+        pool->wait();
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+    });
+    t.join();
+}
+
 /// The use-after-free regression: async work enqueued from a borrowed `ThreadGroup` scope
 /// (materialized views, async-insert flushes, `EXPLAIN ANALYZE`) may outlive the parent query.
 /// The capture must keep the accounting chain alive, allocations must still charge the owning

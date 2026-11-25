@@ -152,9 +152,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunnerUnsafe<Result>(*pool, ThreadName::READ_THREAD_POOL);
-
-    return schedule([request, fd]() -> Result
+    /// Not through `std::function`, so that the callback is stored in the task without an allocation of its own.
+    return scheduleFromThreadPoolUnsafe<Result>([request, fd]() -> Result
     {
         Stopwatch watch(CLOCK_MONOTONIC);
         SCOPE_EXIT({
@@ -194,7 +193,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
         return Result{ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read };
-    }, request.priority);
+    }, *pool, ThreadName::READ_THREAD_POOL, request.priority);
 }
 
 IAsynchronousReader::Result ThreadPoolReader::execute(Request /* request */)

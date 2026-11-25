@@ -46,12 +46,12 @@ ParquetMetadataCacheCell::ParquetMetadataCacheCell(
     , kept_statistics(
           kept_statistics_ ? std::move(kept_statistics_)
                            : std::allocate_shared<ParquetKeptStatistics>(
-                                 ServerOwnedCacheEntryAllocator<ParquetKeptStatistics>(),
+                                 ServerOwnedAllocator<ParquetKeptStatistics>(),
                                  std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
     , kept_offset_indexes(
           kept_offset_indexes_ ? std::move(kept_offset_indexes_)
                                : std::allocate_shared<Parquet::KeptOffsetIndexes>(
-                                     ServerOwnedCacheEntryAllocator<Parquet::KeptOffsetIndexes>(),
+                                     ServerOwnedAllocator<Parquet::KeptOffsetIndexes>(),
                                      std::max<size_t>(memory_bytes, MIN_KEPT_OFFSET_INDEXES_BYTES)))
 {
 }
@@ -124,7 +124,7 @@ std::shared_ptr<const Index> copyIndexToKeep(const std::shared_ptr<const Index> 
 {
     if (!index || kept)
         return nullptr;
-    return std::shared_ptr<const Index>(new Index(*index), deleteKeptIndex<Index>, ServerOwnedCacheEntryAllocator<Index>());
+    return std::shared_ptr<const Index>(new Index(*index), deleteKeptIndex<Index>, ServerOwnedAllocator<Index>());
 }
 
 }
@@ -145,7 +145,7 @@ ParquetKeptStatistics::prepare(const String & column_key, const Ranges & ranges,
         if (ranges_by_column.contains(column_key) || total_bytes + bytes > max_bytes)
             return std::nullopt;
     }
-    return Column{column_key, RangesPtr(new Ranges(ranges), deleteKeptRanges, ServerOwnedCacheEntryAllocator<Ranges>()), bytes};
+    return Column{column_key, RangesPtr(new Ranges(ranges), deleteKeptRanges, ServerOwnedAllocator<Ranges>()), bytes};
 }
 
 bool ParquetKeptStatistics::add(Column column)
