@@ -2042,12 +2042,17 @@ QValue QCompiler::compileExec(const QSQLTemplate & sql, const QTable & source, Q
     /// `exec` returns a value instead of a table:
     /// - for one phrase without a name, the value of the phrase: the list of a column, or an atom for an aggregate;
     /// - with the by phrase as well, a dictionary from the keys to those values;
-    /// - for several phrases, a named phrase, or none, q returns a dictionary from the names of the columns to their
-    ///   values. The lists of a dictionary are of one type here, so this form stays a table.
+    /// - for several phrases or a named phrase, q returns a dictionary from the names of the columns to their values,
+    ///   and without a phrase, the last record. The lists of a dictionary are of one type here, and there are no
+    ///   records, so these forms are not supported. A table in place of them would give other results without
+    ///   a notice: its `count` is the number of the rows, not of the columns.
+    if (sql.columns.size() != 1 || !sql.columns.front().name.empty())
+        throwQError(ErrorCodes::NOT_IMPLEMENTED, offset,
+            "'exec' is supported with one phrase without a name: with several phrases, with a named phrase, or without "
+            "a phrase it returns a dictionary of the columns or a record (use 'select')");
+
     bool single_atom = false;
     QValue table = compileSelect(sql, source, env, &single_atom);
-    if (sql.columns.size() != 1 || !sql.columns.front().name.empty())
-        return table;
 
     auto column_as_list = [&](const NameAndTypePair & column)
     {
