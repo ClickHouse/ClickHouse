@@ -1,0 +1,27 @@
+<test>
+    <settings>
+        <join_algorithm>parallel_hash</join_algorithm>
+        <hash_join_layout>parallel</hash_join_layout>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <query_plan_convert_outer_join_to_inner_join>0</query_plan_convert_outer_join_to_inner_join>
+        <max_threads>8</max_threads>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <collect_hash_table_stats_during_joins>0</collect_hash_table_stats_during_joins>
+    </settings>
+
+    <create_query>CREATE TABLE rh_spill_probe (k UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE rh_spill_build (k UInt64, v UInt64) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO rh_spill_probe SELECT intHash64(number) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO rh_spill_build SELECT intHash64(number * 2), number FROM numbers_mt(10000000)</fill_query>
+
+    <!-- The join ends with 697 MB when its hash tables only grow, and with 429 MB when they are in the Robin Hood mode, of which
+         160 MB are the right blocks. Before each block it switches to `GraceHashJoin` at half of `max_bytes_before_external_join`,
+         here 550 MB, between the two: a join that only grows its hash tables spills at about 670 MB, after their last growth,
+         and a join that switches them to the Robin Hood mode at that growth stays in memory. -->
+    <query>SELECT sum(r.v) FROM rh_spill_probe AS l LEFT JOIN rh_spill_build AS r ON l.k = r.k SETTINGS max_bytes_before_external_join = 1100000000 FORMAT Null</query>
+    <query>SELECT sum(r.v) FROM rh_spill_probe AS l LEFT JOIN rh_spill_build AS r ON l.k = r.k SETTINGS max_bytes_before_external_join = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS rh_spill_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rh_spill_build</drop_query>
+</test>
