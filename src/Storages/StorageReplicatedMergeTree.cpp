@@ -10892,6 +10892,15 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         Coordination::Requests ops;
         /// NOTE Don't need to remove block numbers too, because no in-progress inserts in the range are possible
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.getPartitionId(), part_info.min_block, part_info.max_block);
+        if (ops.size() > zkutil::MULTI_BATCH_SIZE)
+        {
+            /// Too many deduplication blocks to remove in the same multi-request as the log entry: it could exceed
+            /// ZooKeeper's maximum message size (jute.maxbuffer, 1MB by default), and ZooKeeper would close the session.
+            /// Remove them in batches first, as DROP PARTITION does. If we retry or do not commit the DROP_PART below,
+            /// the removed blocks only allow the same data to be inserted again.
+            ops.clear();
+            clearBlocksInPartition(*zookeeper, part_info.getPartitionId(), part_info.min_block, part_info.max_block);
+        }
         size_t clear_block_ops_size = ops.size();
 
         /// If `part_name` is result of a recent merge and source parts are still available then
