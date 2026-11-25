@@ -60,10 +60,6 @@ struct CostConfig
     Float64 unknown_leaf_cost = 100500;
     Float64 funnel_sequential_cost_per_row = 1.0; /// Gather/scatter push every row through one stream endpoint.
     Float64 merge_sequential_cost_per_row = 1.0;  /// N-way merge of sorted streams advances one cursor at a time.
-    /// The price of one distinct value that a `uniqExact` state holds, relative to a hash table entry of an
-    /// aggregation and to a row of an exchange. 0 without `cascades_distinct_aggregation_split`: the values
-    /// of states then have no price.
-    Float64 distinct_state_value_cost = 1.0;
 
     [[nodiscard]] String dump() const;
 };

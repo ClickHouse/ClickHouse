@@ -70,7 +70,6 @@ CostConfig parseCostConfig(const String & json_str)
         read("unknown_leaf_cost", config.unknown_leaf_cost);
         read("funnel_sequential_cost_per_row", config.funnel_sequential_cost_per_row);
         read("merge_sequential_cost_per_row", config.merge_sequential_cost_per_row);
-        read("distinct_state_value_cost", config.distinct_state_value_cost);
     }
     catch (const Poco::Exception & e)
     {
@@ -97,7 +96,6 @@ CostConfig parseCostConfig(const String & json_str)
     require(config.unknown_leaf_cost, "unknown_leaf_cost");
     require(config.funnel_sequential_cost_per_row, "funnel_sequential_cost_per_row");
     require(config.merge_sequential_cost_per_row, "merge_sequential_cost_per_row");
-    require(config.distinct_state_value_cost, "distinct_state_value_cost");
     return config;
 }
 
@@ -113,7 +111,6 @@ String CostConfig::dump() const
     obj.set("unknown_leaf_cost", unknown_leaf_cost);
     obj.set("funnel_sequential_cost_per_row", funnel_sequential_cost_per_row);
     obj.set("merge_sequential_cost_per_row", merge_sequential_cost_per_row);
-    obj.set("distinct_state_value_cost", distinct_state_value_cost);
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     obj.stringify(oss);
     return oss.str();
@@ -189,8 +186,7 @@ static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
                  + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-                 + inputs.config.distinct_state_value_cost * distinct_state_values
-                 + inputs.config.distinct_state_value_cost * distinct_state_bytes
+                 + distinct_state_values + distinct_state_bytes
                  + inputStats(inputs, 0).estimated_row_count) / divide_by;
     return cost;
 }
@@ -285,8 +281,7 @@ static Cost mergingAggregatedCost(const CostInputs & inputs)
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
         + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-        + inputStats(inputs, 0).estimated_row_count
-        + inputs.config.distinct_state_value_cost * inputStats(inputs, 0).distinct_state_values) / inputs.parallelism;
+        + inputStats(inputs, 0).estimated_row_count + inputStats(inputs, 0).distinct_state_values) / inputs.parallelism;
     /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
     /// merge for large outputs; bucket-level merge within a node is parallel.
     cost.sequential = inputs.output_stats.estimated_row_count / inputs.parallelism;
@@ -302,7 +297,7 @@ static Cost broadcastExchangeCost(const CostInputs & inputs)
     /// is the per-node bound. A shuffle moves 1/N per node, so a broadcast still costs N times
     /// a shuffle of the same data.
     cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-        + inputs.config.distinct_state_value_cost * inputs.output_stats.distinct_state_bytes;
+        + inputs.output_stats.distinct_state_bytes;
     cost.sequential += inputs.config.exchange_fixed_overhead;
     return cost;
 }
@@ -319,8 +314,7 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// optimizer keeps big scans on a single node.
     /// The distinct values in `uniqExact` states are not in the row width. The exchange sends and reads
     /// such a state value by value, so a value has the price of a row here and in the funnel below.
-    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row
-        + inputs.config.distinct_state_value_cost * inputs.output_stats.distinct_state_bytes;
+    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row + inputs.output_stats.distinct_state_bytes;
     if (dynamic_cast<const ShuffleExchangeStep *>(&step))
         network_bytes /= std::max(1.0, inputs.node_count);
     cost.network += network_bytes;
@@ -338,8 +332,7 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
         if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
             sorted_gather && sorted_gather->getMaintainSortDescription())
             funnel_rows = std::min(funnel_rows, inputs.output_stats.estimated_row_count);
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row
-            * (funnel_rows + inputs.config.distinct_state_value_cost * inputs.output_stats.distinct_state_values);
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row * (funnel_rows + inputs.output_stats.distinct_state_values);
     }
     if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
         gather && gather->getMaintainSortDescription())

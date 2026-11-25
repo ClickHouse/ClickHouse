@@ -276,8 +276,9 @@ aggregation stay in the group, and the costs select.
     (on by default, and the cost model takes it as on) it keeps the values in a small set for
     each bucket and merges nothing, and in the order of its argument it needs no set. Both take
     much less time for each value.
-  - The price of a value is the constant `distinct_state_value_cost` of the cost configuration:
-    1 with the setting, 0 without it, so that the costs without the setting do not change.
+
+  These estimates do not depend on the setting: they also apply to the plans of an aggregation
+  that the rule does not change.
 
 ## Architecture Details
 
@@ -453,8 +454,7 @@ replicated read of such a table would look almost free.
 The whole cost configuration is overridable at query time via one JSON parameter —
 the three weights, the per-exchange overhead, and the calibration constants
 (`expression_cost_per_row`, `hash_table_build_factor`, `unknown_leaf_cost`,
-`funnel_sequential_cost_per_row`, `merge_sequential_cost_per_row`,
-`distinct_state_value_cost`):
+`funnel_sequential_cost_per_row`, `merge_sequential_cost_per_row`):
 ```sql
 SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":32}';
 ```

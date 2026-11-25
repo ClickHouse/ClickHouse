@@ -11679,13 +11679,13 @@ Consider pushing partial aggregation below a join (eager aggregation) as a cost-
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", BETA, \
         {"26.9", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."}) \
-    DECLARE(Bool, cascades_distinct_aggregation_split, false, R"(
+    DECLARE(Bool, cascades_distinct_aggregation_split, true, R"(
 Consider computing a `uniqExact(x)` without `GROUP BY` (so also a `count(DISTINCT x)`) as a count over an aggregation by `x`, as a cost-based alternative in the Cascades optimizer. The nodes then shuffle the distinct values by their hash and each node counts its own, so no single node merges all the values. With this setting the cost estimates also count the distinct values that the states of `uniqExact` hold.
 Applies to arguments that are integers, `Date`, `Date32`, `DateTime`, enums, `UUID` or `IPv4`.
 The query can have the aggregate functions `count`, `sum`, `min`, `max` and `avg` of numbers beside the `uniqExact`, also with the `-If` combinator. The aggregation by `x` then computes their states for each value of `x`.
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", BETA, \
-        {"26.12", false, false, "New setting to compute a `uniqExact` without `GROUP BY` as a count over an aggregation by its argument in the Cascades optimizer."}) \
+        {"26.12", false, true, "New setting to compute a `uniqExact` without `GROUP BY` as a count over an aggregation by its argument in the Cascades optimizer."}) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", 0, \
