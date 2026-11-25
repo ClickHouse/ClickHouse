@@ -4,3 +4,7 @@ matcher: (UNSUPPORTED_METHOD)
 correlated exists: (NOT_IMPLEMENTED)
 correlated IN: (NOT_IMPLEMENTED)
 alias: 1	2
+lambda argument x, row (10, [1]): Constraint `c1` (VIOLATED_CONSTRAINT)
+lambda argument x, row (1, [10]): ACCEPTED 1 [10]
+two constraints, row (5, [5, 7]): ACCEPTED 5 [5,7]
+two constraints, row (5, [6, 7]): Constraint `c2` (VIOLATED_CONSTRAINT)

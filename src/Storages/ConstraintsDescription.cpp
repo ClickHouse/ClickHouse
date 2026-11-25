@@ -199,7 +199,6 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
 
     /// Named as the real table, so that error messages and qualified names refer to it.
     auto fake_storage = std::make_shared<StorageDummy>(table_id, fake_columns);
-    auto fake_table_expression = std::make_shared<TableNode>(fake_storage, context);
 
     ConstraintsExpressions res;
     res.reserve(constraints.size());
@@ -219,8 +218,11 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
             expression_list->children.push_back(expression_ast);
             auto expression = buildQueryTree(expression_list, context);
 
+            auto fake_table_expression = std::make_shared<TableNode>(fake_storage, context);
             QueryAnalyzer analyzer(/*only_analyze_=*/ false);
             analyzer.resolve(expression, fake_table_expression, context);
+            /// The planner tells a column from a lambda argument of the same name by the alias of its table.
+            fake_table_expression->setAlias("__table1");
 
             /// A guard: no SQL path is known to give several expressions here.
             if (expression->as<ListNode &>().getNodes().size() != 1)

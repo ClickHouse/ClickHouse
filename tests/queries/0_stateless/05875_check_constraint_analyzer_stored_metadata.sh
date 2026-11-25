@@ -33,4 +33,25 @@ check "correlated exists" "exists(SELECT 1 FROM stored.o WHERE id = x)"
 check "correlated IN" "x IN (SELECT id + y FROM stored.o)"
 check "alias" "(x + 1 AS z) > 0 AND z < 10"
 
+# Prints the violated constraint of the `INSERT` of row $3 into a table with constraints $2, or the row when it succeeds.
+check_arr()
+{
+    rm -rf "${WORKING_FOLDER}"
+    mkdir -p "${WORKING_FOLDER}/metadata/stored"
+    echo "ATTACH DATABASE stored ENGINE = Ordinary" > "${WORKING_FOLDER}/metadata/stored.sql"
+    echo "ATTACH TABLE stored.t (x Int32, arr Array(Int32), $2) ENGINE = MergeTree ORDER BY tuple();" > "${WORKING_FOLDER}/metadata/stored/t.sql"
+    echo -n "$1, row $3: "
+    ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --query "INSERT INTO stored.t VALUES $3; SELECT 'ACCEPTED', * FROM stored.t" 2>&1 \
+        | grep -o -E 'Constraint `[a-z0-9]+`|\(([A-Z_]+)\)|^ACCEPTED.*' | head -n2 | tr '\t\n' '  ' | sed 's/ $//'
+    echo
+}
+
+# A lambda argument named as a column, the column itself referred to by an alias.
+c1="CONSTRAINT c1 CHECK (x AS bound) >= 0 AND arrayAll(x -> x >= bound, arr)"
+c2="CONSTRAINT c2 CHECK (x AS b2) >= 0 AND arrayExists(x -> x = b2, arr)"
+check_arr "lambda argument x" "$c1" "(10, [1])"
+check_arr "lambda argument x" "$c1" "(1, [10])"
+check_arr "two constraints" "$c1, $c2" "(5, [5, 7])"
+check_arr "two constraints" "$c1, $c2" "(5, [6, 7])"
+
 rm -rf "${WORKING_FOLDER}"
