@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -7,7 +6,6 @@
 #include <Core/Field.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -17,7 +15,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
@@ -59,24 +56,16 @@ struct QuantileInterpolatedWeighted
             ++map[x];
     }
 
-    /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which would
-    /// make the state forget the dominant value.
-    static void addWeight(Weight & sum, Weight weight)
-    {
-        if (common::addOverflow(sum, weight, sum))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileInterpolatedWeighted` does not fit UInt64");
-    }
-
     void add(const Value & x, Weight weight)
     {
         if (!isNaN(x))
-            addWeight(map[x], weight);
+            map[x] += weight;
     }
 
     void merge(const QuantileInterpolatedWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
-            addWeight(map[pair.getKey()], pair.getMapped());
+            map[pair.getKey()] += pair.getMapped();
     }
 
     void serialize(WriteBuffer & buf) const
@@ -94,7 +83,7 @@ struct QuantileInterpolatedWeighted
         }
     }
 
-    [[nodiscard]] Value get(Float64 level) const
+    Value get(Float64 level) const
     {
         return getImpl<Value>(level);
     }
@@ -105,7 +94,7 @@ struct QuantileInterpolatedWeighted
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    [[nodiscard]] Float64 getFloat(Float64) const
+    Float64 getFloat(Float64) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileInterpolatedWeighted");
     }
@@ -120,7 +109,6 @@ private:
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     template <typename T>
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
     T getImpl(Float64 level) const
     {
         size_t size = map.size();
@@ -195,8 +183,6 @@ private:
                     else
                     {
                         idx = mid;
-                        if (mid == 0)
-                            break;
                         end = mid - 1;
                     }
                 }
@@ -285,22 +271,21 @@ private:
                 }
                 else
                 {
-                    /// The smallest index whose next pair reaches `level`. Half-open: `end` is the
-                    /// last candidate rather than one past the tested one, so `mid` stays below it
-                    /// and `end = mid` replaces an `end = mid - 1` that underflowed to `SIZE_MAX`
-                    /// whenever `mid` was 0 - the `mid > size` guard was there to catch exactly that
-                    /// wrapped value on the next iteration, and is no longer needed.
                     size_t start = 0;
                     size_t end = size - 1;
-                    while (start < end)
+                    while (start <= end)
                     {
-                        const size_t mid = start + (end - start) / 2;
+                        size_t mid = start + (end - start) / 2;
+                        if (mid > size)
+                            break;
                         if (level > value_weight_pairs[mid + 1].second)
                             start = mid + 1;
                         else
-                            end = mid;
+                        {
+                            idx = mid;
+                            end = mid - 1;
+                        }
                     }
-                    idx = start;
                 }
             }
 
@@ -321,26 +306,16 @@ private:
         }
     }
 
-    /// yl + (dy / dx) * (level - xl), computed in `UnderlyingType`.
-    [[nodiscard]] UnderlyingType interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
+    /// This ignores overflows or NaN's that might arise during add, sub and mul operations and doesn't aim to provide exact
+    /// results since `the quantileInterpolatedWeighted` function itself relies mainly on approximation.
+    UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
     {
+        UnderlyingType value_diff = upper_value - lower_value;
         Float64 percentile_diff = upper_percentile - lower_percentile;
         percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.
-        const Float64 level_diff = level - lower_percentile;
 
-        auto legacy = [&]
-        {
-            const UnderlyingType value_diff = upper_value - lower_value;
-            return static_cast<Float64>(lower_value) + (static_cast<Float64>(value_diff) / percentile_diff) * level_diff;
-        };
-
-        if constexpr (is_floating_point<UnderlyingType>)
-            return static_cast<UnderlyingType>(legacy());
-        else
-            /// The two factors stay separate: normalising them into one coefficient would round
-            /// before the exact multiplication.
-            return QuantileInterpolation::interpolateRatio<UnderlyingType>(
-                lower_value, upper_value, level_diff, percentile_diff, legacy);
+        /// yl + (dy / dx) * (level - xl)
+        return static_cast<UnderlyingType>(static_cast<Float64>(lower_value) + (static_cast<Float64>(value_diff) / percentile_diff) * (level - lower_percentile));
     }
 };
 
@@ -386,7 +361,7 @@ void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFac
 void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
 Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation, taking into account the weight of each element.
@@ -432,7 +407,7 @@ SELECT quantileInterpolatedWeighted(n, val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.

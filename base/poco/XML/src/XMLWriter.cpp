@@ -325,9 +325,6 @@ void XMLWriter::characters(const XMLChar ch[], int start, int length)
 			case '&':  writeMarkup(MARKUP_AMPENC); break;
 			case '<':  writeMarkup(MARKUP_LTENC); break;
 			case '>':  writeMarkup(MARKUP_GTENC); break;
-			/// XML 1.0 normalizes literal carriage returns to newlines when parsing. Write a
-			/// character reference so a DOM text node containing '\r' round-trips unchanged.
-			case '\r': writeMarkup(MARKUP_CRENC); break;
 			default:
 				if (c >= 0 && c < 32)
 				{
@@ -382,7 +379,7 @@ void XMLWriter::processingInstruction(const XMLString& target, const XMLString& 
 
 namespace
 {
-	[[clang::no_destroy]] static const XMLString CDATA = toXMLString("CDATA");
+	static const XMLString CDATA = toXMLString("CDATA");
 }
 
 

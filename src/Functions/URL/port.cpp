@@ -15,21 +15,38 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template<bool conform_rfc>
 struct FunctionPortImpl : public IFunction
 {
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override { return "(String, [const UInt16]) -> UInt16"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 1 && arguments.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                            getName(), arguments.size());
+
+        if (!WhichDataType(arguments[0].type).isString())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                "Must be String.", arguments[0].type->getName(), getName());
+
+        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isUInt16())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
+                "Must be UInt16.", arguments[1].type->getName(), getName());
+
+        return std::make_shared<DataTypeUInt16>();
+    }
 
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)
@@ -118,14 +135,14 @@ private:
 struct FunctionPort final : public FunctionPortImpl<false>
 {
     static constexpr auto name = "port";
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
 };
 
 struct FunctionPortRFC final : public FunctionPortImpl<true>
 {
     static constexpr auto name = "portRFC";
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPortRFC>(); }
 };
 

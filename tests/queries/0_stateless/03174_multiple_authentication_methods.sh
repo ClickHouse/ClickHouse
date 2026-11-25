@@ -6,9 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-ssh_key_file="${CLICKHOUSE_TMP}/ssh_key_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-trap 'rm -f "${ssh_key_file}"' EXIT
-
 ssh_key="-----BEGIN OPENSSH PRIVATE KEY-----
          b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
          QyNTUxOQAAACAc6mt3bktHHukGJM1IJKPVtFMe4u3d8T6LHha8J4WOGAAAAJApc2djKXNn
@@ -62,16 +59,16 @@ function test
 
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 ADD IDENTIFIED WITH ssh_key BY KEY '${ssh_pub_key}' TYPE 'ssh-ed25519'"
 
-  echo ${ssh_key} > "${ssh_key_file}"
+  echo ${ssh_key} > ssh_key
 
   echo "Authenticating with ssh key"
-  ${CLICKHOUSE_CLIENT} --user ${user} --ssh-key-file "${ssh_key_file}" --ssh-key-passphrase "" --query "SELECT 1"
+  ${CLICKHOUSE_CLIENT} --user ${user} --ssh-key-file 'ssh_key' --ssh-key-passphrase "" --query "SELECT 1"
 
   echo "Altering credentials and keeping only bcrypt_password"
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 IDENTIFIED WITH bcrypt_password BY '5'"
 
   echo "Asserting SSH does not work anymore"
-  ${CLICKHOUSE_CLIENT} --user ${user} --ssh-key-file "${ssh_key_file}" --ssh-key-passphrase "" --query "SELECT 1" 2>&1 | grep -m1 -o 'AUTHENTICATION_FAILED' | head -n 1
+  ${CLICKHOUSE_CLIENT} --user ${user} --ssh-key-file 'ssh_key' --ssh-key-passphrase "" --query "SELECT 1" 2>&1 | grep -m1 -o 'AUTHENTICATION_FAILED' | head -n 1
 
   echo "Asserting bcrypt_password works"
   test_login_pwd ${user} '5'

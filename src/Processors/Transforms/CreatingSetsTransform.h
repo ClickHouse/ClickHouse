@@ -6,8 +6,6 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/SetSpillable.h>
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
@@ -35,13 +33,11 @@ public:
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_,
-        SetSpillSettings spill_settings_,
         bool recoverable_build_ = false);
 
     ~CreatingSetsTransform() override;
 
     String getName() const override { return "CreatingSetsTransform"; }
-    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     Status prepare() override;
     void work() override;
@@ -50,7 +46,6 @@ public:
 
 private:
     SetAndKeyPtr set_and_key;
-    SetSpillables set_spillables;
     std::optional<std::promise<SetPtr>> promise_to_build;
 
     QueryPipeline table_out;
@@ -64,8 +59,6 @@ private:
 
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
-
-    SetSpillSettings spill_settings;
 
     /// See `CreatingSetStep::recoverable_build`.
     bool recoverable_build = false;

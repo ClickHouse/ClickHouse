@@ -7,29 +7,19 @@ doc_type: 'guide'
 keywords: ['監査ログ']
 ---
 
-コンソールでのアクティビティは監査ログに記録されます。アクセス権を持つユーザーは、ログを確認し、使用中のロギングシステムと統合できます。監査ログへのアクセスは、**View audit logs** 権限 (`control-plane:organization:view-activities`) によって制御されます。
+import { Image } from "/snippets/ja/components/Image.jsx";
 
-* 組織のAdminロールを持つユーザーは、デフォルトでアクセスできます。
-* その他のコンソールユーザーには、組織へのアクセス権に加えて、**View audit logs** 権限を含む[カスタムロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles)が必要です。
-* API キーには、同じ権限を含むロールが必要です。
+コンソールでのアクティビティは監査ログに記録されます。組織のAdminまたはDeveloperロールを持っている場合は、ログを確認し、使用中のロギングシステムと統合できます。
 
-すべての権限の説明については、[コンソールのロールと権限](/ja/products/cloud/reference/security/console-roles)を参照してください。
-
-## ユーザーインターフェイスからコンソール監査ログにアクセスする {#console-audit-log-ui}
+<div id="console-audit-log-ui">
+  ## ユーザーインターフェイスからコンソール監査ログにアクセスする
+</div>
 
 <Steps>
   <Step title="組織を選択する" id="select-org">
     ClickHouse Cloud で、組織の詳細画面に移動します。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse Cloud のアクティビティタブ](/images/cloud/security/activity_log1.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="ClickHouse Cloud のアクティビティタブ" border />
 
     <br />
   </Step>
@@ -44,15 +34,7 @@ keywords: ['監査ログ']
     * **IP Address:** 該当する場合、このフィールドにはイベントを開始したユーザーの IP アドレスが表示されます
     * **Time:** イベントのタイムスタンプ
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse Cloud の Activity テーブル](/images/cloud/security/activity_log2.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="ClickHouse Cloud の Activity テーブル" border />
 
     <br />
   </Step>
@@ -63,24 +45,18 @@ keywords: ['監査ログ']
 </Steps>
 
 <div class="eighty-percent">
-  <div className="ch-image-lg">
-
-  <Frame>
-
-  ![ClickHouse Cloud Activity の CSV エクスポート](/images/cloud/security/activity_log3.webp)
-
-  </Frame>
-
-  </div>
+  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="ClickHouse Cloud Activity の CSV エクスポート" border />
 </div>
 
 <div id="console-audit-log-api">
   ## API 経由でコンソール監査ログにアクセスする
 </div>
 
-ClickHouse Cloud API の `activity` エンドポイントを使用すると、監査イベントをエクスポートできます。詳細については、[API リファレンス](/ja/products/cloud/api-reference/organization/list-of-organization-activities)を参照してください。
+ClickHouse Cloud API の `activity` エンドポイントを使用すると、監査イベントをエクスポートできます。詳細については、[API リファレンス](/ja/products/cloud/api-reference/organization/get-list-of-available-organizations)を参照してください。
 
-## ログインテグレーション {#log-integrations}
+<div id="log-integrations">
+  ## ログインテグレーション
+</div>
 
 API を使用して、任意のログプラットフォームとインテグレーションできます。以下は、すぐに使える対応コネクタです。
 

@@ -2,29 +2,13 @@
 
 #include <gtest/gtest.h>
 
-#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
-#include <Common/PerCPUMemory.h>
-#include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Interpreters/Context.h>
-
-#include "config.h"
-
-#if USE_SILK
-#include <Common/Silk/FiberScheduler.h>
-#include <Common/Silk/tests/gtest_silk_scheduler.h>
-#endif
-
-namespace ProfileEvents
-{
-    extern const Event MemoryAllocatedWithoutCheck;
-    extern const Event MemoryAllocatedWithoutCheckBytes;
-}
 
 namespace DB
 {
@@ -142,115 +126,6 @@ TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
                 << "borrowed thread's name must be restored, not left as the async-pool name";
             CurrentThread::detachFromGroupIfNotDetached();
         }
-    });
-    t.join();
-}
-
-#if USE_SILK
-
-/// A fiber has a `ThreadStatus` without an OS thread of its own, so joining a thread group must not rename the
-/// scheduler thread the fiber happens to run on, neither when it attaches nor when it borrows a group-owning status.
-/// Nothing between the name reads can suspend the fiber, so they all see the same scheduler thread.
-TEST(ThreadGroupSwitcher, DoesNotRenameSchedulerThreadInFiber)
-{
-    initializeFiberSchedulerForTests();
-
-    /// A thread group needs the `ThreadStatus` of the thread that creates it.
-    std::thread t([&]
-    {
-        ThreadStatus ts;
-        auto context = getContext().context;
-        auto G0 = std::make_shared<ThreadGroup>(context, 0);
-        auto G1 = std::make_shared<ThreadGroup>(context, 0);
-
-        for (bool allow_existing_group : {false, true})
-        {
-            ThreadName name_before = ThreadName::UNKNOWN;
-            ThreadName name_inside = ThreadName::UNKNOWN;
-            ThreadName name_after = ThreadName::UNKNOWN;
-            bool bound_to_os_thread = true;
-
-            EXPECT_EQ(Silk::runBlocking([&]
-            {
-                bound_to_os_thread = current_thread->boundToOSThread();
-                if (allow_existing_group)
-                    CurrentThread::attachToGroupIfDetached(G0);
-
-                name_before = getThreadName();
-                {
-                    ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, allow_existing_group);
-                    name_inside = getThreadName();
-                }
-                name_after = getThreadName();
-
-                if (allow_existing_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-                return 0;
-            }), 0);
-
-            EXPECT_FALSE(bound_to_os_thread);
-            ASSERT_NE(name_before, ThreadName::MERGE_MUTATE);
-            EXPECT_EQ(name_inside, name_before) << "allow_existing_group = " << allow_existing_group;
-            EXPECT_EQ(name_after, name_before) << "allow_existing_group = " << allow_existing_group;
-        }
-    });
-    t.join();
-}
-
-#endif
-
-/// Reparenting a thread's `MemoryTracker` flushes the untracked balance the thread carried in, and that
-/// flush increments `MemoryAllocatedWithoutCheck` and `MemoryAllocatedWithoutCheckBytes` on whatever
-/// `ProfileEvents::Counters` chain is in force. Those bytes predate the group, so they must not appear on
-/// the group's counters: `system.query_log` reports the group's counters as the query's.
-TEST(ThreadGroupAttach, PreAttachUntrackedMemoryIsNotChargedToTheGroup)
-{
-    /// A dedicated thread so `current_thread` starts as nullptr and the balance below is this thread's
-    /// alone, independent of whatever other gtests in unit_tests_dbms left behind.
-    std::thread t([&]
-    {
-        ThreadStatus ts;
-        auto group = std::make_shared<ThreadGroup>(getContext().context, 0);
-
-        /// Any allocation between the seeding below and `setParent` can commit the balance through
-        /// the shared per-CPU budget, whose occupancy other threads control. Lifting the budget
-        /// leaves the per-thread cap asserted below as the only trigger that can commit it.
-        const Int64 saved_budget = per_cpu_memory.budgetCapacity();
-        per_cpu_memory.setBudgetCapacity(PerCPUMemory::UNLIMITED_BUDGET);
-        SCOPE_EXIT({ per_cpu_memory.setBudgetCapacity(saved_budget); });
-
-        const auto group_events_before = group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheck];
-        const auto group_bytes_before = group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes];
-        const auto global_bytes_before = ProfileEvents::global_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes];
-
-        /// Written straight into the counter instead of allocated: a real allocation of this size can
-        /// be committed early by the shared per-CPU budget, which no setting of ours controls.
-        constexpr Int64 pre_attach_bytes = 1024 * 1024;
-        ts.untracked_memory.add(pre_attach_bytes);
-
-        /// `~ThreadStatus` flushes whatever balance is left into `total_memory_tracker`, so the seed must
-        /// be netted out on the early return of a failed assertion below too. One unconditional subtraction
-        /// covers both paths (the balance is a running total), and it belongs after the tracker is reparented.
-        SCOPE_EXIT({
-            CurrentThread::detachFromGroupIfNotDetached();
-            ts.untracked_memory.add(-pre_attach_bytes);
-            ts.flushUntrackedMemory();
-        });
-
-        /// The balance is still pending: any commit would have zeroed it.
-        ASSERT_GE(ts.untracked_memory.load(), pre_attach_bytes);
-        ASSERT_LT(ts.untracked_memory.load(), ts.untracked_memory_limit);
-
-        CurrentThread::attachToGroup(group);
-
-        EXPECT_EQ(group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes], group_bytes_before)
-            << "untracked memory carried into the group must not be reported as the group's";
-        EXPECT_EQ(group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheck], group_events_before)
-            << "the flush event itself must not be reported as the group's either";
-        /// Attribution, not suppression: the flush is still counted, outside the group.
-        EXPECT_GE(
-            ProfileEvents::global_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes] - global_bytes_before,
-            static_cast<UInt64>(pre_attach_bytes));
     });
     t.join();
 }

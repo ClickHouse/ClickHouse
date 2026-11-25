@@ -7,6 +7,8 @@ title: 'إعداد نقاط نهاية واجهة برمجة تطبيقات ال
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 تتيح لك ميزة **نقاط نهاية واجهة برمجة تطبيقات الاستعلام** إنشاء نقطة نهاية API مباشرةً من أي استعلام SQL محفوظ في وحدة تحكم ClickHouse Cloud. وستتمكن من الوصول إلى نقاط نهاية API عبر HTTP لتنفيذ استعلاماتك المحفوظة دون الحاجة إلى الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام برنامج تشغيل أصلي.
 
 <div id="quick-start-guide">
@@ -66,27 +68,11 @@ doc_type: 'guide'
 
     لنشغّل هذا الاستعلام سريعًا للتأكد من أنه يعمل، وذلك بتحديد السنة `2010` في مربع إدخال متغيرات الاستعلام على الجانب الأيمن من محرر SQL:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![اختبر استعلام المثال](/images/cloud/sqlconsole/endpoints-testquery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="اختبر استعلام المثال" />
 
     بعد ذلك، احفظ الاستعلام:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![احفظ استعلام المثال](/images/cloud/sqlconsole/endpoints-savequery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="احفظ استعلام المثال" />
 
     يمكن العثور على مزيد من الوثائق حول استعلام محفوظ في قسم [&quot;Saving a query&quot;](/ar/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -95,15 +81,7 @@ doc_type: 'guide'
     يمكن تهيئة نقاط نهاية واجهة برمجة تطبيقات الاستعلام مباشرةً من عرض الاستعلام بالنقر على الزر **Share** ثم اختيار `API Endpoint`.
     سيُطلب منك تحديد مفاتيح API التي يجب أن تتمكن من الوصول إلى نقطة النهاية:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![هيئ نقطة نهاية الاستعلام](/images/cloud/sqlconsole/endpoints-configure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="هيئ نقطة نهاية الاستعلام" />
 
     بعد اختيار مفتاح API، سيُطلب منك:
 
@@ -114,15 +92,7 @@ doc_type: 'guide'
 
     سيُعرض مثال لأمر `curl` حتى تتمكن من إرسال طلب اختبار:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![أمر curl لنقطة النهاية](/images/cloud/sqlconsole/endpoints-completed.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="أمر curl لنقطة النهاية" />
 
     يرد أمر curl المعروض في الواجهة أدناه للتيسير:
 
@@ -138,27 +108,11 @@ doc_type: 'guide'
   <Step title="الاختبار والمراقبة" id="testing-and-monitoring">
     بمجرد إنشاء نقطة النهاية لواجهة برمجة تطبيقات الاستعلام، يمكنك اختباره باستخدام `curl` أو أي HTTP client آخر:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![اختبار curl لنقطة النهاية](/images/cloud/sqlconsole/endpoints-curltest.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="اختبار curl لنقطة النهاية" />
 
     بعد إرسال أول طلب، من المفترض أن يظهر زر جديد مباشرةً إلى يمين الزر **Share**. سيؤدي النقر عليه إلى فتح flyout يحتوي على بيانات المراقبة الخاصة بالاستعلام:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![مراقبة نقطة النهاية](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="مراقبة نقطة النهاية" />
   </Step>
 </Steps>
 

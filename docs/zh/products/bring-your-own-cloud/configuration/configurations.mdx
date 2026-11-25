@@ -9,7 +9,9 @@ doc_type: 'reference'
 
 本页介绍适用于您的 BYOC 部署的各种基础设施配置选项。这些配置可让您自定义网络、安全和计算资源，以满足特定需求。
 
-## 负载均衡器 {#load-balancers}
+<div id="load-balancers">
+  ## 负载均衡器
+</div>
 
 BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路由到您的 ClickHouse 服务。您可以根据自身的网络模型，选择 *public* 或 *private* 负载均衡器端点。
 
@@ -32,7 +34,9 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 
 您可以直接在 ClickHouse Cloud 控制台中为您的 BYOC 基础设施启用私有负载均衡器。如需进行其他端点调整 (例如移除公共负载均衡器) ，请联系 **ClickHouse Cloud Support**。
 
-### AWS 的私有负载均衡器安全组 (Security Group) {#private-load-balancer-security-group}
+<div id="private-load-balancer-security-group">
+  ### AWS 的私有负载均衡器安全组 (Security Group)
+</div>
 
 如果你为 BYOC 部署选择使用私有负载均衡器，则必须确保已配置相应的安全组 (Security Group) 规则，以允许来自所需私有网络 (例如已对等连接的 VPC) 的访问。默认情况下，安全组 (Security Group) 仅允许 VPC 内部流量。
 
@@ -48,64 +52,58 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
   对私有负载均衡器安全组 (Security Group) 的所有更改都必须由 ClickHouse 支持团队执行。这样可以确保配置一致，并避免与 ClickHouse Cloud 管理环境中的设置发生冲突。
 </Note>
 
-## PrivateLink、Private Service Connect 或 Private Link {#privatelink-or-private-service-connect}
+<div id="privatelink-or-private-service-connect">
+  ## PrivateLink、Private Service Connect 或 Private Link
+</div>
 
 为实现最高级别的网络隔离和安全性，BYOC 部署可使用 **AWS PrivateLink**、**GCP Private Service Connect** 或 **Azure Private Link**。借助这些方案，您的应用程序可以通过私有网络连接到 ClickHouse Cloud 服务，无需配置 VPC/VNet peering，也不必将端点暴露在公共互联网中。
 
 如需分步设置说明，请参阅 [私有网络设置指南](/zh/products/bring-your-own-cloud/onboarding/network)。
 
-## Kubernetes API 私有连接 {#k8s-api-private-connection}
+<div id="k8s-api-private-connection">
+  ## Kubernetes API 私有连接
+</div>
 
-默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问。在 AWS 上，会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量；在 GCP 和 Azure 上，则改为由云 IAM 进行管控 (参见 [Kubernetes API server 暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅允许私网访问。在 AWS 和 Azure 上，限制后它只能通过私有网络连接访问。在 GCP 上，公网 IP 端点会被禁用，但管理服务会改用经 IAM 授权的基于 DNS 的端点，该端点位于你的 VPC 网络之外。
+默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问，但会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过私有网络连接访问。
 
-可用的私有连接选项因云提供商而异：
+提供两种私有连接选项：
 
-### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
+<div id="k8s-api-private-connection-tailscale">
+  ### Tailscale (默认)
+</div>
 
-对于 AWS 部署，可以通过 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 以私网方式访问 Kubernetes API 服务器，且无需任何第三方组件：
-
-* ClickHouse Cloud 会自动预配一个 VPC Lattice Resource Gateway 和一个 Resource Configuration，目标指向您 BYOC VPC 内的 EKS API 服务器端点，并通过 AWS Resource Access Manager (RAM) 将该 Resource Configuration 共享给 ClickHouse Cloud 管理账户。
-* ClickHouse 管理服务与您的 Kubernetes API 服务器之间的流量始终完全保留在 AWS 私有网络中。
-* RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
-* 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
-
-### Tailscale {#k8s-api-private-connection-tailscale}
-
-<Warning>
-  使用 Tailscale 作为 EKS API 服务器的私有连接已弃用。在 AWS 上，请改用 [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice)。如果你的 AWS 部署目前通过 Tailscale 私有访问 Kubernetes API，请联系 ClickHouse 支持团队迁移到 VPC Lattice。
-</Warning>
-
-启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API 服务器。在 GCP 上，Tailscale 负责承载部署工具、监控和故障排查相关的流量，而管理服务则使用基于 DNS 的端点——请参阅 [GCP 私有 control-plane 端点](#k8s-api-private-connection-gcp)。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
+启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API server。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
 
 <Note>
   如果你完全依赖 Tailscale 提供私有连接，一旦 Tailscale agent 不可用，ClickHouse 支持团队可能会失去对你的环境的访问权限。这可能会导致故障排查或支持响应时间延长。
 </Note>
 
-### GCP 私有 control-plane 端点 {#k8s-api-private-connection-gcp}
+<div id="k8s-api-private-connection-vpc-lattice">
+  ### AWS VPC Lattice
+</div>
 
-在 GCP 上，ClickHouse 管理服务默认通过 GKE 控制平面的公网 IP 端点访问控制平面。您可以禁用此端点，使控制平面无法再通过公网 IP 地址访问：
+<Info>
+  VPC Lattice 连接功能目前处于私有预览阶段。请联系 ClickHouse 支持团队为您的部署启用此功能。
+</Info>
 
-* 控制平面仍会保留其内部 IP 端点 (仅可从您的 VPC 网络内部访问) ，以及始终启用的基于 DNS 的端点 (`*.gke.goog`) 。
-* ClickHouse 管理服务通过基于 DNS 的端点访问控制平面。此访问的授权依据并非源 IP 允许列表，而是您项目中 ClickHouse 所模拟的服务账号上的 `container.clusters.connect` IAM 权限，因此撤销该权限即可撤销此访问路径。由于请求终止于 Google 前端，而非您的 VPC 网络内部，因此在审查时应将其视为进入控制平面的访问路径，而非网络层面的私有链路。
-* 部署工具、监控以及 ClickHouse 工程师的故障排查访问均通过 Tailscale 访问内部 IP 端点。Tailscale agent 会在初始设置期间部署到集群中，因此只有在设置完成后才能启用此模式。
-* 如果 VPC Service Controls 边界限制了 `container.googleapis.com`，那么基于 DNS 的端点也会受到限制。请添加一条入口规则，放行 ClickHouse 的管理身份；ClickHouse 团队可为您的部署提供这些身份信息。
+对于 AWS 部署，也可以通过 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 以私网方式访问 Kubernetes API server，且无需任何第三方组件：
 
-### Azure Private Link {#k8s-api-private-connection-azure}
+* ClickHouse Cloud 会自动预配一个 VPC Lattice Resource Gateway 和一个 Resource Configuration，目标指向您 BYOC VPC 内的 EKS API server 端点，并通过 AWS Resource Access Manager (RAM) 将该 Resource Configuration 共享给 ClickHouse Cloud 管理账户。
+* ClickHouse 管理服务与您的 Kubernetes API server 之间的流量始终完全保留在 AWS 私有网络中。
+* RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
+* 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
 
-对于 Azure 部署，可以通过 [Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview) 以私网方式访问 AKS API server：
+**联系 ClickHouse 支持团队** 以申请配置私网 API 端点。
 
-* 该集群以私有集群形式创建，启用 API Server VNet Integration，并禁用其公网 FQDN。
-* ClickHouse Cloud 会在您的订阅中预配一个 Private Link Service，置于 API server 的内部负载均衡器之前，同时在 ClickHouse Cloud 管理 VNet 中创建对应的专用终结点。只有来自 ClickHouse Cloud 管理订阅的连接才会被自动批准。
-* ClickHouse 管理服务与您的 API server 之间的流量始终在 Azure 骨干网络内传输。
-* ClickHouse 工程师的故障排查访问仍通过 Tailscale 进行。
-
-**请联系 ClickHouse 支持团队**，申请配置私网 API 端点。
-
-## 节点组 {#node-groups}
+<div id="node-groups">
+  ## 节点组
+</div>
 
 Kubernetes 节点组是一组计算实例，为在 BYOC 部署中运行 ClickHouse 服务提供所需的资源。ClickHouse Cloud 负责管理这些节点组，并自动处理其配置和扩缩容。
 
-### 默认配置 {#default-configuration}
+<div id="default-configuration">
+  ### 默认配置
+</div>
 
 BYOC 集群预配了两类主要的节点组：
 
@@ -115,7 +113,9 @@ BYOC 集群预配了两类主要的节点组：
 * **工作负载节点组**
   专门用于 ClickHouse 数据工作负载，包括 server 和 Keeper 服务。默认情况下，工作负载节点运行在基于 ARM 的实例上，在性能与成本之间实现了良好的平衡。不过，也可以按需将其配置为其他 CPU/内存规格，或切换为 x86 架构。
 
-### 自定义节点组 {#customizing-node-groups}
+<div id="customizing-node-groups">
+  ### 自定义节点组
+</div>
 
 需要特定资源或架构？支持以下自定义选项——请联系 ClickHouse 支持团队进行讨论和实施：
 
@@ -132,7 +132,9 @@ BYOC 集群预配了两类主要的节点组：
   所有节点组自定义和 configuration 变更都必须通过 ClickHouse 支持团队统一协调，以确保兼容性、稳定性和最佳性能。
 </Note>
 
-### 自动扩缩容 {#auto-scaling}
+<div id="auto-scaling">
+  ### 自动扩缩容
+</div>
 
 集群节点组会根据以下因素，通过集群自动扩缩器自动进行扩缩容：
 

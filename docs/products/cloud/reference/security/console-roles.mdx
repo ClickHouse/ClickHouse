@@ -49,8 +49,7 @@ The table below describes the ClickHouse console and SQL console permissions. Mo
 |---|---|
 | **Organization** ([more info](/products/cloud/guides/security/cloud-access-management/manage-cloud-users)) | Organization-level permissions |
 | control-plane:organization:view | View organization details and read-only metadata. |
-| control-plane:organization:manage | Manage organization settings and users. Doesn't include permission to view the organization's members; grant `control-plane:organization:view-members` as well. |
-| control-plane:organization:view-members | View the organization's members and their role assignments in the Console and through the Cloud API. |
+| control-plane:organization:manage | Manage organization settings and users. |
 | control-plane:organization:view-activities | View organization audit logs in the Console and through the Cloud API. |
 | control-plane:organization:create-service | Create new services in the organization. |
 | **Billing** ([more info](/products/cloud/reference/billing/billing-overview)) | Billing and invoice management |
@@ -66,16 +65,14 @@ The table below describes the ClickHouse console and SQL console permissions. Mo
 | **Service (general)** | General service-level permissions |
 | control-plane:service:view | View service-level metadata, settings, and status. |
 | control-plane:service:manage | Manage service configuration and lifecycle operations. |
-| control-plane:service:delete | Delete a service, and turn [deletion protection](/cloud/manage/deletion-protection) on or off. |
+| control-plane:service:delete | Delete a service. |
 | **Backups** ([more info](/products/cloud/features/backups/overview)) | Service backups and restore points |
 | control-plane:service:view-backups | View backups and restore points for a service. |
 | control-plane:service:manage-backups | Create, manage, and restore service backups. |
 | **IP access list** ([more info](/products/cloud/guides/security/connectivity/setting-ip-filters)) | Manage IP access lists and network filtering |
 | control-plane:service:manage-ip-access-list | Manage IP access lists and network filtering for a service. |
-| **Generative AI** ([more info](/agents/assistant/using-ai-chat)) | Configure generative AI features |
+| **Generative AI** ([more info](/products/cloud/features/ai-ml/aichat/using-ai-chat)) | Configure generative AI features |
 | control-plane:service:manage-generative-ai | Configure and manage generative AI features and settings for a service. |
-| **Remote MCP** ([more info](/products/cloud/features/ai-ml/remote-mcp)) | Remote MCP server access |
-| control-plane:service:manage-mcp | Enable or disable the remote MCP server for a service. |
 | **Query API endpoints** ([more info](/products/cloud/guides/sql-console/query-endpoints)) | Query API endpoints |
 | control-plane:service:view-query-api-endpoints | View Query API endpoints and their configuration. |
 | control-plane:service:manage-query-api-endpoints | Create and manage Query API endpoints. |

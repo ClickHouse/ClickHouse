@@ -3,7 +3,6 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/GetPriorityForLoadBalancing.h>
-#include <Common/SecretString.h>
 #include <unordered_map>
 
 namespace Poco::Util
@@ -41,7 +40,7 @@ struct ZooKeeperArgs
     Strings hosts;
     Strings availability_zones;
     String auth_scheme;
-    DB::SecretString identity;
+    String identity;
     String chroot;
     String sessions_path = "/clickhouse/sessions";
     String client_availability_zone;
@@ -63,7 +62,7 @@ struct ZooKeeperArgs
     bool pass_opentelemetry_tracing_context = false;
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
-    DB::SecretString password;
+    String password;
 
     bool enforce_component_tracking = false;
 

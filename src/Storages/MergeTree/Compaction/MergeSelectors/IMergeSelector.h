@@ -44,7 +44,7 @@ public:
       * @param range_filter Additional constraints on returned ranges.
       * @return Selected ranges up to merge_constraints.size() but may be less if some of them did not fit into merge constraints.
       */
-    [[nodiscard]] virtual PartsRanges select(
+    virtual PartsRanges select(
         const PartsRanges & parts_ranges,
         const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const = 0;

@@ -53,10 +53,10 @@ struct IReadBufferIterator
     virtual void setFormatName(const String & /*format_name*/) {}
 
     /// Get last processed file path for better exception messages.
-    [[nodiscard]] virtual String getLastFilePath() const { return ""; }
+    virtual String getLastFilePath() const { return ""; }
 
     /// Return true if method recreateLastReadBuffer is implemented.
-    [[nodiscard]] virtual bool supportsLastReadBufferRecreation() const { return false; }
+    virtual bool supportsLastReadBufferRecreation() const { return false; }
 
     /// Recreate last read buffer to read data from the same file again.
     /// Used to detect format from the file content to avoid
@@ -131,10 +131,5 @@ std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
 
 SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 SchemaCache::Keys getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
-
-/// Whether the number of rows of a file can be taken from or stored to the schema cache (`use_cache_for_count_from_files`).
-/// With `input_format_allow_errors_num`/`_ratio` the number of read rows depends on which rows fail to parse with the
-/// requested structure, and the structure is not a part of the cache key.
-bool canUseNumRowsFromSchemaCache(const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
 }
