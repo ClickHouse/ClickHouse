@@ -173,6 +173,11 @@ public:
     /// otherwise the source request starts unbounded and is reopened when the caller sets the range.
     void setInitialReadUntilPosition(size_t position) { initial_read_until_position = position; }
 
+    /// The range [left, right) of the decrypted file that the caller reads, which it bounds itself once the pipeline
+    /// is built. The decryption stage bounds the header reads to the headers, and to the range only if it follows
+    /// them: a cache below would otherwise create its file segments for the header read past the range's start.
+    void setInitialReadBounds(size_t left, size_t right) { initial_read_bounds.emplace(left, right); }
+
     /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit. When it is
     /// not set, the executor uses the stateless one-shot path.
     void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
@@ -250,6 +255,7 @@ private:
     std::optional<AsyncPrefetchStage> async_prefetch;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
     std::optional<size_t> initial_read_until_position;
+    std::optional<std::pair<size_t, size_t>> initial_read_bounds;
     /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
     std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 

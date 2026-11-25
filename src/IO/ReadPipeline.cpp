@@ -835,11 +835,18 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
     /// -- Stage 6: Decryption (may have multiple layers for double encryption) --
 #if USE_SSL
     /// Bound the source before reading the headers. Every encryption layer adds a header in front of the data it wraps.
-    if (initial_read_until_position)
+    size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
+    if (layers && initial_read_bounds)
     {
-        size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
-        if (layers)
-            impl->setReadUntilPosition(*initial_read_until_position + layers * FileEncryption::Header::kSize);
+        const size_t headers_size = layers * FileEncryption::Header::kSize;
+        const auto [left, right] = *initial_read_bounds;
+        const size_t end = left == 0 ? headers_size + right : headers_size;
+        impl->setReadUntilPosition(end);
+        impl->setReadBounds(0, end);
+    }
+    else if (layers && initial_read_until_position)
+    {
+        impl->setReadUntilPosition(*initial_read_until_position + layers * FileEncryption::Header::kSize);
     }
 
     for (const auto & dec : decryption_stages)

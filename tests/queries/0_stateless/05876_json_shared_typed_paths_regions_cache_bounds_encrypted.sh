@@ -43,8 +43,7 @@ for storage in full packed; do
     "
 
     # The region of b is the only contiguous island of a file's cached segments with over 1 MiB downloaded, see 05455.
-    # Each read of the region file also reads the encryption header at its start, before the bounds are set: a segment
-    # at offset 0 with at most one buffer downloaded.
+    # Each read of the region file also reads the encryption header at its start, a small segment of its own.
     $CLICKHOUSE_CLIENT -m -q "
     SELECT
         '$storage',

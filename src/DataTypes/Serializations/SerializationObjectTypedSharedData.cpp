@@ -1581,7 +1581,7 @@ std::optional<ISerialization::SubstreamPath> getRegionPath(
     region_path[prefix_size].view = path_state.region_views.at(static_cast<size_t>(region - regions.begin()));
     /// A hint of the path's serialization is its bytes of a part of the substream, with only the uncompressed ones
     /// known inside a region: the compressed ones are scaled by the region's ratio.
-    /// The part of the substream lies in the region, which bounds the scaled bytes by the region's.
+    /// The part of the substream lies in the region, which bounds the scaled bytes by the region's, so they fit `size_t`.
     auto & size_hint = region_path.back().size_hint;
     if (!size_hint)
         size_hint = region->size;
@@ -1594,8 +1594,7 @@ std::optional<ISerialization::SubstreamPath> getRegionPath(
         size_hint->compressed = 0;
     else
         size_hint->compressed = static_cast<size_t>(
-            static_cast<double>(size_hint->uncompressed) * static_cast<double>(region->size.compressed)
-            / static_cast<double>(region->size.uncompressed));
+            static_cast<UInt128>(size_hint->uncompressed) * region->size.compressed / region->size.uncompressed);
     return region_path;
 }
 
