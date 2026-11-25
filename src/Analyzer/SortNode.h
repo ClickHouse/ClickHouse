@@ -150,7 +150,7 @@ public:
 
     void setProjectionIndex(size_t projection_index_) { projection_index = projection_index_; }
 
-    std::optional<size_t> getProjectionIndex() const { return projection_index; }
+    [[nodiscard]] std::optional<size_t> getProjectionIndex() const { return projection_index; }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
