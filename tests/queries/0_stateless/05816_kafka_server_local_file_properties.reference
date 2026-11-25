@@ -53,3 +53,7 @@ Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_A
 Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
 Kafka property name `kafka.ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
 OK
+--- A stored table is loaded at startup when the collection has a rejected property
+kafka
+Code: 36
+0

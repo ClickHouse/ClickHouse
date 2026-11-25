@@ -140,3 +140,20 @@ echo '--- Consumers are created for the accepted properties'
 echo '--- A property that is added after the table is created'
 alter_collection_of_existing_table 'kafka.future_option' kafka_altered_table
 alter_collection_of_existing_table 'kafka.ssl_key_location\0suffix' kafka_altered_null_table
+
+echo '--- A stored table is loaded at startup when the collection has a rejected property'
+# Each run of clickhouse-local with the same path loads the stored tables like a server startup.
+local_path="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
+rm -rf "$local_path"
+${CLICKHOUSE_LOCAL} --path="$local_path" --query "
+    CREATE NAMED COLLECTION nc AS ${required_keys};
+    CREATE TABLE kafka (x UInt64) ENGINE = Kafka(nc);
+    ALTER NAMED COLLECTION nc SET \`kafka.ssl_ca_location\` = '/etc/passwd';" < /dev/null
+for query in \
+    "SELECT name FROM system.tables WHERE database = currentDatabase()" \
+    "SELECT * FROM kafka SETTINGS stream_like_engine_allow_direct_select = 1" \
+    "DROP TABLE kafka; SELECT count() FROM system.tables WHERE database = currentDatabase()"
+do
+    ${CLICKHOUSE_LOCAL} --path="$local_path" --query "$query" 2>&1 < /dev/null | grep -o -e '^Code: [0-9]*' -e '^[a-z0-9]*$' | head -1
+done
+rm -rf "$local_path"

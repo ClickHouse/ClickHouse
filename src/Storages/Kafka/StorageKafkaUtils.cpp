@@ -128,9 +128,10 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            /// The named collection is checked every time, also when the definition is read back from metadata
-            /// (server startup, short `ATTACH`): the collection can change after the table is created.
-            KafkaConfigLoader::checkNamedCollection(*named_collection);
+            /// The named collection is checked also on short `ATTACH`: the collection can change after the table is created.
+            /// It is not checked on server startup, so the table stays loadable; its consumers and producers check it again.
+            if (!isLoadingFromExistingMetadata(args.mode))
+                KafkaConfigLoader::checkNamedCollection(*named_collection);
 
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
