@@ -963,6 +963,7 @@ Pipe IcebergMetadata::alterPartition(
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+            case DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE:
             case DatabaseDataLakeCatalogType::S3_TABLES:
             case DatabaseDataLakeCatalogType::UNITY:
                 break;

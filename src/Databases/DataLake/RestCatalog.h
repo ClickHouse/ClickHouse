@@ -188,7 +188,7 @@ protected:
     /// request never mixes the endpoint of one state version with the auth of another.
     /// Virtual so `S3TablesCatalog` can override the network primitive for SigV4 signing;
     /// default arguments are therefore omitted (clang-tidy `google-default-arguments`).
-    virtual DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+    virtual std::unique_ptr<DB::ReadBuffer> createReadBuffer(
         const CatalogState & catalog_state,
         const std::string & endpoint,
         const Poco::URI::QueryParameters & params,
