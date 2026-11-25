@@ -2296,6 +2296,10 @@ bypassing the OS page cache, so that wrong data in the page cache does not make 
 Parts in packed storage (see `min_bytes_for_full_part_storage`) and the part written by `OPTIMIZE ... DRY RUN`
 are still read through the page cache.
 If the filesystem does not support direct I/O, the files are read through the page cache.
+
+Disable this setting where direct reads are slower than reads through the page cache.
+Direct reads always go to the storage device, even if the data is already cached.
+For example, on an Amazon EBS volume, checking a table that fits in the page cache can be several times slower.
 )", 0, \
         {"26.12", false, true, "New setting. Check data parts on local disks with direct I/O, bypassing the OS page cache."}) \
     DECLARE(UInt64, index_granularity_bytes, 10 * 1024 * 1024, R"(
