@@ -1,0 +1,6 @@
+window: (ILLEGAL_AGGREGATION)
+grouping: (ILLEGAL_AGGREGATION)
+matcher: (UNSUPPORTED_METHOD)
+correlated exists: (NOT_IMPLEMENTED)
+correlated IN: (NOT_IMPLEMENTED)
+alias: 1	2
