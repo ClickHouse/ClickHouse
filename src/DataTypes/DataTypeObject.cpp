@@ -642,6 +642,33 @@ SerializationPtr createSharedTypedPathSerialization(
         nested, *shared_it, shared_it - all_shared_typed_paths.begin(), all_shared_typed_paths.size(), path_subcolumn);
 }
 
+/// The type of the sub-object at `prefix`: the typed paths under it with the prefix stripped.
+/// Skip rules are not inherited: they act only while parsing input, and they refer to paths of the root object.
+DataTypePtr createSubObjectType(
+    const String & prefix,
+    const DataTypeObject::TypedPathsMap & typed_paths,
+    const std::unordered_set<String> & shared_typed_paths,
+    DataTypeObject::SchemaFormat schema_format,
+    size_t max_dynamic_paths,
+    size_t max_dynamic_types)
+{
+    DataTypeObject::TypedPathsMap typed_sub_paths;
+    std::unordered_set<String> shared_typed_sub_paths;
+    for (const auto & [path, type] : typed_paths)
+    {
+        if (!path.starts_with(prefix))
+            continue;
+        String sub_path = path.substr(prefix.size());
+        /// Placement is a property of the stored data, so a path under the prefix keeps its SHARED mark.
+        if (shared_typed_paths.contains(path))
+            shared_typed_sub_paths.insert(sub_path);
+        typed_sub_paths.emplace(std::move(sub_path), type);
+    }
+    return std::make_shared<DataTypeObject>(
+        schema_format, std::move(typed_sub_paths), std::unordered_set<String>{}, std::vector<String>{},
+        max_dynamic_paths, max_dynamic_types, std::move(shared_typed_sub_paths));
+}
+
 /// Builds the sub-object type and serialization for a given path prefix.
 /// Returns a pair of (sub_object_type, sub_object_serialization), shared between
 /// the sub-object subcolumn (^) and the combined subcolumn (@) branches.
@@ -652,28 +679,17 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const std::unordered_map<String, SerializationPtr> & all_typed_paths_serializations,
     const SerializationObjectTypedSharedData::SharedTypedPaths & all_shared_typed_paths,
     const DataTypeObject::SchemaFormat & schema_format,
-    const std::unordered_set<String> & paths_to_skip,
-    const std::vector<String> & path_regexps_to_skip,
     size_t max_dynamic_paths,
     size_t max_dynamic_types,
     const DataTypePtr & dynamic_type,
     const SerializationPtr & dynamic_serialization)
 {
-    DataTypeObject::TypedPathsMap typed_sub_paths;
-    std::unordered_set<String> shared_typed_sub_paths;
+    /// The shared paths are read together by the typed shared data serialization below.
     std::unordered_map<String, SerializationPtr> typed_sub_paths_serializations;
-    for (const auto & [path, type] : typed_paths)
+    for (const auto & [path, _] : typed_paths)
     {
-        if (path.starts_with(prefix))
-        {
-            typed_sub_paths[path.substr(prefix.size())] = type;
-            /// Placement is a property of the stored data, so a path under the prefix keeps its SHARED mark.
-            /// The shared paths are read together by the typed shared data serialization below.
-            if (shared_typed_paths.contains(path))
-                shared_typed_sub_paths.insert(path.substr(prefix.size()));
-            else
-                typed_sub_paths_serializations[path] = all_typed_paths_serializations.at(path);
-        }
+        if (path.starts_with(prefix) && !shared_typed_paths.contains(path))
+            typed_sub_paths_serializations[path] = all_typed_paths_serializations.at(path);
     }
 
     /// The shared paths under the prefix are adjacent in the sorted list.
@@ -692,8 +708,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     if (!shared_typed_paths_under_prefix.empty())
         typed_shared_data_serialization = SerializationSubObjectTypedSharedData::create(prefix, std::move(shared_typed_paths_under_prefix), first_shared_path_index, all_shared_typed_paths.size());
 
-    auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
+    auto sub_object_type = createSubObjectType(prefix, typed_paths, shared_typed_paths, schema_format, max_dynamic_paths, max_dynamic_types);
     auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization, typed_shared_data_serialization);
     return {std::move(sub_object_type), std::move(sub_object_serialization)};
 }
@@ -805,7 +820,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             const String prefix = *sub_object_subcolumn + ".";
             auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
                 prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
+                max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
 
             auto res = std::make_unique<SubcolumnInfo>();
             res->data = SubstreamData(sub_object_serialization);
@@ -856,7 +871,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             auto dynamic_result_type = getDynamicType();
             auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
                 prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
+                max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
 
             auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
 
@@ -1081,23 +1096,7 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
     const auto & object_column = assert_cast<const ColumnObject &>(*column);
     const String prefix = path + ".";
 
-    /// Build sub-object type: collect typed paths that start with prefix, with their SHARED marks.
-    TypedPathsMap typed_sub_paths;
-    std::unordered_set<String> shared_typed_sub_paths;
-    for (const auto & [p, type] : typed_paths)
-    {
-        if (p.starts_with(prefix))
-        {
-            typed_sub_paths[p.substr(prefix.size())] = type;
-            if (shared_typed_paths.contains(p))
-                shared_typed_sub_paths.insert(p.substr(prefix.size()));
-        }
-    }
-
-    /// Skip rules are only relevant while parsing input. This synthetic type represents descendants
-    /// that are already stored, and the original rules refer to paths relative to the root object.
-    auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
+    auto sub_object_type = createSubObjectType(prefix, typed_paths, shared_typed_paths, schema_format, max_dynamic_paths, max_dynamic_types);
     auto dynamic_result_type = getDynamicType();
 
     DataTypePtr literal_type;
