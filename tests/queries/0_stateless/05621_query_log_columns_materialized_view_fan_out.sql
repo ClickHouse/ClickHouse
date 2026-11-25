@@ -1,7 +1,5 @@
--- One INSERT feeds several materialized views with different targets. In the query log each
--- table must list its own columns: the source the columns the INSERT writes, each target the
--- columns the SELECT of its view writes into it. The names of the columns may differ between
--- the source and the target. The views are listed in `views`.
+-- One INSERT feeds several materialized views with different targets. Each table lists its own columns: the source
+-- the columns the INSERT writes, each target the columns the SELECT of its view writes into it, under its own names.
 
 -- With async inserts the INSERT's own row in the query log is written before the data is
 -- processed, and the tables and columns are recorded on the row of the flush instead.

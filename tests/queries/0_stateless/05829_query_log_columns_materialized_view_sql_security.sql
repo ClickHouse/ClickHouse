@@ -1,7 +1,6 @@
--- A materialized view with `SQL SECURITY DEFINER` or `NONE` runs under another identity, and what it does is logged on
--- a child row of the query, not on the row of the user who inserted. The columns a view writes into its target go to
--- the same row as the tables the view reads: the user's row for a view without the clause, the child row for a
--- DEFINER or NONE view. The user's row still names every view in `views`.
+-- A materialized view with `SQL SECURITY DEFINER` or `NONE` runs under another identity, and its work is logged on a
+-- child row of the query, not on the user's row. The columns a view writes into its target go to the same row as the
+-- tables the view reads: the user's row for a plain view, the child row for a DEFINER or NONE view.
 SET async_insert = 0;
 SET log_queries = 1;
 SET enable_parallel_replicas = 0;

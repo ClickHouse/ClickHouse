@@ -1,7 +1,6 @@
 -- The columns in the query log describe the statement, not the data: an insert that moves no rows lists the columns
--- of the inserted table too. The columns a materialized view writes into its target are known only when its SELECT
--- is analyzed, which happens with the first block, so an insert that moves no rows lists the target by name only, as
--- the QueryStart row does.
+-- of the inserted table. The columns a view writes are known only when its SELECT is analyzed with the first block,
+-- so such an insert lists the target by name only, like the QueryStart row.
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS mv;

@@ -1,7 +1,6 @@
 -- With `allow_materialized_view_with_bad_select`, the SELECT of a view may produce columns its target lacks, and an
--- insert into a view may supply declared columns its target lacks. The conversion in front of the target drops them
--- silently, so the log lists for the target only the columns it stores. The view named in an INSERT lists the
--- columns of the statement.
+-- insert into a view may supply declared columns its target lacks. The conversion drops them silently, so the log
+-- lists for the target only the columns it stores.
 SET async_insert = 0;
 SET allow_materialized_view_with_bad_select = 1;
 
