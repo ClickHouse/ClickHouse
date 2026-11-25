@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'drizzle', 'drizzle orm', 'drizzle-kit', 'typescr
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-drizzle-beta" />
-
 [Drizzle ORM](https://orm.drizzle.team/)은 SQL과 유사한 쿼리 빌더를 제공하는 TypeScript ORM이며, `drizzle-kit`은 마이그레이션(migration)을 생성하고 실행하는 데 사용하는 동반 CLI입니다. 이 가이드에서는 TypeScript로 `todos` 테이블을 정의하고, `drizzle-kit` 마이그레이션으로 테이블을 생성한 다음, 간단한 Node.js HTTP 서버에서 생성, 조회, 수정, 삭제 쿼리를 처리합니다. 모든 연결에는 인증서 전체 검증(certificate verification)을 수행하는 TLS가 적용됩니다.
 
 ## 사전 요구 사항 {#prerequisites}

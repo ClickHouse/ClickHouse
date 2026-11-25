@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: Parquet is not supported in the fast test.
+# Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_data_page_size=(1048576, None); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_row_group_size=(1000000, None); output_format_parquet_row_group_size_bytes=(536870912, None)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -67,8 +66,12 @@ for file in "$FILE_PLAIN" "$FILE_DICT"; do
 done
 
 echo 'the optimization is applied'
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_PLAIN', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_plain'"
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_DICT', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_dict'"
+# A column that can be written to the columns cache is decoded without the filter, so that the cache gets
+# its values, and a column served from the cache is not decoded at all.
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_PLAIN', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_plain'"
+# A dictionary-encoded column read only by the last PREWHERE step is evaluated once per dictionary value,
+# without the filter: `id < 100000` (true for all rows) moves `s` to an earlier step.
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_DICT', Parquet) PREWHERE s LIKE '%rare-substring%' AND id < 100000 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_dict'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -110,7 +113,7 @@ echo 'dictionary runs'
 for file in "$FILE_RLE" "$FILE_ONE_VALUE"; do
     for enable in 0 1; do
         $CLICKHOUSE_CLIENT -q "
-        SELECT count(), sum(cityHash64(s)) FROM file('$file', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = $enable;
+        SELECT count(), sum(cityHash64(s)) FROM file('$file', Parquet) PREWHERE s LIKE '%needle%' AND id < 100000 SETTINGS apply_string_filters_during_scan = $enable;
         SELECT count(), sum(cityHash64(s)) FROM file('$file', Parquet) PREWHERE s LIKE '%value%' SETTINGS apply_string_filters_during_scan = $enable;
         SELECT id, s FROM file('$file', Parquet) ORDER BY id LIMIT 2 SETTINGS apply_string_filters_during_scan = $enable;
         "
@@ -118,8 +121,8 @@ for file in "$FILE_RLE" "$FILE_ONE_VALUE"; do
 done
 
 echo 'the optimization is applied to the runs'
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_RLE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_rle'"
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_ONE_VALUE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_one_value'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_RLE', Parquet) PREWHERE s LIKE '%rare-substring%' AND id < 100000 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_rle'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_ONE_VALUE', Parquet) PREWHERE s LIKE '%rare-substring%' AND id < 100000 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_one_value'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -140,20 +143,22 @@ GROUP BY log_comment ORDER BY log_comment;
 # dictionary entry matches `%needle%`, while most of the rows do not, and the optimization must stay on.
 # The pruning condition is an equality on the same column: it is itself one of the extracted
 # conditions, so it does not count as another reader of the column that would disable the filter.
+# No page row limit, so the page index cannot skip pages and the filter meets more than 100000 values.
 FILE_PRUNE="${CLICKHOUSE_DATABASE}/t_string_filter_prune.parquet"
 
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION file('$FILE_PRUNE', Parquet, 'id UInt32, s String')
 SELECT number, if(number % 3 = 0, 'needle ' || toString(number), 'an ordinary value')
 FROM numbers(210000)
-SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 16777216;
+SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 16777216,
+    output_format_parquet_data_page_row_limit = 0;
 "
 
 echo 'dictionary pruning does not disable the filter'
 $CLICKHOUSE_CLIENT -q "
 SELECT count() FROM file('$FILE_PRUNE', Parquet)
 PREWHERE s = 'needle 6' AND s LIKE '%needle%'
-SETTINGS apply_string_filters_during_scan = 1, input_format_parquet_dictionary_filter_push_down = 16777216,
+SETTINGS apply_string_filters_during_scan = 1, input_format_parquet_dictionary_filter_push_down = 16777216, use_columns_cache = 0,
     log_comment = '05055_string_filter_pruning'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"

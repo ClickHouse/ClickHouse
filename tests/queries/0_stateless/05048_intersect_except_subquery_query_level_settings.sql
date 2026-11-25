@@ -2,7 +2,6 @@
 -- `UNION`: the grammar leaves it on the last operand's `SELECT`, and it must shape the whole set
 -- operation, including the operands that syntactically precede it.
 
-SET enable_analyzer = 1;
 SET obfuscate_markov_order = 0;
 
 SELECT 'setting reset covers every operand of EXCEPT';

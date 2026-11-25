@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**别名**: `mapFromString`, `str_to_map`
+**别名**: `str_to_map`, `mapFromString`
 
 **参数**
 
@@ -833,9 +833,9 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 引入版本：v21.2.0
 
 返回给定 map 的键。
-启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后，可对此函数进行优化。
-启用该设置后，此函数仅读取 `keys` 子列，而不是整个 map。
+当该 map 未在查询的其他位置使用时，此函数可以仅读取 `keys` 子列，而无需读取整个 map。
 查询 `SELECT mapKeys(m) FROM table` 会被转换为 `SELECT m.keys FROM table`。
+此优化由设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 控制，该设置默认已启用。
 
 **语法**
 
@@ -843,17 +843,19 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 mapKeys(map)
 ```
 
+**别名**：`map_keys`
+
 **参数**
 
 * `map` — 待提取键的 Map。[`Map(K, V)`](/zh/reference/data-types/map)
 
 **返回值**
 
-返回包含该 Map 中所有键的数组。[`Array(T)`](/zh/reference/data-types/array)
+返回包含该 Map 中所有键的 array。[`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))
@@ -935,15 +937,15 @@ SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))
 
 ## mapPopulateSeries {#mapPopulateSeries}
 
-Introduced in: v20.10.0
+引入版本： v20.10.0
 
-用整数键补齐映射中缺失的键值对。
+用整数键补齐Map中缺失的键值对。
 如需将键扩展到超过当前最大值的位置，可以指定一个最大键。
-更具体地说，该函数返回一个映射，其中键按步长 1 形成从最小键到最大键 (如果指定，则到 `max` 参数) 的连续序列，并具有对应的值。
+更具体地说，该函数返回一个Map，其中键按步长 1 形成从最小键到最大键 (如果指定，则到 `max` 参数) 的连续序列，并具有对应的值。
 如果某个键没有指定值，则使用默认值作为其值。
 如果键重复，则只有第一个值 (按出现顺序) 会与该键关联。
 
-**Syntax**
+**语法**
 
 ```sql
 mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
@@ -958,7 +960,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **返回值**
 
-返回一个 Map，或一个由两个数组组成的 Tuple：第一个数组包含按排序顺序排列的键，第二个数组包含对应键的值。[`Map(K, V)`](/zh/reference/data-types/map) 或 [`Tuple(Array(UInt*), Array(Any))`](/zh/reference/data-types/tuple)
+返回一个 Map，或一个由两个数组组成的 元组：第一个数组包含按排序顺序排列的键，第二个数组包含对应键的值。[`Map(K, V)`](/zh/reference/data-types/map) 或 [`Tuple(Array(UInt*), Array)`](/zh/reference/data-types/tuple)
 
 **示例**
 
@@ -1165,9 +1167,9 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 引入版本：v21.2.0
 
 返回给定 map 的值。
-启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后，此函数可得到优化。
-启用该设置后，该函数只会读取 `values` 子列，而不是整个 map。
+当该 map 未在查询的其他位置使用时，该函数可以只读取 `values` 子列，而不是整个 map。
 查询 `SELECT mapValues(m) FROM table` 会被转换为 `SELECT m.values FROM table`。
+此优化由设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 控制，该设置默认已启用。
 
 **语法**
 
@@ -1175,13 +1177,15 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 mapValues(map)
 ```
 
+**别名**：`map_values`
+
 **参数**
 
 * `map` — 要从中提取值的 Map。[`Map(K, V)`](/zh/reference/data-types/map)
 
 **返回值**
 
-返回一个数组，包含该 map 中的所有值。[`Array(T)`](/zh/reference/data-types/array)
+返回一个 array，包含该 map 中的所有值。[`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 

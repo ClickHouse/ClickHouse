@@ -258,10 +258,10 @@ public:
 
 private:
 
-    bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
     {
         if (auto * function_node = node->as<FunctionNode>())
-            if (function_node->isAggregateFunction())
+            if (function_node->isAggregationCall())
                 return true;
 
         for (const auto & group_by_key_node : group_by_keys_nodes)
@@ -509,7 +509,7 @@ void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
         if (const auto * function_node = current->as<FunctionNode>())
         {
             /// the query computes arguments of an aggregate or window function before the step
-            if (function_node->isAggregateFunction() || function_node->isWindowFunction())
+            if (function_node->isAggregationCall() || function_node->isWindowCall())
                 continue;
             if (function_node->getFunctionName() == "arrayJoin")
                 throw Exception(exception_code,
@@ -821,7 +821,7 @@ void validateFromClause(const QueryTreeNodePtr & node)
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "Correlated column '{}' is found in the FROM clause. "
                             "Correlated table expressions in the FROM clause are only supported as a subquery "
-                            "on the right side of JOIN LATERAL (experimental, requires setting allow_experimental_lateral_join = 1). In query {}",
+                            "on the right side of JOIN LATERAL (experimental, requires setting enable_lateral_join = 1). In query {}",
                             column->formatASTForErrorMessage(),
                             node->formatASTForErrorMessage());
                 }

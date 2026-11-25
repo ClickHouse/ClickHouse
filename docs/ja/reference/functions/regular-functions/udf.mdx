@@ -6,21 +6,17 @@ title: 'ユーザー定義関数 (UDFs)'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
 import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse は、いくつかの種類のユーザー定義関数 (UDFs) をサポートしています。
 
-* [実行可能 UDF](#executable-user-defined-functions) は、外部プログラムやスクリプト (Python、Bash など) を起動し、STDIN / STDOUT を介してデータのブロックをストリーミングします。ClickHouse を再コンパイルすることなく、既存のコードやツールを統合するために使用できます。インプロセスの選択肢と比べると呼び出しごとのオーバーヘッドは大きく、より重いロジックや別のランタイムが必要な場合に適しています。
+* [実行可能 UDF](#executable-user-defined-functions) は、外部プログラムやスクリプト (Python、Bash など) を起動し、STDIN / STDOUT を介してデータのBlockをストリーミングします。ClickHouse を再コンパイルすることなく、既存のコードやツールを統合するために使用できます。インプロセスの選択肢と比べると呼び出しごとのオーバーヘッドは大きく、より重いロジックや別のランタイムが必要な場合に適しています。
 * [SQL UDFs](#sql-user-defined-functions) は、`CREATE FUNCTION` を使って SQL のみで定義されます。これらはクエリプランにインライン展開されるため (プロセス境界はありません) 、軽量で、式ロジックの再利用や複雑な計算カラムの簡略化に適しています。
-* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) は、WebAssembly にコンパイルされたコードを、サーバープロセス内のサンドボックスで実行します。外部の実行可能ファイルよりも呼び出しごとのオーバーヘッドが低く、ネイティブ拡張機能よりも優れた分離性を備えているため、WASM をターゲットにできる言語 (例: C/C++/Rust) で記述されたカスタムアルゴリズムに適しています。
-* [Experimental ドライバーベースの実行可能 UDF](#driver-based-executable-user-defined-functions) では、オペレーターが提供する &quot;ドライバー&quot; により、`CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` で指定されたコードスニペットを、関数作成時に実行可能 UDF に変換できます (たとえばコンパイルして)。これは実行可能 UDF をベースとしており、サーバー側のドライバー設定が必要です。
+* [実験的な WebAssembly UDFs](#webassembly-user-defined-functions) は、WebAssembly にコンパイルされたコードを、サーバープロセス内のサンドボックスで実行します。外部の実行可能ファイルよりも呼び出しごとのオーバーヘッドが低く、ネイティブ拡張機能よりも優れた分離性を備えているため、WASM をターゲットにできる言語 (例: C/C++/Rust) で記述されたカスタムアルゴリズムに適しています。
+* [実験的な ドライバーベースの実行可能 UDF](#driver-based-executable-user-defined-functions) では、オペレーターが提供する &quot;ドライバー&quot; により、`CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` で指定されたコードスニペットを、関数作成時に実行可能 UDF に変換できます (たとえばコンパイルして)。これは実行可能 UDF をベースとしており、サーバー側のドライバー設定が必要です。
 
 ## 実行可能ユーザー定義関数 {#executable-user-defined-functions}
-
-<BetaBadge />
 
 <Note>
   ClickHouse Cloud では、実行可能 UDF は一般提供 (GA) されており、Cloud コンソール、Cloud API、または Terraform から作成します。コンパイル済みバイナリ向けの Native ランタイムを含む Cloud 固有のワークフローについては、[Cloud でのユーザー定義関数](/ja/products/cloud/features/sql-console-features/user-defined-functions) を参照してください。
@@ -56,7 +52,14 @@ ClickHouse は、データ処理のために任意の外部実行可能プログ
 
 コマンドは `STDIN` から引数を読み取り、結果を `STDOUT` に出力する必要があります。また、引数は反復的に処理する必要があります。つまり、1 つの chunk の引数を処理したら、次の chunk を待機しなければなりません。
 
-## 実行可能ユーザー定義関数 {#executable-user-defined-functions}
+<Note>
+  `TabSeparated` フォーマットでは、ClickHouse は [TabSeparated のエスケープ規則](/ja/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting) に従い、送信する引数内の特殊文字をエスケープし、コマンドの出力をアンエスケープします。たとえば、引数内のバックスラッシュは `\\` として、タブや改行はそれぞれ `\t`、`\n` としてコマンドに渡されます。コマンド側でも同じ方法で出力をエスケープする必要があります。そうしないと、JSON テキストなどの出力に含まれるバックスラッシュがエスケープシーケンスの開始として解釈され、結果が不正になるか、パースに失敗します。
+
+  コマンドが出力をエスケープしない場合は、代わりに次のいずれかのフォーマットを使用してください。
+
+  * [`TabSeparatedRaw`](/ja/reference/formats/TabSeparated/TabSeparatedRaw): 値はエスケープされないため、値にタブや改行を含めることはできません。
+  * [`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow): 文字列にバックスラッシュ、タブ、改行を含めることができます。後述の [JSON の例](#udf-stdin) を参照してください。
+</Note>
 
 ## 例 {#examples}
 
@@ -612,6 +615,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 * `UnsafeC` - サンドボックスを使用せず、ホスト上でコードを直接コンパイルして実行します。名前のとおり分離は行われないため、信頼できる環境とテスト用途でのみ使用することを想定しています。
 
 これらのサンプルドライバーは出発点として用意されています。信頼できないユーザーに公開する前に、利用環境に合わせてサンドボックス化の内容を確認し、強化してください。
+
+### サードパーティ製ドライバー {#third-party-drivers}
+
+ClickHouse 以外が提供するドライバーもあります。これらは ClickHouse ではなく各作成者がメンテナンスしているため、信頼できないユーザーに公開する前に、サンプルドライバーと同様にレビューしてください。
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - 独自のカーネルを持つ [Hyperlight](https://github.com/hyperlight-dev/hyperlight) マイクロ VM 内で Python 関数本体を実行します。Hyperlight は [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/) のサンドボックスプロジェクトです。行のBlockごとにゲストのスナップショットから起動するため、コードはネットワークにもサーバーのファイルにもアクセスできず、クエリ間でステートも保持しません。`/dev/kvm` を備えた Linux が必要です。
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
 
 ## 関連コンテンツ {#related-content}
 
