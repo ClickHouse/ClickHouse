@@ -116,10 +116,24 @@ VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(c
     return infos;
 }
 
+void logProcessorsPipeline(const ContextPtr & context, const Processors & processors)
+{
+    if (!context->getSettingsRef()[Setting::log_processors_profiles])
+        return;
+
+    auto dump_pipeline = [&]
+    {
+        WriteBufferFromOwnString out;
+        printPipeline(processors, out, true);
+        return out.str();
+    };
+    auto logger = ::getLogger("ProcessorProfileLog");
+    LOG_TEST(logger, "Processors profile log:\n{}", dump_pipeline());
+}
+
 void logProcessorProfile(
     ContextPtr context,
     const VectorWithMemoryTracking<ProcessorsProfileLogInfo> & profile_infos,
-    String pipeline_dump,
     Int32 exception_code,
     const String & exception)
 {
@@ -164,20 +178,13 @@ void logProcessorProfile(
                 processors_profile_log->add([&](ProcessorProfileLogElement & element) { element = processor_elem; });
             }
         }
-        auto logger = ::getLogger("ProcessorProfileLog");
-        LOG_TEST(logger, "Processors profile log:\n{}", pipeline_dump);
     }
 }
 
 void logProcessorProfile(ContextPtr context, const Processors & processors, Int32 exception_code, const String & exception)
 {
-    String pipeline_dump;
-    {
-        WriteBufferFromString out(pipeline_dump);
-        printPipeline(processors, out, true);
-    }
-
     auto profile_infos = getProcessorsProfileLogInfo(processors);
-    logProcessorProfile(context, profile_infos, pipeline_dump, exception_code, exception);
+    logProcessorProfile(context, profile_infos, exception_code, exception);
+    logProcessorsPipeline(context, processors);
 }
 }

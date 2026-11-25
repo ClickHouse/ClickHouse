@@ -103,7 +103,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/stripQuerySettings.h>
-#include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #if CLICKHOUSE_CLOUD
@@ -771,11 +770,9 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 
     VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
-    String pipeline_dump;
-    {
-        WriteBufferFromString out(pipeline_dump);
-        printPipeline(query_pipeline.getProcessors(), out, true);
-    }
+    /// The pipeline is reset below, so its dump can only be logged here.
+    if (!processors_profile_infos.empty())
+        logProcessorsPipeline(context, query_pipeline.getProcessors());
 
     std::optional<ResultProgress> result_progress;
     if (pulling_pipeline)
@@ -797,8 +794,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 
     return QueryPipelineFinalizedInfo{
         .result_progress = std::move(result_progress),
-        .processors_profile_infos = std::move(processors_profile_infos),
-        .pipeline_dump = std::move(pipeline_dump)};
+        .processors_profile_infos = std::move(processors_profile_infos)};
 }
 
 static bool isAsyncInsertFlush(const ASTPtr & query_ast)
@@ -1163,7 +1159,7 @@ static void logQueryFinishImpl(
     }
 
     if (!query_pipeline_finalized_info.processors_profile_infos.empty())
-        logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
+        logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos);
 }
 
 void logQueryFinish(

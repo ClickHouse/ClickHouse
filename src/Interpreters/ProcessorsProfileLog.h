@@ -61,11 +61,13 @@ public:
 
 VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
 
+/// Writes the pipeline dump to the test-level log; the dump is built only if that message is written.
+void logProcessorsPipeline(const ContextPtr & context, const Processors & processors);
+
 void logProcessorProfile(ContextPtr context, const Processors & processors, Int32 exception_code = 0, const String & exception = {});
 void logProcessorProfile(
     ContextPtr context,
     const VectorWithMemoryTracking<ProcessorsProfileLogInfo> & profile_infos,
-    String pipeline_dump,
     Int32 exception_code = 0,
     const String & exception = {});
 

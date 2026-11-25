@@ -17,7 +17,6 @@ struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
     VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos;
-    String pipeline_dump;
 };
 
 struct BlockIO
