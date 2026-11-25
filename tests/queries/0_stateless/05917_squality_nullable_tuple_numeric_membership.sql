@@ -20,7 +20,7 @@ CREATE TABLE squality_nullable_tuple_numeric_check
 (
     l Array(Nullable(Tuple(Nullable(UInt8)))),
     r Array(Tuple(Nullable(UInt16))),
-    CONSTRAINT null_tuple_is_not_member CHECK NOT (l IN r)
+    CONSTRAINT null_tuple_is_not_member CHECK NOT (l IN materialize(r))
 ) ENGINE = Memory;
 
 INSERT INTO squality_nullable_tuple_numeric_check
