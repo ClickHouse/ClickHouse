@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: the failpoint is server-wide, and with the automatic mode on, a query of any other test can reach it.
+# no-fasttest: tests that run alone are kept out of the fast test.
 
 # The plan with parallel replicas takes over the index analysis of the single-node plan. An `UPDATE` applied on
 # the fly between the storage snapshots of the two plans makes the skip index analysis of the old snapshot drop
