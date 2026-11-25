@@ -1064,7 +1064,7 @@ public:
         bool check_numeric_probe_exactness = false;
 
         if (in_null_as_unknown && set_types.size() == 1
-            && (set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1))
+            && (set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 0))
             && !set->sourceIsEmpty())
         {
             auto unknown = ColumnNullable::create(ColumnUInt8::create(1, UInt8{0}), ColumnUInt8::create(1, UInt8{1}));
@@ -1079,7 +1079,7 @@ public:
                 && !left_type->equals(*key_type);
             /// A set containing only `NULL` has no key whose type-sensitive hash
             /// could miss a match. Leave it to the ordinary unknown-result handling.
-            const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
+            const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 0);
             if ((hasUnverifiedPreparedKeyComparison(left_type, key_type)
                     || hasCompoundCarrierForIn(left_type, key_type)) && !only_null_key)
                 throw Exception(

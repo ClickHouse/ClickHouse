@@ -553,6 +553,12 @@ void ExternalQueryBuilder::composeIdsCondition(const VectorWithMemoryTracking<UI
 
 void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const
 {
+    if (requested_rows.empty())
+    {
+        writeChar('0', out);
+        return;
+    }
+
     bool first = true;
 
     if (method == AND_OR_CHAIN || method == CLICKHOUSE_AND_OR_CHAIN)
