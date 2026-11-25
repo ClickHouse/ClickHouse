@@ -224,6 +224,33 @@ public:
     std::atomic<bool> fail_after_removal{false};
 };
 
+/// Fails the synchronization of a directory under `detached` a given number of times, that is, after
+/// a recovery copy was renamed there.
+class DetachSyncFailingDisk final : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    void syncDirectory(const String & path) const override
+    {
+        if (path.starts_with("detached"))
+        {
+            if (remaining_failures > 0)
+            {
+                --remaining_failures;
+                ++failed_syncs;
+                throw std::runtime_error("injected detached directory sync failure");
+            }
+            ++successful_syncs;
+        }
+        DB::DiskLocal::syncDirectory(path);
+    }
+
+    mutable std::atomic<size_t> remaining_failures{0};
+    mutable std::atomic<size_t> failed_syncs{0};
+    mutable std::atomic<size_t> successful_syncs{0};
+};
+
 /// The marker is written and finalized, but its synchronization fails, so the move reports that the
 /// marker was not published although it is on the disk.
 class MarkerSyncFailingDisk final : public DB::DiskLocal
@@ -6170,6 +6197,77 @@ TYPED_TEST(CoordinationChangelogTest, AppendRetiresRecoveryCopiesOfDetachedChang
         for (uint64_t index = 6; index <= 10; ++index)
             EXPECT_EQ(restarted.entryAt(index)->get_term(), 2);
     }
+}
+
+TYPED_TEST(CoordinationChangelogTest, RetriedDetachOfRecoveryCopySynchronizesTheRename)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the retirement of recovery copies is independent of compression";
+
+    /// A rewrite detaches the retained recovery copy of the rewritten range. The rename succeeds, but
+    /// the synchronization of the detached directory fails, so the rewrite fails. The copy is absent
+    /// from its path now, which does not make the rename durable: the retried rewrite must synchronize
+    /// it before forgetting the copy, or a power loss could bring the copy back, and restart would
+    /// replay its obsolete entries.
+    ChangelogDirTest regular("./logs_detach_sync_regular");
+    ChangelogDirTest latest("./logs_detach_sync_latest");
+    auto regular_disk = std::make_shared<DetachSyncFailingDisk>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings settings{
+        .force_sync = true,
+        .compress_logs = false,
+        .rotate_interval = 5,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view copy_path = "changelog_1_5.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 7; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+    ASSERT_TRUE(regular_disk->existsFile(String(copy_path)));
+
+    /// A markerless duplicate of the first range: startup selects the one on the latest disk and
+    /// retains the one on the regular disk as a recovery copy.
+    regular_disk->copyFile(String(copy_path), *latest_disk, String(copy_path), {});
+
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(recovered.getNextEntryIndex(), 8);
+        ASSERT_TRUE(regular_disk->existsFile(String(copy_path)));
+        ASSERT_TRUE(latest_disk->existsFile(String(copy_path)));
+        ASSERT_EQ(regular_disk->successful_syncs, 0);
+
+        regular_disk->remaining_failures = 1;
+        EXPECT_ANY_THROW(recovered.writeAt(3, getLogEntry("rewrite_3", 2)));
+        EXPECT_EQ(regular_disk->failed_syncs, 1);
+        /// The copy was renamed before the failure.
+        EXPECT_FALSE(regular_disk->existsFile(String(copy_path)));
+        EXPECT_EQ(regular_disk->successful_syncs, 0);
+
+        ASSERT_NO_THROW(recovered.writeAt(3, getLogEntry("rewrite_3", 2)));
+        EXPECT_EQ(regular_disk->successful_syncs, 1);
+        EXPECT_FALSE(regular_disk->existsFile(String(copy_path)));
+        recovered.flush();
+        EXPECT_EQ(recovered.getNextEntryIndex(), 4);
+    }
+
+    size_t detached_copies = 0;
+    for (const auto & dir_entry : fs::recursive_directory_iterator(fs::path(regular.path) / "detached"))
+        detached_copies += dir_entry.is_regular_file();
+    EXPECT_EQ(detached_copies, 1);
+
+    DB::Changelog restarted(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 4);
+    EXPECT_EQ(restarted.entryAt(2)->get_term(), 1);
+    EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
 }
 
 TYPED_TEST(CoordinationChangelogTest, FailedBackgroundMoveRemovesUnpublishedDestinationBeforeRewrite)

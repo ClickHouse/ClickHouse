@@ -5417,6 +5417,17 @@ void Changelog::backgroundChangelogOperationsThread()
                                 changelog.path,
                                 changelog.disk->getName());
                         }
+                        else if (changelog.unsynchronized_detached_path)
+                        {
+                            /// The recovery copy was renamed into the detached directory, but the
+                            /// rename was not synchronized: there is nothing to remove at its path.
+                            synchronizeDetachedChangelogCopy(changelog);
+                            LOG_INFO(
+                                log,
+                                "Synchronized the detach of recovery copy {} on disk {}",
+                                changelog.path,
+                                changelog.disk->getName());
+                        }
                         else if (changelog.may_be_absent)
                         {
                             /// The parent directory is synchronized below in either case.
@@ -5594,9 +5605,19 @@ void Changelog::removeRetainedChangelogCopies(uint64_t from_log_index, Changelog
     retained_duplicate_changelogs.erase(duplicate_it);
 }
 
-void Changelog::detachRetainedChangelogCopy(const ChangelogFileDescription & copy)
+void Changelog::detachRetainedChangelogCopy(ChangelogFileDescription & copy)
 {
     const auto & disk = copy.disk;
+
+    /// A previous call renamed the copy but failed to synchronize the rename. The copy is absent from
+    /// its path, which does not prove that it stays absent after a power loss, so retry the
+    /// synchronization instead of forgetting the copy.
+    if (copy.unsynchronized_detached_path)
+    {
+        synchronizeDetachedChangelogCopy(copy);
+        return;
+    }
+
     if (!disk->existsFile(copy.path))
         return;
 
@@ -5638,8 +5659,16 @@ void Changelog::detachRetainedChangelogCopy(const ChangelogFileDescription & cop
         return;
     }
 
-    syncKeeperParentDirectory(disk, detached_path);
-    syncKeeperParentDirectory(disk, copy.path);
+    copy.unsynchronized_detached_path = std::move(detached_path);
+    synchronizeDetachedChangelogCopy(copy);
+}
+
+void Changelog::synchronizeDetachedChangelogCopy(ChangelogFileDescription & copy)
+{
+    chassert(copy.unsynchronized_detached_path);
+    syncKeeperParentDirectory(copy.disk, *copy.unsynchronized_detached_path);
+    syncKeeperParentDirectory(copy.disk, copy.path);
+    copy.unsynchronized_detached_path.reset();
 }
 
 void Changelog::removeRetainedChangelogCopiesSupersededByWriter()

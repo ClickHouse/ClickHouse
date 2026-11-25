@@ -113,6 +113,12 @@ struct ChangelogFileDescription
     /// synchronizing its parent directory, so the removal of this copy must tolerate a missing file.
     bool may_be_absent = false;
 
+    /// Set for a retained recovery copy that was renamed to this path in the detached directory of
+    /// its disk, until the parent directories of both paths are synchronized. The copy is no longer
+    /// at `path`, but the rename is not durable yet: after a power loss the copy can reappear there,
+    /// so the descriptor must not be forgotten before the synchronization is retried and succeeds.
+    std::optional<std::string> unsynchronized_detached_path;
+
     bool broken_at_end = false;
 
     /// Guards disk/path/removed_from_disk. Readers take the shared lock and run concurrently;
@@ -788,7 +794,11 @@ private:
     /// Moves a recovery copy that startup inventoried into the detached directory of its disk, where
     /// restart does not look for changelogs. Its contents were never compared with the selected
     /// changelog, so it can hold entries that the selected one lacks, and is kept for manual recovery.
-    void detachRetainedChangelogCopy(const ChangelogFileDescription & copy);
+    /// If the rename succeeds but its synchronization fails, the copy remembers it, and the next call
+    /// only retries the synchronization.
+    void detachRetainedChangelogCopy(ChangelogFileDescription & copy);
+    /// Makes the rename of a detached recovery copy durable and forgets that it was pending.
+    static void synchronizeDetachedChangelogCopy(ChangelogFileDescription & copy);
     /// Removes the retained recovery copies that the entries appended by the current writer supersede:
     /// those of its range and of every later range, and those of the ranges that startup detached,
     /// which are no longer registered in `existing_changelogs`. Called by the write thread before it
