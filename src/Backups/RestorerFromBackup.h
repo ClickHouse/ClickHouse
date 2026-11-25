@@ -66,6 +66,10 @@ public:
     /// Returns the list of access entities to restore.
     AccessEntitiesToRestore getAccessEntitiesToRestore(const String & data_path_in_backup) const;
 
+    /// Returns the definition from the backup of the table whose data is at `data_path_in_backup`, or null if no table has
+    /// its data there.
+    ASTPtr getTableDefinitionFromBackup(const String & data_path_in_backup) const;
+
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
 

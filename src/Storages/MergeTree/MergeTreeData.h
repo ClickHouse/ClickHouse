@@ -1698,6 +1698,9 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
+    /// Number of restores of this table's data whose parts are not attached yet. Incremented under `lockOperationsWithParts`.
+    std::atomic<size_t> restores_in_progress = 0;
+
     /// True if at least one part contains a lightweight delete mask.
     /// Used as a fallback in `supportsTrivialCountOptimization` when
     /// no storage snapshot is available (e.g. from `StorageMerge`).

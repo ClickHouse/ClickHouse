@@ -4271,6 +4271,12 @@ void StorageMergeTree::checkNoNonAdaptivePartsForGranularityChange() const
             "because part {} has non-adaptive granularity", getName(), part_name);
     };
 
+    /// The parts of a restore are loaded long before they are attached, see `restorePartsFromBackup`.
+    if (restores_in_progress > 0)
+        throw Exception(ErrorCodes::READONLY_SETTING,
+            "Settings 'index_granularity' and 'index_granularity_bytes' cannot be changed for storage '{}' "
+            "while a RESTORE of its data is in progress", getName());
+
     /// A restart loads the parts in every state, and an outdated part may be activated again then.
     waitForOutdatedPartsToBeLoaded();
     {

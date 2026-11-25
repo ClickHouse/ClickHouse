@@ -544,6 +544,18 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     context->checkAccess(required_access_rights.getElements());
 }
 
+ASTPtr RestorerFromBackup::getTableDefinitionFromBackup(const String & data_path_in_backup) const
+{
+    const std::filesystem::path data_path{data_path_in_backup};
+    std::lock_guard lock{mutex};
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (table_info.data_path_in_backup == data_path)
+            return table_info.create_table_query;
+    }
+    return nullptr;
+}
+
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
 {
     std::lock_guard lock{mutex};

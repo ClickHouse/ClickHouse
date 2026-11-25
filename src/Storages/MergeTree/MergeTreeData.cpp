@@ -106,6 +106,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTFunction.h>
@@ -10976,12 +10977,21 @@ public:
         const std::shared_ptr<MergeTreeData> & storage_,
         const BackupPtr & backup_,
         const ContextPtr & query_context_,
-        const ZooKeeperRetriesInfo & zookeeper_retries_info_)
-        : storage(storage_), backup(backup_), query_context(query_context_), zookeeper_retries_info(zookeeper_retries_info_)
+        const ZooKeeperRetriesInfo & zookeeper_retries_info_,
+        bool non_adaptive_parts_allowed_)
+        : storage(storage_)
+        , backup(backup_)
+        , query_context(query_context_)
+        , zookeeper_retries_info(zookeeper_retries_info_)
+        , non_adaptive_parts_allowed(non_adaptive_parts_allowed_)
     {
+        ++storage->restores_in_progress;
     }
 
+    ~RestoredPartsHolder() { --storage->restores_in_progress; }
+
     BackupPtr getBackup() const { return backup; }
+    bool areNonAdaptivePartsAllowed() const { return non_adaptive_parts_allowed; }
 
     void setNumParts(size_t num_parts_)
     {
@@ -11044,6 +11054,9 @@ private:
     const BackupPtr backup;
     const ContextPtr query_context;
     const ZooKeeperRetriesInfo zookeeper_retries_info;
+    /// A non-adaptive part takes its granule size from the table's `index_granularity`, so it is restored only if that
+    /// is the value the part was written with.
+    const bool non_adaptive_parts_allowed;
     size_t num_parts = 0;
     size_t num_broken_parts = 0;
     MutableDataPartsVector parts;
@@ -11063,8 +11076,32 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
-    auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
-        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getContext(), restorer.getZooKeeperRetriesInfo());
+    /// The non-adaptive parts in the backup were written with the `index_granularity` stated in the backed up definition.
+    std::optional<UInt64> backup_index_granularity;
+    if (const auto definition = restorer.getTableDefinitionFromBackup(data_path_in_backup))
+    {
+        const auto * create = definition->as<ASTCreateQuery>();
+        if (create && create->storage && create->storage->settings)
+        {
+            if (const Field * value = create->storage->settings->changes.tryGet("index_granularity"))
+                backup_index_granularity = SettingFieldUInt64(*value).value;
+        }
+    }
+
+    /// The comparison and the registration of the restore are atomic with a granularity change, which is rejected
+    /// while the restore is registered, see `StorageMergeTree::alter`.
+    std::shared_ptr<RestoredPartsHolder> restored_parts_holder;
+    {
+        auto operation_data_parts_lock = lockOperationsWithParts();
+        const bool non_adaptive_parts_allowed
+            = backup_index_granularity && *backup_index_granularity == (*getSettings())[MergeTreeSetting::index_granularity];
+        restored_parts_holder = std::make_shared<RestoredPartsHolder>(
+            std::static_pointer_cast<MergeTreeData>(shared_from_this()),
+            backup,
+            restorer.getContext(),
+            restorer.getZooKeeperRetriesInfo(),
+            non_adaptive_parts_allowed);
+    }
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;
@@ -11108,6 +11145,20 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 
     /// Find all files of this part in the backup.
     Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
+
+    /// Checked before loading, which already reads the marks with the table's granularity.
+    if (!restored_parts_holder->areNonAdaptivePartsAllowed())
+    {
+        for (const String & filename : filenames)
+        {
+            const std::string extension = fs::path(filename).extension();
+            if (!filename.contains('/') && MarkType::isMarkFileExtension(extension) && !MarkType(extension).adaptive)
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore part {} with non-adaptive granularity, because the table's setting 'index_granularity' "
+                    "is not the one stated in the backup",
+                    part_name);
+        }
+    }
 
     /// Calculate the total size of the part.
     UInt64 total_size_of_part = 0;
