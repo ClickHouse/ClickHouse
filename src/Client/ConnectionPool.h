@@ -51,10 +51,10 @@ public:
     /// so the returned connection is established and checked anyway.
     virtual Entry getUnchecked(const ConnectionTimeouts & timeouts, const Settings & settings) = 0;
 
-    [[nodiscard]] const std::string & getHost() const { return host; }
-    [[nodiscard]] UInt16 getPort() const { return port; }
-    [[nodiscard]] const String & getAddress() const { return address; }
-    [[nodiscard]] Priority getConfigPriority() const { return config_priority; }
+    const std::string & getHost() const { return host; }
+    UInt16 getPort() const { return port; }
+    const String & getAddress() const { return address; }
+    Priority getConfigPriority() const { return config_priority; }
 
 protected:
     const String host;
@@ -84,12 +84,12 @@ public:
         UInt16 port_,
         const String & default_database_,
         const String & user_,
-        std::string_view password_,
+        const String & password_,
         const String & proto_send_chunked_,
         const String & proto_recv_chunked_,
         const String & quota_key_,
         const String & cluster_,
-        std::string_view cluster_secret_,
+        const String & cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
@@ -97,7 +97,7 @@ public:
         Priority config_priority_ = Priority{1},
         Connection::SocketFactory socket_factory_ = &Connection::defaultSocketFactory)
         : IConnectionPool(host_, port_, config_priority_)
-        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + std::to_string(port_) + ")"), /* pool_outlives_query_ = */ true)
+        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + std::to_string(port_) + ")"))
         , default_database(default_database_)
         , user(user_)
         , password(password_)
@@ -140,8 +140,6 @@ public:
     }
 
 protected:
-    void releaseObject(Connection & connection) noexcept override { connection.releaseQueryBuffers(); }
-
     /** Creates a new object to put in the pool. */
     ConnectionPtr allocObject() override
     {
@@ -161,14 +159,14 @@ protected:
 private:
     String default_database;
     String user;
-    SecretString password;
+    String password;
     String proto_send_chunked;
     String proto_recv_chunked;
     String quota_key;
 
     /// For inter-server authorization
     String cluster;
-    SecretString cluster_secret;
+    String cluster_secret;
 
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
@@ -192,12 +190,12 @@ public:
         UInt16 port;
         String default_database;
         String user;
-        SecretString password;
+        String password;
         String proto_send_chunked;
         String proto_recv_chunked;
         String quota_key;
         String cluster;
-        SecretString cluster_secret;
+        String cluster_secret;
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
@@ -218,12 +216,12 @@ public:
         UInt16 port,
         String default_database,
         String user,
-        std::string_view password,
+        String password,
         String proto_send_chunked,
         String proto_recv_chunked,
         String quota_key,
         String cluster,
-        std::string_view cluster_secret,
+        String cluster_secret,
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,

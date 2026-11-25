@@ -8,7 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 
 namespace DB
@@ -17,6 +17,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
+}
+
+namespace Setting
+{
+    extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
 }
 
 namespace ArrowFlight
@@ -36,10 +41,19 @@ PollSession::PollSession(
     try
     {
         executor.emplace(block_io.pipeline);
-        auto schema_res = flightSchema(executor->getHeader(), query_context, schema_modifier);
-        if (!schema_res.ok())
-            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema: {}", schema_res.status().ToString());
-        schema = std::move(schema_res).ValueUnsafe();
+        schema = CHColumnToArrowColumn::calculateArrowSchema(
+            executor->getHeader().getColumnsWithTypeAndName(),
+            "Arrow",
+            nullptr,
+            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+
+        if (schema_modifier)
+        {
+            auto result = schema_modifier(schema);
+            if (!result.ok())
+                throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema: {} (schema: {})", result.status().ToString(), schema->ToString());
+            schema = result.ValueUnsafe();
+        }
     }
     catch (...)
     {
@@ -55,13 +69,12 @@ ContextPtr PollSession::queryContext() { return query_context; }
 
 ThreadGroupPtr PollSession::getThreadGroup() const { return thread_group; }
 
-const String & PollSession::getSchema() const { return schema; }
+std::shared_ptr<arrow::Schema> PollSession::getSchema() const { return schema; }
 
 bool PollSession::getNextBlock(Block & block)
 {
     if (!executor->pull(block))
         return false;
-    removeSpecialColumnRepresentations(block);
     if (block_modifier)
         block_modifier(query_context, block);
     return true;

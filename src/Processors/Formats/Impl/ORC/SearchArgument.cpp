@@ -2,13 +2,12 @@
 
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <base/defines.h>
 #include <base/extended_types.h>
-#include <Common/DequeWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <bit>
 #include <cmath>
+#include <deque>
+#include <unordered_set>
 
 
 namespace DB
@@ -227,7 +226,7 @@ Location compareToRange(const T & point, const T & min, const T & max, Less less
 
 template <typename T, typename Less, typename Equal>
 TruthValue evaluatePredicateRange(
-    PredicateLeaf::Operator op, const VectorWithMemoryTracking<T> & values, const T & min_value, const T & max_value, bool has_null, Less less, Equal equal)
+    PredicateLeaf::Operator op, const std::vector<T> & values, const T & min_value, const T & max_value, bool has_null, Less less, Equal equal)
 {
     auto loc_of = [&](const T & v) { return compareToRange(v, min_value, max_value, less, equal); };
     bool min_equals_max = equal(min_value, max_value);
@@ -310,25 +309,21 @@ TruthValue evaluatePredicateRange(
 }
 
 template <typename T>
-TruthValue evaluateRange(PredicateLeaf::Operator op, const VectorWithMemoryTracking<T> & values, const T & min_value, const T & max_value, bool has_null)
+TruthValue evaluateRange(PredicateLeaf::Operator op, const std::vector<T> & values, const T & min_value, const T & max_value, bool has_null)
 {
     return evaluatePredicateRange(op, values, min_value, max_value, has_null,
         [](const T & a, const T & b) { return a < b; },
         [](const T & a, const T & b) { return a == b; });
 }
 
-TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const VectorWithMemoryTracking<Literal> & literals, const Proto::ColumnStatistics & stats)
+TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const std::vector<Literal> & literals, const Proto::ColumnStatistics & stats)
 {
     bool has_null = stats.has_null.value_or(false);
     if (!stats.bucket_statistics || stats.bucket_statistics->count.empty())
         return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
 
     UInt64 true_count = stats.bucket_statistics->count[0];
-    /// Without the total, or with one below the true count (malformed), nothing is known about the false values: do
-    /// not prune by these statistics.
-    if (!stats.number_of_values || true_count > *stats.number_of_values)
-        return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
-    UInt64 false_count = *stats.number_of_values - true_count;
+    UInt64 false_count = stats.number_of_values.value_or(0) - true_count;
     switch (op)
     {
         case PredicateLeaf::Operator::IS_NULL:
@@ -375,9 +370,9 @@ TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const VectorWithMem
 }
 
 template <typename T, typename Get>
-VectorWithMemoryTracking<T> literalsTo(const VectorWithMemoryTracking<Literal> & literals, Get get)
+std::vector<T> literalsTo(const std::vector<Literal> & literals, Get get)
 {
-    VectorWithMemoryTracking<T> result;
+    std::vector<T> result;
     for (const auto & literal : literals)
         if (!literal.isNull())
             result.push_back(get(literal));
@@ -417,10 +412,9 @@ TruthValue PredicateLeaf::evaluatePredicateMinMax(const Proto::ColumnStatistics 
         }
         case PredicateDataType::STRING:
         {
-            /// The bounds of long values contain the actual range, which is enough for the evaluation.
-            if (stats.string_statistics && stats.string_statistics->getLowerBound() && stats.string_statistics->getUpperBound())
+            if (stats.string_statistics && stats.string_statistics->minimum && stats.string_statistics->maximum)
                 result = evaluateRange(op, literalsTo<std::string>(literals, [](const Literal & l) { return l.getString(); }),
-                    *stats.string_statistics->getLowerBound(), *stats.string_statistics->getUpperBound(), has_null);
+                    *stats.string_statistics->minimum, *stats.string_statistics->maximum, has_null);
             break;
         }
         case PredicateDataType::DATE:
@@ -505,13 +499,7 @@ TruthValue checkInBloomFilter(PredicateDataType type, const Literal & literal, c
         switch (type)
         {
             case PredicateDataType::LONG: found = bf.testLong(literal.getLong()); break;
-            case PredicateDataType::FLOAT:
-            {
-                /// The writers hash the bits, so the equal `0.0` and `-0.0` have different hashes.
-                const double value = literal.getFloat();
-                found = bf.testDouble(value) || (value == 0 && bf.testDouble(-value));
-                break;
-            }
+            case PredicateDataType::FLOAT: found = bf.testDouble(literal.getFloat()); break;
             case PredicateDataType::STRING: found = bf.testBytes(literal.getString().data(), literal.getString().size()); break;
             case PredicateDataType::DECIMAL:
             {
@@ -564,8 +552,7 @@ TruthValue PredicateLeaf::evaluatePredicateBloomFilter(const BloomFilter & bloom
     }
 }
 
-TruthValue PredicateLeaf::evaluate(
-    UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter, bool timestamps_shifted) const
+TruthValue PredicateLeaf::evaluate(UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter) const
 {
     /// The files written before ORC-135 store the timestamps in the local time zone of the writer.
     if (type == PredicateDataType::TIMESTAMP && writer_version < WRITER_VERSION_ORC_135)
@@ -581,8 +568,6 @@ TruthValue PredicateLeaf::evaluate(
         return all_null ? TruthValue::YES : (has_null ? TruthValue::YES_NO : TruthValue::NO);
     if (all_null)
         return TruthValue::IS_NULL;
-    if (type == PredicateDataType::TIMESTAMP && timestamps_shifted)
-        return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
 
     TruthValue result = evaluatePredicateMinMax(stats);
     if (bloom_filter && result != TruthValue::NO_NULL && result != TruthValue::NO
@@ -607,9 +592,9 @@ public:
     explicit ExpressionTree(Operator op_) : op(op_) {}
     explicit ExpressionTree(TruthValue constant_) : op(Operator::CONSTANT), constant(constant_) {}
     explicit ExpressionTree(size_t leaf_) : op(Operator::LEAF), leaf(leaf_) {}
-    ExpressionTree(Operator op_, VectorWithMemoryTracking<ExpressionTreePtr> children_) : op(op_), children(std::move(children_)) {}
+    ExpressionTree(Operator op_, std::vector<ExpressionTreePtr> children_) : op(op_), children(std::move(children_)) {}
 
-    [[nodiscard]] TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaves) const
+    TruthValue evaluate(const std::vector<TruthValue> & leaves) const
     {
         switch (op)
         {
@@ -640,16 +625,16 @@ public:
     Operator op;
     TruthValue constant = TruthValue::YES_NO_NULL;
     size_t leaf = 0;
-    VectorWithMemoryTracking<ExpressionTreePtr> children;
+    std::vector<ExpressionTreePtr> children;
 };
 
 
-SearchArgument::SearchArgument(ExpressionTreePtr root_, VectorWithMemoryTracking<PredicateLeaf> leaves_)
+SearchArgument::SearchArgument(ExpressionTreePtr root_, std::vector<PredicateLeaf> leaves_)
     : root(std::move(root_)), leaves(std::move(leaves_))
 {
 }
 
-TruthValue SearchArgument::evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const
+TruthValue SearchArgument::evaluate(const std::vector<TruthValue> & leaf_values) const
 {
     return root ? root->evaluate(leaf_values) : TruthValue::YES_NO_NULL;
 }
@@ -677,7 +662,7 @@ ExpressionTreePtr pushDownNot(ExpressionTreePtr root)
             {
                 auto result = std::make_shared<ExpressionTree>(child->op == Op::AND ? Op::OR : Op::AND);
                 for (const auto & kid : child->children)
-                    result->children.push_back(pushDownNot(std::make_shared<ExpressionTree>(Op::NOT, VectorWithMemoryTracking<ExpressionTreePtr>{kid})));
+                    result->children.push_back(pushDownNot(std::make_shared<ExpressionTree>(Op::NOT, std::vector<ExpressionTreePtr>{kid})));
                 return result;
             }
             case Op::LEAF:
@@ -723,7 +708,7 @@ ExpressionTreePtr foldMaybe(ExpressionTreePtr expr)
 /// Converts multi-level ANDs and ORs into single level ones.
 ExpressionTreePtr flatten(ExpressionTreePtr root)
 {
-    VectorWithMemoryTracking<ExpressionTreePtr> nodes;
+    std::vector<ExpressionTreePtr> nodes;
     for (auto & kid : root->children)
     {
         ExpressionTreePtr child = flatten(kid);
@@ -745,7 +730,7 @@ ExpressionTreePtr copyTree(const ExpressionTreePtr & node)
 }
 
 void generateAllCombinations(
-    VectorWithMemoryTracking<ExpressionTreePtr> & result, const VectorWithMemoryTracking<ExpressionTreePtr> & and_list, size_t and_index, const VectorWithMemoryTracking<ExpressionTreePtr> & non_and_list)
+    std::vector<ExpressionTreePtr> & result, const std::vector<ExpressionTreePtr> & and_list, size_t and_index, const std::vector<ExpressionTreePtr> & non_and_list)
 {
     const auto & kids = and_list[and_index]->children;
     if (result.empty())
@@ -761,7 +746,7 @@ void generateAllCombinations(
     }
     else
     {
-        VectorWithMemoryTracking<ExpressionTreePtr> work = std::move(result);
+        std::vector<ExpressionTreePtr> work = std::move(result);
         result.clear();
         for (const auto & kid : kids)
         {
@@ -788,8 +773,8 @@ ExpressionTreePtr convertToCNF(ExpressionTreePtr root)
     if (root->op != Op::OR)
         return root;
 
-    VectorWithMemoryTracking<ExpressionTreePtr> non_and_list;
-    VectorWithMemoryTracking<ExpressionTreePtr> and_list;
+    std::vector<ExpressionTreePtr> non_and_list;
+    std::vector<ExpressionTreePtr> and_list;
     for (const auto & child : root->children)
     {
         if (child->op == Op::AND)
@@ -816,7 +801,7 @@ ExpressionTreePtr convertToCNF(ExpressionTreePtr root)
     return result;
 }
 
-void collectUsedLeaves(const ExpressionTreePtr & node, VectorWithMemoryTracking<size_t> & reorder, size_t & next)
+void collectUsedLeaves(const ExpressionTreePtr & node, std::vector<size_t> & reorder, size_t & next)
 {
     if (node->op == Op::LEAF)
     {
@@ -829,10 +814,10 @@ void collectUsedLeaves(const ExpressionTreePtr & node, VectorWithMemoryTracking<
 }
 
 /// The trees can share nodes after the CNF conversion, so rewrite every leaf node exactly once.
-void rewriteLeaves(const ExpressionTreePtr & root, const VectorWithMemoryTracking<size_t> & reorder)
+void rewriteLeaves(const ExpressionTreePtr & root, const std::vector<size_t> & reorder)
 {
-    UnorderedSetWithMemoryTracking<ExpressionTree *> leaves;
-    DequeWithMemoryTracking<ExpressionTree *> nodes{root.get()};
+    std::unordered_set<ExpressionTree *> leaves;
+    std::deque<ExpressionTree *> nodes{root.get()};
     while (!nodes.empty())
     {
         ExpressionTree * node = nodes.front();
@@ -915,7 +900,7 @@ SearchArgumentBuilder & SearchArgumentBuilder::nullSafeEquals(UInt64 column_id, 
     return addLeaf(PredicateLeaf(PredicateLeaf::Operator::NULL_SAFE_EQUALS, type, column_id, {std::move(value)}));
 }
 
-SearchArgumentBuilder & SearchArgumentBuilder::in(UInt64 column_id, PredicateDataType type, const VectorWithMemoryTracking<Literal> & values)
+SearchArgumentBuilder & SearchArgumentBuilder::in(UInt64 column_id, PredicateDataType type, const std::vector<Literal> & values)
 {
     if (values.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create an IN expression with no arguments in ORC search argument builder");
@@ -945,14 +930,14 @@ std::unique_ptr<SearchArgument> SearchArgumentBuilder::build()
     root = convertToCNF(root);
     root = flatten(root);
 
-    VectorWithMemoryTracking<size_t> reorder(leaves.size(), std::numeric_limits<size_t>::max());
+    std::vector<size_t> reorder(leaves.size(), std::numeric_limits<size_t>::max());
     size_t num_used = 0;
     collectUsedLeaves(root, reorder, num_used);
     rewriteLeaves(root, reorder);
 
-    VectorWithMemoryTracking<PredicateLeaf> used_leaves;
+    std::vector<PredicateLeaf> used_leaves;
     used_leaves.reserve(num_used);
-    VectorWithMemoryTracking<const PredicateLeaf *> by_new_index(num_used);
+    std::vector<const PredicateLeaf *> by_new_index(num_used);
     for (size_t i = 0; i < leaves.size(); ++i)
         if (reorder[i] != std::numeric_limits<size_t>::max())
             by_new_index[reorder[i]] = &leaves[i];
@@ -973,8 +958,7 @@ inline UInt64 rotl64(UInt64 x, int r)
     return (x << r) | (x >> (64 - r));
 }
 
-/// The hash functions below wrap around by design, and the results must match the hashes in the files written by other implementations.
-NO_SANITIZE_UNSIGNED_OVERFLOW inline UInt64 fmix64(UInt64 value)
+inline UInt64 fmix64(UInt64 value)
 {
     value ^= (value >> 33);
     value *= 0xff51afd7ed558ccdULL;
@@ -985,7 +969,7 @@ NO_SANITIZE_UNSIGNED_OVERFLOW inline UInt64 fmix64(UInt64 value)
 }
 
 /// The 64-bit variant of Murmur3 used by ORC (the lower half of the 128-bit hash with one state).
-NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 murmur3Hash64(const UInt8 * data, size_t size)
+UInt64 murmur3Hash64(const UInt8 * data, size_t size)
 {
     UInt64 h = MURMUR3_DEFAULT_SEED;
     const UInt64 c1 = 0x87c37b91114253d5ULL;
@@ -1023,7 +1007,7 @@ NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 murmur3Hash64(const UInt8 * data, size_t si
 }
 
 /// Thomas Wang's 64-bit integer hash, as in the reference implementation.
-NO_SANITIZE_UNSIGNED_OVERFLOW Int64 getLongHash(Int64 key)
+Int64 getLongHash(Int64 key)
 {
     UInt64 k = static_cast<UInt64>(key);
     k = (~k) + (k << 21);
@@ -1056,8 +1040,7 @@ BloomFilter::BloomFilter(const Proto::BloomFilter & proto) : num_hash_functions(
             word = std::byteswap(word);
 }
 
-/// The combination of the two halves of the hash wraps around by design, as in the reference implementation.
-NO_SANITIZE_UNSIGNED_OVERFLOW bool BloomFilter::testHash(Int64 hash) const
+bool BloomFilter::testHash(Int64 hash) const
 {
     Int32 hash1 = static_cast<Int32>(hash & 0xffffffff);
     Int32 hash2 = static_cast<Int32>(static_cast<UInt64>(hash) >> 32);

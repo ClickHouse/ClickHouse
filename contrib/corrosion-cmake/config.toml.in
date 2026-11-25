@@ -1,4 +1,3 @@
-@RUST_BUILD_DIR_CONFIG@
 [profile.release]
 debug = false
 strip = true
@@ -7,17 +6,9 @@ strip = true
 # We use LTO to slightly decrease binary size
 [profile.release-thinlto]
 inherits = "release"
-lto = "thin"
+lto = true
 
 @RUST_DEV_PROFILE@
-# Features are resolved once for all members of the workspace in `contrib/rust-contrib-workspace`,
-# so a crate that several members use is compiled once.
-[unstable]
-feature-unification = true
-
-[resolver]
-feature-unification = "workspace"
-
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 
@@ -25,16 +16,6 @@ directory = "@RUST_VENDOR_DIR@"
 registry = 'sparse+https://index.crates.io/'
 replace-with = 'vendored-sources'
 
-# arrow-rs
-[source."git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse/58.4.1"]
-git = "https://github.com/ClickHouse/arrow-rs"
-branch = "ClickHouse/58.4.1"
-replace-with = "vendored-sources"
-# ipnet
-[source."git+https://github.com/ClickHouse/ipnet?branch=ClickHouse/2.12.2"]
-git = "https://github.com/ClickHouse/ipnet"
-branch = "ClickHouse/2.12.2"
-replace-with = "vendored-sources"
 # chdig
 [source."git+https://github.com/azat-rust/clickhouse-rs?branch=next"]
 git = "https://github.com/azat-rust/clickhouse-rs"

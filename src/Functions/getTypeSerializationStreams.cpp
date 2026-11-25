@@ -24,24 +24,24 @@ public:
         return std::make_shared<FunctionGetTypeSerializationStreams>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any) -> Array(String)";
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto type = getType(arguments[0]);
 

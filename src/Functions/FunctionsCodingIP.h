@@ -8,7 +8,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/Exception.h>
 
 namespace DB
 {

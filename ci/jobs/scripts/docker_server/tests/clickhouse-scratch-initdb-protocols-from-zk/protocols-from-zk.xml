@@ -1,3 +1,0 @@
-<clickhouse>
-    <protocols from_zk="/bootstrap_protocols"/>
-</clickhouse>

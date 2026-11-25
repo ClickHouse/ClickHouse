@@ -66,8 +66,7 @@ KafkaConsumer2::~KafkaConsumer2()
     if (!consumer)
         return;
 
-    auto consumer_to_close = moveConsumer();
-    consumer_to_close.reset();
+    moveConsumer();
 }
 
 void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
@@ -251,10 +250,7 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
 
         auto & queue_to_poll_from = queues.at(topic_partition);
         LOG_TRACE(log, "Batch size {}", batch_size);
-        /// The requested count may exceed the configured batch size (e.g. when a large intent is
-        /// replayed), but a single pull must still respect `kafka_poll_max_batch_size`. The caller
-        /// pulls the rest with further calls.
-        const auto messages_to_pull = std::min<uint64_t>(message_count.value_or(batch_size), batch_size);
+        const auto messages_to_pull = message_count.value_or(batch_size);
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = queue_to_poll_from.consume_batch(messages_to_pull, std::chrono::milliseconds(poll_timeout));
         num_messages_read += new_messages.size();
@@ -317,7 +313,7 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
     {
         try
         {
-            // See https://github.com/confluentinc/librdkafka/issues/1470
+            // See https://github.com/edenhill/librdkafka/issues/1470
             // broker may reject commit if during offsets.commit.timeout.ms (5000 by default), there were not enough
             // replicas available for the __consumer_offsets topic. also some other temporary issues like client-server
             // connectivity problems are possible
@@ -465,9 +461,6 @@ void KafkaConsumer2::resetIfStopped()
     if (stopped)
     {
         stalled_status = StalledStatus::CONSUMER_STOPPED;
-        /// Discard the interrupted batch; a later batch must not continue from its middle.
-        messages.clear();
-        current = messages.end();
     }
 }
 

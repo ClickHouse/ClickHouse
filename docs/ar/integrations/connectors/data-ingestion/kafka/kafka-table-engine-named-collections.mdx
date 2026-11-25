@@ -6,7 +6,9 @@ slug: /integrations/data-ingestion/kafka/kafka-table-engine-named-collections
 doc_type: 'guide'
 ---
 
-## المقدمة {#introduction}
+<div id="introduction">
+  ## المقدمة
+</div>
 
 في هذا الدليل، سنستعرض كيفية توصيل ClickHouse بـ Kafka باستخدام المجموعات المسماة. ويوفّر استخدام ملف التكوين الخاص بالمجموعات المسماة عدة مزايا:
 
@@ -16,7 +18,9 @@ doc_type: 'guide'
 
 تم اختبار هذا الدليل على Apache Kafka 3.4.1 وClickHouse 24.5.1.
 
-## الافتراضات {#assumptions}
+<div id="assumptions">
+  ## الافتراضات
+</div>
 
 يفترض هذا المستند أن لديك:
 
@@ -24,19 +28,24 @@ doc_type: 'guide'
 2. عنقود ClickHouse مُعدّ ويعمل.
 3. معرفة أساسية بلغة SQL وإلمامًا بإعدادات ClickHouse وKafka.
 
-## المتطلبات الأساسية {#prerequisites}
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
 
 تأكد من أن المستخدم الذي ينشئ المجموعة المسماة لديه أذونات الوصول اللازمة:
 
 ```xml
 <access_management>1</access_management>
 <named_collection_control>1</named_collection_control>
+<show_named_collections>1</show_named_collections>
 <show_named_collections_secrets>1</show_named_collections_secrets>
 ```
 
 راجع [دليل إدارة المستخدمين](/ar/concepts/features/security/access-rights) لمزيد من التفاصيل حول تمكين التحكم بالوصول.
 
-## الإعداد {#configuration}
+<div id="configuration">
+  ## الإعداد
+</div>
 
 أضِف القسم التالي إلى ملف `config.xml` في ClickHouse:
 
@@ -89,24 +98,32 @@ doc_type: 'guide'
 </named_collections>
 ```
 
-### ملاحظات التهيئة {#configuration-notes}
+<div id="configuration-notes">
+  ### ملاحظات التهيئة
+</div>
 
 1. عدِّل عناوين Kafka والإعدادات ذات الصلة بما يتوافق مع إعداد عنقود Kafka لديك.
 2. يحتوي القسم السابق لـ `<kafka>` على معلمات محرك Kafka في ClickHouse. للحصول على قائمة كاملة بالمعلمات، راجع [معلمات محرك Kafka ](/ar/reference/engines/table-engines/integrations/kafka).
 3. يحتوي القسم داخل `<kafka>` على خيارات تهيئة Kafka الموسَّعة. ولمزيد من الخيارات، راجع [تهيئة librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 4. يستخدم هذا المثال بروتوكول الأمان `SASL_SSL` وآلية `PLAIN`. عدِّل هذه الإعدادات وفقًا لتهيئة عنقود Kafka لديك.
 
-## إنشاء الجداول وقواعد البيانات {#creating-tables-and-databases}
+<div id="creating-tables-and-databases">
+  ## إنشاء الجداول وقواعد البيانات
+</div>
 
 أنشئ قواعد البيانات والجداول اللازمة على عنقود ClickHouse لديك. إذا كنت تشغّل ClickHouse كعقدة واحدة، فتجاوز جزء العنقود من أمر SQL واستخدم أي محرك آخر بدلًا من `ReplicatedMergeTree`.
 
-### أنشئ قاعدة البيانات {#create-the-database}
+<div id="create-the-database">
+  ### أنشئ قاعدة البيانات
+</div>
 
 ```sql
 CREATE DATABASE kafka_testing ON CLUSTER LAB_CLICKHOUSE_CLUSTER;
 ```
 
-### إنشاء جداول Kafka {#create-kafka-tables}
+<div id="create-kafka-tables">
+  ### إنشاء جداول Kafka
+</div>
 
 أنشئ أول جدول Kafka لعنقود Kafka الأول:
 
@@ -132,7 +149,9 @@ CREATE TABLE kafka_testing.second_kafka_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTE
 ENGINE = Kafka(cluster_2);
 ```
 
-### إنشاء الجداول ذات النسخ المتماثل {#create-replicated-tables}
+<div id="create-replicated-tables">
+  ### إنشاء الجداول ذات النسخ المتماثل
+</div>
 
 أنشئ جدولًا لجدول Kafka الأول:
 
@@ -158,7 +177,9 @@ CREATE TABLE kafka_testing.second_replicated_table ON CLUSTER STAGE_CLICKHOUSE_C
 ORDER BY id;
 ```
 
-### إنشاء العروض المادية {#create-materialized-views}
+<div id="create-materialized-views">
+  ### إنشاء العروض المادية
+</div>
 
 أنشئ عرضًا ماديًا لإدراج البيانات من جدول Kafka الأول إلى الجدول المكرَّر الأول:
 
@@ -182,7 +203,9 @@ SELECT
 FROM second_kafka_table;
 ```
 
-## التحقق من الإعداد {#verifying-the-setup}
+<div id="verifying-the-setup">
+  ## التحقق من الإعداد
+</div>
 
 يُفترض أن ترى الآن مجموعات المستهلكين ذات الصلة في عناقيد Kafka لديك:
 
@@ -199,7 +222,9 @@ SELECT * FROM first_replicated_table LIMIT 10;
 SELECT * FROM second_replicated_table LIMIT 10;
 ```
 
-### ملاحظة {#note}
+<div id="note">
+  ### ملاحظة
+</div>
 
 في هذا الدليل، البيانات التي تم إدخالها إلى موضوعَي Kafka هي نفسها. في حالتك، ستكون مختلفة. يمكنك إضافة أي عدد تريده من عناقيد Kafka.
 
