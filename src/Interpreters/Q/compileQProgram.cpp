@@ -28,6 +28,7 @@
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/Q/ASTQQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/Exception.h>
@@ -56,6 +57,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_RECURSION;
+    extern const int ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
 }
@@ -1053,6 +1055,17 @@ std::optional<QValue> QCompiler::resolveTable(const String & name)
             if (columns.empty())
                 context->checkAccess(AccessType::SELECT, id);
         }
+    }
+
+    /// An `Alias` table has the metadata of its target, so its columns are also seen through the grants on every table
+    /// that the alias resolves through, as in `system.columns`: a grant on the alias alone does not show them.
+    if (const auto * alias = storage->as<StorageAlias>())
+    {
+        NameSet granted = alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, columns.getNames());
+        std::erase_if(columns, [&](const NameAndTypePair & column) { return !granted.contains(column.name); });
+        if (columns.empty())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges to see the columns of the table {} through the tables that it is an alias of", id.getNameForLogs());
     }
     checkNoReservedNames(columns);
 
