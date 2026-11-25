@@ -9,7 +9,7 @@ SELECT accurateCastOrNull(42::UInt32, 'QBit(Float32, 1)');
 -- element conversion returns Nullable while the QBit element column is non-nullable.
 SELECT accurateCastOrNull(arrayMap(x -> x % 3, range(8))::Array(Dynamic), 'QBit(Float32, 8)') SETTINGS allow_experimental_qbit_type = 1;
 SELECT accurateCastOrNull(arrayMap(x -> toInt64(x % 3)::Variant(Int64, String), range(8))::Array(Variant(Int64, String)), 'QBit(Float32, 8)') SETTINGS allow_experimental_qbit_type = 1, allow_experimental_variant_type = 1;
-SELECT accurateCastOrNull([NULL, 9223372036854775807, 1048576]::Array(Dynamic), 'QBit(Float32, 114)') SETTINGS allow_experimental_qbit_type = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT accurateCastOrNull([NULL, 9223372036854775807, 1048576]::Array(Dynamic), 'QBit(Float32, 114)') SETTINGS allow_experimental_qbit_type = 1;
 
 -- A correct-size array with an inaccurately-convertible element must make the whole QBit NULL
 -- (QBit elements are non-nullable), not silently expose the element default.
