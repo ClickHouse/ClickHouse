@@ -103,6 +103,14 @@ namespace Dynamic
         Var(const Var & other);
         /// Copy constructor.
 
+#ifdef POCO_NO_SOO
+        Var(Var && other) noexcept : _pHolder(other._pHolder) { other._pHolder = nullptr; }
+        /// Move constructor. Leaves other empty.
+
+        Var(std::string && val) : _pHolder(new VarHolderImpl<std::string>(std::move(val))) { }
+        /// Creates the Var from the given string without copying it.
+#endif
+
         ~Var();
         /// Destroys the Var.
 
@@ -241,6 +249,20 @@ namespace Dynamic
 
         Var & operator=(const Var & other);
         /// Assignment operator specialization for Var
+
+#ifdef POCO_NO_SOO
+        Var & operator=(Var && other) noexcept
+        /// Move assignment. Leaves other empty.
+        {
+            if (this != &other)
+            {
+                delete _pHolder;
+                _pHolder = other._pHolder;
+                other._pHolder = nullptr;
+            }
+            return *this;
+        }
+#endif
 
         template <typename T>
         const Var operator+(const T & other) const

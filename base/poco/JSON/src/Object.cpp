@@ -216,6 +216,24 @@ void Object::set(const std::string& key, const Dynamic::Var& value)
 }
 
 
+void Object::set(std::string&& key, Dynamic::Var&& value)
+{
+	std::pair<ValueMap::iterator, bool> ret = _values.try_emplace(std::move(key), std::move(value));
+	if (!ret.second) ret.first->second = std::move(value);
+	if (_preserveInsOrder)
+	{
+		KeyList::iterator it = _keys.begin();
+		KeyList::iterator end = _keys.end();
+		for (; it != end; ++it)
+		{
+			if (ret.first->first == (*it)->first) return;
+		}
+		_keys.push_back(ret.first);
+	}
+	_modified = true;
+}
+
+
 Poco::DynamicStruct Object::makeStruct(const Object::Ptr& obj)
 {
 	Poco::DynamicStruct ds;
