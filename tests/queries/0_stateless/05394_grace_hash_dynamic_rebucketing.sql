@@ -9,6 +9,8 @@ SET max_bytes_in_join = 0;
 SET max_rows_in_join = 0;
 SET max_threads = 1;
 SET max_block_size = 128;
+-- Read `payload.size` for `length(payload)` so randomized settings do not change the size of the spilled rows.
+SET optimize_functions_to_subcolumns = 1;
 SET join_use_nulls = 0;
 SET collect_hash_table_stats_during_joins = 0;
 SET query_plan_join_swap_table = 'false';
@@ -19,11 +21,11 @@ CREATE TABLE rebucket_left (k String, lv UInt64) ENGINE = Memory;
 CREATE TABLE rebucket_right (k String, rv UInt64, payload String) ENGINE = Memory;
 
 INSERT INTO rebucket_left
-SELECT concat(toString(number), repeat('k', 96)), number + 1 FROM numbers(6000);
+SELECT concat(toString(number), repeat('k', 96)), number + 1 FROM numbers(600);
 INSERT INTO rebucket_right
-SELECT concat(toString(number % 5000), repeat('k', 96)), number + 1, repeat('v', 128) FROM numbers(20000);
+SELECT concat(toString(number % 500), repeat('k', 96)), number + 1, repeat('v', 128) FROM numbers(2000);
 INSERT INTO rebucket_right
-SELECT concat(toString(number + 7000), repeat('k', 96)), number + 20001, repeat('v', 128) FROM numbers(1000);
+SELECT concat(toString(number + 700), repeat('k', 96)), number + 2001, repeat('v', 128) FROM numbers(100);
 
 SELECT 'inner', count(), sum(lv), sum(rv), sum(length(payload))
 FROM rebucket_left ALL INNER JOIN rebucket_right USING (k);
