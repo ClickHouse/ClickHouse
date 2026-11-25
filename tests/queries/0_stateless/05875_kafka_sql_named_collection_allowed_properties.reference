@@ -1,0 +1,62 @@
+--- TLS
+enable_ssl_certificate_verification: OK
+ssl_endpoint_identification_algorithm: OK
+ssl_cipher_suites: OK
+ssl_curves_list: OK
+ssl_sigalgs_list: OK
+ssl_keystore_password: OK
+--- Kerberos
+sasl_kerberos_service_name: OK
+sasl_kerberos_principal: OK
+sasl_kerberos_keytab: Kafka property `sasl.kerberos.keytab` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+sasl_kerberos_kinit_cmd: Kafka property `sasl.kerberos.kinit.cmd` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+--- OIDC
+sasl_oauthbearer_method: OK
+sasl_oauthbearer_client_id: OK
+sasl_oauthbearer_client_secret: OK
+sasl_oauthbearer_scope: OK
+sasl_oauthbearer_extensions: OK
+sasl_oauthbearer_grant_type: OK
+sasl_oauthbearer_token_endpoint_url: OK
+sasl_oauthbearer_assertion_algorithm: OK
+sasl_oauthbearer_assertion_claim_iss: OK
+sasl_oauthbearer_assertion_private_key_passphrase: OK
+sasl_oauthbearer_assertion_private_key_file: Kafka property `sasl.oauthbearer.assertion.private.key.file` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `sasl.oauthbearer.assertion.private.key.pem` instead. (BAD_ARGUMENTS)
+sasl_oauthbearer_assertion_file: Kafka property `sasl.oauthbearer.assertion.file` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+sasl_oauthbearer_assertion_jwt_template_file: Kafka property `sasl.oauthbearer.assertion.jwt.template.file` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+sasl_oauthbearer_metadata_authentication_type: Kafka property `sasl.oauthbearer.metadata.authentication.type` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+--- The URL of the token endpoint
+sasl_oauthbearer_token_endpoint_url = http://127.0.0.1:1/token: OK
+sasl_oauthbearer_token_endpoint_url = file:///etc/passwd: Kafka property `sasl.oauthbearer.token.endpoint.url` must be an HTTP or HTTPS URL. (BAD_ARGUMENTS)
+sasl_oauthbearer_token_endpoint_url = /etc/passwd: Kafka property `sasl.oauthbearer.token.endpoint.url` must be an HTTP or HTTPS URL. (BAD_ARGUMENTS)
+sasl_oauthbearer_token_endpoint_url = https://127.0.0.1:1/token\0suffix: Kafka property `sasl.oauthbearer.token.endpoint.url` must be an HTTP or HTTPS URL. (BAD_ARGUMENTS)
+--- Properties that are deprecated or have no effect
+socket_blocking_max_ms: OK
+broker_version_fallback: OK
+api_version_fallback_ms: OK
+client_dns_lookup: OK
+socket_nagle_disable: OK
+topic_metadata_refresh_sparse: OK
+topic_blacklist: OK
+transactional_id: OK
+max_poll_records: OK
+ssl_engine_id: OK
+ssl_truststore_location: OK
+topic.auto.commit.enable: OK
+topic.enable.auto.commit: OK
+consume_callback_max_messages: OK
+--- Properties that use a resource of the server
+offset_store_method: Kafka property `offset.store.method` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+topic.offset.store.method: Kafka property `topic.offset.store.method` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+internal_termination_signal: Kafka property `internal.termination.signal` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+log_queue: Kafka property `log.queue` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+--- The timeout of a transaction
+transaction_timeout_ms = 2147483: OK
+transaction_timeout_ms = 2147484: Kafka property `transaction.timeout.ms` must be an integer between 0 and 2147483, got `2147484`. (BAD_ARGUMENTS)
+--- A consumer is created with the accepted properties
+Consumer set property client.dns.lookup:use_all_dns_ips
+Consumer set property enable.ssl.certificate.verification:false
+Consumer set property sasl.kerberos.service.name:kafka2
+Consumer set property socket.blocking.max.ms:2000
+Consumer set property ssl.endpoint.identification.algorithm:none
+Consumer set property topic.metadata.refresh.sparse:false

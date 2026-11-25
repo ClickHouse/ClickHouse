@@ -696,6 +696,38 @@ def test_ai_functions_host_filter(start_cluster):
         drop_ai_collections(node5)
 
 
+def test_kafka_oidc_token_endpoint_host_filter(start_cluster):
+    # The server sends the OIDC token request to `sasl.oauthbearer.token.endpoint.url`, so a named
+    # collection created with SQL can set it only to a host that the filter allows.
+    # `node1` allows `host:80` (the broker) and the hosts of `allowed.example`. No broker is needed:
+    # `CREATE TABLE` does not connect.
+    def create_table(url):
+        node1.query("DROP TABLE IF EXISTS kafka_oidc")
+        node1.query("DROP NAMED COLLECTION IF EXISTS kafka_oidc")
+        node1.query(
+            "CREATE NAMED COLLECTION kafka_oidc AS kafka_broker_list = 'host:80', "
+            "kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', "
+            f"`kafka.sasl_oauthbearer_token_endpoint_url` = '{url}'"
+        )
+        return node1.query_and_get_answer_with_error(
+            "CREATE TABLE kafka_oidc (x UInt64) ENGINE = Kafka(kafka_oidc)"
+        )[1]
+
+    try:
+        error = create_table("https://user:secret@mydomain.com/token")
+        assert "UNACCEPTABLE_URL" in error, error
+        assert "mydomain.com:443" in error, error
+        # Only the host and port are printed: the rest of the URL can carry credentials.
+        assert "secret" not in error, error
+
+        # Control: an allowed host passes the check, so the filter did not reject everything.
+        error = create_table("https://mydomain.allowed.example/token")
+        assert "Exception" not in error, error
+    finally:
+        node1.query("DROP TABLE IF EXISTS kafka_oidc")
+        node1.query("DROP NAMED COLLECTION IF EXISTS kafka_oidc")
+
+
 def test_hive_catalog_host_filter(start_cluster):
     query = (
         "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "

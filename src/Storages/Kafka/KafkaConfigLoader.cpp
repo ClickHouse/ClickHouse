@@ -10,6 +10,8 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <Interpreters/Context.h>
+#include <Poco/URI.h>
 #include <Common/HiddenSecret.h>
 #include <Common/StringUtils.h>
 #include <Common/Exception.h>
@@ -18,6 +20,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -240,13 +243,46 @@ String toKafkaPropertyName(const String & key)
     return name;
 }
 
-/// Rejects the values of the allowed properties that librdkafka accepts but cannot use.
+/// Rejects the values of the allowed properties that librdkafka accepts but that are not safe to use from SQL.
 void checkSQLKafkaPropertyValue(const String & name, const String & value)
 {
-    if (name != "topic.metadata.propagation.max.ms")
+    if (name == "sasl.oauthbearer.token.endpoint.url")
+    {
+        /// An empty value resets the property.
+        if (value.empty())
+            return;
+
+        /// The server sends the token request to this URL, so the host is checked in the same way as the brokers.
+        /// librdkafka reads the value as a C string: with a null character it uses another URL than the checked one.
+        Poco::URI uri;
+        try
+        {
+            if (!value.contains('\0'))
+                uri = Poco::URI(value);
+        }
+        catch (const Poco::SyntaxException &) // NOLINT(bugprone-empty-catch)
+        {
+            /// `uri` stays empty, and the check of the scheme rejects it.
+        }
+
+        /// The value is not printed: a URL can carry credentials.
+        if (uri.getScheme() != "http" && uri.getScheme() != "https")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property `{}` must be an HTTP or HTTPS URL", name);
+
+        Context::getGlobalContextInstance()->getRemoteHostFilter().checkURL(uri);
+        return;
+    }
+
+    /// librdkafka accepts larger values of these timeouts, but it converts them from milliseconds to microseconds
+    /// in a 32-bit `int`, which overflows. With `transactional.id`, `transaction.timeout.ms` is also the value of
+    /// `socket.timeout.ms`, which is converted in this way.
+    static constexpr std::string_view timeouts_converted_in_int[] = {
+        "topic.metadata.propagation.max.ms",
+        "transaction.timeout.ms",
+    };
+    if (std::ranges::find(timeouts_converted_in_int, std::string_view(name)) == std::ranges::end(timeouts_converted_in_int))
         return;
 
-    /// librdkafka accepts up to 3600000 but converts the value to microseconds in a 32-bit `int`: larger values overflow.
     /// The format is stricter than the one of librdkafka (which reads a prefix of the value with `strtol`),
     /// so the number that librdkafka reads is never greater than the number checked here.
     static constexpr UInt64 max_value = std::numeric_limits<int>::max() / 1000;
@@ -260,12 +296,34 @@ void checkSQLKafkaPropertyValue(const String & name, const String & value)
 
 /// Only properties reviewed for use without access to server-local resources may be set from SQL.
 /// Match the exact name passed to librdkafka, including any `topic.` prefix.
+///
+/// The list has every property of `rd_kafka_properties` in `rdkafka_conf.c` that librdkafka accepts by its name,
+/// with the `topic.` spelling of the topic properties. A harmless property is not left out, even if it is
+/// deprecated or has no effect in ClickHouse: a named collection that sets it must continue to work.
+/// The Java properties `ssl.truststore.location` and `sasl.jaas.config` are in the list too: librdkafka rejects
+/// them when it creates the client, and it explains what to use instead.
+/// The exceptions are:
+/// - the paths of files, libraries and commands: `ssl.key.location`, `ssl.certificate.location`, `ssl.ca.location`,
+///   `ssl.crl.location`, `ssl.keystore.location`, `https.ca.location`, `ssl.engine.location`, `ssl.providers`,
+///   `plugin.library.paths`, `sasl.kerberos.keytab`, `sasl.kerberos.kinit.cmd`, `sasl.oauthbearer.assertion.file`,
+///   `sasl.oauthbearer.assertion.private.key.file`, `sasl.oauthbearer.assertion.jwt.template.file`,
+///   `offset.store.path`, and `offset.store.method`, which selects the offset store in a local file
+///   (`ssl.engine.id` is in the list: librdkafka uses it only together with `ssl.engine.location`);
+/// - `sasl.oauthbearer.metadata.authentication.type`, which sends the token of the cloud instance of the server
+///   to a broker chosen in SQL;
+/// - `internal.termination.signal`, which installs a signal handler for the whole process, and `log.queue`,
+///   which keeps the log messages in a queue that ClickHouse does not read;
+/// - the `test.*` properties.
+/// When librdkafka is updated, review its new properties and add the ones that are not of these kinds.
 void checkSQLKafkaProperty(const String & name, const String & value)
 {
     static constexpr std::string_view allowed_properties[] = {
         "acks",
         "allow.auto.create.topics",
+        "api.version.fallback.ms",
         "api.version.request",
+        "api.version.request.timeout.ms",
+        "auto.commit.enable",
         "auto.commit.interval.ms",
         "auto.offset.reset",
         "batch.num.messages",
@@ -273,20 +331,33 @@ void checkSQLKafkaProperty(const String & name, const String & value)
         "bootstrap.servers",
         "broker.address.family",
         "broker.address.ttl",
+        "broker.version.fallback",
+        "builtin.features",
         "check.crcs",
+        "client.dns.lookup",
         "client.id",
         "client.rack",
+        "client.software.name",
+        "client.software.version",
         "compression.codec",
         "compression.level",
         "compression.type",
         "connections.max.idle.ms",
+        "consume.callback.max.messages",
         "coordinator.query.interval.ms",
         "debug",
+        "delivery.report.only.error",
         "delivery.timeout.ms",
         "enable.auto.commit",
         "enable.auto.offset.store",
+        "enable.gapless.guarantee",
         "enable.idempotence",
+        "enable.metrics.push",
         "enable.partition.eof",
+        "enable.random.seed",
+        "enable.sasl.oauthbearer.unsecure.jwt",
+        "enable.sparse.connections",
+        "enable.ssl.certificate.verification",
         "fetch.error.backoff.ms",
         "fetch.max.bytes",
         "fetch.message.max.bytes",
@@ -296,31 +367,42 @@ void checkSQLKafkaProperty(const String & name, const String & value)
         "group.id",
         "group.instance.id",
         "group.protocol",
+        "group.protocol.type",
         "group.remote.assignor",
         "heartbeat.interval.ms",
         "https.ca.pem",
         "isolation.level",
         "linger.ms",
         "log.connection.close",
+        "log.thread.name",
         "log_level",
         "max.in.flight",
         "max.in.flight.requests.per.connection",
         "max.partition.fetch.bytes",
         "max.poll.interval.ms",
+        "max.poll.records",
+        "message.copy.max.bytes",
         "message.max.bytes",
         "message.send.max.retries",
         "message.timeout.ms",
         "metadata.broker.list",
         "metadata.max.age.ms",
+        "metadata.recovery.rebootstrap.trigger.ms",
+        "metadata.recovery.strategy",
+        "metadata.request.timeout.ms",
+        "offset.store.sync.interval.ms",
         "partition.assignment.strategy",
         "partitioner",
+        "produce.offset.report",
         "queue.buffering.backpressure.threshold",
         "queue.buffering.max.kbytes",
         "queue.buffering.max.messages",
         "queue.buffering.max.ms",
         "queued.max.messages.kbytes",
         "queued.min.messages",
+        "queuing.strategy",
         "receive.message.max.bytes",
+        "reconnect.backoff.jitter.ms",
         "reconnect.backoff.max.ms",
         "reconnect.backoff.ms",
         "request.required.acks",
@@ -328,35 +410,84 @@ void checkSQLKafkaProperty(const String & name, const String & value)
         "retries",
         "retry.backoff.max.ms",
         "retry.backoff.ms",
+        "sasl.jaas.config",
+        "sasl.kerberos.min.time.before.relogin",
+        "sasl.kerberos.principal",
+        "sasl.kerberos.service.name",
         "sasl.mechanism",
         "sasl.mechanisms",
+        "sasl.oauthbearer.assertion.algorithm",
+        "sasl.oauthbearer.assertion.claim.aud",
+        "sasl.oauthbearer.assertion.claim.exp.seconds",
+        "sasl.oauthbearer.assertion.claim.iss",
+        "sasl.oauthbearer.assertion.claim.jti.include",
+        "sasl.oauthbearer.assertion.claim.nbf.seconds",
+        "sasl.oauthbearer.assertion.claim.sub",
+        "sasl.oauthbearer.assertion.private.key.passphrase",
         "sasl.oauthbearer.assertion.private.key.pem",
+        "sasl.oauthbearer.client.credentials.client.id",
+        "sasl.oauthbearer.client.credentials.client.secret",
+        "sasl.oauthbearer.client.id",
+        "sasl.oauthbearer.client.secret",
+        "sasl.oauthbearer.config",
+        "sasl.oauthbearer.extensions",
+        "sasl.oauthbearer.grant.type",
+        "sasl.oauthbearer.method",
+        "sasl.oauthbearer.scope",
+        "sasl.oauthbearer.sub.claim.name",
+        "sasl.oauthbearer.token.endpoint.url",
         "sasl.password",
         "sasl.username",
         "security.protocol",
         "session.timeout.ms",
+        "share.acknowledgement.mode",
+        "socket.blocking.max.ms",
         "socket.connection.setup.timeout.ms",
         "socket.keepalive.enable",
+        "socket.max.fails",
+        "socket.nagle.disable",
         "socket.receive.buffer.bytes",
         "socket.send.buffer.bytes",
         "socket.timeout.ms",
+        "ssl.ca.certificate.stores",
         "ssl.ca.pem",
         "ssl.certificate.pem",
+        "ssl.cipher.suites",
+        "ssl.curves.list",
+        "ssl.endpoint.identification.algorithm",
+        "ssl.engine.id",
         "ssl.key.password",
         "ssl.key.pem",
+        "ssl.keystore.password",
+        "ssl.sigalgs.list",
+        "ssl.truststore.location",
         "statistics.interval.ms",
+        "sticky.partitioning.linger.ms",
         "topic.acks",
+        "topic.auto.commit.enable",
+        "topic.auto.commit.interval.ms",
         "topic.auto.offset.reset",
+        "topic.blacklist",
         "topic.compression.codec",
         "topic.compression.level",
         "topic.compression.type",
+        "topic.consume.callback.max.messages",
         "topic.delivery.timeout.ms",
+        "topic.enable.auto.commit",
         "topic.message.timeout.ms",
         "topic.metadata.propagation.max.ms",
+        "topic.metadata.refresh.fast.cnt",
+        "topic.metadata.refresh.fast.interval.ms",
         "topic.metadata.refresh.interval.ms",
+        "topic.metadata.refresh.sparse",
+        "topic.offset.store.sync.interval.ms",
         "topic.partitioner",
+        "topic.produce.offset.report",
+        "topic.queuing.strategy",
         "topic.request.required.acks",
         "topic.request.timeout.ms",
+        "transaction.timeout.ms",
+        "transactional.id",
     };
     static_assert(std::ranges::is_sorted(allowed_properties));
     if (std::ranges::binary_search(allowed_properties, std::string_view(name)))

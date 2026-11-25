@@ -88,7 +88,7 @@ function alter_collection_of_existing_table()
 echo '--- File properties are rejected in a collection created by SQL'
 for key in \
     ssl_key_location ssl_certificate_location ssl_ca_location ssl_crl_location ssl_keystore_location \
-    ssl_engine_location ssl_engine_id ssl_providers https_ca_location \
+    ssl_engine_location ssl_providers https_ca_location \
     sasl_kerberos_keytab sasl_kerberos_kinit_cmd \
     sasl_oauthbearer_assertion_file sasl_oauthbearer_assertion_private_key_file sasl_oauthbearer_assertion_jwt_template_file \
     plugin_library_paths offset_store_path
