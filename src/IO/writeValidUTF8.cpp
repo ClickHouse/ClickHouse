@@ -77,7 +77,8 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
         }
 
         /// A well-formed character moves `p` by a constant, so the next one does not wait for a table lookup.
-        if (u[0] - 0xC2u < 0xE0u - 0xC2u)
+        const UInt8 lead = u[0];
+        if (lead >= 0xC2 && lead < 0xE0)
         {
             if (end - p >= 2 && (u[1] & 0xC0) == 0x80)
             {
@@ -85,7 +86,7 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
                 continue;
             }
         }
-        else if (u[0] - 0xE0u < 0x10u)
+        else if (lead >= 0xE0 && lead < 0xF0)
         {
             if (end - p >= 3 && UTF8::isLegalSequence(u, 3))
             {
@@ -93,7 +94,7 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
                 continue;
             }
         }
-        else if (u[0] - 0xF0u < 0x05u)
+        else if (lead >= 0xF0 && lead < 0xF5)
         {
             if (end - p >= 4 && UTF8::isLegalSequence(u, 4))
             {

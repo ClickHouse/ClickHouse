@@ -79,7 +79,11 @@ inline const char * skipASCII(const char * begin, const char * p, const char * e
             using Mask = bool __attribute__((ext_vector_type(16)));
             Bytes bytes;
             memcpy(&bytes, p, sizeof(bytes));
-            return p + std::countr_zero(__builtin_bit_cast(UInt16, __builtin_convertvector(bytes >> 7, Mask)));
+            const auto mask = __builtin_bit_cast(UInt16, __builtin_convertvector(bytes >> 7, Mask));
+            /// Lane 0 is the lowest bit of `mask` on little-endian targets and the highest on big-endian ones.
+            if constexpr (std::endian::native == std::endian::big)
+                return p + std::countl_zero(mask);
+            return p + std::countr_zero(mask);
         }
     }
 
