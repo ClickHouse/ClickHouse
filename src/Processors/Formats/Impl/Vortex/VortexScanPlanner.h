@@ -7,16 +7,12 @@
 
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Processors/Formats/Impl/Vortex/VortexFFIHelpers.h>
 #include <Common/Logger.h>
 
 #include <string>
-#include <vector>
-
-namespace arrow
-{
-class Schema;
-}
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -37,7 +33,7 @@ struct VortexScanPlan
 {
     /// The top-level file fields to read, in header order. Empty means no column of the file is
     /// needed and only the row count matters.
-    std::vector<std::string> column_names;
+    VectorWithMemoryTracking<std::string> column_names;
 
     /// The translated part of the WHERE condition, or null. The scan drops the rows it rules out
     /// and skips the statistics zones it excludes; ClickHouse reapplies the full condition to the
@@ -54,7 +50,7 @@ struct VortexScanPlan
 
 VortexScanPlan planVortexScan(
     const Block & header,
-    const arrow::Schema & file_schema,
+    const ArrowIPC::ArrowSchema & file_schema,
     const FormatFilterInfo * filter_info,
     const FormatSettings & format_settings,
     const LoggerPtr & log);

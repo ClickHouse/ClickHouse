@@ -16,6 +16,7 @@
 
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <pcg_random.hpp>
+#include <Common/VectorWithMemoryTracking.h>
 
 /*
  * This file contains helper functions for debugging and testing join optimization.
@@ -36,14 +37,17 @@ String dumpRelationStatsForLogs(const RelationStats & stats)
     {
         const auto & [name, column_stats] = column;
         /// No min/max: they can be values of rows hidden by a row policy, and this line reaches clients with `send_logs_level`.
-        std::vector<String> fields;
+        VectorWithMemoryTracking<String> fields;
         if (column_stats.null_fraction)
             fields.push_back(fmt::format("null {}", *column_stats.null_fraction));
         if (column_stats.avg_bytes != 0)
             fields.push_back(fmt::format("avg_bytes {}", column_stats.avg_bytes));
+        /// The provenance goes last: tests match the NDV and the optional `[...]` fields right after the column name.
+        const String provenance = fmt::format(
+            "(ndv: {}, range: {})", column_stats.ndv_provenance.toString(), column_stats.range_provenance.toString());
         if (fields.empty())
-            return fmt::format("{}: {}", name, column_stats.num_distinct_values);
-        return fmt::format("{}: {} [{}]", name, column_stats.num_distinct_values, fmt::join(fields, ", "));
+            return fmt::format("{}: {} {}", name, column_stats.num_distinct_values, provenance);
+        return fmt::format("{}: {} [{}] {}", name, column_stats.num_distinct_values, fmt::join(fields, ", "), provenance);
     };
     return fmt::format(
         "{}: {} rows, columns: [{}]",
@@ -55,7 +59,7 @@ String dumpRelationStatsForLogs(const RelationStats & stats)
 /* Read a table statistics hint from the query parameter.
  * The parameter should be a JSON object with the following structure:
  * SET param__internal_join_table_stat_hints = '{
- *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... } },
+ *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... }, "key_ranges": { "column_name": [0, 999] } },
  *   ...
  * }';
  */
@@ -91,7 +95,11 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
         {
             auto distinct_keys = stat_object->getObject("distinct_keys");
             for (const auto & [key, value] : *distinct_keys)
-                stats.column_stats[key].num_distinct_values = value.convert<UInt64>();
+            {
+                auto & column_stats = stats.column_stats[key];
+                column_stats.num_distinct_values = value.convert<UInt64>();
+                column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
+            }
         }
 
         if (stat_object->isObject("column_bytes"))
@@ -99,6 +107,23 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
             auto column_bytes = stat_object->getObject("column_bytes");
             for (const auto & [key, value] : *column_bytes)
                 stats.column_stats[key].avg_bytes = value.convert<Float64>();
+        }
+
+        /// `"key_ranges": { "column_name": [min, max] }`
+        if (stat_object->isObject("key_ranges"))
+        {
+            auto key_ranges = stat_object->getObject("key_ranges");
+            for (const auto & [key, value] : *key_ranges)
+            {
+                const auto & range = value.extract<Poco::JSON::Array::Ptr>();
+                if (!range || range->size() != 2)
+                    continue;
+                auto & column_stats = stats.column_stats[key];
+                column_stats.min_value = Field(range->get(0).convert<Float64>());
+                column_stats.max_value = Field(range->get(1).convert<Float64>());
+                /// Unlike a hinted distinct count, a hinted range gives no guarantee, see `SyntheticOverride`.
+                column_stats.range_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
+            }
         }
         LOG_DEBUG(
             getLogger("optimizeJoin"),
@@ -141,7 +166,9 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
     for (const auto & col : header)
     {
         UInt64 ndv = 1 + (rng() % stats.estimated_rows.value());
-        stats.column_stats[col.name] = ColumnStats{.num_distinct_values = ndv};
+        auto & column_stats = stats.column_stats[col.name];
+        column_stats.num_distinct_values = ndv;
+        column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
     }
 
     LOG_DEBUG(

@@ -12,11 +12,11 @@ struct FFI_VortexWriter;
 namespace DB
 {
 
-class CHColumnToArrowColumn;
 struct VortexWriteContext;
 
 /// Writes Vortex files (https://docs.vortex.dev/) through the Rust bindings in
-/// `rust/workspace/vortex`. Chunks are passed over as Arrow record batches; the library chooses the
+/// `contrib/vortex-cmake`. Chunks are passed over as Arrow record batches in the C data interface (see
+/// `ArrowIPC::exportRecordBatchToC`); the library chooses the
 /// encodings and the layout of the file and streams the bytes back through a callback. Unlike
 /// reading, this runs entirely on the calling thread.
 class VortexBlockOutputFormat final : public IOutputFormat
@@ -32,13 +32,14 @@ private:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
-    void initWriter(const Chunk * chunk);
+    void initWriter();
 
     std::unique_ptr<VortexWriteContext> write_context;
-    std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
     FFI_VortexWriter * writer = nullptr;
 
     const FormatSettings format_settings;
+    /// The settings the chunks are exported to Arrow with.
+    const FormatSettings arrow_format_settings;
 };
 
 }

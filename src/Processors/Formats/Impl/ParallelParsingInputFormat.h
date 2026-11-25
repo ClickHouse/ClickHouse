@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -11,7 +13,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Poco/Event.h>
 
 
 namespace DB
@@ -23,6 +24,11 @@ namespace ErrorCodes
 }
 
 class Context;
+
+/// True if the current thread is a parallel-parsing segmentator whose format has finished parsing; false on
+/// any other thread. A `FileSegmentationEngine` that reads far past `min_bytes` in a single call (Avro reads
+/// a whole OCF block) polls it to stop mid-read.
+bool isSegmentatorParsingFinished();
 
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
@@ -66,6 +72,7 @@ class Context;
  *  2) take the blocks from the processing unit to return them to the caller
  *  3) signal that the processing unit is empty
  *  4) repeat until it encounters unit that is marked as "past_the_end"
+ * The reader thread cuts and parses the first unit itself and starts the segmentator only if more data follows.
  * All threads must also check for cancel/eof/exception flags.
  */
 class ParallelParsingInputFormat final : public IInputFormat
@@ -102,8 +109,9 @@ public:
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
-        // bump into reader thread on wraparound.
-        processing_units.resize(params.max_threads + 2);
+        // bump into reader thread on wraparound. Capped like in `ParallelFormattingOutputFormat`
+        // (the units only buffer chunks), before adding, because `max_threads` comes from a setting.
+        processing_units.resize(std::min(params.max_threads, size_t{1022}) + 2);
     }
 
     ~ParallelParsingInputFormat() override
@@ -124,6 +132,11 @@ public:
     void setSerializationHints(const SerializationInfoByName & hints) override
     {
         serialization_hints = hints;
+    }
+
+    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override
+    {
+        column_mapper = column_mapper_;
     }
 
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
@@ -205,6 +218,8 @@ private:
     const InternalParserCreator internal_parser_creator;
     /// Function to segment the file. Then "parsers" will parse that segments.
     FormatFactory::FileSegmentationEngineCreator file_segmentation_engine_creator;
+    /// Created once per stream: an engine may keep state across segments (e.g. Avro caches the file header).
+    FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const FormatSettings format_settings;
     const size_t min_chunk_bytes;
@@ -213,6 +228,7 @@ private:
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
     SerializationInfoByName serialization_hints{{}};
+    ColumnMapperPtr column_mapper;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -235,8 +251,6 @@ private:
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
-    Poco::Event first_parser_finished;
-
     std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
 
@@ -256,9 +270,9 @@ private:
 
     struct ChunkExt
     {
-        std::vector<Chunk> chunk;
-        std::vector<BlockMissingValues> block_missing_values;
-        std::vector<size_t> approx_chunk_sizes;
+        Chunks chunk;
+        VectorWithMemoryTracking<BlockMissingValues> block_missing_values;
+        VectorWithMemoryTracking<size_t> approx_chunk_sizes;
     };
 
     struct ProcessingUnit
@@ -281,7 +295,7 @@ private:
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
-    std::deque<ProcessingUnit> processing_units;
+    DequeWithMemoryTracking<ProcessingUnit> processing_units;
 
     /// Compute it to have a more understandable error message.
     size_t successfully_read_rows_count{0};
@@ -289,13 +303,11 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
+        chassert(ticket_number != 0);
         runner.enqueueAndKeepTrack([this, ticket_number]()
         {
             parserThreadFunction(ticket_number);
         });
-        /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
-        if (ticket_number == 0)
-            first_parser_finished.wait();
     }
 
     void finishAndWait() noexcept
@@ -334,6 +346,9 @@ private:
 
     void segmentatorThreadFunction(ThreadGroupPtr thread_group);
     void parserThreadFunction(size_t current_ticket_number);
+
+    /// Cuts the next segment of the input into `unit`. Returns whether more data follows.
+    bool segmentUnit(ProcessingUnit & unit);
 
     /// Save/log a background exception, set termination flag, wake up all
     /// threads. This function is used by segmentator and parsed threads.
