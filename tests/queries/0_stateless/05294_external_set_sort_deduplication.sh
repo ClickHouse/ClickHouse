@@ -9,54 +9,62 @@ set -euo pipefail
 LOCAL_DIR=$(mktemp -d "${CLICKHOUSE_TMP}/external-set-dedup.XXXXXX")
 trap 'rm -rf "${LOCAL_DIR}"' EXIT
 
-# Builds a set on disk in a fresh process and prints the probes it finds, whether it spilled, whether its
-# temporary files (the runs and the set) satisfy `files`, and the merges of runs counted for the set and for
-# sorting. The optional last argument adds checks.
-#
-# Each subquery starts with keys that no probe finds, which grow the table to the threshold, so the set spills
-# with them before the keys of the case arrive. The sorter writes a run once it holds the threshold while
-# query memory exceeds it, which exact tracking makes deterministic.
-build_set()
+# Runs the queries of a case in a fresh process, then prints the counts of spilled sets, of their temporary
+# files (the runs of the sorter and the sets) and of merges of runs in files. Each case sets `max_rows_in_set`
+# to the number of distinct keys of its set, so a set that kept a key twice would exceed it and its query
+# would throw. Exact memory tracking makes the spills deterministic, and one thread keeps the chunks in order.
+run_case()
 {
     local name="$1"
-    local threshold="$2"
-    local max_block_size="$3"
-    local files="$4"
-    local rhs="$5"
-    local checks="${6:-}"
-    ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}/${name}" --max_bytes_before_external_set "${threshold}" \
-        --max_block_size "${max_block_size}" --max_untracked_memory 0 --multiquery <<SQL
-SELECT countIf(number IN (${rhs})) FROM numbers(1000);
-SELECT sum(value) FROM system.events WHERE event = 'SetsSpilledToDisk';
-SELECT sum(value) ${files} FROM system.events WHERE event = 'ExternalSetWritePart';
-SELECT (SELECT sum(value) FROM system.events WHERE event = 'ExternalSetMerge'),
-    (SELECT sum(value) FROM system.events WHERE event = 'ExternalSortMerge');
-${checks}
+    local queries="$2"
+    shift 2
+    ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}/${name}" --max_untracked_memory 0 --max_threads 1 "$@" --multiquery <<SQL
+${queries}
+SELECT '${name}', (SELECT sum(value) FROM system.events WHERE event = 'SetsSpilledToDisk'),
+    (SELECT sum(value) FROM system.events WHERE event = 'ExternalSetWritePart'),
+    (SELECT sum(value) FROM system.events WHERE event = 'ExternalSetMerge');
 SQL
 }
 
-# 8,192-row chunks of 100 distinct keys each shrink to 100 rows, so the sorter never holds 16 KiB and the set
-# is the only file.
-build_set within_chunks 16384 8192 "= 1" \
-    "SELECT if(number < 8192, 1000000 + number % 600, number % 100) FROM numbers(40960)"
+# Chunks of 8,192 rows repeat the same 100 keys. The sorter sorts its buffer whenever it holds a run of
+# 16 KiB, and each sort leaves fewer keys than half a run, which stay for the next sort. So the sorter makes
+# no run while the keys arrive, and only the merge writes them to a temporary file, as one run, because query
+# memory exceeds the threshold. The subquery starts with keys that no probe finds, which grow the table to
+# the threshold, so the set spills before the repeated keys arrive.
+run_case buffer_stays "
+SELECT countIf(number IN (SELECT if(number < 8192, 1000000 + number % 600, number % 100) FROM numbers(40960)))
+FROM numbers(1000);" \
+    --max_bytes_before_external_set 16384 --max_block_size 8192 --max_rows_in_set 700
 
-# 100 chunks hold the same 128 keys, so the sorter writes runs that each hold every key once. All temporary
-# data stays far below the 102,400 raw key bytes, and the merge of the runs removes the repeats across them.
-build_set across_chunks 16384 16384 "> 1" \
-    "SELECT if(number < 640, 1000000 + number, number % 128) FROM numbers(13440) SETTINGS max_block_size = 128" \
-    "SELECT sum(value) < 102400 / 4 FROM system.events WHERE event = 'ExternalSetUncompressedBytes';"
+# With a threshold of 1 byte, the set spills at its first chunk, and each chunk becomes a run in a file of its
+# own. Chunk `k` holds the keys from `32 * k` to `32 * k + 63`, so each run repeats half of the keys of the
+# previous one. The runs make two chains, and their merge passes each key once.
+run_case repeats_across_runs "
+SELECT countIf(number IN (SELECT intDiv(number, 64) * 32 + number % 64 FROM numbers(1024))) FROM numbers(1000);" \
+    --max_bytes_before_external_set 1 --max_block_size 64 --max_rows_in_set 544
 
-# The first row brings 2,100 other keys in one chunk, which fill the table to the threshold. Then one-row
-# chunks bring 0..98 and 300, then copies of 200. A merge step of 100 rows emits 0..98 and one 200, and the
-# next consumes 100 copies and emits nothing.
-#
-# With 102 copies, every chunk stays in memory, and the steps belong to the final merge.
-build_set duplicate_only_merge_step_in_memory 65536 100 "= 1" \
-    "SELECT arrayJoin(if(number = 0, range(1000000, 1002100), [multiIf(number < 100, number - 1, number = 100, 300, 200)]))
-     FROM numbers(203) SETTINGS max_block_size = 1"
+# Each key but the first comes twice in a row, so each chunk ends with the key that the next one starts with.
+# The sorted runs make one chain, which passes the key at each boundary once. With a threshold of 16 bytes,
+# the sorter sorts its buffer whenever it holds 2 keys, so each chunk of 64 rows becomes a run in a file, and
+# the last chunk of 1 key stays in memory until the merge writes it to a file of its own, because query memory
+# exceeds the threshold. The chain reads that file last, and it holds only the key that ends the previous run.
+run_case touching_runs "
+SELECT countIf(number IN (SELECT intDiv(number + 1, 2) FROM numbers(1025))) FROM numbers(1000);" \
+    --max_bytes_before_external_set 16 --max_block_size 64 --max_rows_in_set 513
 
-# With 1,000 copies, the sorter writes a run of more than 100 chunks, the steps belong to the merge that
-# writes it, and the steps without rows write no block.
-build_set duplicate_only_merge_step_in_run 65536 100 "> 1" \
-    "SELECT arrayJoin(if(number = 0, range(1000000, 1002100), [multiIf(number < 100, number - 1, number = 100, 300, 200)]))
-     FROM numbers(1101) SETTINGS max_block_size = 1"
+# A run that ends with the largest key of its type ends a chain that no later run joins. The merge treats a
+# chain that has ended as holding the largest key, and still passes a real largest key once. The chunks hold
+# the keys from 0 to 62 and the largest key, from 32 to 94 and the largest key, and from 64 to 127, whose
+# chain ends first. The probes are the smallest and the largest keys of the range, the next key, and the two
+# largest keys of the type. The merge keeps whole 64-bit keys in its tree, and one word of 256-bit keys, which
+# it completes with the whole keys when the words are equal.
+run_case largest_key "
+SELECT 'UInt64', groupArray(k IN (
+    SELECT if(intDiv(number, 64) < 2 AND number % 64 = 63, 18446744073709551615, intDiv(number, 64) * 32 + number % 64)
+    FROM numbers(192)))
+FROM (SELECT arrayJoin([0, 127, 128, 18446744073709551614, 18446744073709551615]) AS k);
+SELECT 'UInt256', groupArray(k IN (
+    SELECT if(intDiv(number, 64) < 2 AND number % 64 = 63, bitNot(toUInt256(0)), toUInt256(intDiv(number, 64) * 32 + number % 64))
+    FROM numbers(192)))
+FROM (SELECT arrayJoin([toUInt256(0), 127, 128, bitNot(toUInt256(1)), bitNot(toUInt256(0))]) AS k);" \
+    --max_bytes_before_external_set 1 --max_block_size 64 --max_rows_in_set 129

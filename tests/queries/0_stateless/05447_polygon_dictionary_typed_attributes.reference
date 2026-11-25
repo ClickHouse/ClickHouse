@@ -1,0 +1,8 @@
+dictGet
+-0.5	{'west':2}	{"side":"west"}
+0.5	{'east':1}	{"side":"east"}
+10	{}	{}
+dictGetOrDefault
+-0.5	[3]	{'west':2}	{"side":"west"}	west	20
+0.5	[1,2]	{'east':1}	{"side":"east"}	east	10
+10	[1]	{'d':1}	{"d":1}	1	1

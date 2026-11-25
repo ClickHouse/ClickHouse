@@ -58,6 +58,14 @@ ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, 
 
 }
 
+NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
+{
+    NamesAndTypesList res;
+    for (const auto & column : columns)
+        res.emplace_back(column.name, column.type);
+    return res;
+}
+
 String MergeTreeReadTaskColumns::dump() const
 {
     WriteBufferFromOwnString s;
@@ -284,11 +292,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
             ? nullptr
             : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info);
+
         if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
-                index_read_task->index,
+                *index_read_task,
                 pre_columns_per_step,
                 read_info->read_hints.index_granules));
         }
@@ -421,7 +430,7 @@ void MergeTreeReadTask::initializeReadersChain(
 
     PrewhereExprInfo all_prewhere_actions;
 
-    if (index_build_context || lazy_materializing_rows)
+    if (index_build_context || lazy_materializing_rows || info->delete_bitmap)
         initializeIndexReader(index_build_context, lazy_materializing_rows);
 
     for (const auto & step : info->mutation_steps)
@@ -462,9 +471,10 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
         }
     }
 
-    if (index_read_result || lazy_materializing_rows)
+    if (index_read_result || lazy_materializing_rows || info->delete_bitmap)
     {
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(
+            readers.main.get(), std::move(index_read_result), part_rows, info->delete_bitmap);
     }
 
 }
@@ -518,7 +528,21 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb);
+    /// A block that is a whole stripe of the columns cache is read whole, beyond `rows_to_read`, because it shares the
+    /// columns of the cache. But the functions and filters of the query run over the whole block and copy what passes,
+    /// so the rows that pass the filters of `PREWHERE` must stay within `rows_to_read`, which keeps a block of wide rows
+    /// to `preferred_block_size_bytes`. A selective `PREWHERE` lets whole stripes be read, as the filtered rows cost
+    /// little to the later steps. Never beyond `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs.
+    UInt64 max_stripe_block_rows = block_size_params.max_block_size_rows;
+    if (size_predictor)
+    {
+        double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
+        double rows_before_filtration = static_cast<double>(rows_to_read) / filtration_ratio;
+        if (rows_before_filtration < static_cast<double>(max_stripe_block_rows))
+            max_stripe_block_rows = std::max(rows_to_read, static_cast<UInt64>(rows_before_filtration));
+    }
+
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, max_stripe_block_rows);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -550,8 +574,10 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         {
             /// We may have columns that have other references, usually it is a constant column that has been created during analysis
             /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
-            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
-            if (column->use_count() == 1)
+            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink.
+            /// Shrinking reallocates the column, so don't do it if only a little memory would be freed (e.g. for small blocks).
+            static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+            if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
             {
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->shrinkToFit();

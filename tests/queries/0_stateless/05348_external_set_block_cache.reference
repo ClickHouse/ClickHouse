@@ -1,0 +1,13 @@
+packed	10000	99990000
+cache	10000	99990000
+cache	10000	99990000
+cache	10000	99990000
+threads	100000	9999900000
+packed	1
+whole set	1
+small cache	1
+no cache	1
+threads	1
+packed	1
+no cache	0
+1	1	1	1

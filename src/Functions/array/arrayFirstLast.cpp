@@ -28,6 +28,15 @@ enum class ArrayFirstLastElementNotExistsStrategy : uint8_t
 template <ArrayFirstLastStrategy strategy, ArrayFirstLastElementNotExistsStrategy element_not_exists_strategy>
 struct ArrayFirstLastImpl
 {
+    /// Declarative signature — element type of the first array is preserved
+    /// (wrapped in `Nullable` for the `OrNull` variants when the predicate
+    /// never matches). Lambda return type follows the boolean-predicate
+    /// convention used by `arrayFilter`.
+    static constexpr auto signature =
+        element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null
+            ? "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Nullable(T)"
+            : "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> T";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -50,8 +59,17 @@ struct ArrayFirstLastImpl
         return ColumnNullable::create(std::move(column), std::move(null_map));
     }
 
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped, const DataTypePtr & result_type)
     {
+        /// For the OrNull variants `result_type` is Nullable, so the row under the NULL keeps the column zero.
+        const bool trivial_default = result_type->isDefaultInsertTrivial();
+        MutableColumnPtr type_default;
+        if (!trivial_default)
+        {
+            type_default = array.getData().cloneEmpty();
+            result_type->insertDefaultInto(*type_default);
+        }
+
         const auto * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
         if (!column_filter)
@@ -80,7 +98,7 @@ struct ArrayFirstLastImpl
 
                 for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
                 {
-                    size_t start_offset = offsets[offset_index - 1];
+                    size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
                     size_t end_offset = offsets[offset_index];
 
                     if (end_offset > start_offset)
@@ -92,7 +110,10 @@ struct ArrayFirstLastImpl
                     }
                     else
                     {
-                        out->insertDefault();
+                        if (trivial_default)
+                            out->insertDefault();
+                        else
+                            out->insertFrom(*type_default, 0);
 
                         if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
                             (*vec_null_map_to)[offset_index] = true;
@@ -106,7 +127,10 @@ struct ArrayFirstLastImpl
             }
 
             auto out = array.getData().cloneEmpty();
-            out->insertManyDefaults(array.size());
+            if (trivial_default)
+                out->insertManyDefaults(array.size());
+            else
+                out->insertManyFrom(*type_default, 0, array.size());
 
             if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
             {
@@ -135,7 +159,7 @@ struct ArrayFirstLastImpl
 
         for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
         {
-            size_t start_offset = offsets[offset_index - 1];
+            size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
             size_t end_offset = offsets[offset_index];
 
             bool exists = false;
@@ -167,7 +191,10 @@ struct ArrayFirstLastImpl
 
             if (!exists)
             {
-                out->insertDefault();
+                if (trivial_default)
+                    out->insertDefault();
+                else
+                    out->insertFrom(*type_default, 0);
 
                 if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
                     (*vec_null_map_to)[offset_index] = true;

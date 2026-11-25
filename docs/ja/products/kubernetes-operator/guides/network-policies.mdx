@@ -19,11 +19,9 @@ operator は、どちらもデフォルトで無効になっている 2 つの�
   エラーを返しません。これらに依存する前に、使用中の CNI がポリシーを適用することを確認してください。
 </Note>
 
-<div id="cluster-network-policies">
-  ## クラスターのNetworkPolicy
-</div>
+## クラスターのNetworkPolicy {#cluster-network-policies}
 
-クラスターごとにマネージドポリシーを有効にします。
+クラスターごとにmanaged ポリシーを有効にします。
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -39,23 +37,22 @@ spec:
     policy: Enabled
 ```
 
-管理対象のポリシーは、**クラスター内部のトラフィックのみ**を対象とします。ポッドを選択すると、
+managed ポリシーは、**クラスター内部のトラフィックのみ**を対象とします。ポッドを選択すると、
 イングレスはデフォルト拒否となり、operator はクラスターの動作に必要な通信のみを許可します。
 
-| クラスター      | 許可される送信元                                                       | 許可されるポート                                       |
-| ---------- | -------------------------------------------------------------- | ---------------------------------------------- |
-| ClickHouse | クラスター自身のポッド                                                    | `9009` (interserver) 、`9001` (management)      |
-| ClickHouse | Operator ポッド (ラベル `clickhouse.com/role: operator`、任意のネームスペース)  | `9001`、`9002` (management)                     |
-| Keeper     | クラスター自身のポッド                                                    | `9234` (Raft)                                  |
-| Keeper     | Operator ポッドおよびこの Keeper を参照するすべての `ClickHouseCluster`         | `2181`、`2281` (client) 、`9123` (HTTP control)  |
+| クラスター      | 許可される送信元                                                      | 許可されるポート                                      |
+| ---------- | ------------------------------------------------------------- | --------------------------------------------- |
+| ClickHouse | クラスター自身のポッド                                                   | `9009` (interserver) 、`9001` (management)     |
+| ClickHouse | Operator ポッド (ラベル `clickhouse.com/role: operator`、任意のネームスペース) | `9001`、`9002` (management)                    |
+| Keeper     | クラスター自身のポッド                                                   | `9234` (Raft)                                 |
+| Keeper     | Operator ポッドおよびこの Keeper を参照するすべての `ClickHouseCluster`        | `2181`、`2281` (client) 、`9123` (HTTP control) |
 
 Keeper は `keeperClusterRef` に基づいて ClickHouse クラスターを許可します。参照を
 追加または削除すると、他のネームスペースからの参照も含めて、Keeper のポリシーが
-自動的に更新されます。
+自動的に更新されます。`externalKeeper` を使用するクラスターは、ノードが Keeper のポッドを
+指していても許可されません。
 
-<div id="allowing-clients">
-  ### クライアントと監視の許可
-</div>
+### クライアントと監視の許可 {#allowing-clients}
 
 クライアント接続とメトリクスのスクレイプは**対象に含まれません**。managed
 ポリシー を有効にすると、許可するまでクライアントポート (`9000`/`8123`、または TLS
@@ -90,9 +87,7 @@ Keeper では `9090`) にも当てはまります。監視用ネームスペー�
 ポリシーは削除されます。ユーザー定義のポリシーは、クラスターの `app` ラベルが
 付与されている場合を除き、operator が変更することはありません。
 
-<div id="np-cluster-wide-disable">
-  ### クラスター全体での無効化
-</div>
+### クラスター全体での無効化 {#np-cluster-wide-disable}
 
 NetworkPolicy の管理は、operator&#39;s
 `ENABLE_NETWORK_POLICY` 環境変数により、クラスター全体で無効にすることもできます。`ENABLE_NETWORK_POLICY=false` の場合、
@@ -117,15 +112,11 @@ controller:
     enabled: false
 ```
 
-<div id="operator-pod-policies">
-  ## Operator ポッドポリシー
-</div>
+## Operator ポッドポリシー {#operator-pod-policies}
 
 チャート には、**controller manager ポッド**、つまり operator プロセス自体に到達できるトラフィックを制限するための任意のポリシーも含まれています。これらは、operator が他のクライアント向けに公開している 2 つのポート、メトリクスエンドポイントと admission webhook を対象とします。
 
-<div id="what-the-helm-chart-creates">
-  ## Helm チャートで作成されるもの
-</div>
+## Helm チャートで作成されるもの {#what-the-helm-chart-creates}
 
 有効にすると、このチャートは最大 2 つのイングレス専用ポリシーを作成します。いずれも
 controller manager ポッドを対象とします。
@@ -138,9 +129,7 @@ controller manager ポッドを対象とします。
 どちらのポリシーも `policyTypes: [Ingress]` のみを指定します。これらは operator からの外向きトラフィックを制限せず、
 ClickHouse server や Keeper のポッドにも影響しません。
 
-<div id="default-deny">
-  ## デフォルト拒否の動作
-</div>
+## デフォルト拒否の動作 {#default-deny}
 
 イングレス `NetworkPolicy` でポッドを選択すると、そのポッドは**イングレスに対する
 デフォルト拒否**に切り替わります。いずれかのポリシーが適用されると、明示的に許可されていない
@@ -154,9 +143,7 @@ operator に到達できるイングレスは次のみです。
 ラベルの付いていない scraper や webhook 呼び出し元は、ポリシーが有効になった時点で
 動作しなくなることを意味します。
 
-<div id="enabling">
-  ## ポリシーを有効にする
-</div>
+## ポリシーを有効にする {#enabling}
 
 Helm では、values でゲートを有効にします。
 
@@ -180,9 +167,7 @@ raw の `kubectl` manifest を使用する場合は、
 [kubectl install guide](/ja/products/kubernetes-operator/install/kubectl) で説明されているとおり、`[NETWORK POLICY]` セクションのコメントを外してください。
 raw の manifest にも、同じ 2 つのポリシーが含まれています。
 
-<div id="labeling-namespaces">
-  ## クライアントのネームスペースへのラベル付け
-</div>
+## クライアントのネームスペースへのラベル付け {#labeling-namespaces}
 
 どちらのポリシーも `namespaceSelector` によって送信元のネームスペースを照合するため、operator に到達する必要があるすべてのネームスペースには、対応するラベルが付いている必要があります。ラベルの付いていないネームスペースからの スクレイプ や webhook 呼び出しは破棄されます。
 
@@ -214,9 +199,7 @@ kubectl label namespace <caller-namespace> webhook=enabled
   Kubernetes API server に対する明示的な許可ルールを追加してください。
 </Warning>
 
-<div id="verifying">
-  ## 確認
-</div>
+## 確認 {#verifying}
 
 ```bash
 NS=clickhouse-operator-system
@@ -238,9 +221,7 @@ kubectl -n $NS describe networkpolicy
 スクレイプしてもデータが返らない場合や、CR の適用がハングする場合は、対象ネームスペースにラベルが付いていないこと、または
 上記の API サーバー到達性に関する注意事項が原因である可能性が最も高いです。
 
-<div id="related-guides">
-  ## 関連ガイド
-</div>
+## 関連ガイド {#related-guides}
 
 * [operator の監視](/ja/products/kubernetes-operator/guides/monitoring) — メトリクス エンドポイント、その RBAC、スクレイプの保護について説明します。
 * [kubectl を使用したインストール](/ja/products/kubernetes-operator/install/kubectl) — ネットワークポリシーのセクションをどこでアンコメントするかを説明します。

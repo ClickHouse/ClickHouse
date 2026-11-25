@@ -1,0 +1,43 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- The references require fixed key mappings and selected granules.
+
+SET explain_query_plan_default = 'legacy';
+SET use_query_condition_cache = 0;
+SET optimize_trivial_count_query = 0;
+SET optimize_trivial_count_with_sparsity_filter = 0;
+SET optimize_move_to_prewhere = 0;
+SET optimize_rewrite_has_to_in = 0;
+
+-- The predicate wraps a direct key in a monotonic `plus` and a non-monotonic `cityHash64`.
+-- Its set can instead be transformed into the leading key's domain. That mapping compares the
+-- leading key directly and must not carry the partial chain from the unsuccessful monotonic match.
+CREATE TABLE set_mapping_transform (x UInt32) ENGINE = MergeTree
+ORDER BY (cityHash64(cityHash64(x + 1)), x)
+SETTINGS index_granularity = 1, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0,
+    add_minmax_index_for_numeric_columns = 0;
+INSERT INTO set_mapping_transform SELECT number FROM numbers(64);
+
+{% macro check(predicate) -%}
+SELECT '{{ predicate }}',
+    (SELECT count() FROM set_mapping_transform WHERE {{ predicate }}),
+    (SELECT count() FROM set_mapping_transform WHERE {{ predicate }} SETTINGS use_primary_key = 0),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ')
+     FROM (EXPLAIN indexes = 1 SELECT 1 FROM set_mapping_transform WHERE {{ predicate }})
+     WHERE match(trimLeft(explain), '^(Condition:|Granules:)'))
+FORMAT TSVRaw;
+{%- endmacro %}
+
+{% for multiple_atoms in [0, 1] %}
+SET analyze_index_with_multiple_key_columns_per_condition = {{ multiple_atoms }};
+SELECT 'multiple_atoms={{ multiple_atoms }}';
+{{ check('cityHash64(x + 1) IN (cityHash64(toUInt64(9)))') }}
+{{ check('has([cityHash64(toUInt64(9))], cityHash64(x + 1))') }}
+
+-- Hashing is not injective, so complement predicates must preserve all matching rows.
+{{ check('cityHash64(x + 1) NOT IN (cityHash64(toUInt64(9)))') }}
+{{ check('notHas([cityHash64(toUInt64(9))], cityHash64(x + 1))') }}
+{% endfor %}
+
+DROP TABLE set_mapping_transform;

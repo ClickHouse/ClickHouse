@@ -49,8 +49,19 @@ BufferingFromFileSource::BufferingFromFileSource(SharedHeader header, TemporaryB
     inputs.emplace_back(Block(), this);
 }
 
+BufferingFromFileSource::BufferingFromFileSource(SharedHeader header, TemporaryBlockStreamHolder && tmp_stream_, LoggerPtr log_)
+    : ISource(std::move(header))
+    , owned_stream(std::move(tmp_stream_))
+    , tmp_stream(*owned_stream)
+    , log(log_)
+{
+}
+
 IProcessor::Status BufferingFromFileSource::prepare()
 {
+    if (owned_stream)
+        return ISource::prepare();
+
     auto & completion = getCompletionPort();
     if (!completion.isFinished())
     {

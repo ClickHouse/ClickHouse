@@ -54,6 +54,7 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
+#include <Storages/System/StorageSystemConnections.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
@@ -73,6 +74,7 @@
 #include <Storages/System/StorageSystemConstraints.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
+#include <Storages/System/StorageSystemChangelog.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Storages/System/StorageSystemSessionQueryIds.h>
@@ -143,12 +145,15 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Storages/System/StorageSystemIcebergMetadataLogEntries.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
 #include <Storages/System/StorageSystemWasmModules.h>
 
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
+#include <Server/ConnectionRegistry.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -171,6 +176,11 @@
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool collect_connection_metrics;
+}
 
 const char * const ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE = __builtin_FILE();
 
@@ -1517,6 +1527,7 @@ The following kinds of entities are collected (the value of the `type` column is
 
 - Functions (`Function`)
 - Aggregate functions (`Aggregate Function`)
+- Window functions (`Window Function`)
 - Table functions (`Table Function`)
 - Table engines (`Table Engine`)
 - Database engines (`Database Engine`)
@@ -1690,6 +1701,21 @@ SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 ┌─name─────────────┐
 │ Olga Khvostikova │
 └──────────────────┘
+```
+)DOCS_MD");
+    attach<StorageSystemChangelog>(context, system_database, "changelog", R"DOCS_MD(
+.description
+Contains the entries of the curated ClickHouse changelog (the repository's `CHANGELOG.md`), one row per entry of each feature release, so release notes can be queried with SQL.
+
+.examples
+Find recent JSON-related changes, newest release first:
+
+```sql
+SELECT version, category, description
+FROM system.changelog
+WHERE description ILIKE '%JSON%' AND version >= (26, 1, 0)
+ORDER BY version DESC
+LIMIT 3
 ```
 )DOCS_MD");
     attach<StorageSystemUsers>(context, system_database, "users", R"DOCS_MD(
@@ -1909,9 +1935,11 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT query_id, type, query, query_duration_ms
 FROM system.query_log
-WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+WHERE query_id GLOBAL IN (SELECT query_id FROM system.session_query_ids)
 ORDER BY event_time_microseconds;
 ```
+
+`GLOBAL IN` evaluates the subquery once, in the current session. With plain `IN`, a query executed with parallel replicas also evaluates it on the other replicas, which do not see the history of the current session, so the rows they read are filtered out.
 
 .see_also
 - [system.query_log](/reference/system-tables/query_log) - Details of executed queries.
@@ -1960,6 +1988,8 @@ marks_bytes:             48
 .description
 Contains information about existing projections in all tables.
 
+The `total_rows`, `data_compressed_bytes` and `data_uncompressed_bytes` columns are summed over the active parts of the table that contain the projection, so they are zero until the projection is built, for example by inserts made after it was added or by `ALTER TABLE ... MATERIALIZE PROJECTION`. For the size of each projection part, see [system.projection_parts](/operations/system-tables/projection_parts).
+
 .examples
 ```sql
 SELECT * FROM system.projections LIMIT 2 FORMAT Vertical;
@@ -1968,23 +1998,29 @@ SELECT * FROM system.projections LIMIT 2 FORMAT Vertical;
 ```text
 Row 1:
 ──────
-database:    default
-table:       landing
-name:        improved_sorting_key
-type:        Normal
-sorting_key: ['user_id','date']
-query:       SELECT * ORDER BY user_id, date
-settings:     {}
+database:                default
+table:                   landing
+name:                    improved_sorting_key
+type:                    Normal
+total_rows:              100000
+data_compressed_bytes:   27720
+data_uncompressed_bytes: 2300000
+sorting_key:             ['user_id','date']
+query:                   SELECT * ORDER BY user_id, date
+settings:                {}
 
 Row 2:
 ──────
-database:    default
-table:       landing
-name:        agg_no_key
-type:        Aggregate
-sorting_key: []
-query:       SELECT count()
-settings:     {}
+database:                default
+table:                   landing
+name:                    agg_no_key
+type:                    Aggregate
+total_rows:              1
+data_compressed_bytes:   29
+data_uncompressed_bytes: 3
+sorting_key:             []
+query:                   SELECT count()
+settings:                {}
 ```
 )DOCS_MD");
     attachNoDescription<StorageSystemConstraints>(context, system_database, "constraints", R"DOCS_MD(
@@ -2253,6 +2289,7 @@ SELECT * FROM system.dns_cache;
     attachNoDescription<StorageSystemSymbols>(context, system_database, "symbols", R"DOCS_MD(
 .description
 Contains information for introspection of `clickhouse` binary. It requires the introspection privilege to access.
+Only symbols of the main executable are listed; addresses are offsets inside it.
 This table is only useful for C++ experts and ClickHouse engineers.
 
 .examples
@@ -2654,6 +2691,72 @@ moved to the TTL destination by a background move task (observable via
 `system.moves`). See the
 [`perform_ttl_move_on_insert` setting on the MergeTree engine](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
 )DOCS_MD");
+    /// Attach the table also if `collect_connection_metrics` is `false`, because a reload of the configuration can change the setting.
+    ConnectionRegistry::instance().setEnabled(context->getServerSettings()[ServerSetting::collect_connection_metrics]);
+    attach<StorageSystemConnections>(context, system_database, "connections", R"DOCS_MD(
+.description
+Shows the open client connections of the native TCP and HTTP query interfaces.
+A connection is `active` when a query runs. A connection is `idle` when it waits for the next query.
+
+The table does not show these connections:
+- Connections of other protocols, for example MySQL, PostgreSQL, and gRPC.
+- Interserver connections.
+- HTTP connections that did not run a query, for example `/ping` and Prometheus connections.
+
+The server collects the connections only if the server setting `collect_connection_metrics` is `true`. If the setting is `false`, the table is empty.
+You can change the setting without a restart (`SYSTEM RELOAD CONFIG`):
+- When you change the setting to `false`, the table becomes empty and the server stops the registration of new connections.
+- When you change the setting to `true`, an open connection shows in the table on its next query.
+
+The server adds a TCP connection to the table after authentication. The server removes the connection when it closes.
+The server adds an HTTP connection to the table on its first query. The server removes the connection when the socket closes.
+Thus, the table shows an HTTP keep-alive connection as `idle` between the requests.
+
+A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+The check uses the user ID, not the name. Thus, a renamed user keeps its connections, and a new user with the old name does not get them.
+
+`connection_id` is a random UUID. Thus, it is unique across servers, and you can combine the tables of many replicas, for example with `clusterAllReplicas`.
+
+`connected_time` has the same meaning for TCP and HTTP: the time when the server started to handle the socket.
+This time is before the TCP handshake, the authentication, and the first query. Thus, it can be earlier than the time when the connection shows in the table.
+
+.examples
+```sql
+SELECT connection_id, protocol, user, status, query_id, client_name, connected_time, last_query_time
+FROM system.connections
+FORMAT Vertical;
+```
+
+```sql
+SELECT hostName(), protocol, status, count()
+FROM clusterAllReplicas(default, system.connections)
+GROUP BY ALL;
+```
+
+```response
+Row 1:
+──────
+connection_id:   0d6c1b7e-31a2-4f5c-9a43-7e2b8c5d1f90
+protocol:        TCP
+user:            default
+status:          active
+query_id:        845dcadd-7249-4ce4-8c3d-c08032594155
+client_name:     ClickHouse client
+connected_time:  2026-03-17 09:18:18
+last_query_time: 2026-03-17 09:18:27
+
+Row 2:
+──────
+connection_id:   a4f3e2d1-8b7c-4c6d-9e5f-1a2b3c4d5e6f
+protocol:        HTTP
+user:            default
+status:          idle
+query_id:
+client_name:     curl/8.5.0
+connected_time:  2026-03-17 09:18:14
+last_query_time: 2026-03-17 09:18:14
+```
+)DOCS_MD");
     attach<StorageSystemProcesses>(context, system_database, "processes", R"DOCS_MD(
 .description
 This system table is used for implementing the `SHOW PROCESSLIST` query.
@@ -2807,16 +2910,31 @@ Number of file segments evicted from a filesystem cache, labelled by cache name 
 Total bytes of file segments evicted from a filesystem cache, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_eviction_metrics` and `expose_prometheus_eviction_metrics_per_user`.
 
 ### `object_storage_queue_failures_total` {#object-storage-queue-failures-total}
-Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) failures, labelled by database, table, processing stage (`read`, `set_processing`, `insert`, `commit`) and error code.
+Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) failures, labelled by database, table, processing stage (`read`, `set_processing`, `insert`, `commit`, `after_processing`) and error code. For the `after_processing` stage the value is the number of objects for which the `after_processing` action (delete, tag or move) did not complete.
 
 ### `object_storage_queue_permanently_failed_files_total` {#object-storage-queue-permanently-failed-files-total}
 Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) files given up on for good after exhausting retries (or with retries disabled), labelled by database and table. Each of these represents a file whose data will never be processed.
 
 ### `object_storage_queue_newest_seen_object_timestamp_seconds` {#object-storage-queue-newest-seen-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
 
 ### `object_storage_queue_newest_committed_object_timestamp_seconds` {#object-storage-queue-newest-committed-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
+
+### `object_storage_queue_processed_files_total` {#object-storage-queue-processed-files-total}
+Number of files committed as processed by this `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server, labelled by database and table.
+
+### `object_storage_queue_last_poll_timestamp_seconds` {#object-storage-queue-last-poll-timestamp-seconds}
+Unix timestamp of the last time a background streaming thread of an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server started a cycle that looks for files to process or started a batch of that cycle, labelled by database and table. It is set when a cycle starts, after the table registered itself as active in Keeper, and again before each batch of the cycle, so it advances also when the cycle finds no files or fails, and during a long backlog. It does not advance when the registration fails. The value 0 means that the table has not polled since it was started. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
+
+### `system_log_flushes_total` {#system-log-flushes-total}
+Number of attempts to flush the in-memory buffer of a system log to its table, labelled by the database and the table of the system log and by result (`success`, `failure`).
+
+### `system_log_flushed_rows_total` {#system-log-flushed-rows-total}
+Number of rows written by successful flushes of a system log, labelled by the database and the table of the system log.
+
+### `system_log_dropped_rows_total` {#system-log-dropped-rows-total}
+Number of rows of a system log that were lost, labelled by the database and the table of the system log and by reason: `queue_full` for rows that were not accepted because the in-memory buffer reached `max_size_rows` (it is updated when the buffer is taken for the next flush), `flush_failed` for rows of a flush that failed.
 
 .examples
 You can use a query like this to export all the dimensional metrics in the Prometheus format.
@@ -3194,6 +3312,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 
 Row 2:
@@ -3214,6 +3333,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 ```
 
@@ -3303,15 +3423,17 @@ Contains information about all filesystem cache settings
 )DOCS_MD");
     attachNoDescription<StorageSystemColumnsCache>(context, system_database, "columns_cache", R"DOCS_MD(
 .description
-Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
+Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts and of `Parquet` files in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
 
 Each entry corresponds to a contiguous range of granules `[row_begin, row_end)` of a single column of a single data part, within a fixed stripe of the part of about 65536 rows. Reads are served from the cache granule by granule, and the stripes are the same for every read of the part, so the entries do not depend on how a query splits the part into mark ranges: a read that touches only some granules of a stripe caches those, and adjacent ranges written by different reads are merged.
 
-The cache identifies entries by table UUID, so it is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud). Tables in legacy `Ordinary` databases have no UUID and are silently excluded from the cache. Only wide parts participate in the cache; compact parts are silently excluded.
+The cache identifies entries by table UUID, so it is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud). Tables in legacy `Ordinary` databases have no UUID and are silently excluded from the cache. Both wide and compact parts participate in the cache, including the parts of projections.
+
+An entry of a `Parquet` file (read by the `file`, `s3`, `azureBlobStorage` table functions and table engines, and by data lake tables) holds a chunk of up to 65536 rows of a column of one row group of the file: `part` is the path of the file, and `[row_begin, row_end)` is the range of rows of the chunk in the file. An entry of a file read by a table (for example `ENGINE = File`, `S3`, or a data lake table) has the UUID of the table in `table_uuid`, shows its `database` and `table`, and is visible under the same rules as the entries of a `MergeTree` table. An entry of a file read by a table function has the nil UUID in `table_uuid` and empty `database` and `table`; it is visible only to a user holding `SHOW COLUMNS` globally and an unrestricted `READ` grant on the source of the file (`FILE`, `S3`, `AZURE`, `HDFS` or `URL`).
 
 The cache is controlled by the server settings `columns_cache_size` (by default `columns_cache_size_to_ram_ratio` of the memory available to the server) and `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`, `enable_reads_from_columns_cache`, `enable_writes_to_columns_cache`, `columns_cache_max_estimated_bytes_to_write_to_cache`, and `columns_cache_max_bytes_to_write_to_cache`. It can be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/system).
 
-The rows are filtered by access rights: an entry is visible only to a user who may see both its table and its column, that is holds `SHOW TABLES` on the table and `SHOW COLUMNS` on the column. A grant of `SHOW COLUMNS` on `*.*` does not bypass a revoke on an individual table or column, because this table exposes operational data (part names, row ranges and cached sizes) and not only schema. Entries of a table that no longer exists carry no name to check, so they are visible only to a user holding `SHOW COLUMNS` globally.
+The rows are filtered by access rights: an entry is visible only to a user who may see both its table and its column, that is holds `SHOW TABLES` on the table and `SHOW COLUMNS` on the column. A grant of `SHOW COLUMNS` on `*.*` does not bypass a revoke on an individual table or column, because this table exposes operational data (part names, row ranges and cached sizes) and not only schema. Entries of a table that no longer exists carry no name to check, so they are visible only to a user holding `SHOW COLUMNS` globally; for an entry of a `Parquet` file read by such a table, the unrestricted `READ` grant on the source of the file is also required.
 
 .examples
 Total memory consumed by cached columns, per table:
@@ -3805,6 +3927,10 @@ This system table contains the snapshot history of Iceberg tables existing in Cl
 .description
 This system table contains per-file metadata for Iceberg tables existing in ClickHouse, with one row per data or delete file referenced by the current snapshot of each table. It will be empty if you don't have any Iceberg tables in ClickHouse.
 )DOCS_MD");
+    attach<StorageSystemIcebergMetadataLogEntries>(context, system_database, "iceberg_metadata_log_entries", R"DOCS_MD(
+.description
+This system table contains the metadata files of Iceberg tables existing in ClickHouse, with one row per metadata file. It will be empty if you don't have any Iceberg tables in ClickHouse.
+)DOCS_MD");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", R"DOCS_MD(
 .description
@@ -3972,9 +4098,13 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
         attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
             R"DOCS_MD(
 .description
-Shows the current user their own query log records. It reads the query log table configured by the `query_log.database` and `query_log.table` server settings (`system.query_log` by default) and returns only the rows whose initiating user is equal to `currentUser()` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`).
+Shows the current user their own query log records. It reads the query log table configured by the `query_log.database` and `query_log.table` server settings (`system.query_log` by default) and returns only the rows whose initiating user is equal to `currentUser()` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`). An authenticated current user must be non-empty and match the reported initial user. The unauthenticated `clickhouse-local` client is the exception: it can read rows with an empty initiating user only when both user identities are empty and the query uses the `LOCAL` interface. In other cases, the table returns no rows.
 
 Unlike the query log table itself, `system.user_query_log` can be read without any grants, so users can inspect their own queries without being given access to the queries of others.
+
+Only top-level rows (`is_initial_query = 1`) are returned. Child rows, such as the queries a distributed query sends to other servers and what runs under the identity of `SQL SECURITY DEFINER` and `NONE` views, are omitted.
+
+A row policy that exposes `system.query_log` rows by user (`user`, `initial_user` or `authenticated_user`) also exposes those child rows, so add `is_initial_query = 1` to it or use `system.user_query_log`.
 
 This is only supported when the query log is stored locally. If `query_log.engine` is configured as `Distributed` or any other engine that delegates reads to another server, `system.user_query_log` refuses to read from it and throws an exception, because the required access check cannot be enforced across a ClickHouse-protocol server boundary. In that case, disable the table with `query_log.enable_user_query_log = 0`.
 

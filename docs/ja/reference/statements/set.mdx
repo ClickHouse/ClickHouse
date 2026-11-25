@@ -28,9 +28,7 @@ SET force_index_by_date = 1
 SET force_index_by_date
 ```
 
-<div id="set-time-zone">
-  ## SET TIME ZONE
-</div>
+## SET TIME ZONE {#set-time-zone}
 
 ```sql
 SET TIME ZONE [=] 'timezone'
@@ -49,13 +47,11 @@ SET TIME ZONE 'America/New_York';
 SELECT getSetting('session_timezone');
 ```
 
-timezone の値には、[IANA Time Zone Database](https://www.iana.org/time-zones) にある有効な名前を指定する必要があります。無効な timezone 名を指定すると、エラーになります。
+タイムゾーンの値には、サーバーに同梱されている [IANA Time Zone Database](https://www.iana.org/time-zones) のうち `system.time_zones` に列挙されている名前、または `Fixed/UTC±HH:MM:SS` 形式の固定オフセットを指定する必要があります。オペレーティングシステムのタイムゾーンデータベースにしか存在しない名前を含め、それ以外の値を指定するとエラーになります。
 
 `session_timezone` 設定の詳細については、[session&#95;timezone](/ja/reference/settings/session-settings/other#session_timezone) を参照してください。
 
-<div id="setting-query-parameters">
-  ## クエリパラメータの設定
-</div>
+## クエリパラメータの設定 {#setting-query-parameters}
 
 `SET` ステートメントは、パラメータ名の先頭に `param_` を付けることで、クエリパラメータを定義する際にも使用できます。
 クエリパラメータを使うと、実行時に実際の値に置き換えられるプレースホルダーを含む汎用的なクエリを記述できます。

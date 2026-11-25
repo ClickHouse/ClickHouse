@@ -14,8 +14,8 @@
 --   2. Distributed execution result
 --   3. Single-node baseline for correctness comparison
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 0;
 SET enable_parallel_replicas = 0;
@@ -174,8 +174,8 @@ FROM dist_orders RIGHT ANTI JOIN dist_items ON dist_orders.order_id = dist_items
 SETTINGS make_distributed_plan = 0;
 
 
--- ANY INNER JOIN: broadcast (safe, right side small)
-SELECT '-- ANY INNER JOIN (broadcast)';
+-- ANY INNER JOIN: shuffle (broadcast blocked - each right row joins at most once)
+SELECT '-- ANY INNER JOIN (shuffle)';
 EXPLAIN PLAN SELECT count()
 FROM dist_orders ANY INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 

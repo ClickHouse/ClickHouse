@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
@@ -24,6 +25,7 @@
 #include <ranges>
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
+#include <Databases/IDatabase.h>
 
 namespace ProfileEvents
 {
@@ -56,6 +58,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static bool hasSupportedMetadataMutation(const MutationCommands & commands)
+{
+    for (const auto & cmd : commands)
+        if (AlterConversions::isSupportedMetadataMutation(cmd.type))
+            return true;
+    return false;
+}
+
 
 ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_)
     : storage(storage_)
@@ -84,6 +94,7 @@ void ReplicatedMergeTreeQueue::clear()
     mutation_pointer.clear();
     mutation_pointer_mtime = 0;
     mutation_counters = {};
+    num_metadata_mutations_in_map.store(0, std::memory_order_release);
 }
 
 void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch)
@@ -1197,6 +1208,9 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                         mutations_by_partition.erase(partition_and_block_num.first);
                 }
 
+                if (hasSupportedMetadataMutation(entry.commands))
+                    num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
+
                 if (!it->second.is_done)
                 {
                     const auto commands = entry.commands;
@@ -1232,7 +1246,9 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
         auto entries = zookeeper->tryGet(entry_paths);
 
-        std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
+        /// Not `ReplicatedMergeTreeMutationEntryPtr`: the partitions of the scoped commands are
+        /// resolved on the entries below, before they are published to the queue's state.
+        std::vector<std::shared_ptr<ReplicatedMergeTreeMutationEntry>> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
             const auto & maybe_response = entries[i];
@@ -1248,14 +1264,30 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
         }
 
+        /** Resolve the partitions of the commands that name some, so that the per-part selection of the
+          * on-the-fly commands can keep such a command out of the partitions it does not name. Done here,
+          * once per entry, and not while a storage snapshot is built: a partition expression is arbitrary
+          * user SQL and must not be evaluated on the read path.
+          *
+          * The submitting replica already replaced every partition expression of an entry with the
+          * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
+          * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
+          * the same partitions. Only an entry created by an older version may still carry an expression;
+          * it is left unresolved and not evaluated here.
+          */
+        for (const auto & entry : new_mutations)
+            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext(), /* only_pinned = */ true);
+
         bool some_mutations_are_probably_done = false;
         {
             std::lock_guard state_lock(state_mutex);
 
-            for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
+            for (const std::shared_ptr<ReplicatedMergeTreeMutationEntry> & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
                 incrementMutationsCounters(mutation_counters, entry->commands);
+                if (hasSupportedMetadataMutation(entry->commands))
+                    num_metadata_mutations_in_map.fetch_add(1, std::memory_order_release);
 
                 NOEXCEPT_SCOPE({
                     for (const auto & pair : entry->block_numbers)
@@ -1333,6 +1365,9 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         {
             decrementMutationsCounters(mutation_counters, entry->commands);
         }
+
+        if (hasSupportedMetadataMutation(entry->commands))
+            num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
 
         mutations_by_znode.erase(it);
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
@@ -1659,6 +1694,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
     const CommittingBlocks & committing_blocks,
+    bool merges_delayed_after_startup,
     std::unique_lock<SharedMutex> & state_lock) const
 {
     if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
@@ -1764,12 +1800,20 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
+        if (entry.type == LogEntry::MERGE_PARTS && merges_delayed_after_startup)
+        {
+            constexpr auto fmt_string = "Not executing log entry {} for part {} because merges are delayed after the table startup (delay_merges_after_startup_seconds).";
+            LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name);
+            return false;
+        }
+
         /** If any of the required parts are now fetched or in merge process, wait for the end of this operation.
           * Otherwise, even if all the necessary parts for the merge are not present, you should try to make a merge.
           * If any parts are missing, instead of merge, there will be an attempt to download a part.
           * Such a situation is possible if the receive of a part has failed, and it was moved to the end of the queue.
           */
         size_t sum_parts_size_in_bytes = 0;
+        MergeTreeData::DataPartsVector source_parts;
         for (const auto & name : entry.source_parts)
         {
             if (future_parts.contains(name))
@@ -1787,6 +1831,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
+                source_parts.push_back(std::move(part));
             }
         }
 
@@ -1875,14 +1920,18 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
 
-                /// A TTLDrop merge deletes every row only when an unconditional rows TTL is the
-                /// table's only TTL. With a GROUP BY, WHERE or column TTL rows survive and the
-                /// merge rewrites them, so it does need room for what its source parts hold.
+                /// Every row of a part whose rows TTL has expired is dropped, so a TTLDrop merge needs room
+                /// only for the other source parts.
                 if (entry.merge_type == MergeType::TTLDrop)
                 {
                     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
                     if (metadata_snapshot->hasOnlyRowsTTL())
-                        ignore_max_size = true;
+                    {
+                        sum_parts_size_in_bytes = 0;
+                        for (const auto & part : source_parts)
+                            if (!MergeTask::isRowsTTLExpired(*part, entry.create_time))
+                                sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
+                    }
                 }
             }
 
@@ -2173,6 +2222,8 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, partition_ids_hint, /*with_data=*/ true);
     }
 
+    const bool merges_delayed_after_startup = data.areMergesDelayedAfterStartup();
+
     std::unique_lock lock(state_mutex);
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -2180,7 +2231,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if ((*it)->currently_executing)
             continue;
 
-        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
+        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, merges_delayed_after_startup, lock))
         {
             entry = *it;
             /// We gave a chance for the entry, move it to the tail of the queue, after that
@@ -2416,6 +2467,13 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
         }
     }
 
+    /** A command that names a partition applies to that partition alone, but the queue keys a mutation
+      * entry by the partitions of *all* of its commands: `ALTER TABLE ... CLEAR COLUMN c IN PARTITION
+      * '1', CLEAR COLUMN d` is a single entry, and the unscoped `CLEAR COLUMN d` puts it in every
+      * partition, which used to hand the scoped `CLEAR COLUMN c` to their parts as well.
+      */
+    filterCommandsOutsidePartition(result, partition_id);
+
     std::reverse(result.begin(), result.end());
     return result;
 }
@@ -2423,7 +2481,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
 NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations())
+    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
         return res;
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
@@ -2448,9 +2506,13 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     for (const auto & patch : patch_parts)
         min_metadata_version = std::min<Int64>(min_metadata_version, patch->getMetadataVersion());
 
-    std::shared_lock lock(state_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && min_metadata_version >= params.metadata_version)
+    const bool need_metadata_mutations = min_metadata_version < params.metadata_version
+        && num_metadata_mutations_in_map.load(std::memory_order_acquire) > 0;
+
+    if (!params.need_data_mutations && !params.need_alter_mutations && !need_metadata_mutations)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+
+    std::shared_lock lock(state_mutex);
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
@@ -2874,9 +2936,16 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
     return result;
 }
 
-ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
+/// Lock ownership is transferred to the caller via the returned QueueLocks, which the
+/// thread-safety analysis cannot model.
+ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
+    QueueLocks locks{
+        std::unique_lock(state_mutex, std::defer_lock),
+        std::unique_lock(pull_logs_to_queue_mutex, std::defer_lock),
+        std::unique_lock(update_mutations_mutex, std::defer_lock)};
+    std::lock(locks.state_lock, locks.pull_logs_to_queue_lock, locks.update_mutations_lock);
+    return locks;
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler
