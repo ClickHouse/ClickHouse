@@ -67,3 +67,6 @@ nullable greater or null warm scanned files	4
 deletion vectors	19	1
 deletion vectors warm	19
 deletion vectors warm scanned files	10
+statistics only in the checkpoint	1	1
+statistics only in the checkpoint warm	1
+statistics only in the checkpoint warm scanned files	1

@@ -89,7 +89,7 @@ std::shared_ptr<CachedScanMetadata> buildCachedScanMetadata(
     using KernelExclusiveCachedScanMetadata
         = KernelPointerWrapper<::ExclusiveCachedScanMetadata, ::free_exclusive_cached_scan_metadata>;
 
-    KernelScan scan(KernelUtils::unwrapResult(::scan(snapshot, engine, /* predicate */nullptr, /* schema */nullptr), "scan"));
+    KernelScan scan(KernelUtils::unwrapResult(::scan_for_cached_scan_metadata(snapshot, engine), "scan_for_cached_scan_metadata"));
     KernelScanMetadataIterator scan_metadata_iterator(
         KernelUtils::unwrapResult(::scan_metadata_iter_init(engine, scan.get()), "scan_metadata_iter_init"));
 
