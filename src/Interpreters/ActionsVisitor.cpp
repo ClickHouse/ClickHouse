@@ -754,9 +754,12 @@ ASTPtr makeExactCompoundValueInComparison(
     }
     else
         equal = makeASTFunction("equals", left->clone(), right->clone());
-    auto both_null = makeASTFunction(
-        "and", makeASTFunction("isNull", left->clone()), makeASTFunction("isNull", right->clone()));
-    return makeASTFunction("ifNull", std::move(equal), std::move(both_null));
+    auto left_null = makeASTFunction("isNull", left->clone());
+    auto right_null = makeASTFunction("isNull", right->clone());
+    auto either_null = makeASTFunction("or", left_null->clone(), right_null->clone());
+    auto both_null = makeASTFunction("and", std::move(left_null), std::move(right_null));
+    auto non_null_equal = makeASTFunction("ifNull", std::move(equal), make_intrusive<ASTLiteral>(Field{0u}));
+    return makeASTFunction("if", std::move(either_null), std::move(both_null), std::move(non_null_equal));
 }
 
 ASTPtr makeExactArrayInComparison(

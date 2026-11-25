@@ -569,10 +569,12 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
 
     bool first = true;
 
-    if (method == CLICKHOUSE_NULL_IN_WITH_TUPLES || method == CLICKHOUSE_NULL_IN_WITH_TUPLES_SKIP_NULL)
+    if (method == CLICKHOUSE_NULL_IN_WITH_TUPLES)
     {
         VectorWithMemoryTracking<size_t> regular_rows;
+        VectorWithMemoryTracking<size_t> nullable_rows;
         VectorWithMemoryTracking<size_t> special_float_rows;
+        VectorWithMemoryTracking<size_t> nullable_special_float_rows;
         for (const auto row : requested_rows)
         {
             bool has_null = false;
@@ -591,41 +593,61 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
                     has_special_float |= std::isnan(value) || value == 0;
                 }
             }
-            if (has_null && method == CLICKHOUSE_NULL_IN_WITH_TUPLES_SKIP_NULL)
-                continue;
-            (has_special_float ? special_float_rows : regular_rows).push_back(row);
+            if (has_special_float)
+                (has_null ? nullable_special_float_rows : special_float_rows).push_back(row);
+            else
+                (has_null ? nullable_rows : regular_rows).push_back(row);
         }
 
-        if (regular_rows.empty() && special_float_rows.empty())
+        if (regular_rows.empty() && nullable_rows.empty() && special_float_rows.empty() && nullable_special_float_rows.empty())
         {
             writeChar('0', out);
             return;
         }
 
-        if (!regular_rows.empty())
+        auto write_null_in = [&](const VectorWithMemoryTracking<size_t> & rows, bool requires_null_policy)
         {
+            if (rows.empty())
+                return;
+            if (!first)
+                writeString(" OR ", out);
+            if (requires_null_policy)
+                writeString("(getSetting('transform_null_in') AND ", out);
             writeString("nullIn(", out);
             composeKeyTupleDefinition(out, 0, key_columns.size());
             writeString(", (", out);
-            for (size_t index = 0; index < regular_rows.size(); ++index)
+            for (size_t index = 0; index < rows.size(); ++index)
             {
                 if (index)
                     writeString(", ", out);
-                composeKeyTuple(key_columns, regular_rows[index], out, 0, key_columns.size());
+                composeKeyTuple(key_columns, rows[index], out, 0, key_columns.size());
             }
             writeString("))", out);
+            if (requires_null_policy)
+                writeChar(')', out);
             first = false;
-        }
+        };
 
-        for (const auto row : special_float_rows)
+        write_null_in(regular_rows, false);
+        write_null_in(nullable_rows, true);
+
+        auto write_special_float_rows = [&](const VectorWithMemoryTracking<size_t> & rows, bool requires_null_policy)
         {
-            if (!first)
-                writeString(" OR ", out);
-            first = false;
-            writeChar('(', out);
-            composeKeyCondition(key_columns, row, out, 0, key_columns.size(), true);
-            writeChar(')', out);
-        }
+            for (const auto row : rows)
+            {
+                if (!first)
+                    writeString(" OR ", out);
+                first = false;
+                writeChar('(', out);
+                if (requires_null_policy)
+                    writeString("getSetting('transform_null_in') AND ", out);
+                composeKeyCondition(key_columns, row, out, 0, key_columns.size(), true);
+                writeChar(')', out);
+            }
+        };
+
+        write_special_float_rows(special_float_rows, false);
+        write_special_float_rows(nullable_special_float_rows, true);
         return;
     }
 

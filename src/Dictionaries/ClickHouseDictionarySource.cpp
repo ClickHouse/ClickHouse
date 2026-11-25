@@ -1,5 +1,4 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
-#include <Core/Settings.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/CurrentThread.h>
@@ -32,11 +31,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool transform_null_in;
-}
 
 namespace ErrorCodes
 {
@@ -148,11 +142,9 @@ BlockIO ClickHouseDictionarySource::loadIds(const VectorWithMemoryTracking<UInt6
 
 BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
-    /// The source user's profile can enable three-valued `IN` independently of
-    /// this context. Use explicit `nullIn` for compact generated key predicates.
-    const auto method = context->getSettingsRef()[Setting::transform_null_in]
-        ? ExternalQueryBuilder::CLICKHOUSE_NULL_IN_WITH_TUPLES
-        : ExternalQueryBuilder::CLICKHOUSE_NULL_IN_WITH_TUPLES_SKIP_NULL;
+    /// Evaluate the source user's `transform_null_in` policy where the generated
+    /// query runs; a remote source can have a different profile from this context.
+    const auto method = ExternalQueryBuilder::CLICKHOUSE_NULL_IN_WITH_TUPLES;
     String query = query_builder->composeLoadKeysQuery(
         key_columns, requested_rows, method);
     return createStreamForQuery(query);

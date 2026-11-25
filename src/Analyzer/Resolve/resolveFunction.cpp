@@ -1632,10 +1632,14 @@ static QueryTreeNodePtr buildExactCompoundValueInComparison(
     left_null->getArguments().getNodes().push_back(left);
     auto right_null = std::make_shared<FunctionNode>("isNull");
     right_null->getArguments().getNodes().push_back(right);
+    auto either_null = std::make_shared<FunctionNode>("or");
+    either_null->getArguments().getNodes() = {left_null, right_null};
     auto both_null = std::make_shared<FunctionNode>("and");
     both_null->getArguments().getNodes() = {std::move(left_null), std::move(right_null)};
-    auto value_equal = std::make_shared<FunctionNode>("ifNull");
-    value_equal->getArguments().getNodes() = {std::move(equal), std::move(both_null)};
+    auto non_null_equal = std::make_shared<FunctionNode>("ifNull");
+    non_null_equal->getArguments().getNodes() = {std::move(equal), std::make_shared<ConstantNode>(Field{0u})};
+    auto value_equal = std::make_shared<FunctionNode>("if");
+    value_equal->getArguments().getNodes() = {std::move(either_null), std::move(both_null), std::move(non_null_equal)};
     return value_equal;
 }
 

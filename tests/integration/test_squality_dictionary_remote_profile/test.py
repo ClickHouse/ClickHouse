@@ -17,10 +17,18 @@ def started_cluster():
         )
         source.query("INSERT INTO default.squality_source VALUES (1, 2, 'found')")
         source.query(
+            "CREATE TABLE default.squality_nullable_source "
+            "(k Nullable(UInt64), part UInt8, v String) ENGINE = Memory"
+        )
+        source.query(
+            "INSERT INTO default.squality_nullable_source VALUES (NULL, 1, 'present')"
+        )
+        source.query(
             "CREATE USER squality_reader IDENTIFIED WITH no_password "
-            "SETTINGS in_null_as_unknown = 1"
+            "SETTINGS in_null_as_unknown = 1, transform_null_in = 1"
         )
         source.query("GRANT SELECT ON default.squality_source TO squality_reader")
+        source.query("GRANT SELECT ON default.squality_nullable_source TO squality_reader")
         yield cluster
     finally:
         cluster.shutdown()
@@ -58,3 +66,39 @@ def test_remote_source_user_profile(layout, lifetime):
         )
     finally:
         initiator.query("DROP DICTIONARY IF EXISTS default.squality_remote_dict")
+
+
+@pytest.mark.parametrize(
+    "layout,lifetime",
+    [
+        ("COMPLEX_KEY_DIRECT()", ""),
+        ("COMPLEX_KEY_CACHE(SIZE_IN_CELLS 16)", " LIFETIME(30)"),
+    ],
+)
+def test_remote_source_nullable_key_profile(layout, lifetime):
+    assert (
+        initiator.query("SELECT value FROM system.settings WHERE name = 'transform_null_in'")
+        == "0\n"
+    )
+    initiator.query("DROP DICTIONARY IF EXISTS default.squality_remote_nullable_dict")
+    try:
+        initiator.query(
+            "CREATE DICTIONARY default.squality_remote_nullable_dict "
+            "(k Nullable(UInt64), part UInt8, v String DEFAULT 'missing') "
+            "PRIMARY KEY k, part "
+            f"SOURCE(CLICKHOUSE(HOST '{source.ip_address}' PORT 9000 "
+            "USER 'squality_reader' PASSWORD '' DB 'default' "
+            "TABLE 'squality_nullable_source')) "
+            f"LAYOUT({layout}){lifetime}"
+        )
+        assert (
+            initiator.query(
+                "SELECT dictHas('default.squality_remote_nullable_dict', "
+                "(CAST(NULL AS Nullable(UInt64)), toUInt8(1))), "
+                "dictGet('default.squality_remote_nullable_dict', 'v', "
+                "(CAST(NULL AS Nullable(UInt64)), toUInt8(1)))"
+            )
+            == "1\tpresent\n"
+        )
+    finally:
+        initiator.query("DROP DICTIONARY IF EXISTS default.squality_remote_nullable_dict")
