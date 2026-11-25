@@ -1,23 +1,96 @@
 #include <Storages/System/StorageSystemGrants.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemPrivileges.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Role.h>
 #include <Access/User.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <IO/WriteBufferFromString.h>
+#include <algorithm>
 
 namespace DB
 {
+namespace
+{
+
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return node;
+}
+
+bool isGranteeName(const ActionsDAG::Node * node)
+{
+    return node->type == ActionsDAG::ActionType::INPUT
+        && (node->result_name == "user_name" || node->result_name == "role_name");
+}
+
+bool isStringConstant(const ActionsDAG::Node * node)
+{
+    return node->type == ActionsDAG::ActionType::COLUMN && isString(removeNullable(node->result_type));
+}
+
+bool canFilterGrantees(const ActionsDAG::Node * predicate)
+{
+    const auto * node = skipAliases(predicate);
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    const auto & name = node->function_base->getName();
+    if (name == "and" || name == "or")
+        return std::ranges::all_of(node->children, [](const auto * child) { return canFilterGrantees(child); });
+
+    if (node->children.size() != 2)
+        return false;
+
+    const auto * lhs = skipAliases(node->children[0]);
+    const auto * rhs = skipAliases(node->children[1]);
+    if (name == "equals")
+        return (isGranteeName(lhs) && isStringConstant(rhs)) || (isGranteeName(rhs) && isStringConstant(lhs));
+    if (name == "in")
+    {
+        if (!isGranteeName(lhs) || rhs->type != ActionsDAG::ActionType::COLUMN || !rhs->column)
+            return false;
+
+        const auto * column_set = checkAndGetColumn<ColumnSet>(&rhs->column->getDataColumn());
+        if (!column_set)
+            return false;
+
+        /// A concurrent insert into a `Set` table can change the final predicate after this
+        /// prefilter has discarded an entity. A subquery set may also be built later by the pipeline.
+        const auto future_set = column_set->getData();
+        if (!future_set || future_set->isMutableDuringQuery())
+            return false;
+
+        const auto set = future_set->get();
+        if (!set)
+            return false;
+
+        /// Probing non-string keys can throw on names of entities that emit no grant rows.
+        const auto & key_types = set->getDataTypes();
+        return key_types.size() == 1 && isString(removeNullable(key_types.front()));
+    }
+    return false;
+}
+
+}
 
 ColumnsDescription StorageSystemGrants::getColumnsDescription()
 {
@@ -52,7 +125,14 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+Block StorageSystemGrants::getFilterSampleBlock() const
+{
+    auto name_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+    return {{{}, name_type, "user_name"}, {{}, name_type, "role_name"}};
+}
+
+
+void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
@@ -63,6 +143,32 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
 
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
+
+    /// The base class extracts predicates on grantee names. Restrict early evaluation to simple
+    /// name comparisons because entities with no grants produce no rows on which a general
+    /// expression could otherwise throw. Keep the expression intact when filtering the names.
+    if (predicate && canFilterGrantees(predicate))
+    {
+        Block grantees = getFilterSampleBlock();
+        auto names = grantees.cloneEmptyColumns();
+        auto entity_ids = ColumnUUID::create();
+        for (const auto & id : ids)
+        {
+            const auto grantee = access_control.tryReadNameWithType(id);
+            if (!grantee)
+                continue;
+
+            const auto & [name, type] = *grantee;
+            names[0]->insert(type == AccessEntityType::USER ? Field{name} : Field{});
+            names[1]->insert(type == AccessEntityType::ROLE ? Field{name} : Field{});
+            entity_ids->insertValue(id);
+        }
+        grantees.setColumns(std::move(names));
+        grantees.insert({std::move(entity_ids), std::make_shared<DataTypeUUID>(), "_entity_id"});
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, grantees, context);
+        const auto & matched = assert_cast<const ColumnUUID &>(*grantees.getByName("_entity_id").column).getData();
+        ids.assign(matched.begin(), matched.end());
+    }
 
     size_t column_index = 0;
     auto & column_user_name = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
