@@ -65,7 +65,7 @@ private:
     bool drive_loop_on_worker = false;
     /// How long an empty first poll waits for a message, like Kafka's poll timeout (0: return at once).
     const UInt64 first_poll_timeout_ms;
-    /// Background streaming only: the ready views the insert pipeline of this cycle was built for.
+    /// Background streaming only: the views the insert pipeline of this cycle reaches (StorageRabbitMQ::getReachableViews).
     const std::optional<std::vector<StorageID>> streaming_views;
     const Block non_virtual_header;
     const Block virtual_header;
@@ -100,7 +100,7 @@ private:
 
     Chunk generateImpl();
 
-    /// True if the ready dependent views differ from `streaming_views` (always false without them).
+    /// True if StorageRabbitMQ::getReachableViews differs from streaming_views (always false without them).
     bool viewsChanged() const;
 
     /// Budget of driveLoopUntilMessage: for a REFRESH cycle the flush interval when set, else a finite

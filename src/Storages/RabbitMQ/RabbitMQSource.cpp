@@ -7,7 +7,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Common/logger_useful.h>
@@ -165,7 +164,7 @@ bool RabbitMQSource::viewsChanged() const
     if (!streaming_views)
         return false;
 
-    const auto views = DatabaseCatalog::instance().getReadyDependentViews(storage.getStorageID(), context);
+    const auto views = storage.getReachableViews(context);
     return views.size() != streaming_views->size()
         || !std::ranges::all_of(views, [&](const StorageID & view) { return std::ranges::contains(*streaming_views, view); });
 }

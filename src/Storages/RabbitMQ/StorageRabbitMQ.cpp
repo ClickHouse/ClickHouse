@@ -1336,6 +1336,22 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
+std::vector<StorageID> StorageRabbitMQ::getReachableViews(const ContextPtr & query_context) const
+{
+    auto views = DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), query_context);
+    for (size_t i = 0; i < views.size(); ++i)
+    {
+        const auto view = DatabaseCatalog::instance().tryGetTable(views[i], query_context);
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        if (!materialized_view)
+            continue;
+        for (const auto & dependent : DatabaseCatalog::instance().getDependentViews(materialized_view->getTargetTableId()))
+            if (!std::ranges::contains(views, dependent))
+                views.push_back(dependent);
+    }
+    return views;
+}
+
 void StorageRabbitMQ::threadFunc()
 {
     try
@@ -1364,7 +1380,7 @@ void StorageRabbitMQ::threadFunc()
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
                 {
-                    auto views = DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext());
+                    auto views = getReachableViews(getContext());
                     if (views.empty())
                         break;
 
@@ -1530,7 +1546,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         write_failed = true;
     }
 
-    views_changed = std::ranges::any_of(sources, [](const auto & source) { return source->endedOnViewsChange(); });
+    views_changed = rows == 0 && std::ranges::any_of(sources, [](const auto & source) { return source->endedOnViewsChange(); });
 
     LOG_TRACE(log, "Processed {} rows", rows.load());
 

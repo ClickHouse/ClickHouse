@@ -28,6 +28,9 @@ public:
     /// SYSTEM STOP/PAUSE blocks future cycles; the source checks it to end an idle wait early.
     bool isConsumeBlocked() const { return stream_control.isBlocked(); }
 
+    /// The ready dependent views and, transitively, the views of their target tables (empty while not ready).
+    std::vector<StorageID> getReachableViews(const ContextPtr & query_context) const;
+
     StorageRabbitMQ(
             const StorageID & table_id_,
             ContextPtr context_,

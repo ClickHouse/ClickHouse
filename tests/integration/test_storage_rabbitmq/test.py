@@ -2328,8 +2328,10 @@ def test_rabbitmq_idle_table_does_not_rebuild_insert_pipeline(rabbitmq_cluster, 
     connection.close()
 
 
-@pytest.mark.parametrize("refresh_while_stopped", [False, True])
-def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster, db, unique, refresh_while_stopped):
+@pytest.mark.parametrize(
+    "refresh_while_stopped, cascade", [(False, False), (True, False), (False, True)]
+)
+def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster, db, unique, refresh_while_stopped, cascade):
     # A view created while a streaming cycle waits for its first message must get the messages that arrive
     # meanwhile, although the insert pipeline of that cycle was built without it.
     instance.query(
@@ -2387,7 +2389,9 @@ def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster,
             instance.query(f"SYSTEM REFRESH {db}.rabbit")
         # The held cycle has its insert pipeline built for mv1 only.
         instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=DEFAULT_TIMEOUT_SEC)
-        instance.query(f"CREATE MATERIALIZED VIEW {db}.mv2 TO {db}.t2 AS SELECT key FROM {db}.rabbit")
+        # With `cascade`, the new view reads the target of mv1, which the held pipeline also writes.
+        source = f"{db}.t1" if cascade else f"{db}.rabbit"
+        instance.query(f"CREATE MATERIALIZED VIEW {db}.mv2 TO {db}.t2 AS SELECT key FROM {source}")
         for key in range(1, 101):
             publish(key)
 
