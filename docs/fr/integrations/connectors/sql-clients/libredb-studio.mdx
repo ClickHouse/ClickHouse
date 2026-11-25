@@ -10,7 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -69,7 +68,7 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
        nom de la base de données.
     4. Pour HTTPS, ouvrez **SSL / TLS**, choisissez un mode SSL autre que `disable`, puis remplacez la valeur de **Port** par
        le port HTTPS de votre serveur (souvent `8443`). Tous les modes autres que `disable` vérifient le certificat
-       du serveur à l’aide des AC approuvées par le serveur LibreDB Studio, ce qui correspond au comportement décrit par `verify-system`.
+       serveur à l’aide des AC approuvées par le serveur LibreDB Studio, ce qui correspond au comportement décrit par `verify-system`.
        Cela fonctionne avec ClickHouse Cloud ainsi qu’avec les serveurs dont le certificat est émis par une AC
        publiquement reconnue. Pour un certificat auto-signé ou émis par une AC privée, consultez la section
        [Dépannage](#troubleshooting).
@@ -79,7 +78,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default` ou `https://reader:secret@ch.example.com:8443/analytics`.
     Une URL `https://` active automatiquement TLS.
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="Boîte de dialogue New Connection de LibreDB Studio avec ClickHouse sélectionné, l’hôte, le port 8123, le nom d’utilisateur et la base de données renseignés, et un test de connexion réussi" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![Boîte de dialogue New Connection de LibreDB Studio avec ClickHouse sélectionné, l’hôte, le port 8123, le nom d’utilisateur et la base de données renseignés, et un test de connexion réussi](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Exécuter une requête" id="run-a-query">
@@ -102,11 +105,15 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="Éditeur SQL de LibreDB Studio affichant la requête uk_price_paid et une grille de résultats avec les types de colonnes ClickHouse déclarés" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Éditeur SQL de LibreDB Studio affichant la requête uk_price_paid et une grille de résultats avec les types de colonnes ClickHouse déclarés](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-## Superviser ClickHouse {#monitor-clickhouse}
+## Surveiller ClickHouse {#monitor-clickhouse}
 
 Le tableau de bord de supervision lit les sources suivantes avec l’utilisateur de la connexion :
 
@@ -128,7 +135,11 @@ LibreDB Studio permet également d’exécuter `OPTIMIZE TABLE ... FINAL` sur un
 pour une table ou une base de données, et d’arrêter une requête en cours d’exécution avec `KILL QUERY ... SYNC`. Ces opérations nécessitent les
 privilèges accordés correspondants.
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="Vue d’ensemble de la supervision dans LibreDB Studio pour une connexion ClickHouse, affichant la version du serveur, le temps de fonctionnement, les connexions, la taille du stockage, le taux de succès du cache et le nombre de tables" />
+<div className="ch-image-md">
+  <Frame>
+    ![Vue d’ensemble de la supervision dans LibreDB Studio pour une connexion ClickHouse, affichant la version du serveur, le temps de fonctionnement, les connexions, la taille du stockage, le taux de succès du cache et le nombre de tables](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## Dépannage {#troubleshooting}
 

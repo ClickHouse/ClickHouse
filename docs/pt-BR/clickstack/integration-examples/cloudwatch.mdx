@@ -16,7 +16,7 @@ import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/Galaxy
 </Info>
 
 <div id="overview">
-  ## Visão geral
+  ## Visão geral {#overview}
 </div>
 
 O AWS CloudWatch é um serviço de monitoramento para recursos e aplicações da AWS. Embora o CloudWatch ofereça agregação de logs, encaminhar logs para o ClickStack permite:
@@ -28,7 +28,7 @@ O AWS CloudWatch é um serviço de monitoramento para recursos e aplicações da
 Este guia mostra como encaminhar logs do CloudWatch para o ClickStack usando o OpenTelemetry Collector.
 
 <div id="existing-cloudwatch">
-  ## Integração com grupos de logs existentes do CloudWatch
+  ## Integração com grupos de logs existentes do CloudWatch {#existing-cloudwatch}
 </div>
 
 Esta seção aborda a configuração do OpenTelemetry Collector para extrair logs dos seus grupos de logs existentes do CloudWatch e encaminhá-los ao ClickStack.
@@ -36,7 +36,7 @@ Esta seção aborda a configuração do OpenTelemetry Collector para extrair log
 Se quiser testar a integração antes de configurar seu ambiente de produção, você pode fazer isso com nosso conjunto de dados de demonstração na [seção do conjunto de dados de demonstração](#demo-dataset).
 
 <div id="prerequisites">
-  ### Pré-requisitos
+  ### Pré-requisitos {#prerequisites}
 </div>
 
 * Instância do ClickStack em execução
@@ -51,19 +51,15 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
   <Step title="Obter a API key do ClickStack" id="get-api-key">
     O OpenTelemetry Collector envia dados para o endpoint OTLP do ClickStack, que requer autenticação.
 
-    1. Abra o HyperDX na URL do seu ClickStack (por exemplo, http://localhost:8080)
+    1. Abra a Interface do ClickStack na URL do seu ClickStack (por exemplo, http://localhost:8080)
     2. Crie uma conta ou faça login, se necessário
     3. Acesse **Configurações da equipe → API Keys**
     4. Copie sua **API key de ingestão**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![API key do ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![API key do ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
     </div>
 
     Salve isso em uma variável de ambiente:
@@ -254,7 +250,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     * Nomes/prefixos de grupos de logs → Seus grupos de logs do CloudWatch reais
 
     <Note>
-      O CloudWatch receiver busca logs apenas em janelas de tempo recentes (com base em `poll_interval`). Quando é iniciado pela primeira vez, começa a partir do horário atual. Logs históricos n&#39;o são recuperados por padrão.
+      O CloudWatch receiver busca logs apenas em janelas de tempo recentes (com base em `poll_interval`). Quando é iniciado pela primeira vez, começa a partir do horário atual. Logs históricos não são recuperados por padrão.
     </Note>
   </Step>
 
@@ -292,22 +288,18 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     ```
   </Step>
 
-  <Step title="Verifique os logs no HyperDX" id="verify-logs">
+  <Step title="Verifique os logs na Interface do ClickStack" id="verify-logs">
     Quando o coletor estiver em execução:
 
-    1. Abra o HyperDX em http://localhost:8080 (ou na URL do seu ClickStack)
+    1. Abra a Interface do ClickStack em http://localhost:8080 (ou na URL do seu ClickStack)
     2. Acesse a visualização **Logs**
     3. Aguarde 1 a 2 minutos para que os logs apareçam (dependendo do seu intervalo de polling)
     4. Pesquise logs dos seus grupos de logs do CloudWatch
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Visualização de pesquisa de logs](/images/clickstack/cloudwatch/log-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Visualização de pesquisa de logs](/images/clickstack/cloudwatch/log-search-view.webp)
+      </Frame>
     </div>
 
     Procure estes atributos principais nos logs:
@@ -318,20 +310,14 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     * `Body`: O conteúdo da mensagem de log
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Valores da coluna de logs de erro](/images/clickstack/cloudwatch/error-log-column-values.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Valores da coluna de logs de erro](/images/clickstack/cloudwatch/error-log-column-values.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## Conjunto de dados de demonstração
-</div>
+## Conjunto de dados de demonstração {#demo-dataset}
 
 Para usuários que desejam testar a integração com os logs do CloudWatch antes de configurar o ambiente de produção na AWS, fornecemos um dataset de exemplo com logs pré-gerados que mostram padrões realistas de vários serviços da AWS.
 
@@ -373,7 +359,7 @@ Para usuários que desejam testar a integração com os logs do CloudWatch antes
   <Step title="Verifique os dados de demonstração" id="verify-demo-logs">
     Depois da importação:
 
-    1. Abra o HyperDX em http://localhost:8080 e faça login (crie uma conta, se necessário)
+    1. Abra a Interface do ClickStack em http://localhost:8080 e faça login (crie uma conta, se necessário)
     2. Acesse a visualização **Logs**
     3. Defina o intervalo de tempo como **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**
     4. Pesquise por `cloudwatch-demo` ou filtre por `LogAttributes['source'] = 'cloudwatch-demo'`
@@ -381,26 +367,20 @@ Para usuários que desejam testar a integração com os logs do CloudWatch antes
     Você deverá ver logs de vários grupos de logs do CloudWatch.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Visualização de busca de demonstração](/images/clickstack/cloudwatch/demo-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Visualização de busca de demonstração](/images/clickstack/cloudwatch/demo-search-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **Exibição de fuso horário**
 
-      O HyperDX exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração abrangem **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. Defina o intervalo de tempo como **2025-12-06 00:00:00 - 2025-12-09 00:00:00** para garantir que você veja os logs de demonstração independentemente da sua localização. Depois de ver os logs, você pode restringir o intervalo para um período de 24 horas para visualizações mais claras.
+      A Interface do ClickStack exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração abrangem **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. Defina o intervalo de tempo como **2025-12-06 00:00:00 - 2025-12-09 00:00:00** para garantir que você veja os logs de demonstração independentemente da sua localização. Depois de ver os logs, você pode restringir o intervalo para um período de 24 horas para visualizações mais claras.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Dashboards e visualização
-</div>
+## Dashboards e visualização {#dashboards}
 
 Para ajudar você a monitorar os logs do CloudWatch com o ClickStack, fornecemos um dashboard pré-configurado com visualizações essenciais.
 
@@ -410,29 +390,21 @@ Para ajudar você a monitorar os logs do CloudWatch com o ClickStack, fornecemos
   </Step>
 
   <Step title="Importe o dashboard" id="import-dashboard">
-    1. Abra o HyperDX e navegue até a seção Dashboards
+    1. Abra a Interface do ClickStack e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Botão Import dashboard](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Botão Import dashboard](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. Faça upload do arquivo `cloudwatch-logs-dashboard.json` e clique em **Finish Import**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Caixa de diálogo Finish import](/images/clickstack/cloudwatch/finish-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Caixa de diálogo Finish import](/images/clickstack/cloudwatch/finish-import.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -440,13 +412,9 @@ Para ajudar você a monitorar os logs do CloudWatch com o ClickStack, fornecemos
     O dashboard será criado com todas as visualizações pré-configuradas:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard do CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Dashboard do CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -456,12 +424,10 @@ Para ajudar você a monitorar os logs do CloudWatch com o ClickStack, fornecemos
 </Steps>
 
 <div id="troubleshooting">
-  ## Solução de problemas
+  ## Solução de problemas {#troubleshooting}
 </div>
 
-<div id="no-logs">
-  ### Nenhum log aparece no HyperDX
-</div>
+### Nenhum log aparece na interface do ClickStack {#no-logs}
 
 **Verifique se as credenciais da AWS estão configuradas:**
 
@@ -477,8 +443,8 @@ Certifique-se de que suas credenciais da AWS tenham as permissões `logs:Describ
 **Verifique os logs do collector em busca de erros:**
 
 ```bash
-# Se estiver usando o Docker diretamente, os logs aparecem no stdout
-# Se estiver usando o Docker Compose:
+# If using Docker directly, logs appear in stdout
+# If using Docker Compose:
 docker compose logs otel-collector
 ```
 
@@ -492,10 +458,10 @@ Erros comuns:
 **Verifique se os grupos de logs do CloudWatch existem e contêm logs recentes:**
 
 ```bash
-# Liste seus grupos de logs
+# List your log groups
 aws logs describe-log-groups --region us-east-1
 
-# Verifique se um grupo de logs específico tem logs recentes (última hora)
+# Check if a specific log group has recent logs (last hour)
 aws logs filter-log-events \
   --log-group-name /aws/lambda/my-function \
   --region us-east-1 \
@@ -504,7 +470,7 @@ aws logs filter-log-events \
 ```
 
 <div id="missing-recent">
-  ### Apenas logs antigos aparecem ou logs recentes estão faltando
+  ### Apenas logs antigos aparecem ou logs recentes estão faltando {#missing-recent}
 </div>
 
 **O CloudWatch receiver começa em &quot;agora&quot; por padrão:**
@@ -526,7 +492,7 @@ docker run --rm ...
 O receiver criará um novo checkpoint e buscará logs a partir de agora.
 
 <div id="expired-credentials">
-  ### Token de segurança inválido / credenciais expiradas
+  ### Token de segurança inválido / credenciais expiradas {#expired-credentials}
 </div>
 
 Se você estiver usando credenciais temporárias (AWS SSO, função assumida), elas expiram após algum tempo.
@@ -547,7 +513,7 @@ docker restart <container-id>
 ```
 
 <div id="latency">
-  ### Alta latência ou falta de logs recentes
+  ### Alta latência ou falta de logs recentes {#latency}
 </div>
 
 **Reduza o intervalo de polling:**
@@ -561,7 +527,7 @@ logs:
 **Observação:** Intervalos de polling menores aumentam as chamadas à API da AWS e podem gerar custos mais altos com a API do CloudWatch.
 
 <div id="memory">
-  ### Collector consumindo memória demais
+  ### Collector consumindo memória demais {#memory}
 </div>
 
 **Reduza o tamanho do batch ou aumente o timeout:**
@@ -582,16 +548,14 @@ groups:
 ```
 
 <div id="next-steps">
-  ## Próximos passos
+  ## Próximos passos {#next-steps}
 </div>
 
 * Configure [alertas](/pt-BR/clickstack/features/alerts) para eventos críticos (falhas de conexão, picos de erros)
 * Reduza os custos do CloudWatch ajustando os períodos de retenção ou arquivando no S3, agora que você já tem logs no ClickStack
 * Filtre grupos de logs com muito ruído removendo-os da configuração do collector para reduzir o volume de ingestão
 
-<div id="going-to-production">
-  ## Preparando para produção
-</div>
+## Preparando para produção {#going-to-production}
 
 Este guia mostra como executar o OpenTelemetry Collector localmente com Docker Compose para testes. Para implantações em produção, execute o collector em uma infraestrutura com acesso à AWS (EC2 com IAM roles, EKS com IRSA ou ECS com task roles) para eliminar a necessidade de gerenciar chaves de acesso. Implante os collectors na mesma região da AWS que seus grupos de logs do CloudWatch para reduzir a latência e os custos.
 
