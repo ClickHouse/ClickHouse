@@ -201,11 +201,15 @@ using GetAddrInfo = int (*)(const char *, const char *, const struct addrinfo *,
 
 }
 
+/// The names are reserved identifiers, but they are the names that musl and the sanitizer runtime define.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
 #if defined(USE_MUSL)
-extern "C" int __musl_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** res); // NOLINT(bugprone-reserved-identifier)
+extern "C" int __musl_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** res); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #elif defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
-extern "C" int __interceptor_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** res); // NOLINT(bugprone-reserved-identifier)
+extern "C" int __interceptor_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** res); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #endif
+#pragma clang diagnostic pop
 
 namespace
 {
