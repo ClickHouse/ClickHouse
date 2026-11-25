@@ -662,11 +662,12 @@ Field convertObjectToType(
         }
 
         /// As in parsing, a value that is not valid for a typed path gets the default of the type
-        /// with `type_json_skip_invalid_typed_paths`, and a NULL also with `input_format_null_as_default`.
+        /// with `type_json_skip_invalid_typed_paths`, and a NULL also with `input_format_null_as_default`
+        /// or with `type_json_skip_null_typed_paths`, which treats a NULL of a source path as absent.
         const auto & path_type = *typed_it->second;
         if (value.isNull() && !canContainNull(path_type))
         {
-            if (format_settings.null_as_default || skip_invalid)
+            if (format_settings.null_as_default || skip_invalid || format_settings.json.type_json_skip_null_typed_paths)
                 continue;
             return {};
         }

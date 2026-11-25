@@ -34,5 +34,6 @@ NULL and invalid values of typed paths
 {"n":0}
 {"n":0}
 {"n":0}
+{"n":0}
 nested timestamps out of the range of DateTime
 ('2020-01-02 00:00:00')

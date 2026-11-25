@@ -57,6 +57,7 @@ SELECT 'NULL and invalid values of typed paths';
 SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : null}' AS JSON(n Nullable(UInt8)))));
 SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : null}' AS JSON(n Nullable(UInt8))))) SETTINGS input_format_null_as_default = 0; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : null}' AS JSON(n Nullable(UInt8))))) SETTINGS input_format_null_as_default = 0, type_json_skip_invalid_typed_paths = 1;
+SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : null}' AS JSON(n Nullable(UInt8))))) SETTINGS input_format_null_as_default = 0, type_json_skip_null_typed_paths = 1;
 SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : "abc"}' AS JSON(n String)))); -- { serverError TYPE_MISMATCH }
 SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : "abc"}' AS JSON(n String)))) SETTINGS type_json_skip_invalid_typed_paths = 1;
 
