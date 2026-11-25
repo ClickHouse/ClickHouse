@@ -977,10 +977,23 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
         const auto & interpolated_column_names = sort_analysis_result_optional->interpolated_column_names;
+        /// An `INTERPOLATE` target is named as the column is named in this query, which differs from the result
+        /// column name if the column aliases were given from outside, e.g. by a CTE `t(a, b)`.
+        const auto & names_before_override = query_node.getProjectionColumnNamesBeforeOverride();
+        if (!names_before_override.empty() && names_before_override.size() != project_names.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Projection column names before override size mismatch. Expected {}. Actual {}",
+                project_names.size(),
+                names_before_override.size());
+
         /// A result column takes the interpolated values only if it is the column the target interpolates.
-        for (auto & [name, alias] : project_names)
-            if (auto it = interpolated_column_names.find(alias); it != interpolated_column_names.end() && it->second == name)
-                name = sort_analysis_result_optional->interpolate_target_column_names.at(alias);
+        for (size_t i = 0; i < project_names.size(); ++i)
+        {
+            auto & [name, alias] = project_names[i];
+            const auto & target_name = names_before_override.empty() ? alias : names_before_override[i];
+            if (auto it = interpolated_column_names.find(target_name); it != interpolated_column_names.end() && it->second == name)
+                name = sort_analysis_result_optional->interpolate_target_column_names.at(target_name);
+        }
 
         project_names_actions->dag.project(project_names, keep_inputs);
     }

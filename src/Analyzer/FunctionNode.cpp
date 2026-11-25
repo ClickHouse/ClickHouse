@@ -244,6 +244,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
     result_function->is_operator = is_operator;
+    result_function->is_builtin = is_builtin;
 
     return result_function;
 }

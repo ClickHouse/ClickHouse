@@ -304,6 +304,27 @@ struct ExistsExpressionData
 
 using ExistsExpressionVisitor = InDepthNodeVisitor<OneTypeMatcher<ExistsExpressionData>, false>;
 
+/// The UNIQUE predicate is parsed into the internal function `__unique`, which is only
+/// rewritten by the analyzer (`QueryAnalyzer::resolveUniquePredicate`). The legacy expression
+/// analysis that still goes through `TreeRewriter` (constraints, indexes and similar
+/// non-query expressions) has no handling for it, so reject it explicitly here with a clear
+/// message instead of failing later with an obscure "Unknown function __unique" exception.
+struct UniquePredicateData
+{
+    using TypeToVisit = ASTFunction;
+
+    static void visit(ASTFunction & func, ASTPtr)
+    {
+        /// Only the parser-produced predicate form is rejected; an ordinary call `__unique(...)`
+        /// (e.g. an executable UDF with this name) goes through the usual function resolution.
+        if (func.name == "__unique" && func.isOperator())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The UNIQUE predicate is not supported in this context. It can only be used in the expressions of a query.");
+    }
+};
+
+using UniquePredicateVisitor = InDepthNodeVisitor<OneTypeMatcher<UniquePredicateData>, false>;
+
 struct ReplacePositionalArgumentsData
 {
     using TypeToVisit = ASTSelectQuery;
@@ -1719,6 +1740,9 @@ void TreeRewriter::normalize(
 
     ExistsExpressionVisitor::Data exists;
     ExistsExpressionVisitor(exists).visit(query);
+
+    UniquePredicateVisitor::Data unique_predicate;
+    UniquePredicateVisitor(unique_predicate).visit(query);
 
     if (context_->getSettingsRef()[Setting::enable_positional_arguments])
     {
