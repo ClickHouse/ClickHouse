@@ -1041,7 +1041,8 @@ std::optional<QValue> QCompiler::resolveTable(const String & name)
     /// The generated query is checked for access as usual when it is executed.
     StoragePtr storage = DatabaseCatalog::instance().getTable(id, context);
     auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-    NamesAndTypesList columns = metadata->getColumns().getOrdinary();
+    /// All the columns that a query can select: the `MATERIALIZED` and `ALIAS` ones as well, which `SELECT *` leaves out.
+    NamesAndTypesList columns = metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases));
     if (id.hasDatabase() && id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
         auto access = context->getAccess();
