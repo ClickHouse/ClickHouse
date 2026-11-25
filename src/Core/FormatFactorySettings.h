@@ -144,7 +144,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.11", false, true, "Rename duplicate column names in the header of formats with names instead of rejecting them."}) \
+        {"26.12", false, true, "Rename duplicate column names in the header of formats with names instead of rejecting them."}) \
     DECLARE(Bool, input_format_with_types_use_header, true, R"(
 Controls whether format parser should check if data types from the input data match data types from the target table.
 
