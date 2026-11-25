@@ -36,13 +36,10 @@ struct JoinOnKeyColumns
     /// Only rows where mask == true can be joined
     JoinCommon::JoinMask join_mask_column;
 
-    Sizes key_sizes;
-
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
-        bool keep_lowcardinality = false);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, bool keep_lowcardinality = false);
 
-    bool isRowFiltered(size_t i) const
+    [[nodiscard]] bool isRowFiltered(size_t i) const
     {
         return join_mask_column.isRowFiltered(i);
     }
@@ -58,6 +55,10 @@ struct JoinOnKeyColumns
     /// uninitialized and must not be read.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
 };
+
+/// `JoinOnKeyColumns::buildRowSkipData` for the given NULL key map and ON-section mask.
+const UInt8 * buildRowSkipData(
+    ConstNullMapPtr null_map, const JoinCommon::JoinMask & mask, IColumn::Filter & buffer, size_t range_begin, size_t range_size);
 
 struct LazyOutput
 {
@@ -88,8 +89,8 @@ struct LazyOutput
     std::optional<size_t> row_store_row_length;
     bool has_columns = false;
 
-    const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
-    size_t getRowCount() const { return row_count; }
+    [[nodiscard]] const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
+    [[nodiscard]] size_t getRowCount() const { return row_count; }
 
     void reserve(size_t size) { row_refs.reserve(size); }
 
@@ -220,7 +221,7 @@ public:
         lazy_output.has_columns = plan.has_columns;
     }
 
-    size_t size() const { return columns.size(); }
+    [[nodiscard]] size_t size() const { return columns.size(); }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
@@ -246,7 +247,7 @@ public:
             lazy_output.addDefault();
     }
 
-    const IColumn & leftAsofKey() const { return *left_asof_key; }
+    [[nodiscard]] const IColumn & leftAsofKey() const { return *left_asof_key; }
 
     /// `PreSelectedRows` returns false. It keeps one ref per right row for the additional filter.
     static constexpr bool appendsWholeKey() { return true; }

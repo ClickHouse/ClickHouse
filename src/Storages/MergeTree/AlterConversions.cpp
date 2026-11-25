@@ -58,6 +58,10 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.max_parser_depth = command.max_parser_depth;
     res.max_parser_backtracks = command.max_parser_backtracks;
     res.ast_text = command.ast_text;
+    /// The rewritten command keeps the partition scope resolved on the original one, so that
+    /// `MutationsInterpreter` reads the resolved ids instead of the partition expression.
+    res.has_partition = command.has_partition;
+    res.partition_ids = command.partition_ids;
 
     auto handle = res.mutateAst();
     auto new_assignments = make_intrusive<ASTExpressionList>();
@@ -121,6 +125,8 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     /// patch-visibility window of the stage is unbounded above: a patch part created *after* this
     /// `DELETE` would be applied before its predicate is evaluated.
     mutation_command->mutation_version = command.mutation_version;
+    /// Same for the partition scope resolved on the original command.
+    mutation_command->partition_ids = command.partition_ids;
 
     return *mutation_command;
 }
@@ -211,6 +217,11 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         columns_touched_by_metadata_mutations.insert(command.column_name);
         columns_touched_by_metadata_mutations.insert(command.rename_to);
 
+        /// A rename changes which column a name reads, so an index over that name is stale whatever its
+        /// granules were typed - the type record certifies the type, never the column identity.
+        value_updated_columns.insert(command.column_name);
+        value_updated_columns.insert(command.rename_to);
+
         /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
         /// update the existing entry to map A directly to C instead of having two separate entries.
         bool chained = false;
@@ -240,6 +251,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             rename_map.erase(it);
         }
 
+        /// The reader returns the replacement column's defaults instead of the stored values.
+        value_updated_columns.insert(dropped_column_name);
         dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
@@ -261,6 +274,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
         addUpdatedColumns(command, all_updated_columns);
+        addUpdatedColumns(command, value_updated_columns);
         mutation_commands.push_back(command);
     }
 }
@@ -282,6 +296,7 @@ void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
             updated_column_name = patch_conversions->getColumnNewName(column.name);
 
         all_updated_columns.insert(updated_column_name);
+        value_updated_columns.insert(updated_column_name);
         columns_updated_in_patches.insert(updated_column_name);
     }
 
