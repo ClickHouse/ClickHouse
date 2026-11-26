@@ -94,12 +94,14 @@ ArrowIPC::ArrowSchema importSchemaFromC(const ::ArrowSchema & schema);
 /// Decodes a record batch of `schema` exported to the Arrow C data interface (a struct array whose children are
 /// the columns) into ClickHouse columns, as the native `Arrow` format decodes a record batch message. Takes
 /// ownership of `array`, which is released before returning, and marks it released. The buffers are not copied
-/// before decoding. Dictionary-encoded fields are not supported.
+/// before decoding. Dictionary-encoded fields are not supported. The columns marked in `skip_top_level_fields`
+/// (may be null; one entry per field of `schema`) are not decoded and not returned.
 RecordBatchDecoder::DecodedColumns importRecordBatchFromC(
     ::ArrowArray & array,
     const ArrowIPC::ArrowSchema & schema,
     const FormatSettings & settings,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
+    const RequestedTypes * target_types = nullptr,
+    const VectorWithMemoryTracking<char> * skip_top_level_fields = nullptr);
 
 }
 

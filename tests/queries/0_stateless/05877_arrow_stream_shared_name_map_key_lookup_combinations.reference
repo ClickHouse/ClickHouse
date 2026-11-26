@@ -1,0 +1,21 @@
+a type equal to the merge of the other two
+7	{(0,0):7}
+7	{(0,0):7}
+7	{(0,0):7}
+7	{(0,0):7}
+a type requested twice
+7	{(0,0):7}
+no type resolves the key
+0
+0
+several shared elements of a tuple key
+7
+7
+7
+7
+7
+7
+too many combinations
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS

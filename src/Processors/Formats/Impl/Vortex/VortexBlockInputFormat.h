@@ -20,6 +20,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
+#include <Processors/Formats/Impl/ArrowIPC/RecordBatchDecoder.h>
 #include <mutex>
 #include <optional>
 
@@ -175,7 +176,7 @@ private:
     /// The GeoParquet geometry columns of the file's schema metadata, when `input_format_parquet_allow_geoparquet_parser` is on.
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
     /// The requested types of the header columns, by name: the hints the decoder reads the batches with.
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_types;
+    ArrowIPC::RequestedTypes requested_types;
 
     /// Cancellation can arrive on any thread, so the lifetime of the scan handle is serialized.
     std::mutex scan_mutex;
@@ -183,6 +184,12 @@ private:
     /// Set before the first task exists and cleared after the last one has stopped, so the tasks
     /// can read it without holding a lock.
     std::shared_ptr<const ArrowIPC::ArrowSchema> scan_schema;
+    /// The structs of `scan_schema` whose null maps the decoder keeps only for the conversion of the decoded
+    /// columns (see `RecordBatchDecoder::collectVisibilityOnlyStructs`). Set and cleared along with `scan_schema`.
+    ArrowIPC::RecordBatchDecoder::VisibilityOnlyStructs visibility_only_structs;
+    /// The fields of `scan_schema` that are not decoded, because a later field has the same normalized name
+    /// (see `RecordBatchDecoder::shadowedTopLevelFields`). Set and cleared along with `scan_schema`.
+    VectorWithMemoryTracking<char> shadowed_scan_fields;
 
     std::mutex delivery_mutex;
     std::condition_variable delivery_cv;

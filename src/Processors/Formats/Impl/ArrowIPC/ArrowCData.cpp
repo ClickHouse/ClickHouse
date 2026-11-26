@@ -1028,7 +1028,8 @@ RecordBatchDecoder::DecodedColumns importRecordBatchFromC(
     ::ArrowArray & array,
     const ArrowIPC::ArrowSchema & schema,
     const FormatSettings & settings,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types)
+    const RequestedTypes * target_types,
+    const VectorWithMemoryTracking<char> * skip_top_level_fields)
 {
     if (!array.release)
         throwBadArray("the array is released");
@@ -1055,13 +1056,16 @@ RecordBatchDecoder::DecodedColumns importRecordBatchFromC(
         /// The offset of the record batch applies to its columns, on top of their own.
         if (column->length < owned.offset + owned.length)
             throwBadArray(fmt::format("column '{}' has fewer rows than the record batch", schema.fields[i].name));
+        /// A skipped column is not decoded, so it has no nodes and buffers in the batch.
+        if (skip_top_level_fields && (*skip_top_level_fields).at(i))
+            continue;
         layout.add(schema.fields[i], *column, column->offset + owned.offset, owned.length, 1);
     }
     const auto repacked = layout.takeOwned();
 
     DictionaryRegistry registry;
     RecordBatchDecoder decoder(schema, settings, registry);
-    return decoder.decodeExternalBatch(batch, target_types);
+    return decoder.decodeExternalBatch(batch, target_types, skip_top_level_fields);
 }
 
 }

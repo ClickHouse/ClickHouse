@@ -102,6 +102,10 @@ struct ArrowType
     /// position instead of by name.
     bool positional_fields = false;
 
+    /// Struct: the entries of a `Map` (its single child). Its two fields are the key and the value whatever
+    /// their names in the file, and they are addressed as the subcolumns `keys` and `values` of the map.
+    bool map_entries = false;
+
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
 };

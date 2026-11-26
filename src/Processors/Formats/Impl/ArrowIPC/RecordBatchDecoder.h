@@ -20,6 +20,27 @@
 namespace DB::ArrowIPC
 {
 
+/// The type requested for a normalized column name, including a dotted subcolumn name (see
+/// `ArrowIPCBlockInputFormat::prepareReader`).
+struct RequestedType
+{
+    /// Guides how the field is decoded (e.g. a `date32` read as the raw day number for a numeric type, or
+    /// the null map of a struct kept for a `Tuple`).
+    DataTypePtr type;
+    /// With case-insensitive matching, several header columns with different types share this normalized
+    /// name (`T String` and `t Tuple(s IPv6)`). All of them are taken from the one decoded field, so its raw
+    /// bytes must not be reinterpreted for any one of them: each column is converted by its own type after
+    /// decoding. `type` then keeps the requirements of these columns that decoding has to honor.
+    bool shared = false;
+    /// The distinct types of these columns, in the order of the header (empty unless `shared`). `type` keeps
+    /// only one of two types that decoding does not tell apart (`Map(String, UInt8)` and `Map(IPv6, UInt8)`),
+    /// while a key lookup of a map parses the key in the type of the keys, so it is resolved against each of
+    /// them (see `ArrowIPC::buildChunk`).
+    DataTypes shared_types;
+};
+
+using RequestedTypes = UnorderedMapWithMemoryTracking<String, RequestedType>;
+
 /// Where a field sits for the requested-type rules of `RecordBatchDecoder::decodeField`: its dotted column
 /// name and the number of List/Map levels above it. The requested types of the header are looked up by this
 /// name, for the field itself when its parent gives it no hint, and for the fields below it.
@@ -44,6 +65,12 @@ struct DictionaryUse
 {
     FieldPosition position;
     DataTypePtr hint;
+    /// The field, or a field below it (when the values are a struct, an array or a map), is decoded for
+    /// several requested columns that can read its raw bytes differently (see `RecordBatchDecoder::rawByteTarget`),
+    /// so the values are registered without the post-decode rewrite: each requested column taken from the
+    /// field is converted by its own type after decoding. It is derived from the position and the requested
+    /// types alone, so it does not take part in `DictionaryRegistry::useKey`.
+    bool keep_raw_bytes = false;
 
     /// The two uses decode the values the same way.
     bool operator==(const DictionaryUse & other) const;
@@ -219,7 +246,7 @@ public:
     DecodedColumns decodeBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
+        const RequestedTypes * target_types = nullptr,
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
 
     /// A record batch whose layout is given directly rather than by a `RecordBatch` message: the pre-ordered field
@@ -234,17 +261,41 @@ public:
         VectorWithMemoryTracking<Int64> variadic_counts;
     };
 
-    /// Decodes all fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
-    /// for the duration of the call only: the decoded columns own their data.
+    /// Decodes the fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
+    /// for the duration of the call only: the decoded columns own their data. The top-level fields marked in
+    /// `skip_top_level_fields` (may be null; see `shadowedTopLevelFields`) are not decoded, and the batch has no
+    /// nodes and buffers for them.
     DecodedColumns decodeExternalBatch(
-        const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
+        const ExternalBatch & batch, const RequestedTypes * target_types = nullptr,
+        const VectorWithMemoryTracking<char> * skip_top_level_fields = nullptr);
+
+    /// Whether each top-level field of the schema is followed by another one with the same normalized name
+    /// (`T` and `t` with case-insensitive matching). The reader takes the last of these fields (see
+    /// `ArrowIPCBlockInputFormat::buildChunk`), so the others are not decoded: the requested types, resolved
+    /// against the field that supplies the column, could not describe them.
+    [[nodiscard]] VectorWithMemoryTracking<char> shadowedTopLevelFields() const;
 
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
     /// hint (`use`), following the same rules as inline values. `target_types_` supplies requested subcolumn
     /// types. The returned null map preserves entry validity independently of the resulting column type.
     DictionaryRegistry::Values decodeDictionaryValues(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field,
-        const DictionaryUse & use, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_);
+        const DictionaryUse & use, const RequestedTypes * target_types_);
+
+    /// The structs that keep their null maps only to tell the hidden rows to the post-decode raw-byte conversion
+    /// (see `wrapsInNullable`): such a struct is decoded for several requested columns, and none of them asks
+    /// for its nulls. The reader drops such a null map from the subcolumns it takes from the struct once they
+    /// are converted, so that it does not change their nulls (see `ArrowIPCBlockInputFormat::buildChunk`).
+    ///
+    /// The structs are told by the top-level schema field they are decoded from and by their position in it:
+    /// the indexes of the struct children leading to them, each preceded by `/` (lists, map entries and
+    /// run-end-encoded values add nothing; the top-level field itself is the empty position). The dotted path
+    /// does not tell them: a top-level field named `t.s` and the child `s` of a top-level struct `t` share the
+    /// path `t.s`, but resolve different hints, so one of them can keep the null map a requested `Tuple` asks for.
+    /// The result depends only on the schema and the requested types, which are those of `decodeBatch`.
+    using VisibilityOnlyStructs = UnorderedMapWithMemoryTracking<const ArrowField *, UnorderedSetWithMemoryTracking<String>>;
+    [[nodiscard]] VisibilityOnlyStructs collectVisibilityOnlyStructs(
+        const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields, const RequestedTypes * target_types_) const;
 
     /// Returns a 0/1 mask of the buffers referenced by the requested top-level fields. The `advanceField`
     /// traversal follows decoding's layout so subset reads can load, validate and decompress only the
@@ -268,7 +319,7 @@ public:
     /// belong only to unrequested fields.
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> collectDictionaryUses(
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const;
+        const RequestedTypes * target_types_) const;
 
 private:
     Slice nextBuffer();
@@ -360,7 +411,7 @@ private:
     /// (`below_union`) nothing is looked up in `lookup_types`, as in `decodeUnion`.
     void collectDictionaryUses(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool below_union,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
+        const RequestedTypes * lookup_types,
         UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const;
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
@@ -373,9 +424,23 @@ private:
     /// `target_hint` from its parent: the use `collectDictionaryUses` records for the field.
     [[nodiscard]] DictionaryUse dictionaryUse(const DataTypePtr & target_hint, const String & path, size_t list_depth) const;
     [[nodiscard]] ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
-    /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
-    /// requested. The reader applies the destination nullability after converting visible rows.
-    [[nodiscard]] bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
+    /// Nullable structs retain their null maps when tuples are nullable, a tuple conversion is requested, or
+    /// the struct (at the dotted `path`) carries a requested subcolumn together with a requested column that
+    /// encloses it (`t` and `t.s`, or `t.u` and `t.u.s`, for the struct `t`) and one of them asks for a
+    /// raw-byte conversion: the subcolumn is taken from the decoded struct and converted after decoding, which
+    /// needs the null map to tell the hidden rows. The reader applies the destination nullability after
+    /// converting visible rows, and reads a null row as the default tuple when tuples are not nullable.
+    [[nodiscard]] bool wrapsInNullable(
+        const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint, const String & path) const;
+    /// Whether a nullable struct `field` at the dotted `path`, resolving `effective_hint`, keeps its null map
+    /// only for the post-decode raw-byte conversion (see `collectVisibilityOnlyStructs`): no requested type
+    /// asks for its nulls, and its leaves keep their bytes for several requested columns. `types` are the
+    /// requested types that apply at the field (null below a union).
+    [[nodiscard]] bool keepsNullMapOnlyForConversion(
+        const ArrowField & field, const DataTypePtr & effective_hint, const String & path, const RequestedTypes * types) const;
+    void collectVisibilityOnlyStructs(
+        const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+        const RequestedTypes * lookup_types, const String & position, UnorderedSetWithMemoryTracking<String> & positions) const;
     /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
     /// run's value repeated for its rows. The nulls are those of the values.
     ColumnPtr decodeRunEndEncoded(
@@ -394,6 +459,14 @@ private:
     /// decoded (`target_types`), preferring the hint derived from the parent and otherwise looking up `path`,
     /// the dotted column name, `list_depth` lists below the top level.
     [[nodiscard]] DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
+    /// The `IPv6` / big-integer type a variable binary field is converted to while decoding, or null to keep
+    /// its bytes: `rawByteTargetType` of the requested type, unless the field is decoded for several requested
+    /// columns (the field's own dotted name and an enclosing field, e.g. `t.s` and `t`, or `t` and `t.u` for
+    /// the field `t.u.s`). Their types can ask for different values of the same bytes, and each of these
+    /// columns is taken from the one decoded column, so the field keeps its bytes and the post-decode rewrite
+    /// converts every requested column by its own type. Other hints (e.g. `Date`) do not change the layout
+    /// and apply regardless.
+    [[nodiscard]] DataTypePtr rawByteTarget(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
 
@@ -403,7 +476,7 @@ private:
     void beginBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
         const VectorWithMemoryTracking<char> * reachable_buffers,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_);
+        const RequestedTypes * target_types_);
     /// Decodes one column of the current batch after the caller has validated its root node's row count,
     /// and reports its ClickHouse type. `target_hint`, `path`, and `list_depth` describe the requested-type
     /// position used by `decodeField`: a record batch column sits at the top level, and dictionary values
@@ -440,7 +513,7 @@ private:
     Int64 current_length = 0;
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
+    const RequestedTypes * target_types = nullptr;
     /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used
     /// below one: `target_types` is not consulted there.
     bool decoding_below_union = false;

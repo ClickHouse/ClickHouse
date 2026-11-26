@@ -291,7 +291,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
             /// The array is borrowed for the duration of this callback; importing it moves the
             /// data out and marks the struct released, which is how it is handed back.
             const size_t num_rows = static_cast<size_t>(array->length);
-            auto decoded = ArrowIPC::importRecordBatchFromC(*array, *scan_schema, format_settings, &requested_types);
+            auto decoded = ArrowIPC::importRecordBatchFromC(
+                *array, *scan_schema, format_settings, &requested_types, &shadowed_scan_fields);
 
             ColumnPtr row_index;
             if (row_index_column)
@@ -322,7 +323,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
                 piece.missing_values = BlockMissingValues(getPort().getHeader().columns());
                 BlockMissingValues * missing_values_ptr = format_settings.defaults_for_omitted_fields ? &piece.missing_values : nullptr;
                 piece.chunk = ArrowIPC::buildChunk(
-                    getPort().getHeader(), piece_columns, length, format_settings, /* allow_missing_columns */ true, geo_columns, missing_values_ptr);
+                    getPort().getHeader(), piece_columns, length, format_settings, /* allow_missing_columns */ true, geo_columns, missing_values_ptr,
+                    requested_types, visibility_only_structs);
                 if (row_index)
                     piece.row_numbers = row_index->cut(begin, length);
 
@@ -411,6 +413,8 @@ void VortexBlockInputFormat::closeReader()
             scan = nullptr;
         }
         scan_schema.reset();
+        visibility_only_structs.clear();
+        shadowed_scan_fields.clear();
     }
     {
         std::lock_guard lock(delivery_mutex);
@@ -485,14 +489,9 @@ void VortexBlockInputFormat::prepareReader()
         auto geo_it = file_schema->custom_metadata.find("geo");
         geo_columns = parseGeoMetadataEncoding(geo_it != file_schema->custom_metadata.end() ? &geo_it->second : nullptr);
     }
-    requested_types.clear();
-    for (const auto & header_column : getPort().getHeader())
-    {
-        String name = header_column.name;
-        if (format_settings.arrow.case_insensitive_column_matching)
-            boost::to_lower(name);
-        requested_types[name] = header_column.type;
-    }
+    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    ArrowIPC::SharedRequestedHeaderTypes shared_requested_header_types;
+    ArrowIPC::collectRequestedTypes(getPort().getHeader(), case_insensitive, requested_types, shared_requested_header_types);
 
     const VortexScanPlan plan = planVortexScan(getPort().getHeader(), *file_schema, format_filter_info.get(), format_settings, log);
 
@@ -569,6 +568,22 @@ void VortexBlockInputFormat::prepareReader()
         new_scan_schema->fields.push_back(*it);
     }
     scan_schema = std::move(new_scan_schema);
+    /// With case-insensitive matching, header columns of different types can share a name. They are all taken
+    /// from the one decoded field, which is then decoded with the requirements of all of them, as in `Arrow`.
+    ArrowIPC::resolveSharedRequestedTypes(
+        *scan_schema, /*keep_top_level_fields=*/nullptr, case_insensitive, shared_requested_header_types, requested_types);
+    {
+        ArrowIPC::DictionaryRegistry registry;
+        const ArrowIPC::RecordBatchDecoder decoder(*scan_schema, format_settings, registry);
+        /// Of the fields with the same normalized name, the columns are taken from the last one (see `buildChunk`),
+        /// which is the one the shared requested types are resolved against. The other ones are not decoded, as in
+        /// `Arrow`: the requested types could not describe them. The row numbers are taken by position.
+        shadowed_scan_fields = decoder.shadowedTopLevelFields();
+        if (row_index_column)
+            shadowed_scan_fields.front() = 0;
+        /// A shadowed field is in the scan schema, but it is not decoded, so its structs are not looked up.
+        visibility_only_structs = decoder.collectVisibilityOnlyStructs(/*keep_top_level_fields=*/nullptr, &requested_types);
+    }
 
     char * error = nullptr;
     auto * new_scan = vortex_ffi_scan_create(reader, &options, &callbacks, &error);
@@ -656,7 +671,8 @@ Chunk VortexBlockInputFormat::readWithoutColumns()
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     ArrowIPC::RecordBatchDecoder::DecodedColumns no_columns;
     auto chunk = ArrowIPC::buildChunk(
-        getPort().getHeader(), no_columns, num_rows, format_settings, /* allow_missing_columns */ true, geo_columns, block_missing_values_ptr);
+        getPort().getHeader(), no_columns, num_rows, format_settings, /* allow_missing_columns */ true, geo_columns, block_missing_values_ptr,
+        requested_types, /* visibility_only_structs */ {});
 
     if (row_index_column)
         chunk.getChunkInfos().add(rowNumbersWithoutColumns(first_delivered, num_rows));

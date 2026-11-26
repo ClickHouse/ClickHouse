@@ -60,6 +60,10 @@ private:
     void prepareReader();
     void prepareStreamReader();
     void prepareFileReader();
+    /// Re-merges the requested types of each normalized name shared by several header columns (see
+    /// `shared_requested_header_types`) once the schema is known, so that a named and an unnamed `Tuple`
+    /// are matched with the fields of the struct as the decoder matches them.
+    void resolveSharedRequestedTypes();
     void collectDictionaryFields(const ArrowIPC::ArrowFields & fields);
     /// Decodes the values of one `DictionaryBatch` with `batch_decoder` and registers them in `dictionaries`
     /// under the batch's id, once for each position of a field encoding that dictionary (`dictionary_uses`).
@@ -98,7 +102,13 @@ private:
     /// subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_field_target_types;
+    ArrowIPC::RequestedTypes requested_field_target_types;
+    /// The distinct types of the header columns that share a normalized name (`RequestedType::shared`), in
+    /// header order, for `resolveSharedRequestedTypes`.
+    UnorderedMapWithMemoryTracking<String, DataTypes> shared_requested_header_types;
+    /// The structs whose null maps the decoder keeps only for the post-decode conversion, by the top-level
+    /// schema field they are decoded from (see `RecordBatchDecoder::collectVisibilityOnlyStructs`).
+    ArrowIPC::RecordBatchDecoder::VisibilityOnlyStructs visibility_only_structs;
     /// For each Arrow dictionary id the requested columns reference, the positions of the fields encoding it
     /// with the requested type hint each resolves there (see `RecordBatchDecoder::collectDictionaryUses`),
     /// computed from the requested header before any dictionary batch is decoded. A DictionaryBatch whose id
@@ -131,11 +141,30 @@ private:
 namespace ArrowIPC
 {
 
+/// The distinct types of the header columns that share a normalized name (`RequestedType::shared`), in header order.
+using SharedRequestedHeaderTypes = UnorderedMapWithMemoryTracking<String, DataTypes>;
+
+/// Fills `requested_types` with the type of each column of `header` by its normalized name (lower-cased with
+/// case-insensitive matching), for the decoder. A name several header columns of different types share is marked
+/// as shared and keeps the decoding requirements of all of them; their types are recorded in
+/// `shared_header_types` for `resolveSharedRequestedTypes`.
+void collectRequestedTypes(
+    const Block & header, bool case_insensitive, RequestedTypes & requested_types, SharedRequestedHeaderTypes & shared_header_types);
+
+/// Re-merges the requested types of each shared name once the schema is known, so that a named and an unnamed
+/// `Tuple` are matched with the fields of the struct as the decoder matches them. `keep_top_level_fields` are the
+/// normalized names of the top-level fields that are decoded (all of them when null).
+void resolveSharedRequestedTypes(
+    const ArrowSchema & schema, const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields, bool case_insensitive,
+    const SharedRequestedHeaderTypes & shared_header_types, RequestedTypes & requested_types);
+
 /// Converts the decoded columns of a record batch into a chunk of `header`: matches the columns by name (or
 /// case-insensitively), extracts the subcolumns of `Nested` and struct fields, parses GeoParquet geometry,
 /// reinterprets raw bytes and casts to the requested types. A header column absent from the batch is filled
 /// with defaults when `allow_missing_columns`, and an exception otherwise. Used by the native `Arrow` formats and
 /// by the formats that receive Arrow data through the C data interface.
+/// `requested_types` and `visibility_only_structs` are the ones the columns were decoded with: the requested
+/// types the decoder was given, and the result of `RecordBatchDecoder::collectVisibilityOnlyStructs` for them.
 Chunk buildChunk(
     const Block & header,
     RecordBatchDecoder::DecodedColumns & decoded,
@@ -143,7 +172,9 @@ Chunk buildChunk(
     const FormatSettings & format_settings,
     bool allow_missing_columns,
     const UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> & geo_columns,
-    BlockMissingValues * block_missing_values);
+    BlockMissingValues * block_missing_values,
+    const RequestedTypes & requested_types,
+    const RecordBatchDecoder::VisibilityOnlyStructs & visibility_only_structs);
 
 }
 
