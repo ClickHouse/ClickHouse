@@ -2301,7 +2301,9 @@ backward compatibility.
 )", 0) \
     DECLARE(UInt64, finished_mutations_to_keep, 100, R"(
 How many records about mutations that are done to keep. If zero, then no
-finished mutation entries are kept.
+finished mutation entries are kept: the entry of a mutation is removed by the
+background cleanup once the mutation is finished. To keep all the entries, set
+a large value instead (in previous versions, zero meant keeping all of them).
 )", 0) \
     DECLARE(UInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024, R"(
 The minimum data volume for merge operation that is required for using direct
