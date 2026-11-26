@@ -15,8 +15,6 @@
 0	1
 -- A `DateTime64` key against a `DateTime64` column of a smaller scale
 0	1
--- A floating-point key, which a sort-merge join compares unlike the set
-0	1
 -- `Array(UInt8)` against `Array(Bool)`, a cast that throws on a value the element type cannot hold
 0	1
 -- IN read on the totals row of the query

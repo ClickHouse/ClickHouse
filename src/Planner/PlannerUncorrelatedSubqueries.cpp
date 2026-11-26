@@ -28,7 +28,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
-#include <DataTypes/hasNullable.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -294,12 +293,10 @@ bool canRewriteInToJoin(const ActionsDAG::Node & in_node, const QueryTreeNodePtr
         /// even when one of its alternatives is not, and a sort-merge join then treats all such values as equal.
         /// A set does not match a timestamp that the cast to the column type changes, e.g. by dropping a sub-second
         /// part, while the join would match the changed value.
-        /// A set compares floating-point values by their bits, while a sort-merge join compares the numbers and matches `-0.0` with `0.0`.
         /// A cast to a tuple, or to a type that cannot be inside `Nullable`, throws on a value the column type cannot hold.
         const auto not_comparable = [](const IDataType & type) { return !type.isComparableForEquality(); };
         if (anyInTypeTree(*key_base, not_comparable) || anyInTypeTree(*column_base, not_comparable)
             || (isDateTime64(key_base) && key_base->getName() != column_base->getName())
-            || hasTypeThatCanContainFloat(subquery_columns[i].type)
             || (key_base->getName() != column_base->getName() && (!column_base->canBeInsideNullable() || isTuple(column_base))))
             return false;
     }

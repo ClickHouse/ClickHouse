@@ -49,10 +49,6 @@ SELECT '-- A `DateTime64` key against a `DateTime64` column of a smaller scale';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE toDateTime64(id, 6) IN (SELECT toDateTime64(k, 3) FROM s));
 
-SELECT '-- A floating-point key, which a sort-merge join compares unlike the set';
-SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT count() FROM t WHERE toFloat64(id) IN (SELECT toFloat64(k) FROM s));
-
 SELECT '-- `Array(UInt8)` against `Array(Bool)`, a cast that throws on a value the element type cannot hold';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t);
