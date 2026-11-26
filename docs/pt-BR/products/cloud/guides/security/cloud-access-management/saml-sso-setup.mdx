@@ -45,13 +45,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
     Clique no botão de alternância ao lado de `Enable SAML single sign-on`. Deixe esta tela aberta, pois você precisará consultá-la várias vezes durante o processo de configuração.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Iniciar a configuração do SAML](/images/cloud/security/saml-self-serve-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Iniciar a configuração do SAML](/images/cloud/security/saml-self-serve-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -68,13 +64,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
     </Tip>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Criar aplicativo no provedor de identidade](/images/cloud/security/saml-self-serve-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Criar aplicativo no provedor de identidade](/images/cloud/security/saml-self-serve-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -82,13 +74,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
     Obtenha a `Metadata URL` do seu provedor SAML. Volte ao ClickHouse Cloud, clique em `Next: Provide metadata URL` e cole a URL na caixa de texto.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Adicionar URL de metadados](/images/cloud/security/saml-self-serve-3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Adicionar URL de metadados](/images/cloud/security/saml-self-serve-3.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -96,13 +84,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
     Clique em `Next: Verify your domains`. Insira seu domínio na caixa de texto e clique em `Check domain`. O sistema gerará um código de verificação aleatório para adicionar a um registro TXT no seu provedor de DNS.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Adicionar domínio para verificar](/images/cloud/security/saml-self-serve-4.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Adicionar domínio para verificar](/images/cloud/security/saml-self-serve-4.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -114,13 +98,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Verifique seu domínio](/images/cloud/security/saml-self-serve-5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Verifique seu domínio](/images/cloud/security/saml-self-serve-5.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -230,13 +210,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
     1. Acesse o console do Google Admin (admin.google.com).
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![App SAML do Google](/images/cloud/security/saml-google-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![App SAML do Google](/images/cloud/security/saml-google-app.webp)
+         </Frame>
        </div>
 
     2. Clique em **Apps** e, em seguida, em **Web and mobile apps** à esquerda.
@@ -292,13 +268,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
     5. Insira um nome e selecione **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**; em seguida, clique em **Create**.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Aplicativo do Azure fora da galeria](/images/cloud/security/saml-azure-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Aplicativo do Azure fora da galeria](/images/cloud/security/saml-azure-app.webp)
+         </Frame>
        </div>
 
     6. Clique em **Users and groups** à esquerda e atribua os usuários.
@@ -326,13 +298,9 @@ Se o SAML já estiver habilitado e você precisar de acesso de administrador, co
         | (U) /identity/claims/name            | Omitted       | user.mail        |
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![Atributos e declarações](/images/cloud/security/saml-azure-claims.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Atributos e declarações](/images/cloud/security/saml-azure-claims.webp)
+          </Frame>
         </div>
 
     11. Copie a metadata URL e volte para [Adicionar a metadata URL à sua configuração SAML](#add-metadata-url) para continuar o processo.

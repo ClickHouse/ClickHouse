@@ -45,13 +45,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     点击 `Enable SAML single sign-on` 旁边的开关。请保持此页面处于打开状态，因为在设置过程中你需要多次返回查看这里的信息。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![开始设置 SAML](/images/cloud/security/saml-self-serve-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![开始设置 SAML](/images/cloud/security/saml-self-serve-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -68,13 +64,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     </Tip>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![创建身份提供商应用程序](/images/cloud/security/saml-self-serve-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![创建身份提供商应用程序](/images/cloud/security/saml-self-serve-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -82,13 +74,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     从您的 SAML 提供商处获取 `Metadata URL`。返回 ClickHouse Cloud，点击 `Next: Provide metadata URL`，然后将该 URL 粘贴到文本框中。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![添加元数据 URL](/images/cloud/security/saml-self-serve-3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![添加元数据 URL](/images/cloud/security/saml-self-serve-3.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -96,13 +84,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     点击 `Next: Verify your domains`。在文本框中输入你的域名，然后点击 `Check domain`。系统会生成一个随机验证码，你需要将其添加为 DNS 提供商中的一条 TXT 记录。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![添加要验证的域名](/images/cloud/security/saml-self-serve-4.webp)
-
-    </Frame>
-
+      <Frame>
+        ![添加要验证的域名](/images/cloud/security/saml-self-serve-4.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -114,13 +98,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![验证您的域名](/images/cloud/security/saml-self-serve-5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![验证您的域名](/images/cloud/security/saml-self-serve-5.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -198,7 +178,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
 
        | 字段                             | 值                                 |
        | ------------------------------ | --------------------------------- |
-       | Single Sign-On URL             | 从控制台复制 Single Sign-On URL         |
+       | Single Sign On URL             | 从控制台复制 Single Sign-On URL         |
        | Audience URI (SP Entity ID)    | 从控制台复制 Service Provider Entity ID |
        | Default RelayState             | 留空                                |
        | Name ID format                 | 未指定                               |
@@ -230,13 +210,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     1. 前往 Google 管理控制台 (admin.google.com) 。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Google SAML 应用](/images/cloud/security/saml-google-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Google SAML 应用](/images/cloud/security/saml-google-app.webp)
+         </Frame>
        </div>
 
     2. 点击 **Apps**，然后点击左侧的 **Web and mobile apps**。
@@ -292,13 +268,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     5. 输入名称，选择 **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**，然后点击 **Create**。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Azure 非库应用](/images/cloud/security/saml-azure-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Azure 非库应用](/images/cloud/security/saml-azure-app.webp)
+         </Frame>
        </div>
 
     6. 点击左侧的 **Users and groups**，然后分配用户。
@@ -326,13 +298,9 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
         | (U) /identity/claims/name            | Omitted       | user.mail        |
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![属性和声明](/images/cloud/security/saml-azure-claims.webp)
-
-        </Frame>
-
+          <Frame>
+            ![属性和声明](/images/cloud/security/saml-azure-claims.webp)
+          </Frame>
         </div>
 
     11. 复制元数据 URL，然后返回[将元数据 URL 添加到您的 SAML 配置中](#add-metadata-url)，继续后续流程。

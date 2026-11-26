@@ -25,13 +25,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 設定画面の例：
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![セキュアなネイティブ設定の例](/images/integrations/data-visualization/grafana/config_common.webp)
-
-</Frame>
-
+  <Frame>
+    ![セキュアなネイティブ設定の例](/images/integrations/data-visualization/grafana/config_common.webp)
+  </Frame>
 </div>
 
 共通設定の YAML 設定例：
@@ -65,17 +61,13 @@ secureJsonData:
 HTTP protocol で接続を選択すると、追加の設定項目が表示されます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![追加の HTTP 設定オプション](/images/integrations/data-visualization/grafana/config_http.webp)
-
-</Frame>
-
+  <Frame>
+    ![追加の HTTP 設定オプション](/images/integrations/data-visualization/grafana/config_http.webp)
+  </Frame>
 </div>
 
 <div id="http-path">
-  #### HTTP パス
+  #### HTTP パス {#http-path}
 </div>
 
 HTTP サーバーが別の URL パスで公開されている場合は、ここで設定できます。
@@ -87,7 +79,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### カスタム HTTP ヘッダー
+  #### カスタム HTTP ヘッダー {#custom-http-headers}
 </div>
 
 サーバーに送信するリクエストに、カスタムヘッダーを追加できます。
@@ -121,13 +113,9 @@ secureJsonData:
 これらの設定は任意です。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![追加設定の例](/images/integrations/data-visualization/grafana/config_additional.webp)
-
-</Frame>
-
+  <Frame>
+    ![追加設定の例](/images/integrations/data-visualization/grafana/config_additional.webp)
+  </Frame>
 </div>
 
 YAML の例:
@@ -143,7 +131,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry
+  ### OpenTelemetry {#opentelemetry}
 </div>
 
 OpenTelemetry (OTel) は、このプラグインに密接に統合されています。
@@ -154,7 +142,7 @@ OpenTelemetryデータは、[exporter plugin](https://github.com/open-telemetry/
 
 ### ログ {#logs}
 
-[ログのクエリ構築](/ja/integrations/connectors/data-visualization/grafana/query-builder#logs)を高速化するために、ログクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、クエリビルダーに実行可能なログクエリが事前に読み込まれ、Explore ページでログをすばやく確認できるようになり、オブザーバビリティ用途での閲覧が効率化されます。
+[ログのクエリの構築](/ja/integrations/connectors/data-visualization/grafana/query-builder#logs)を高速化するために、ログクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、クエリビルダーに実行可能なログクエリが事前に読み込まれ、Explore ページでログをすばやく確認できるようになり、オブザーバビリティ用途での閲覧が効率化されます。
 
 OpenTelemetry を使用している場合は、&quot;**Use OTel**&quot; スイッチを有効にし、**デフォルトのログテーブル** を `otel_logs` に設定してください。
 これにより、デフォルトのカラムは自動的に上書きされ、選択した OTel スキーマバージョンが使用されます。
@@ -164,13 +152,9 @@ OpenTelemetry を使用している場合は、&quot;**Use OTel**&quot; スイ�
 ログ設定画面の例:
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Logs config](/images/integrations/data-visualization/grafana/config_logs.webp)
-
-</Frame>
-
+  <Frame>
+    ![Logs config](/images/integrations/data-visualization/grafana/config_logs.webp)
+  </Frame>
 </div>
 
 ログ設定 YAML の例:
@@ -201,7 +185,7 @@ jsonData:
 
 ### トレース {#traces}
 
-[トレースのクエリビルダー](/ja/integrations/connectors/data-visualization/grafana/query-builder#traces)を高速化するには、トレースクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、実行可能なトレース検索クエリがクエリビルダーに事前に読み込まれ、Explore ページでオブザーバビリティデータをよりすばやく参照できるようになります。
+[トレースのクエリの構築](/ja/integrations/connectors/data-visualization/grafana/query-builder#traces)を高速化するには、トレースクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、実行可能なトレース検索クエリがクエリビルダーに事前に読み込まれ、Explore ページでオブザーバビリティデータをよりすばやく参照できるようになります。
 
 OpenTelemetry を使用している場合は、「**Use OTel**」スイッチを有効にし、**デフォルトのトレーステーブル**を `otel_traces` に設定してください。
 これにより、選択した OTel スキーマバージョンを使用するよう、デフォルトのカラムが自動的に上書きされます。
@@ -210,13 +194,9 @@ OpenTelemetry は必須ではありませんが、トレースにそのスキー
 トレース設定画面の例:
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![トレース設定](/images/integrations/data-visualization/grafana/config_traces.webp)
-
-</Frame>
-
+  <Frame>
+    ![トレース設定](/images/integrations/data-visualization/grafana/config_traces.webp)
+  </Frame>
 </div>
 
 トレース設定 YAML の例:
@@ -253,7 +233,7 @@ jsonData:
 リンクを非表示にするには、トグルをオフにするか、YAML で `showTraceLinks: false` を設定します。
 
 <div id="column-aliases">
-  ### カラムの別名
+  ### カラムの別名 {#column-aliases}
 </div>
 
 カラムに別名を付けると、異なる名前や型でデータをクエリできるようになり、便利です。
@@ -267,7 +247,7 @@ jsonData:
 * 選択するカラムを変換するために、関数をよく適用する
 
 <div id="table-defined-alias-columns">
-  #### テーブルで定義する ALIAS カラム
+  #### テーブルで定義する ALIAS カラム {#table-defined-alias-columns}
 </div>
 
 ClickHouse にはカラムのエイリアス機能が組み込まれており、Grafana でもそのまま利用できます。
@@ -321,25 +301,17 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 次に、このテーブルを Grafana で使えるように設定できます。なお、名前は任意で、別のデータベースで定義することも可能です。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![別名テーブル設定の例](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
-
-</Frame>
-
+  <Frame>
+    ![別名テーブル設定の例](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+  </Frame>
 </div>
 
 これで Grafana では、`DESC example_table` の結果ではなく、別名テーブル の結果が表示されます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![別名テーブル選択の例](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
-
-</Frame>
-
+  <Frame>
+    ![別名テーブル選択の例](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+  </Frame>
 </div>
 
 どちらのエイリアス方式も、複雑な型変換や JSON フィールドの抽出に利用できます。

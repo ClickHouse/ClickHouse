@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'spring boot', 'spring', 'java', 'jdbc', 'pgjdbc'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-spring-boot-beta" />
-
 يتصل [Spring Boot](https://spring.io/projects/spring-boot) بـ Postgres عبر مشغّل JDBC الخاص بـ PostgreSQL ‏(pgjdbc) ومجمّع الاتصالات HikariCP، ويُنفّذ عمليات الترحيل الخاصة بـ [Flyway](https://documentation.red-gate.com/flyway) عند بدء تشغيل التطبيق. في هذا الدليل، ستُنشئ جدول `todos` باستخدام عملية ترحيل في Flyway، ثم تعالج طلبات الإنشاء والقراءة والتحديث والحذف عبر وحدة تحكم REST مبنية على Spring Data JPA. يستخدم كل اتصال بروتوكول TLS مع تحقق كامل من الشهادة.
 
 ## المتطلبات الأساسية {#prerequisites}
