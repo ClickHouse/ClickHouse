@@ -25,11 +25,11 @@ Selectividad máxima del filtro para usar la sugerencia construida a partir del 
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "50"},{"label": "Nueva opción"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "50"},{"label": "Nueva configuración"}]}]} />
 
 Número máximo de postings grandes que se pueden leer cuando está habilitada la evaluación de LIKE en el índice de texto mediante escaneo del diccionario.
 
-Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitado.
+Requiere que [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/es/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) esté habilitado.
 
 ## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
@@ -37,12 +37,13 @@ Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitad
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "Nueva configuración"}]}]} />
 
-Longitud mínima de la subcadena alfanumérica buscada en un patrón LIKE/ILIKE, o de una subcadena buscada de `startsWith`/`endsWith`, necesaria para usar la evaluación de LIKE en el índice de texto mediante escaneo del diccionario.
+Longitud mínima de la subcadena alfanumérica buscada en un patrón LIKE/ILIKE, o de una subcadena buscada de `startsWith`/`endsWith`,
+necesaria para usar la evaluación de LIKE en el índice de texto mediante escaneo del diccionario.
 Los patrones más cortos que este umbral coinciden con demasiados tokens del diccionario y se omiten para evitar escaneos costosos.
 
 Con el tokenizador `array`, donde cualquier patrón es apto, el umbral se compara con el número de caracteres que no son comodines en todo el patrón.
 
-Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitado.
+Requiere que [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/es/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) esté habilitado.
 
 ## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
