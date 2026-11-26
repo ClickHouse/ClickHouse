@@ -196,6 +196,20 @@ def musl_llvm_cmake_args():
     )
 
 
+def shell_is_elf(path):
+    """A shell condition that is true if :param path: is an ELF file (the image has no `file`)."""
+    return f'[ "$(head -c 4 "{path}" | tail -c 3)" = ELF ]'
+
+
+def shell_is_static(path):
+    """A shell condition that is true if :param path: is a static (non-PIE) executable: one
+    without a program interpreter or a dynamic section."""
+    return (
+        f'! llvm-readelf-{LLVM_VERSION} --program-headers "{path}"'
+        f" | grep -qE '^ +(INTERP|DYNAMIC) '"
+    )
+
+
 def download_and_extract(name, url, sha256):
     tarball = f"{TEMP}/{os.path.basename(url)}"
     return Result.from_commands_run(
@@ -460,7 +474,7 @@ def main():
                         f"clang++-{LLVM_VERSION} {musl_cxx_flags()} {musl_exe_linker_flags()}"
                         f" -fuse-ld=lld -O2 {test_source} -o {test_binary}",
                         f"{test_binary}",
-                        f"file {test_binary} | grep -q 'statically linked'",
+                        shell_is_static(test_binary),
                     ],
                 )
             )
@@ -1107,8 +1121,8 @@ def main():
                 command=(
                     f"for f in {STAGE2_INSTALL_DIR}/bin/*; do"
                     f' [ -L "$f" ] && continue;'
-                    f' file "$f" | grep -q ELF || continue;'
-                    f' file "$f" | grep -q "statically linked" || {{ echo "$f is not statically linked"; exit 1; }};'
+                    f" {shell_is_elf('$f')} || continue;"
+                    f" {shell_is_static('$f')} || {{ echo \"$f is not statically linked\"; exit 1; }};"
                     f" done"
                 ),
             )
@@ -1117,14 +1131,16 @@ def main():
 
         # Strip ELF executables and shared libraries to reduce archive size
         # (relocations from --emit-relocs and LTO symbols are no longer needed).
-        # Use "file" to skip scripts (Python, Perl, shell) that strip cannot handle.
+        # Check the ELF magic to skip scripts (Python, Perl, shell) that strip cannot handle.
         if res:
             results.append(
                 Result.from_commands_run(
                     name="Strip binaries",
                     command=(
-                        f"find {STAGE2_INSTALL_DIR}/bin -type f -executable"
-                        f" -exec sh -c 'file \"$1\" | grep -q ELF && strip --strip-unneeded \"$1\"' _ {{}} \\;"
+                        f"find {STAGE2_INSTALL_DIR}/bin -type f -executable | while read -r f; do"
+                        f" {shell_is_elf('$f')} || continue;"
+                        f' strip --strip-unneeded "$f" || exit 1;'
+                        f" done"
                         f" && find {STAGE2_INSTALL_DIR}/lib -name '*.so*' -type f"
                         f" -exec strip --strip-unneeded {{}} +"
                     ),
