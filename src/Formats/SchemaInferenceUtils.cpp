@@ -639,8 +639,9 @@ namespace
         auto transform_func = [&](DataTypePtr & type1, DataTypePtr & type2){ transformInferredJSONTypesIfNeeded(type1, type2, settings, json_info); };
         for (auto & type : data_types)
         {
-            if (const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get()))
-                merged_type->merge(*json_type, transform_func);
+            const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get());
+            if (json_type && !merged_type->merge(*json_type, transform_func))
+                return;
         }
 
         for (auto & type : data_types)
@@ -868,7 +869,7 @@ namespace
         }
     }
 
-    DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings)
+    DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone)
     {
         if (fastCheckForInvalidDateTimeOrDateTime64(field))
             return nullptr;
@@ -876,12 +877,12 @@ namespace
         if (!settings.try_infer_datetimes_only_datetime64)
         {
             time_t tmp = 0;
-            if (tryInferDateTime(field, tmp, settings))
+            if (tryInferDateTime(field, tmp, settings, time_zone))
                 return std::make_shared<DataTypeDateTime>();
         }
 
         DateTime64 tmp;
-        if (tryInferDateTime64(field, tmp, settings))
+        if (tryInferDateTime64(field, tmp, settings, time_zone))
             return std::make_shared<DataTypeDateTime64>(9);
 
         return nullptr;
@@ -1732,6 +1733,11 @@ DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSet
 
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings)
 {
+    return tryInferDateOrDateTimeFromString(field, settings, DateLUT::instance());
+}
+
+DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone)
+{
     if (settings.try_infer_dates)
     {
         DayNum tmp;
@@ -1741,7 +1747,7 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
 
     if (settings.try_infer_datetimes)
     {
-        if (auto type = tryInferDateTimeOrDateTime64(field, settings))
+        if (auto type = tryInferDateTimeOrDateTime64(field, settings, time_zone))
             return type;
     }
 

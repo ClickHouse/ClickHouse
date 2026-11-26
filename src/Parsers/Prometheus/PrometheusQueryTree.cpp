@@ -6,6 +6,7 @@
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
+#include <base/EnumReflection.h>
 #include <base/arithmeticOverflow.h>
 #include <fmt/ranges.h>
 
@@ -405,6 +406,32 @@ bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 time_s
 }
 
 
+String PrometheusQueryTree::Node::getTypeAndName() const
+{
+    return String{magic_enum::enum_name(node_type)};
+}
+
+String PrometheusQueryTree::Function::getTypeAndName() const
+{
+    return fmt::format("Function '{}'", function_name);
+}
+
+String PrometheusQueryTree::UnaryOperator::getTypeAndName() const
+{
+    return fmt::format("Unary operator '{}'", operator_name);
+}
+
+String PrometheusQueryTree::BinaryOperator::getTypeAndName() const
+{
+    return fmt::format("Binary operator '{}'", operator_name);
+}
+
+String PrometheusQueryTree::AggregationOperator::getTypeAndName() const
+{
+    return fmt::format("Aggregation operator '{}'", operator_name);
+}
+
+
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
@@ -697,7 +724,7 @@ int PrometheusQueryTree::BinaryOperator::getPrecedence() const
         return 6;
     if (operator_name == "or")
         return 7;
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", operator_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented", getTypeAndName());
 }
 
 bool PrometheusQueryTree::BinaryOperator::isRightAssociative() const
