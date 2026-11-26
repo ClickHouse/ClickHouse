@@ -8,6 +8,7 @@
 
 #include <type_traits>
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -97,7 +98,7 @@ enum class FilterResult
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
 /// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
-using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
+using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NameSet>;
 
 [[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
 
@@ -113,6 +114,17 @@ using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
     ActionsDAG pre_actions_dag,
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
+
+/// Whether the side of a join is a `Join` or key-value storage that the join looks rows up in. Such a storage
+/// is validated against the kind and strictness of the join when the join is built.
+[[nodiscard]] bool isPreparedJoinStorage(const QueryPlan::Node & side_node);
+
+/// Whether no two rows that `node` outputs agree on all of `columns`; with no columns, whether it outputs at most one row.
+[[nodiscard]] bool isUniqueByColumns(const QueryPlan::Node & node, NameSet columns);
+
+/// Whether a row of the other side matches at most one row of `side`, whose input is `side_node`: the key
+/// equalities of the join determine columns that this input is unique by.
+[[nodiscard]] bool matchesAtMostOneRow(const JoinStepLogical & join, const QueryPlan::Node & side_node, JoinTableSide side);
 
 /// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
 /// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows

@@ -8,7 +8,7 @@ doc_type: 'changelog'
 ---
 
 <div id="table-of-contents">
-  ### جدول المحتويات
+  ### جدول المحتويات {#table-of-contents}
 </div>
 
 **[إصدار ClickHouse v23.12، 2023-12-28](#2312)**<br />
@@ -25,21 +25,21 @@ doc_type: 'changelog'
 **[إصدار ClickHouse v23.1، 2023-01-25](#231)**<br />
 **[سجل التغييرات لعام 2022](/ar/resources/changelogs/oss/2022)**<br />
 
-### <a id="2312" /> إصدار ClickHouse 23.12، 2023-12-28. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.12/)، [الفيديو](https://www.youtube.com/watch?v=7TLuT6gt0PQ)
+### <a id="2312" /> إصدار ClickHouse 23.12، 2023-12-28. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.12/)، [الفيديو](https://www.youtube.com/watch?v=7TLuT6gt0PQ) {#2312}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/7TLuT6gt0PQ" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change}
 </div>
 
 * إصلاح التحقق من الدوال غير الحتمية في تعبيرات TTL. سابقًا، كان بإمكانك في بعض الحالات إنشاء تعبير TTL يتضمن دوال غير حتمية، ما قد يؤدي لاحقًا إلى سلوك غير معرّف. يُصلح هذا [#37250](https://github.com/ClickHouse/ClickHouse/issues/37250). كما تُمنع افتراضيًا تعبيرات TTL التي لا تعتمد على أي عمود في الجدول. ويمكن السماح بها مجددًا باستخدام `SET allow_suspicious_ttl_expressions = 1` أو `SET compatibility = '23.11'`. يُغلق هذا [#37286](https://github.com/ClickHouse/ClickHouse/issues/37286). [#51858](https://github.com/ClickHouse/ClickHouse/pull/51858) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * تم إهمال إعداد MergeTree ‏`clean_deleted_rows`، ولم يعد له أي تأثير. ولم تعد الكلمة المفتاحية `CLEANUP` في `OPTIMIZE` مسموحًا بها افتراضيًا (ويمكن إعادة تفعيلها باستخدام الإعداد `allow_experimental_replacing_merge_with_cleanup`). [#58267](https://github.com/ClickHouse/ClickHouse/pull/58267) ([Alexander Tokmakov](https://github.com/tavplubix)). يُصلح هذا [#57930](https://github.com/ClickHouse/ClickHouse/issues/57930). ويُغلق هذا [#54988](https://github.com/ClickHouse/ClickHouse/issues/54988). ويُغلق هذا [#54570](https://github.com/ClickHouse/ClickHouse/issues/54570). ويُغلق هذا [#50346](https://github.com/ClickHouse/ClickHouse/issues/50346). ويُغلق هذا [#47579](https://github.com/ClickHouse/ClickHouse/issues/47579). يجب إزالة هذه الميزة لأنها غير مناسبة. وعلينا إزالتها في أقرب وقت ممكن، إذ لا يوجد خيار آخر. [#57932](https://github.com/ClickHouse/ClickHouse/pull/57932) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature}
 </div>
 
 * تنفيذ Refreshable Materialized Views، بناءً على الطلب في [#33919](https://github.com/ClickHouse/ClickHouse/issues/33919). [#56946](https://github.com/ClickHouse/ClickHouse/pull/56946) ([Michael Kolupaev](https://github.com/al13n321)، [Michael Guzov](https://github.com/koloshmet)).
@@ -64,7 +64,7 @@ doc_type: 'changelog'
 * سيُطبَّق الآن تحليل المفتاح الأساسي في جداول MergeTree على شروط التصفية التي تتضمن العمود الافتراضي `_part_offset` (واختياريًا مع `_part`). ويمكن أن تؤدي هذه الميزة دور نوع خاص من الفهرس الثانوي. [#58224](https://github.com/ClickHouse/ClickHouse/pull/58224) ([Amos Bird](https://github.com/amosbird)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement}
 </div>
 
 * استخراج نطاقات الأجزاء غير المتقاطعة من جدول MergeTree أثناء معالجة FINAL. وبهذه الطريقة يمكن تجنّب منطق FINAL الإضافي لهذه النطاقات من الأجزاء غير المتقاطعة. وعندما يكون عدد القيم المكررة ذات المفتاح الأساسي نفسه منخفضًا، يصبح الأداء مماثلًا تقريبًا للأداء بدون FINAL. تحسين أداء القراءة في MergeTree FINAL عند ضبط الإعداد `do_not_merge_across_partitions_select_final`. [#58120](https://github.com/ClickHouse/ClickHouse/pull/58120) ([Maksim Kita](https://github.com/kitaisreal)).
@@ -87,7 +87,7 @@ doc_type: 'changelog'
 * أُضيف تحسين لسلسلة AND notEquals في مُحسِّن التعبيرات المنطقية. هذا التحسين متاح فقط عند تفعيل المحلّل التجريبي. [#58214](https://github.com/ClickHouse/ClickHouse/pull/58214) ([Kevin Mingtarja](https://github.com/kevinmingtarja)).
 
 <div id="improvement">
-  #### تحسينات
+  #### تحسينات {#improvement}
 </div>
 
 * إضافة دعم حد الذاكرة المرن في Keeper. سيرفض الطلبات إذا اقترب استخدام الذاكرة من الحد الأقصى. [#57271](https://github.com/ClickHouse/ClickHouse/pull/57271) ([Han Fei](https://github.com/hanfei1991)). [#57699](https://github.com/ClickHouse/ClickHouse/pull/57699) ([Han Fei](https://github.com/hanfei1991)).
@@ -133,7 +133,7 @@ doc_type: 'changelog'
 * إضافة دعم لتحديد معلمات الاستعلام في سطر الأوامر في clickhouse-local [#58210](https://github.com/ClickHouse/ClickHouse/pull/58210) ([Pradeep Chhetri](https://github.com/chhetripradeep)).
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement}
 </div>
 
 * إضفاء العشوائية على مزيد من الإعدادات [#39663](https://github.com/ClickHouse/ClickHouse/pull/39663) ([Anton Popov](https://github.com/CurtizJ)).
@@ -145,7 +145,7 @@ doc_type: 'changelog'
 * ستتوفر أيضًا الإعدادات المتاحة حصريًا في ClickHouse Cloud ضمن build ClickHouse مفتوح المصدر، تسهيلًا للاستخدام. [#57638](https://github.com/ClickHouse/ClickHouse/pull/57638) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
-  #### إصلاح خلل (سلوك غير صحيح يمكن للمستخدم ملاحظته في إصدار مستقر رسمي)
+  #### إصلاح خلل (سلوك غير صحيح يمكن للمستخدم ملاحظته في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
 </div>
 
 * أُصلِح احتمال حدوث خلل في ترتيب الفرز ضمن TTL GROUP BY [#49103](https://github.com/ClickHouse/ClickHouse/pull/49103) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -186,14 +186,14 @@ doc_type: 'changelog'
 * إصلاح التباطؤ في `CREATE VIEW` عند وجود عدد هائل من الاستعلامات الفرعية [#58220](https://github.com/ClickHouse/ClickHouse/pull/58220) ([Tao Wang](https://github.com/wangtZJU)).
 * إصلاح التحليل المتوازي لتنسيق JSONCompactEachRow [#58181](https://github.com/ClickHouse/ClickHouse/pull/58181) ([Alexey Milovidov](https://github.com/alexey-milovidov)). [#58250](https://github.com/ClickHouse/ClickHouse/pull/58250) ([Kruglov Pavel](https://github.com/Avogar)).
 
-### <a id="2311" /> إصدار ClickHouse 23.11، بتاريخ 2023-12-06. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.11/)، [الفيديو](https://www.youtube.com/watch?v=1HJdjOH4Eis)
+### <a id="2311" /> إصدار ClickHouse 23.11، بتاريخ 2023-12-06. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.11/)، [الفيديو](https://www.youtube.com/watch?v=1HJdjOH4Eis) {#2311}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/1HJdjOH4Eis" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-1}
 </div>
 
 * أصبح ملف تكوين خادم ClickHouse الافتراضي يفعّل كلاً من `access_management` (إدارة المستخدمين عبر استعلامات SQL) و`named_collection_control` (إدارة المجموعات المسماة عبر استعلامات SQL) للمستخدم `default` بشكل افتراضي. ويغلق هذا [#56482](https://github.com/ClickHouse/ClickHouse/issues/56482). [#56619](https://github.com/ClickHouse/ClickHouse/pull/56619) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -203,7 +203,7 @@ doc_type: 'changelog'
 * لم يعد بإمكانك استخدام الدالة التجميعية `avgWeighted` مع وسيطات من النوع `Decimal`. الحل البديل: حوّل الوسيطات إلى `Float64`. ويغلق هذا [#43928](https://github.com/ClickHouse/ClickHouse/issues/43928). ويغلق هذا [#31768](https://github.com/ClickHouse/ClickHouse/issues/31768). ويغلق هذا [#56435](https://github.com/ClickHouse/ClickHouse/issues/56435). إذا كنت قد استخدمت هذه الدالة داخل العروض المادية أو الإسقاطات مع وسيطات `Decimal`، فيرجى التواصل مع support@clickhouse.com. تم إصلاح خطأ في الدالة التجميعية `sumMap`، لكن ذلك جعلها أبطأ بنحو 1.5..2 مرة. ولا يهم ذلك لأن هذه الدالة رديئة على أي حال. ويغلق هذا [#54955](https://github.com/ClickHouse/ClickHouse/issues/54955). ويغلق هذا [#53134](https://github.com/ClickHouse/ClickHouse/issues/53134). ويغلق هذا [#55148](https://github.com/ClickHouse/ClickHouse/issues/55148). كما تم إصلاح خطأ في الدالة `groupArraySample` — إذ كانت تستخدم نفس البذرة العشوائية عند توليد أكثر من حالة تجميعية واحدة في استعلام. [#56350](https://github.com/ClickHouse/ClickHouse/pull/56350) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-1}
 </div>
 
 * تمت إضافة إعداد الخادم `async_load_databases` للتحميل غير المتزامن لقواعد البيانات والجداول. يسرّع هذا وقت بدء تشغيل الخادم. وينطبق على قواعد البيانات ذات المحركات `Ordinary` و`Atomic` و`Replicated`. وتُحمَّل البيانات الوصفية لجداولها بشكل غير متزامن. ويؤدي تنفيذ query على جدول إلى رفع أولوية مهمة التحميل والانتظار حتى اكتمالها. كما تمت إضافة جدول نظام جديد `system.asynchronous_loader` لأغراض الفحص الداخلي. [#49351](https://github.com/ClickHouse/ClickHouse/pull/49351) ([Sergei Trifonov](https://github.com/serxa)).
@@ -232,7 +232,7 @@ doc_type: 'changelog'
 * أُضيف دعم [أنواع Protobuf المعروفة جيدًا](https://protobuf.dev/reference/protobuf/google.protobuf/) في Protobuf format. [#56741](https://github.com/ClickHouse/ClickHouse/pull/56741) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-1}
 </div>
 
 * مهلات زمنية تكيفية للتعامل مع S3. تُجرى المحاولة الأولى بمهلات منخفضة للإرسال والاستقبال. [#56314](https://github.com/ClickHouse/ClickHouse/pull/56314) ([Sema Checherinda](https://github.com/CheSema)).
@@ -260,7 +260,7 @@ doc_type: 'changelog'
 * تنفيذ `BackupEntriesCollector` بالتوازي في النسخ الاحتياطية. [#56312](https://github.com/ClickHouse/ClickHouse/pull/56312) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 <div id="improvement">
-  #### تحسينات
+  #### تحسينات {#improvement-1}
 </div>
 
 * أُضيف إعداد جديد في `MergeTree` باسم `add_implicit_sign_column_constraint_for_collapsing_engine` (معطّل افتراضيًا). عند تمكينه، يضيف قيد CHECK ضمنيًا إلى جداول `CollapsingMergeTree` بحيث يقيّد قيمة العمود `Sign` لتكون -1 أو 1 فقط. [#56701](https://github.com/ClickHouse/ClickHouse/issues/56701). [#56986](https://github.com/ClickHouse/ClickHouse/pull/56986) ([Kevin Mingtarja](https://github.com/kevinmingtarja)).
@@ -323,7 +323,7 @@ doc_type: 'changelog'
 * تقليل استخدام `INCONSISTENT_METADATA_FOR_BACKUP` بهذا القدر. وإذا أمكن، يُفضَّل مواصلة الفحص بدلًا من إيقافه ثم إعادة بدء فحص النسخة الاحتياطية من البداية. [#57385](https://github.com/ClickHouse/ClickHouse/pull/57385) ([Vitaly Baranov](https://github.com/vitlibar)).
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-1}
 </div>
 
 * أُضيف اختبار SQLLogic. [#56078](https://github.com/ClickHouse/ClickHouse/pull/56078) ([Han Fei](https://github.com/hanfei1991)).
@@ -343,7 +343,7 @@ doc_type: 'changelog'
 * ضُبط الحد الأقصى لاستخدام الذاكرة لـ clickhouse-client (`1G`) في CI. [#56873](https://github.com/ClickHouse/ClickHouse/pull/56873) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-1">
-  #### إصلاح خلل
+  #### إصلاح خلل {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-1}
 </div>
 
 * إصلاح analyzer التجريبي: يجب أن تعالج عملية insert from select مع استعلام فرعي يشير إلى جدول الإدراج كتلةَ الإدراج فقط. [#50857](https://github.com/ClickHouse/ClickHouse/pull/50857) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
@@ -417,14 +417,14 @@ doc_type: 'changelog'
 * تعيد mutations في MergeTree استخدام index granularity لجزء المصدر [#57352](https://github.com/ClickHouse/ClickHouse/pull/57352) ([Maksim Kita](https://github.com/kitaisreal)).
 * FS cache: إضافة حدّ للتنزيل في الخلفية [#57424](https://github.com/ClickHouse/ClickHouse/pull/57424) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
-### <a id="2310" /> إصدار ClickHouse 23.10، بتاريخ 2023-11-02. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.10/)، [الفيديو](https://www.youtube.com/watch?v=PGQS6uPb970)
+### <a id="2310" /> إصدار ClickHouse 23.10، بتاريخ 2023-11-02. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.10/)، [الفيديو](https://www.youtube.com/watch?v=PGQS6uPb970) {#2310}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/PGQS6uPb970" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-2}
 </div>
 
 * لم يعد هناك خيار لإزالة أجزاء البيانات المعطوبة تلقائيًا. هذا يُغلق [#55174](https://github.com/ClickHouse/ClickHouse/issues/55174). [#55184](https://github.com/ClickHouse/ClickHouse/pull/55184) ([Alexey Milovidov](https://github.com/alexey-milovidov)). [#55557](https://github.com/ClickHouse/ClickHouse/pull/55557) ([Jihyuk Bok](https://github.com/tomahawk28)).
@@ -437,7 +437,7 @@ doc_type: 'changelog'
 * لم تعد المسارات العشوائية على نقطة نهاية HTTP تُفسَّر على أنها طلب إلى نقطة النهاية `/query`. [#55521](https://github.com/ClickHouse/ClickHouse/pull/55521) ([Konstantin Bogdanov](https://github.com/thevar1able)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-2}
 </div>
 
 * تمت إضافة الدالة `arrayFold(accumulator, x1, ..., xn -> expression, initial, array1, ..., arrayn)` التي تطبّق دالة lambda على عدة Arrays لها نفس عدد العناصر، وتجمع النتيجة في مُجمِّع. [#49794](https://github.com/ClickHouse/ClickHouse/pull/49794) ([Lirikl](https://github.com/Lirikl)).
@@ -465,7 +465,7 @@ doc_type: 'changelog'
 * تقديم الإعداد `create_table_empty_primary_key_by_default` لتعيين `ORDER BY ()` افتراضيًا. [#55899](https://github.com/ClickHouse/ClickHouse/pull/55899) ([Srikanth Chekuri](https://github.com/srikanthccv)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-2}
 </div>
 
 * إضافة الخيار `query_plan_preserve_num_streams_after_window_functions` للحفاظ على عدد التدفقات بعد تقييم window functions، بما يتيح معالجة التدفقات بالتوازي. [#50771](https://github.com/ClickHouse/ClickHouse/pull/50771) ([frinkr](https://github.com/frinkr)).
@@ -496,7 +496,7 @@ doc_type: 'changelog'
 * إضافة الإعداد `optimize_trivial_approximate_count_query` لاستخدام تقريب `count` مع Storage `EmbeddedRocksDB`. وتمكين العدّ البسيط لـ StorageJoin. [#55806](https://github.com/ClickHouse/ClickHouse/pull/55806) ([Duc Canh Le](https://github.com/canhld94)).
 
 <div id="improvement">
-  #### تحسينات
+  #### تحسينات {#improvement-2}
 </div>
 
 * أصبحت الدوال `toDayOfWeek` (الاسم البديل في MySQL: `DAYOFWEEK`) و`toYearWeek` (`YEARWEEK`) و`toWeek` (`WEEK`) تدعم الآن الوسائط من النوع `String`. وهذا يجعل سلوكها متسقًا مع سلوك MySQL. [#55589](https://github.com/ClickHouse/ClickHouse/pull/55589) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -541,7 +541,7 @@ doc_type: 'changelog'
 * طباعة المسار الخاص بالأجزاء التالفة على القرص قبل إيقاف server. قبل هذا التغيير، إذا كان أحد الأجزاء تالفًا على القرص وتعذّر على server بدء التشغيل، كان من شبه المستحيل معرفة أي جزء تالف. تم إصلاح ذلك. [#56181](https://github.com/ClickHouse/ClickHouse/pull/56181) ([Duc Canh Le](https://github.com/canhld94)).
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-2}
 </div>
 
 * إذا كانت قاعدة البيانات في Docker قد هُيئت بالفعل، فلا حاجة إلى تهيئتها مرة أخرى عند عمليات التشغيل اللاحقة. قد يساعد ذلك في حل مشكلة إعادة تشغيل الحاوية بلا توقف عندما تفشل قاعدة البيانات في التحميل خلال 1000 محاولة (وهذا مهم خصوصًا لقواعد البيانات الكبيرة جدًا والإعدادات متعددة العقد). [#50724](https://github.com/ClickHouse/ClickHouse/pull/50724) ([Alexander Nikolaev](https://github.com/AlexNik)).
@@ -553,7 +553,7 @@ doc_type: 'changelog'
 * استخدام المستودع الأصلي لـ apache datasketches. [#55787](https://github.com/ClickHouse/ClickHouse/pull/55787) ([Nikita Taranov](https://github.com/nickitat)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-2">
-  #### إصلاح خلل (سلوك غير صحيح يلاحظه المستخدم في إصدار مستقر رسمي)
+  #### إصلاح خلل (سلوك غير صحيح يلاحظه المستخدم في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-2}
 </div>
 
 * تخطّي إنشاء الروابط الصلبة لملفات الفهرس المعكوس أثناء عملية mutation [#47663](https://github.com/ClickHouse/ClickHouse/pull/47663) ([cangyin](https://github.com/cangyin)).
@@ -617,14 +617,14 @@ doc_type: 'changelog'
 * إصلاح schema cache في حالة fallback من JSON-&gt;JSONEachRow مع settings مُعدّلة [#56172](https://github.com/ClickHouse/ClickHouse/pull/56172) ([Kruglov Pavel](https://github.com/Avogar)).
 * إضافة معالج أخطاء إلى odbc-bridge [#56185](https://github.com/ClickHouse/ClickHouse/pull/56185) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 
-### <a id="239" /> إصدار ClickHouse 23.9 بتاريخ 2023-09-28. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.9/)، [الفيديو](https://www.youtube.com/watch?v=yS8YU-rBpMM)
+### <a id="239" /> إصدار ClickHouse 23.9 بتاريخ 2023-09-28. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.9/)، [الفيديو](https://www.youtube.com/watch?v=yS8YU-rBpMM) {#239}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/yS8YU-rBpMM" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-3}
 </div>
 
 * إزالة خيار التكوين `status_info` وحالة القواميس من معالج Prometheus الافتراضي. [#54090](https://github.com/ClickHouse/ClickHouse/pull/54090) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -632,7 +632,7 @@ doc_type: 'changelog'
 * تعطيل الإعداد `input_format_json_try_infer_numbers_from_strings` افتراضيًا، بحيث لا نحاول افتراضيًا استدلال الأرقام من السلاسل النصية في تنسيقات JSON، وذلك لتجنب أخطاء التحليل المحتملة عندما تحتوي البيانات النموذجية على سلاسل نصية تبدو كأنها أرقام. [#55099](https://github.com/ClickHouse/ClickHouse/pull/55099) ([Kruglov Pavel](https://github.com/Avogar)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-3}
 </div>
 
 * تحسين schema inference من JSON formats: 1) أصبح من الممكن الآن استنتاج named Tuples من JSON objects من دون JSON type التجريبي، وذلك عبر الإعداد `input_format_json_try_infer_named_tuples_from_objects` في JSON formats. سابقًا، من دون JSON type التجريبي، لم يكن بالإمكان استنتاج JSON objects إلا على أنها Strings أو Maps، أما الآن فأصبح بالإمكان استنتاج named Tuple. وسيحتوي النوع Tuple الناتج على جميع مفاتيح الكائنات التي قُرئت في عينة البيانات أثناء schema inference. وقد يكون ذلك مفيدًا عند قراءة بيانات JSON المهيكلة من دون كائنات sparse. هذا الإعداد مُمكَّن افتراضيًا. 2) السماح بتحليل JSON array إلى column من النوع String عبر الإعداد `input_format_json_read_arrays_as_strings`. ويمكن أن يساعد ذلك في قراءة Arrays التي تحتوي على قيم من types مختلفة. 3) السماح باستخدام النوع String لمفاتيح JSON ذات types غير المعروفة (`null`/`[]`/`{}`) في بيانات العينة عبر الإعداد `input_format_json_infer_incomplete_types_as_strings`. أصبح بإمكاننا الآن في JSON formats قراءة أي قيمة في column من النوع String، كما يمكن تجنب الخطأ `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` أثناء schema inference باستخدام النوع String للأنواع غير المعروفة، وبذلك ستُقرأ البيانات بنجاح. [#54427](https://github.com/ClickHouse/ClickHouse/pull/54427) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -657,7 +657,7 @@ doc_type: 'changelog'
 * إضافة إعداد جديد `print_pretty_type_names` لطباعة أسماء الأنواع المتداخلة العميقة بتنسيق Pretty، مثل Tuple/Maps/Arrays. [#55095](https://github.com/ClickHouse/ClickHouse/pull/55095) ([Kruglov Pavel](https://github.com/Avogar)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-3}
 </div>
 
 * تسريع القراءة من S3 عبر تفعيل عمليات الجلب المسبق افتراضيًا. [#53709](https://github.com/ClickHouse/ClickHouse/pull/53709) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -681,21 +681,21 @@ doc_type: 'changelog'
 * استبدال البحث الخطي في `MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules` ببحث ثنائي. [#54869](https://github.com/ClickHouse/ClickHouse/pull/54869) ([usurai](https://github.com/usurai)).
 
 <div id="experimental-feature">
-  #### الميزة التجريبية
+  #### الميزة التجريبية {#experimental-feature}
 </div>
 
 * أصبح الآن من الممكن تنفيذ إنشاء فهارس `Annoy` بالتوازي باستخدام الإعداد `max_threads_for_annoy_index_creation`. [#54047](https://github.com/ClickHouse/ClickHouse/pull/54047) ([Robert Schulze](https://github.com/rschu1ze)).
 * لا تقرأ ميزة النسخ المتماثلة المتوازية عبر Distributed من جميع النسخ المتماثلة [#54199](https://github.com/ClickHouse/ClickHouse/pull/54199) ([Igor Nikonov](https://github.com/devcrafter)).
 
 <div id="improvement">
-  #### تحسينات
+  #### تحسينات {#improvement-3}
 </div>
 
 * السماح باستبدال أسماء ملفات الأعمدة الطويلة في أجزاء بيانات `MergeTree` ببصمات تجزئة للأسماء. يساعد ذلك على تجنّب الخطأ `File name too long` في بعض الحالات. [#50612](https://github.com/ClickHouse/ClickHouse/pull/50612) ([Anton Popov](https://github.com/CurtizJ)).
 * تحليل البيانات بتنسيق `JSON` على أنها `JSONEachRow` إذا تعذّر تحليل البيانات الوصفية. يتيح ذلك قراءة الملفات ذات الامتداد `.json` حتى إذا كان التنسيق الفعلي هو `JSONEachRow`. يغلق [#45740](https://github.com/ClickHouse/ClickHouse/issues/45740). [#54405](https://github.com/ClickHouse/ClickHouse/pull/54405) ([Kruglov Pavel](https://github.com/Avogar)).
 * إخراج JSON/XML صالح عند حدوث استثناء أثناء تنفيذ استعلام HTTP. تمت إضافة الإعداد `http_write_exception_in_output_format` لتمكين هذا السلوك أو تعطيله (وهو مُمكّن افتراضيًا). [#52853](https://github.com/ClickHouse/ClickHouse/pull/52853) ([Kruglov Pavel](https://github.com/Avogar)).
 * تحتوي الواجهة `information_schema.tables` الآن على حقل جديد `data_length` يعرض الحجم التقريبي للبيانات على القرص. وهذا مطلوب لتشغيل الاستعلامات التي يُنشئها Amazon QuickSight. [#55037](https://github.com/ClickHouse/ClickHouse/pull/55037) ([Robert Schulze](https://github.com/rschu1ze)).
-* حصلت واجهة MySQL على تنفيذ أولي محدود للعبارات المُحضّرة، وهو كافٍ فقط للسماح بإنشاء اتصال من Tableau Online إلى ClickHouse عبر موصل MySQL. [#54115](https://github.com/ClickHouse/ClickHouse/pull/54115) ([Serge Klochkov](https://github.com/slvrtrn)). يُرجى ملاحظة ما يلي: تنفيذ العبارات المُحضّرة محدود جدًا، ولا ندعم بعد ربط الوسائط، إذ لا يلزم ذلك في حالة استخدام Tableau Online هذه تحديدًا. وسيُنفَّذ ذلك لاحقًا عند الحاجة، بعد اختبار Tableau Online على نطاق واسع إذا تبيّن وجود مشكلات.
+* حصلت واجهة MySQL على تنفيذ أولي محدود للعبارات المُحضّرة، وهو كافٍ فقط للسماح بإنشاء اتصال من Tableau Online إلى ClickHouse عبر موصل MySQL. [#54115](https://github.com/ClickHouse/ClickHouse/pull/54115) ([Serge Klochkov](https://github.com/slvrtrn)). يُرجى ملاحظة ما يلي: تنفيذ العبارات المُحضّرة محدود جدًا، ولا ندعم بعد ربط الوسائط، إذ لا يلزم ذلك في حالة استخدام Tableau Online هذه تحديدًا. وسيُنفَّذ ذلك لاحقًا عند الحاجة، بعد اختبار Tableau Online على نطاق واسع إذا تبيّن وجود مشكلات.
 * دعم أنماط المطابقة غير الحساسة لحالة الأحرف وdot-all في قواميس `regexp_tree`. [#50906](https://github.com/ClickHouse/ClickHouse/pull/50906) ([Johann Gan](https://github.com/johanngan)).
 * تحسين في Keeper: إضافة أمر Keeper باسم `createIfNotExists`. [#48855](https://github.com/ClickHouse/ClickHouse/pull/48855) ([Konstantin Bogdanov](https://github.com/thevar1able)).
 * استدلال أكثر دقة لأنواع الأعداد الصحيحة، مع إصلاح [#51236](https://github.com/ClickHouse/ClickHouse/issues/51236). [#53003](https://github.com/ClickHouse/ClickHouse/pull/53003) ([Chen768959](https://github.com/Chen768959)).
@@ -725,7 +725,7 @@ doc_type: 'changelog'
 * أصبحت query cache تُرجِع خطأً الآن إذا حاولتَ تخزين نتيجة استعلام يحتوي على دالة غير حتمية مثل `now` و `randomString` و `dictGet`. وبالمقارنة مع السلوك السابق (عدم تخزين النتيجة بصمت)، يقلّل هذا من الالتباس والمفاجآت. [#54801](https://github.com/ClickHouse/ClickHouse/pull/54801) ([Robert Schulze](https://github.com/rschu1ze)).
 * مُنع استخدام الأعمدة الخاصة مثل materialized/ephemeral/alias مع وسائط التخزين `file`/`s3`/`url`/...، مع إصلاح عمليات insert إلى الأعمدة ephemeral من الملفات. يُغلق [#53477](https://github.com/ClickHouse/ClickHouse/issues/53477). [#54803](https://github.com/ClickHouse/ClickHouse/pull/54803) ([Kruglov Pavel](https://github.com/Avogar)).
 * أصبح جمع metadata للنسخ الاحتياطي أكثر قابلية للتهيئة. [#54804](https://github.com/ClickHouse/ClickHouse/pull/54804) ([Vitaly Baranov](https://github.com/vitlibar)).
-* سيضيف `clickhouse-local` الآن إلى ملف السجل الخاص به (إذا كان مفعّلًا عبر الخيار --server&#95;logs&#95;file) بادئة لكل سطر تتضمن timestamp ومعرّف thread وما إلى ذلك، تمامًا مثل `clickhouse-server`. [#54807](https://github.com/ClickHouse/ClickHouse/pull/54807) ([Michael Kolupaev](https://github.com/al13n321)).
+* سيضيف `clickhouse-local` الآن إلى ملف السجل الخاص به (إذا كان مفعّلًا عبر الخيار `--server_logs_file`) بادئة لكل سطر تتضمن timestamp ومعرّف thread وما إلى ذلك، تمامًا مثل `clickhouse-server`. [#54807](https://github.com/ClickHouse/ClickHouse/pull/54807) ([Michael Kolupaev](https://github.com/al13n321)).
 * الحقل `is_obsolete` في الجدول `system.merge_tree_settings` — أصبحت قيمته الآن 1 لإعدادات merge tree المتقادمة. في السابق، كان الوصف وحده يشير إلى أن الإعداد متقادم. [#54837](https://github.com/ClickHouse/ClickHouse/pull/54837) ([Robert Schulze](https://github.com/rschu1ze)).
 * أصبح من الممكن استخدام صيغة الجمع مع interval literals. ينبغي أن يكون `INTERVAL 2 HOURS` مكافئًا لـ `INTERVAL 2 HOUR`. [#54860](https://github.com/ClickHouse/ClickHouse/pull/54860) ([Jordi Villar](https://github.com/jrdi)).
 * أصبح إنشاء projection باستخدام `Nullable` PK مسموحًا به دائمًا. هذا يُصلح [#54814](https://github.com/ClickHouse/ClickHouse/issues/54814). [#54895](https://github.com/ClickHouse/ClickHouse/pull/54895) ([Amos Bird](https://github.com/amosbird)).
@@ -737,7 +737,7 @@ doc_type: 'changelog'
 * أُضيفت الدالة `timestamp` للتوافق مع MySQL. يحلّ [#54275](https://github.com/ClickHouse/ClickHouse/issues/54275). [#54639](https://github.com/ClickHouse/ClickHouse/pull/54639) ([Nikolay Degterinsky](https://github.com/evillique)).
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-3}
 </div>
 
 * رُقِّيَ المترجم البرمجي المستخدم في البُنى الرسمية وبُنى التكامل المستمر لـ ClickHouse من Clang 16 إلى 17. [#53831](https://github.com/ClickHouse/ClickHouse/pull/53831) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -749,7 +749,7 @@ doc_type: 'changelog'
 * استُبدلت المكتبة المستخدمة لمعالجة (ترميز/فك ترميز) قيم base64 من Turbo-Base64 إلى aklomp-base64. كلتاهما تستفيدان من تسريع SIMD على x86 وARM، ولكن 1. ترخيص الثانية (BSD-2) أنسب لـ ClickHouse، إذ إن Turbo64 انتقل في هذه الأثناء إلى GPL-3، 2. ومع عدد أكبر من النجوم على GitHub، يبدو aklomp-base64 أكثر قابلية للاستمرار مستقبلًا، 3. يوفّر aklomp-base64 واجهة برمجة تطبيقات أفضل قليلًا (مع أن هذا أمر قد يُعدّ ذاتيًا)، و4. لا يتطلب aklomp-base64 منا الالتفاف على الأخطاء (مثل التهيئة غير الآمنة للخيوط). ملاحظة: يرفض aklomp-base64 قيم base64 من دون حشو، بينما يفك Turbo-Base64 ترميزها على أساس أفضل جهد. وتترك RFC-4648 مسألة ما إذا كان الحشو إلزاميًا أم لا مفتوحة، لكن هذا قد يشكّل، بحسب السياق، تغييرًا سلوكيًا ينبغي الانتباه إليه. [#54119](https://github.com/ClickHouse/ClickHouse/pull/54119) ([Mikhail Koviazin](https://github.com/mkmkme)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-2">
-  #### إصلاح خلل (سلوك غير صحيح يلاحظه المستخدم في إصدار مستقر رسمي)
+  #### إصلاح خلل (سلوك غير صحيح يلاحظه المستخدم في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-3}
 </div>
 
 * إصلاح REPLACE/MOVE PARTITION مع zero-copy replication (ملاحظة: &quot;zero-copy replication&quot; ميزة تجريبية) [#54193](https://github.com/ClickHouse/ClickHouse/pull/54193) ([Alexander Tokmakov](https://github.com/tavplubix)).
@@ -808,14 +808,14 @@ doc_type: 'changelog'
 * إصلاح: insert quorum بدون retries في keeper [#55026](https://github.com/ClickHouse/ClickHouse/pull/55026) ([Igor Nikonov](https://github.com/devcrafter)).
 * إصلاح الحالة البسيطة مع Nullable [#55030](https://github.com/ClickHouse/ClickHouse/pull/55030) ([Pedro Riera](https://github.com/priera)).
 
-### <a id="238" /> إصدار ClickHouse 23.8 LTS، 2023-08-31. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.8/)، [الفيديو](https://www.youtube.com/watch?v=d1_pyoWcydk)
+### <a id="238" /> إصدار ClickHouse 23.8 LTS، 2023-08-31. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.8/)، [الفيديو](https://www.youtube.com/watch?v=d1_pyoWcydk) {#238}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/d1_pyoWcydk" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-4}
 </div>
 
 * إذا كان `disk` الديناميكي يحتوي على اسم، فيجب تحديده بالشكل `disk = disk(name = 'disk_name'`, ...) ضمن وسائط دالة disk. في الإصدار السابق، كان يمكن تحديده بالشكل `disk = disk_<disk_name>(...)`، لكن هذا لم يعد مدعومًا. [#52820](https://github.com/ClickHouse/ClickHouse/pull/52820) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -825,7 +825,7 @@ doc_type: 'changelog'
 * تعطيل دعم 3DES في اتصالات TLS. [#52893](https://github.com/ClickHouse/ClickHouse/pull/52893) ([Kenji Noguchi](https://github.com/knoguchi)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-4}
 </div>
 
 * استيراد مباشر من أرشيفات zip/7z/tar. مثال: `file('*.zip :: *.csv')`. [#50321](https://github.com/ClickHouse/ClickHouse/pull/50321) ([nikitakeba](https://github.com/nikitakeba)).
@@ -854,7 +854,7 @@ doc_type: 'changelog'
 * إضافة دعم استخدام السلاسل النصية الحرفية كأسماء للجداول. ويغلق [#52178](https://github.com/ClickHouse/ClickHouse/issues/52178). [#52635](https://github.com/ClickHouse/ClickHouse/pull/52635) ([hendrik-m](https://github.com/hendrik-m)).
 
 <div id="experimental-feature">
-  #### الميزة التجريبية
+  #### الميزة التجريبية {#experimental-feature-1}
 </div>
 
 * إضافة محرك جدول جديد `S3Queue` لاستيراد البيانات المتدفقة من S3. يُغلق [#37012](https://github.com/ClickHouse/ClickHouse/issues/37012). [#49086](https://github.com/ClickHouse/ClickHouse/pull/49086) ([s-kat](https://github.com/s-kat)). وهو غير جاهز للاستخدام. لا تستخدمه.
@@ -862,7 +862,7 @@ doc_type: 'changelog'
 * إضافة دعم تجريبي لـ HNSW بوصفه طريقةً للبحث التقريبي عن الجيران. [#53447](https://github.com/ClickHouse/ClickHouse/pull/53447) ([Davit Vardanyan](https://github.com/davvard)). هذا مخصّص حاليًا لمن يواصلون العمل على التنفيذ. لا تستخدمه.
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-4}
 </div>
 
 * دعم pushdown لمرشحات Parquet. أي عند قراءة ملفات Parquet، تُتخطى مجموعات الصفوف (أجزاء من الملف) استنادًا إلى شرط WHERE وقيم الحد الأدنى/الحد الأقصى في كل عمود. وبوجه خاص، إذا كان الملف مرتبًا تقريبًا حسب عمود معيّن، فستكون الاستعلامات التي تُصفّي نطاقًا صغيرًا من ذلك العمود أسرع بكثير. [#52951](https://github.com/ClickHouse/ClickHouse/pull/52951) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -886,7 +886,7 @@ doc_type: 'changelog'
 * ستؤدي إدارة threads بعناية أكبر إلى تحسين سرعة S3 table function عند التعامل مع عدد كبير من الملفات بأكثر من ~25%. [#53668](https://github.com/ClickHouse/ClickHouse/pull/53668) ([pufit](https://github.com/pufit)).
 
 <div id="improvement">
-  #### تحسينات
+  #### تحسينات {#improvement-4}
 </div>
 
 * أُضيف الإعداد `stderr_reaction` للتحكم في الإجراء المتخذ (none أو log أو throw) عندما تحتوي `stderr` الخاصة بالأمر الخارجي على بيانات. وهذا يُسهّل تصحيح أخطاء الأوامر الخارجية. [#43210](https://github.com/ClickHouse/ClickHouse/pull/43210) ([Amos Bird](https://github.com/amosbird)).
@@ -961,7 +961,7 @@ doc_type: 'changelog'
 * تُتجاهل المفاتيح الأجنبية في تعريفات الجداول لتحسين التوافق مع MySQL، بحيث لا يضطر المستخدم إلى إعادة كتابة SQL الخاص بجزء المفتاح الأجنبي. راجع [#53380](https://github.com/ClickHouse/ClickHouse/issues/53380). [#53864](https://github.com/ClickHouse/ClickHouse/pull/53864) ([jsc0218](https://github.com/jsc0218)).
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-4}
 </div>
 
 * لا تكشف الرموز من الملف التنفيذي لـ ClickHouse للرابط الديناميكي. قد يُصلح ذلك [#43933](https://github.com/ClickHouse/ClickHouse/issues/43933). [#47475](https://github.com/ClickHouse/ClickHouse/pull/47475) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -986,7 +986,7 @@ doc_type: 'changelog'
 * تحسين طفيف لعملية البناء في CMake عبر تنقية بعض التبعيات وإزالة بعض العناصر المكررة. تتضمن كل commit وصفًا موجزًا للتغييرات المُدخلة. [#53759](https://github.com/ClickHouse/ClickHouse/pull/53759) ([Amos Bird](https://github.com/amosbird)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-1">
-  #### إصلاح خلل
+  #### إصلاح خلل {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-4}
 </div>
 
 * لا تعِد تعيين فهرس Annoy (التجريبي) أثناء الإنشاء عند وجود أكثر من علامة واحدة [#51325](https://github.com/ClickHouse/ClickHouse/pull/51325) ([Tian Xinhui](https://github.com/xinhuitian)).
@@ -1053,14 +1053,14 @@ doc_type: 'changelog'
 * إصلاح احتمال حدوث segfault أثناء استخدام محرك PostgreSQL [#53847](https://github.com/ClickHouse/ClickHouse/pull/53847) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * إصلاح الاسم المستعار `named&#95;collection&#95;admin` [#54066](https://github.com/ClickHouse/ClickHouse/pull/54066) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
-### <a id="237" /> إصدار ClickHouse 23.7، 2023-07-27. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.7/)، [الفيديو](https://www.youtube.com/watch?v=TI1kONfON18)
+### <a id="237" /> إصدار ClickHouse 23.7، 2023-07-27. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.7/)، [الفيديو](https://www.youtube.com/watch?v=TI1kONfON18) {#237}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/TI1kONfON18" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-5}
 </div>
 
 * إضافة نوع الوصول `NAMED COLLECTION` (الأسماء البديلة: `USE NAMED COLLECTION`، `NAMED COLLECTION USAGE`). هذا التغيير غير متوافق مع الإصدارات السابقة لأن نوع الوصول هذا معطّل افتراضيًا (لأن نوع الوصول الأب `NAMED COLLECTION ADMIN` معطّل افتراضيًا أيضًا). اقتُرح في [#50277](https://github.com/ClickHouse/ClickHouse/issues/50277). للمنح، استخدم `GRANT NAMED COLLECTION ON collection_name TO user` أو `GRANT NAMED COLLECTION ON * TO user`، وللتمكن من منح هذه الصلاحيات، يلزم وجود `named_collection_admin` في config (وكان اسمه سابقًا `named_collection_control`، لذا سيبقى كاسم بديل). [#50625](https://github.com/ClickHouse/ClickHouse/pull/50625) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -1070,7 +1070,7 @@ doc_type: 'changelog'
 * أُزيلت الميزة التجريبية `hashid` بسبب خطأ. وكانت جودة التنفيذ محل شك منذ البداية، ولم تتجاوز المرحلة التجريبية. هذا يغلق [#52406](https://github.com/ClickHouse/ClickHouse/issues/52406). [#52449](https://github.com/ClickHouse/ClickHouse/pull/52449) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-5}
 </div>
 
 * تمت إضافة محرك قاعدة البيانات `Overlay` لدمج عدة قواعد بيانات في قاعدة بيانات واحدة. كما تمت إضافة محرك قاعدة البيانات `Filesystem` لتمثيل دليل في نظام الملفات على هيئة مجموعة من الجداول المتاحة ضمنيًا، مع اكتشاف format وstructure تلقائيًا. ويتيح محرك قاعدة البيانات الجديد `S3` التفاعل مع تخزين S3 بوضع القراءة فقط، من خلال تمثيل prefix على هيئة مجموعة من الجداول. كما يتيح محرك قاعدة البيانات الجديد `HDFS` التفاعل مع تخزين HDFS بالطريقة نفسها. [#48821](https://github.com/ClickHouse/ClickHouse/pull/48821) ([alekseygolub](https://github.com/alekseygolub)).
@@ -1105,7 +1105,7 @@ doc_type: 'changelog'
 * إضافة إعداد جديد `disable_url_encoding` يتيح تعطيل فك ترميز/ترميز المسار في URI ضمن محرك URL. [#52337](https://github.com/ClickHouse/ClickHouse/pull/52337) ([Kruglov Pavel](https://github.com/Avogar)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-5}
 </div>
 
 * تمكين الاختيار التلقائي لتنسيق التسلسل sparse افتراضيًا. وهذا يحسّن الأداء. هذا التنسيق مدعوم منذ الإصدار 22.1. بعد هذا التغيير، قد لا يكون الرجوع إلى إصدار أقدم من 22.1 ممكنًا. وقد يتطلب الرجوع إلى إصدار أقدم تعيين `ratio_of_defaults_for_sparse_serialization=0.9375` [55153](https://github.com/ClickHouse/ClickHouse/issues/55153). يمكنك تعطيل استخدام تنسيق التسلسل sparse من خلال تعيين الإعداد `ratio_of_defaults_for_sparse_serialization = 1` لجداول MergeTree لديك. [#49631](https://github.com/ClickHouse/ClickHouse/pull/49631) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -1125,7 +1125,7 @@ doc_type: 'changelog'
 * أُضيف الإعداد الجديد `merge_tree_determine_task_size_by_prewhere_columns`. إذا ضُبط على `true`، فلن تُؤخذ في الاعتبار عند تحديد حجم مهمة القراءة إلا أحجام الأعمدة الواردة في قسم `PREWHERE`. وإلا فستؤخذ جميع الأعمدة الواردة في الاستعلام في الاعتبار. [#52606](https://github.com/ClickHouse/ClickHouse/pull/52606) ([Nikita Taranov](https://github.com/nickitat)).
 
 <div id="improvement">
-  #### تحسينات
+  #### تحسينات {#improvement-5}
 </div>
 
 * استخدم read&#95;bytes/total&#95;bytes&#95;to&#95;read لشريط التقدّم في table functions من نوع s3/file/url/... لتحسين عرض التقدّم. [#51286](https://github.com/ClickHouse/ClickHouse/pull/51286) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -1172,7 +1172,7 @@ doc_type: 'changelog'
 * الآن لن يُغلق منفذ interserver إلا بعد إيقاف الجداول. [#52498](https://github.com/ClickHouse/ClickHouse/pull/52498) ([alesapin](https://github.com/alesapin)).
 
 <div id="experimental-feature">
-  #### الميزة التجريبية
+  #### الميزة التجريبية {#experimental-feature-2}
 </div>
 
 * أصبحت كتابة ملفات Parquet أسرع بمقدار 10 مرات، وهي الآن متعددة الخيوط، وبسرعة تكاد تماثل سرعة القراءة. [#49367](https://github.com/ClickHouse/ClickHouse/pull/49367) ([Michael Kolupaev](https://github.com/al13n321)). ويتم التحكم في ذلك عبر الإعداد `output_format_parquet_use_custom_encoder`، وهو معطّل افتراضيًا لأن هذه الميزة لا تزال غير مثالية.
@@ -1188,7 +1188,7 @@ doc_type: 'changelog'
 * دعم الأمر `reconfig` في ZooKeeper لـ ClickHouse Keeper مع إعادة تهيئة incremental يمكن تفعيلها عبر الإعداد `keeper_server.enable_reconfiguration`. ويدعم ذلك إضافة خوادم وإزالة خوادم وتغيير أولويات الخوادم. [#49450](https://github.com/ClickHouse/ClickHouse/pull/49450) ([Mike Kot](https://github.com/myrrc)). ويُشتبه في أن هذه الميزة غير مكتملة.
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-5}
 </div>
 
 * إضافة بنيات ClickHouse تجريبية لنظام Linux RISC-V 64 إلى CI. [#31398](https://github.com/ClickHouse/ClickHouse/pull/31398) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -1201,7 +1201,7 @@ doc_type: 'changelog'
 * التحقق من عدم وجود حالات ترقيم غير صحيحة: مسافة قبل فاصلة مثل `Hello ,world` بدلًا من `Hello, world`. [#52549](https://github.com/ClickHouse/ClickHouse/pull/52549) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-1">
-  #### إصلاح خلل
+  #### إصلاح خلل {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-5}
 </div>
 
 * إصلاح syncTables في MaterializedPostgreSQL [#49698](https://github.com/ClickHouse/ClickHouse/pull/49698) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -1252,14 +1252,14 @@ doc_type: 'changelog'
 * إصلاح مشكلة الحذف الخفيف بعد حذف projection [#52517](https://github.com/ClickHouse/ClickHouse/pull/52517) ([Anton Popov](https://github.com/CurtizJ)).
 * إصلاح الخطأ المحتمل &quot;يتعذر تفريغ الاتصالات: ألغِ أولًا&quot; [#52585](https://github.com/ClickHouse/ClickHouse/pull/52585) ([Kruglov Pavel](https://github.com/Avogar)).
 
-### <a id="236" /> إصدار ClickHouse 23.6، 2023-06-29. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.6/)، [الفيديو](https://www.youtube.com/watch?v=cuf_hYn7dqU)
+### <a id="236" /> إصدار ClickHouse 23.6، 2023-06-29. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.6/)، [الفيديو](https://www.youtube.com/watch?v=cuf_hYn7dqU) {#236}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/cuf_hYn7dqU" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-6}
 </div>
 
 * حذف الميزة `do_not_evict_index_and_mark_files` من ذاكرة التخزين المؤقت fs. إذ لم تكن هذه الميزة إلا تزيد الأمور سوءًا. [#51253](https://github.com/ClickHouse/ClickHouse/pull/51253) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -1268,21 +1268,21 @@ doc_type: 'changelog'
 * استُعيض عن مقاييس CGroups المتعلقة بـ CPU بمقياس واحد، وهو `CGroupMaxCPU`، لتحسين سهولة الاستخدام. وستُطبَّع مقاييس استخدام CPU ‏`Normalized` وفق حدود CGroups بدلًا من العدد الإجمالي لوحدات CPU عند تعيينها. ويغلق هذا [#50836](https://github.com/ClickHouse/ClickHouse/issues/50836). [#50835](https://github.com/ClickHouse/ClickHouse/pull/50835) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-6}
 </div>
 
 * بدأت الدالة `transform` وكذلك `CASE` مع مطابقة القيم بدعم جميع أنواع البيانات. هذا يُغلق [#29730](https://github.com/ClickHouse/ClickHouse/issues/29730). هذا يُغلق [#32387](https://github.com/ClickHouse/ClickHouse/issues/32387). هذا يُغلق [#50827](https://github.com/ClickHouse/ClickHouse/issues/50827). هذا يُغلق [#31336](https://github.com/ClickHouse/ClickHouse/issues/31336). هذا يُغلق [#40493](https://github.com/ClickHouse/ClickHouse/issues/40493). [#51351](https://github.com/ClickHouse/ClickHouse/pull/51351) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * أُضيف الخيار `--rename_files_after_processing <pattern>`. هذا يُغلق [#34207](https://github.com/ClickHouse/ClickHouse/issues/34207). [#49626](https://github.com/ClickHouse/ClickHouse/pull/49626) ([alekseygolub](https://github.com/alekseygolub)).
-* أُضيف دعم للمعدِّل `TRUNCATE` في العبارة `INTO OUTFILE`. ويُنصح باستخدام `APPEND` أو `TRUNCATE` مع `INTO OUTFILE` عندما يكون الملف موجودًا. [#50950](https://github.com/ClickHouse/ClickHouse/pull/50950) ([alekar](https://github.com/alekar)).
+* أُضيف دعم للمُعدِّل `TRUNCATE` في العبارة `INTO OUTFILE`. ويُنصح باستخدام `APPEND` أو `TRUNCATE` مع `INTO OUTFILE` عندما يكون الملف موجودًا. [#50950](https://github.com/ClickHouse/ClickHouse/pull/50950) ([alekar](https://github.com/alekar)).
 * أُضيف محرك الجدول `Redis` ودالة الجدول `redis`. ويتيح ذلك الاستعلام عن خوادم Redis الخارجية. [#50150](https://github.com/ClickHouse/ClickHouse/pull/50150) ([JackyWoo](https://github.com/JackyWoo)).
-* أصبح من الممكن تخطي الملفات الفارغة في دوال الجداول file/s3/url/hdfs باستخدام الإعدادات `s3_skip_empty_files` و`hdfs_skip_empty_files` و`engine_file_skip_empty_files` و`engine_url_skip_empty_files`. [#50364](https://github.com/ClickHouse/ClickHouse/pull/50364) ([Kruglov Pavel](https://github.com/Avogar)).
+* أصبح من الممكن تخطي الملفات الفارغة في دالات الجداول file/s3/url/hdfs باستخدام الإعدادات `s3_skip_empty_files` و`hdfs_skip_empty_files` و`engine_file_skip_empty_files` و`engine_url_skip_empty_files`. [#50364](https://github.com/ClickHouse/ClickHouse/pull/50364) ([Kruglov Pavel](https://github.com/Avogar)).
 * أُضيف إعداد جديد باسم `use_mysql_types_in_show_columns` لتعديل تعليمة SQL ‏`SHOW COLUMNS` بحيث تعرض الأنواع المكافئة في MySQL عندما يكون العميل متصلًا عبر منفذ التوافق مع MySQL. [#49577](https://github.com/ClickHouse/ClickHouse/pull/49577) ([Thomas Panetti](https://github.com/tpanetti)).
-* يمكن الآن استدعاء `clickhouse-client` باستخدام سلسلة اتصال بدلًا من &quot;--host&quot; و&quot;--port&quot; و&quot;--user&quot; وما إلى ذلك. [#50689](https://github.com/ClickHouse/ClickHouse/pull/50689) ([Alexey Gerasimchuck](https://github.com/Demilivor)).
+* يمكن الآن استدعاء `clickhouse-client` باستخدام سلسلة اتصال بدلًا من `--host` و`--port` و`--user` وما إلى ذلك. [#50689](https://github.com/ClickHouse/ClickHouse/pull/50689) ([Alexey Gerasimchuck](https://github.com/Demilivor)).
 * أُضيف الإعداد `session_timezone`؛ ويُستخدم كمنطقة زمنية افتراضية للجلسة عند عدم تحديدها صراحةً. [#44149](https://github.com/ClickHouse/ClickHouse/pull/44149) ([Andrey Zvonov](https://github.com/zvonand)).
-* أصبح الترميز `DEFLATE_QPL` الآن خاضعًا للتحكم عبر إعداد الخادم &quot;enable&#95;deflate&#95;qpl&#95;codec&quot; (الافتراضي: false) بدلًا من الإعداد &quot;allow&#95;experimental&#95;codecs&quot;. وهذا يعني أن `DEFLATE_QPL` لم يعد تجريبيًا. [#50775](https://github.com/ClickHouse/ClickHouse/pull/50775) ([Robert Schulze](https://github.com/rschu1ze)).
+* أصبح المرمِّز `DEFLATE_QPL` الآن خاضعًا للتحكم عبر إعداد الخادم &quot;enable&#95;deflate&#95;qpl&#95;codec&quot; (الافتراضي: false) بدلًا من الإعداد &quot;allow&#95;experimental&#95;codecs&quot;. وهذا يعني أن `DEFLATE_QPL` لم يعد تجريبيًا. [#50775](https://github.com/ClickHouse/ClickHouse/pull/50775) ([Robert Schulze](https://github.com/rschu1ze)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-6}
 </div>
 
 * تحسين جدولة مهام اختيار الدمج والتنظيف في `ReplicatedMergeTree`. لن تُنفَّذ هذه المهام بوتيرة متكررة جدًا عندما لا يكون هناك ما يمكن دمجه أو تنظيفه. أُضيفت الإعدادات `max_merge_selecting_sleep_ms` و`merge_selecting_sleep_slowdown_factor` و`max_cleanup_delay_period` و`cleanup_thread_preferred_points_per_iteration`. يُفترض أن يؤدي هذا إلى إغلاق [#31919](https://github.com/ClickHouse/ClickHouse/issues/31919). [#50107](https://github.com/ClickHouse/ClickHouse/pull/50107) ([Alexander Tokmakov](https://github.com/tavplubix)).
@@ -1298,7 +1298,7 @@ doc_type: 'changelog'
 * عدم قراءة جميع الأعمدة من جدول GLOBAL JOIN الموجود على الجانب الأيمن. [#50721](https://github.com/ClickHouse/ClickHouse/pull/50721) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 
 <div id="experimental-feature-3">
-  #### ميزة تجريبية
+  #### ميزة تجريبية {#experimental-feature-3}
 </div>
 
 * دعم النسخ المتماثلة المتوازية مع المحلّل. [#50441](https://github.com/ClickHouse/ClickHouse/pull/50441) ([Raúl Marín](https://github.com/Algunenano)).
@@ -1306,10 +1306,10 @@ doc_type: 'changelog'
 * عدم نسخ استعلامات `ALTER PARTITION` وعمليات mutation عبر قاعدة البيانات `Replicated` إذا كان لديها shard واحد فقط وكان الجدول الأساسي هو `ReplicatedMergeTree`. [#51049](https://github.com/ClickHouse/ClickHouse/pull/51049) ([Alexander Tokmakov](https://github.com/tavplubix)).
 
 <div id="improvement-6">
-  #### تحسين
+  #### تحسين {#improvement-6}
 </div>
 
-* خُفِّفت حدود &quot;Too many parts&quot; لتصبح أكثر ملاءمة للأنظمة الحديثة. وأُعيد تطبيق الضغط العكسي أثناء استعلامات insert طويلة التشغيل. [#50856](https://github.com/ClickHouse/ClickHouse/pull/50856) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* خُفِّفت حدود &quot;Too many parts&quot; لتصبح أكثر ملاءمة للأنظمة الحديثة. وأُعيد تطبيق الضغط العكسي أثناء استعلامات insert طويلة التشغيل. [#50856](https://github.com/ClickHouse/ClickHouse/pull/50856) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * إتاحة تحويل IPv6 إلى IPv4 address للنطاق CIDR ‏::ffff:0:0/96 (العناوين المعيّنة إلى IPv4). [#49759](https://github.com/ClickHouse/ClickHouse/pull/49759) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * تحديث protocol الخاص بـ MongoDB لدعم MongoDB بالإصدار 5.1 والإصدارات الأحدث. مع الحفاظ على دعم الإصدارات التي تستخدم protocol القديم (&lt;3.6). يُغلق [#45621](https://github.com/ClickHouse/ClickHouse/issues/45621)، [#49879](https://github.com/ClickHouse/ClickHouse/issues/49879). [#50061](https://github.com/ClickHouse/ClickHouse/pull/50061) ([Nikolay Degterinsky](https://github.com/evillique)).
 * إضافة الإعداد `input_format_max_bytes_to_read_for_schema_inference` لتقييد عدد البايتات المقروءة أثناء schema inference. يُغلق [#50577](https://github.com/ClickHouse/ClickHouse/issues/50577). [#50592](https://github.com/ClickHouse/ClickHouse/pull/50592) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -1320,7 +1320,7 @@ doc_type: 'changelog'
 * أصبحت الإعدادات `number_of_mutations_to_delay` و`number_of_mutations_to_throw` مفعّلة افتراضيًا بالقيمتين 500 و1000 على التوالي. [#50726](https://github.com/ClickHouse/ClickHouse/pull/50726) ([Anton Popov](https://github.com/CurtizJ)).
 * تعرض dashboard القيم المفقودة بشكل صحيح. وهذا يُغلق [#50831](https://github.com/ClickHouse/ClickHouse/issues/50831). [#50832](https://github.com/ClickHouse/ClickHouse/pull/50832) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * أُضيفت إمكانية استخدام argument للتاريخ والوقت بتنسيق syslog timestamp في الدالتين `parseDateTimeBestEffort*` و`parseDateTime64BestEffort*`. [#50925](https://github.com/ClickHouse/ClickHouse/pull/50925) ([Victor Krasnov](https://github.com/sirvickr)).
-* أصبح بالإمكان الآن تحديد parameter سطر الأوامر &quot;--password&quot; في clickhouse-client مرة واحدة فقط. [#50966](https://github.com/ClickHouse/ClickHouse/pull/50966) ([Alexey Gerasimchuck](https://github.com/Demilivor)).
+* أصبح بالإمكان الآن تحديد parameter سطر الأوامر `--password` في clickhouse-client مرة واحدة فقط. [#50966](https://github.com/ClickHouse/ClickHouse/pull/50966) ([Alexey Gerasimchuck](https://github.com/Demilivor)).
 * استخدام `hash_of_all_files` من `system.parts` للتحقق من identity الخاصة بـ parts أثناء النسخ الاحتياطية على مستوى cluster. [#50997](https://github.com/ClickHouse/ClickHouse/pull/50997) ([Vitaly Baranov](https://github.com/vitlibar)).
 * يحدّد جدول النظام zookeeper&#95;connection الحقل connected&#95;time بوصفه الوقت الذي أُنشئ فيه الاتصال (بالتنسيق القياسي)، كما أُضيف الحقل session&#95;uptime&#95;elapsed&#95;seconds الذي يوضّح مدة جلسة الاتصال بعد إنشائها (بالثواني). [#51026](https://github.com/ClickHouse/ClickHouse/pull/51026) ([郭小龙](https://github.com/guoxiaolongzte)).
 * تحسين شريط التقدّم لدوال الجداول file/s3/hdfs/url باستخدام حجم الـ chunk من البيانات المصدر، مع اعتماد حساب تزايدي للحجم الإجمالي في كل thread. وإصلاح شريط التقدّم لدوال *Cluster. ويغلق هذا [#47250](https://github.com/ClickHouse/ClickHouse/issues/47250). [#51088](https://github.com/ClickHouse/ClickHouse/pull/51088) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -1329,7 +1329,7 @@ doc_type: 'changelog'
 * إصلاح القيمة الحالية current&#95;elements&#95;num التي تكون غير صحيحة أحيانًا في fs cache. [#51242](https://github.com/ClickHouse/ClickHouse/pull/51242) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 <div id="buildtestingpackaging-improvement-6">
-  #### تحسينات في البناء/الاختبار/التغليف
+  #### تحسينات في البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-6}
 </div>
 
 * إضافة keeper-client مضمّن إلى الملف التنفيذي المستقل لـ Keeper. [#50964](https://github.com/ClickHouse/ClickHouse/pull/50964) ([pufit](https://github.com/pufit)).
@@ -1340,7 +1340,7 @@ doc_type: 'changelog'
 * تقسيم تعليمة `RUN` الضخمة في Dockerfile إلى أجزاء شرطية أصغر. تثبيت الأدوات اللازمة عند الطلب ضمن طبقة `RUN` نفسها، ثم إزالتها بعد ذلك. ترقية نظام التشغيل مرة واحدة فقط في البداية. استخدام طريقة حديثة للتحقق من توقيع المستودع. خفض صورة الأساس إلى ubuntu:20.04 لمعالجة المشكلات في إصدارات Docker الأقدم. ترقية إصدار golang لمعالجة ثغرات golang الأمنية. [#51504](https://github.com/ClickHouse/ClickHouse/pull/51504) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-6">
-  #### إصلاح خطأ (سلوك غير صحيح يمكن للمستخدم ملاحظته في إصدار مستقر رسمي)
+  #### إصلاح خطأ (سلوك غير صحيح يمكن للمستخدم ملاحظته في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-6}
 </div>
 
 * الإبلاغ بشكل صحيح عن حالة تحميل القواميس التنفيذية [#48775](https://github.com/ClickHouse/ClickHouse/pull/48775) ([Anton Kozlov](https://github.com/tonickkozlov)).
@@ -1375,14 +1375,14 @@ doc_type: 'changelog'
 * إصلاح فشل أداة الاختبار العشوائي في ActionsDAG [#51301](https://github.com/ClickHouse/ClickHouse/pull/51301) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * إزالة البيانات المهملة من الدالة `transform` [#51350](https://github.com/ClickHouse/ClickHouse/pull/51350) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
-### <a id="235" /> إصدار ClickHouse 23.5، بتاريخ 2023-06-08. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.5/)، [الفيديو](https://www.youtube.com/watch?v=o8Gj1ClU71M)
+### <a id="235" /> إصدار ClickHouse 23.5، بتاريخ 2023-06-08. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.5/)، [الفيديو](https://www.youtube.com/watch?v=o8Gj1ClU71M) {#235}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/o8Gj1ClU71M" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="upgrade-notes">
-  #### ملاحظات الترقية
+  #### ملاحظات الترقية {#upgrade-notes}
 </div>
 
 * ضغط العلامات والمفتاح الأساسي افتراضيًا. يخفّض هذا بشكل كبير زمن الاستعلامات الباردة. ملاحظات الترقية: أُضيف دعم العلامات المضغوطة والمفتاح الأساسي المضغوط في الإصدار 22.9. إذا فعّلت العلامات المضغوطة أو المفتاح الأساسي المضغوط، أو ثبّتَّ الإصدار 23.5 أو أحدث، حيث تكون العلامات المضغوطة أو المفتاح الأساسي المضغوط مفعّلين افتراضيًا، فلن تتمكن من الرجوع إلى الإصدار 22.8 أو أقدم. يمكنك أيضًا تعطيل العلامات المضغوطة أو المفاتيح الأساسية المضغوطة صراحةً عبر تحديد الإعدادين `compress_marks` و `compress_primary_key` في قسم `<merge_tree>` من ملف إعدادات الخادم. **ملاحظات الترقية:** إذا كنت تُجري الترقية من إصدار أقدم من 22.9، فينبغي لك إما ترقية جميع النسخ المتماثلة دفعةً واحدة، أو تعطيل الضغط قبل الترقية، أو الترقية عبر إصدار وسيط يدعم العلامات المضغوطة لكن لا يفعّلها افتراضيًا، مثل 23.3. [#42587](https://github.com/ClickHouse/ClickHouse/pull/42587) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -1395,13 +1395,13 @@ doc_type: 'changelog'
 * الإعداد `enable_memory_bound_merging_of_aggregation_results` مفعّل افتراضيًا. إذا كنت تُحدّث من إصدار أقدم من 22.12، فنوصي بضبط هذا الخيار على `false` إلى أن يكتمل التحديث. [#50319](https://github.com/ClickHouse/ClickHouse/pull/50319) ([Nikita Taranov](https://github.com/nickitat)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-7}
 </div>
 
 * تمت إضافة محرك التخزين AzureBlobStorage ودالة الجدول azureBlobStorage. ومجموعة الميزات المدعومة مشابهة جدًا لمحرك التخزين/دالة الجدول S3 [#50604] (https://github.com/ClickHouse/ClickHouse/pull/50604) ([alesapin](https://github.com/alesapin)) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni).
 * تمت إضافة عميل CLI أصلي لـ ClickHouse Keeper، وهو متاح باسم `clickhouse keeper-client` [#47414](https://github.com/ClickHouse/ClickHouse/pull/47414) ([pufit](https://github.com/pufit)).
 * تمت إضافة دالة الجدول `urlCluster`. وأُعيدت هيكلة جميع دوال الجداول *Cluster لتقليل تكرار الشيفرة. كما أصبح استدلال المخطط يعمل مع جميع تواقيع دوال *Cluster الممكنة ومع المجموعات المسماة. يُغلق [#38499](https://github.com/ClickHouse/ClickHouse/issues/38499). [#45427](https://github.com/ClickHouse/ClickHouse/pull/45427) ([attack204](https://github.com/attack204)), Pavel Kruglov.
-* أصبح بالإمكان الآن استخدام ذاكرة التخزين المؤقت للاستعلامات لأحمال العمل في بيئات الإنتاج. [#47977](https://github.com/ClickHouse/ClickHouse/pull/47977) ([Robert Schulze](https://github.com/rschu1ze)). كما أصبحت ذاكرة التخزين المؤقت للاستعلامات تدعم الاستعلامات التي تستخدم المعدِّلَين totals و extremes. [#48853](https://github.com/ClickHouse/ClickHouse/pull/48853) ([Robert Schulze](https://github.com/rschu1ze)). وتم جعل الإعداد `allow_experimental_query_cache` متقادمًا من أجل التوافق مع الإصدارات السابقة. وقد أُزيل في https://github.com/ClickHouse/ClickHouse/pull/47977. [#49934](https://github.com/ClickHouse/ClickHouse/pull/49934) ([Timur Solodovnikov](https://github.com/tsolodov)).
+* أصبح بالإمكان الآن استخدام ذاكرة التخزين المؤقت للاستعلامات لأحمال العمل في بيئات الإنتاج. [#47977](https://github.com/ClickHouse/ClickHouse/pull/47977) ([Robert Schulze](https://github.com/rschu1ze)). كما أصبحت ذاكرة التخزين المؤقت للاستعلامات تدعم الاستعلامات التي تستخدم المعدِّلَين totals و extremes. [#48853](https://github.com/ClickHouse/ClickHouse/pull/48853) ([Robert Schulze](https://github.com/rschu1ze)). وتم جعل الإعداد `allow_experimental_query_cache` متقادمًا من أجل التوافق مع الإصدارات السابقة. وقد أُزيل في https://github.com/ClickHouse/ClickHouse/pull/47977. [#49934](https://github.com/ClickHouse/ClickHouse/pull/49934) ([Timur Solodovnikov](https://github.com/tsolodov)).
 * أصبحت أنواع البيانات الجغرافية (`Point` و `Ring` و `Polygon` و `MultiPolygon`) جاهزة للاستخدام في بيئات الإنتاج. [#50022](https://github.com/ClickHouse/ClickHouse/pull/50022) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * تمت إضافة استدلال المخطط إلى محركات الجداول PostgreSQL و MySQL و MeiliSearch و SQLite. يُغلق [#49972](https://github.com/ClickHouse/ClickHouse/issues/49972). [#50000](https://github.com/ClickHouse/ClickHouse/pull/50000) ([Nikolay Degterinsky](https://github.com/evillique)).
 * سيُضبط نوع كلمة المرور في الاستعلامات مثل `CREATE USER u IDENTIFIED BY 'p'` تلقائيًا وفقًا للإعداد `default_password_type` في `config.xml` على الخادم. يُغلق [#42915](https://github.com/ClickHouse/ClickHouse/issues/42915). [#44674](https://github.com/ClickHouse/ClickHouse/pull/44674) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -1409,7 +1409,7 @@ doc_type: 'changelog'
 * تمت إضافة الكلمة المحجوزة الجديدة `INTO OUTFILE 'file.txt' APPEND`. [#48880](https://github.com/ClickHouse/ClickHouse/pull/48880) ([alekar](https://github.com/alekar)).
 * تمت إضافة الجدول `system.zookeeper_connection` الذي يعرض معلومات عن اتصالات Keeper. [#45245](https://github.com/ClickHouse/ClickHouse/pull/45245) ([mateng915](https://github.com/mateng0915)).
 * تمت إضافة الدالة الجديدة `generateRandomStructure` التي تُنشئ بنية جدول عشوائية. ويمكن استخدامها مع دالة الجدول `generateRandom`. [#47409](https://github.com/ClickHouse/ClickHouse/pull/47409) ([Kruglov Pavel](https://github.com/Avogar)).
-* أُتيح استخدام `CASE` بدون فرع `ELSE`، كما وُسِّعت `transform` للتعامل مع المزيد من الأنواع. وأُصلحت أيضًا بعض المشكلات التي كانت تجعل transform() يعيد نتائج غير صحيحة عند مزج أنواع Decimal مع أنواع رقمية أخرى. [#48300](https://github.com/ClickHouse/ClickHouse/pull/48300) ([Salvatore Mesoraca](https://github.com/aiven-sal)). هذا يُغلق #2655. هذا يُغلق #9596. هذا يُغلق #38666.
+* أُتيح استخدام `CASE` بدون فرع `ELSE`، كما وُسِّعت `transform` للتعامل مع المزيد من الأنواع. وأُصلحت أيضًا بعض المشكلات التي كانت تجعل transform() يعيد نتائج غير صحيحة عند مزج أنواع Decimal مع أنواع رقمية أخرى. [#48300](https://github.com/ClickHouse/ClickHouse/pull/48300) ([Salvatore Mesoraca](https://github.com/aiven-sal)). هذا يُغلق #2655. هذا يُغلق #9596. هذا يُغلق #38666.
 * تمت إضافة [التشفير من جهة الخادم باستخدام مفاتيح KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) مع جداول S3، وإعداد `header` مع أقراص S3. يُغلق [#48723](https://github.com/ClickHouse/ClickHouse/issues/48723). [#48724](https://github.com/ClickHouse/ClickHouse/pull/48724) ([Johann Gan](https://github.com/johanngan)).
 * تمت إضافة MemoryTracker للمهام الخلفية (merges و mutations). ويقدّم الإعدادان `merges_mutations_memory_usage_soft_limit` و `merges_mutations_memory_usage_to_ram_ratio` حد الذاكرة المرن لعمليات merges و mutations. وإذا تم بلوغ هذا الحد، فلن يقوم ClickHouse بجدولة مهام merge أو mutation جديدة. كما تمت إضافة المقياس `MergesMutationsMemoryTracking` لإتاحة مراقبة استخدام الذاكرة الحالي للمهام الخلفية. إعادة تقديم [#46089](https://github.com/ClickHouse/ClickHouse/issues/46089). يُغلق [#48774](https://github.com/ClickHouse/ClickHouse/issues/48774). [#48787](https://github.com/ClickHouse/ClickHouse/pull/48787) ([Dmitry Novik](https://github.com/novikd)).
 * أصبحت الدالة `dotProduct` تعمل مع Array. [#49050](https://github.com/ClickHouse/ClickHouse/pull/49050) ([FFFFFFFHHHHHHH](https://github.com/FFFFFFFHHHHHHH)).
@@ -1418,19 +1418,19 @@ doc_type: 'changelog'
 * إضافة الحقل `grants` إلى ملف users.xml، مما يتيح تحديد grants للمستخدمين. [#49381](https://github.com/ClickHouse/ClickHouse/pull/49381) ([pufit](https://github.com/pufit)).
 * دعم full/right join باستخدام خوارزمية grace hash join. [#49483](https://github.com/ClickHouse/ClickHouse/pull/49483) ([lgbo](https://github.com/lgbo-ustc)).
 * يقوم المعدّل `WITH FILL` بالتعبئة بحسب sorting prefix. ويتحكم في ذلك الإعداد `use_with_fill_by_sorting_prefix` (مفعّل افتراضيًا). ذو صلة بـ [#33203](https://github.com/ClickHouse/ClickHouse/issues/33203)#issuecomment-1418736794. [#49503](https://github.com/ClickHouse/ClickHouse/pull/49503) ([Igor Nikonov](https://github.com/devcrafter)).
-* أصبح clickhouse-client الآن يقبل الاستعلامات بعد &quot;--multiquery&quot; عند عدم وجود &quot;--query&quot; (أو &quot;-q&quot;). مثال: clickhouse-client --multiquery &quot;select 1; select 2;&quot;. [#49870](https://github.com/ClickHouse/ClickHouse/pull/49870) ([Alexey Gerasimchuk](https://github.com/Demilivor)).
+* أصبح clickhouse-client الآن يقبل الاستعلامات بعد `--multiquery` عند عدم وجود `--query` (أو &quot;-q&quot;). مثال: clickhouse-client `--multiquery` &quot;select 1; select 2;&quot;. [#49870](https://github.com/ClickHouse/ClickHouse/pull/49870) ([Alexey Gerasimchuk](https://github.com/Demilivor)).
 * إضافة `handshake_timeout` منفصل لتلقي حزمة Hello من replica. يُغلق [#48854](https://github.com/ClickHouse/ClickHouse/issues/48854). [#49948](https://github.com/ClickHouse/ClickHouse/pull/49948) ([Kruglov Pavel](https://github.com/Avogar)).
 * تمت إضافة الدالة &quot;space&quot; التي تكرّر مسافة بعدد المرات المحدد. [#50103](https://github.com/ClickHouse/ClickHouse/pull/50103) ([Robert Schulze](https://github.com/rschu1ze)).
-* تمت إضافة الخيار --input&#95;format&#95;csv&#95;trim&#95;whitespaces. [#50215](https://github.com/ClickHouse/ClickHouse/pull/50215) ([Alexey Gerasimchuk](https://github.com/Demilivor)).
+* تمت إضافة الخيار `--input_format_csv_trim_whitespaces`. [#50215](https://github.com/ClickHouse/ClickHouse/pull/50215) ([Alexey Gerasimchuk](https://github.com/Demilivor)).
 * السماح للدالة `dictGetAll` في قواميس شجرة regexp بإرجاع قيم من عدة تطابقات على شكل مصفوفات. يُغلق [#50254](https://github.com/ClickHouse/ClickHouse/issues/50254). [#50255](https://github.com/ClickHouse/ClickHouse/pull/50255) ([Johann Gan](https://github.com/johanngan)).
 * تمت إضافة الدالة `toLastDayOfWeek` لتقريب تاريخ أو تاريخ مع وقت للأعلى إلى أقرب يوم سبت أو أحد. [#50315](https://github.com/ClickHouse/ClickHouse/pull/50315) ([Victor Krasnov](https://github.com/sirvickr)).
-* إمكانية تجاهل فهرس تخطٍّ عبر تحديد `ignore_data_skipping_indices`. [#50329](https://github.com/ClickHouse/ClickHouse/pull/50329) ([Boris Kuschel](https://github.com/bkuschel)).
+* إمكانية تجاهل فهرس تخطٍّ عبر تحديد `ignore_data_skipping_indices`. [#50329](https://github.com/ClickHouse/ClickHouse/pull/50329) ([Boris Kuschel](https://github.com/bkuschel)).
 * إضافة الجدول `system.user_processes` والاستعلام `SHOW USER PROCESSES` لعرض معلومات الذاكرة وProfileEvents على مستوى المستخدم. [#50492](https://github.com/ClickHouse/ClickHouse/pull/50492) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
 * إضافة إعدادات الخادم وformat `display_secrets_in_show_and_select` لعرض الأسرار الخاصة بالجداول وقواعد البيانات ودوال الجداول والقواميس. وإضافة الامتياز `displaySecretsInShowAndSelect` الذي يحدد المستخدمين المسموح لهم بعرض الأسرار. [#46528](https://github.com/ClickHouse/ClickHouse/pull/46528) ([Mike Kot](https://github.com/myrrc)).
 * السماح بإعداد ROW POLICY لجميع الجداول التي تنتمي إلى DATABASE. [#47640](https://github.com/ClickHouse/ClickHouse/pull/47640) ([Ilya Golshtein](https://github.com/ilejn)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-7}
 </div>
 
 * ضغط العلامات والمفتاح الأساسي افتراضيًا. يقلّل ذلك بشكل كبير من زمن الاستعلامات الباردة. ملاحظات الترقية: أُضيف دعم العلامات المضغوطة والمفتاح الأساسي المضغوط في الإصدار 22.9. إذا كنت قد فعّلت العلامات المضغوطة أو المفتاح الأساسي المضغوط، أو ثبّتَّ الإصدار 23.5 أو أحدث، حيث تكون العلامات المضغوطة أو المفتاح الأساسي المضغوط مفعّلين افتراضيًا، فلن تتمكن من الرجوع إلى الإصدار 22.8 أو أقدم. يمكنك أيضًا تعطيل العلامات المضغوطة أو المفاتيح الأساسية المضغوطة صراحةً بتحديد الإعدادين `compress_marks` و`compress_primary_key` في قسم `<merge_tree>` من ملف تهيئة الخادم. [#42587](https://github.com/ClickHouse/ClickHouse/pull/42587) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -1459,7 +1459,7 @@ doc_type: 'changelog'
 * الإعداد `enable_memory_bound_merging_of_aggregation_results` مفعّل افتراضيًا. [#50319](https://github.com/ClickHouse/ClickHouse/pull/50319) ([Nikita Taranov](https://github.com/nickitat)).
 
 <div id="experimental-feature-3">
-  #### ميزة تجريبية
+  #### ميزة تجريبية {#experimental-feature-4}
 </div>
 
 * خفّض codec `DEFLATE_QPL` الحد الأدنى لإصدار SIMD إلى SSE 4.2. [تغيير في التوثيق ضمن qpl](https://github.com/intel/qpl/commit/3f8f5cea27739f5261e8fd577dc233ffe88bf679) - يعتمد Intel® QPL على مُوجّه kernels وقت التشغيل وفحص cpuid لاختيار أفضل تنفيذ متاح (sse/avx2/avx512) - أُعيدت هيكلة ملف cmake الخاص ببناء qpl في ClickHouse ليتوافق مع أحدث إصدار qpl من upstream. [#49811](https://github.com/ClickHouse/ClickHouse/pull/49811) ([jasperzhu](https://github.com/jinjunzh)).
@@ -1469,7 +1469,7 @@ doc_type: 'changelog'
 * عند تفعيل نسخ متماثلة متوازية، فإنها تتخطى دائمًا الخوادم غير المتاحة (ويتحكم في هذا السلوك الإعداد `skip_unavailable_shards`، وهو مفعّل افتراضيًا ولا يمكن إلا تعطيله). هذا يُغلق: [#48565](https://github.com/ClickHouse/ClickHouse/issues/48565). [#50293](https://github.com/ClickHouse/ClickHouse/pull/50293) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 <div id="improvement-6">
-  #### تحسين
+  #### تحسين {#improvement-7}
 </div>
 
 * لن يفك الأمر `BACKUP` تشفير البيانات المخزنة على الأقراص المشفرة أثناء إنشاء نسخة احتياطية. وبدلًا من ذلك، ستُخزَّن البيانات في النسخة الاحتياطية بصيغة مشفرة. ولا يمكن استعادة هذه النسخ الاحتياطية إلا إلى قرص مشفر يضم قائمة مفاتيح التشفير نفسها (أو قائمة موسعة منها). [#48896](https://github.com/ClickHouse/ClickHouse/pull/48896) ([Vitaly Baranov](https://github.com/vitlibar)).
@@ -1542,7 +1542,7 @@ doc_type: 'changelog'
 * دعم القيم العشرية ذات الحجم غير الثابت. ويغلق هذا [#49130](https://github.com/ClickHouse/ClickHouse/issues/49130). [#50586](https://github.com/ClickHouse/ClickHouse/pull/50586) ([Kruglov Pavel](https://github.com/Avogar)).
 
 <div id="buildtestingpackaging-improvement-7">
-  #### تحسينات البناء/الاختبار/التحزيم
+  #### تحسينات البناء/الاختبار/التحزيم {#buildtestingpackaging-improvement-7}
 </div>
 
 * `keeper-bench` جديد ومحسَّن. يمكن تخصيص كل شيء من ملف YAML/XML: - مولِّد الطلبات - يمكن أن يكون لكل نوع من مولدات الطلبات مجموعة محددة من الحقول - يمكن إنشاء الطلبات المتعددة بمجرد تطبيق الأمر نفسه تحت المفتاح `multi` - يمكن تعريف حقل `weight` لكل طلب أو طلب فرعي ضمن الطلبات المتعددة للتحكم في التوزيع - تعريف الأشجار التي يلزم إعدادها لتشغيل الاختبار - يمكن تعريف المضيفين مع إمكانية تخصيص جميع قيم `timeout`، كما يمكن التحكم في عدد الجلسات التي سيتم إنشاؤها لكل مضيف - الأعداد الصحيحة المعرّفة بالحقلين `min_value` و`max_value` هي مولدات أرقام عشوائية. [#48547](https://github.com/ClickHouse/ClickHouse/pull/48547) ([Antonio Andelic](https://github.com/antonio2368)).
@@ -1564,7 +1564,7 @@ doc_type: 'changelog'
 * إصلاح CVE-2022-2469 غير الصحيح في libgsasl. [#50404](https://github.com/ClickHouse/ClickHouse/pull/50404) ([Robert Schulze](https://github.com/rschu1ze)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-7">
-  #### إصلاح خطأ (سلوك غير صحيح ظاهر للمستخدمين في إصدار مستقر رسمي)
+  #### إصلاح خطأ (سلوك غير صحيح ظاهر للمستخدمين في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-7}
 </div>
 
 * ActionsDAG: إصلاح تحسين غير صحيح [#47584](https://github.com/ClickHouse/ClickHouse/pull/47584) ([Salvatore Mesoraca](https://github.com/aiven-sal)).
@@ -1651,14 +1651,14 @@ doc_type: 'changelog'
 * إصلاح تحويل Null إلى LowCardinality(Nullable) في دالة الجدول values [#50637](https://github.com/ClickHouse/ClickHouse/pull/50637) ([Kruglov Pavel](https://github.com/Avogar)).
 * التراجع عن تحسين غير صالح لـ RegExpTreeDictionary [#50642](https://github.com/ClickHouse/ClickHouse/pull/50642) ([Johann Gan](https://github.com/johanngan)).
 
-### <a id="234" /> إصدار ClickHouse 23.4، 2023-04-26. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.4/)، [الفيديو](https://www.youtube.com/watch?v=4rrf6bk_mOg)
+### <a id="234" /> إصدار ClickHouse 23.4، 2023-04-26. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.4/)، [الفيديو](https://www.youtube.com/watch?v=4rrf6bk_mOg) {#234}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/4rrf6bk_mOg" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-7}
 </div>
 
 * أصبح المُنسِّق &#39;%M&#39; في الدالة formatDateTime() يطبع اسم الشهر الآن بدلًا من الدقائق. وهذا يجعل السلوك متسقًا مع MySQL. ويمكن استعادة السلوك السابق باستخدام الإعداد &quot;formatdatetime&#95;parsedatetime&#95;m&#95;is&#95;month&#95;name = 0&quot;. [#47246](https://github.com/ClickHouse/ClickHouse/pull/47246) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -1666,7 +1666,7 @@ doc_type: 'changelog'
 * يُرفض الآن استخدام الفهارس الأساسية/الثانوية ومفاتيح الفرز ذات التعبيرات المتطابقة. ويمكن تعطيل هذا السلوك باستخدام الإعداد `allow_suspicious_indices`. [#48536](https://github.com/ClickHouse/ClickHouse/pull/48536) ([凌涛](https://github.com/lingtaolf)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-8}
 </div>
 
 * دعم دالة التجميع الجديدة `quantileGK`/`quantilesGK`، على غرار [approx&#95;percentile](https://spark.apache.org/docs/latest/api/sql/index.html#approx_percentile) في Spark. راجع خوارزمية Greenwald-Khanna على الرابط http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf. [#46428](https://github.com/ClickHouse/ClickHouse/pull/46428) ([李扬](https://github.com/taiyang-li)).
@@ -1685,7 +1685,7 @@ doc_type: 'changelog'
 * أُضيفت دوال للتعامل مع الأعمدة من النوع `Map`: ‏`mapConcat` و`mapSort` و`mapExists`. [#48071](https://github.com/ClickHouse/ClickHouse/pull/48071) ([Anton Popov](https://github.com/CurtizJ)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-8}
 </div>
 
 * أصبحت قراءة الملفات بتنسيق `Parquet` أسرع بكثير. أُضيف التوازي إلى عمليات الإدخال/الإخراج وفك الترميز (ويتحكم فيها الإعداد `max_threads`)، ولا تُقرأ إلا نطاقات البيانات المطلوبة. [#47964](https://github.com/ClickHouse/ClickHouse/pull/47964) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -1700,7 +1700,7 @@ doc_type: 'changelog'
 * إزالة محاولات connection الزائدة إذا كان الإعداد `skip_unavailable_shards` مفعّلًا. [#48771](https://github.com/ClickHouse/ClickHouse/pull/48771) ([Azat Khuzhin](https://github.com/azat)).
 
 <div id="experimental-feature">
-  #### الميزة التجريبية
+  #### الميزة التجريبية {#experimental-feature-5}
 </div>
 
 * تُدمَج الإدخالات في ذاكرة التخزين المؤقت للاستعلامات الآن إلى الحد الأقصى `max_block_size` وتُضغط. [#45912](https://github.com/ClickHouse/ClickHouse/pull/45912) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -1709,7 +1709,7 @@ doc_type: 'changelog'
 * تنفيذ zero-copy replication (ميزة تجريبية) على الأقراص المشفّرة. [#48741](https://github.com/ClickHouse/ClickHouse/pull/48741) ([Vitaly Baranov](https://github.com/vitlibar)).
 
 <div id="improvement-6">
-  #### تحسين
+  #### تحسين {#improvement-8}
 </div>
 
 * زيادة القيمة الافتراضية لـ `connect_timeout_with_failover_ms` إلى 1000 ملّي ثانية (بسبب إضافة connections غير المتزامنة في https://github.com/ClickHouse/ClickHouse/pull/47229). يُغلق [#5188](https://github.com/ClickHouse/ClickHouse/issues/5188). [#49009](https://github.com/ClickHouse/ClickHouse/pull/49009) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -1769,7 +1769,7 @@ doc_type: 'changelog'
 * ستذكر رسالة الاستثناء الخاصة بمعلمة الاستعلام غير المحللة أيضًا اسم المعلمة. إعادة تنفيذ [#48878](https://github.com/ClickHouse/ClickHouse/issues/48878). يُغلق [#48772](https://github.com/ClickHouse/ClickHouse/issues/48772). [#49061](https://github.com/ClickHouse/ClickHouse/pull/49061) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-8}
 </div>
 
 * تحديث المناطق الزمنية. تم تحديث ما يلي: Africa/Cairo, Africa/Casablanca, Africa/El&#95;Aaiun, America/Bogota, America/Cambridge&#95;Bay, America/Ciudad&#95;Juarez, America/Godthab, America/Inuvik, America/Iqaluit, America/Nuuk, America/Ojinaga, America/Pangnirtung, America/Rankin&#95;Inlet, America/Resolute, America/Whitehorse, America/Yellowknife, Asia/Gaza, Asia/Hebron, Asia/Kuala&#95;Lumpur, Asia/Singapore, Canada/Yukon, Egypt, Europe/Kirov, Europe/Volgograd, Singapore. [#48572](https://github.com/ClickHouse/ClickHouse/pull/48572) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -1782,7 +1782,7 @@ doc_type: 'changelog'
 * إضافة تشغيل CI مع تمكين البنية التحتية الجديدة لـ محلّل. [#48719](https://github.com/ClickHouse/ClickHouse/pull/48719) ([Dmitry Novik](https://github.com/novikd)).
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-8">
-  #### إصلاح خلل (سلوك غير صحيح ملحوظ للمستخدم في إصدار مستقر رسمي)
+  #### إصلاح خلل (سلوك غير صحيح ملحوظ للمستخدم في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-8}
 </div>
 
 * إصلاح system.query&#95;views&#95;log لـ MVs التي تُرسَل من الخيوط الخلفية [#46668](https://github.com/ClickHouse/ClickHouse/pull/46668) ([Azat Khuzhin](https://github.com/azat)).
@@ -1822,14 +1822,14 @@ doc_type: 'changelog'
 * إصلاح خطأ `UNKNOWN_IDENTIFIER` أثناء التحديد من جدول يحتوي على row policy وعمود يتضمن نقاطًا [#48976](https://github.com/ClickHouse/ClickHouse/pull/48976) ([Kruglov Pavel](https://github.com/Avogar)).
 * إصلاح التجميع حسب سلاسل نصية Nullable فارغة [#48999](https://github.com/ClickHouse/ClickHouse/pull/48999) ([LiuNeng](https://github.com/liuneng1994)).
 
-### <a id="233" /> إصدار ClickHouse 23.3 LTS، 2023-03-30. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.3/)، [الفيديو](https://www.youtube.com/watch?v=ISaGUjvBNao)
+### <a id="233" /> إصدار ClickHouse 23.3 LTS، 2023-03-30. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.3/)، [الفيديو](https://www.youtube.com/watch?v=ISaGUjvBNao) {#233}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/ISaGUjvBNao" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="upgrade-notes">
-  #### ملاحظات الترقية
+  #### ملاحظات الترقية {#upgrade-notes-1}
 </div>
 
 * أصبحت عمليات `DELETE` الخفيفة جاهزة للاستخدام في بيئة production ومفعّلة افتراضيًا. كما أصبح استعلام `DELETE` لجداول MergeTree متاحًا افتراضيًا الآن.
@@ -1841,7 +1841,7 @@ doc_type: 'changelog'
 * عدم السماح بالفهارس الثانوية الثابتة وغير الحتمية. [#46839](https://github.com/ClickHouse/ClickHouse/pull/46839) ([Anton Popov](https://github.com/CurtizJ)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-9}
 </div>
 
 * تمت إضافة وضع جديد لتقسيم العمل على replicas باستخدام الإعدادين `parallel_replicas_custom_key` و`parallel_replicas_custom_key_filter_type`. إذا كانت الـ cluster تتكون من shard واحدة تضم عدة replicas، فسيتم اختيار ما يصل إلى `max_parallel_replicas` منها عشوائيًا وتحويلها إلى shards. ولكل shard، يُضاف filter مطابق إلى query على initiator قبل إرسالها إلى الـ shard. وإذا كانت الـ cluster تتكون من عدة shards، فسيكون السلوك مماثلًا لـ `sample_key` مع إمكانية تحديد key اعتباطي. [#45108](https://github.com/ClickHouse/ClickHouse/pull/45108) ([Antonio Andelic](https://github.com/antonio2368)).
@@ -1868,7 +1868,7 @@ doc_type: 'changelog'
 * أُضيف العامل `REGEXP` (على غرار العوامل &quot;LIKE&quot; و&quot;IN&quot; و&quot;MOD&quot; وغيرها) لتحسين التوافق مع MySQL. [#47869](https://github.com/ClickHouse/ClickHouse/pull/47869) ([Robert Schulze](https://github.com/rschu1ze)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-9}
 </div>
 
 * أصبحت العلامات في الذاكرة مضغوطة الآن، وتستهلك ذاكرة أقل بمقدار 3 إلى 6 مرات. [#47290](https://github.com/ClickHouse/ClickHouse/pull/47290) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -1887,7 +1887,7 @@ doc_type: 'changelog'
 * السماح باستخدام PREWHERE مع Merge عند وجود تعبيرات DEFAULT مختلفة للأعمدة. [#46831](https://github.com/ClickHouse/ClickHouse/pull/46831) ([Azat Khuzhin](https://github.com/azat)).
 
 <div id="experimental-feature-3">
-  #### ميزة تجريبية
+  #### ميزة تجريبية {#experimental-feature-6}
 </div>
 
 * النسخ المتماثلة المتوازية: تحسين الأداء العام عبر الاستفادة بشكل أفضل من النسخة المتماثلة المحلية، ومنع القراءة باستخدام النسخ المتماثلة المتوازية من MergeTree غير المتماثلة افتراضيًا. [#47858](https://github.com/ClickHouse/ClickHouse/pull/47858) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -1896,7 +1896,7 @@ doc_type: 'changelog'
 * إصلاح إنشاء عرض مادي باستخدام MaterializedPostgreSQL [#40807](https://github.com/ClickHouse/ClickHouse/pull/40807) ([Maksim Buren](https://github.com/maks-buren630501)).
 
 <div id="improvement-6">
-  #### تحسين
+  #### تحسين {#improvement-9}
 </div>
 
 * تمكين `input_format_json_ignore_unknown_keys_in_named_tuple` افتراضيًا. [#46742](https://github.com/ClickHouse/ClickHouse/pull/46742) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -1948,7 +1948,7 @@ doc_type: 'changelog'
 * السماح بتخطي الأخطاء المرتبطة بقيم `enum` غير المعروفة في تنسيقات إدخال الصفوف. [#48133](https://github.com/ClickHouse/ClickHouse/pull/48133) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="buildtestingpackaging-improvement-6">
-  #### تحسينات في البناء/الاختبار/التغليف
+  #### تحسينات في البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-9}
 </div>
 
 * أصبح ClickHouse يُبنى الآن باستخدام `C++23`. [#47424](https://github.com/ClickHouse/ClickHouse/pull/47424) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -1966,7 +1966,7 @@ doc_type: 'changelog'
 * استعادة إمكانية تشغيل بنية خادم التصحيح الأصلية على macOS. [#48050](https://github.com/ClickHouse/ClickHouse/pull/48050) ([Robert Schulze](https://github.com/rschu1ze)). ملاحظة: هذا التغيير ذو صلة بالتطوير فقط، لأن البُنى الرسمية لـ ClickHouse تُنجَز باستخدام الترجمة العابرة.
 
 <div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release-9">
-  #### إصلاح خطأ (خلل ظاهر للمستخدم في إصدار مستقر رسمي)
+  #### إصلاح خطأ (خلل ظاهر للمستخدم في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release-9}
 </div>
 
 * إصلاح إعادة ضبط محلل التنسيقات، واختبار معالجة الرسائل التالفة في `Kafka` [#45693](https://github.com/ClickHouse/ClickHouse/pull/45693) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -2031,14 +2031,14 @@ doc_type: 'changelog'
 * ضبط مهلات مقابس TCP/HTTP بشكل صحيح في Keeper [#48108](https://github.com/ClickHouse/ClickHouse/pull/48108) ([Antonio Andelic](https://github.com/antonio2368)).
 * إصلاح احتمال استدعاء عضو على مؤشر فارغ في تنسيق `Avro` [#48184](https://github.com/ClickHouse/ClickHouse/pull/48184) ([Kruglov Pavel](https://github.com/Avogar)).
 
-### <a id="232" /> إصدار ClickHouse 23.2، 2023-02-23. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.2/)، [الفيديو](https://www.youtube.com/watch?v=2o0vRMMIrkY)
+### <a id="232" /> إصدار ClickHouse 23.2، 2023-02-23. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.2/)، [الفيديو](https://www.youtube.com/watch?v=2o0vRMMIrkY) {#232}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/2o0vRMMIrkY" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="backward-incompatible-change">
-  #### تغيير غير متوافق مع الإصدارات السابقة
+  #### تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change-8}
 </div>
 
 * توسيع الدالة &quot;toDayOfWeek()&quot; (alias: &quot;DAYOFWEEK&quot;) بإضافة وسيطة mode تحدد ما إذا كان الأسبوع يبدأ يوم الاثنين أو الأحد، وما إذا كان العد يبدأ من 0 أو 1. ولضمان الاتساق مع دوال date time الأخرى، أُدرجت وسيطة mode بين وسيطتَي الوقت والمنطقة الزمنية. وهذا يكسر الاستخدام الحالي للصيغة ذات الوسيطتين (التي لم تكن موثقة سابقًا) &quot;toDayOfWeek(time, time&#95;zone)&quot;. ويمكن إصلاح ذلك بإعادة كتابة الدالة إلى &quot;toDayOfWeek(time, 0, time&#95;zone)&quot;. [#45233](https://github.com/ClickHouse/ClickHouse/pull/45233) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -2050,7 +2050,7 @@ doc_type: 'changelog'
 * منع إنشاء columns جديدة مضغوطة بمزيج من codecs &quot;Delta&quot; أو &quot;DoubleDelta&quot; متبوعًا بـ codecs &quot;Gorilla&quot; أو &quot;FPC&quot;. ويمكن تجاوز ذلك باستخدام setting &quot;allow&#95;suspicious&#95;codecs = true&quot;. [#45652](https://github.com/ClickHouse/ClickHouse/pull/45652) ([Robert Schulze](https://github.com/rschu1ze)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-10}
 </div>
 
 * أضف `StorageIceberg` ودالة الجدول `iceberg` للوصول إلى مخزن جداول Iceberg على S3. [#45384](https://github.com/ClickHouse/ClickHouse/pull/45384) ([flynn](https://github.com/ucasfl)).
@@ -2073,7 +2073,7 @@ doc_type: 'changelog'
 * إضافة دالة جديدة `JSONArrayLength` تُرجع عدد العناصر في مصفوفة JSON الخارجية. تُرجع الدالة NULL إذا كانت سلسلة JSON المُدخلة غير صالحة. [#46631](https://github.com/ClickHouse/ClickHouse/pull/46631) ([李扬](https://github.com/taiyang-li)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-10}
 </div>
 
 * تعمل الآلية المُضافة إذا كان شرط PREWHERE عبارة عن اقتران لعدة شروط (cond1 AND cond2 AND ... ). وهي تجمع الشروط التي تتطلب قراءة الأعمدة نفسها ضمن خطوات. بعد كل خطوة، يُحسَب الجزء المقابل من الشرط الكامل، وقد تُرشَّح الصفوف الناتجة. يتيح ذلك قراءة عدد أقل من الصفوف في الخطوات التالية، مما يوفّر عرض نطاق IO ويقلّل حجم المعالجة. هذه الآلية معطلة افتراضيًا حاليًا. وسيتم تفعيلها افتراضيًا في أحد الإصدارات المستقبلية بعد التأكد من أنها لا تسبب أي تراجعات، لذا يُنصح بشدة باستخدامها لأغراض الاختبار. ويمكن التحكم فيها عبر إعدادين: &quot;enable&#95;multiple&#95;prewhere&#95;read&#95;steps&quot; و &quot;move&#95;all&#95;conditions&#95;to&#95;prewhere&quot;. [#46140](https://github.com/ClickHouse/ClickHouse/pull/46140) ([Alexander Gololobov](https://github.com/davenger)).
@@ -2107,7 +2107,7 @@ doc_type: 'changelog'
 * تُجدول عمليات الدمج المتزامنة باستخدام `round-robin` افتراضيًا لضمان تشغيل عادل وخالٍ من التجويع. سابقًا، في الأجزاء ذات الحمل الزائد الشديد، كان من الممكن أن تتعرض عمليات الدمج الكبيرة للتجويع بسبب عمليات الدمج الأصغر نتيجة استخدام الجدولة ذات الأولوية الصارمة. أُضيف خيار في إعدادات الخادم باسم `background_merges_mutations_scheduling_policy` لاختيار خوارزمية الجدولة (`round_robin` أو `shortest_task_first`). [#46247](https://github.com/ClickHouse/ClickHouse/pull/46247) ([Sergei Trifonov](https://github.com/serxa)).
 
 <div id="improvement-6">
-  #### تحسين
+  #### تحسين {#improvement-10}
 </div>
 
 * تمكين إعادة المحاولة لعملية INSERT افتراضيًا في حال فقدان جلسة ZooKeeper. نحن نستخدم ذلك بالفعل في بيئة الإنتاج. [#46308](https://github.com/ClickHouse/ClickHouse/pull/46308) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -2169,7 +2169,7 @@ doc_type: 'changelog'
 * لا تُحمَّل المجموعات المسماة عند بدء تشغيل الخادم (بل تُحمَّل عند أول استخدام لها). [#46607](https://github.com/ClickHouse/ClickHouse/pull/46607) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 <div id="buildtestingpackaging-improvement-6">
-  #### تحسينات في البناء/الاختبار/التغليف
+  #### تحسينات في البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-10}
 </div>
 
 * إضافة GWP-ASan المُنفَّذ عبر runtime الخاص بـ LLVM. يُغلق هذا [#27039](https://github.com/ClickHouse/ClickHouse/issues/27039). [#45226](https://github.com/ClickHouse/ClickHouse/pull/45226) ([Han Fei](https://github.com/hanfei1991)).
@@ -2184,7 +2184,7 @@ doc_type: 'changelog'
 * ترقية Intel QPL من v0.3.0 إلى v1.0.0 2. وبناء libaccel-config وربطه ربطًا ثابتًا بمكتبة QPL بدلًا من الربط الديناميكي. [#45809](https://github.com/ClickHouse/ClickHouse/pull/45809) ([jasperzhu](https://github.com/jinjunzh)).
 
 <div id="bug-fix-user-visible-misbehavior-in-official-stable-release">
-  #### إصلاح الأخطاء (خلل يلاحظه المستخدم في الإصدار المستقر الرسمي)
+  #### إصلاح الأخطاء (خلل يلاحظه المستخدم في الإصدار المستقر الرسمي) {#bug-fix-user-visible-misbehavior-in-official-stable-release}
 </div>
 
 * تفريغ البيانات بدقة وفقًا لـ `rabbitmq_flush_interval_ms` أو `rabbitmq_max_block_size` في `StorageRabbitMQ`. يغلق [#42389](https://github.com/ClickHouse/ClickHouse/issues/42389). يغلق [#45160](https://github.com/ClickHouse/ClickHouse/issues/45160). [#44404](https://github.com/ClickHouse/ClickHouse/pull/44404) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -2231,18 +2231,18 @@ doc_type: 'changelog'
 * كانت memory buffers المخصصة أثناء asynchronous inserts تُحرَّر في Context العام، ولم تكن counters الخاصة بـ MemoryTracker للمستخدم وquery المقابلين تُحدَّث بشكل صحيح. وقد أدى ذلك إلى استثناءات OOM إيجابية كاذبة. [#46622](https://github.com/ClickHouse/ClickHouse/pull/46622) ([Dmitry Novik](https://github.com/novikd)).
 * تم التحديث بحيث لا تتم إزالة `on_expression` من `table_join` لأنه يُستخدم في عمليات التحليل المستقبلية، مما يحل [#45185](https://github.com/ClickHouse/ClickHouse/issues/45185). [#46487](https://github.com/ClickHouse/ClickHouse/pull/46487) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 
-### <a id="231" /> إصدار ClickHouse 23.1، 2023-01-26. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.1/)، [الفيديو](https://www.youtube.com/watch?v=zYSZXBnTMSE)
+### <a id="231" /> إصدار ClickHouse 23.1، 2023-01-26. [العرض التقديمي](https://presentations.clickhouse.com/2023-release-23.1/)، [الفيديو](https://www.youtube.com/watch?v=zYSZXBnTMSE) {#231}
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/zYSZXBnTMSE" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen />
 </Frame>
 
 <div id="clickhouse-release-231">
-  ### إصدار ClickHouse 23.1
+  ### إصدار ClickHouse 23.1 {#clickhouse-release-231}
 </div>
 
 <div id="upgrade-notes">
-  #### ملاحظات الترقية
+  #### ملاحظات الترقية {#upgrade-notes-2}
 </div>
 
 * يصبح الاستعلام `SYSTEM RESTART DISK` بلا تأثير. [#44647](https://github.com/ClickHouse/ClickHouse/pull/44647) ([alesapin](https://github.com/alesapin)).
@@ -2254,7 +2254,7 @@ doc_type: 'changelog'
 * تُمنع الاستعلامات التي تجمع بين الربط بالمساواة والتعبيرات الثابتة (مثل `JOIN ON t1.x = t2.x AND 1 = 1`) بسبب نتائج غير صحيحة. [#44016](https://github.com/ClickHouse/ClickHouse/pull/44016) ([Vladimir C](https://github.com/vdimir)).
 
 <div id="new-feature">
-  #### ميزة جديدة
+  #### ميزة جديدة {#new-feature-11}
 </div>
 
 * مصدر قاموس لاستخراج المفاتيح عبر اجتياز شجرة التعبيرات النمطية. ويمكن استخدامه لتحليل `User-Agent`. [#40878](https://github.com/ClickHouse/ClickHouse/pull/40878) ([Vage Ogannisian](https://github.com/nooblose)). [#43858](https://github.com/ClickHouse/ClickHouse/pull/43858) ([Han Fei](https://github.com/hanfei1991)).
@@ -2276,7 +2276,7 @@ doc_type: 'changelog'
   إضافة الإعدادات input&#95;format&#95;tsv/csv/custom&#95;detect&#95;header التي تُمكّن هذا السلوك (مفعّلة افتراضيًا). يُغلق [#44640](https://github.com/ClickHouse/ClickHouse/issues/44640). [#44953](https://github.com/ClickHouse/ClickHouse/pull/44953) ([Kruglov Pavel](https://github.com/Avogar)).
 
 <div id="experimental-feature-3">
-  #### ميزة تجريبية
+  #### ميزة تجريبية {#experimental-feature-7}
 </div>
 
 * إضافة فهرس معكوس تجريبي كنوع جديد من الفهارس الثانوية للبحث النصي بكفاءة. [#38667](https://github.com/ClickHouse/ClickHouse/pull/38667) ([larryluogit](https://github.com/larryluogit)).
@@ -2285,7 +2285,7 @@ doc_type: 'changelog'
 * أُضيف `SYSTEM DROP DATABASE REPLICA` الذي يزيل البيانات الوصفية لنسخة متماثلة معطلة من قاعدة بيانات `Replicated`. ويحل [#41794](https://github.com/ClickHouse/ClickHouse/issues/41794). [#42807](https://github.com/ClickHouse/ClickHouse/pull/42807) ([Alexander Tokmakov](https://github.com/tavplubix)).
 
 <div id="performance-improvement">
-  #### تحسين الأداء
+  #### تحسين الأداء {#performance-improvement-11}
 </div>
 
 * لا تُحمَّل الأجزاء غير النشطة عند بدء تشغيل جداول `MergeTree`. [#42181](https://github.com/ClickHouse/ClickHouse/pull/42181) ([Anton Popov](https://github.com/CurtizJ)).
@@ -2311,7 +2311,7 @@ doc_type: 'changelog'
 * إضافة ذاكرة تخزين مؤقت لمعرّفات الكتل غير المتزامنة. سيقلّل هذا عدد طلبات ZooKeeper عند تفعيل إزالة الازدواجية في عمليات الإدراج غير المتزامنة. [#45106](https://github.com/ClickHouse/ClickHouse/pull/45106) ([Han Fei](https://github.com/hanfei1991)).
 
 <div id="improvement-6">
-  #### تحسين
+  #### تحسين {#improvement-11}
 </div>
 
 * استخدام البنية من جدول الإدراج في generateRandom بدون وسائط. [#45239](https://github.com/ClickHouse/ClickHouse/pull/45239) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -2350,7 +2350,7 @@ doc_type: 'changelog'
 * إضافة parameter `\<storage_policy>` في config لسجلات النظام. [#45320](https://github.com/ClickHouse/ClickHouse/pull/45320) ([Stig Bakken](https://github.com/stigsb)).
 
 <div id="buildtestingpackaging-improvement">
-  #### تحسينات البناء/الاختبار/التغليف
+  #### تحسينات البناء/الاختبار/التغليف {#buildtestingpackaging-improvement-11}
 </div>
 
 * الربط الثابت مع مكتبة `skim` (وهي مكتوبة بلغة Rust) لتنفيذ البحث الضبابي في سجل clickhouse client/local. [#44239](https://github.com/ClickHouse/ClickHouse/pull/44239) ([Azat Khuzhin](https://github.com/azat)).
@@ -2363,7 +2363,7 @@ doc_type: 'changelog'
 * إطلاق [موقع ويب](https://aretestsgreenyet.com/) لعرض حالة ClickHouse CI. [المصدر](https://github.com/ClickHouse/aretestsgreenyet).
 
 <div id="bug-fix">
-  #### إصلاح الأخطاء
+  #### إصلاح الأخطاء {#bug-fix}
 </div>
 
 * استبدال أنواع IP الخاصة بالنطاق (IPv4 وIPv6) بـ native. [#43221](https://github.com/ClickHouse/ClickHouse/pull/43221) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)). ويؤدي ذلك تلقائيًا إلى إصلاح بعض الأجزاء غير المنفذة في الشيفرة.

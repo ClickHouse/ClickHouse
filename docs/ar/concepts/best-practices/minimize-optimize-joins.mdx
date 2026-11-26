@@ -3,14 +3,12 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: 'تقليل عمليات JOIN وتحسينها'
 title: 'تقليل عمليات JOIN وتحسينها'
 description: 'مستند يوضح أفضل الممارسات لاستخدام عمليات JOIN في ClickHouse'
-keywords: ['JOIN', 'Parallel Hash JOIN']
+keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
-تقدّم هذه الصفحة إرشادات عملية لتجنّب عمليات JOIN متى أمكن، ولخفض كلفتها حين لا غنى عنها. للاطلاع على الصيغة والدلالات، راجع [مرجع عبارة `JOIN`](/ar/reference/statements/select/join). وللاطلاع على خوارزميات التنفيذ وكيفية اختيار الخوارزمية المناسبة، راجع [ربط الجداول](/ar/concepts/features/operations/select/joining-tables).
+تقدّم هذه الصفحة إرشادات عملية لتجنّب عمليات JOIN متى أمكن، ولخفض كلفتها حين لا غنى عنها. للاطلاع على الصيغة والدلالات، راجع [مرجع عبارة `JOIN`](/ar/reference/statements/select/join). وللاطلاع على خوارزميات التنفيذ وكيفية اختيار الخوارزمية المناسبة، راجع [خوارزميات الربط](/ar/concepts/features/operations/select/join-algorithms).
 
 ## يُفضَّل تجنّب عمليات JOIN {#prefer-avoiding-joins}
 
@@ -37,34 +35,39 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 اتبع أفضل الممارسات التالية لتحسين أداء عمليات JOIN:
 
-* **استخدم عمليات `ANY` JOIN عندما يكفيك تطابق واحد.** تُرجع عملية JOIN العادية كل الصفوف المطابقة، وقد تُنتج ضربًا ديكارتيًا عند تكرار المفاتيح. استخدم `LEFT ANY JOIN` أو `ANY INNER JOIN` عندما يكفي تطابق واحد، لتقليل حجم النتيجة واستهلاك الذاكرة.
+* **استخدم عمليات `ANY` JOIN عندما يكفيك تطابق واحد.** تُرجع عملية JOIN العادية كل الصفوف المطابقة، وقد تُنتج ضربًا ديكارتيًا عند تكرار المفاتيح. ولإثراء كل صف من الطرف الأيسر بصف مطابق واحد من الطرف الأيمن، استخدم `LEFT ANY JOIN`، مما يقلّل حجم النتيجة واستهلاك الذاكرة. وللتحقق من وجود صف مطابق، استخدم `IN` أو `LEFT SEMI JOIN`. ومع الإعداد الافتراضي [`any_join_distinct_right_table_keys = 0`](/ar/reference/settings/session-settings/other#any_join_distinct_right_table_keys)، تقصر عملية `INNER ANY JOIN` الطرف الأيسر أيضًا على صف واحد لكل مفتاح، لذا قد تُسقط صفوفًا من الطرف الأيسر تشترك في المفتاح نفسه. راجع [صرامة `ALL` و`ANY`](/ar/concepts/features/operations/select/joining-tables#all-and-any-strictness).
 * **قلّص البيانات في كلا الطرفين قبل عملية JOIN.** طبّق شروطًا انتقائية في عبارتي `WHERE` و`JOIN ON`. يدفع ClickHouse عوامل التصفية إلى المراحل الأدنى متى أمكن، غير أن الاستعلامات الفرعية الصريحة تضمن تصفية كل مُدخل قبل تنفيذ عملية JOIN.
 * **فكّر في استخدام `IN` بدلًا من `INNER JOIN`.** إذا كان الاستعلام يحتاج فقط إلى التحقق من وجود مفتاح في الجدول الآخر، فإن الاستعلام الفرعي `IN` يعبّر عن ذلك مباشرةً، وقد يستهلك ذاكرة أقل مما يتطلبه إنتاج نتيجة `INNER JOIN`.
+* **استخدم القواميس لعمليات البحث المتكررة من نوع مفتاح-قيمة.** عند استخدام تخطيط مثل `HASHED` أو `COMPLEX_KEY_HASHED`، يُحمَّل [القاموس](/ar/concepts/features/dictionaries) في الذاكرة مسبقًا قبل تنفيذ الاستعلام، ويُحدَّث وفقًا لقيمة `LIFETIME` الخاصة به. وتبحث الدالة [`dictGetOrDefault`](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetOrDefault) عن كل مفتاح في القاموس دون الحاجة إلى عملية JOIN، على سبيل المثال: `dictGetOrDefault('stackoverflow.users_dict', 'DisplayName', tuple(p.OwnerUserId), '')`.
 * **فضّل محرك الجداول `Join` لعمليات البحث المتكررة.** يخزّن [محرك الجداول `Join`](/ar/reference/engines/table-engines/special/join) في الذاكرة بنيةً محسوبة مسبقًا لنوع الربط وصرامة ومفتاح محددين. وفي ClickHouse Cloud، يُنفَّذ بصيغة `SharedJoin` مدعومًا بجدول `MergeTree`، ويتيح `Join(ANY, LEFT, key)` بحثًا قابلًا للتحديث لكل مفتاح. راجع [Fast, updatable lookups with the Join table engine](https://clickhouse.com/blog/join-table-engine).
 * **نفّذ الربط على مفاتيح فرز الجداول متى أمكن.** عندما يكون الجدولان مرتّبين فعليًا وفق مفتاح الربط، يمكن للخوارزمية `full_sorting_merge` تخطي الفرز وتقليل استهلاك الذاكرة. تحقّق من خطة التنفيذ، وقارن أداء هذه الخوارزمية بالخوارزمية الافتراضية على بيانات ممثِّلة للواقع.
-* **تجنّب عمليات JOIN التي تلجأ إلى الكتابة على القرص.** قد تساعد كتابة حالة JOIN الوسيطة على القرص في إبقاء الاستعلام ضمن الحد الأقصى للذاكرة، لكن عمليات IO على القرص تزيد زمن الاستجابة عادةً. ويمكن لعمليات الربط بالتجزئة التحوّل إلى grace hash عند بلوغ عتبات الكتابة المُهيّأة، بينما يمكن لعمليات الربط بالدمج اللجوء إلى الفرز الخارجي. قلّل عدد صفوف الإدخال وأعمدته، أو أعد النظر في نموذج البيانات قبل الاعتماد على الكتابة على القرص. راجع [اختيار خوارزمية JOIN المثلى](#choosing-the-optimal-join-algorithm) لمزيد من التفاصيل.
+* **تجنّب عمليات JOIN التي تلجأ إلى الكتابة على القرص.** قد تساعد كتابة حالة JOIN الوسيطة على القرص في إبقاء الاستعلام ضمن الحد الأقصى للذاكرة، لكن عمليات IO على القرص تزيد زمن الاستجابة عادةً. ويمكن لعمليات الربط بالتجزئة التحوّل إلى grace hash عند بلوغ عتبات الكتابة المُهيّأة، بينما يمكن لعمليات الربط بالدمج اللجوء إلى الفرز الخارجي. قلّل عدد صفوف الإدخال وأعمدته، أو أعد النظر في نموذج البيانات قبل الاعتماد على الكتابة على القرص. راجع [اختيار خوارزمية الربط المثلى](#choosing-the-optimal-join-algorithm) لمزيد من التفاصيل.
 * **استخدم القيم الافتراضية علاماتٍ على عدم التطابق عند الاقتضاء.** يملأ الإعداد الافتراضي [`join_use_nulls = 0`](/ar/reference/settings/session-settings/join#join_use_nulls) أعمدة JOIN الخارجية غير المطابقة بالقيمة الافتراضية لنوع بياناتها، متجنبًا بذلك أغلفة `Nullable`. لا تفعّل `join_use_nulls` إلا عندما يتعيّن على الاستعلام التمييز بين صف غير مطابق وصف مطابق يحتوي على قيمة افتراضية.
 
 ## اختيار خوارزمية JOIN المثلى {#choosing-the-optimal-join-algorithm}
 
-يدعم ClickHouse عدة خوارزميات JOIN توازن بين السرعة واستهلاك الذاكرة.
-القيمة الافتراضية للإعداد [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) هي `direct,parallel_hash,hash,ie_join`، ويختار ClickHouse أول خوارزمية قابلة للتطبيق وفقًا لنوع JOIN وصرامته وشرطه ومحرك الجدول. لا تفكر في تغييرها إلا بعد تقليص حجم كلا المدخلين، وعندما تُظهر القياسات على بيانات تمثيلية الحاجة إلى استراتيجية مختلفة للذاكرة أو التنفيذ. لمزيد من التفاصيل حول تنفيذ الخوارزميات وأنواع JOIN المدعومة، راجع [اختيار خوارزمية JOIN](/ar/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+يدعم ClickHouse عدة خوارزميات الربط توازن بين السرعة واستهلاك الذاكرة.
+القيمة الافتراضية للإعداد [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) هي `direct,hash,ie_join`، ويختار ClickHouse أول خوارزمية قابلة للتطبيق وفقًا لنوع JOIN وصرامته وشرطه ومحرك الجدول. لا تفكر في تغييرها إلا بعد تقليص حجم كلا المدخلين، وعندما تُظهر القياسات على بيانات تمثيلية الحاجة إلى استراتيجية مختلفة للذاكرة أو التنفيذ. لمزيد من التفاصيل حول تنفيذ الخوارزميات وأنواع JOIN المدعومة، راجع [خوارزميات الربط](/ar/concepts/features/operations/select/join-algorithms).
 
 إذا كان الأداء هو مقياس التحسين الأهم لديك وتسعى إلى تنفيذ الربط بأسرع ما يمكن، فيمكنك الاستعانة بشجرة القرار التالية لاختيار خوارزمية الربط المناسبة:
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="شجرة قرار تحسين أداء الربط" />
+<div className="ch-image-lg">
+  <Frame>
+    ![شجرة قرار تحسين أداء الربط](/images/guides/joins-4.webp)
+  </Frame>
+</div>
 
 <br />
 
-* **(1)** إذا أمكن تحميل بيانات الجدول الأيمن مسبقًا في بنية بيانات مفتاح-قيمة داخل الذاكرة ذات زمن استجابة منخفض، مثل القاموس، وكان مفتاح الربط يطابق سمة المفتاح في مخزن مفتاح-قيمة الأساسي، وكانت دلالات `LEFT ANY JOIN` كافية، فإن **الربط المباشر (direct join)** يكون قابلًا للتطبيق، وغالبًا ما يكون النهج الأسرع.
+* **(1)** إذا كان الجانب الأيمن قاموسًا أو مخزنًا آخر يدعم عمليات بحث مفتاح-قيمة منخفضة زمن الاستجابة، فإن خوارزمية [`direct`](/ar/concepts/features/operations/select/join-algorithms#direct) تكون قابلة للتطبيق، وغالبًا ما تكون النهج الأسرع. وتتطلب هذه الخوارزمية استعلام `INNER JOIN` أو `LEFT JOIN` أو `LEFT ANY JOIN` أو `LEFT SEMI JOIN` أو `LEFT ANTI JOIN` يحتوي فيه عبارة `ON` على شرط مساواة واحد فقط على مفتاح المخزن أحادي العمود، وإلا فإن ClickHouse ينتقل إلى الخوارزمية التالية في [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) دون إصدار خطأ.
 
 * **(2)** إذا كان [الترتيب الفعلي للصفوف](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) في جدولك يطابق ترتيب فرز مفتاح الربط، فإن الأمر يتوقف على عوامل أخرى. في هذه الحالة، [يتخطى](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) **الربط بالدمج مع الفرز الكامل** مرحلة الفرز، مما يؤدي إلى انخفاض كبير في استخدام الذاكرة، فضلًا عن أوقات تنفيذ أسرع من بعض خوارزميات الربط بالتجزئة، تبعًا لحجم البيانات وتوزيع قيم مفتاح الربط.
 
-* **(3)** إذا كانت الذاكرة تتسع للجدول الأيمن، حتى مع [العبء الإضافي في استخدام الذاكرة](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) الذي يفرضه **الربط المتوازي بالتجزئة**، فقد تكون هذه الخوارزمية أو الربط بالتجزئة أسرع. ويعتمد ذلك على حجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الربط.
+* **(3)** إذا كانت الذاكرة تتسع للجدول الأيمن، فاستخدم خوارزمية [`hash`](/ar/concepts/features/operations/select/join-algorithms#hash). وهي عادةً الخيار الأسرع داخل الذاكرة، تبعًا لحجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الربط. ولكل استعلام، يقرر ClickHouse ما إذا كان سيبني جدول تجزئة واحدًا أو سيقسّم جدول التجزئة إلى أجزاء تملؤها عدة خيوط بالتزامن، وهو ما تعرضه شجرة القرار بوصفه الربط المتوازي بالتجزئة. ويتحكم الإعداد [`parallel_hash_join_threshold`](/ar/reference/settings/session-settings/parallel#parallel_hash_join_threshold) في هذا القرار: إذ يُقسَّم جدول التجزئة عندما يبلغ العدد التقديري للصفوف في الجدول الأيمن العتبة، أو عند عدم توفر تقدير. وبدءًا من الإصدار 26.11، أصبح `parallel_hash` اسمًا بديلًا متقادمًا لـ `hash`، لذا فإن إدراجه في `join_algorithm` لا يغيّر هذا القرار.
 
-* **(4)** إذا كانت الذاكرة لا تتسع للجدول الأيمن، فيمكن لعمليات الربط بالتجزئة والربط المتوازي بالتجزئة نقل البيانات إلى القرص عبر التحول إلى الربط بالتجزئة بأسلوب Grace عند بلوغ [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) أو [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join). ويمكن أيضًا للربط بالدمج مع الفرز الكامل والربط بالدمج الجزئي استخدام التخزين الخارجي. ويتوقف تحديد النهج الأسرع على حجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الربط.
+* **(4)** إذا كانت الذاكرة لا تتسع للجدول الأيمن، فيمكن لعمليات الربط بالتجزئة والربط المتوازي بالتجزئة الكتابة إلى القرص عبر التحول إلى الربط بالتجزئة بأسلوب Grace عند بلوغ [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) أو [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join). ويمكن أيضًا للربط بالدمج مع الفرز الكامل والربط بالدمج الجزئي استخدام التخزين الخارجي. ويتوقف تحديد النهج الأسرع على حجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الربط.
 
 الربط بالدمج الجزئي مُحسَّن لتقليل استخدام الذاكرة عند ربط جداول كبيرة، لكن ذلك يأتي على حساب سرعة الربط التي تكون بطيئة جدًا، لا سيما عندما لا يطابق الترتيب الفعلي لصفوف الجدول الأيسر ترتيب فرز مفتاح الربط.
 
@@ -72,18 +75,90 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يتوقف تحديد الأسرع بين الخوارزميات الثلاث المعتمدة على القرص على حجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الربط. لذا يُفضَّل دائمًا إجراء بعض اختبارات الأداء على أحجام واقعية من بياناتك لتحديد الخوارزمية الأسرع.
 
+### أمثلة على شجرة القرار {#decision-tree-examples}
+
+تطبّق الأمثلة التالية كل خطوة من خطوات شجرة القرار على [مجموعة بيانات Stack Overflow](/ar/getting-started/example-datasets/stackoverflow). لمعرفة الخوارزمية التي تُنفَّذ بها عملية JOIN، شغّل الاستعلام مع `EXPLAIN actions = 1` واطّلع على سطر `Algorithm` في الإخراج.
+
+**(1) `direct`.** يخزّن القاموس التالي اسم العرض لكل مستخدم، ويبحث الاستعلام عن مؤلف كل منشور حاصل على تقييم مرتفع:
+
+```sql
+CREATE DICTIONARY stackoverflow.users_dict
+(
+    Id Int32,
+    DisplayName String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(DB 'stackoverflow' TABLE 'users'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 600 MAX 900);
+
+SELECT p.Id, p.Score, u.DisplayName
+FROM stackoverflow.posts AS p
+LEFT JOIN stackoverflow.users_dict AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000;
+```
+
+يُظهر السطر `Algorithm` القيمة `DirectKeyValueJoin`. يستخدم القاموس التخطيط `COMPLEX_KEY_HASHED` للحفاظ على النوع `Int32` للعمود `users.Id`. أما التخطيط ذو المفتاح البسيط، مثل `HASHED`، فيحوّل المفتاح إلى `UInt64`، ولا يمكن عندئذٍ ربطه بالعمود `posts.OwnerUserId` من النوع `Int32`.
+
+**(2) `full_sorting_merge`.** الجدول `badges` مرتّب حسب `UserId`، ومفتاح الفرز للجدول `users` يبدأ بـ `Id`، ولذلك فإن كلا الجدولين مرتّبان فعليًا على القرص حسب مفتاح الربط في JOIN:
+
+```sql
+SELECT u.Location, count() AS famous_questions
+FROM stackoverflow.badges AS b
+INNER JOIN stackoverflow.users AS u ON b.UserId = u.Id
+WHERE b.Name = 'Famous Question'
+GROUP BY u.Location
+ORDER BY famous_questions DESC
+LIMIT 5
+SETTINGS join_algorithm = 'full_sorting_merge';
+```
+
+يُظهر سطر `Algorithm` القيمة `FullSortingMergeJoin`، وتُظهر خطوتا `ReadFromMergeTree` كلتاهما نوع القراءة `InOrder`. أي أن ClickHouse يقرأ الجدولين كليهما وفق ترتيب مفتاح الربط في JOIN بدلاً من فرزهما.
+
+**(3) `hash`.** مع القيمة الافتراضية لـ `join_algorithm`، تُنفَّذ عملية JOIN التالية باستخدام `hash`:
+
+```sql
+SELECT u.Location, count() AS popular_posts
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.users AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000
+GROUP BY u.Location
+ORDER BY popular_posts DESC
+LIMIT 5
+SETTINGS parallel_hash_join_threshold = 0;
+```
+
+في غياب عبارة `SETTINGS`، لا يقسّم ClickHouse جدول التجزئة إلا عندما يبلغ العدد التقديري للصفوف في الجدول الأيمن القيمة الافتراضية لـ `parallel_hash_join_threshold` وهي 100,000. أما عند ضبط `parallel_hash_join_threshold = 0`، فإنه يقسّم جدول التجزئة بصرف النظر عن هذا التقدير.
+
+**(4) الكتابة إلى القرص.** يتيح الاستعلام التالي لجدول التجزئة أن يكبر حتى 10 GiB في الذاكرة. وعند تجاوز هذا الحجم، يحوّل ClickHouse عملية JOIN إلى `grace_hash` ويكتب جزءًا من البيانات إلى التخزين المؤقت:
+
+```sql
+SELECT u.Location, count() AS popular_posts
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.users AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000
+GROUP BY u.Location
+ORDER BY popular_posts DESC
+LIMIT 5
+SETTINGS max_bytes_before_external_join = '10Gi';
+```
+
 ## التحسين من أجل الذاكرة {#optimizing-for-memory}
 
 إذا كنت تريد تحسين عملية الربط لتحقيق أدنى استخدام للذاكرة بدلاً من أسرع وقت تنفيذ، فيمكنك الاستعانة بشجرة القرار التالية بدلاً من ذلك:
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="شجرة قرار تحسين الذاكرة في عمليات الربط" />
+<div className="ch-image-lg">
+  <Frame>
+    ![شجرة قرار تحسين الذاكرة في عمليات الربط](/images/guides/joins-5.webp)
+  </Frame>
+</div>
 
 <br />
 
 * **(1)** إذا كان الترتيب الفعلي للصفوف في جدولك يطابق ترتيب الفرز حسب مفتاح الربط، فإن استخدام الذاكرة في **الربط بالدمج مع الفرز الكامل** يبلغ أدنى مستوياته، مع ميزة إضافية هي سرعة الربط الجيدة، إذ تكون مرحلة الفرز [معطّلة](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order).
-* **(2)** يمكن ضبط **الربط بالتجزئة بأسلوب Grace** لتحقيق استخدام منخفض جداً للذاكرة عبر زيادة قيمة [`grace_hash_join_initial_buckets`](/ar/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets)، وذلك على حساب سرعة الربط. أما **الربط بالدمج الجزئي** فمصمَّم عمداً لاستخدام قدر قليل من الذاكرة الرئيسية. وعند تفعيل الفرز الخارجي، يستهلك **الربط بالدمج مع الفرز الكامل** عموماً ذاكرةً أكبر من الربط بالدمج الجزئي حين لا يطابق ترتيب الصفوف ترتيب الفرز حسب المفتاح، غير أنه يتميز بوقت تنفيذ أفضل بكثير. كما يمكن لعمليات الربط بالتجزئة والربط المتوازي بالتجزئة تخفيف ضغط الذاكرة بالتحول إلى أسلوب Grace عند بلوغ عتبة الكتابة المهيّأة.
+* **(2)** يمكن ضبط الخوارزمية [`grace_hash`](/ar/concepts/features/operations/select/join-algorithms#grace-hash) لتحقيق استخدام منخفض جداً للذاكرة عبر زيادة قيمة [`grace_hash_join_initial_buckets`](/ar/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets)، وذلك على حساب سرعة JOIN. أما الخوارزمية [`partial_merge`](/ar/concepts/features/operations/select/join-algorithms#partial-merge) فمصمَّمة عمداً لاستخدام قدر قليل من الذاكرة الرئيسية. وعند تفعيل الفرز الخارجي، تستهلك الخوارزمية [`full_sorting_merge`](/ar/concepts/features/operations/select/join-algorithms#full-sorting-merge) عموماً ذاكرةً أكبر من `partial_merge` حين لا يطابق ترتيب الصفوف ترتيب الفرز حسب المفتاح، غير أنها تتميز بوقت تنفيذ أفضل بكثير لعمليات JOIN. كما يمكن للخوارزمية [`hash`](/ar/concepts/features/operations/select/join-algorithms#hash) تخفيف ضغط الذاكرة بالتحول إلى `grace_hash` عند بلوغ عتبة الكتابة المهيّأة.
 
 ## أمثلة على تحسين JOIN {#join-optimization-examples}
 
@@ -127,6 +202,8 @@ WHERE
 
 يُعيد استعلام `IN` أيضًا القيمة `86`. وبلغ الوسيط الحسابي للوقت المنقضي 10.206 ثانية، فيما بلغت ذروة استهلاك الذاكرة 162.81 MiB. كما قرأ 174.20 مليون صف و19.02 GiB من البيانات.
 
+يُعيد الاستعلامان النتيجة نفسها لأن قيم `posts.Id` مميزة. ولا تكون إعادة الكتابة هذه مكافئة إلا إذا كان مفتاح الربط في الجانب الأيسر مميزًا، إذ يُعيد `ANY INNER JOIN` صفًا واحدًا على الأكثر من الجانب الأيسر لكل مفتاح، بينما يُعيد `IN` كل صف من الجانب الأيسر يوجد له تطابق.
+
 ### تطبيق التصفية على كلا الجانبين قبل استبدال JOIN {#filter-both-sides-before-replacing-the-join}
 
 في هذا الاختبار، أدّت إعادة الكتابة إلى خفض الوسيط للوقت المنقضي بنسبة 18% وخفض ذروة استهلاك الذاكرة بنسبة 14%.
@@ -164,9 +241,15 @@ WHERE
 
 يُعيد استعلام `IN` أيضًا القيمة `261915`. وبلغ الوسيط للوقت المنقضي 0.696 ثانية، فيما بلغت ذروة استهلاك الذاكرة 51.70 MiB. وقد قرأ الاستعلام 46.20 مليون صف و817.49 MiB من البيانات.
 
+إعادة الكتابة هذه مكافئة للاستعلام الأصلي لأن قيم `posts.Id` مميزة، ومن ثَمّ لا يطابق كل تصويت أكثر من منشور واحد.
+
 ## قراءات إضافية {#further-reading}
 
-* [ربط الجداول](/ar/concepts/features/operations/select/joining-tables)
+* [استخدام JOIN في ClickHouse](/ar/concepts/features/operations/select/joining-tables)
+* [كيف ينفّذ ClickHouse عمليات JOIN](/ar/concepts/features/operations/select/join-execution)
+* [خوارزميات الربط](/ar/concepts/features/operations/select/join-algorithms)
+* [إدارة الذاكرة والكتابة إلى القرص في عمليات JOIN](/ar/concepts/features/operations/select/join-memory-management)
+* [إعدادات JOIN](/ar/concepts/features/operations/select/join-settings)
 * [مرجع عبارة `JOIN`](/ar/reference/statements/select/join)
 * [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices)
 * [الدعم الكامل لعمليات SQL JOIN، الجزء 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)

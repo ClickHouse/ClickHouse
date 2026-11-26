@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Temporal', '指标', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -22,17 +20,17 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
 <Info>
   **简而言之**
 
-  使用 OTel Prometheus receiver 在 ClickStack 中监控 Temporal Cloud 指标。包含一个预置仪表盘。
+  使用 OTel Prometheus receiver 在 ClickStack 中监控 Temporal Cloud 指标。包含一个预构建仪表板。
 </Info>
 
 <div id="existing-temporal">
-  ## 与现有 Temporal Cloud 集成
+  ## 与现有 Temporal Cloud 集成 {#existing-temporal}
 </div>
 
 本节将介绍如何通过为 ClickStack OTel collector 配置 Prometheus receiver 来配置 ClickStack。
 
 <div id="prerequisites">
-  ## 前置条件
+  ## 前置条件 {#prerequisites}
 </div>
 
 * 正在运行的 ClickStack 实例
@@ -51,7 +49,7 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
   </Step>
 
   <Step title="创建自定义 OTel collector 配置" id="custom-otel">
-    ClickStack 允许你通过挂载自定义配置文件并设置环境变量，扩展基础 OpenTelemetry collector 配置。自定义配置会与 HyperDX 通过 OpAMP 管理的基础配置合并。
+    ClickStack 允许你通过挂载自定义配置文件并设置环境变量，扩展基础 OpenTelemetry collector 配置。自定义配置会与 ClickStack 用户界面通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `temporal-metrics.yaml` 的文件，内容如下：
 
@@ -117,7 +115,7 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
 
     以下所有命令都假定在示例目录中执行，即存放 `temporal-metrics.yaml` 和 `temporal.key` 的目录。
 
-    ##### 选项 1：Docker Compose
+##### 选项 1：Docker Compose {#docker-compose}
 
     更新您的 ClickStack 部署配置：
 
@@ -133,7 +131,7 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
           # ... other volumes ...
     ```
 
-    ##### 选项 2：Docker run (一体化镜像)
+##### 选项 2：Docker run (一体化镜像) {#all-in-one}
 
     如果通过 `docker run` 使用一体化镜像：
 
@@ -147,20 +145,22 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
     ```
   </Step>
 
-  <Step title="在 HyperDX 中验证指标" id="verifying-metrics">
-    配置完成后，登录 HyperDX 并确认指标已开始流入：
+  <Step title="在 ClickStack 用户界面中验证指标" id="verifying-metrics">
+    配置完成后，登录 ClickStack 用户界面并确认指标已开始流入：
 
     1. 进入 Metrics 浏览器
     2. 搜索以 `temporal` 开头的指标 (例如：`temporal_cloud_v1_workflow_success_count`、`temporal_cloud_v1_poll_timeout_count`)
     3. 你应能看到指标数据点按所配置的采集间隔持续出现
 
-    <Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Temporal 指标" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Temporal 指标](/images/clickstack/temporal/temporal-metrics.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 仪表盘和可视化
-</div>
+## 仪表盘和可视化 {#dashboards}
 
 为帮助你开始使用 ClickStack 监控 Temporal Cloud，我们提供了一些 Temporal 指标的示例可视化。
 
@@ -169,30 +169,42 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step title="导入预构建仪表盘" id="import-dashboard">
-    1. 打开 HyperDX 并导航到“仪表盘”部分
+  <Step title="导入预构建仪表板" id="import-dashboard">
+    1. 打开 ClickStack 用户界面并导航到“仪表盘”部分
     2. 点击右上角省略号菜单下的 **导入仪表盘**
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. 上传 `temporal-metrics-dashboard.json` 文件，然后点击 **完成导入**
 
-    <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="完成导入对话框" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![完成导入对话框](/images/clickstack/temporal/import-temporal-metrics-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
     该仪表盘会创建完成，并预先配置好所有可视化：
 
-    <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Temporal 指标仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Temporal 指标仪表盘](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 自定义配置未正确加载
+  ### 自定义配置未正确加载 {#troubleshooting-not-loading}
 </div>
 
 请确认环境变量 `CUSTOM_OTELCOL_CONFIG_FILE` 已正确设置：
@@ -223,14 +235,12 @@ docker exec <container-name> cat /etc/otelcol-contrib/temporal.key
 # 该命令应输出您的 temporal.key
 ```
 
-<div id="no-metrics">
-  ### HyperDX 中未显示任何指标
-</div>
+### ClickStack 用户界面中未显示任何指标 {#no-metrics}
 
 验证 collector 能否访问 Temporal Cloud：
 
 ```bash
-# 在 ClickStack 容器内执行
+# From the ClickStack container
 docker exec <container-name> curl -H "Authorization: Bearer <API_KEY>" https://metrics.temporal.io/v1/metrics
 ```
 
@@ -244,14 +254,14 @@ temporal_cloud_v1_workflow_success_count{operation="CompletionStats",region="aws
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "Prometheus:"
-## 通常为：docker exec clickstack cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "prometheus:"
+## usually, docker exec clickstack cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "prometheus:"
 ```
 
 检查 collector agent 日志中是否有错误：
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
-# 查找连接错误或身份验证失败
+# Look for connection errors or authentication failures
 # docker exec clickstack cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
 ```
 
@@ -259,32 +269,30 @@ docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i Promet
 
 ```bash
 docker exec <container> cat /var/log/otel-collector.log | grep -i error
-# 查找配置解析错误 - 早期的 supervisor.opamp-client 报错可忽略 
+# Look for config parsing errors - early supervisor.opamp-client can be ignored 
 # docker exec clickstack cat /var/log/otel-collector.log | grep -i error
 ```
 
 <div id="auth-errors">
-  ### 身份验证错误
+  ### 身份验证错误 {#auth-errors}
 </div>
 
 如果你在日志中看到身份验证错误，请检查你的 API 密钥。
 
 <div id="network-issues">
-  ### 网络连接问题
+  ### 网络连接问题 {#network-issues}
 </div>
 
 如果 ClickStack 无法访问 Temporal Cloud，请确保你的 Docker Compose 文件或 `docker run` 命令已启用[外部网络](https://docs.docker.com/engine/network/#drivers)。
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 * 为关键指标 (工作流失败率、任务积压增长、从调度到启动的延迟) 设置[告警](/zh/clickstack/features/alerts)
 * 为特定用例创建额外的仪表盘 (命名空间级监控、工作流类型性能)
 * 通过复制 receiver 配置并为其指定不同的端点和服务名称，监控多个 Temporal Cloud 账户
 
-<div id="going-to-production">
-  ## 面向生产环境
-</div>
+## 面向生产环境 {#going-to-production}
 
 本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

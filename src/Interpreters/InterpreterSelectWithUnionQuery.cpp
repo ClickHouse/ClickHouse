@@ -27,6 +27,7 @@
 #include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <fmt/ranges.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -286,7 +287,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     }
     else
     {
-        std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
+        VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans(num_plans);
         SharedHeaders headers(num_plans);
 
         for (size_t i = 0; i < num_plans; ++i)
@@ -309,7 +310,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             headers[i] = plans[i]->getCurrentHeader();
         }
 
-        auto max_threads = getEffectiveMaxThreads(settings);
+        auto max_threads = getEffectiveMaxThreads(*context);
         auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* allow_narrowing = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));

@@ -31,7 +31,7 @@ protected:
 
     void initializeQueue(Inputs inputs);
     void updateCursor(Input & input, size_t source_num);
-    bool skipLastRowFor(size_t input_number) const { return current_inputs[input_number].skip_last_row; }
+    [[nodiscard]] bool skipLastRowFor(size_t input_number) const { return current_inputs[input_number].skip_last_row; }
     void setRowRef(detail::RowRef & row, SortCursor & cursor) { row.set(cursor); }
     bool rowsHaveDifferentSortColumns(const detail::RowRef & lhs, const detail::RowRef & rhs)
     {
@@ -63,14 +63,14 @@ protected:
     static constexpr size_t max_share_of_rows_to_check = 8;
 
     /// Whether at the beginning of the only non-empty source most rows have a key different from the next row.
-    bool singleSourceHasMostlyDistinctKeys() const;
+    [[nodiscard]] bool singleSourceHasMostlyDistinctKeys() const;
 
     /// Whether the current chunk of the source comes from a part without duplicate keys: a part with a non-zero level.
-    bool sourceHasUniqueKeys(size_t source_num) const { return inputs_origin_merge_tree_part_level[source_num] > 0; }
+    [[nodiscard]] bool sourceHasUniqueKeys(size_t source_num) const { return inputs_origin_merge_tree_part_level[source_num] > 0; }
 
 private:
     /// Whether most rows at the beginning of the merge come in batches of at least `min_batch_size_to_take` rows.
-    bool sourcesHaveLongBatchesOfUniqueKeys() const;
+    [[nodiscard]] bool sourcesHaveLongBatchesOfUniqueKeys() const;
 
     /// Inputs currently being merged.
     Inputs current_inputs;
