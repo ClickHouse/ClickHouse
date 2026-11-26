@@ -3,6 +3,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
@@ -222,9 +223,10 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
     auto & resolved_stream_paths = resolved_stream_paths_by_column[name_and_type.name];
 
     const auto add_resolved_stream = [&](
-        const String & full_stream_name, const ISerialization::SubstreamPath & substream_path, MergeTreeWriterStream * stream, const bool is_offsets)
+        const String & full_stream_name, const ISerialization::SubstreamPath & substream_path, MergeTreeWriterStream * stream, const bool is_offsets,
+        const UInt64 min_compress_block_size)
     {
-        const ResolvedStream resolved_stream{.stream = stream, .is_offsets = is_offsets};
+        const ResolvedStream resolved_stream{.stream = stream, .is_offsets = is_offsets, .min_compress_block_size = min_compress_block_size};
         resolved_streams.push_back(resolved_stream);
         resolved_streams_by_full_name.emplace(full_stream_name, resolved_stream);
 
@@ -234,6 +236,10 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
             path.push_back(
                 {substream.type, substream.bucket, substream.name_of_substream, substream.variant_element_name, substream.object_path_name});
     };
+
+    /// The column-level block sizes of a `Quantized` column are for its vectors; its other streams use the table-level ones.
+    const auto * custom_serialization = name_and_type.type->getCustomSerialization();
+    const bool is_quantized = custom_serialization && typeid(*custom_serialization) == typeid(SerializationQuantizedVector);
 
     const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
 
@@ -245,6 +251,7 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         column_max_compress_block_size = settings.max_compress_block_size;
     /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
     column_max_compress_block_size = std::min<UInt64>(column_max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+    const UInt64 table_max_compress_block_size = std::min<UInt64>(settings.max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
@@ -268,11 +275,14 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         }
 
         const bool is_offsets = substream_path.back().type == ISerialization::Substream::ArraySizes;
+        const bool use_column_block_sizes = !is_quantized || ISerialization::getArrayLevel(substream_path) > 0;
+        const UInt64 min_compress_block_size
+            = use_column_block_sizes ? getEffectiveMinCompressBlockSize(name_and_type) : settings.min_compress_block_size;
 
         /// Shared offsets for Nested type.
         if (const auto it = column_streams.find(stream_name); it != column_streams.end())
         {
-            add_resolved_stream(full_stream_name, substream_path, it->second.get(), is_offsets);
+            add_resolved_stream(full_stream_name, substream_path, it->second.get(), is_offsets, min_compress_block_size);
             return;
         }
 
@@ -288,7 +298,7 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         if (!marks_compression_codec)
             marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
-        UInt64 max_compress_block_size = column_max_compress_block_size;
+        UInt64 max_compress_block_size = use_column_block_sizes ? column_max_compress_block_size : table_max_compress_block_size;
 
         /// A write buffer is allocated per stream below, and a single column can own thousands of
         /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is
@@ -331,7 +341,7 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
             settings.marks_compress_block_size,
             query_write_settings));
         chassert(inserted);
-        add_resolved_stream(full_stream_name, substream_path, stream_it->second.get(), is_offsets);
+        add_resolved_stream(full_stream_name, substream_path, stream_it->second.get(), is_offsets, min_compress_block_size);
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
@@ -590,7 +600,6 @@ void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stre
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const NameAndTypePair & name_and_type,
     const WrittenOffsetSubstreams & offset_substreams)
 {
-    const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
     const auto & resolved_streams = getResolvedStreams(name_and_type.name);
 
     StreamsWithMarks result;
@@ -605,7 +614,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
         auto & stream = *resolved_stream.stream;
 
         /// There could already be enough data to compress into the new block.
-        if (stream.compressed_hashing.offset() >= min_compress_block_size)
+        if (stream.compressed_hashing.offset() >= resolved_stream.min_compress_block_size)
             stream.compressed_hashing.next();
 
         StreamNameAndMark stream_with_mark;

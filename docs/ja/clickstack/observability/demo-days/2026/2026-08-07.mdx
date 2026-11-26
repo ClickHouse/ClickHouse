@@ -1,0 +1,228 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-08-07
+title: 'デモデイズ - 2026-08-07'
+sidebarTitle: '2026-08-07'
+description: 'ClickStack デモデー（2026-08-07）'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## 評価履歴付きのアラート詳細ページ {#alert-detail-page-with-evaluation-history}
+
+*デモ担当者: [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/ZMdWe3-Oc7c" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+現在のアラートページには、履歴ストリップとエラーボタンがあります。一見便利そうですが、いざ何かを調べようとすると役に立ちません。
+
+エラーはアラートのドキュメント自体に保存されているため、ページに表示されるのは実際の履歴ではなく、最新のステートにすぎません。アラートが発火したのか、それ以前に失敗していたのか、評価スケジュールに遅れずについていけているのかを判断できません。この問題はアラートのパフォーマンス改善に取り組む中で表面化し、既存のビューは単に情報が乏しいだけでなく、かえって混乱を招くものであることが明らかになりました。
+
+新しい詳細ページでは、すべての評価がイベントとして記録されます。タイムスタンプの範囲を指定して履歴の任意の期間を調べることができ、発火と解決は別々に、はっきりと区別して表示されます。
+
+グループ化の結果はテーブル内で個別に表示されます。アラートで `GROUP BY` を使用している場合、評価を開くと、どのグループが発火し、どのグループが発火しなかったかを正確に確認できます。この区別は、結果の一部だけがしきい値を超えた場合に重要になります。エラーも個々の履歴エントリごとに保存されるため、元の ClickHouse クエリのエラーも含めて、いつ何が失敗したかを確認できます。
+
+タイミング関連のカラムを見れば、アラートの処理が遅れていないかどうかがわかります。クエリの所要時間には、ClickHouse クエリの実行にかかった時間が記録されます。アラートが 1 分ごとにスケジュールされているのにクエリに 3 分かかるのであれば、遅延は原因不明のものではなく、起こるべくして起きているとわかります。Webhook の所要時間は、結果を宛先に送信するのにかかった時間を示します。
+
+スキップされたバケットによって、その結果として生じたバックログが可視化されます。たとえば値が 7 であれば、スケジュールされた評価ウィンドウのうち 7 つが予定どおりに実行されず、後から処理されたことを意味します。
+
+**関連 PR:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) アラート評価の読み取りモデルと GET /alerts/:id/evaluations、[#2834](https://github.com/hyperdxio/hyperdx/pull/2834) アラート評価のエラーと分析情報を AlertHistory に永続化、[#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 評価履歴付きのアラート詳細ページ
+
+## 評価による MCP でのメトリクスツール活用度の測定 {#measuring-metric-tool-adoption-in-the-mcp-with-evals}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/1_8MyDALMY8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これは評価フレームワークにおける 3 つ目の、そしておそらく最後となるメトリクスシナリオです。他の 2 つのシナリオの中間に位置するよう、意図的に設計されています。
+
+既存の `metric-saturation` シナリオは、強制された場合にエージェントがメトリクスツールを使いこなせるかを問うものです。一方、新しい `deploy-regression` シナリオは、エージェントが自らの判断でメトリクスツールを選ぶかどうかを問います。このシナリオでは、`checkout-api` の段階的ロールアウトが 6 つのポッドのうち 3 つを更新した時点で一時停止します。新しいビルドは定額のプロモーションコードに対して `TypeError` の例外をスローし、その結果チェックアウトの約 7～8% が 500 を返します。ただし、これが発生するのは更新済みのポッドで、かつ該当するコードが使われた場合に限られます。
+
+エージェントには、これらの情報は一切ラベル付けされていません。最も有力な手がかりは、失敗したチェックアウトをポッド名でクロス集計し、該当ポッドをロールアウトのイベントログと突き合わせることで得られます。仕込まれたメトリクスで障害の開始時点は裏付けられますが、ポッド間の分割や根本的な不具合までは見えません。エージェントはメトリクスをまったく使わなくてもこのシナリオを解決できます。だからこそ、メトリクスを使ったとすれば、それは強制ではなく自発的な選択だと言えるのです。
+
+解決までの道筋が単純になりすぎないよう、いくつかの罠も仕掛けられています。障害が始まる数分前には無関係なロールアウトが行われ、さらに無害な非推奨警告が大量に発生し、実際のエラーと同じ境界で増加します。
+
+このシナリオを構築する過程で、利用可能なメトリクスの種類と名前をエージェントに提示する方法について、MCP に改善の余地があることも明らかになりました。これを受けた変更により、どちらもより見つけやすくなっています。
+
+改善の幅は控えめで、比較結果もその点を率直に示しています。エージェントは変更がなくても、すでに高いスコアを出しています。それでも変更を適用すると、いくつかの実行では有用なメトリクスにかなり早く到達するようになりました。ここで最も高性能なモデルである Fable では、この差は小さくなります。
+
+一方で、逆の傾向を示した結果も 1 つあります。Opus では、メトリクス関連の変更を適用すると、いくつかの実行でスコアがわずかに低下しました。安易に理由づけする前に、さらにデータを集める必要があります。
+
+評価フレームワークによって、MCP におけるメトリクスの提示方法の改善が初めて定量的に測定されました。変更が良くなったと「感じられるか」だけに頼る必要は、もうありません。
+
+今後は、Opus の結果を把握できるだけの十分な回数の実行を重ね、その後で関連するコードを整理する予定です。
+
+**関連 PR:** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) deploy-regression シナリオを追加 (自発的なメトリクスツール活用度を測定) 、[#2717](https://github.com/hyperdxio/hyperdx/pull/2717) metric-saturation シナリオを強化、[#2694](https://github.com/hyperdxio/hyperdx/pull/2694) メトリクスツール活用度の採点とレポート、[#2855](https://github.com/hyperdxio/hyperdx/pull/2855) MCP 経由でサマリーメトリクスを公開
+
+## 分散テーブル、ヒストグラム、トレースルックアップの高速化 {#distributed-tables-histograms-and-faster-trace-lookups}
+
+*デモ: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VQKNOb45pcs" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+今回は小規模な修正をまとめて行いました。その多くは ClickHouseチームからのフィードバックを受けたものです。最も単純なものは、他のセクションにはすべてクリアボタンがあるのに、あるフィルタセクションにだけクリアボタンがなかったという問題です。全体を一括でクリアする「すべてクリア」ボタンは、引き続き要望リストに残っています。
+
+分散テーブルのケースはもう少し複雑でした。基盤となるターゲットテーブルの中には、分散テーブルが公開するカラムの一部を宣言していないものがあります。ClickStack は行の詳細全体を読み込む際に `SELECT *` を実行するため、このような構成ではそのまま失敗します。行のサイドパネルにはすでにエラーが表示されていましたが、展開した行には表示されず、しかもどちらも、そもそもなぜ ClickStack が `SELECT *` を発行しているのかを説明していませんでした。現在は両方のビューで、対処の手がかりとなる十分なコンテキストを添えてエラーが表示されます。
+
+メトリクスには 2 つの別個の問題がありました。1 つ目は、指数ヒストグラムのテーブルがメトリクスのログソースに永続化されていなかったことです。最近まで指数ヒストグラムがサポートされていなかったため、これまでは問題になりませんでした。既存の不完全なログソースを開くと、フィールドにはスキーマ推論による値が入力されて表示されます。ユーザーが変更点はないと判断するのも無理はなく、結果として保存されないままになっていました。
+
+現在、既存のログソースを開いただけではスキーマ推論は実行されません。メトリクスのログソースを作成したとき、またはそのデータベースを変更したときにのみ実行されるため、推論されたテーブルをまだ保存する必要があることが明確になります。
+
+また、集計のドロップダウンには、ヒストグラムメトリクスに対しても平均、最小、最大などの関数が表示されていましたが、ヒストグラムはそのいずれにも対応していません。これらを選択すると、クエリの実行時またはタイルの保存時に失敗していました。現在、これらの選択肢はヒストグラムメトリクスおよび指数ヒストグラムメトリクスでは非表示になります。MCP の `query_tile` パスでも、永続化されたタイルに対してこれらを拒否するようになり、独自の奇妙な形で失敗するのではなく、UI と同じ挙動になりました。
+
+系列の上限に関する修正は、より目立たないものです。`GROUP BY` によって複数の系列が生成される場合、最大値の上位 N 件を残すように上限を設定できます。ところが比率モードでは、順位付けに分子のみが使われていました。そのため、実際に比率が高い系列ではなく分子が大きい系列が優先され、分子と分母がともに大きい系列が、実際には比率がより高い系列を押しのけてしまうことがありました。現在は、プロットされている比率そのものに基づいて順位付けされます。
+
+検索ページでのログソースのデフォルト選択も変更されました。以前は、メトリクスやセッションを含むログソースであっても、最初に設定されたログソースが選択されていました。そのため、ユーザーは自分で選んだわけでもないのに、互換性のないログソースに関するエラーに直面することがありました。現在は、実際に使用できる有効なログソースのうち最初のものがデフォルトで選択されます。
+
+ログのサイドパネルからトレースを選択する操作にも、コストの高いルックアップが隠れていました。HyperDX はスパン ID とトレース ID だけで検索しており、タイムスタンプのパーティションやプライマリキーを活用していませんでした。これでは大量のデータを扱うデプロイメントで処理が遅くなります。現在、ルックアップはログソースから推論された日付範囲で絞り込まれ、その範囲内で見つからなかった場合には、意図的に範囲指定のないクエリへフォールバックします。たとえば、数時間前に開始されたスパンに関連付けられたログでは、このフォールバックが重要になります。
+
+ログソース名によるディープリンクは前週に導入されましたが、その直後に、ユーザーはどうやってその存在を知ればよいのかという、もっともな指摘が寄せられました。各ページが受け付ける URLパラメータはすでに仕様として扱われていたため、今回正式にドキュメント化しました。唯一の例外はログソースのフィルタで、現時点では ClickHouse 専用のため記載していません。また、別途ドキュメントの見直しを行い、スパンリンクなどのログソースの設定項目を追加しました。最近追加された項目に加え、単に記載漏れになっていたいくつかの項目も網羅しています。
+
+**関連 PR:** [#2771](https://github.com/hyperdxio/hyperdx/pull/2771) 分散テーブルでの SELECT * のエラー表示を改善し、展開された行にも適用、[#2817](https://github.com/hyperdxio/hyperdx/pull/2817) データベースの選択が変更された場合にのみメトリクステーブルを自動検出、[#2794](https://github.com/hyperdxio/hyperdx/pull/2794) すでにテーブルが設定されているソースではメトリクステーブルを推論しないように変更 (open)、[#2793](https://github.com/hyperdxio/hyperdx/pull/2793) ヒストグラムメトリクスで非サポートの集約関数を非表示に、[#2796](https://github.com/hyperdxio/hyperdx/pull/2796) query&#95;tile で非サポートの aggFns を含む永続化されたヒストグラムタイルを拒否 (open)、[#2759](https://github.com/hyperdxio/hyperdx/pull/2759) 比率モードでの系列上限の順位付けに比率の値を使用、[#2769](https://github.com/hyperdxio/hyperdx/pull/2769) 検索ページで互換性のない種類のソースがデフォルトで選択されないように修正、[#2816](https://github.com/hyperdxio/hyperdx/pull/2816) 「トレースを表示」後のサイドパネルにおける行のルックアップを時間ウィンドウ内に制限、[#2836](https://github.com/hyperdxio/hyperdx/pull/2836) フィルタ変数の設定を追加
+
+## コントリビューターによるヒートマップのパーセンタイル表示と Lucene 検索の改善 {#heatmap-percentiles-and-lucene-search-from-contributors}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lCNozJs2Jlw" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+今週は外部のコントリビューターから 10 件ほどのプルリクエストが寄せられました。そのうち 2 件を特に紹介します。
+
+1 件目は [@niladrix719](https://github.com/niladrix719) によるもので、ヒートマップのホバー時のツールチップにパーセンタイル情報が表示されるようになりました。1 つのセルをヒートマップ全体と目視で見比べなくても、ホバーするだけで、たとえば 26 ミリ秒のバケットが表示中の所要時間の 85 パーセンタイルに位置していることを確認できます。
+
+2 件目は、[@shuvamk](https://github.com/shuvamk) による一連の Lucene 検索の改善です。
+
+上限または下限のない範囲が正しく動作するようになりました。これまでは `Duration:[* TO 500]` を指定すると ClickHouse に文字列 `*` を `UInt64` へ変換させようとしており、当然ながらうまくいきませんでしたが、現在は `<= 500` という述語に変換されます。また、排他的な範囲境界を指定するための波括弧もサポートされるようになりました。
+
+エスケープ処理の修正はさらに重要です。これらのバグはエラーにならず、誤った結果を返していたためです。Lucene のフィールドの検索語はそのまま `ILIKE` パターンに渡されますが、このパターンではアンダースコアが任意の 1 文字、パーセント記号が任意の文字列を表します。そのため、`ServiceName:user_service` で検索すると `user-service` や `user.service` といった値にも一致していました。現在は、クエリが ClickHouse に渡される前にこれらのメタ文字がエスケープされます。
+
+また別の修正により、数値およびブール型の検索で Map の添字が二重にエスケープされなくなりました。これまで生成される述語では、Map のルックアップが行われず、式全体が 1 つの識別子として扱われていました。
+
+Lucene の言語切り替えで表示されるアプリ内の例も、新しい範囲形式に対応するよう更新されています。
+
+**関連 PR:** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) ヒートマップのホバー時のツールチップにパーセンタイル情報を表示、[#2779](https://github.com/hyperdxio/hyperdx/pull/2779) 開いた範囲、排他的な範囲、および数値以外の範囲の上限と下限に対応、[#2774](https://github.com/hyperdxio/hyperdx/pull/2774) 検索語内の LIKE メタ文字をエスケープ、[#2841](https://github.com/hyperdxio/hyperdx/pull/2841) 数値および Bool の検索で Map の添字のエスケープを 1 回のみに修正、[#2837](https://github.com/hyperdxio/hyperdx/pull/2837) 新しい Lucene 構文の例を追加
+
+## トレース検索での RED メトリクス {#red-metrics-on-trace-search}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/qbb7MJmUFf8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**これは探索的な取り組みであり、リリースを約束するものではありません。**
+
+現在、トレース検索ではログ検索と同じ単一のカウントヒストグラムが使われており、ログレベルごとに色分けされています。これで対象トレースの件数はわかりますが、そのパフォーマンスについてはほとんど何もわかりません。
+
+提案中の結果ビューでは、トレースソースの場合、このヒストグラムを RED メトリクスに置き換えます。スループットはスパン数の棒グラフとして表示されます。エラーは、折れ線グラフで表示される割合 (rate) と、棒グラフで表示される未加工の件数とを切り替えられます。所要時間は、ソースの未加工の duration カラムから平均、p95、p99 を直接プロットします。
+
+さらに興味深いのはヒートマップビューです。デモでは、所要時間が徐々に増加しているサービスがほぼ一目でわかります。また、パーセンタイルの推移だけでは見落としがちなレイテンシ分布の形状も把握できます。
+
+未解決の課題はコストです。トレース検索では 1 回の検索ごとにすでに多数のクエリを発行しており、ここにさらに複数の集計を追加するとなると、先に進める前にパフォーマンスの改善が必要です。
+
+この動作について、ぜひフィードバックをお寄せください。
+
+**関連プルリクエスト:** [#2826](https://github.com/hyperdxio/hyperdx/pull/2826) トレース検索結果ビューに RED メトリクスを表示 (オープン、探索的)
+
+## ClickHouse Grafana プラグインにおけるカスタムログカラム {#custom-log-columns-in-the-clickhouse-grafana-plugin}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lp4aPioDlsQ" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+数週間前、複数の顧客から同じ問題が報告されました。Grafana プラグインのコンパクトなログビューでは、ログに含まれる追加のカラムやフィールドが見づらいというものです。
+
+今回の変更では、データソース設定のログセクションに Columns 設定が追加されます。この設定は個々のクエリではなくデータソース単位で管理されるため、選択内容はそのデータソースを使うすべてのユーザーに引き継がれ、毎回設定し直す必要はありません。
+
+任意のテーブルカラムを選択できます。選択したカラムは、プラグインによって実際のカラム名のままログラベルに組み込まれ、Grafana 全体で利用できるようになります。これらは左側の Fields リストと、ログ行の詳細に表示されます。ログ行の詳細では、新たに追加された Fields グループが Resource attributes や Log attributes と並んで表示され、同じく filter-for と filter-out のアクションを利用できます。テーブルビューでは、通常のカラムフィルタとして機能します。
+
+これらはすべて同一のクエリによって実現されています。この設定がなければ、これらのフィールドはどこにも表示されません。まさにこの点が、今回のリクエストのきっかけとなった不満でした。
+
+報告は、スキーマの使い方が異なる双方のユーザーから寄せられました。OpenTelemetry を使用しつつ独自のカラムを追加している顧客もいれば、完全にカスタムのスキーマを使用し、それぞれの事情からフィールドをリソース属性やログ属性ではなく実際のカラムに格納している顧客もいます。いずれのケースでも、Grafana 上ではそれらの値をまったく確認できませんでした。
+
+デモの時点では、この変更はまだレビュー中で、翌週のプラグインビルドに含まれる予定でした。詳細は [ClickHouse Grafana プラグイン 4.20 の記事](https://clickhouse.com/blog/clickhouse-grafana-plugin-4-20)を参照してください。
+
+**関連 PR:** [grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) 任意のログテーブルカラムによる閲覧とフィルタリング(デモ時点ではオープン)
+
+## 高カーディナリティ系列をソース側で制限する {#capping-high-cardinality-series-at-the-source}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/AKjuQuLKEaI" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+高カーディナリティな応答では、数十万行がチャートに渡されることがあります。クライアントは描画の前に、すべての行を JSON に変換する必要があります。負荷の高いダッシュボードでは、この変換のコストがクエリ自体のコストを上回ることもあります。さらに、上限のない `GROUP BY` は、結果がブラウザに届く前にサーバーのメモリを使い果たしてしまう可能性があります。
+
+新しいアプローチでは、こうした行の大部分を ClickHouse の外に出さないようにします。クエリには最大行数とグループ化済み行の最大数の設定が含まれるようになり、現在はどちらも 5,000 に設定されています。率直に言えば、この数値は妥当な上限として見積もったものにすぎません。上限を超えたことが応答で示された場合、チャートにはクエリが返したデータ量が多すぎるという警告が表示されます。
+
+この仕組みは、レンダリングを 250 系列に制限する既存のフロントエンド最適化の上に重ねて適用されます。以前は、約 100 本の線を描画するために数万の系列をメモリに保持していたため、ブラウザのタブのメモリ使用量が数ギガバイトに達し、ホバーやパンの操作も遅くなっていました。
+
+両方の制限は引き続き有効です。極端な `GROUP BY` でも、取得されるのは約 5,000 行で、そのうちレンダリングされるのは 250 行です。本当にすべてのデータが必要な場合に備えて、明示的に「すべて読み込む」ための手段も用意されています。
+
+いずれかの制限に繰り返し達するチャートについては、やはり SQL を改善することが本来の解決策です。上限を追加するか、`GROUP BY` の対象をより絞り込んでください。
+
+**関連 PR:** [#2802](https://github.com/hyperdxio/hyperdx/pull/2802) 高カーディナリティな時系列チャートの系列数を制限し、すべて読み込むための手段を追加、[#2856](https://github.com/hyperdxio/hyperdx/pull/2856) サーバー側の行数／カーディナリティ上限により、未加工 SQL タイルのコストをソース側で制限 (オープン)
+
+## Exemplar：メトリクスチャートからトレースへ {#exemplars-from-a-metric-chart-to-the-trace}
+
+*デモ担当者: [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/SC_Bo2hqw8c" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Exemplar は、集計されたメトリクスを個々のイベント (通常はトレース) に結び付けます。たとえばレイテンシのヒストグラムで 99 パーセンタイルが 2.4 秒に跳ね上がった場合、Exemplar を使えば 2.4 秒かかった実際のリクエストを 1 件特定し、そのトレースを開くことができます。
+
+アプリケーションがアクティブなスパン内で計測値を記録すると、OpenTelemetry はそれを通常の集約に含めます。その計測値が対象となるかどうかを Exemplar フィルターが判定し、小さなリザーバーが少数の例を保持して、集計されたメトリクスポイントとともにエクスポートします。各 Exemplar には、元の値とタイムスタンプ、トレース ID とスパン ID、および集計ストリームから除外された属性が含まれます。
+
+リザーバーを小さく保つことで、生の計測値をすべてエクスポートしたり、`trace_id` などの high-cardinality な値をすべてのメトリクス系列に付与したりすることなく、具体的なコンテキストを得られます。ただし、Exemplar はあくまで一例にすぎず、最も遅いリクエストであるとも、統計的に代表的なサンプルであるとも限りません。また、リンク先を解決できるかどうかは、エクスポーターや関与するバックエンド、参照先のトレースが保持されているかどうかにも左右されます。
+
+デモでは、前日にマージされた `query_exemplars` プロキシエンドポイントを介して Prometheus バックエンドを使用しています。要求された期間が長すぎる場合、エンドポイントはクエリを拒否せず、期間を絞り込んで処理します。
+
+テストデータは、スパンメトリクスを出力する OpenTelemetry Collector から取得しています。collector はスパンを処理しながら、トレースIDに紐付いた Exemplar 付きのメトリクスに変換します。これらの Exemplar はメトリクスチャート上にマーカーとして表示されます。マーカーにホバーすると、Exemplar の値とタイムスタンプがトレースメタデータとともに表示され、トレースを直接開くボタンも表示されます。動作は良好で、今のところ十分な速度が出ています。
+
+設定はタイル単位で行います。チャートで Exemplar を有効にし、リンクの解決に使用するトレースソースを選択します。この機能は現時点では単一系列のメトリクスにのみ対応しており、チャートごとのトグルに加えて、デプロイメント単位のフラグによっても制御されています。
+
+テストではいくつかの小さなバグが見つかり、その一部は他の人もすでに個別に見つけていましたが、Prometheus 経由のパスはほぼ完成しています。次は ClickHouse の対応です。こちらはメトリクステーブルから Exemplar を直接クエリする方式で、トレースデータからメトリクスを生成しているチームも、同じように個々のトレースまでたどれるようになります。
+
+**関連 PR:** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) スパンからトレース Exemplar 付きのリクエストメトリクスを導出 (オープン) 、[#2806](https://github.com/hyperdxio/hyperdx/pull/2806) /v1/prometheus/query&#95;exemplars を追加しプロキシを強化、[#2807](https://github.com/hyperdxio/hyperdx/pull/2807) 最大規模の 2 つのチャートファイルをディレクトリに分割、[#2808](https://github.com/hyperdxio/hyperdx/pull/2808) メトリクスおよび PromQL 時系列チャート向けの Exemplar オーバーレイ (オープン) 、[#2809](https://github.com/hyperdxio/hyperdx/pull/2809) API およびエージェントで作成されたタイルで Exemplar 設定を受け付けるよう対応 (オープン)
+
+## Terraform インポートヘルパーと一括エクスポート {#terraform-import-helpers-and-batch-export}
+
+*デモ担当者: [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/fTJHMqBIU44" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボード、保存済み検索、保存済み検索アラートに「Export to Terraform」ボタンが追加されました。これにより、import ブロックを手書きしたり、リソースの型名や ID のフォーマットを推測したりしなくても、ClickHouse プロバイダーを通じて既存のリソースを Terraform の管理下に移行できます。
+
+デモで特に質問が集まったのは、出力内容をどうするかという設計上の判断でした。このボタンが生成するのは `import` ブロックのみで、完全なリソース定義の生成は Terraform に任せます。リソースブロックを追加するだけでは、既存リソースを管理下に置いたことにはなりません。むしろ別のリソースが新たに作成されたり、既存のリソースが上書きされたりするおそれがあります。Terraform の新しいインポートワークフローであれば、この違いが適切に処理されます。
+
+生成された import ブロックを設定に貼り付け、`-generate-config-out` に `generated.tf` などのファイルを指定して `terraform plan` を実行します。Terraform が既存のリソースを読み取り、対応するリソースブロックを書き出します。インポートが完了すると、そのリソースは Terraform の状態で管理されるようになり、以降の apply では ClickStack 上で再作成されることなく、既存のリソースとして管理されます。
+
+チーム設定には、サポート対象のすべてのリソースを 1 つのファイルにまとめてダウンロードできる一括エクスポート機能も用意されています。デモでは、70 個のダッシュボード、約 40 個のアラート、55 個の保存済み検索がエクスポートされました。Webhook とソースにも対応しています。
+
+シークレットは、意図的に V2 API の対象外となっています。`GET` が返すのは UI ですでに表示されている情報のみであるため、接続情報にはホストとユーザー名は含まれますが、パスワードは含まれません。生成された設定を使用する際は、不足しているシークレットを各自で指定してください。
+
+**関連 PR:** [#2741](https://github.com/hyperdxio/hyperdx/pull/2741) ClickStack リソース向けの Terraform インポートヘルパーを追加
+
+## 共通チャートコンポーネント、ビジュアルの改善、ドラフト機能の提案 {#shared-chart-components-visual-polish-and-a-drafts-proposal}
+
+*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+カスタムダッシュボードのカードとプリセットのカードの見た目に差異が生じていたことから、「そもそもなぜ同じコンポーネントを使っていないのか」という当然の疑問が浮かびました。現在は同じコンポーネントを使用しています。共通の ChartCard が、ダッシュボードタイルで使われているのと同じプリミティブでスタンドアロンのチャートをラップするため、ボーダー、パディング、全幅のヘッダー区切り線を手作業で合わせなくても常に一致します。両方の経路を 1 つのコンポーネントに統合する作業は想定以上に複雑でしたが、現在は内部的に同じものをレンダリングしています。右側にコントロールを持たないカードについては、高さを揃えたままにする必要があるため、まだいくつかのフォローアップ作業が残っています。
+
+このほか、細かな改善も数多く行いました。その中には、スクリーンショットやデモ動画での ClickStack の見え方を改善することを主な目的としたものもいくつかあります。セグメントコントロールは、リストの線を高さゼロのボックスを囲むボーダーとして描画していたため、上下の辺が重なって 2px の線のように見えていました。これを本来の 1px の辺に修正しました。同じ理由で、ボタンの色も見直しています。
+
+ライトモードでのオープンソース版のロゴも修正しました。以前はロゴを含むすべての色を反転させる CSS フィルタでテーマを切り替えていたため、ライトモードでは誤ったブランドカラーが表示されていました。実は同じロゴをどちらのテーマでも問題なく使えることがわかったため、テーマに応じて分岐させる必要はなくなりました。
+
+検索画面での行のクリックも、再び正しく動作するようになりました。以前の挙動は意図的なものでしたが、使っていてそうは感じられませんでした。クリックした行の上にドロワーが開くことがあり、画面上では何も変わっていないように見えてしまっていたのです。現在は、ドロワー領域内をクリックするとその内容が更新され、領域外をクリックするとドロワーが閉じます。
+
+さらに、danger に加えて warning と success の状態を表すセマンティックな Alert コンポーネントを追加しました。新しいエージェントスキルにより、未加工の赤色や警告テキストを使おうとする箇所は、Mantine のパレットカラーをハードコードするのではなく Alert を使うよう誘導されます。
+
+最後のパートは、あくまでデザインの検討段階のものです。これらはモックアップであり、ぜひフィードバックをお寄せください。
+
+発端はタイルエディタにおける局所的な問題でした。モーダルからドロワーが開き、そこからさらに別のモーダルが開く構成で、Escape を 1 回押すと 1 階層戻るのではなく、スタック全体が閉じてしまっていたのです。そこから作業が広がり、ダッシュボード全体を見直すことになりました。
+
+この提案では、保存済みダッシュボードと一時的なダッシュボードという区分をなくし、ドラフトに置き換えます。「New dashboard」をクリックすると、自分だけが閲覧できる非公開のドラフトが作成されます。準備ができたら、チームに保存できます。また、チームのダッシュボードをドラフトに戻したり、完全に破棄したりすることもできます。これにより、現在の一時的なダッシュボードが担っている役割を、最初にどちらにするか決めることなくカバーできます。2 つの概念が 1 つにまとまるわけです。
+
+お気に入りには、カード表示に加えてリスト表示が追加される予定です。大きなカードが並ぶページでは、探しているものが意外なほど画面の下のほうに押しやられてしまうことがあるためです。テンプレートは 1 行にまとめられます。タグによるフィルタリングは複数のタグに対応し、名前順または最終閲覧順での並べ替えも可能になります。選択した 1 つのタグだけが唯一の整理手段、という状態ではなくなります。
+
+タイルエディタでは、ドロワーを開く代わりに、設定パネルを右側にドッキングします。また、現在 2 つある設定画面への経路を、わかりやすい 1 つの経路に統合します。
+
+**関連 PR:** [#2829](https://github.com/hyperdxio/hyperdx/pull/2829) 共通の ChartCard コンポーネントを追加し、ChartBox の使用箇所を移行、[#2814](https://github.com/hyperdxio/hyperdx/pull/2814) Mantine テーマを改善 (タブ、コードの背景、セグメントコントロール)、[#2704](https://github.com/hyperdxio/hyperdx/pull/2704) AA 基準に調整したセマンティックカラートークンと Alert/Text のバリアント、[#2714](https://github.com/hyperdxio/hyperdx/pull/2714) セマンティックな Alert/Text/danger バリアントのドキュメント化、[#2682](https://github.com/hyperdxio/hyperdx/pull/2682) 外側をクリックしたときに検索ドロワーと session ドロワーを閉じる、[#2721](https://github.com/hyperdxio/hyperdx/pull/2721) タイルエディタをドッキングされた設定パネル付きのドロワーに移行 (未マージ)。ドラフトとお気に入りの再設計については PR はなく、現時点ではモックアップの段階です。

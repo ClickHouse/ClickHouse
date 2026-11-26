@@ -19,7 +19,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTPリクエストのURLパス内のデータベース名を認識するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効化: HTTPインターフェイスはURLパスの`\/database\/`部分を現在のデータベースとして解釈します。"}]}]} />
 
-有効にすると、HTTPインターフェイスはURLパス内の`/database/`部分を認識し、これを現在のデータベースとして使用します。
+有効にすると、HTTPインターフェイスはURLパス内の`/database/`部分を認識し、これを現在のデータベースとして使用します。また、`/database/table.CSV`のように、データベース名をプレフィックスとするパスベースの`PUT`アップロードも有効になります。
 
 これは、ルーティングされたパス形式のリクエストを解釈するかどうかを制御するユーザーごとの設定です。ルーティング自体は、サーバーレベルの設定`http_allow_path_requests` (デフォルトでは有効) によってグローバルに制御されます。HTTPインターフェイスがパス形式のリクエスト (`/my_db/my_table.csv`など) をクエリハンドラーにルーティングするには、この設定を有効にする必要があります。ルーティングの判定はリクエストの認証前に行われるため、ユーザーごとの設定に依存させることはできません。`http_allow_path_requests`が無効の場合、未知のパスには通常の`404`が返されます。ルーティング後、この設定は認証済みユーザーに有効な設定に照らして再度確認されるため、ユーザー、ロール、またはプロファイルごとに選択的に無効化できます。
 
@@ -52,7 +52,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP リクエストの URL パス内のテーブル名を、任意のフォーマット\/圧縮拡張子付きで認識するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効化: HTTP インターフェイスは URL パスの最後の部分を `table[.format[.compression]]` として解釈し、`SELECT * FROM table` の結果を返します。"}]}]} />
 
-有効にすると、HTTP インターフェイスは URL パスの最後の部分を、`table`、`table.format`、または `table.format.compression` 形式のテーブル名として認識します。このパスは `SELECT * FROM table` として解釈されます。
+有効にすると、HTTP インターフェイスは URL パスの最後の部分を、`table`、`table.format`、または `table.format.compression` 形式のテーブル名として認識します。`GET` および `HEAD` の場合、このパスは `SELECT * FROM table` として解釈されます。パスベースの `PUT` の場合は、アップロードを受け付ける既存の書き込み先テーブルと入力形式をこのパスで指定します。
 
 [`http_allow_database_as_path`](/ja/reference/settings/session-settings/http#http_allow_database_as_path) と同様に、これはユーザーごとの設定です。パス形式のリクエストのルーティングは、サーバーレベルの `http_allow_path_requests` 設定によってグローバルに制御されます (ルーティングは認証前に行われます) 。
 

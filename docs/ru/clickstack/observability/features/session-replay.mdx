@@ -1,0 +1,235 @@
+---
+slug: /clickstack/observability/features/session-replay
+title: 'Воспроизведение сеансов'
+sidebarTitle: 'Воспроизведение сеансов'
+description: 'Записывайте и воспроизводите пользовательские сеансы в ClickHouse Observability, чтобы отлаживать проблемы на стороне фронтенда, анализировать поведение пользователей и коррелировать действия в браузере с журналами и трассировками бэкенда.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'воспроизведение сеансов', 'браузерный SDK', 'обсервабилити фронтенда', 'пользовательские сеансы', 'отладка']
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+Воспроизведение сеансов в ClickHouse Observability записывает и восстанавливает действия пользователей в вашем веб-приложении, позволяя наглядно воспроизвести, что именно пользователь видел и делал во время сеанса. Вместо записи видео SDK фиксирует изменения DOM, движения мыши, клики, прокрутку, ввод с клавиатуры, журнал консоли, сетевые запросы (XHR и Fetch) и исключения JavaScript, а затем воссоздаёт происходящее в браузере.
+
+Поскольку воспроизведения сеансов хранятся в ClickHouse вместе с журналами, трассировками и метриками, всего за несколько кликов можно перейти от просмотра действий пользователя к анализу стоящих за ними backend-трассировок и запросов к базе данных. Поэтому воспроизведение сеансов помогает отлаживать проблемы в продакшне, изучать поведение пользователей, выявлять неудобные места в UX и наглядно подтверждать проблемы, о которых сообщают в службу поддержки.
+
+## Инструментирование приложения {#instrumentation}
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Бета-версия" />
+
+    ClickHouse Observability полностью совместим с OpenTelemetry, поэтому браузерную телеметрию (трассировку, исключения) можно отправлять с помощью стандартного OpenTelemetry JavaScript SDK или любого из [SDK для различных языков](/ru/clickstack/observability/ingesting-data/sdks). Однако **для воспроизведения сеансов требуется браузерный SDK** (`@clickhouse/clickstack-browser`), который дополняет OpenTelemetry SDK записью сеансов, перехватом вывода консоли и перехватом сетевых запросов. Если вам нужна только трассировка без воспроизведения сеансов, с сервисом будет работать любой браузерный SDK, совместимый с OTel.
+
+    В примерах ниже используется браузерный SDK. В своём сервисе ClickHouse Observability откройте **Team Settings → Data → Managed Telemetry** и скопируйте **OTLP HTTP endpoint** и **API key**. Замените этими сведениями о подключении значения `YOUR_OTEL_ENDPOINT` и `YOUR_API_KEY` в примерах.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Раздел Managed Telemetry с замаскированными конечной точкой OTLP по HTTP и ключом API](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Указывайте конечную точку HTTPS полностью, в том виде, в каком она приведена в разделе Managed Telemetry, без путей сигналов вроде `/v1/traces`. Передайте ключ API в `apiKey` с префиксом `Bearer `, как показано ниже. Затем установите и инициализируйте SDK в своём приложении.
+
+    <Tip>
+      Инициализируйте SDK один раз на верхнем уровне клиентского входного модуля, например `src/main.ts` в Vite или `instrumentation-client.ts` в Next.js. Инициализация выполняется асинхронно, поэтому запросы, отправленные сразу после `init` в том же тике, могут быть не перехвачены.
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Тег script">
+        Если приложение не использует сборщик (bundler), подключите SDK напрямую через тег script. После этого становится доступна глобальная переменная `ClickStack`, которую можно использовать так же, как пакет NPM.
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+            apiKey: 'Bearer YOUR_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      Параметр `traceOrigins` играет ключевую роль в связывании воспроизведения сеансов с backend-трассировкой: укажите в нём домен вашего API, чтобы включить сквозную распределённую трассировку от фронтенда до бэкенда. Общие параметры SDK, включая настройки конфиденциальности и отчёты об ошибках, описаны в [справочнике по браузерному SDK](/ru/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy). При инициализации SDK используйте приведённые выше сведения о подключении к управляемому сервису.
+    </Note>
+
+    Браузерный SDK по умолчанию маскирует поля ввода и текст. Если приложение работает с конфиденциальными данными, см. раздел [настройки конфиденциальности](/ru/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy). О том, как искать и фильтровать сеансы по пользователю в интерфейсе, см. раздел [добавление информации о пользователе](/ru/clickstack/observability/ingesting-data/sdks/browser#users-and-errors).
+  </Tab>
+
+  <Tab title="Самоуправляемый" id="self-managed">
+    Самостоятельно управляемый ClickHouse Observability полностью совместим с OpenTelemetry, поэтому вы можете отправлять браузерную телеметрию (трассировку, исключения) с помощью стандартного OpenTelemetry JavaScript SDK или любого из [SDK для языков программирования](/ru/clickstack/observability/ingesting-data/sdks). Однако **для воспроизведения сеанса требуется браузерный SDK** (`@clickhouse/clickstack-browser`), который дополняет OpenTelemetry SDK записью сеансов, перехватом вывода консоли и перехватом сетевых запросов. Если вам нужна только трассировка без воспроизведения сеанса, с сервисом будет работать любой браузерный SDK, совместимый с OTel.
+
+    Прежде чем инструментировать приложение, необходимо запустить коллектор ClickStack OpenTelemetry, подключённый к вашему сервису ClickHouse Cloud. Чтобы настроить соединение, следуйте руководству [Загрузка данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured), а чтобы запустить коллектор — [руководству по развертыванию](/ru/clickstack/self-configured/deployment/managed#start-a-collector-existing) .
+
+    В приведённых ниже примерах замените `http://your-otel-collector:4318` на доступную из браузера конечную точку OTLP по HTTP вашего коллектора. Укажите в `apiKey` ключ приёма данных вашего коллектора без префикса `Bearer` или не задавайте этот параметр, если приёмник не требует аутентификации. Добавьте источник (origin) вашего приложения в список разрешённых в конфигурации CORS коллектора. Затем установите и инициализируйте браузерный SDK.
+
+    <Tip>
+      Инициализируйте SDK один раз на верхнем уровне клиентского модуля точки входа, например `src/main.ts` в Vite или `instrumentation-client.ts` в Next.js. Инициализация выполняется асинхронно, поэтому запросы, отправленные сразу после `init` в том же тике, могут быть не перехвачены.
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Тег script">
+        Если приложение не использует бандлер, подключите SDK напрямую через тег script. После этого станет доступна глобальная переменная `ClickStack`, которую можно использовать так же, как NPM-пакет.
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'http://your-otel-collector:4318',
+            apiKey: 'YOUR_INGESTION_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      Параметр `traceOrigins` играет ключевую роль в связывании записей воспроизведения сеансов с backend-трассировкой: укажите в нём домен вашего API, чтобы включить сквозную распределённую трассировку от фронтенда до бэкенда. Полный список параметров SDK, включая настройки конфиденциальности и отправку отчётов об ошибках, приведён в [справочнике по браузерному SDK](/ru/clickstack/observability/ingesting-data/sdks/browser).
+    </Note>
+
+    Браузерный SDK по умолчанию маскирует поля ввода и текст. Для приложений, работающих с конфиденциальными данными, см. раздел [настройки конфиденциальности](/ru/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy), а также раздел [добавление информации о пользователе](/ru/clickstack/observability/ingesting-data/sdks/browser#users-and-errors), чтобы искать и фильтровать сеансы по пользователям в интерфейсе.
+
+    <Note>
+      ClickStack Browser SDK использует стандартный атрибут `session.id`. Убедитесь, что ваша версия ClickStack поддерживает этот атрибут на странице Sessions; см. [требования к совместимости SDK](https://github.com/ClickHouse/clickstack-browser#clickstack-versions).
+    </Note>
+
+### Как хранятся данные сеансов {#data-storage}
+
+    <Note>
+      Эти сведения о хранилище относятся только к самостоятельно управляемому ClickHouse Observability. В полностью управляемых сервисах хранилищем и схемами для воспроизведения сеансов занимается провайдер.
+    </Note>
+
+    Данные воспроизведения сеансов хранятся в ClickHouse в специальной таблице [`hyperdx_sessions`](/ru/clickstack/self-configured/ingesting-data/schemas#sessions), отдельно от журналов и трассировок. Каждое событие сеанса представляет собой строку с полем `Body`, содержащим полезную нагрузку события, и столбцом типа Map `LogAttributes`, в котором хранятся метаданные события. Именно в столбцах `Body` и `LogAttributes` содержатся сведения о событиях сеанса, по которым восстанавливается воспроизведение.
+
+    Полную информацию о схемах таблиц см. в разделе [Таблицы и схемы](/ru/clickstack/self-configured/ingesting-data/schemas).
+  </Tab>
+</Tabs>
+
+## Просмотр воспроизведения сеансов {#viewing-replays}
+
+Перейдите в раздел **Клиентские сеансы** на левой боковой панели интерфейса. В этом представлении перечислены все записанные сеансы браузера с указанием их длительности и количества событий.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Представление поиска воспроизведения сеансов](/images/clickstack/session-replay/observability-client-sessions.png)
+  </Frame>
+</div>
+
+Откройте сеанс и нажмите **Play**, чтобы воспроизвести записанные взаимодействия. В режиме воспроизведения справа отображается восстановленный сеанс пользователя в том виде, в каком он его видел, а слева — временная шкала событий браузера: сетевые запросы, журнал консоли и ошибки.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Воспроизведение сеанса](/images/clickstack/session-replay/observability-session-replay.png)
+  </Frame>
+</div>
+
+Чтобы изменить уровень детализации временной шкалы, переключайтесь между режимами **Highlighted** и **All Events**. Ошибки выделены красным, а щелчок по любому событию перематывает воспроизведение к соответствующему моменту сеанса.
+
+### От сеанса к трассе {#session-to-trace}
+
+Выбрав сетевой запрос или ошибку на временной шкале сеанса, можно перейти на вкладку **Trace** и проследить путь запроса через серверные сервисы: увидеть связанные журналы, спаны и запросы к базе данных, запущенные этим действием пользователя.
+
+Это возможно благодаря конфигурации `traceOrigins`, которая связывает браузерные спаны с серверными через заголовок `traceparent` и формирует единую распределённую трассу — от клика пользователя до самой базы данных. Подробное практическое руководство, включая инструментирование как фронтенда, так и бэкенда, см. в статье [Инструментирование приложения NextJS с помощью OpenTelemetry и ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Открытие воспроизведения сеанса и переход от события к его трассе](/images/clickstack/session-replay/observability-session-to-trace.gif)
+  </Frame>
+</div>
+
+### От трассы к сеансу {#trace-to-session}
+
+Связь работает и в обратном направлении. Просматривая трассу в разделе **Поиск**, щёлкните по ней, чтобы открыть подробные сведения о трассе, а затем перейдите на вкладку **Воспроизведение сеанса** — так вы увидите, что именно происходило у пользователя в момент этой трассы. Это особенно полезно при расследовании ошибок или медленных запросов: можно начать с проблемы на стороне бэкенда и сразу увидеть ситуацию глазами пользователя.
+
+## Попробуйте в деле {#try-it-out}
+
+Следуйте инструкциям из [демонстрации воспроизведения сеансов](/ru/clickstack/observability/example-datasets/session-replay), чтобы инструментировать интерактивное приложение, отправить данные сеансов в ваш сервис ClickHouse Observability и воспроизвести свои действия.
+
+## Дополнительные материалы {#learn-more}
+
+* [Демонстрация воспроизведения сеансов](/ru/clickstack/observability/example-datasets/session-replay) — инструментирование интерактивного приложения с использованием сведений о подключении к управляемому сервису
+* [Справочник по браузерному SDK](/ru/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) — общие параметры SDK и продвинутая конфигурация
+* [Поиск](/ru/clickstack/observability/features/search) — синтаксис поиска для фильтрации сеансов и событий
+* [Панели мониторинга](/ru/clickstack/observability/features/dashboards/overview) — создание визуализаций и панелей мониторинга на основе данных сеансов и данных трассировки
+* [Оповещения](/ru/clickstack/observability/features/alerts) — настройка оповещений об ошибках, задержке и других сигналах
+* [Архитектура](/ru/clickstack/observability/architecture) — как взаимодействуют компоненты сервиса

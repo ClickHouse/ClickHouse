@@ -16,9 +16,7 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
 <CommunityMaintainedBadge />
 
-<div id="start-or-download-dbvisualizer">
-  ## Inicie ou baixe o DbVisualizer
-</div>
+## Inicie ou baixe o DbVisualizer {#start-or-download-dbvisualizer}
 
 O DbVisualizer está disponível em https://www.dbvis.com/download/
 
@@ -31,20 +29,16 @@ O DbVisualizer está disponível em https://www.dbvis.com/download/
     O DbVisualizer inclui os drivers JDBC mais atualizados para o ClickHouse. Ele tem gerenciamento completo de driver JDBC integrado, apontando para os lançamentos mais recentes, bem como para versões históricas dos drivers.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Interface do gerenciador de drivers do DbVisualizer mostrando a configuração do ClickHouse JDBC driver](/images/integrations/sql-clients/dbvisualizer-driver-manager.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Interface do gerenciador de drivers do DbVisualizer mostrando a configuração do driver JDBC do ClickHouse](/images/integrations/sql-clients/dbvisualizer-driver-manager.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Conecte-se ao ClickHouse" id="3-connect-to-clickhouse">
-    Para se conectar a um banco de dados no DbVisualizer, primeiro você precisa criar e configurar uma conexão de banco de dados.
+    Para se conectar a um banco de dados no DbVisualizer, primeiro você precisa criar e configurar uma conexão com o banco de dados.
 
-    1. Crie uma nova conexão em **Database-&gt;Create Database Connection** e selecione um driver para seu banco de dados no menu pop-up.
+    1. Crie uma nova conexão em **Database-&gt;Create conexão com o banco de dados** e selecione um driver para seu banco de dados no menu pop-up.
 
     2. Uma aba **Object View** para a nova conexão será aberta.
 
@@ -52,7 +46,7 @@ O DbVisualizer está disponível em https://www.dbvis.com/download/
 
     4. Deixe **Database Type** como **Auto Detect**.
 
-    5. Se o driver selecionado em **Driver Type** estiver marcado com uma marca de verificação verde, ele estará pronto para uso. Caso contrário, talvez seja necessário configurar o driver no **Driver Manager**.
+    5. Se o driver selecionado em **Driver Type** estiver marcado com uma marca de verificação verde, ele estará pronto para uso. Caso contrário, talvez seja necessário configurar o driver no **Gerenciador de Drivers**.
 
     6. Insira as informações sobre o servidor do banco de dados nos campos restantes.
 
@@ -67,7 +61,7 @@ O DbVisualizer está disponível em https://www.dbvis.com/download/
 </Steps>
 
 <div id="learn-more">
-  ## Saiba mais
+  ## Saiba mais {#learn-more}
 </div>
 
 Para mais informações sobre o DbVisualizer, consulte a [documentação do DbVisualizer](https://www.dbvis.com/docs/ug/).
