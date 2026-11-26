@@ -1,0 +1,135 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/aws-lambda
+description: 'Mise en place et configuration d''AWS Lambda pour ClickHouse Observability et les déploiements autogérés.'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'AWS Lambda'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Pour les fonctions Node.js utilisant des handlers asynchrones, utilisez le SDK Node.js de ClickStack. Pour les autres environnements d’exécution ou les handlers basés sur des fonctions de rappel, utilisez les couches Lambda OpenTelemetry décrites ci-dessous.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Handlers asynchrones Node.js {#nodejs-async-handlers}
+
+Utilisez un environnement d’exécution Lambda Node.js compatible avec la version minimale de Node.js requise par le SDK (22.15). Installez le SDK et incluez-le dans votre paquet de déploiement :
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+Définissez ces variables d’environnement Lambda afin d’initialiser le SDK avant le chargement de votre handler et de nommer votre service :
+
+```text
+NODE_OPTIONS=--import @clickhouse/clickstack-node/register
+OTEL_SERVICE_NAME=my-lambda-function
+```
+
+Encapsulez votre handler asynchrone avec `withFlush` afin que la télémétrie mise en mémoire tampon soit exportée avant la fin de l&#39;invocation :
+
+```javascript
+// index.mjs
+import { withFlush } from '@clickhouse/clickstack-node';
+
+export const handler = withFlush(async (event) => {
+  console.log('request received');
+  return { statusCode: 200, body: 'OK' };
+});
+```
+
+Définissez le handler de la fonction sur `index.handler`. Si vous utilisez un bundler pour la fonction, déclarez le SDK et les dépendances instrumentées comme externes et incluez-les dans le paquet de déploiement. N&#39;activez pas non plus de couche Lambda d&#39;auto-instrumentation avec cette configuration.
+
+Définissez les variables de destination ci-dessous dans la configuration d&#39;environnement de la fonction Lambda. L&#39;endpoint doit être joignable depuis votre fonction. Le SDK termine son vidage avant l&#39;échéance de l&#39;invocation ; les handlers basés sur des fonctions de rappel ne sont pas pris en charge par `withFlush`.
+
+### Configurer votre destination {#configure-destination}
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre bêta" />
+
+    Ouvrez **Paramètres de l’équipe → Données → Télémétrie gérée** dans votre service et copiez l’**endpoint HTTP OTLP** ainsi que l’**API key**. Utilisez l’endpoint HTTPS complet, port compris :
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Autogéré">
+    Utilisez l’endpoint HTTP OTLP et la clé d’ingestion de votre collecteur. Remplacez `https://` par `http://` si TLS n’est pas configuré sur votre collecteur. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Autres environnements d’exécution et handlers {#other-runtimes-and-handlers}
+
+Suivez les [instructions officielles d’auto-instrumentation Lambda](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/) pour sélectionner les couches adaptées à votre environnement d’exécution, à votre architecture et à votre région AWS, puis configurez le wrapper d’instrumentation.
+
+Ajoutez et configurez la [couche Lambda du collecteur OpenTelemetry](https://opentelemetry.io/docs/platforms/faas/lambda-collector/). Conservez les exportateurs du SDK de l’application pointés vers le collecteur local, comme indiqué dans la documentation amont. Configurez ensuite la connexion sortante du collecteur comme décrit ci-dessous.
+
+### Configurer la destination du collecteur Lambda {#configure-lambda-collector-destination}
+
+Définissez `CLICKHOUSE_OTLP_ENDPOINT` et `CLICKHOUSE_INGESTION_API_KEY` dans les variables d’environnement de votre fonction Lambda. Ajoutez ensuite l’exportateur suivant à la configuration de votre collecteur.
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre bêta" />
+
+    Ouvrez **Paramètres de l’équipe → Données → Télémétrie gérée** dans votre service, puis copiez l’**OTLP HTTP endpoint** et l’**API key**. Définissez `CLICKHOUSE_OTLP_ENDPOINT` sur l’endpoint HTTPS complet, port compris, et `CLICKHOUSE_INGESTION_API_KEY` sur la clé.
+
+    ```yaml
+    exporters:
+      otlphttp/clickhouse:
+        endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+        headers:
+          Authorization: "Bearer ${env:CLICKHOUSE_INGESTION_API_KEY}"
+    ```
+  </Tab>
+
+  <Tab title="Autogéré">
+    Définissez `CLICKHOUSE_OTLP_ENDPOINT` sur l’endpoint OTLP HTTP de votre collecteur et `CLICKHOUSE_INGESTION_API_KEY` sur sa clé d’ingestion. L’endpoint doit être joignable depuis votre fonction Lambda. Pour configurer le collecteur de destination, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```yaml
+    exporters:
+      otlphttp/clickhouse:
+        endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+        headers:
+          Authorization: "${env:CLICKHOUSE_INGESTION_API_KEY}"
+    ```
+  </Tab>
+</Tabs>
+
+Ajoutez `otlphttp/clickhouse` à la liste `exporters` de chaque pipeline de signaux que vous souhaitez envoyer. Par exemple, avec le récepteur `otlp` amont :
+
+```yaml
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+```
+
+Fusionnez ces paramètres dans la configuration de votre collecteur, en conservant les paramètres de ses récepteurs et processeurs. Empaquetez la configuration avec votre fonction et définissez `OPENTELEMETRY_COLLECTOR_CONFIG_URI` sur son emplacement, par exemple `/var/task/collector.yaml`, conformément aux instructions de configuration du collecteur fournies par la documentation amont.
+
+## Vérifier l&#39;ingestion {#verify-ingestion}
+
+Déployez puis invoquez votre fonction. Dans ClickHouse Observability, sélectionnez un intervalle de temps récent et recherchez le nom du service de votre fonction dans Traces. Consultez également Logs et Metrics si votre instrumentation émet ces signaux ; l&#39;ajout d&#39;un pipeline n&#39;active pas automatiquement leur collecte.
+
+Pour la configuration de la couche et le dépannage, consultez la [documentation OpenTelemetry Lambda](https://github.com/open-telemetry/opentelemetry-lambda).
