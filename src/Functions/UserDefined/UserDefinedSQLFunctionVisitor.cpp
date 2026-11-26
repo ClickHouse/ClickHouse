@@ -223,11 +223,13 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             if (isColumnNameList(*ast_node_to_update, *child))
                 continue;
 
-            if (auto * inner_function = child->as<ASTFunction>())
+            /// An expansion can return its argument unexpanded, which may be a SQL UDF call too.
+            while (const auto * inner_function = child->as<ASTFunction>())
             {
                 auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
-                if (replace_result)
-                    child = replace_result;
+                if (!replace_result)
+                    break;
+                child = replace_result;
             }
 
             auto identifier_name_opt = tryGetIdentifierName(child);
