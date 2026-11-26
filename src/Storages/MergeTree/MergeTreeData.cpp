@@ -316,6 +316,7 @@ namespace Setting
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
+    extern const SettingsBool flatten_nested;
 }
 
 namespace MergeTreeSetting
@@ -6268,6 +6269,99 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     return {};
 }
 
+/// The column each column was renamed from; a column the ALTER adds has none.
+using ColumnOldNames = std::unordered_map<String, std::optional<String>>;
+
+ColumnOldNames getColumnOldNames(const ColumnsDescription & columns)
+{
+    ColumnOldNames old_names;
+    for (const auto & column : columns)
+        old_names.emplace(column.name, column.name);
+    return old_names;
+}
+
+void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & command, bool flatten_nested)
+{
+    if (command.ignore)
+        return;
+    if (command.type == AlterCommand::ADD_COLUMN)
+    {
+        if (command.data_type && flatten_nested)
+        {
+            ColumnsDescription added;
+            added.add(ColumnDescription(command.column_name, command.data_type));
+            added.flattenNested();
+            for (const auto & column : added)
+                old_names.try_emplace(column.name, std::nullopt);
+        }
+        else
+            old_names.try_emplace(command.column_name, std::nullopt);
+    }
+    else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
+        old_names.erase(command.column_name);
+    else if (command.type == AlterCommand::RENAME_COLUMN)
+    {
+        if (auto node = old_names.extract(command.column_name))
+        {
+            node.key() = command.rename_to;
+            old_names.insert(std::move(node));
+        }
+    }
+}
+
+/// The columns of `metadata` whose data the commands drop or clear.
+NameSet getColumnsDroppedByAlter(
+    const AlterCommands & commands,
+    const StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const MergeTreeSettings * settings_defaults,
+    bool flatten_nested)
+{
+    const auto & old_columns = metadata.columns;
+    NameSet dropped_columns;
+    auto old_names = getColumnOldNames(old_columns);
+    /// A Nested group is dropped in the column order the previous commands leave.
+    auto current_metadata = metadata;
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::DROP_COLUMN && !command.ignore)
+        {
+            auto it = old_names.find(command.column_name);
+            if (!command.clear && !command.partition && it != old_names.end())
+            {
+                if (it->second)
+                    dropped_columns.emplace(*it->second);
+            }
+            else if (!command.clear && !command.partition && !current_metadata.columns.has(command.column_name))
+            {
+                for (const auto & nested_column : current_metadata.columns.getNested(command.column_name))
+                {
+                    auto member = old_names.find(nested_column.name);
+                    if (member == old_names.end())
+                        continue;
+                    if (member->second)
+                        dropped_columns.emplace(*member->second);
+                    old_names.erase(member);
+                }
+            }
+            else if (old_columns.has(command.column_name))
+            {
+                dropped_columns.emplace(command.column_name);
+            }
+            else
+            {
+                for (const auto & nested_column : old_columns.getNested(command.column_name))
+                    dropped_columns.emplace(nested_column.name);
+            }
+        }
+        advanceColumnOldNames(old_names, command, flatten_nested);
+        if (!command.ignore)
+            command.apply(current_metadata, context, share_nested_offsets, &old_columns, settings_defaults);
+    }
+    return dropped_columns;
+}
+
 }
 
 void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
@@ -6374,6 +6468,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
+    const bool flatten_nested = settings[Setting::flatten_nested];
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
@@ -6637,6 +6732,31 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     auto apply_context = Context::createCopy(local_context);
     if (auto txn = local_context->getZooKeeperMetadataTransaction(); !txn || txn->isInitialQuery())
         apply_context->setAnalyzingBackgroundExpressions(true);
+    const NameSet dropped_columns
+        = getColumnsDroppedByAlter(commands, new_metadata, apply_context, share_nested_offsets, settings_defaults.get(), flatten_nested);
+    /// A Nested group dropped after a reorder can contain key or special columns that the group check above does not see.
+    /// Only the initial execution judges it: an older initiator of a `Replicated` database ALTER may have committed it.
+    if (!isSecondaryDDLReplay(local_context))
+    {
+        for (const auto & column_name : dropped_columns)
+        {
+            for (const auto & [role, special_column] :
+                 {std::pair{"version", &version_column}, std::pair{"is_deleted", &is_deleted_column}, std::pair{"sign", &sign_column}})
+            {
+                if (belongs_to(*special_column, column_name))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER DROP {} ({}) column",
+                        role,
+                        backQuoteIfNeed((*special_column)->name));
+            }
+            if (columns_in_keys.contains(column_name) || column_to_subcolumns_used_in_keys.contains(column_name))
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP key {} column which is a part of key expression",
+                    backQuoteIfNeed(column_name));
+        }
+    }
     commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
@@ -6684,27 +6804,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
             check(old_metadata.table_ttl.definition_ast, new_metadata.table_ttl.definition_ast, "TTL");
 
-            /// The column each column was renamed from; a column the ALTER adds has none.
-            std::unordered_map<String, std::optional<String>> old_names;
-            for (const auto & column : old_metadata.columns)
-                old_names.emplace(column.name, column.name);
+            auto old_names = getColumnOldNames(old_metadata.columns);
             for (const auto & command : commands)
-            {
-                if (command.ignore)
-                    continue;
-                if (command.type == AlterCommand::ADD_COLUMN)
-                    old_names.try_emplace(command.column_name, std::nullopt);
-                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
-                    old_names.erase(command.column_name);
-                else if (command.type == AlterCommand::RENAME_COLUMN)
-                {
-                    if (auto node = old_names.extract(command.column_name))
-                    {
-                        node.key() = command.rename_to;
-                        old_names.insert(std::move(node));
-                    }
-                }
-            }
+                advanceColumnOldNames(old_names, command, flatten_nested);
 
             for (const auto & index : new_metadata.secondary_indices)
             {
@@ -6999,8 +7101,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             columns_in_projections.emplace(col, projection.name);
     }
 
-    NameSet dropped_columns;
-
     std::map<String, const IDataType *> old_types;
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
@@ -7170,17 +7270,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             it->second);
                     }
                 }
-            }
-
-            if (old_metadata.columns.has(command.column_name))
-            {
-                dropped_columns.emplace(command.column_name);
-            }
-            else
-            {
-                const auto & nested = old_metadata.columns.getNested(command.column_name);
-                for (const auto & nested_column : nested)
-                    dropped_columns.emplace(nested_column.name);
             }
         }
         else if (command.type == AlterCommand::RESET_SETTING)

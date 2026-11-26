@@ -466,7 +466,7 @@ void StorageAlias::alter(
     /// type at that time, so prepare them again against the target's current metadata.
     AlterCommands commands = params;
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ true);
-    commands.prepare(*target_metadata);
+    commands.prepare(*target_metadata, local_context);
     target_storage->checkAlterIsPossible(commands, local_context);
     target_storage->alter(commands, local_context, target_alter_lock, target_ddl_guard);
 }
