@@ -53,9 +53,9 @@ the fork's branches before assuming a pin is a plain upstream commit.
 Submodules are cloned shallow in most checkouts. `git describe` and `git log OLD..NEW` then report nonsense or fail;
 run `git -C contrib/<lib> fetch --unshallow --tags origin` first (the pipeline does this for you).
 
-A few libraries are built through cargo instead of a plain CMake file list - either as a member of the workspace in
-`contrib/rust-contrib-workspace/` (`wasmtime`, `pcodec`) or from a `contrib/<lib>-cmake/` file that drives cargo
-(`chdig`, `delta-kernel-rs`); they export `ch_rust::*` targets. See [rust.md](rust.md) for those.
+A few libraries are built through cargo instead of a plain CMake file list, as members of the workspace in
+`contrib/rust-contrib-workspace/` (`wasmtime`, `pcodec`, `chdig`, `delta-kernel-rs`); they export `ch_rust::*`
+targets. See [rust.md](rust.md) for those.
 
 ## Process
 
@@ -87,8 +87,8 @@ grep -n "\b${LIB}\b" contrib/CMakeLists.txt   # where it is added
 ```
 
 - plain CMake: `contrib/<lib>-cmake/CMakeLists.txt`;
-- Rust: either `contrib/<lib>-cmake/CMakeLists.txt` of a workspace member (`wasmtime`, `pcodec`) or a `contrib/<lib>-cmake/` file that drives
-  cargo (`chdig`, `delta-kernel-rs`) — see [rust.md](rust.md);
+- Rust: `contrib/<lib>-cmake/CMakeLists.txt` of a workspace member (`wasmtime`, `pcodec`, `chdig`, `delta-kernel-rs`) -
+  see [rust.md](rust.md);
 - shared wrapper: the fallback above; the wrapper's file list and aliases (`ch_contrib::aws_s3` for every
   `aws-c-*` library) are what steps 8, 9 and 11 must use.
 

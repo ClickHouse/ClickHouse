@@ -49,6 +49,7 @@
               "pages": [
                 "products/cloud/features/infrastructure/on-demand-compute",
                 "products/cloud/features/large-single-replica-services",
+                "products/cloud/features/compute-generations",
                 "products/cloud/features/infrastructure/parallel-replicas",
                 "products/cloud/features/infrastructure/replica-aware-routing",
                 "products/cloud/features/infrastructure/shared-catalog",
@@ -177,7 +178,8 @@
                     "products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                     "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
                   ]
-                }
+                },
+                "products/cloud/guides/security/connectivity/org-network-connectivity"
               ]
             },
             {
@@ -221,6 +223,7 @@
               "pages": [
                 "products/cloud/features/monitoring/overview",
                 "products/cloud/features/monitoring/cloud-console",
+                "products/cloud/features/monitoring/recommendations",
                 "products/cloud/features/monitoring/advanced-dashboard",
                 "products/cloud/features/monitoring/notifications",
                 "products/cloud/features/monitoring/prometheus",
@@ -259,39 +262,7 @@
           "group": "AI tools and agents",
           "pages": [
             "products/cloud/features/ai-ml/index",
-            {
-              "group": "Agents",
-              "pages": [
-                "products/cloud/features/ai-ml/agents/index",
-                "products/cloud/features/ai-ml/agents/quickstart",
-                "products/cloud/features/ai-ml/agents/chat",
-                {
-                  "group": "Agent Builder",
-                  "pages": [
-                    "products/cloud/features/ai-ml/agents/builder/index",
-                    "products/cloud/features/ai-ml/agents/builder/model-parameters",
-                    "products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                    "products/cloud/features/ai-ml/agents/builder/web-search",
-                    "products/cloud/features/ai-ml/agents/builder/image-generation",
-                    "products/cloud/features/ai-ml/agents/builder/vision",
-                    "products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                    "products/cloud/features/ai-ml/agents/builder/skills",
-                    "products/cloud/features/ai-ml/agents/builder/subagents"
-                  ]
-                },
-                "products/cloud/features/ai-ml/agents/prompts",
-                "products/cloud/features/ai-ml/agents/memory",
-                "products/cloud/features/ai-ml/agents/marketplace",
-                "products/cloud/features/ai-ml/agents/sharing-and-access",
-                {
-                  "group": "Assistant",
-                  "pages": [
-                    "products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
-                    "products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
-                  ]
-                }
-              ]
-            },
+            "products/cloud/features/ai-ml/schema-advisor",
             "products/cloud/features/ai-ml/langfuse",
             {
               "expanded": false,
@@ -301,6 +272,7 @@
                 "products/cloud/features/ai-ml/mcp/remote-mcp"
               ]
             },
+            "products/cloud/features/ai-ml/linked-billing-claude-platform",
             "products/cloud/features/ai-ml/model-developer-terms"
           ]
         },

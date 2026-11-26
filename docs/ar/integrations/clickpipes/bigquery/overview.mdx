@@ -8,12 +8,10 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/ar/_intro.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <IntroClickPipe />
 
 <div id="features">
-  ## الميزات
+  ## الميزات {#features}
 </div>
 
 ### التحميل الأولي {#initial-load}
@@ -48,59 +46,63 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
   لا تستطيع [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) و[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) قراءة إلا التغييرات الواقعة ضمن [نافذة الرجوع بالزمن في BigQuery](https://docs.cloud.google.com/bigquery/docs/time-travel) لجدول المصدر. تبلغ مدة هذه النافذة سبعة أيام افتراضيًا، وقد تُختصر إلى يومين. إذا تأخر النسخ المتماثل إلى ما بعد هذه النافذة، فأجرِ تحميلًا أوليًا جديدًا لاستعادة نسخة كاملة. يفرض BigQuery رسومًا على الاستعلامات التي تُنفَّذ باستخدام الطرق الثلاث جميعها. ويترتب على تفعيل سجل التغييرات لاستخدام [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) تكاليف تخزين إضافية في BigQuery.
 </Note>
 
-<div id="data-type-mapping">
-  ## تعيين أنواع البيانات
-</div>
+## مطابقة أنواع البيانات {#data-type-mapping}
 
 [أنواع بيانات BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
 
-| نوع بيانات BigQuery | نوع بيانات ClickHouse | التفاصيل                                                        |
-| ------------------- | --------------------- | --------------------------------------------------------------- |
-| `BOOL`              | `Bool`                |                                                                 |
-| `INT64`             | `Int64`               |                                                                 |
-| `FLOAT64`           | `Float64`             |                                                                 |
-| `NUMERIC`           | `Decimal(P, S)`       | دقة تصل إلى 38، ومقياس يصل إلى 9، مع الحفاظ على الدقة/المقياس.  |
-| `BIGNUMERIC`        | `Decimal(P, S)`       | دقة تصل إلى 76، ومقياس يصل إلى 38، مع الحفاظ على الدقة/المقياس. |
-| `STRING`            | `String`              |                                                                 |
-| `BYTES`             | `String`              |                                                                 |
-| `JSON`              | `String` (JSON)       |                                                                 |
-| `DATE`              | `Date`                |                                                                 |
-| `TIME`              | `String`              | بدقة ميكروثانية.                                                |
-| `DATETIME`          | `DateTime`            | بدقة ميكروثانية.                                                |
-| `TIMESTAMP`         | `DateTime64(6)`       | بدقة ميكروثانية.                                                |
-| `GEOGRAPHY`         | `String`              |                                                                 |
-| `GEOMETRY`          | `String`              |                                                                 |
-| `UUID`              | `String`              |                                                                 |
-| `ARRAY<T>`          | `Array(T)`            |                                                                 |
-| `ARRAY<DATE>`       | `Array(Date)`         |                                                                 |
-| `STRUCT` (RECORD)   | `String`              |                                                                 |
+| نوع بيانات BigQuery | نوع بيانات ClickHouse  | التفاصيل                                                                                                                                                                                                     |
+| ------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BOOL`              | `Bool`                 |                                                                                                                                                                                                              |
+| `INT64`             | `Int64`                |                                                                                                                                                                                                              |
+| `FLOAT64`           | `Float64`              |                                                                                                                                                                                                              |
+| `NUMERIC`           | `Decimal(P, S)`        | يُحتفَظ بالدقة وعدد المنازل العشرية. القيمة الافتراضية هي `Decimal(38, 9)` عند عدم تحديد المعلمات.                                                                                                           |
+| `BIGNUMERIC`        | `Decimal(P, S)`        | يُحتفَظ بالدقة وعدد المنازل العشرية. القيمة الافتراضية هي `Decimal(76, 38)` عند عدم تحديد المعلمات.                                                                                                          |
+| `STRING`            | `String`               |                                                                                                                                                                                                              |
+| `BYTES`             | `String`               |                                                                                                                                                                                                              |
+| `JSON`              | `String`               |                                                                                                                                                                                                              |
+| `DATE`              | `Date32`               |                                                                                                                                                                                                              |
+| `TIME`              | `DateTime64(6)`        | وقت اليوم ممثَّلًا كإزاحة من حقبة Unix. يُطابَق مع `Time64(6)` إذا كان الإعداد [`enable_time_time64_type`](/ar/reference/settings/session-settings/enable#enable_time_time64_type) مفعّلًا على خدمة ClickHouse. |
+| `DATETIME`          | `DateTime64(6)`        | بدقة الميكروثانية. يُخزَّن بتوقيت UTC لأن `DATETIME` لا يتضمن منطقة زمنية.                                                                                                                                   |
+| `TIMESTAMP`         | `DateTime64(6)`        | بدقة الميكروثانية.                                                                                                                                                                                           |
+| `GEOGRAPHY`         | `String`               | بصيغة WKT.                                                                                                                                                                                                   |
+| `INTERVAL`          | `String`               |                                                                                                                                                                                                              |
+| `RANGE`             | `String`               |                                                                                                                                                                                                              |
+| `STRUCT` (RECORD)   | `String`               | يُسلسَل ككائن JSON.                                                                                                                                                                                          |
+| `ARRAY<T>`          | `Array(T)`             | تتبع أنواع العناصر المطابقات الواردة أعلاه، باستثناء الحالات المدرجة أدناه.                                                                                                                                  |
+| `ARRAY<DATE>`       | `Array(Date)`          |                                                                                                                                                                                                              |
+| `ARRAY<TIME>`       | `Array(DateTime64(6))` |                                                                                                                                                                                                              |
+| `ARRAY<JSON>`       | `String`               | يُسلسَل كمصفوفة JSON.                                                                                                                                                                                        |
+| `ARRAY<STRUCT>`     | `Array(String)`        | يُسلسَل كل عنصر ككائن JSON.                                                                                                                                                                                  |
 
 <div id="access-control">
-  ## التحكم في الوصول
+  ## التحكم في الوصول {#access-control}
 </div>
 
 <div id="authentication">
-  ### المصادقة
+  ### المصادقة {#authentication}
 </div>
 
 <a id="service-account-credentials" />
-#### بيانات اعتماد حساب الخدمة
 
-يُجري ClickPipes المصادقة على مشروعك في Google Cloud باستخدام [مفتاح حساب الخدمة](https://docs.cloud.google.com/iam/docs/keys-create-delete). نوصي بإنشاء حساب الخدمة مخصّص بأقل مجموعة مطلوبة من [الأذونات](#permissions) للسماح لـ ClickPipes بتصدير البيانات من BigQuery، وتحميلها إلى حاوية GCS مرحلية، ثم قراءتها إلى ClickHouse.
+#### بيانات اعتماد حساب الخدمة {#service-account-credentials}
 
-<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="إنشاء مفتاح حساب خدمة بأذونات BigQuery وCloud Storage" size="lg" border />
+يُجري ClickPipes المصادقة على مشروعك في Google Cloud باستخدام [مفتاح حساب الخدمة](https://docs.cloud.google.com/iam/docs/keys-create-delete). نوصي بإنشاء حساب الخدمة مخصّص بأقل مجموعة مطلوبة من [الصلاحيات](#permissions) للسماح لـ ClickPipes بتصدير البيانات من BigQuery، وتحميلها إلى حاوية GCS مرحلية، ثم قراءتها إلى ClickHouse.
 
-<a id="gcp-workload-identity" />
-#### Workload Identity في GCP (تجريبي)
-
-اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق خدمة ClickPipes. امنح هذا الحساب [أدوار BigQuery وGCS](#permissions) الموضحة أدناه، ثم أنشئ مسار استيعاب البيانات باستخدام المصادقة `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. لا تقدّم بيانات اعتماد حساب الخدمة عند استخدام طريقة المصادقة هذه.
-
-<div id="permissions">
-  ### الأذونات
+<div className="ch-image-lg">
+  <Frame>
+    ![إنشاء مفتاح حساب خدمة بصلاحيات BigQuery وCloud Storage](/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp)
+  </Frame>
 </div>
 
-<a id="bigquery" />
-#### BigQuery
+#### Workload Identity في GCP (تجريبي) {#gcp-workload-identity}
+
+اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق الخدمة في ClickPipes. امنح هذا الحساب [أدوار BigQuery وGCS](#permissions) الموضحة أدناه، ثم أنشئ مسار استيعاب البيانات باستخدام طريقة المصادقة `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. لا تقدّم بيانات اعتماد حساب الخدمة عند استخدام طريقة المصادقة هذه.
+
+<div id="permissions">
+  ### الأذونات {#permissions}
+</div>
+
+#### BigQuery {#bigquery}
 
 يحتاج حساب الخدمة الذي تستخدمه ClickPipes، سواء قدّمته بنفسك أو كان مُدارًا عبر Workload Identity، إلى أدوار BigQuery التالية:
 
@@ -116,7 +118,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage
+  #### Cloud Storage {#cloud-storage}
 </div>
 
 يجب أن يكون لدى حساب الخدمة أدوار Cloud Storage التالية:

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_threads">
-  ## max_threads
-</div>
+## max_threads {#max_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -36,17 +34,13 @@ Sin SMT (p. ej., Intel HyperThreading), esto corresponde al número de núcleos 
 Para los usuarios de ClickHouse Cloud, el valor predeterminado se mostrará como `auto(N)`, donde N coincide con el tamaño de vCPU de su servicio; por ejemplo, 2vCPU/8GiB, 4vCPU/16GiB, etc.
 Consulte la pestaña de configuración en la Cloud Console para ver una lista de todos los tamaños de servicio.
 
-<div id="max_threads_for_indexes">
-  ## max_threads_for_indexes
-</div>
+## max_threads_for_indexes {#max_threads_for_indexes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El número máximo de hilos que procesan índices.
 
-<div id="max_threads_min_free_memory_per_thread">
-  ## max_threads_min_free_memory_per_thread
-</div>
+## max_threads_min_free_memory_per_thread {#max_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -54,7 +48,7 @@ El número máximo de hilos que procesan índices.
 
 Reduce `max_threads` cuando el servidor está bajo presión de memoria, para evitar iniciar consultas con mucho paralelismo que probablemente alcancen el límite de memoria.
 
-La memoria libre se calcula como el valor de `max_server_memory_usage` del servidor menos la memoria que registra actualmente el rastreador global de memoria. Si esa memoria libre es inferior a `max_threads` multiplicado por este valor, `max_threads` se reduce al mayor N tal que `N * value <= free_memory`, con un mínimo de `1`.
+La memoria libre se calcula como el valor de `max_server_memory_usage` del servidor menos la memoria que registra actualmente el rastreador global de memoria. Si esa memoria libre es inferior a `max_threads` multiplicado por este valor, `max_threads` se reduce al mayor N tal que `N * value <= free_memory`, con un mínimo de `1`. La memoria libre se mide una sola vez por consulta, al construir su plan, de modo que todas las partes de la consulta se planifiquen con el mismo número de hilos.
 
 Establezca `0` para desactivar este límite.
 
