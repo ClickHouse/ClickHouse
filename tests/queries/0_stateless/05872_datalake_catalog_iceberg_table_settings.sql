@@ -2,7 +2,7 @@
 -- no-fasttest: the `DataLakeCatalog` database engine needs the Avro and Parquet libraries.
 
 -- A `DataLakeCatalog` database accepts the settings of the Iceberg table engine that it applies to all its tables, and
--- `ALTER DATABASE ... MODIFY SETTING` changes them for any catalog type. The other `iceberg_` settings are rejected.
+-- `ALTER DATABASE ... MODIFY SETTING` changes them for any catalog type. The other settings of the table engines are rejected.
 -- `ATTACH` does not connect to the catalog, so the endpoint does not have to exist. `CREATE` rejects a setting before
 -- it connects.
 
@@ -17,6 +17,14 @@ SETTINGS catalog_type = 'rest', warehouse = 'demo', iceberg_metadata_file_path =
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
 ENGINE = DataLakeCatalog('http://localhost:18181/v1')
 SETTINGS catalog_type = 'rest', warehouse = 'demo', iceberg_use_version_hint = 1; -- { serverError BAD_ARGUMENTS }
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+ENGINE = DataLakeCatalog('http://localhost:18181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'demo', paimon_keeper_path = '/paimon/table'; -- { serverError BAD_ARGUMENTS }
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+ENGINE = DataLakeCatalog('http://localhost:18181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'demo', storage_catalog_type = 'rest'; -- { serverError BAD_ARGUMENTS }
 
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
 ENGINE = DataLakeCatalog('http://localhost:18181/v1')
@@ -42,6 +50,8 @@ SETTINGS catalog_type = 'glue', warehouse = 'demo', region = 'us-east-1';
 
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING allow_experimental_iceberg_compaction = 1, iceberg_timezone_for_timestamptz = 'Asia/Tokyo';
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING region = 'eu-west-1'; -- { serverError NOT_IMPLEMENTED }
+-- `disk` is a setting of the database itself, not one of the table settings that `ALTER DATABASE` changes for any catalog type.
+ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING disk = 'default'; -- { serverError NOT_IMPLEMENTED }
 
 SHOW CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

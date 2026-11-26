@@ -11,6 +11,9 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
+#include <array>
+
 namespace DB
 {
 
@@ -133,13 +136,18 @@ bool DatabaseDataLakeSettings::isDatabaseAndTableSetting(std::string_view name)
     return index != static_cast<size_t>(-1) && accessor.isDatabaseAndTableSetting(index);
 }
 
+/// The settings of the data lake table engines that the database checks. The format settings, which it gives to all its
+/// tables too, `disk`, which is a setting of the database itself, and the obsolete settings, which do nothing, are not here.
+#define TABLE_ENGINE_SETTING_NAME(TYPE, NAME, ...) #NAME,
+static constexpr auto table_engine_settings
+    = std::to_array<std::string_view>({DATA_LAKE_STORAGE_RELATED_SETTINGS(TABLE_ENGINE_SETTING_NAME, TABLE_ENGINE_SETTING_NAME)});
+#undef TABLE_ENGINE_SETTING_NAME
+
 void DatabaseDataLakeSettings::checkCanBeSetForDatabase(std::string_view name)
 {
-    /// The `iceberg_` prefix is a deprecated way to tell whether a setting can be set for the database: it is kept only
-    /// so that the other settings, which the database accepted before, are still accepted. Do not use the name of a setting
-    /// for such decisions, mark the setting with `DATABASE_AND_TABLE_SETTING` in its declaration instead. An unknown name
-    /// is reported by `applyChanges`.
-    if (!name.starts_with("iceberg_") || !hasBuiltin(name) || isDatabaseAndTableSetting(name))
+    /// An unknown name is reported by `applyChanges`.
+    const std::string_view resolved_name = DatabaseDataLakeSettingsTraits::resolveName(name);
+    if (std::ranges::find(table_engine_settings, resolved_name) == table_engine_settings.end() || isDatabaseAndTableSetting(name))
         return;
 
     const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
@@ -151,8 +159,8 @@ void DatabaseDataLakeSettings::checkCanBeSetForDatabase(std::string_view name)
     }
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
-        "Setting `{}` of the Iceberg table engine cannot be set for a `DataLakeCatalog` database. "
-        "The table settings that the database applies to all its Iceberg tables are: {}",
+        "Table setting `{}` cannot be set for a `DataLakeCatalog` database. "
+        "The table settings that the database applies to all its tables are: {}",
         name,
         fmt::join(table_settings, ", "));
 }

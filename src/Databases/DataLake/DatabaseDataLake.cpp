@@ -2502,8 +2502,9 @@ which applies them to all its Iceberg tables. `ALTER DATABASE ... MODIFY SETTING
 | `iceberg_format_version` | The format version of the new tables, unless `CREATE TABLE` sets it. Default: `2`. |
 | `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_compaction_max_bytes_to_merge`, `iceberg_compaction_max_rows_to_merge` | The background compaction of the tables and the cleanup after it, the same as for an Iceberg table. Changing them stops the background compaction of the tables, and the next query to a table starts it again with the new values. |
 
-The other settings of the Iceberg table engine whose names start with `iceberg_` cannot be set for the database: they tell
-where the metadata file of a table is, which the catalog tells instead, or do not apply to the tables of the database.
+The other settings of the Iceberg and Paimon table engines cannot be set for the database, except `disk` and the format
+settings: they tell where the metadata file of a table is, which the catalog tells instead, configure a catalog of the table
+itself, or make sense only for one table, such as `paimon_keeper_path`.
 
 ## Examples {#examples}
 

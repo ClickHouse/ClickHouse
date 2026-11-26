@@ -56,10 +56,8 @@ class SettingsChanges;
 /// A table of a `DataLakeCatalog` database has no definition of its own: the database builds it from the catalog and gives
 /// it the settings of the database. The settings marked with `DATABASE_AND_TABLE_SETTING` can be set for such a database,
 /// which applies them to all its tables, and changed with `ALTER DATABASE ... MODIFY SETTING`. A `DataLakeCatalog` database
-/// rejects the other settings whose names start with `iceberg_`, for example the ones that tell where the metadata file of
-/// a table is, which the catalog tells instead. Checking the prefix is deprecated, so do not rely on the name of a new
-/// setting: mark it with `DATABASE_AND_TABLE_SETTING` if the database can apply it. See
-/// `DatabaseDataLakeSettings::checkCanBeSetForDatabase`.
+/// rejects the other settings of this list, for example the ones that tell where the metadata file of a table is, which the
+/// catalog tells instead, or that make sense only for one table. See `DatabaseDataLakeSettings::checkCanBeSetForDatabase`.
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
@@ -193,6 +191,10 @@ Stored in the table definition, so it survives a server restart. Falls back to t
     DECLARE(String, storage_aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
     DECLARE(String, object_storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
+
+/// The settings of a table that are also the settings of a `DataLakeCatalog` database itself. The database checks them and
+/// gives them to all its tables, like the other settings it accepts, but `ALTER DATABASE ... MODIFY SETTING` cannot change them.
+#define DATA_LAKE_STORAGE_AND_DATABASE_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, disk, "", "Disk name to use for underlying storage", 0) \
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
@@ -240,6 +242,7 @@ using DataLakeStorageSettingsPtr = std::shared_ptr<DataLakeStorageSettings>;
 /// Expanding this list requires <Core/FormatFactorySettings.h>, not included here to keep this widely used header light.
 #define LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
     DATA_LAKE_STORAGE_RELATED_SETTINGS(M, ALIAS) \
+    DATA_LAKE_STORAGE_AND_DATABASE_SETTINGS(M, ALIAS) \
     OBSOLETE_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 

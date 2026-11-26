@@ -93,7 +93,8 @@ struct DatabaseDataLakeSettings
     /// The database handles them itself, so `ALTER DATABASE ... MODIFY SETTING` can change them for any catalog type.
     static bool isDatabaseAndTableSetting(std::string_view name);
 
-    /// Throws if `name` is a setting of the Iceberg table engine that cannot be set for the database.
+    /// Throws if `name` is a setting of the data lake table engines in `DATA_LAKE_STORAGE_RELATED_SETTINGS` that is not
+    /// marked with `DATABASE_AND_TABLE_SETTING`, so it cannot be set for the database.
     static void checkCanBeSetForDatabase(std::string_view name);
 
 private:
