@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-replicated-database
-# Random settings limits: output_format_parquet_data_page_size=(1048576, None); output_format_parquet_compression_method=('zstd', 'zstd'); output_format_parquet_max_dictionary_size=(1048576, None)
+# Random settings limits: output_format_parquet_data_page_size=(1048576, None); output_format_parquet_compression_method=('zstd', 'zstd'); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_data_page_row_limit=(20000, None)
 # Tag no-fasttest: needs Parquet
 # Tag no-replicated-database: a table of the test is created from a named collection, which exists only on
 # the server it was created on: the other replicas of the database fail to create the table.
