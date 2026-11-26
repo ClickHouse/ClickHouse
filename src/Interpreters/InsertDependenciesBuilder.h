@@ -135,6 +135,7 @@ public:
     }
 
     /// The sink for the output of all the chains: commits the insert when they have finished, a table before its dependent views.
+    /// Call it after all the chains are created: it commits the sessions of their sinks.
     ProcessorPtr createCommitSink(SharedHeader header) const;
 
     /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink
@@ -268,8 +269,8 @@ private:
     Chain createSinkImpl(StorageIDMaybeEmpty view_id) const;
     Chain createPostSink(StorageIDMaybeEmpty view_id) const;
 
-    void beginWriteSessions();
-    void beginWriteSession(const StorageIDMaybeEmpty & view_id);
+    /// The session of the destination table (by `root_view`) or of the target of a view, begun on the first call.
+    StorageWriteSessionPtr getWriteSession(const StorageIDMaybeEmpty & view_id) const;
 
     Chain createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const;
 
@@ -286,10 +287,10 @@ private:
     bool async_insert = false;
     bool skip_destination_table = false;
     size_t sink_stream_size = 1;
-    /// The sessions of the destination table (by `root_view`) and of the targets of the views, which create their sinks.
-    MapIdWriteSession write_sessions;
-    /// The ids of `write_sessions`, a table before its dependent views.
-    std::vector<StorageIDMaybeEmpty> write_sessions_order;
+    /// The sessions of the tables this insert has sinks for, see `getWriteSession`.
+    mutable MapIdWriteSession write_sessions;
+    /// The ids of `write_sessions` in the order the sessions began, a table before its dependent views.
+    mutable std::vector<StorageIDMaybeEmpty> write_sessions_order;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
     /// When the insertion is made into a regular table (it is init_table_id), the root_view is {} / StorageID::createEmpty() and dependent_views contains init_table_id.

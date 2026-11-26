@@ -1198,8 +1198,6 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
         && !mv_dedup_single_stream)
         sink_stream_size = max_insert_threads;
-
-    beginWriteSessions();
 }
 
 namespace
@@ -1263,42 +1261,18 @@ private:
 
 }
 
-void InsertDependenciesBuilder::beginWriteSession(const StorageIDMaybeEmpty & view_id)
+StorageWriteSessionPtr InsertDependenciesBuilder::getWriteSession(const StorageIDMaybeEmpty & view_id) const
 {
+    if (auto it = write_sessions.find(view_id); it != write_sessions.end())
+        return it->second;
+
     const auto & inner_table_id = inner_tables.at(view_id);
+    auto session = storages.at(inner_table_id)->beginWrite(
+        select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_contexts.at(view_id), async_insert);
 
-    StorageWriteSessionPtr session;
-    try
-    {
-        session = storages.at(inner_table_id)->beginWrite(
-            select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_contexts.at(view_id), async_insert);
-    }
-    catch (Exception & e)
-    {
-        /// Like in `createSink`.
-        if (!view_id.empty())
-            e.addMessage("while writing to target table {} of materialized view {}",
-                inner_table_id.getNameForLogs(), view_id.getNameForLogs());
-        throw;
-    }
-
-    write_sessions[view_id] = std::move(session);
+    write_sessions.emplace(view_id, session);
     write_sessions_order.push_back(view_id);
-
-    for (const auto & child_view_id : dependent_views.at(view_id))
-        beginWriteSession(child_view_id);
-}
-
-void InsertDependenciesBuilder::beginWriteSessions()
-{
-    if (!skip_destination_table)
-    {
-        beginWriteSession(root_view);
-        return;
-    }
-
-    for (const auto & child_view_id : dependent_views.at(root_view))
-        beginWriteSession(child_view_id);
+    return session;
 }
 
 ProcessorPtr InsertDependenciesBuilder::createCommitSink(SharedHeader header) const
@@ -2077,7 +2051,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     }
     else
     {
-        auto sink = write_sessions.at(view_id)->createSink();
+        auto sink = getWriteSession(view_id)->createSink();
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
