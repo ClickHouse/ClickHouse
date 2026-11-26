@@ -429,10 +429,13 @@ public:
     /// Azure uses it the same way.
     bool is_loading_from_existing_metadata = false;
 
-    /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`),
-    /// and by a `*Cluster` table function on a node for a query authenticated by the cluster secret:
+    /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
     /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
     bool is_replayed_definition = false;
+
+    /// Set by a `*Cluster` table function on a node for a query authenticated by the cluster secret: the inferred `format`
+    /// or `structure` the initiator sends over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
+    bool accept_sent_not_overridable_auto = false;
 
     /// Whether the structure is a `NOT OVERRIDABLE` `'auto'` of a named collection: the nodes of a cluster without a secret
     /// then infer it, so the initiator does as well.

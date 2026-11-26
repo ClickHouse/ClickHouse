@@ -196,10 +196,13 @@ void StorageObjectStorageConfiguration::initialize(
         engine_args = configuration_to_initialize.completeEngineArgsFromCatalog(*table_id, local_context);
     }
 
+    const bool accept_not_overridable_auto
+        = configuration_to_initialize.is_replayed_definition || configuration_to_initialize.accept_sent_not_overridable_auto;
+
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(
-                 engine_args, local_context, true, nullptr, table_id, /* settings= */ nullptr, configuration_to_initialize.is_replayed_definition))
+                 engine_args, local_context, true, nullptr, table_id, /* settings= */ nullptr, accept_not_overridable_auto))
     {
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
         configuration_to_initialize.is_structure_not_overridable = configuration_to_initialize.structure == "auto"
@@ -218,7 +221,7 @@ void StorageObjectStorageConfiguration::initialize(
                 configuration_to_initialize.url_overridden_by_base_setting,
                 local_context,
                 /*skip_userinfo=*/ true,
-                configuration_to_initialize.is_replayed_definition);
+                accept_not_overridable_auto);
     }
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);

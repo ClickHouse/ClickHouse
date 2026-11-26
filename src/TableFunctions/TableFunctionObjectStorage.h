@@ -58,7 +58,7 @@ public:
     {
         auto configuration_to_initialize = getConfiguration(context);
         if (isClusterFunction() && isSecondaryQueryAuthenticatedByClusterSecret(context))
-            configuration_to_initialize->is_replayed_definition = true;
+            configuration_to_initialize->accept_sent_not_overridable_auto = true;
         StorageObjectStorageConfiguration::initialize(*configuration_to_initialize, args, context, true);
     }
 
