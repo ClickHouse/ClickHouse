@@ -92,11 +92,17 @@ Test template:
 
 The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
 
+Currently, do not use `run_all_queries="1"` outside the standard benchmarks `clickbench.xml`, `tpch.xml` and `tpcds.xml`. Master runs and full pull request runs measure at most 10 queries of a test, chosen at random, and the attribute makes them measure every query of the test, which slows down CI. The nightly job runs all queries of every test anyway.
+
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
 ### Queries whose time keeps growing with each run
 
 Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when the time of a query of the test keeps growing with each run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2). Usually each run reads what the previous runs changed, for example a table that grows with every timed `INSERT`. A pull request job runs at most 10 queries of a test, chosen at random, unless the test sets `run_all_queries="1"`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.
+
+### Unstable queries in a new or changed test
+
+The check of a pull request also fails when a query of a test it adds or changes is unstable. If the pull request changes only files under `tests/` and the reference server runs the performance reference build of the master commit the pull request is merged with, both servers run the same code built the same way, and the check fails when the report marks the query changed or unstable (a relative difference above 15% that is at least its randomization threshold, or a randomization threshold above 25%; higher for a query with history or a test with its own threshold). Otherwise the two servers do not run the same build (the pull request changes code, or the reference is the official build or a build of an older master commit), and the check fails when the standard deviation of the query's run times on the tested server is more than half their median (at least 5 runs). This includes a spread that the change itself causes: after the merge both servers of master run that code, so the query would vary as much on both. A query that failed on the reference server and ran only on the tested one, which the report does not compare, is judged by the standard deviation of its run times in any pull request. Usually the query runs for a few milliseconds or waits for something besides its own work, such as Keeper or the network; make each run do more work.
 
 ### Disabling a query
 
@@ -163,7 +169,7 @@ Tests tagged `long` are skipped in PR and master runs (`perf.py` skips them unle
 
 How to write one:
 
-* `<test run_all_queries="1" max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
+* `<test max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
 * Put `<max_execution_time>0</max_execution_time>` into `<settings>`, otherwise long setup statements are cut by the server profile limit. Prewarm and timed runs still get the budget.
 * Load raw data with `fill_query` and finish every loaded MergeTree table as `tpch_sf100.xml` does: insert; `MODIFY SETTING lock_acquire_timeout_for_background_operations`; `OPTIMIZE ... FINAL` with `optimize_throw_if_noop = 1`; row and part counts; then content checks. `tpch_sf100.xml` also runs `MATERIALIZE STATISTICS` (`mutations_sync = 1`) before `SYSTEM STOP MERGES`, which blocks mutations too; for a test whose queries only read, the harness stops merges after the setup (`perf.py --stop-merges`).
 * Keep the tables in `default` (no `CREATE DATABASE`, no `USE`) and drop them with `DROP TABLE IF EXISTS <t> SYNC`, so the disk is free for the next test. (`USE` in existing tests is reconnect-safe: `clickhouse_driver` re-sends the database selected by `USE` when it reconnects.)
@@ -189,16 +195,18 @@ Red and green. A timeout is `TIMEOUT_EXCEEDED` (for a shell query, its time limi
 
 | | tested side, alone or with the reference | reference side only |
 |---|---|---|
-| prewarm error or timeout | red (`run-error` line) | `partial`, measured on the tested side |
-| timed-run timeout | red | with `--long`: censored row, both sides keep running; otherwise red |
+| prewarm error or timeout | red (`run-error` line) | `partial`, measured on the tested side; without `--long`, a timeout of an SQL query that writes is red and stops the test |
+| timed-run timeout | red | with `--long`: censored row, both sides keep running; otherwise an SQL query that only reads is `partial`, measured on the tested side, and the runs the reference completed are dropped; a query that writes and a shell query are red and stop the test |
 | timed-run error | red | red |
 
-A censored row records the time of the completed statements plus the budget. With `--long`, regressions and `partial` queries are visible but do not turn the job red, and:
+A timeout on the reference side only of an SQL query that only reads (`SELECT`, `WITH` without `INSERT`, `EXPLAIN`, `SHOW`, `DESCRIBE`, `EXISTS`) is listed in the "Warnings" table of the report (a `reference-timeout` line of the raw output), so a test of a query that is too slow before the change it comes with does not fail the check. A query that writes and a shell query are not treated this way: cut by the time limit, they can leave the reference server in another state than the tested one, and the queries after them would compare different data. A censored row records the time of the completed statements plus the budget. With `--long`, regressions and `partial` queries are visible but do not turn the job red, and:
 
 * A settings or setup failure on the reference side (a feature the older binary lacks) runs the test on the tested side only, reported as `partial`, without `do_not_check_in_pr`. A setup failure on the tested side is red.
 * Every test runs under `timeout -k 60` with a 4-hour budget. A non-zero exit always leaves an error record (`124`: budget expired, `137`: killed), so the job is red. A failed upload of the required results (raw runs, query metrics, test times) is red too.
 * Teardown: on exit, including `SIGTERM`, `perf.py` runs the drop queries on every server that ran setup and prints `teardown-complete` only if all of them succeeded (a missing table is accepted on a reference whose setup failed). Without that line the harness records `teardown incomplete, stopping the batch` and runs no further tests on that host; what was measured is still reported.
 * Changes reported by the nightly are unconfirmed: `confirm_changes` is skipped, and the repetition from night to night is the confirmation.
+
+Without `--long` (the `master_head` jobs of pull requests and master), the tests and the log export end 10 minutes before `job_end` (`TESTS_END_RESERVE_SEC`), so that the report fits into the job timeout. Each test runs under `timeout -k 60` with the time left. A test cut by it, or not started, is an error record, so the job is red with its report. The log export gets the rest of that time, down to dropping the export without sending the logs. `perf.py` runs its teardown on `SIGTERM` in every mode.
 
 To get the text of a reported `query_index` (0-based, after substitutions), check out the tests of that run and use `tests/performance/scripts/perf.py --print-queries tests/performance/<test>.xml --queries-to-run <query_index>`.
 
@@ -208,6 +216,7 @@ Nightly results are comparable only under the same conditions. Append a dated li
 
 * YYYY-MM-DD (first scheduled night): instance type `r8g.4xlarge`, image `clickhouse/performance-comparison`, pool `arm-medium-storage`.
 * YYYY-MM-DD (first night with the new tests): 26 new `long` tests (Iceberg and data lakes, formats, Arrow Flight, vector index, JSON, engine, projections, skip indexes, analyzer, query shapes, encodings), `NIGHTLY_PERF_PLACEMENT` pins, Arrow Flight port and ticket flags on the nightly servers, S3 public-data and REST-catalog seeding, S3 cleanup after every S3 test.
+* YYYY-MM-DD (first night with the test): `iceberg_suite_local_tpcds_sf100.xml` (TPC-DS SF100 over `IcebergLocal` tables) in `2/4`.
 
 Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
 

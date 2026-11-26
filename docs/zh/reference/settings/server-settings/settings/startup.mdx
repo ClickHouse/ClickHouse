@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并根据 ClickHouse 源代码自动生成。
 
-<div id="startup_mv_delay_ms">
-  ## startup_mv_delay_ms
-</div>
+## startup_mv_delay_ms {#startup_mv_delay_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />用于模拟物化视图创建延迟的调试参数
 
-<div id="startup_scripts.throw_on_error">
-  ## startup_scripts.throw_on_error
-</div>
+## startup_scripts.throw_on_error {#startup_scripts.throw_on_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />如果设置为 true，则脚本执行期间一旦发生错误，服务器 将不会启动。
 
