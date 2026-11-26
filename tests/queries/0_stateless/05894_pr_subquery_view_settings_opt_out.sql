@@ -34,7 +34,8 @@ SELECT '-- subqueries';
 SELECT count(), sum(a) FROM (SELECT a FROM t_pr);
 SELECT count(), sum(a) FROM (SELECT a FROM t_pr SETTINGS enable_parallel_replicas = 0);
 SELECT count(), sum(a) FROM (SELECT a FROM t_pr SETTINGS max_parallel_replicas = 1);
-SELECT count(), sum(a) FROM (SELECT a FROM t_pr SETTINGS parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'a');
+-- Custom-key parallel replicas do not support serialize_query_plan (on in the distributed plan CI job).
+SELECT count(), sum(a) FROM (SELECT a FROM t_pr SETTINGS parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'a') SETTINGS serialize_query_plan = 0;
 SELECT count(), sum(a) FROM (SELECT l.a AS a FROM t_pr AS l INNER JOIN t_pr_r AS r USING a SETTINGS parallel_replicas_for_queries_with_multiple_tables = 0);
 SELECT count(), sum(a) FROM (SELECT l.a AS a FROM t_pr AS l INNER JOIN t_pr_r AS r USING a SETTINGS parallel_replicas_for_queries_with_multiple_tables = 1) SETTINGS parallel_replicas_for_queries_with_multiple_tables = 0;
 
@@ -42,7 +43,7 @@ SELECT '-- views';
 SELECT count(), sum(a) FROM v_on;
 SELECT count(), sum(a) FROM v_off;
 SELECT count(), sum(a) FROM v_mpr1;
-SELECT count(), sum(a) FROM v_ck;
+SELECT count(), sum(a) FROM v_ck SETTINGS serialize_query_plan = 0;
 SELECT count(), sum(a) FROM v_off_sub;
 SELECT count(), sum(a) FROM v_off_nested;
 SELECT count(), sum(a) FROM v_off_over_leaf;
@@ -58,7 +59,7 @@ SELECT 'sub_join_off', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM (SELECT l.a 
 SELECT 'v_on', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_on) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 SELECT 'v_off', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_off) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 SELECT 'v_mpr1', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_mpr1) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
-SELECT 'v_ck', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_ck) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+SELECT 'v_ck', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_ck) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' SETTINGS serialize_query_plan = 0;
 SELECT 'v_off_sub', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_off_sub) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 SELECT 'v_off_nested', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_off_nested) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 SELECT 'v_off_over_leaf', count() > 0 FROM (EXPLAIN SELECT sum(a) FROM v_off_over_leaf) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
