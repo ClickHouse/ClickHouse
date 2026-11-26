@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # As 05455, on an encrypted disk over a cache: the decryption passes the bounds of the path's region down to the cache,
-# shifted by the encryption header, so the cache keeps its file segments within the region.
+# shifted by the encryption header, so the cache keeps its file segments within the region. Both read paths: the default
+# one, and the `ReaderExecutor` (`use_reader_executor`), which decrypts internally and resolves the cache on its own.
 ALIGNMENT=$((1024 * 1024))
 
 for storage in full packed; do
@@ -34,32 +35,38 @@ for storage in full packed; do
 
     -- Regions of about 4 MB each, so that the region of b starts and ends away from the 1 MiB alignment.
     INSERT INTO t_cache_bounds_encrypted_$storage SELECT number, concat('{\"a\":\"', hex(randomString(500)), '\",\"b\":\"', hex(randomString(500)), '\",\"c\":\"', hex(randomString(500)), '\"}') FROM numbers(4000);
-
-    SYSTEM DROP FILESYSTEM CACHE '$cache_name';
-
-    SET enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0, force_read_through_distributed_cache = 0,
-        enable_reads_from_columns_cache = 0;
-    SELECT json.b FROM t_cache_bounds_encrypted_$storage FORMAT Null;
     "
 
-    # The region of b is the only contiguous island of a file's cached segments with over 1 MiB downloaded, see 05455.
-    # Each read of the region file also reads the encryption header at its start, a small segment of its own.
-    $CLICKHOUSE_CLIENT -m -q "
-    SELECT
-        '$storage',
-        any(part_storage_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_cache_bounds_encrypted_$storage' AND active;
-    SELECT count() = 1, min(rb) % $ALIGNMENT != 0, (max(re) + 1) % $ALIGNMENT != 0
-    FROM (
-        SELECT min(b) AS rb, max(e) AS re, sum(downloaded) AS total
+    for reader in default executor; do
+        if [ "$reader" = executor ]; then reader_settings=", use_reader_executor = 1, remote_filesystem_read_method = 'read'"; else reader_settings=""; fi
+
+        $CLICKHOUSE_CLIENT -m -q "
+        SYSTEM DROP FILESYSTEM CACHE '$cache_name';
+
+        SET enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0, force_read_through_distributed_cache = 0,
+            enable_reads_from_columns_cache = 0 $reader_settings;
+        SELECT json.b FROM t_cache_bounds_encrypted_$storage FORMAT Null;
+        "
+
+        # The region of b is the only contiguous island of a file's cached segments with over 1 MiB downloaded, see 05455.
+        # Each read of the region file also reads the encryption header at its start, a small segment of its own.
+        $CLICKHOUSE_CLIENT -m -q "
+        SELECT
+            '$storage $reader',
+            any(part_storage_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_cache_bounds_encrypted_$storage' AND active;
+        SELECT count() = 1, min(rb) % $ALIGNMENT != 0, (max(re) + 1) % $ALIGNMENT != 0
         FROM (
-            SELECT key, file_segment_range_begin AS b, file_segment_range_end AS e, downloaded_size AS downloaded,
-                   sum(if(file_segment_range_begin > prev_e + 1, 1, 0)) OVER (PARTITION BY key ORDER BY file_segment_range_begin) AS island
+            SELECT min(b) AS rb, max(e) AS re, sum(downloaded) AS total
             FROM (
-                SELECT key, file_segment_range_begin, file_segment_range_end, downloaded_size,
-                       lagInFrame(file_segment_range_end, 1, toUInt64(0)) OVER (PARTITION BY key ORDER BY file_segment_range_begin) AS prev_e
-                FROM system.filesystem_cache WHERE cache_name = '$cache_name')
-        ) GROUP BY key, island HAVING total > $ALIGNMENT);
-    "
+                SELECT key, file_segment_range_begin AS b, file_segment_range_end AS e, downloaded_size AS downloaded,
+                       sum(if(file_segment_range_begin > prev_e + 1, 1, 0)) OVER (PARTITION BY key ORDER BY file_segment_range_begin) AS island
+                FROM (
+                    SELECT key, file_segment_range_begin, file_segment_range_end, downloaded_size,
+                           lagInFrame(file_segment_range_end, 1, toUInt64(0)) OVER (PARTITION BY key ORDER BY file_segment_range_begin) AS prev_e
+                    FROM system.filesystem_cache WHERE cache_name = '$cache_name')
+            ) GROUP BY key, island HAVING total > $ALIGNMENT);
+        "
+    done
 
     $CLICKHOUSE_CLIENT -q "DROP TABLE t_cache_bounds_encrypted_$storage"
 done

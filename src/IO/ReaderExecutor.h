@@ -89,6 +89,10 @@ public:
     /// that holds the position, and holes shorter than `min_bytes_for_seek` do not break a run.
     void setRequestMap(ByteRangeSet ranges);
 
+    /// The logical range [left, right) the caller stays within; forwarded to the cache tiers in physical coordinates so
+    /// they keep the segments of a narrow read within it. Set before any read.
+    void setReadBounds(size_t left, size_t right);
+
     [[nodiscard]] size_t getPosition() const { return position; }
 
     /// Logical file size (physical size minus the encryption headers), saturating to 0.

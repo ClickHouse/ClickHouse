@@ -1,4 +1,8 @@
-full	Full
+full default	Full
 1	1	1
-packed	Packed
+full executor	Full
+1	1	1
+packed default	Packed
+1	1	1
+packed executor	Packed
 1	1	1

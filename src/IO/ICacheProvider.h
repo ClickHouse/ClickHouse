@@ -187,6 +187,10 @@ public:
     /// object-local position (so the object's file base is `range.offset - object_offset`).
     virtual VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_offset, ByteRange range) = 0;
+
+    /// The byte range [begin, end) the reader stays within, in file-level coordinates of this tier (the cache's,
+    /// so past the encryption header). The tier does not align its segments past it. Set before any `resolve`.
+    virtual void setReadBounds(std::optional<std::pair<size_t, size_t>> /* bounds */) {}
 };
 
 /// The cache tiers a read is layered through, fastest-first (e.g. page cache over filesystem cache).

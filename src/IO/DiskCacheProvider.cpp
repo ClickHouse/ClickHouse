@@ -496,12 +496,14 @@ DiskCacheProvider::DiskCacheProvider(
     const FilesystemCacheSettings & cache_settings_,
     ThrottlerPtr local_throttler_,
     std::optional<FileCacheKey> custom_cache_key_,
-    std::optional<FileCacheOriginInfo> custom_origin_)
+    std::optional<FileCacheOriginInfo> custom_origin_,
+    std::optional<std::pair<size_t, size_t>> read_bounds_)
     : cache(std::move(cache_))
     , cache_settings(cache_settings_)
     , local_throttler(std::move(local_throttler_))
     , custom_cache_key(std::move(custom_cache_key_))
     , custom_origin(std::move(custom_origin_))
+    , read_bounds(read_bounds_)
     /// 16 keep-alive anchors, untracked metrics; `EqualWeightFunction` makes the
     /// byte cap an entry count.
     , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
@@ -602,6 +604,18 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
     /// grid rounding `getOrSet` itself applies.
     CreateFileSegmentSettings create_settings;
     create_settings.temporary = cache_settings.cache_temporarily;
+
+    /// The read bounds in this object's offsets: the alignment does not create segments past the range the
+    /// reader stays within, so a narrow read does not download and cache the neighbours it rounds out to.
+    std::optional<FileSegment::Range> alignment_bounds;
+    if (read_bounds)
+    {
+        const size_t lo = read_bounds->first > object_file_offset ? read_bounds->first - object_file_offset : 0;
+        const size_t hi = read_bounds->second > object_file_offset ? std::min(read_bounds->second - object_file_offset, object_size) : 0;
+        if (lo < hi)
+            alignment_bounds.emplace(lo, hi - 1);
+    }
+
     auto got_holder = cache->getOrSet(
         resolved_key,
         ask_lo_obj,
@@ -610,7 +624,8 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         create_settings,
         /*file_segments_limit=*/0,
         resolved_origin,
-        cache_settings.boundary_alignment);
+        cache_settings.boundary_alignment,
+        alignment_bounds);
 
     /// A miss over the segment's WHOLE extent, carrying an OPEN writer on the same single-segment
     /// holder as the prefix hit (a partial segment shares the holder). The writer appends from the

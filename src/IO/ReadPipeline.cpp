@@ -321,6 +321,19 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             total_file_size));
     }
 
+    /// The read bounds in the file's physical offsets (past the encryption headers the executor reads and
+    /// strips), so the cache keeps its segments of a range read within it; see `wrapDecryption`.
+    std::optional<std::pair<size_t, size_t>> cache_read_bounds;
+    if (initial_read_bounds)
+    {
+        size_t headers_size = 0;
+#if USE_SSL
+        const size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
+        headers_size = layers * FileEncryption::Header::kSize;
+#endif
+        cache_read_bounds.emplace(initial_read_bounds->first + headers_size, initial_read_bounds->second + headers_size);
+    }
+
     /// Cache chain of the filesystem cache(s). `filesystem_caches` is inner-to-outer; the executor
     /// queries the front first, so reverse it.
     for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
@@ -328,7 +341,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         chassert(it->cache);
         cache_chain.push_back(std::make_shared<DiskCacheProvider>(
             it->cache, it->cache_settings, settings.local_throttler,
-            it->custom_cache_key, it->custom_origin));
+            it->custom_cache_key, it->custom_origin, cache_read_bounds));
     }
 
     auto executor = std::make_unique<ReaderExecutor>(

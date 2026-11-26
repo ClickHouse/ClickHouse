@@ -32,6 +32,7 @@ public:
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
     void setRequestMap(ByteRangeSet ranges) override;
+    void setReadBounds(size_t left, size_t right) override;
 
     /// Random-read / size probes must be denied for unknown-size sources: a
     /// `true` answer leads formats (Parquet/ORC/Arrow) to call
