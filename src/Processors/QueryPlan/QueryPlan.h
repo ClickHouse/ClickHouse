@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Core/Field.h>
@@ -12,6 +14,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <functional>
 #include <list>
@@ -26,6 +29,7 @@ namespace DB
 {
 
 class AnalyzeStepsStats;
+struct ExplainFormatSettings;
 
 struct PrettyNames;
 struct PrettyNamesPerPlan;
@@ -41,6 +45,7 @@ class WriteBuffer;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+using QueryPlanPtrs = VectorWithMemoryTracking<QueryPlanPtr>;
 
 class Pipe;
 
@@ -60,7 +65,12 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
+/// The id of the exchange that each send and receive step writes to or reads from.
+using MapStepToExchangeIds = UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt32>;
+
 /// Options from EXPLAIN queries based on plan.
+class QueryPlanLogCapture;
+
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -77,6 +87,13 @@ struct ExplainPlanOptions
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
+    /// Print a plan executed by stateless workers (`make_distributed_plan`) as one plan per query fragment,
+    /// followed by the exchanges between the fragments.
+    /// Not sent to remote shards by `toSettingsChanges`, because it cannot be combined with `distributed`.
+    bool fragments = false;
+    /// Draw a plan executed by stateless workers as boxes: one box per step, a frame per query fragment, and the
+    /// exchanges as edges between the fragments. Not sent to remote shards by `toSettingsChanges`, like `fragments`.
+    bool tree = false;
     /// Add input headers to step.
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.
@@ -100,11 +117,15 @@ struct ExplainPlanOptions
     /// plan carries these - they come from `calculateHashTableCacheKeys` - so a caller holding them
     /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
     /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
-    const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
+    const UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
+    /// When set, the JSON output adds `Exchange Id` to each send and receive step in the map: the id of the exchange it
+    /// writes to or reads from. Set by `EXPLAIN PLAN fragments = 1, json = 1` (see `explainAsFragmentsJSON`).
+    const MapStepToExchangeIds * exchange_ids = nullptr;
 
-    SettingsChanges toSettingsChanges() const;
+    [[nodiscard]] SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
+struct DistributedPlanCut;
 
 struct CostEstimationInfo
 {
@@ -125,7 +146,7 @@ public:
     /// throw. The move constructor stays noexcept because it steals the holder instead of appending.
     QueryPlan & operator=(QueryPlan &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
-    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
+    void unitePlans(QueryPlanStepPtr step, QueryPlanPtrs plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
@@ -140,6 +161,9 @@ public:
     void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
+    static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
+    static void deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
     void ensureSerialized(size_t max_supported_version) const;
@@ -162,6 +186,11 @@ public:
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
 
+    /// The first part of `convertToDistributed`: checks that the optimized plan can still be distributed,
+    /// takes the `IN`-subquery sets out of it, cuts it into the stages of a distributed plan, and adds the
+    /// `final_result` exchange to the `main` stage.
+    DistributedPlanCut cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings);
+
     /// The single decision function for `make_distributed_plan`. When this plan cannot be
     /// distributed: throws under `distributed_plan_fallback_to_local_execution = 0`, otherwise
     /// logs, flips `settings.make_distributed_plan` to false and returns true. The plan is
@@ -174,10 +203,16 @@ public:
     /// True once `applyDistributedPlanFallbackToLocal` rejected this plan, which then runs locally.
     bool didFallBackToLocal() const { return distributed_plan_decision == DistributedPlanDecision::FellBack; }
 
+    /// Why `applyDistributedPlanFallbackToLocal` rejected this plan; empty unless `didFallBackToLocal`.
+    const String & getDistributedPlanFallbackReason() const { return distributed_plan_fallback_reason; }
+
+    /// `log_capture` is passed only by the caller whose plan is the query's own; the nested builds
+    /// of subqueries and of child plans pass nothing, so only one plan per query is ever captured.
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings,
-        bool do_optimize=true);
+        bool do_optimize=true,
+        QueryPlanLogCapture * log_capture = nullptr);
 
     struct ExplainPipelineOptions
     {
@@ -190,6 +225,10 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
+    /// The steps of `explainPlan` as a flat array in pre-order, the root first. Instead of `Plans`, each step has `Children`:
+    /// the `Node Id` of its inputs in input order, then of the roots of its nested plans (`IQueryPlanStep::getChildPlans`),
+    /// whose steps follow in the same array.
+    JSONBuilder::ItemPtr explainPlanSteps(const ExplainPlanOptions & options) const;
 
     void explainPlan(
         WriteBuffer & buffer,
@@ -234,15 +273,22 @@ public:
     struct Node
     {
         QueryPlanStepPtr step;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
         std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
     /// Extract subplan from plan from the root node.
     /// The root node and all the children will be removed from the nodes.
+    /// The subplan holds no resources: use this overload for a fragment that is put back into the plan
+    /// that owns `nodes` (e.g. by `replaceNodeWithPlan`), which already holds them.
     static QueryPlan extractSubplan(Node * root, Nodes & nodes);
+    /// The same, but the subplan also inherits the execution limits and the resources of `source_plan`,
+    /// the plan that owns `nodes`. Use it for a subplan that is executed on its own, possibly after
+    /// `source_plan` has been consumed into a pipeline. Do not use it for a fragment that is put back into
+    /// `source_plan`: that would append the resources of `source_plan` to itself again.
+    static QueryPlan extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan);
 
     Node * getRootNode() const { return root; }
     void replaceRootNode(Node * new_root) { root = new_root; }
@@ -273,6 +319,8 @@ private:
         /// See `serializeForDistributedTask`.
         bool sets_must_be_ready = false;
         SizeLimits sets_transfer_limits = {};
+        /// The nesting depth of plans for sets from subqueries, used on deserialize to limit the recursion.
+        size_t subquery_nesting_depth = 0;
     };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
@@ -309,6 +357,8 @@ private:
     /// (`enable_cascades_optimizer`, the `distributed_plan_default_*_bucket_count` values, the
     /// projection force flags). It holds today because they all come from the same query context.
     DistributedPlanDecision distributed_plan_decision = DistributedPlanDecision::Undecided;
+    /// The reason of a `FellBack` decision, for `EXPLAIN`.
+    String distributed_plan_fallback_reason;
 };
 
 
@@ -331,12 +381,21 @@ struct QueryPlanAndSets
     struct SetFromSubquery;
 
     QueryPlan plan;
-    std::list<SetFromStorage> sets_from_storage;
-    std::list<SetFromTuple> sets_from_tuple;
-    std::list<SetFromSubquery> sets_from_subquery;
+    ListWithMemoryTracking<SetFromStorage> sets_from_storage;
+    ListWithMemoryTracking<SetFromTuple> sets_from_tuple;
+    ListWithMemoryTracking<SetFromSubquery> sets_from_subquery;
 };
 
 std::string debugExplainStep(IQueryPlanStep & step);
+
+/// The lines `EXPLAIN PLAN` prints under the line of a step, as chosen by `options`: the header, the input headers, the
+/// sorting, the actions, the indexes, the projections, the distributed plan and, with `steps_to_stats`, the measured
+/// statistics. Every line starts with `settings.detail_prefix` and ends with a newline.
+void explainStepDetails(
+    IQueryPlanStep & step,
+    ExplainFormatSettings & settings,
+    const ExplainPlanOptions & options,
+    const AnalyzeStepsStats * steps_to_stats = nullptr);
 std::string debugExplainPlan(const QueryPlan & plan);
 
 /// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.
@@ -372,14 +431,14 @@ struct ExchangeDescription
     std::optional<SortDescription> sort_description = {};
 };
 
-using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
+using ExchangeDescriptions = UnorderedMapWithMemoryTracking<String, ExchangeDescription>;
 
 
 /// Stores named parameters for query plan.
 /// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
 struct QueryPlanParameters
 {
-    std::unordered_map<String, Field> parameters;
+    UnorderedMapWithMemoryTracking<String, Field> parameters;
 };
 
 /// One transported runtime filter this task receives: the executor reads the filter from `stream`
@@ -398,9 +457,9 @@ struct DistributedQueryTask
 {
     String task_id;
     QueryPlanParameters parameters;
-    std::vector<ExchangeStreamId> input_exchange_streams;
-    std::vector<ExchangeStreamId> output_exchange_streams;
-    std::vector<RuntimeFilterReceiveDescriptor> runtime_filter_descriptors;
+    VectorWithMemoryTracking<ExchangeStreamId> input_exchange_streams;
+    VectorWithMemoryTracking<ExchangeStreamId> output_exchange_streams;
+    VectorWithMemoryTracking<RuntimeFilterReceiveDescriptor> runtime_filter_descriptors;
 };
 
 /// A group of tasks with the same plan fragment and differenet parameters
@@ -411,23 +470,47 @@ struct DistributedQueryStage
     /// ids ascend from the leaves to `main`. Not sent to workers.
     UInt32 id = 0;
     QueryPlan query_plan_fragment;   /// Common for all tasks
-    std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
+    VectorWithMemoryTracking<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
 
     /// The stage only merges and sends a runtime filter (an `rf_merge_*` stage); it produces no
     /// query data. See `waitsForFilterOnlyStages` for whether an executor waits for it.
     bool filter_only = false;
 };
 
+/// A stage that another stage reads from, and the exchange between them.
+struct StageDependency
+{
+    String stage;
+    String exchange;
+};
+
+using StageDependencies = VectorWithMemoryTracking<StageDependency>;
+
 /// Represents a graph of stages
 /// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
 struct DistributedQueryPlan
 {
-    std::unordered_map<String, DistributedQueryStage> stages;
-    /// Maps stage name to stages it depends on and the corresponding exchange_id
-    std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
+    UnorderedMapWithMemoryTracking<String, DistributedQueryStage> stages;
+    /// Maps stage name to the stages it reads from, in the order to start them.
+    UnorderedMapWithMemoryTracking<String, StageDependencies> stage_depends_on;
     /// Maps exchange_id to exchange description
     ExchangeDescriptions exchange_descriptions;
     String final_result_stream_name;
+};
+
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
+/// The result of `QueryPlan::cutIntoDistributedPlan`.
+struct DistributedPlanCut
+{
+    DistributedQueryPlan distributed_plan;
+    /// The exchange the `main` stage sends the result of the query to.
+    ExchangeDescription final_result_exchange;
+    /// The header of the result of the query, taken before the cut.
+    SharedHeader result_header;
+    /// The `IN`-subquery sets taken out of the plan; the caller adds them back to the initiator plan.
+    std::vector<FutureSetFromSubqueryPtr> delayed_sets; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- this is `PreparedSets::Subqueries`; naming it here would need the full PreparedSets header
 };
 
 }

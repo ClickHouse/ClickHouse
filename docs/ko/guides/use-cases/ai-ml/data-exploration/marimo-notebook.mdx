@@ -7,8 +7,6 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 가이드에서는 ClickHouse 기반의 빠른 in-process SQL OLAP Engine인 [chDB](/ko/chdb/index)를 사용해 Marimo 노트북에서 ClickHouse Cloud의 데이터셋을 탐색하는 방법을 알아봅니다.
 
 **사전 요구 사항:**
@@ -33,26 +31,38 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이 데이터셋에는 1995년부터 2024년까지 영국에서 주택이 판매된 가격 데이터가 포함되어 있습니다.
 
 <div id="setup">
-  ## 설정
+  ## 설정 {#setup}
 </div>
 
 <div id="loading-the-dataset">
-  ### 데이터셋 로드하기
+  ### 데이터셋 로드하기 {#loading-the-dataset}
 </div>
 
 이 데이터셋을 기존 ClickHouse Cloud 서비스에 추가하려면 계정 정보로 [console.clickhouse.cloud](https://console.clickhouse.cloud/)에 로그인하십시오.
 
 왼쪽 메뉴에서 `Data sources`를 클릭한 다음 `Predefined sample data`를 클릭합니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="예시 데이터셋 추가" />
+<div className="ch-image-md">
+  <Frame>
+    ![예시 데이터셋 추가](/images/use-cases/AI_ML/jupyter/1.webp)
+  </Frame>
+</div>
 
 `UK property price paid data`(4GB) 카드에서 `Get started`를 선택합니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="영국 실거래가 데이터셋 선택" />
+<div className="ch-image-md">
+  <Frame>
+    ![UK price paid 데이터셋 선택](/images/use-cases/AI_ML/jupyter/2.webp)
+  </Frame>
+</div>
 
 그런 다음 `Import dataset`을 클릭합니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="영국 실거래가 데이터셋 가져오기" />
+<div className="ch-image-md">
+  <Frame>
+    ![UK price paid 데이터셋 가져오기](/images/use-cases/AI_ML/jupyter/3.webp)
+  </Frame>
+</div>
 
 ClickHouse는 `default` 데이터베이스에 `pp_complete` 테이블을 자동으로 생성하고, 2,892만 개의 가격 데이터 행으로 이 테이블을 채웁니다.
 
@@ -60,7 +70,7 @@ ClickHouse는 `default` 데이터베이스에 `pp_complete` 테이블을 자동�
 터미널에서 다음 명령을 실행하여 사용자 이름과 비밀번호를 환경 변수로 추가하십시오:
 
 <div id="setting-up-credentials">
-  ### 자격 증명 설정
+  ### 자격 증명 설정 {#setting-up-credentials}
 </div>
 
 ```bash
@@ -74,9 +84,7 @@ export CLICKHOUSE_CLOUD_PASSWORD=your_actual_password
   영구적으로 설정하려면 셸 설정 파일에 추가하세요.
 </Note>
 
-<div id="installing-marimo">
-  ### Marimo 설치
-</div>
+### Marimo 설치 {#installing-marimo}
 
 이제 가상 환경을 활성화합니다.
 가상 환경에서 이 가이드에 사용할 다음 패키지를 설치합니다:
@@ -93,13 +101,15 @@ marimo edit clickhouse_exploration.py
 
 새 브라우저 창이 열리며 localhost:2718에 Marimo 인터페이스가 표시됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Marimo 인터페이스" />
+<div className="ch-image-md">
+  <Frame>
+    ![Marimo 인터페이스](/images/use-cases/AI_ML/Marimo/4.webp)
+  </Frame>
+</div>
 
 Marimo 노트북은 순수 Python 파일로 저장되므로 버전 관리가 쉽고 다른 사용자와 공유하기도 편리합니다.
 
-<div id="installing-dependencies">
-  ## 의존성 설치
-</div>
+## 의존성 설치 {#installing-dependencies}
 
 새 셀에서 필요한 패키지를 import합니다:
 
@@ -124,10 +134,14 @@ result
 
 방금 실행한 셀 바로 아래에 다음과 같은 결과가 표시됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+<div className="ch-image-md">
+  <Frame>
+    ![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
+  </Frame>
+</div>
 
 <div id="exploring-the-data">
-  ## 데이터 탐색하기
+  ## 데이터 탐색하기 {#exploring-the-data}
 </div>
 
 이제 영국 부동산 실거래가 데이터가 준비되었고 Marimo 노트북에서 chDB도 실행 중이므로, 데이터를 탐색해 보겠습니다.
@@ -136,7 +150,7 @@ ClickHouse의 [`remoteSecure`](/ko/reference/functions/table-functions/remote) �
 또한 chDB가 이 데이터를 프로세스 내 Pandas 데이터 프레임으로 반환하도록 할 수 있는데, 이는 데이터를 다룰 때 편리하고 익숙한 방식입니다.
 
 <div id="querying-clickhouse-cloud-data">
-  ### ClickHouse Cloud 데이터 쿼리
+  ### ClickHouse Cloud 데이터 쿼리 {#querying-clickhouse-cloud-data}
 </div>
 
 다음 쿼리를 사용해 새 셀을 만들고, ClickHouse Cloud 서비스에서 영국 부동산 실거래가 데이터를 가져와 `pandas.DataFrame`으로 변환합니다:
@@ -181,9 +195,7 @@ df.head()
 이 경우 연도별 평균 가격을 반환하고, `town='LONDON'` 조건으로 필터링합니다.
 그런 다음 결과는 `df`라는 변수에 DataFrame으로 저장됩니다.
 
-<div id="visualizing-the-data">
-  ### 데이터 시각화
-</div>
+### 데이터 시각화 {#visualizing-the-data}
 
 이제 데이터가 익숙한 형태로 준비되었으므로, 런던의 부동산 가격이 시간에 따라 어떻게 변해왔는지 살펴보겠습니다.
 
@@ -206,13 +218,15 @@ fig
 
 어쩌면 당연한 일이지만, 런던의 부동산 가격은 시간이 지남에 따라 크게 상승했습니다.
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Marimo 데이터 시각화" />
+<div className="ch-image-md">
+  <Frame>
+    ![Marimo 데이터 시각화](/images/use-cases/AI_ML/Marimo/6.webp)
+  </Frame>
+</div>
 
 Marimo의 강점 중 하나는 반응형 실행 모델입니다. 여러 도시를 동적으로 선택할 수 있는 대화형 위젯을 만들어 보겠습니다.
 
-<div id="interactive-town-selection">
-  ### 대화형 마을 선택
-</div>
+### 대화형 마을 선택 {#interactive-town-selection}
 
 새 셀에서 여러 마을 중 하나를 선택할 수 있는 드롭다운을 만드세요:
 
@@ -267,11 +281,13 @@ fig_reactive
 
 이제 드롭다운에서 마을을 선택하면 차트가 실시간으로 업데이트됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Marimo 동적 차트" />
-
-<div id="exploring-price-distributions">
-  ### 대화형 박스플롯으로 가격 분포 살펴보기
+<div className="ch-image-md">
+  <Frame>
+    ![Marimo 동적 차트](/images/use-cases/AI_ML/Marimo/7.webp)
+  </Frame>
 </div>
+
+### 대화형 박스플롯으로 가격 분포 살펴보기 {#exploring-price-distributions}
 
 이제 데이터를 더 자세히 살펴보기 위해 런던의 연도별 부동산 가격 분포를 확인해 보겠습니다.
 상자수염그림은 중앙값, 사분위수, 이상치를 보여주므로 단순한 평균 가격만 볼 때보다 분포를 훨씬 더 잘 이해할 수 있습니다.
@@ -343,10 +359,14 @@ fig_box
 있습니다.
 슬라이더를 움직이면 Marimo의 반응형 실행 기능 덕분에 플롯이 자동으로 갱신됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Marimo 동적 차트" />
+<div className="ch-image-md">
+  <Frame>
+    ![Marimo 동적 차트](/images/use-cases/AI_ML/Marimo/8.webp)
+  </Frame>
+</div>
 
 <div id="summary">
-  ## 요약
+  ## 요약 {#summary}
 </div>
 
 이 가이드에서는 Marimo 노트북을 사용해 ClickHouse Cloud에서 chDB로 데이터를 탐색하는 방법을 살펴보았습니다.

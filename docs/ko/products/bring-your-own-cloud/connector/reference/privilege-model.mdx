@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -15,15 +14,19 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ## 아이덴티티 {#identities}
 
-<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
+  </Frame>
+</div>
 
 * **커넥터의 mTLS 클라이언트 인증서**는 조직 ID를 공통 이름(common name)으로 사용하며, 모든 데몬을 커넥터 엔드포인트에 인증합니다. `clicklink clctl instances create`도 엔드포인트를 호출할 때 동일한 인증서와 HMAC 키를 사용합니다.
-* **`pcm_scraper`와 `pcm_troubleshooter`**는 스크레이퍼와 Troubleshooter가 접속할 때 사용하는 읽기 전용 ClickHouse 사용자입니다. 실행기에는 ClickHouse 사용자가 없습니다.
+* **`pcm_scraper`와 `pcm_troubleshooter`**&#xB294; 스크레이퍼와 Troubleshooter가 접속할 때 사용하는 읽기 전용 ClickHouse 사용자입니다. 실행기에는 ClickHouse 사용자가 없습니다.
 * **Troubleshooter ServiceAccount**는 프로비저닝된 배포마다 하나씩 존재하며, 지원 세션에서 사용할 수 있는 읽기 전용 Kubernetes 뷰를 제공합니다.
-* **`pcm-executor`**는 관리형 서비스의 수명 주기를 담당하는 실행기의 Kubernetes ServiceAccount입니다. ValidatingAdmissionPolicy가 이 계정의 쓰기 작업을 서비스 네임스페이스로 제한합니다.
-* **`pcm-platform`**은 플랫폼 업데이트에 사용되는 실행기의 아이덴티티입니다. `clicklink clctl platform approve`를 실행하면 2시간 동안만 유효한 토큰이 발급되며 갱신되지 않습니다. 승인과 승인 사이에는 실행기가 플랫폼 계층에 대한 쓰기 액세스를 갖지 않습니다.
-* **서비스별 IAM role**(기본값 `CH-S3-<service>-<region>-00-Role`)은 사용자의 자격 증명을 사용해 `clicklink clctl executor prepare`가 생성합니다. 이 역할은 해당 서비스의 데이터 및 Backup 버킷으로 범위가 한정되고 해당 서비스의 Kubernetes ServiceAccount만 신뢰하므로, 실행기도 ClickHouse도 이 역할을 assume할 수 없습니다.
-* **커넥터 EC2 VM의 인스턴스 프로필**은 차트 로그인과 이미지 검사 모두에서 직접 플랫폼 액세스를 위해 환경의 읽기 전용 ECR puller 역할을 assume합니다. 승인 CLI도 동일한 인스턴스 프로필 경로를 사용하며, workstation의 AWS 프로필이나 SSO 자격 증명이 이를 대체하지 않습니다. 다른 ECR 차트 레지스트리는 주변 AWS 자격 증명을 사용합니다. 이미지 pull은 사용자의 노드에서 해당 노드의 pull 역할로 수행됩니다. 실행기는 사용자의 버킷이나 IAM에 대한 자격 증명을 보유하지 않으며 S3나 IAM 호출도 하지 않습니다. [레지스트리 자격 증명](/ko/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)을 참조하십시오.
+* **`pcm-executor`**&#xB294; 관리형 서비스의 수명 주기를 담당하는 실행기의 Kubernetes ServiceAccount입니다. ValidatingAdmissionPolicy가 이 계정의 쓰기 작업을 서비스 네임스페이스로 제한합니다.
+* **`pcm-platform`**&#xC740; 플랫폼 업데이트에 사용되는 실행기의 아이덴티티입니다. `clicklink clctl platform approve`를 실행하면 2시간 동안만 유효한 토큰이 발급되며 갱신되지 않습니다. 승인과 승인 사이에는 실행기가 플랫폼 계층에 대한 쓰기 액세스를 갖지 않습니다.
+* **서비스별 IAM role**(기본값 `CH-S3-<service>-<region>-00-Role`)은 사용자의 자격 증명을 사용해 `clicklink clctl executor prepare`가 생성합니다. 이 역할은 해당 서비스의 데이터 및 백업(backup) 버킷으로 범위가 한정되고 해당 서비스의 Kubernetes ServiceAccount만 신뢰하므로, 실행기도 ClickHouse도 이 역할을 assume할 수 없습니다.
+* **커넥터 EC2 VM의 인스턴스 프로필**은 차트 로그인과 이미지 검사 모두에서 직접 플랫폼 액세스를 위해 환경의 읽기 전용 ECR puller 역할을 assume합니다. 승인 CLI도 동일한 인스턴스 프로필 경로를 사용하며, workstation의 AWS 프로필이나 SSO 자격 증명이 이를 대체하지 않습니다. 다른 ECR 차트 레지스트리는 주변 AWS 자격 증명을 사용합니다. 이미지 가져오기는 사용자의 노드에서 해당 노드의 pull 역할로 수행됩니다. 실행기는 사용자의 버킷이나 IAM에 대한 자격 증명을 보유하지 않으며 S3나 IAM 호출도 하지 않습니다. [레지스트리 자격 증명](/ko/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)을 참조하십시오.
 * **사용자 본인의 자격 증명**으로 모든 권한이 부여됩니다. `init --managed` 시점의 실행기 액세스 권한 부여, `prepare` 시점의 버킷 및 역할 생성, `approve` 시점의 모든 플랫폼 업데이트에 대한 권한 부여, 그리고 `teardown` 시점의 정리 작업이 여기에 해당합니다.
 
 ## connector로 수행할 수 있는 작업 {#what-the-connector-can-do}

@@ -1,6 +1,10 @@
 #pragma once
 
-#include <rmm/cuda_stream_view.hpp>
+#include <array>
+#include <tuple>
+#include <utility>
+
+#include <cuda/stream_ref>
 
 #include <cuda_runtime_api.h>
 
@@ -21,7 +25,47 @@ __host__ inline void checkCuda(cudaError_t status, const char * message)
         throwCudaError(status, message);
 }
 
+/// Makes `waiting` wait for what is queued on `stream` so far, without the host waiting.
+__host__ inline void waitFor(cuda::stream_ref waiting, cuda::stream_ref stream)
+{
+    cudaEvent_t event = nullptr;
+    checkCuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "Cannot create a CUDA event");
+    const cudaError_t recorded = cudaEventRecord(event, stream.get());
+    const cudaError_t waited = recorded == cudaSuccess ? cudaStreamWaitEvent(waiting.get(), event, 0) : recorded;
+    cudaEventDestroy(event);
+    checkCuda(waited, "Cannot make a stream wait for another");
+}
+
 __host__ bool isClickHouseException(const std::exception & exception);
+
+/// Shared by code of libstdc++ and libc++, whose `std::span` differ.
+template <typename T>
+struct GPUSpan
+{
+    const T * values = nullptr;
+    size_t count = 0;
+
+    __host__ GPUSpan() = default;
+
+    __host__ GPUSpan(const T * values_, size_t count_)
+        : values(values_), count(count_)
+    {
+    }
+
+    template <typename Container, typename = typename Container::value_type>
+    __host__ GPUSpan(const Container & container) /// NOLINT
+        : values(container.data()), count(container.size())
+    {
+    }
+
+    __host__ const T & operator[](size_t index) const { return values[index]; }
+
+    __host__ size_t size() const { return count; }
+    __host__ bool empty() const { return count == 0; }
+
+    __host__ const T * begin() const { return values; }
+    __host__ const T * end() const { return values + count; }
+};
 
 enum class GPUElementType : int
 {
@@ -36,6 +80,24 @@ enum class GPUElementType : int
     Float32 = 8,
     Float64 = 9,
     String = 10,
+};
+
+enum class GPUAggregationKind : int
+{
+    Sum = 0,
+    Min = 1,
+    Max = 2,
+    Count = 3,
+    Mean = 4,
+};
+
+struct GPUGroupByAggregate
+{
+    static constexpr uint32_t no_column = ~uint32_t{0};
+
+    GPUAggregationKind aggregation;
+    uint32_t column;
+    GPUElementType result_type;
 };
 
 enum class GPUCodec : int
@@ -71,6 +133,15 @@ struct DeviceVariableColumn
     const size_t chars_bytes = 0;
 };
 
+/// The rows of the device that a filter keeps, a bit each in 32-bit words; without words, all of them.
+struct DeviceBitmask
+{
+    const uint32_t * words = nullptr;
+    size_t rows = 0;
+
+    __host__ bool keepsAll() const { return words == nullptr; }
+};
+
 struct DeviceColumnView
 {
     GPUColumnKind kind;
@@ -100,6 +171,11 @@ struct HostColumnView
 __host__ __device__ constexpr bool isInteger(GPUElementType type)
 {
     return type != GPUElementType::Float32 && type != GPUElementType::Float64 && type != GPUElementType::String;
+}
+
+__host__ __device__ constexpr bool isUnsigned(GPUElementType type)
+{
+    return type == GPUElementType::UInt8 || type == GPUElementType::UInt16 || type == GPUElementType::UInt32 || type == GPUElementType::UInt64;
 }
 
 __host__ __device__ constexpr size_t sizeOf(GPUElementType type)

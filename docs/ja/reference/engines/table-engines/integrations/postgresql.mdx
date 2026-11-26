@@ -109,7 +109,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## 設定 {#settings}
 
-`PostgreSQL` テーブルエンジン (および [`postgresql`](/ja/reference/functions/table-functions/postgresql) テーブル関数) で使用される接続プールは、`SETTINGS` 句を使ってテーブルごとに設定できます。設定を指定しない場合は、対応するクエリレベルの `postgresql_*` 設定の値がデフォルトで使用されます。
+`PostgreSQL` テーブルエンジン (および [`postgresql`](/ja/reference/functions/table-functions/postgresql) テーブル関数) で使用される接続プールは、`SETTINGS` 句を使ってテーブルごとに設定できます。設定を指定しない場合は、対応するクエリレベルの `postgresql_*` 設定の値がデフォルトで使用されます。新しいテーブル (バックアップから復元されたものを除く) は、この方法で取得した値のうち、サーバーの値 (例: `SET` やユーザーの設定プロファイルで設定された値) と異なるものを自身の `SETTINGS` に追加します。これにより、サーバーの再起動後もそれらの値が保持されます。サーバーの値と同じ値は保存されないため、そのようなテーブルでは、後でサーバーの値が変更されると変更後の値が使われます。名前付きコレクションで指定された設定はクエリレベルの設定から取得されないため、その設定については何も保存されません。保存済みの値はテーブルの `SETTINGS` の一部となるため、後から名前付きコレクションに追加された同じキーをオーバーライドします。そのキーが `NOT OVERRIDABLE` の場合、テーブルの読み込みは `Override not allowed` エラーで失敗します。テーブルの `SETTINGS` 句で `name = DEFAULT` によりリセットされた設定は、クエリレベルの設定から取得されません。
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
@@ -160,7 +160,7 @@ PostgreSQL 側の`SELECT`クエリは、読み取り専用の PostgreSQL トラ�
 
 `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN` などの単純な`WHERE`句は、PostgreSQL サーバー上で実行されます。
 
-すべての JOIN、集計、ソート、`IN [ array ]` 条件、および`LIMIT`によるサンプリング制約は、PostgreSQL へのクエリが完了した後にのみ ClickHouse で実行されます。
+すべての JOIN、集計、ソート、および `IN [ array ]` 条件は、PostgreSQL へのクエリが完了した後に ClickHouse で実行されます。`LIMIT`によるサンプリング制約は、安全に実行でき、かつ [external&#95;storage&#95;push&#95;down&#95;limit](/ja/reference/settings/session-settings/external-storage#external_storage_push_down_limit) が有効な場合に限り PostgreSQL にプッシュダウンされます。それ以外の場合は ClickHouse で実行されます。
 
 ## テーブル名の代わりにクエリを渡す {#passing-a-query}
 

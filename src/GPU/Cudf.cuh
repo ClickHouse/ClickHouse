@@ -5,9 +5,13 @@
 
 #include <cudf/column/column.hpp>
 #include <cudf/column/column_view.hpp>
+#include <cudf/table/table.hpp>
+#include <cudf/table/table_view.hpp>
 #include <cudf/types.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
+#include <rmm/device_buffer.hpp>
+
+#include <cuda/stream_ref>
 
 #include <cuda_runtime_api.h>
 
@@ -15,8 +19,13 @@
 #include <memory>
 #include <string>
 
+extern "C" void * __cxa_current_primary_exception() noexcept;
+
 namespace DB::GPU
 {
+
+/// cuDF and rmm are of libstdc++: their `what` would bind to libc++'s.
+__host__ std::string messageOfDeviceException(const std::exception & exception);
 
 template <typename Body>
 __host__ auto guarded(const std::string & doing, Body && body)
@@ -30,7 +39,9 @@ __host__ auto guarded(const std::string & doing, Body && body)
         if (isClickHouseException(exception))
             throw;
 
-        throwGPUError((doing + ": " + exception.what()).c_str());
+        /// Leaked: its destructor would bind to libc++'s too.
+        static_cast<void>(__cxa_current_primary_exception());
+        throwGPUError((doing + ": " + messageOfDeviceException(exception)).c_str());
     }
 }
 
@@ -46,12 +57,18 @@ __host__ void checkNoNulls(const cudf::column_view & column);
 
 __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type);
 
+/// cuDF sums unsigned integers into signed ones.
+__host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GPUElementType type);
+
+__host__ std::unique_ptr<cudf::table> keptRows(
+    const cudf::table_view & table, DeviceBitmask kept, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream);
+
 struct DeviceVariableColumnOfCudf
 {
     DeviceVariableColumn view;
     std::unique_ptr<cudf::column> widened_offsets;
 };
 
-__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, rmm::cuda_stream_view stream);
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, cuda::stream_ref stream);
 
 }

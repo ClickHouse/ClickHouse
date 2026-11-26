@@ -51,6 +51,8 @@ Esta tabla puede usarse para la monitorización. La tabla contiene una fila por 
 * `throttling_us` ([Nullable(Int64)](/es/reference/data-types/nullable)) — Solo para nodos `bandwidth_limit`. Número total de microsegundos durante los que este nodo estuvo en estado de limitación.
 * `tokens` ([Nullable(Float64)](/es/reference/data-types/nullable)) — Solo para nodos `bandwidth_limit`. Número de tokens disponibles actualmente en el limitador token-bucket.
 * `allocated` ([Nullable(Int64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Cantidad de recurso asignada actualmente en este nodo.
+* `reclaimable` ([Nullable(Int64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Memoria disponible para nuevas solicitudes de volcado a disco en este nodo. Para cada asignación, las solicitudes pendientes se restan de la memoria recuperable que notifica y el resultado se limita a cero antes de sumarse.
+* `reclaiming` ([Nullable(Int64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Memoria solicitada para volcado a disco pero aún no liquidada en este nodo, incluidas las solicitudes que todavía no han empezado a ejecutarse. La liquidación retira la cantidad solicitada independientemente de la cantidad realmente liberada.
 * `allocations` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Número actual de asignaciones de recursos en ejecución en este nodo.
 * `updates` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Número total de actualizaciones propagadas a través de este nodo.
 * `increases` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Número total de solicitudes de aumento aprobadas por este nodo.
@@ -59,6 +61,8 @@ Esta tabla puede usarse para la monitorización. La tabla contiene una fila por 
 * `removes` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Número total de asignaciones eliminadas de este nodo.
 * `killers` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Número total de expulsiones iniciadas por este nodo debido a solicitudes de aumento.
 * `victims` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Número total de asignaciones expulsadas de este nodo.
+* `spills` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos de espacio compartido. Número total de solicitudes de volcado a disco emitidas por este nodo debido a que se superó su límite flexible de memoria.
+* `soft_limit` ([Nullable(Int64)](/es/reference/data-types/nullable)) — Solo para nodos `allocation_limit`. Límite flexible de memoria efectivo por encima del cual se solicita a las asignaciones recuperables que realicen volcado a disco (el menor entre `max_memory_before_spill` y `max_memory_to_spill_ratio * max_memory`). Los valores no inferiores al límite estricto indican que el volcado a disco está deshabilitado.
 * `rejects` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos `allocation_queue`. Número total de asignaciones de recursos rechazadas por este nodo.
 * `pending` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Solo para nodos `allocation_queue`. Número actual de asignaciones de recursos pendientes en este nodo.
 

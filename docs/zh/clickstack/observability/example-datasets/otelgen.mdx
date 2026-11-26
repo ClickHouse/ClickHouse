@@ -1,0 +1,190 @@
+---
+slug: /clickstack/observability/example-datasets/otelgen
+title: '使用 otelgen 生成合成 OpenTelemetry 数据'
+sidebarTitle: '使用 otelgen 生成合成数据'
+description: '使用 otelgen 向全托管的 ClickHouse Observability 发送合成日志、链路追踪和指标数据'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'otelgen', '合成数据', 'OpenTelemetry', '测试', '日志', '链路追踪', '指标', '可观测性']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版产品" />
+
+    [`otelgen`](https://github.com/krzko/otelgen) 是一个轻量级 Go 命令行工具，可生成合成的 OTLP 日志、链路追踪和指标。您可以用它向全托管的 ClickHouse Observability 发送测试数据，并在搜索和 Chart Explorer 中查看结果。
+
+    <Steps>
+      <Step title="前置条件" id="prerequisites-managed">
+        您需要已有一个全托管 ClickHouse Observability 服务，并且能够通过网络访问其托管遥测端点。请参阅[全托管入门指南](/zh/clickstack/observability/getting-started)。
+      </Step>
+
+      <Step title="安装 otelgen" id="install-otelgen-managed">
+        使用 Homebrew 安装：
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        或使用 Go 安装：
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step title="设置环境变量" id="set-env-vars-managed">
+        打开您的 ClickHouse Observability 服务，进入 **团队设置 → Managed Telemetry**，复制 **OTLP HTTP endpoint** 和 **API key**。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![团队设置中的 Managed Telemetry 页面，显示已遮盖的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        将端点设置为主机和端口的形式，去掉 `https://` 前缀。例如，`https://YOUR_OTEL_ENDPOINT:4318` 应改为 `YOUR_OTEL_ENDPOINT:4318`。不要附加 `/v1/logs` 之类的信号路径。
+
+        ```shell
+        export OTEL_ENDPOINT='YOUR_OTEL_ENDPOINT:4318'
+        printf "API key: "
+        read -r -s OTEL_API_KEY
+        printf "\n"
+        export OTEL_API_KEY
+        ```
+
+        以下命令使用 `--protocol http` 且不带 `--insecure`，因此 `otelgen` 会通过 HTTPS 连接并执行证书验证。从端点参数中去掉 `https://` 并不会禁用 TLS。每个请求都通过您的托管遥测 API key 进行身份验证。
+      </Step>
+
+      <Step title="生成链路追踪" id="generate-traces-managed">
+        短时间内发送少量包含多个 span 的链路追踪：
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` 表示每秒发送的 trace 数量，`--duration` 表示运行时长 (单位为秒) 。请勿添加 `--insecure`，以确保连接使用 HTTPS 并执行证书验证。
+      </Step>
+
+      <Step title="生成日志" id="generate-logs-managed">
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 \
+          logs multi --duration 10
+        ```
+      </Step>
+
+      <Step title="生成指标" id="generate-metrics-managed">
+        运行以下命令生成指标，几秒钟后按 `Ctrl+C` 停止。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` 的 `metrics` 命令下还支持 `gauge`、`histogram`、`up-down-counter` 和 `exponential-histogram` 子命令。
+      </Step>
+
+      <Step title="在 ClickHouse Observability 中验证" id="verify-managed">
+        在您的 ClickHouse Observability 服务中打开 **搜索**，在 **Logs** 和 **Traces** 数据源之间切换，确认是否有新事件。将时间范围设置为 **Last 15 minutes**，并查找默认服务名称 `otelgen`。
+
+        打开 **Chart Explorer**，选择 **Metrics**，为 `otelgen.metrics.sum` 绘制图表，以验证指标是否已成功摄取。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="自管理">
+    [`otelgen`](https://github.com/krzko/otelgen) 是一个小巧的 Go 命令行工具，可生成合成的 OTLP 日志、链路追踪和指标。您可以用它来确认现有的 ClickStack OpenTelemetry 采集器能够正常接收数据，并且事件能够显示在可观测性 UI 中。
+
+    本指南假定采集器已在运行，并通过 `4317` (gRPC) 和 `4318` (HTTP) 端口提供 OTLP 端点。
+
+    <Steps>
+      <Step title="前置条件" id="prerequisites-managed-self-configured">
+        本指南假定您已完成 [ClickHouse Observability — 自管理版入门指南](/zh/clickstack/self-configured/getting-started/managed)，并且已有一个正在运行的 OpenTelemetry 采集器，且从运行 `otelgen` 的机器可以访问其 OTLP gRPC (`4317`) 和 HTTP (`4318`) 端点。如果您已使用 `OTLP_AUTH_TOKEN` [保护采集器](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)，请准备好该值。
+      </Step>
+
+      <Step title="安装 otelgen" id="install-otelgen-managed-self-configured">
+        使用 Homebrew 安装：
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        或使用 Go 安装：
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step title="设置环境变量" id="set-env-vars-managed-self-configured">
+        导出采集器端点；如果采集器已启用保护，还需导出认证令牌：
+
+        ```shell
+        export OTEL_ENDPOINT=<host>:4317
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        请使用采集器的主机和端口。如果采集器运行在同一台机器上，则该值为 `localhost:4317`。
+
+        <Info>
+          **未受保护的采集器**
+
+          ClickStack OpenTelemetry 采集器默认不进行身份验证。如果您尚未按照[保护采集器](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)设置 `OTLP_AUTH_TOKEN`，请跳过此处的 `OTLP_AUTH_TOKEN`，并删除下文命令中的 `--header` 标志。
+        </Info>
+      </Step>
+
+      <Step title="生成链路追踪" id="generate-traces-managed-self-configured">
+        短时间内发送一批包含多个 span 的链路追踪：
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` 表示每秒发送的 trace 数量，`--duration` 表示运行时长 (单位为秒) 。`--insecure` 会禁用 gRPC 连接上的 TLS；将 `otelgen` 指向采集器的明文 OTLP 端口时需要使用该选项。
+      </Step>
+
+      <Step title="生成日志" id="generate-logs-managed-self-configured">
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          logs multi
+        ```
+      </Step>
+
+      <Step title="生成指标" id="generate-metrics-managed-self-configured">
+        指标子命令不支持 `--duration`。运行命令后，等待几秒钟再按 `Ctrl+C` 停止。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` 在 `metrics` 下还支持 `gauge`、`histogram`、`up-down-counter` 和 `exponential-histogram` 子命令。
+      </Step>
+
+      <Step title="在可观测性 UI 中验证" id="verify-managed-self-configured">
+        从 ClickHouse Cloud 控制台打开可观测性 UI。在 `Search` 视图中，将数据源在 `Logs` 和 `Traces` 之间切换，确认是否出现新事件。将时间范围设置为 `Last 15 minutes`。打开 `Chart Explorer`，选择 `Metrics`，并为 `otelgen` 生成的任一指标名称 (例如 `otelgen.metrics.sum`) 绘制图表，以验证指标摄取是否正常。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
