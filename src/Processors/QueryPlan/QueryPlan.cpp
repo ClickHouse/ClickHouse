@@ -334,7 +334,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
             log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
-            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
+            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, log_capture->getCollected().work_intervals));
         }
         catch (...)
         {

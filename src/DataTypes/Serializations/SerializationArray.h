@@ -108,7 +108,7 @@ public:
 
         [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
         [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev, const DataTypePtr &) const override;
     };
 
     const SerializationPtr & getNestedSerialization() const { return nested; }

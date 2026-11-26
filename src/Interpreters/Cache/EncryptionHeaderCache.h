@@ -5,14 +5,15 @@
 #include <Common/Logger.h>
 #include <base/types.h>
 
+#include <functional>
 #include <optional>
 
 namespace DB
 {
 
 /// Process-global cache of the raw encryption-header bytes at the front of an encrypted file,
-/// keyed by its storage path, so the experimental `ReaderExecutor` can skip re-reading the header
-/// on repeated opens of the same file. Only disk reads populate it (see
+/// keyed by its storage path, so `ReadPipeline::wrapDecryption` and the experimental `ReaderExecutor` can skip
+/// re-reading the header on repeated opens of the same file. Only disk reads populate it (see
 /// `ReadPipeline::needEncryptionHeaderCache`); url / external reads pass a null cache.
 ///
 /// Stores opaque bytes rather than parsed `FileEncryption::Header`s, so it has no SSL dependency;
@@ -64,6 +65,10 @@ public:
 
     /// Return the cached header bytes for `storage_path`, or nullopt on a miss.
     std::optional<HeaderBytes> read(const String & storage_path);
+
+    /// Return the header bytes for `storage_path`, calling `load` on a miss. Concurrent calls for the same path wait for
+    /// one `load`, so the header of a file is read once. If `load` throws, nothing is cached and the exception propagates.
+    HeaderBytes getOrSet(const String & storage_path, const std::function<HeaderBytes()> & load);
 
     void clear();
 

@@ -598,7 +598,7 @@ Cette fonction se comporte comme [sumMap](/fr/reference/functions/aggregate-func
 
 **Valeur renvoyée**
 
-* Renvoie un tuple de deux tableaux : les clés dans l’ordre trié et les valeurs additionnées pour les clés correspondantes.
+* Renvoie un tuple de deux tableaux : les clés dans l’ordre trié et les valeurs additionnées pour les clés correspondantes.
 
 **Exemple**
 
@@ -609,7 +609,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt16, requests UInt64)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
@@ -638,13 +638,13 @@ Cette fonction se comporte de la même manière que [sumMap](/fr/reference/funct
 
 **Paramètres**
 
-* `keys_to_keep` : [Array](/fr/reference/data-types/array) de clés à utiliser pour le filtre.
-* `keys` : [Array](/fr/reference/data-types/array) de clés.
-* `values` : [Array](/fr/reference/data-types/array) de valeurs.
+* `keys_to_keep` : [Array](/fr/reference/data-types/array) de clés à utiliser pour le filtre.
+* `keys` : [Array](/fr/reference/data-types/array) de clés.
+* `values` : [Array](/fr/reference/data-types/array) de valeurs.
 
 **Valeur renvoyée**
 
-* Renvoie un tuple de deux tableaux : les clés dans l&#39;ordre trié, et les valeurs additionnées pour les clés correspondantes.
+* Renvoie un tuple de deux tableaux : les clés dans l&#39;ordre trié, et les valeurs additionnées pour les clés correspondantes.
 
 **Exemple**
 
@@ -657,7 +657,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt8, requests UInt8)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),

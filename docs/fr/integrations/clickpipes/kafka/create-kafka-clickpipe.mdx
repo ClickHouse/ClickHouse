@@ -19,13 +19,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
     Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur &quot;Set up a ClickPipe&quot;.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Sélectionner les importations](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Sélectionner les importations](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -33,13 +29,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
     Sélectionnez votre source de données Kafka dans la liste.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Sélectionner le type de source de données](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Sélectionner le type de source de données](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -47,13 +39,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
     Remplissez le formulaire en indiquant un nom pour votre ClickPipe, une description (facultative), vos identifiants et d&#39;autres informations de connexion.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Renseignez les informations de connexion](/images/integrations/data-ingestion/clickpipes/cp_step2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Renseignez les informations de connexion](/images/integrations/data-ingestion/clickpipes/cp_step2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -78,13 +66,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
        * **SSH User** : le nom d’utilisateur à utiliser pour l’authentification sur l’hôte bastion.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Configuration du tunnel SSH](/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Configuration du tunnel SSH](/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp)
+      </Frame>
     </div>
 
     3. Pour utiliser l’authentification par clé, cliquez sur « Révoquer et régénérer la paire de clés » afin de générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
@@ -101,13 +85,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
     L’UI affichera ensuite un exemple de document de ce topic.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Sélectionnez votre topic](/images/integrations/data-ingestion/clickpipes/cp_step3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Sélectionnez votre topic](/images/integrations/data-ingestion/clickpipes/cp_step3.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -115,25 +95,17 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
     À l’étape suivante, vous pouvez choisir d’ingérer les données dans une nouvelle table ClickHouse ou de réutiliser une table existante. Suivez les instructions à l’écran pour modifier le nom de la table, son schéma et ses paramètres. Un aperçu en temps réel de vos modifications s’affiche dans le tableau d’exemple en haut de la page.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Définir la table, le schéma et les paramètres](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Définir la table, le schéma et les paramètres](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+      </Frame>
     </div>
 
     Vous pouvez également personnaliser les paramètres avancés à l’aide des options proposées
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Définir les options avancées](/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Définir les options avancées](/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -144,13 +116,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
     * `Only destination table` : accorde uniquement les autorisations `INSERT` sur la table de destination.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Permissions](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Permissions](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -158,13 +126,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
     Cliquez sur &quot;Create ClickPipe&quot; pour créer et exécuter votre ClickPipe. Il sera alors répertorié dans la section Data Sources.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Voir l’aperçu](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Voir l’aperçu](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

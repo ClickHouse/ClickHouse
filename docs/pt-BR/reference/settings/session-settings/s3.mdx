@@ -109,6 +109,19 @@ Valores possíveis:
 * 0 — `SELECT` lança uma exceção se o arquivo vazio não for compatível com o formato solicitado.
 * 1 — `SELECT` retorna um resultado vazio para um arquivo vazio.
 
+## s3_skip_hidden_files {#s3_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração: ignora objetos com um segmento de caminho iniciado por `_` ou `.` abaixo do prefixo sem glob ao listar arquivos por glob, como fazem outros leitores do ecossistema Hive. Tabelas com `partition_strategy = 'hive'` sempre ignoram esses caminhos."}]}]} />
+
+Habilita ou desabilita a omissão de caminhos ocultos ao listar arquivos por glob em tabelas com o motor [S3](/pt-BR/reference/engines/table-engines/integrations/s3), ou seja, objetos com um segmento de caminho iniciado por `_` ou `.` abaixo do prefixo sem glob do caminho. Um segmento que contém `=` é um diretório de partição (como `_p=1` para uma coluna de partição `_p`) e não é considerado oculto. Os gravadores do ecossistema Hive (Hive, Spark, Trino) armazenam temporariamente a saída em andamento e gravam objetos marcadores nesses caminhos (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), e a leitura desses objetos gera uma condição de corrida com o commit do gravador: a consulta pode retornar dados não confirmados ou falhar se o gravador renomear ou excluir o objeto armazenado temporariamente durante a leitura. Segmentos dentro do prefixo sem glob não são verificados. Tabelas com `partition_strategy = 'hive'` sempre ignoram caminhos ocultos, independentemente desta configuração.
+
+Valores possíveis:
+
+* 0 — todos os objetos correspondentes ao glob são lidos.
+* 1 — objetos com um segmento de caminho oculto abaixo do prefixo sem glob são ignorados.
+
 ## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
