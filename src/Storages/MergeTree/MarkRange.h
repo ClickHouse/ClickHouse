@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <Common/DevectorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 #include <fmt/format.h>
 #include <base/types.h>
@@ -81,12 +82,26 @@ public:
     bool has_dropped_rows = false;
 
     /// If not zero, the chunk holds all rows of `mark_ranges` in order, and every mark has this number
-    /// of rows (except the last mark of the part, which can have fewer). Then the query condition cache
+    /// of rows (except the last mark of the chunk, which can have fewer). Then the query condition cache
     /// can record the marks without matches of a chunk that is filtered only partially (`FilterTransform`).
     size_t rows_per_mark = 0;
+
+    /// If not empty, the same for marks of different sizes: the i-th mark of `mark_ranges` has `rows_in_marks[i]` rows.
+    VectorWithMemoryTracking<size_t> rows_in_marks;
+
+    bool hasRowPositions() const { return rows_per_mark || !rows_in_marks.empty(); }
+
+    void resetRowPositions()
+    {
+        rows_per_mark = 0;
+        rows_in_marks.clear();
+    }
 };
 
 using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
+
+/// For a transform that removes or reorders the rows of the chunk.
+void resetMarkRangesInfoRowPositions(Chunk & chunk);
 
 struct MarkRangeHash
 {

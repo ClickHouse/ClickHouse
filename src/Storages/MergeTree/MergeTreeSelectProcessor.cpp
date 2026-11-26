@@ -418,6 +418,46 @@ static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & 
     steps = std::move(result);
 }
 
+/// Sets the row positions of `info` if the chunk of `num_rows` rows holds all rows of its marks (the reader removed none).
+static void setRowPositionsIfChunkHoldsWholeMarks(MarkRangesInfo & info, const MergeTreeIndexGranularity & index_granularity, size_t num_rows)
+{
+    size_t total_rows = 0;
+    size_t first_mark_rows = 0;
+    size_t last_mark_rows = 0;
+    /// Whether all marks but the last one have `first_mark_rows` rows.
+    bool same_rows = true;
+    for (const auto & range : info.mark_ranges)
+    {
+        for (size_t mark = range.begin; mark < range.end; ++mark)
+        {
+            if (last_mark_rows && last_mark_rows != first_mark_rows)
+                same_rows = false;
+
+            last_mark_rows = index_granularity.getMarkRows(mark);
+            if (!last_mark_rows)
+                return;
+            if (!first_mark_rows)
+                first_mark_rows = last_mark_rows;
+            total_rows += last_mark_rows;
+        }
+    }
+
+    if (!total_rows || total_rows != num_rows)
+        return;
+
+    /// Only the last mark can have fewer rows.
+    if (same_rows && last_mark_rows <= first_mark_rows)
+    {
+        info.rows_per_mark = first_mark_rows;
+        return;
+    }
+
+    info.rows_in_marks.reserve(info.mark_ranges.getNumberOfMarks());
+    for (const auto & range : info.mark_ranges)
+        for (size_t mark = range.begin; mark < range.end; ++mark)
+            info.rows_in_marks.push_back(index_granularity.getMarkRows(mark));
+}
+
 PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
@@ -521,13 +561,17 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             {
                 String part_name
                     = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
-                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
+                const auto & index_granularity = data_part_info->getIndexGranularity();
+                auto mark_ranges_info = std::make_shared<MarkRangesInfo>(
                     /// QueryConditionCache is a coordinator feature; concrete part present here.
                     data_part_info->getDataPart()->storage.getStorageID().uuid,
                     part_name,
-                    data_part_info->getIndexGranularity().getMarksCount(),
-                    data_part_info->getIndexGranularity().hasFinalMark(),
-                    res.read_mark_ranges));
+                    index_granularity.getMarksCount(),
+                    index_granularity.hasFinalMark(),
+                    res.read_mark_ranges);
+                /// With the query condition cache, the reader reads whole granules (see `MergeTreeRangeReader::startReadingChain`).
+                setRowPositionsIfChunkHoldsWholeMarks(*mark_ranges_info, index_granularity, res.row_count);
+                chunk.getChunkInfos().add(std::move(mark_ranges_info));
             }
 
             /// Some rows survived PREWHERE, but individual granules within this batch may

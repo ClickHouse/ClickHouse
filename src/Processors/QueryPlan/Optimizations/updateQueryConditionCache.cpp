@@ -70,7 +70,8 @@ static void updateQueryConditionCacheForMemory(const Stack & stack, const ReadFr
 
         const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
         if (filter_node && VirtualColumnUtils::isDeterministic(filter_node) && !filter_step->getExpression().hasArrayJoin())
-            filter_step->setConditionForQueryConditionCache(*condition_hash, read_from_memory.getFilterActionsDAG()->getNames()[0]);
+            filter_step->setConditionForQueryConditionCache(
+                *condition_hash, read_from_memory.getFilterActionsDAG()->getNames()[0], /*rows_keep_positions=*/ true);
         return;
     }
 }
@@ -174,11 +175,21 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     }
 
     FilterStep * filter_step_to_tag = nullptr;
+    /// Whether only expression steps that keep the rows lie between the read and the filter step to tag.
+    bool rows_keep_positions = true;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get());
         if (!filter_step)
+        {
+            if (!filter_step_to_tag)
+            {
+                const auto * expression_step = typeid_cast<const ExpressionStep *>(iter->node->step.get());
+                if (!expression_step || expression_step->getExpression().hasArrayJoin())
+                    rows_keep_positions = false;
+            }
             continue;
+        }
 
         const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
         if (!filter_node || !is_deterministic_or_time_condition(filter_node))
@@ -228,7 +239,11 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
     String condition = derived ? derived->condition : filter_actions_dag->getNames()[0];
-    filter_step_to_tag->setConditionForQueryConditionCache(condition_hash, condition);
+
+    /// A TopK read records only the chunks without matches.
+    rows_keep_positions = rows_keep_positions && !is_top_k_read && !filter_step_to_tag->getExpression().hasArrayJoin();
+
+    filter_step_to_tag->setConditionForQueryConditionCache(condition_hash, condition, rows_keep_positions);
 }
 
 

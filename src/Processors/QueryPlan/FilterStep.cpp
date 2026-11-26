@@ -512,9 +512,13 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
 
             /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(
+            auto transform = std::make_shared<FilterTransform>(
                 header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition,
                 /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
+            /// An atom that removes rows of a chunk resets the row positions of its `MarkRangesInfo` for the next atoms.
+            if (rows_keep_positions_for_query_condition_cache)
+                transform->setRowsKeepPositionsForQueryConditionCache();
+            return transform;
         });
     }
 
@@ -524,9 +528,12 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(
+        auto transform = std::make_shared<FilterTransform>(
             header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition,
             /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
+        if (rows_keep_positions_for_query_condition_cache)
+            transform->setRowsKeepPositionsForQueryConditionCache();
+        return transform;
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -641,15 +648,19 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
+void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_, bool rows_keep_positions)
 {
     condition = {condition_hash_, condition_};
+    rows_keep_positions_for_query_condition_cache = rows_keep_positions;
 }
 
 void FilterStep::saltConditionForQueryConditionCache(UInt64 salt)
 {
     if (!condition)
         return;
+
+    /// A TopK read records only the chunks without matches.
+    rows_keep_positions_for_query_condition_cache = false;
 
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on every platform, same as in `updateQueryConditionCache`.
     size_t condition_hash = condition->first;

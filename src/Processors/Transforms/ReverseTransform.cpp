@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Processors/Transforms/ReverseTransform.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -19,6 +20,7 @@ void ReverseTransform::transform(Chunk & chunk)
         column = column->permute(permutation, 0);
 
     chunk.setColumns(std::move(columns), num_rows);
+    resetMarkRangesInfoRowPositions(chunk);
 }
 
 }

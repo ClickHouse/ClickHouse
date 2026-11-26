@@ -36,6 +36,7 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , rows_keep_positions_for_query_condition_cache(other.rows_keep_positions_for_query_condition_cache)
         , optimize_constant_columns_after_filter(other.optimize_constant_columns_after_filter)
     {}
 
@@ -50,11 +51,16 @@ public:
     [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
     [[nodiscard]] bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    /// `rows_keep_positions`: only steps that keep the rows lie between the read and this filter (see `MarkRangesInfo`).
+    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_, bool rows_keep_positions = false);
     [[nodiscard]] bool hasConditionForQueryConditionCache() const { return condition.has_value(); }
     /// Forget a previously attached query condition cache key, e.g. when a later optimization pass
     /// discovers that the filter's verdict is no longer reusable across executions.
-    void resetConditionForQueryConditionCache() { condition.reset(); }
+    void resetConditionForQueryConditionCache()
+    {
+        condition.reset();
+        rows_keep_positions_for_query_condition_cache = false;
+    }
     /// Folds a plan-level salt into the already set condition hash (see `updateQueryConditionCache`).
     void saltConditionForQueryConditionCache(UInt64 salt);
 
@@ -164,6 +170,7 @@ private:
     bool remove_filter_column;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    bool rows_keep_positions_for_query_condition_cache = false;
 
     std::optional<bool> optimize_constant_columns_after_filter;
 };

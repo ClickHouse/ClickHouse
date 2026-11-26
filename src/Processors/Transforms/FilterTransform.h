@@ -55,6 +55,9 @@ public:
 
     static bool canUseType(const DataTypePtr & type);
 
+    /// Only steps that keep the rows lie between the read and this filter (see `updateQueryConditionCache`).
+    void setRowsKeepPositionsForQueryConditionCache() { rows_keep_positions_for_query_condition_cache = true; }
+
 private:
     ExpressionActionsPtr expression;
     SetSpillables set_spillables;
@@ -78,6 +81,7 @@ private:
 
     MarkRangesInfoPtr buffered_mark_ranges_info; /// Buffers mark info for chunks from the same table and part.
                                                  /// The goal is to write less often into the query condition cache (reduce lock contention).
+    bool rows_keep_positions_for_query_condition_cache = false;
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;
@@ -93,9 +97,11 @@ private:
     void removeFilterIfNeed(Columns & columns) const;
     void applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const;
 
-    void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
-    /// For a chunk that is filtered only partially, see `MarkRangesInfo::rows_per_mark`.
-    void writeMarksWithoutMatchesIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description);
+    /// Records the marks of the chunk (or only `marks_without_matches` of them) as having no matches.
+    void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info, const MarkRanges * marks_without_matches = nullptr);
+    /// For a chunk of `num_rows` rows that is filtered only partially, see `MarkRangesInfo::rows_per_mark`.
+    void writeMarksWithoutMatchesIntoQueryConditionCache(
+        const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description, size_t num_rows);
 };
 
 }

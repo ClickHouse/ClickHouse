@@ -30,6 +30,9 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <algorithm>
+#include <numeric>
+
 namespace ProfileEvents
 {
     extern const Event FilterTransformPassedRows;
@@ -602,21 +605,6 @@ void updateRowNumbersInfo(const Chunk & chunk, const IColumn::Filter & filter)
     }
 }
 
-/// After this filter removes some rows, the rows of the chunk are no longer at the positions given by
-/// `MarkRangesInfo::rows_per_mark`, e.g. for the next filter of a split `AND` chain (`FilterStep`).
-void markRangesInfoPartiallyFiltered(Chunk & chunk)
-{
-    auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-    if (!mark_ranges_info || !mark_ranges_info->rows_per_mark)
-        return;
-
-    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased, so don't mutate in place.
-    auto updated_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
-    updated_info->rows_per_mark = 0;
-    chunk.getChunkInfos().extract<MarkRangesInfo>();
-    chunk.getChunkInfos().add(std::move(updated_info));
-}
-
 }
 
 void FilterTransform::doTransform(Chunk & chunk)
@@ -738,8 +726,9 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (num_filtered_rows != num_rows_before_filtration)
     {
-        writeMarksWithoutMatchesIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>(), *filter_description);
-        markRangesInfoPartiallyFiltered(chunk);
+        writeMarksWithoutMatchesIntoQueryConditionCache(
+            chunk.getChunkInfos().get<MarkRangesInfo>(), *filter_description, num_rows_before_filtration);
+        resetMarkRangesInfoRowPositions(chunk);
     }
 
     /// If all the rows pass through the filter.
@@ -786,35 +775,66 @@ void FilterTransform::doTransform(Chunk & chunk)
 }
 
 void FilterTransform::writeMarksWithoutMatchesIntoQueryConditionCache(
-    const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description)
+    const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description, size_t num_rows)
 {
-    if (!query_condition_cache || !mark_ranges_info || !mark_ranges_info->rows_per_mark || mark_ranges_info->has_dropped_rows)
+    if (!query_condition_cache || !rows_keep_positions_for_query_condition_cache || !mark_ranges_info
+        || !mark_ranges_info->hasRowPositions() || mark_ranges_info->has_dropped_rows)
         return;
 
-    const auto * description = typeid_cast<const FilterDescription *>(&filter_description);
-    if (!description || !description->data)
+    /// The rows passing the filter are given by a mask, or for a sparse filter by their sorted positions.
+    const IColumnFilter * filter = nullptr;
+    const PaddedPODArray<UInt64> * passing_rows = nullptr;
+    if (const auto * description = typeid_cast<const FilterDescription *>(&filter_description))
+        filter = description->data;
+    else if (const auto * sparse_description = typeid_cast<const SparseFilterDescription *>(&filter_description))
+        passing_rows = &sparse_description->filter_indices->getData();
+
+    if (!filter && !passing_rows)
         return;
 
-    const auto & filter = *description->data;
     const size_t rows_per_mark = mark_ranges_info->rows_per_mark;
+    const auto & rows_in_marks = mark_ranges_info->rows_in_marks;
 
-    /// Only the last mark can have fewer rows.
     size_t num_marks = 0;
     for (const auto & range : mark_ranges_info->mark_ranges)
         num_marks += range.end - range.begin;
-    if (num_marks == 0 || filter.size() <= (num_marks - 1) * rows_per_mark || filter.size() > num_marks * rows_per_mark)
+
+    bool rows_match_marks = false;
+    if (!rows_in_marks.empty())
+        rows_match_marks = rows_in_marks.size() == num_marks && std::accumulate(rows_in_marks.begin(), rows_in_marks.end(), size_t{0}) == num_rows;
+    else /// Only the last mark can have fewer rows.
+        rows_match_marks = num_marks != 0 && num_rows > (num_marks - 1) * rows_per_mark && num_rows <= num_marks * rows_per_mark;
+
+    if (!rows_match_marks || (filter && filter->size() != num_rows))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "The chunk with {} rows does not consist of {} marks of {} rows for the query condition cache",
-            filter.size(), num_marks, rows_per_mark);
+            "The chunk with {} rows does not consist of the rows of its {} marks for the query condition cache", num_rows, num_marks);
 
     MarkRanges marks_without_matches;
     size_t row = 0;
+    size_t mark_index = 0;
+    size_t next_passing_row = 0;
     for (const auto & range : mark_ranges_info->mark_ranges)
     {
         for (size_t mark = range.begin; mark < range.end; ++mark)
         {
-            const size_t end = std::min(row + rows_per_mark, filter.size());
-            if (memoryIsZero(filter.data(), row, end))
+            const size_t mark_rows = rows_in_marks.empty() ? rows_per_mark : rows_in_marks[mark_index];
+            ++mark_index;
+            const size_t end = std::min(row + mark_rows, num_rows);
+            bool has_matches = false;
+            if (filter)
+            {
+                has_matches = !memoryIsZero(filter->data(), row, end);
+            }
+            else
+            {
+                /// The rows before this mark are passed over already: find the first passing row after it.
+                const auto * next = std::lower_bound(passing_rows->begin() + next_passing_row, passing_rows->end(), end);
+                const size_t next_index = next - passing_rows->begin();
+                has_matches = next_index != next_passing_row;
+                next_passing_row = next_index;
+            }
+
+            if (!has_matches)
             {
                 if (!marks_without_matches.empty() && marks_without_matches.back().end == mark)
                     ++marks_without_matches.back().end;
@@ -826,17 +846,10 @@ void FilterTransform::writeMarksWithoutMatchesIntoQueryConditionCache(
     }
 
     if (!marks_without_matches.empty())
-        query_condition_cache->write(
-            mark_ranges_info->table_uuid,
-            mark_ranges_info->part_name,
-            condition->first,
-            condition->second,
-            marks_without_matches,
-            mark_ranges_info->marks_count,
-            /*has_final_mark=*/ false);
+        writeIntoQueryConditionCache(mark_ranges_info, &marks_without_matches);
 }
 
-void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
+void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info, const MarkRanges * marks_without_matches)
 {
     if (!query_condition_cache || isCancelled())
         return;
@@ -870,9 +883,18 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         return;
     }
 
+    const MarkRanges & mark_ranges = marks_without_matches ? *marks_without_matches : mark_ranges_info->mark_ranges;
+    auto make_buffer = [&]
+    {
+        auto buffer = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+        if (marks_without_matches)
+            buffer->mark_ranges = *marks_without_matches;
+        return buffer;
+    };
+
     if (!buffered_mark_ranges_info)
     {
-        buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+        buffered_mark_ranges_info = make_buffer();
     }
     else
     {
@@ -890,11 +912,11 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
                 buffered_mark_ranges_info->marks_count,
                 buffered_mark_ranges_info->has_final_mark);
 
-            buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+            buffered_mark_ranges_info = make_buffer();
         }
         else
         {
-            buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
+            buffered_mark_ranges_info->appendMarkRanges(mark_ranges);
         }
     }
 }
