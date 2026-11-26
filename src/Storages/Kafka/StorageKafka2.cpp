@@ -1508,12 +1508,6 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
 {
     std::lock_guard lock{consumers_mutex};
     consumer_ptr->stopUsing();
-    if (retire_released_consumers)
-    {
-        for (auto & consumer : consumers)
-            if (consumer == consumer_ptr)
-                consumer = nullptr;
-    }
     /// Use notify_all so that all threads waiting for different consumer indices get a chance to check.
     cv.notify_all();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
@@ -1546,11 +1540,29 @@ void StorageKafka2::drainEventsTask()
     for (size_t idx = 0; idx < tasks.size(); ++idx)
         pollConsumerEvents(idx);
 
+    std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
+    {
+        std::lock_guard lock(consumers_mutex);
+        /// After the shutdown nothing takes a released consumer again: close its handle here, for the
+        /// reason given in `cleanConsumers()`.
+        if (retire_released_consumers)
+            for (const auto & consumer : consumers)
+                if (consumer && consumer->hasConsumer() && !consumer->isInUse())
+                    cpp_consumers_to_close.push_back(consumer->moveConsumer());
+    }
+
+    cpp_consumers_to_close.clear();
+
     {
         std::lock_guard lock(consumers_mutex);
         /// After the shutdown the task stops by itself once no consumer is left to serve.
-        const bool has_consumers
-            = std::any_of(consumers.begin(), consumers.end(), [](const auto & consumer) { return consumer && consumer->hasConsumer(); });
+        bool has_consumers = false;
+        for (auto & consumer : consumers)
+        {
+            if (retire_released_consumers && consumer && !consumer->hasConsumer())
+                consumer = nullptr;
+            has_consumers = has_consumers || static_cast<bool>(consumer);
+        }
         if (shutdown_called && !has_consumers)
             return;
     }

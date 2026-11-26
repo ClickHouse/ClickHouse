@@ -187,7 +187,7 @@ private:
     std::mutex consumers_mutex;
     std::condition_variable cv;
     std::vector<KeeperHandlingConsumerPtr> consumers TSA_GUARDED_BY(consumers_mutex);
-    /// Set once the shutdown has stopped waiting: `releaseConsumer` drops consumers from then on.
+    /// Set once the shutdown has stopped waiting: the drain task closes consumers released after that.
     bool retire_released_consumers TSA_GUARDED_BY(consumers_mutex) = false;
 
     std::vector<std::shared_ptr<TaskContext>> tasks;
