@@ -59,6 +59,8 @@ time array text	1
 time array column expected	1
 time array column	1
 time array column in	2
+start of day expected	1
+start of day	1
 if of numbers uses the index	2
 cast to a number uses the index	1
 date of time uses the index	1

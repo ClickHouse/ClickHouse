@@ -35,6 +35,7 @@ DROP TABLE IF EXISTS t_unrelated_setting;
 DROP TABLE IF EXISTS t_shared_prefix;
 DROP TABLE IF EXISTS t_lambda_text;
 DROP TABLE IF EXISTS t_plus_int;
+DROP TABLE IF EXISTS t_start_of_day;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -129,6 +130,8 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO t_lambda_text VALUES ({'abc':'1'}), ({'def':'1'});
 CREATE TABLE t_plus_int (x UInt64) ENGINE = MergeTree ORDER BY x + 1 SETTINGS index_granularity = 1;
 INSERT INTO t_plus_int SELECT number FROM numbers(100);
+CREATE TABLE t_start_of_day (d Date) ENGINE = MergeTree ORDER BY toStartOfDay(d) SETTINGS index_granularity = 1;
+INSERT INTO t_start_of_day SELECT toDate('2024-01-01') + number FROM numbers(10);
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
@@ -225,6 +228,11 @@ SELECT 'time array text', count() FROM t_time_array_text WHERE toString([dt]) = 
 SELECT 'time array column expected', count() FROM t_time_array_text WHERE dt = toDateTime(1704067200) SETTINGS use_primary_key = 0;
 SELECT 'time array column', count() FROM t_time_array_text WHERE dt = toDateTime(1704067200);
 SELECT 'time array column in', count() FROM t_time_array_text WHERE dt IN (toDateTime(1704067200), toDateTime(1704070800));
+SET optimize_time_filter_with_preimage = 0;
+SELECT 'start of day expected', count() FROM t_start_of_day WHERE toStartOfDay(d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati')
+SETTINGS use_primary_key = 0;
+SELECT 'start of day', count() FROM t_start_of_day WHERE toStartOfDay(d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati');
+SET optimize_time_filter_with_preimage = 1;
 SET optimize_if_transform_strings_to_enum = 1, optimize_if_transform_const_strings_to_lowcardinality = 1,
     input_format_try_infer_datetimes_only_datetime64 = 1;
 SELECT 'if of numbers uses the index', count() FROM t_if_numbers WHERE if(x >= 0, -x, x) = -5 SETTINGS force_primary_key = 1;
@@ -261,6 +269,7 @@ DROP TABLE t_unrelated_setting;
 DROP TABLE t_shared_prefix;
 DROP TABLE t_lambda_text;
 DROP TABLE t_plus_int;
+DROP TABLE t_start_of_day;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;

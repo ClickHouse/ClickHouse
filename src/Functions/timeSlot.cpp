@@ -10,8 +10,6 @@ namespace DB
 
 using FunctionTimeSlot = FunctionDateOrDateTimeToDateTimeOrDateTime64<TimeSlotImpl>;
 
-constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
-
 REGISTER_FUNCTION(TimeSlot)
 {
     FunctionDocumentation::Description description = R"(
@@ -44,7 +42,7 @@ SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(FunctionTimeSlot::name, &FunctionTimeSlot::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
+    factory.registerFunction<FunctionTimeSlot>(documentation);
 }
 
 }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/Settings.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Interpreters/Context.h>
 
@@ -9,6 +11,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_extended_results_for_datetime_functions;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -23,6 +26,9 @@ private:
     const bool enable_extended_results_for_datetime_functions = false;
 
 public:
+    static constexpr FunctionResultSetting result_settings[]
+        = {Setting::enable_extended_results_for_datetime_functions, Setting::session_timezone};
+
     static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionDateOrDateTimeToDateTimeOrDateTime64>(context_);
@@ -48,6 +54,13 @@ public:
         return
             "(T : DateOrDateTime) -> DateTime(timezoneOf(T))"
             " OR (DateOrDateTime, const tz String) -> DateTime(tz)";
+    }
+
+    /// A `Date` becomes a time in the time zone of the session, e.g. `toStartOfDay(d)`.
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], result_type, /*creates_result_type=*/ false);
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

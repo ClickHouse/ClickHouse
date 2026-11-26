@@ -8,8 +8,6 @@ namespace DB
 
 using FunctionToStartOfMinute = FunctionDateOrDateTimeToDateTimeOrDateTime64<ToStartOfMinuteImpl>;
 
-constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
-
 REGISTER_FUNCTION(ToStartOfMinute)
 {
     FunctionDocumentation::Description description = R"(
@@ -44,7 +42,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(FunctionToStartOfMinute::name, &FunctionToStartOfMinute::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
+    factory.registerFunction<FunctionToStartOfMinute>(documentation);
 }
 
 }
