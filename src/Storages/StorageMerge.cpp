@@ -2505,11 +2505,15 @@ void ReadFromMerge::RowPolicyData::addCreatingSetsStep(QueryPlan & plan, Context
             if (const auto & tree = subquery->getQueryTree())
                 subquery_trees.push_back(tree);
 
-        addBuildSubqueriesForSetsStepIfNeeded(plan, SelectQueryOptions{}, planner_context, UsefulSets(subqueries.begin(), subqueries.end()));
+        /// The policy's subqueries read the view source iff the query does.
+        SelectQueryOptions options;
+        options.view_source_in_subqueries = planner_context->isViewSourceInSubqueries();
+
+        addBuildSubqueriesForSetsStepIfNeeded(plan, options, planner_context, UsefulSets(subqueries.begin(), subqueries.end()));
 
         /// `DelayedCreatingSetsStep::makePlansForSets` strips the set plan's own CTE gate, so plant one here.
         for (const auto & tree : subquery_trees)
-            addBuildSubqueriesForMaterializedCTEsIfNeeded(plan, SelectQueryOptions{}, collectMaterializedCTEs(tree, SelectQueryOptions{}));
+            addBuildSubqueriesForMaterializedCTEsIfNeeded(plan, options, collectMaterializedCTEs(tree, options));
         return;
     }
 
