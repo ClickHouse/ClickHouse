@@ -1728,7 +1728,12 @@ public:
             fillNullsFromBlocks(columns_right, rows_added);
 
         if (auto * stats = parent.matched_rows_stats.get())
+        {
             stats->collectNonJoined(rows_added);
+            /// `IBlocksStream::next` never fills again after an empty fill, so each stream reports its end once
+            if (rows_added == 0)
+                stats->finishNonJoinedStream(num_buckets);
+        }
 
         return rows_added;
     }

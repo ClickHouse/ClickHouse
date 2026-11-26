@@ -1,0 +1,8 @@
+RIGHT	100
+RIGHT LIMIT 1	not collected
+FULL	100
+FULL LIMIT 1	not collected
+RIGHT parallel_hash	100
+RIGHT unmatched	0
+RIGHT unmatched LIMIT 1	not collected
+FULL empty right	0

@@ -1361,6 +1361,8 @@ strictness.
 
 The right side is unavailable whenever the join keeps only one row per key in its hash table, which `ANY`, `SEMI` and `ANTI` joins do: the duplicate right rows are never stored, so they cannot be counted. The left side is unavailable when the join suppresses the output of a left row whose partner was already claimed by another left row, which makes the emitted rows an undercount of the matched ones.
 
+For `RIGHT` and `FULL` kinds the right side is the right rows minus the ones the join emits without a partner, after all probing. A query that stops before the join emitted all of them, for example on a `LIMIT`, reports it as `not collected`.
+
 Enabling [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys) switches `ANY` to the older `RightAny` semantics, which emits one row per left row and therefore keeps both counts. `ANY RIGHT` and `ANY FULL` then report **both** sides, and `ANY INNER` is rewritten to `SEMI LEFT`.
 
 The [`Join`](/reference/engines/table-engines/special/join) table engine follows the same table, using the kind and strictness declared in the engine: `Join(ALL, INNER, …)` reports both sides, `Join(ANY, LEFT, …)` neither.

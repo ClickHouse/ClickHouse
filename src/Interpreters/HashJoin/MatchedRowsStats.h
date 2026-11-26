@@ -120,6 +120,8 @@ public:
     void markRightMatched(UInt64 ref_word);
 
     void collectNonJoined(UInt64 non_joined_rows);
+    /// Called once by each of the `num_streams` non-joined streams of the join, when it is exhausted
+    void finishNonJoinedStream(size_t num_streams);
 
     void prepareRightFlagsIfNeeded(const HashJoin::StoredBlocksList & stored_blocks);
     void prepareRightFlags(const HashJoin::StoredBlocksList & stored_blocks);
@@ -136,6 +138,8 @@ private:
     std::atomic<UInt64> left_rows_matched = 0;
     std::atomic<bool> left_matched_available = true;
     std::atomic<UInt64> non_joined_right_rows = 0;
+    std::atomic<size_t> finished_non_joined_streams = 0;
+    std::atomic<bool> non_joined_finished = false;
 
     JoinKind join_kind;
     JoinStrictness join_strictness;
