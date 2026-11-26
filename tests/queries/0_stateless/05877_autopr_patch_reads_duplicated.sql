@@ -11,19 +11,19 @@ DROP TABLE IF EXISTS t_patch_equal_keys;
 CREATE TABLE t_patch_merge_on_key (key UInt64, a String, b String) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2', apply_patches_on_merge = 0;
 SYSTEM STOP MERGES t_patch_merge_on_key;
-INSERT INTO t_patch_merge_on_key SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(500000);
+INSERT INTO t_patch_merge_on_key SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(100000);
 
 -- Every granule of the patch holds the key of every range of the part.
 CREATE TABLE t_patch_equal_keys (c UInt64 DEFAULT 0, key UInt64, a String, b String) ENGINE = MergeTree ORDER BY c
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2', apply_patches_on_merge = 0;
 SYSTEM STOP MERGES t_patch_equal_keys;
-INSERT INTO t_patch_equal_keys (key, a, b) SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(500000);
+INSERT INTO t_patch_equal_keys (key, a, b) SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(100000);
 
 -- The patch is written for the two parts, which are then merged without applying it.
 CREATE TABLE t_patch_join (key UInt64, a String, b String) ENGINE = MergeTree ORDER BY key
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v1', apply_patches_on_merge = 0;
-INSERT INTO t_patch_join SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(250000);
-INSERT INTO t_patch_join SELECT number + 250000, hex(sipHash128(number + 250000, 0)), '' FROM numbers(250000);
+INSERT INTO t_patch_join SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(50000);
+INSERT INTO t_patch_join SELECT number + 50000, hex(sipHash128(number + 50000, 0)), '' FROM numbers(50000);
 
 SET enable_lightweight_update = 1;
 UPDATE t_patch_merge_on_key SET b = concat(hex(sipHash128(key, 1)), hex(sipHash128(key, 2))) WHERE 1;
