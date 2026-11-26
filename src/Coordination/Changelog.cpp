@@ -4497,9 +4497,19 @@ void Changelog::finalizeChangelogsAfterRead(
 
     /// Move files to correct disks
     auto latest_start_index = current_writer->getStartIndex();
+    const auto last_index_to_place = max_log_id.load(std::memory_order_relaxed);
     std::vector<ChangelogFileDescriptionPtr> placement_moves;
     for (const auto & [start_index, description] : existing_changelogs)
     {
+        /// The changelogs that start after the last read index and survived the cleanup above are on
+        /// the latest log disk, and a later rotation can reuse them in place. They must stay there:
+        /// `rotate` refuses to rewrite a changelog on another disk.
+        if (start_index > last_index_to_place)
+        {
+            chassert(description->disk == latest_log_disk);
+            continue;
+        }
+
         /// The active log stays on the disk where the writer opened it.
         /// A move to latest_log_disk can fail during initialization.
         if (start_index == latest_start_index)
