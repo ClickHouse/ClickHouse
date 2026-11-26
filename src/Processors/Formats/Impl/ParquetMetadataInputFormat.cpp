@@ -1,11 +1,10 @@
 #include <span>
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
-#if USE_ARROW_LIBRARY
+#if USE_PARQUET
 
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -18,16 +17,10 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/NamesAndTypes.h>
-#include <arrow/api.h>
-#include <arrow/status.h>
-#include <parquet/file_reader.h>
-#include <parquet/geospatial/statistics.h>
-#include <parquet/size_statistics.h>
-#include <parquet/statistics.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
-#include <arrow/io/memory.h>
-#include <DataTypes/NestedUtils.h>
+#include <Processors/Formats/Impl/Parquet/FooterMetadata.h>
+
+#include <algorithm>
+#include <cmath>
 
 
 namespace DB
@@ -36,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 static NamesAndTypesList getHeaderForParquetMetadata()
@@ -154,35 +146,67 @@ static void checkHeader(const Block & header)
     }
 }
 
-/// Arrow's `parquet::Encoding` lacks the encodings added to the format recently (such as `ALP`) and
-/// reports all of them as `UNDEFINED`. Their names are taken from the Thrift metadata instead, which
-/// keeps the original values.
-static std::optional<Parquet::parq::FileMetaData> getThriftFileMetadata(const parquet::FileMetaData & metadata)
+namespace
 {
-    /// Serializing the footer of an encrypted file with a plaintext footer requires the encryptor.
-    if (metadata.is_encryption_algorithm_set())
-        return std::nullopt;
 
-    auto stream = arrow::io::BufferOutputStream::Create();
-    if (!stream.ok())
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot serialize Parquet metadata: {}", stream.status().ToString());
-    metadata.WriteTo(stream->get());
-    auto buffer = (*stream)->Finish();
-    if (!buffer.ok())
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot serialize Parquet metadata: {}", buffer.status().ToString());
+using Parquet::parq::CompressionCodec;
 
-    Parquet::parq::FileMetaData result;
-    Parquet::deserializeThriftStruct(result, reinterpret_cast<const char *>((*buffer)->data()), (*buffer)->size());
-    return result;
+/// The compression codec as the Apache Arrow library named it, for the output to stay the same: its `LZ4` is
+/// Parquet's `LZ4_RAW`, and Parquet's deprecated `LZ4` is its `LZ4_HADOOP`. An unknown codec reads as `UNCOMPRESSED`.
+/// The enums are read with `thriftEnumToInt`: loading a value out of the range of the enum, which a malformed file
+/// can have, is undefined behavior.
+std::string_view compressionName(const CompressionCodec::type & codec)
+{
+    switch (Parquet::thriftEnumToInt(codec))
+    {
+        case CompressionCodec::UNCOMPRESSED: return "UNCOMPRESSED";
+        case CompressionCodec::SNAPPY: return "SNAPPY";
+        case CompressionCodec::GZIP: return "GZIP";
+        case CompressionCodec::LZO: return "LZO";
+        case CompressionCodec::BROTLI: return "BROTLI";
+        case CompressionCodec::LZ4: return "LZ4_HADOOP";
+        case CompressionCodec::ZSTD: return "ZSTD";
+        case CompressionCodec::LZ4_RAW: return "LZ4";
+        default: return "UNCOMPRESSED";
+    }
 }
 
-static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
-    ReadBuffer & in,
-    const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped)
+std::string_view encodingName(const Parquet::parq::Encoding::type & encoding)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-    return parquet::ReadMetaData(arrow_file);
+    auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(Parquet::thriftEnumToInt(encoding));
+    if (it == Parquet::parq::_Encoding_VALUES_TO_NAMES.end())
+        return "UNDEFINED";
+    return it->second;
+}
+
+std::string_view physicalTypeName(std::optional<Parquet::parq::Type::type> type)
+{
+    if (!type)
+        return "UNDEFINED";
+    return Parquet::parq::_Type_VALUES_TO_NAMES.at(*type);
+}
+
+template <typename T>
+void insertNullable(IColumn & column, std::optional<T> value)
+{
+    auto & nullable = assert_cast<ColumnNullable &>(column);
+    if (!value)
+    {
+        nullable.insertDefault();
+        return;
+    }
+    if constexpr (std::is_same_v<T, String>)
+        assert_cast<ColumnString &>(nullable.getNestedColumn()).insertData(value->data(), value->size());
+    else
+        assert_cast<ColumnVector<T> &>(nullable.getNestedColumn()).insertValue(*value);
+    nullable.getNullMapData().push_back(false);
+}
+
+void insertString(IColumn & column, std::string_view value)
+{
+    assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
+}
+
 }
 
 ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
@@ -197,7 +221,11 @@ Chunk ParquetMetadataInputFormat::read()
     if (done)
         return res;
 
-    auto metadata = getFileMetadata(*in, format_settings, is_stopped);
+    const auto maybe_metadata = Parquet::FooterMetadata::read(*in, format_settings, is_stopped);
+    if (!maybe_metadata)
+        return res;
+    const auto & metadata = *maybe_metadata;
+    const auto & file_metadata = metadata.metadata();
 
     const auto & header = getPort().getHeader();
     auto names_and_types = getHeaderForParquetMetadata();
@@ -210,21 +238,21 @@ Chunk ParquetMetadataInputFormat::read()
         if (name == names[0])
         {
             auto column = types[0]->createColumn();
-            assert_cast<ColumnUInt64 &>(*column).insertValue(metadata->num_columns());
+            assert_cast<ColumnUInt64 &>(*column).insertValue(metadata.columns().size());
             res.addColumn(std::move(column));
         }
         /// num_rows
         else if (name == names[1])
         {
             auto column = types[1]->createColumn();
-            assert_cast<ColumnUInt64 &>(*column).insertValue(metadata->num_rows());
+            assert_cast<ColumnUInt64 &>(*column).insertValue(file_metadata.num_rows);
             res.addColumn(std::move(column));
         }
         /// num_row_groups
         else if (name == names[2])
         {
             auto column = types[2]->createColumn();
-            assert_cast<ColumnUInt64 &>(*column).insertValue(metadata->num_row_groups());
+            assert_cast<ColumnUInt64 &>(*column).insertValue(file_metadata.row_groups.size());
             res.addColumn(std::move(column));
         }
         /// format_version
@@ -233,15 +261,14 @@ Chunk ParquetMetadataInputFormat::read()
             auto column = types[3]->createColumn();
             /// Parquet file doesn't know its exact version, only whether it's 1.x or 2.x
             /// (FileMetaData.version = 1 or 2).
-            String version = metadata->version() == parquet::ParquetVersion::PARQUET_1_0 ? "1" : "2";
-            assert_cast<ColumnString &>(*column).insertData(version.data(), version.size());
+            insertString(*column, file_metadata.version == 2 ? "2" : "1");
             res.addColumn(std::move(column));
         }
         /// metadata_size
         else if (name == names[4])
         {
             auto column = types[4]->createColumn();
-            assert_cast<ColumnUInt64 &>(*column).insertValue(metadata->size());
+            assert_cast<ColumnUInt64 &>(*column).insertValue(metadata.metadataSize());
             res.addColumn(std::move(column));
         }
         /// total_uncompressed_size
@@ -249,8 +276,8 @@ Chunk ParquetMetadataInputFormat::read()
         {
             auto column = types[5]->createColumn();
             size_t total_uncompressed_size = 0;
-            for (int32_t i = 0; i != metadata->num_row_groups(); ++i)
-                total_uncompressed_size += metadata->RowGroup(i)->total_byte_size();
+            for (const auto & row_group : file_metadata.row_groups)
+                total_uncompressed_size += row_group.total_byte_size;
 
             assert_cast<ColumnUInt64 &>(*column).insertValue(total_uncompressed_size);
             res.addColumn(std::move(column));
@@ -260,8 +287,8 @@ Chunk ParquetMetadataInputFormat::read()
         {
             auto column = types[6]->createColumn();
             size_t total_compressed_size = 0;
-            for (int32_t i = 0; i != metadata->num_row_groups(); ++i)
-                total_compressed_size += metadata->RowGroup(i)->total_compressed_size();
+            for (const auto & row_group : file_metadata.row_groups)
+                total_compressed_size += row_group.total_compressed_size;
 
             assert_cast<ColumnUInt64 &>(*column).insertValue(total_compressed_size);
             res.addColumn(std::move(column));
@@ -270,14 +297,14 @@ Chunk ParquetMetadataInputFormat::read()
         else if (name == names[7])
         {
             auto column = types[7]->createColumn();
-            fillColumnsMetadata(metadata, column);
+            fillColumnsMetadata(metadata, *column);
             res.addColumn(std::move(column));
         }
         /// row_groups
         else if (name == names[8])
         {
             auto column = types[8]->createColumn();
-            fillRowGroupsMetadata(metadata, column);
+            fillRowGroupsMetadata(metadata, *column);
             res.addColumn(std::move(column));
         }
     }
@@ -286,92 +313,58 @@ Chunk ParquetMetadataInputFormat::read()
     return res;
 }
 
-void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column)
+void ParquetMetadataInputFormat::fillColumnsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column)
 {
-    auto & array_column = assert_cast<ColumnArray &>(*column);
+    auto & array_column = assert_cast<ColumnArray &>(column);
     auto & tuple_column = assert_cast<ColumnTuple &>(array_column.getData());
-    int32_t num_columns = metadata->num_columns();
-    std::optional<Parquet::parq::FileMetaData> thrift_metadata;
-    bool thrift_metadata_parsed = false;
-    for (int32_t column_i = 0; column_i != num_columns; ++column_i)
+    const size_t num_row_groups = metadata.metadata().row_groups.size();
+    for (size_t column_i = 0; column_i != metadata.columns().size(); ++column_i)
     {
-        const auto * column_info = metadata->schema()->Column(column_i);
+        const auto & column_info = metadata.columns()[column_i];
         /// name
-        String column_name = column_info->name();
-        assert_cast<ColumnString &>(tuple_column.getColumn(0)).insertData(column_name.data(), column_name.size());
+        insertString(tuple_column.getColumn(0), column_info.name);
         /// path
-        String path = column_info->path()->ToDotString();
-        assert_cast<ColumnString &>(tuple_column.getColumn(1)).insertData(path.data(), path.size());
+        insertString(tuple_column.getColumn(1), column_info.path);
         /// max_definition_level
-        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(2)).insertValue(column_info->max_definition_level());
+        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(2)).insertValue(column_info.max_definition_level);
         /// max_repetition_level
-        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(3)).insertValue(column_info->max_repetition_level());
+        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(3)).insertValue(column_info.max_repetition_level);
         /// physical_type
-        std::string_view physical_type = magic_enum::enum_name(column_info->physical_type());
-        assert_cast<ColumnString &>(tuple_column.getColumn(4)).insertData(physical_type.data(), physical_type.size());
+        insertString(tuple_column.getColumn(4), physicalTypeName(column_info.physical_type));
         /// logical_type
-        String logical_type = column_info->logical_type()->ToString();
-        assert_cast<ColumnString &>(tuple_column.getColumn(5)).insertData(logical_type.data(), logical_type.size());
+        insertString(tuple_column.getColumn(5), column_info.logical_type);
 
-        if (metadata->num_row_groups() > 0)
+        if (num_row_groups > 0)
         {
-            auto column_chunk_metadata = metadata->RowGroup(0)->ColumnChunk(column_i);
             /// compression
-            std::string_view compression = magic_enum::enum_name(column_chunk_metadata->compression());
-            assert_cast<ColumnString &>(tuple_column.getColumn(6)).insertData(compression.data(), compression.size());
+            insertString(tuple_column.getColumn(6), compressionName(metadata.columnChunk(0, column_i).codec));
 
             /// total_uncompressed_size/total_compressed_size
             size_t total_uncompressed_size = 0;
             size_t total_compressed_size = 0;
-            for (int32_t row_group_i = 0; row_group_i != metadata->num_row_groups(); ++row_group_i)
+            for (size_t row_group_i = 0; row_group_i != num_row_groups; ++row_group_i)
             {
-                column_chunk_metadata = metadata->RowGroup(row_group_i)->ColumnChunk(column_i);
-                total_uncompressed_size += column_chunk_metadata->total_uncompressed_size();
-                total_compressed_size += column_chunk_metadata->total_compressed_size();
+                const auto & chunk = metadata.columnChunk(row_group_i, column_i);
+                total_uncompressed_size += chunk.total_uncompressed_size;
+                total_compressed_size += chunk.total_compressed_size;
             }
             assert_cast<ColumnUInt64 &>(tuple_column.getColumn(7)).insertValue(total_uncompressed_size);
             assert_cast<ColumnUInt64 &>(tuple_column.getColumn(8)).insertValue(total_compressed_size);
 
             /// space_saved
             String space_saved = fmt::format("{:.4}%", (1 - static_cast<double>(total_compressed_size) / static_cast<double>(total_uncompressed_size)) * 100);
-            assert_cast<ColumnString &>(tuple_column.getColumn(9)).insertData(space_saved.data(), space_saved.size());
+            insertString(tuple_column.getColumn(9), space_saved);
 
-            /// encodings
+            /// encodings, of the last row group
             auto & encodings_array_column = assert_cast<ColumnArray &>(tuple_column.getColumn(10));
             auto & encodings_nested_column = assert_cast<ColumnString &>(encodings_array_column.getData());
-            const auto & encodings = column_chunk_metadata->encodings();
-            for (size_t encoding_i = 0; encoding_i < encodings.size(); ++encoding_i)
-            {
-                std::string_view codec_name = magic_enum::enum_name(encodings[encoding_i]);
-                if (encodings[encoding_i] == parquet::Encoding::UNDEFINED)
-                {
-                    if (!thrift_metadata_parsed)
-                    {
-                        thrift_metadata = getThriftFileMetadata(*metadata);
-                        thrift_metadata_parsed = true;
-                    }
-                    /// The encodings of the last row group are shown, see the loop above.
-                    const size_t row_group_i = metadata->num_row_groups() - 1;
-                    if (thrift_metadata && row_group_i < thrift_metadata->row_groups.size()
-                        && size_t(column_i) < thrift_metadata->row_groups[row_group_i].columns.size())
-                    {
-                        const auto & thrift_encodings = thrift_metadata->row_groups[row_group_i].columns[column_i].meta_data.encodings;
-                        if (encoding_i < thrift_encodings.size())
-                        {
-                            auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(Parquet::thriftEnumToInt(thrift_encodings[encoding_i]));
-                            if (it != Parquet::parq::_Encoding_VALUES_TO_NAMES.end())
-                                codec_name = it->second;
-                        }
-                    }
-                }
-                encodings_nested_column.insertData(codec_name.data(), codec_name.size());
-            }
+            for (const auto & encoding : metadata.columnChunk(num_row_groups - 1, column_i).encodings)
+                insertString(encodings_nested_column, encodingName(encoding));
             encodings_array_column.getOffsets().push_back(encodings_nested_column.size());
         }
         else
         {
-            String compression = "NONE";
-            assert_cast<ColumnString &>(tuple_column.getColumn(6)).insertData(compression.data(), compression.size());
+            insertString(tuple_column.getColumn(6), "NONE");
             tuple_column.getColumn(7).insertDefault();
             tuple_column.getColumn(8).insertDefault();
             tuple_column.getColumn(9).insertDefault();
@@ -381,252 +374,155 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
     array_column.getOffsets().push_back(tuple_column.size());
 }
 
-void ParquetMetadataInputFormat::fillRowGroupsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column)
+void ParquetMetadataInputFormat::fillRowGroupsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column)
 {
-    auto & row_groups_array_column = assert_cast<ColumnArray &>(*column);
+    auto & row_groups_array_column = assert_cast<ColumnArray &>(column);
     auto & row_groups_column = assert_cast<ColumnTuple &>(row_groups_array_column.getData());
-    for (int32_t i = 0; i != metadata->num_row_groups(); ++i)
+    const auto & row_groups = metadata.metadata().row_groups;
+    for (size_t i = 0; i != row_groups.size(); ++i)
     {
-        auto row_group_metadata = metadata->RowGroup(i);
+        const auto & row_group = row_groups[i];
         /// file_offset
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(0)).insertValue(row_group_metadata->file_offset());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(0)).insertValue(row_group.file_offset);
         /// num_columns
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(1)).insertValue(row_group_metadata->num_columns());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(1)).insertValue(row_group.columns.size());
         /// num_rows
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(2)).insertValue(row_group_metadata->num_rows());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(2)).insertValue(row_group.num_rows);
         /// total_uncompressed_size
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(3)).insertValue(row_group_metadata->total_byte_size());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(3)).insertValue(row_group.total_byte_size);
         /// total_compressed_size
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(4)).insertValue(row_group_metadata->total_compressed_size());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(4)).insertValue(row_group.total_compressed_size);
         /// columns
-        fillColumnChunksMetadata(row_group_metadata, row_groups_column.getColumn(5));
+        fillColumnChunksMetadata(metadata, i, row_groups_column.getColumn(5));
     }
     row_groups_array_column.getOffsets().push_back(row_groups_column.size());
 }
 
-void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<parquet::RowGroupMetaData> & row_group_metadata, IColumn & column)
+void ParquetMetadataInputFormat::fillColumnChunksMetadata(const Parquet::FooterMetadata & metadata, size_t row_group, IColumn & column)
 {
     auto & array_column = assert_cast<ColumnArray &>(column);
     auto & tuple_column = assert_cast<ColumnTuple &>(array_column.getData());
-    for (int32_t column_i = 0; column_i != row_group_metadata->num_columns(); ++column_i)
+    const size_t num_columns = metadata.metadata().row_groups[row_group].columns.size();
+    for (size_t column_i = 0; column_i != num_columns; ++column_i)
     {
-        auto column_chunk_metadata = row_group_metadata->ColumnChunk(column_i);
+        const auto & chunk = metadata.columnChunk(row_group, column_i);
+        const auto & column_info = metadata.columns()[column_i];
         /// name
-        String column_name = row_group_metadata->schema()->Column(column_i)->name();
-        assert_cast<ColumnString &>(tuple_column.getColumn(0)).insertData(column_name.data(), column_name.size());
+        insertString(tuple_column.getColumn(0), column_info.name);
         /// path
-        String path = row_group_metadata->schema()->Column(column_i)->path()->ToDotString();
-        assert_cast<ColumnString &>(tuple_column.getColumn(1)).insertData(path.data(), path.size());
+        insertString(tuple_column.getColumn(1), column_info.path);
         /// total_compressed_size
-        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(2)).insertValue(column_chunk_metadata->total_compressed_size());
+        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(2)).insertValue(chunk.total_compressed_size);
         /// total_uncompressed_size
-        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(3)).insertValue(column_chunk_metadata->total_uncompressed_size());
+        assert_cast<ColumnUInt64 &>(tuple_column.getColumn(3)).insertValue(chunk.total_uncompressed_size);
         /// have_statistics
-        bool have_statistics = column_chunk_metadata->is_stats_set();
-        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(4)).insertValue(have_statistics);
-        if (have_statistics)
-            fillColumnStatistics(column_chunk_metadata->statistics(), tuple_column.getColumn(5), row_group_metadata->schema()->Column(column_i)->type_length());
+        const auto statistics = metadata.statistics(row_group, column_i);
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(4)).insertValue(statistics.has_value());
+        /// statistics
+        if (statistics)
+            fillColumnStatistics(metadata, column_i, *statistics, tuple_column.getColumn(5));
         else
             tuple_column.getColumn(5).insertDefault();
-        assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(column_chunk_metadata->bloom_filter_length().value_or(0));
+        /// bloom_filter_bytes
+        assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(chunk.__isset.bloom_filter_length ? chunk.bloom_filter_length : 0);
         /// A file written before SizeStatistics existed, or by a writer that omits it, has no size
         /// statistics at all; that is not the same as a column whose histograms are legitimately
         /// empty, so the presence is reported separately.
-        auto size_statistics = column_chunk_metadata->size_statistics();
-        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(7)).insertValue(size_statistics != nullptr);
-        fillColumnSizeStatistics(size_statistics, tuple_column.getColumn(8));
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(7)).insertValue(chunk.__isset.size_statistics);
+        fillColumnSizeStatistics(metadata, row_group, column_i, tuple_column.getColumn(8));
         /// Present only for columns with the `GEOMETRY` or `GEOGRAPHY` logical type.
-        auto geospatial_statistics = column_chunk_metadata->geo_statistics();
-        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(9)).insertValue(geospatial_statistics != nullptr);
-        fillColumnGeospatialStatistics(geospatial_statistics, tuple_column.getColumn(10));
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(9)).insertValue(chunk.__isset.geospatial_statistics);
+        fillColumnGeospatialStatistics(metadata, row_group, column_i, tuple_column.getColumn(10));
     }
     array_column.getOffsets().push_back(tuple_column.size());
 }
 
 void ParquetMetadataInputFormat::fillColumnGeospatialStatistics(
-    const std::shared_ptr<parquet::geospatial::GeoStatistics> & geospatial_statistics, IColumn & column)
+    const Parquet::FooterMetadata & metadata, size_t row_group, size_t column_index, IColumn & column)
 {
     auto & geospatial_statistics_column = assert_cast<ColumnTuple &>(column);
-    if (!geospatial_statistics)
+    const auto & chunk = metadata.columnChunk(row_group, column_index);
+    if (!chunk.__isset.geospatial_statistics)
     {
         geospatial_statistics_column.insertDefault();
         return;
     }
 
-    const auto lower_bound = geospatial_statistics->lower_bound();
-    const auto upper_bound = geospatial_statistics->upper_bound();
-    const auto dimension_valid = geospatial_statistics->dimension_valid();
+    const auto & geospatial_statistics = chunk.geospatial_statistics;
+    const auto & bbox = geospatial_statistics.bbox;
+    const bool has_xy = geospatial_statistics.__isset.bbox;
+    const bool has_z = has_xy && bbox.__isset.zmin && bbox.__isset.zmax;
+    const bool has_m = has_xy && bbox.__isset.mmin && bbox.__isset.mmax;
     /// The bounds are in XYZM order, the columns are xmin, xmax, ymin, ymax, ...
-    for (size_t dimension = 0; dimension < dimension_valid.size(); ++dimension)
+    const std::pair<double, double> bounds[] = {{bbox.xmin, bbox.xmax}, {bbox.ymin, bbox.ymax}, {bbox.zmin, bbox.zmax}, {bbox.mmin, bbox.mmax}};
+    const bool present[] = {has_xy, has_xy, has_z, has_m};
+    for (size_t dimension = 0; dimension < 4; ++dimension)
     {
-        for (size_t is_max = 0; is_max < 2; ++is_max)
-        {
-            auto & bound_column = assert_cast<ColumnNullable &>(geospatial_statistics_column.getColumn(dimension * 2 + is_max));
-            if (dimension_valid[dimension])
-            {
-                assert_cast<ColumnFloat64 &>(bound_column.getNestedColumn()).insertValue(is_max ? upper_bound[dimension] : lower_bound[dimension]);
-                bound_column.getNullMapData().push_back(false);
-            }
-            else
-            {
-                bound_column.insertDefault();
-            }
-        }
+        const auto [lower, upper] = bounds[dimension];
+        const bool valid = present[dimension] && !std::isnan(lower) && !std::isnan(upper);
+        insertNullable<Float64>(geospatial_statistics_column.getColumn(dimension * 2), valid ? std::optional<Float64>(lower) : std::nullopt);
+        insertNullable<Float64>(geospatial_statistics_column.getColumn(dimension * 2 + 1), valid ? std::optional<Float64>(upper) : std::nullopt);
     }
 
     auto & types_column = assert_cast<ColumnArray &>(geospatial_statistics_column.getColumn(8));
     auto & types_data = assert_cast<ColumnInt32 &>(types_column.getData());
-    if (auto geometry_types = geospatial_statistics->geometry_types())
-        for (const auto geometry_type : *geometry_types)
-            types_data.insertValue(geometry_type);
+    auto geometry_types = geospatial_statistics.geospatial_types;
+    std::sort(geometry_types.begin(), geometry_types.end());
+    geometry_types.erase(std::unique(geometry_types.begin(), geometry_types.end()), geometry_types.end());
+    for (const auto geometry_type : geometry_types)
+        types_data.insertValue(geometry_type);
     types_column.getOffsets().push_back(types_data.size());
 }
 
 void ParquetMetadataInputFormat::fillColumnSizeStatistics(
-    const std::shared_ptr<parquet::SizeStatistics> & size_statistics, IColumn & column)
+    const Parquet::FooterMetadata & metadata, size_t row_group, size_t column_index, IColumn & column)
 {
     auto & size_statistics_column = assert_cast<ColumnTuple &>(column);
+    const auto & chunk = metadata.columnChunk(row_group, column_index);
+    const auto * size_statistics = chunk.__isset.size_statistics ? &chunk.size_statistics : nullptr;
 
-    auto & unencoded_bytes = assert_cast<ColumnNullable &>(size_statistics_column.getColumn(0));
-    if (size_statistics && size_statistics->unencoded_byte_array_data_bytes.has_value())
-    {
-        assert_cast<ColumnUInt64 &>(unencoded_bytes.getNestedColumn())
-            .insertValue(static_cast<UInt64>(*size_statistics->unencoded_byte_array_data_bytes));
-        unencoded_bytes.getNullMapData().push_back(false);
-    }
-    else
-    {
-        unencoded_bytes.insertDefault();
-    }
+    insertNullable<UInt64>(
+        size_statistics_column.getColumn(0),
+        size_statistics && size_statistics->__isset.unencoded_byte_array_data_bytes
+            ? std::optional<UInt64>(static_cast<UInt64>(size_statistics->unencoded_byte_array_data_bytes))
+            : std::nullopt);
 
-    auto insert_histogram = [&](std::span<const int64_t> histogram, IColumn & histogram_column)
+    auto insert_histogram = [&](const auto * histogram, IColumn & histogram_column)
     {
         auto & array_column = assert_cast<ColumnArray &>(histogram_column);
         auto & data_column = assert_cast<ColumnUInt64 &>(array_column.getData());
-        for (const auto level_count : histogram)
-            data_column.insertValue(static_cast<UInt64>(level_count));
+        if (histogram)
+        {
+            for (const auto level_count : *histogram)
+                data_column.insertValue(static_cast<UInt64>(level_count));
+        }
         array_column.getOffsets().push_back(data_column.size());
     };
 
-    insert_histogram(size_statistics ? std::span<const int64_t>(size_statistics->repetition_level_histogram) : std::span<const int64_t>(), size_statistics_column.getColumn(1));
-    insert_histogram(size_statistics ? std::span<const int64_t>(size_statistics->definition_level_histogram) : std::span<const int64_t>(), size_statistics_column.getColumn(2));
+    insert_histogram(size_statistics ? &size_statistics->repetition_level_histogram : nullptr, size_statistics_column.getColumn(1));
+    insert_histogram(size_statistics ? &size_statistics->definition_level_histogram : nullptr, size_statistics_column.getColumn(2));
 }
 
-template <typename T>
-static void getMinMaxNumberStatistics(const std::shared_ptr<parquet::Statistics> & statistics, String & min, String & max)
-{
-    const auto & typed_statistics = dynamic_cast<parquet::TypedStatistics<T> &>(*statistics);
-    min = std::to_string(typed_statistics.min());
-    max = std::to_string(typed_statistics.max());
-}
-
-void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parquet::Statistics> & statistics, IColumn & column, int32_t type_length)
+void ParquetMetadataInputFormat::fillColumnStatistics(
+    const Parquet::FooterMetadata & metadata, size_t column_index, const Parquet::FooterMetadata::Statistics & statistics, IColumn & column)
 {
     auto & statistics_column = assert_cast<ColumnTuple &>(column);
     /// num_values
-    auto & nullable_num_values = assert_cast<ColumnNullable &>(statistics_column.getColumn(0));
-    assert_cast<ColumnUInt64 &>(nullable_num_values.getNestedColumn()).insertValue(statistics->num_values());
-    nullable_num_values.getNullMapData().push_back(false);
-
+    insertNullable<UInt64>(statistics_column.getColumn(0), static_cast<UInt64>(statistics.num_values));
     /// null_count
-    if (statistics->HasNullCount())
-    {
-        auto & nullable_null_count = assert_cast<ColumnNullable &>(statistics_column.getColumn(1));
-        assert_cast<ColumnUInt64 &>(nullable_null_count.getNestedColumn()).insertValue(statistics->null_count());
-        nullable_null_count.getNullMapData().push_back(false);
-    }
-    else
-    {
-        statistics_column.getColumn(1).insertDefault();
-    }
-
-    /// distinct_count
-    if (statistics->HasDistinctCount())
-    {
-        auto & nullable_distinct_count = assert_cast<ColumnNullable &>(statistics_column.getColumn(2));
-        size_t distinct_count = statistics->distinct_count();
-        /// It can be set but still be 0 because of a bug: https://github.com/apache/arrow/issues/27644
-        /// If we see distinct_count = 0 with non 0 values in chunk, set it to NULL
-        if (distinct_count == 0 && statistics->num_values() != 0)
-        {
-            nullable_distinct_count.insertDefault();
-        }
-        else
-        {
-            assert_cast<ColumnUInt64 &>(nullable_distinct_count.getNestedColumn()).insertValue(distinct_count);
-            nullable_distinct_count.getNullMapData().push_back(false);
-        }
-    }
-    else
-    {
-        statistics_column.getColumn(2).insertDefault();
-    }
-
+    insertNullable<UInt64>(statistics_column.getColumn(1),
+        statistics.null_count ? std::optional<UInt64>(static_cast<UInt64>(*statistics.null_count)) : std::nullopt);
+    /// distinct_count. It can be set but still be 0 because of a bug: https://github.com/apache/arrow/issues/27644
+    /// If we see distinct_count = 0 with non 0 values in chunk, set it to NULL
+    std::optional<UInt64> distinct_count;
+    if (statistics.distinct_count && !(*statistics.distinct_count == 0 && statistics.num_values != 0))
+        distinct_count = static_cast<UInt64>(*statistics.distinct_count);
+    insertNullable<UInt64>(statistics_column.getColumn(2), distinct_count);
     /// min/max
-    if (statistics->HasMinMax() && statistics->physical_type() != parquet::Type::type::UNDEFINED)
+    if (statistics.min && statistics.max)
     {
-        String min;
-        String max;
-        switch (statistics->physical_type())
-        {
-            case parquet::Type::type::FLOAT:
-            {
-                getMinMaxNumberStatistics<parquet::FloatType>(statistics, min, max);
-                break;
-            }
-            case parquet::Type::type::DOUBLE:
-            {
-                getMinMaxNumberStatistics<parquet::DoubleType>(statistics, min, max);
-                break;
-            }
-            case parquet::Type::type::INT32:
-            {
-                getMinMaxNumberStatistics<parquet::Int32Type>(statistics, min, max);
-                break;
-            }
-            case parquet::Type::type::INT64:
-            {
-                getMinMaxNumberStatistics<parquet::Int64Type>(statistics, min, max);
-                break;
-            }
-            case parquet::Type::type::INT96:
-            {
-                const auto & int96_statistics = dynamic_cast<parquet::TypedStatistics<parquet::Int96Type> &>(*statistics);
-                min = parquet::Int96ToString(int96_statistics.min());
-                max = parquet::Int96ToString(int96_statistics.max());
-                break;
-            }
-            case parquet::Type::type::BOOLEAN:
-            {
-                getMinMaxNumberStatistics<parquet::BooleanType>(statistics, min, max);
-                break;
-            }
-            case parquet::Type::type::BYTE_ARRAY:
-            {
-                const auto & byte_array_statistics = dynamic_cast<parquet::ByteArrayStatistics &>(*statistics);
-                min = parquet::ByteArrayToString(byte_array_statistics.min());
-                max = parquet::ByteArrayToString(byte_array_statistics.max());
-                break;
-            }
-            case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-            {
-                const auto & flba_statistics = dynamic_cast<parquet::FLBAStatistics &>(*statistics);
-                min = parquet::FixedLenByteArrayToString(flba_statistics.min(), type_length);
-                max = parquet::FixedLenByteArrayToString(flba_statistics.max(), type_length);
-                break;
-            }
-            case parquet::Type::type::UNDEFINED:
-            {
-                break; /// unreachable
-            }
-        }
-
-        auto & nullable_min = assert_cast<ColumnNullable &>(statistics_column.getColumn(3));
-        assert_cast<ColumnString &>(nullable_min.getNestedColumn()).insertData(min.data(), min.size());
-        nullable_min.getNullMapData().push_back(false);
-        auto & nullable_max = assert_cast<ColumnNullable &>(statistics_column.getColumn(4));
-        assert_cast<ColumnString &>(nullable_max.getNestedColumn()).insertData(max.data(), max.size());
-        nullable_max.getNullMapData().push_back(false);
+        insertNullable<String>(statistics_column.getColumn(3), metadata.formatStatisticsValue(column_index, *statistics.min));
+        insertNullable<String>(statistics_column.getColumn(4), metadata.formatStatisticsValue(column_index, *statistics.max));
     }
     else
     {

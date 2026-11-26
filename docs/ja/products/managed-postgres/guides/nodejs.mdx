@@ -7,11 +7,7 @@ keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'java
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
-
-[node-postgres](https://node-postgres.com/) (`pg` パッケージ) は、Node.js 向けの Postgres ドライバーとして最も広く利用されています。このガイドでは、TLS 証明書の検証を完全に有効にした `pg.Pool` 経由で ClickHouse Managed Postgres に接続し、2 つのテーブルを作成します。続いて、トランザクション内で口座間の送金を行い、小さな `node:http` サーバーからデータを返します。
+[node-postgres](https://node-postgres.com/) (`pg` パッケージ) は、Node.js 向けの Postgres ドライバーとして最も広く利用されています。このガイドでは、TLS 証明書の検証を完全に有効にした `pg.Pool` 経由で ClickHouse Managed Postgres に接続し、2 つのテーブルを作成します。続いて、トランザクション内でアカウント間の送金を行い、小さな `node:http` サーバーからデータを返します。
 
 ## 前提条件 {#prerequisites}
 

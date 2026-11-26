@@ -14,6 +14,7 @@
 
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -94,6 +95,8 @@ struct Settings;
   * Additional rules about identifier binding.
   * Bind for identifier to entity means that identifier first part match some node during analysis.
   * If other parts of identifier cannot be resolved in that node, exception must be thrown.
+  * A qualifier that matches a table expression is the exception: on a miss the lookup continues,
+  * and the error message names that table expression if nothing else resolves.
   *
   * Example:
   * CREATE TABLE test_table (id UInt64, compound_value Tuple(value UInt64)) ENGINE=TinyLog;
@@ -159,6 +162,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
@@ -177,8 +181,12 @@ private:
 
     static void expandLimitByAll(QueryNode & query_tree_node_typed);
 
-    static std::string
-    rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
+    static std::string rewriteAggregateFunctionNameIfNeeded(
+        const std::string & aggregate_function_name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
@@ -382,8 +390,10 @@ private:
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
-    /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.
-    std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
+    /// by tree hash, so syntactically-identical calls fold to the same constant. For server constants
+    /// the key also holds `Context::isDistributed` of the scope, because their bases capture it.
+    /// See `resolveFunction`.
+    std::map<std::pair<IQueryTreeNode::Hash, bool>, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
 

@@ -202,6 +202,10 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
     // Do this before `assign` starts fetching, otherwise messages may leak into the main queue before we detach it.
     try
     {
+        /// `assign` recreates the toppar of a still-assigned partition that librdkafka does not know (e.g. its topic was deleted),
+        /// so empty the assignment first: then the queues below belong to the toppars that `assign` fetches.
+        consumer->unassign();
+
         for (const auto & topic_partition : topic_partitions)
             queues.emplace(
                 TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()},

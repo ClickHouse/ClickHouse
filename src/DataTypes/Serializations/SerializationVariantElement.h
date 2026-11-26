@@ -30,6 +30,9 @@ private:
     /// subcolumn whose value for an absent element is not its default: the element is not there, so the
     /// extracted value is `NULL` and the map must read 1 rather than 0.
     bool selected_subcolumn_is_null_map;
+    /// The type whose default fills the rows of other variants, set only when it is not the column default. Only whether
+    /// it is set is part of the pool key: the key of the nested serialization already determines which type it is.
+    DataTypePtr absent_element_type;
 
     SerializationVariantElement(
         const SerializationPtr & nested_,
@@ -37,13 +40,15 @@ private:
         ColumnVariant::Discriminator variant_discriminator_,
         size_t num_variants_,
         bool nullable_added_by_extraction_,
-        bool selected_subcolumn_is_null_map_)
+        bool selected_subcolumn_is_null_map_,
+        const DataTypePtr & absent_element_type_)
         : SerializationWrapper(nested_)
         , variant_element_name(variant_element_name_)
         , variant_discriminator(variant_discriminator_)
         , num_variants(num_variants_)
         , nullable_added_by_extraction(nullable_added_by_extraction_)
         , selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_)
+        , absent_element_type(absent_element_type_)
     {
     }
 
@@ -51,20 +56,21 @@ private:
     void insertRowsForAbsentElement(IColumn & inner_column, size_t num_rows) const;
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_);
+    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_, bool has_absent_element_type_);
     static SerializationPtr create(
         const SerializationPtr & nested_,
         const String & variant_element_name_,
         ColumnVariant::Discriminator variant_discriminator_,
         size_t num_variants_,
         bool nullable_added_by_extraction_,
-        bool selected_subcolumn_is_null_map_ = false);
+        bool selected_subcolumn_is_null_map_ = false,
+        const DataTypePtr & element_type_ = nullptr);
 
     /// The null-map substreams `hasSubcolumnForPath` accepts. `NullMapHidden` is deliberately excluded
     /// there and so is not one of them.
     static bool isNullMapSubstream(Substream::Type type);
     size_t allocatedBytes() const override;
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -128,7 +134,7 @@ public:
             bool selected_subcolumn_is_null_map_ = false);
 
         [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev, const DataTypePtr & prev_type) const override;
         [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
         [[nodiscard]] std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream & selected) const override;
     };

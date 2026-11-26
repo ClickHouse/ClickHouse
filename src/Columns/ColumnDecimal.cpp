@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
@@ -431,7 +432,7 @@ template <is_decimal T>
 bool ColumnDecimal<T>::tryInsert(const Field & x)
 {
     DecimalField<T> value;
-    if (!x.tryGet<DecimalField<T>>(value))
+    if (!x.tryGet<DecimalField<T>>(value) || value.getScale() != scale)
         return false;
     data.push_back(value);
     return true;
@@ -461,6 +462,19 @@ void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size
     data.resize(old_size + length);
 
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::insertFromEither(
+    const IColumn & src_true, bool src_true_is_const, const IColumn & src_false, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    insertFromEitherFixedSize(
+        data,
+        assert_cast<const Self &>(src_true).getData(),
+        src_true_is_const,
+        assert_cast<const Self &>(src_false).getData(),
+        src_false_is_const,
+        condition);
 }
 
 template <is_decimal T>
@@ -682,6 +696,30 @@ template <is_decimal T>
 bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
 {
     return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
+template <is_decimal T>
+ColumnPtr ColumnDecimal<T>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
+    auto res = this->create(total_rows, scale);
+    auto & res_data = res->getData();
+
+    T default_value = assert_cast<const Self &>(column_with_default_value.getDataColumn()).getElement(0);
+    std::fill(res_data.begin(), res_data.end(), default_value);
+
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        const size_t position = offsets[i];
+        if (position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset of a non-default value {} is out of range [0, {})", position, total_rows);
+        res_data[position] = data[i + shift];
+    }
+
+    return res;
 }
 
 template <is_decimal T>

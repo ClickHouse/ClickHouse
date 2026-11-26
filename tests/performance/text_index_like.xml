@@ -42,5 +42,10 @@
   <!-- A phrase in 99% of the rows prunes almost nothing, so this measures the cost of searching one of its words. -->
   <query>SELECT count() FROM tab WHERE message LIKE '%quick brown%'</query>
 
+  <!-- Served as LIKE '%clickhouse%' (ILIKE for positionCaseInsensitive) -->
+  <query>SELECT count() FROM tab WHERE position(message, 'clickhouse') > 0 SETTINGS use_text_index_for_substring_search = 1</query>
+  <query>SELECT count() FROM tab WHERE countSubstrings(message, 'clickhouse') > 0 SETTINGS use_text_index_for_substring_search = 1</query>
+  <query>SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'CLICKHOUSE') > 0 SETTINGS use_text_index_for_substring_search = 1</query>
+
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>

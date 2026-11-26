@@ -75,7 +75,8 @@ struct ISerializationSubcolumnCreator
 
     [[nodiscard]] virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
     [[nodiscard]] virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
-    [[nodiscard]] virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
+    /// `prev_type` is the type of `prev`, before `create(prev_type)` wraps it; may be null.
+    [[nodiscard]] virtual ColumnPtr create(const ColumnPtr & prev, const DataTypePtr & prev_type) const = 0;
 
     /// A creator wraps whichever subcolumn was selected beneath it, but `create` receives only that
     /// subcolumn's type, column and serialization, which cannot tell a null map from any other `UInt8`.
@@ -158,11 +159,10 @@ public:
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
-    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
-    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
-    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
-    /// Default: identity.
-    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
+    /// Create an empty column of `type` in the layout this serialization deserializes into. Each layer composes on
+    /// top of the nested one, so this reproduces the serialization's kind stack (Sparse/Replicated/Detached) and any
+    /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
+    virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
     static KindStack getKindStack(const IColumn & column);
     static String kindToString(Kind kind);
