@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <base/scope_guard.h>
 #include <base/unit.h>
@@ -194,6 +195,36 @@ TEST(RuntimeFilterLookup, FindRejectsProbeOfAnotherType)
     probe_values->insertData("a", 1);
     probe_values->insertData("b", 1);
     expectMask(low_cardinality_filter.find(ColumnWithTypeAndName(std::move(probe_values), std::make_shared<DataTypeString>(), "k")), {1, 0});
+}
+
+TEST(RuntimeFilterLookup, PruningPredicateRejectsKeyOfAnotherType)
+{
+    /// A shipped plan can pair a `UInt64` builder with a probe on a `UInt8` column. The pruning predicate would
+    /// read that column with a set of the `UInt64` values.
+    const auto type = makeUInt64Type();
+    auto filter = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
+    filter->enableIndexAnalysis();
+    filter->insert(makeUInt64Column({1, 2}));
+    auto lookup = createRuntimeFilterLookup();
+    lookup->add("runtime_filter", "runtime_filter", std::move(filter));
+
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> descriptors{
+        {.filter_id = "runtime_filter", .key_column_name = "k", .key_column_type = std::make_shared<DataTypeUInt8>(),
+         .is_global_row_index = false,
+         .key_cast = nullptr}};
+    ActionsDAG dag;
+    try
+    {
+        buildRuntimeRangePredicate(*lookup, descriptors, dag, getContext().context);
+        FAIL() << "Expected an exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 }
 
 TEST(RuntimeFilterLookup, ExactNotContainsQueriesSet)

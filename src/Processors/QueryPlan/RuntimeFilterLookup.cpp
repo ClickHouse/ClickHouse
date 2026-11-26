@@ -1542,7 +1542,14 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const auto & cast = descriptor.key_cast;
     const bool apply_cast = cast && !isIdentityCast(key_node.result_type, cast->getResultType());
     const auto & key_casted = apply_cast ? addKeyCast(dag, key_node, cast) : key_node;
-    chassert(key_casted.result_type->equals(*target_type));
+    /// The predicate compares the key with the values of the filter as if they had the type of the key, so they
+    /// must have the same type. A shipped plan pairs the probe with its builder only by key, like in `RuntimeFilter::find`.
+    if (!key_casted.result_type->equals(*target_type))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Runtime filter on type {} cannot prune by a key of type {}",
+            target_type->getName(),
+            key_casted.result_type->getName());
 
     if (exact_values)
     {
