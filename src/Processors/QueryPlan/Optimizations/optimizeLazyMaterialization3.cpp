@@ -441,9 +441,10 @@ public:
             return false;
 
         /// The pruning of the plan can keep a column meant for a lazy read: a join keeps a column of a side it reads nothing
-        /// of, for the number of rows, and that column can be, or be computed from, a column of a read. Such a column stays in
-        /// the main read and crosses the `LIMIT` instead. One pass is enough: the copy of such a column is made at its own
-        /// read, which only keeps the column it already keeps, and changes nothing above the read or at another read.
+        /// of, for the number of rows, and that column can be, or be computed from, a column of a read. Such a column is read
+        /// a second time where the read can read it twice and `mayReadTwice` allows it, and otherwise stays in the main read
+        /// and crosses the `LIMIT` instead. One pass is enough: the copy of such a column is made at its own read, which only
+        /// keeps the column it already keeps, and changes nothing above the read or at another read.
         if (!collectCarriedValues(sort_key_nodes, kept_by_read))
             return false;
 
@@ -457,7 +458,8 @@ public:
     }
 
     /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read that the main read
-    /// keeps anyway. A sort key crosses as a column the sorting needs. In the order of the merged DAG, so that the copies
+    /// keeps anyway and the lazy read does not read a second time (`kept_by_read`). A sort key crosses as a column the
+    /// sorting needs. In the order of the merged DAG, so that the copies
     /// are numbered and cross the `LIMIT` the same way every time.
     ///
     /// Each value crosses as a copy of its own, made where it is computed: of the column the step there outputs, or of a
@@ -506,8 +508,10 @@ public:
         return true;
     }
 
-    /// Moves to the main read the columns meant for a lazy read that the pruning of the plan keeps, `unneeded_of` says
-    /// which; each read on its own. Returns false where an object storage read cannot be split for the rest.
+    /// Settles the columns meant for a lazy read that the pruning of the plan keeps, `unneeded_of` says which; each read on
+    /// its own. A MergeTree read reads such a column a second time where it can and `mayReadTwice` allows it, and moves it
+    /// to the main read otherwise; an object storage read always moves it there. Returns false where an object storage
+    /// read cannot be split for the rest.
     bool keepColumnsThePruningKeeps(
         const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<size_t>> & unneeded_of, NodeSet & kept_by_read)
     {
@@ -799,9 +803,10 @@ private:
         return top_down_nodes;
     }
 
-    /// Picks the columns each source reads lazily. A column the frontier wants read lazily that something
-    /// below the `LIMIT` reads as well, or that the read keeps anyway, stays in the main read and crosses the
-    /// `LIMIT` as a column instead; those are returned in `kept_by_read`.
+    /// Picks the columns each source reads lazily. A column the frontier wants read lazily that something below the `LIMIT`
+    /// reads as well, or that the read keeps anyway, is read a second time where the read can read it twice and
+    /// `mayReadTwice` allows it. Otherwise it stays in the main read and crosses the `LIMIT` as a column instead; those, and
+    /// the columns a lazy read cannot read at all, are returned in `kept_by_read`.
     bool chooseLazyReads(NodeSet & kept_by_read)
     {
         for (size_t source = 0; source < merged.sources.size(); ++source)
@@ -1168,8 +1173,9 @@ private:
         const auto lazy_it = lazy_by_source.find(source);
         auto * lazy = lazy_it != lazy_by_source.end() ? &lazy_it->second : nullptr;
         const Block * lazy_header = nullptr;
-        /// The columns the lazy read reads again that the main read outputs, but nothing below the `LIMIT` needs.
-        Names duplicate_names;
+        /// The columns the lazy read reads again that the main read still outputs, but nothing below the `LIMIT` needs, such
+        /// as one FINAL merges by: they are dropped right above the read.
+        Names read_twice_unneeded_names;
 
         if (merge_tree && merge_tree->canRemoveUnusedColumns())
         {
@@ -1196,7 +1202,7 @@ private:
             {
                 if (!std::ranges::binary_search(unneeded, position) || std::ranges::binary_search(result.dropped_positions, position))
                     continue;
-                duplicate_names.push_back(former_header.getByPosition(position).name);
+                read_twice_unneeded_names.push_back(former_header.getByPosition(position).name);
                 result.dropped_positions.insert(std::ranges::upper_bound(result.dropped_positions, position), position);
             }
 
@@ -1248,9 +1254,9 @@ private:
             if (offsets.added_part_offset)
                 consumed_positions.push_back(offsets.part_offset_position);
 
-            /// The offsets can be put anywhere in the header, so the duplicates are found by name: the columns of a read are
+            /// The offsets can be put anywhere in the header, so those columns are found by name: the columns of a read are
             /// storage columns, with unique names.
-            for (const auto & name : duplicate_names)
+            for (const auto & name : read_twice_unneeded_names)
                 consumed_positions.push_back(plan.getCurrentHeader()->getPositionByName(name));
         }
         else
