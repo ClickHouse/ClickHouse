@@ -1,7 +1,6 @@
--- A filter on the current time must not keep automatic parallel replicas from reusing statistics: a
--- folded `now64()` is identified by the expression it was folded from, not by the value, which differs
--- between two executions and even between the two plans of one query. Windows of different length must
--- still be told apart.
+-- A filter on the current time must not keep automatic parallel replicas from reusing statistics: their key takes
+-- a folded `now64()` as the expression it was folded from, not by the value, which differs between two executions.
+-- Windows of different length must still be told apart.
 
 DROP TABLE IF EXISTS t_autopr_now;
 
@@ -22,8 +21,8 @@ FORMAT Null SETTINGS log_comment = 'now_1_day_2';
 SELECT k % 10, count() FROM t_autopr_now WHERE ts >= now64(3) - INTERVAL 1 HOUR GROUP BY k % 10
 FORMAT Null SETTINGS log_comment = 'now_1_hour';
 
--- The constant keeps its identity when it reaches the filter through an alias, a lambda or a scalar subquery.
--- Each uses its own window, so that it collects its own statistics.
+-- The same holds when the constant reaches the filter through an alias, a lambda, a scalar subquery or a column of
+-- a subquery. Each uses its own window, so that it collects its own statistics.
 SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (now64(3) - INTERVAL 2 DAY AS cutoff) GROUP BY k % 10
 FORMAT Null SETTINGS log_comment = 'now_alias_1';
 SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (now64(3) - INTERVAL 2 DAY AS cutoff) GROUP BY k % 10
@@ -36,6 +35,10 @@ SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (SELECT now64(3) - INTERVAL
 FORMAT Null SETTINGS log_comment = 'now_scalar_1';
 SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (SELECT now64(3) - INTERVAL 4 DAY) GROUP BY k % 10
 FORMAT Null SETTINGS log_comment = 'now_scalar_2';
+SELECT k % 10, count() FROM (SELECT k, ts, now64(3) - INTERVAL 5 DAY AS cutoff FROM t_autopr_now) WHERE ts >= cutoff GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_subquery_1';
+SELECT k % 10, count() FROM (SELECT k, ts, now64(3) - INTERVAL 5 DAY AS cutoff FROM t_autopr_now) WHERE ts >= cutoff GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_subquery_2';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 

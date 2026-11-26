@@ -2989,7 +2989,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     DataTypes argument_types;
     bool all_arguments_constants = true;
     bool all_arguments_are_deterministic = true;
-    bool all_arguments_are_fixed_for_query = true;
     std::vector<size_t> function_lambda_arguments_indexes;
 
     auto & function_arguments = function_node.getArguments().getNodes();
@@ -3029,14 +3028,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         bool argument_is_constant = false;
         bool argument_is_deterministic = true;
-        bool argument_is_fixed_for_query = true;
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
             argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_deterministic = constant_node->isDeterministic();
-            argument_is_fixed_for_query = constant_node->isFixedForQuery();
             argument_is_constant = true;
         }
         else if (auto scalar_column = tryGetScalarConstantColumn(function_argument, scope.context))
@@ -3045,13 +3042,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_column.column = std::move(scalar_column);
             argument_column.type = function_argument->getResultType();
             argument_is_constant = true;
-            /// Not known to be the value the other analyses of the query read.
-            argument_is_fixed_for_query = false;
         }
 
         all_arguments_constants &= argument_is_constant;
         all_arguments_are_deterministic &= argument_is_deterministic;
-        all_arguments_are_fixed_for_query &= argument_is_fixed_for_query;
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
@@ -3610,7 +3604,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (allow_constant_folding && function_base->isSuitableForConstantFolding())
         {
             auto result_type = function_base->getResultType();
-
             auto executable_function = function_base->prepare(argument_columns);
 
             /// A shared call folds to the value another analysis of the query folded it to, if there is one: every
@@ -3663,12 +3656,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (shared_value)
                     value = shared_value;
 
-                /// The value is the one every analysis of the query reads only when it is shared or deterministic.
-                const bool is_fixed_for_query = all_arguments_are_fixed_for_query && (function->isDeterministic() || shared_value);
+                /// See `QueryFoldedConstantsCache::recordSource`. The call itself is the expression: the plan has only
+                /// the outermost constant of `now() - INTERVAL 1 DAY`, and its arguments are resolved to values by now.
+                if (!is_deterministic && node->hasOriginalAST())
+                    folded_constants_cache->recordSource(*value, *node->getOriginalAST());
 
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(
-                    ConstantValue{std::move(value), std::move(result_type)}, node, is_deterministic, is_fixed_for_query);
+                constant_node = std::make_shared<ConstantNode>(ConstantValue{std::move(value), std::move(result_type)}, node, is_deterministic);
             }
         }
 

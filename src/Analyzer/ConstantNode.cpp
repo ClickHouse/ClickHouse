@@ -27,11 +27,10 @@
 namespace DB
 {
 
-    ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_, bool is_fixed_for_query_)
+    ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
     , is_deterministic(is_deterministic_)
-    , is_fixed_for_query(is_deterministic_ || is_fixed_for_query_)
 {
     source_expression = std::move(source_expression_);
 }
@@ -164,22 +163,9 @@ void ConstantNode::convertToNullable()
            makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
 }
 
-bool ConstantNode::isComparedBySourceExpression(CompareOptions compare_options) const
-{
-    return compare_options.non_deterministic_constants_by_source_expression && !is_deterministic && is_fixed_for_query
-        && source_expression;
-}
-
-bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
-
-    const bool by_source = isComparedBySourceExpression(compare_options);
-    if (by_source != rhs_typed.isComparedBySourceExpression(compare_options))
-        return false;
-    if (by_source)
-        return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
-            && source_expression->isEqual(*rhs_typed.source_expression, compare_options);
 
     const auto & column = constant_value.getColumn();
     const auto & rhs_column = rhs_typed.constant_value.getColumn();
@@ -188,29 +174,15 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
            && column->compareAt(0, 0, *rhs_column, 1) == 0;
 }
 
-void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
-    if (isComparedBySourceExpression(compare_options))
-    {
-        const auto source_hash = source_expression->getTreeHash(compare_options);
-        hash_state.update(source_hash.low64);
-        hash_state.update(source_hash.high64);
-    }
-    else
-        constant_value.getColumn()->updateHashFast(hash_state);
+    constant_value.getColumn()->updateHashFast(hash_state);
     constant_value.getType()->updateHash(hash_state);
-}
-
-UInt64 ConstantNode::getNonDeterministicSourceHash() const
-{
-    if (is_deterministic || !is_fixed_for_query || !source_expression)
-        return 0;
-    return source_expression->getTreeHash({.compare_aliases = false, .non_deterministic_constants_by_source_expression = true}).low64;
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic, is_fixed_for_query);
+    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
     result->mask_id = mask_id;
     return result;
 }

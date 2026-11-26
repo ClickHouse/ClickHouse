@@ -25,6 +25,7 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 class QueryPlan;
 
 struct DistributedPlanLocalObject;
+class QueryFoldedConstantsCache;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -300,6 +301,9 @@ struct QueryPlanOptimizationSettings
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.
     UInt64 parallel_replicas_boundary_settings_hash = 0;
+    /// What the query folded its non-deterministic constants from, for the keys of the statistics automatic
+    /// parallel replicas collects (see `QueryFoldedConstantsCache::recordSource`). Null outside a query.
+    std::shared_ptr<const QueryFoldedConstantsCache> query_folded_constants;
 
     bool query_plan_optimize_primary_key = true;
 

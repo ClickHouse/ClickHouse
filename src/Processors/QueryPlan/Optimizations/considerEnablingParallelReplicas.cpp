@@ -1013,11 +1013,19 @@ void considerEnablingParallelReplicas(
     /// matched them left the latter's key under the single-replica plan's root, so no replicas plan has to be
     /// built to find it again. Mode 2 recollects, so it always matches against a fresh replicas plan, and with
     /// `automatic_parallel_replicas_remember_boundary` off every query does.
+    ///
+    /// The two plans are matched on keys that hash constants by value. The replicas plan takes over this plan's index
+    /// analysis, so they match only where they filter on the same values. The analyses of a query share what they fold
+    /// `now()` and the like to (see `QueryFoldedConstantsCache`), so where the values differ, the query reads a setting
+    /// that the replicas plan is built with another value of. The statistics and the remembered boundary are for the
+    /// next execution, which folds `now() - INTERVAL 1 DAY` to another value, so their keys take such a constant as
+    /// the expression it was folded from.
     const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
+    const auto statistics_keys = calculateHashTableCacheKeys(root, optimization_settings.query_folded_constants.get());
     auto & stats_cache = getRuntimeDataflowStatisticsCache();
     /// Where the replicas' half ends also depends on settings that leave the single-replica plan as it is, so the
     /// key carries them beside the root's hash.
-    const auto root_key = sipHash64Of(nopr_node_hashes.at(&root), optimization_settings.parallel_replicas_boundary_settings_hash);
+    const auto root_key = sipHash64Of(statistics_keys.at(&root), optimization_settings.parallel_replicas_boundary_settings_hash);
     QueryPlan::Node * single_replica_plan_boundary = nullptr;
     size_t single_replica_plan_boundary_hash = 0;
     ReadFromMergeTree * remembered_coordinated_read = nullptr;
@@ -1027,10 +1035,10 @@ void considerEnablingParallelReplicas(
         if (const auto remembered = stats_cache.getBoundary(root_key))
         {
             std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash)
-                = findCorrespondingNodeInSingleNodePlan(remembered->boundary_hash, root, nopr_node_hashes);
+                = findCorrespondingNodeInSingleNodePlan(remembered->boundary_hash, root, statistics_keys);
             if (single_replica_plan_boundary)
                 remembered_coordinated_read
-                    = findCoordinatedReadByHash(*single_replica_plan_boundary, remembered->coordinated_read_hash, nopr_node_hashes);
+                    = findCoordinatedReadByHash(*single_replica_plan_boundary, remembered->coordinated_read_hash, statistics_keys);
         }
     }
 
@@ -1101,8 +1109,8 @@ void considerEnablingParallelReplicas(
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
 
     const auto pr_node_hashes = calculateHashTableCacheKeys(*plan_with_parallel_replicas->getRootNode());
-    std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash)
-        = findCorrespondingNodeInSingleNodePlan(pr_node_hashes.at(replicas_plan_boundary), root, nopr_node_hashes);
+    single_replica_plan_boundary
+        = findCorrespondingNodeInSingleNodePlan(pr_node_hashes.at(replicas_plan_boundary), root, nopr_node_hashes).first;
     if (!single_replica_plan_boundary)
     {
         /// `findCorrespondingNodeInSingleNodePlan` has logged why. Both plans in full, each step tagged with
@@ -1117,6 +1125,7 @@ void considerEnablingParallelReplicas(
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         return;
     }
+    single_replica_plan_boundary_hash = statistics_keys.at(single_replica_plan_boundary);
 
     /// Now we need to identify the reading step that should be instrumented for statistics collection.
     /// It has to be the read parallel replicas will actually coordinate, because the cost model divides its
@@ -1153,7 +1162,7 @@ void considerEnablingParallelReplicas(
         stats_cache.setBoundary(
             root_key,
             {.boundary_hash = single_replica_plan_boundary_hash,
-             .coordinated_read_hash = nopr_node_hashes.at(findNodeOfStep(*single_replica_plan_boundary, *reads.to_instrument))});
+             .coordinated_read_hash = statistics_keys.at(findNodeOfStep(*single_replica_plan_boundary, *reads.to_instrument))});
 
     /// The replicas plan exists now, so the decision cannot ask for it again.
     [[maybe_unused]] const bool needs_replicas_plan = decideAtBoundary(

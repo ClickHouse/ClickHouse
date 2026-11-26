@@ -2,10 +2,12 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
+#include <base/extended_types.h>
 
 #include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 namespace DB
 {
@@ -38,9 +40,23 @@ public:
         return values.emplace(hash, std::move(value)).first->second;
     }
 
+    /// Which expression a non-deterministic constant of the query was folded from, by its value, for the statistics
+    /// of automatic parallel replicas: their key is to be the same in the next execution of the query, which folds
+    /// `now() - INTERVAL 1 DAY` to another value. The plan refers to a constant through headers and the names of
+    /// subquery columns, which keep the value but not the expression, so it is looked up by the value.
+    ///
+    /// `source` is the expression as it is written, whose hash is the same in every execution. Only values of a fixed
+    /// size are recorded: the keys leave out the others.
+    void recordSource(const IColumn & value, const IAST & source);
+
+    /// The `source` recorded for a constant equal to `value`, or zero. Two expressions folded to the same value share
+    /// the source recorded first, which costs only an estimate.
+    UInt64 tryGetSource(const IColumn & value) const;
+
 private:
     mutable std::mutex mutex;
     std::map<IQueryTreeNode::Hash, ColumnConstPtr> values;
+    std::unordered_map<UInt128, UInt64> sources;
 };
 
 using QueryFoldedConstantsCachePtr = std::shared_ptr<QueryFoldedConstantsCache>;

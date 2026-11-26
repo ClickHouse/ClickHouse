@@ -13,6 +13,7 @@ namespace DB
 {
 
 class JoinStepLogical;
+class QueryFoldedConstantsCache;
 class ReadFromMergeTree;
 
 class FutureSetFromSubquery;
@@ -358,7 +359,10 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const 
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+/// With `folded_constants` a constant the query folded from a non-deterministic expression is hashed as that expression
+/// (see `ActionsDAG::updateHash`), so the keys stay the same in the next execution of a query filtering on `now()`.
+std::unordered_map<const QueryPlan::Node *, UInt64>
+calculateHashTableCacheKeys(const QueryPlan::Node & root, const QueryFoldedConstantsCache * folded_constants = nullptr);
 
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
@@ -373,10 +377,11 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
+    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes,
+    const QueryFoldedConstantsCache * folded_constants = nullptr);
 
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
-UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
+UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side, const QueryFoldedConstantsCache * folded_constants = nullptr);
 
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,

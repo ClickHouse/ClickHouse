@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ObjectFilterStep.h>
+#include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -39,7 +40,7 @@ void ObjectFilterStep::serialize(Serialization & ctx) const
 {
     /// Position, not name, for a cache key - see `FilterStep::serialize`.
     if (ctx.for_cache_key)
-        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name, ctx.input_header), ctx.out);
+        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name, ctx.input_header, ctx.registry.folded_constants), ctx.out);
     else
         writeStringBinary(filter_column_name, ctx.out);
 

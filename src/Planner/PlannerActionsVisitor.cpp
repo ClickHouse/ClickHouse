@@ -647,27 +647,20 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addInputConstantColumnIfNecessary(
-        const std::string & node_name, const ColumnWithTypeAndName & column, UInt64 source_expression_hash = 0)
+    const ActionsDAG::Node * addInputConstantColumnIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addInput(column, source_expression_hash);
+        const auto * node = &actions_dag.addInput(column);
         node_name_to_node[node->result_name] = node;
 
         return node;
     }
 
     const ActionsDAG::Node * addConstantIfNecessary(
-        const std::string & node_name,
-        ColumnConstPtr column,
-        DataTypePtr type,
-        std::string name,
-        bool is_deterministic,
-        bool is_masked_secret = false,
-        UInt64 source_expression_hash = 0)
+        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic, bool is_masked_secret = false)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -682,9 +675,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(
-            std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret,
-            /*is_runtime_filter_id=*/false, source_expression_hash);
+        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -1057,14 +1048,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     actions_stack[0].addConstantIfNecessary(
         constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
-        /* is_masked_secret= */ constant_node.isMasked(), constant_node.getNonDeterministicSourceHash());
+        /* is_masked_secret= */ constant_node.isMasked());
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)
     {
         ColumnWithTypeAndName column{constant_node.getColumn(), constant_type, constant_node_name};
         for (size_t i = 1; i < actions_stack_size; ++i)
-            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column, constant_node.getNonDeterministicSourceHash());
+            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column);
     }
 
     return {constant_node_name, Levels(0)};

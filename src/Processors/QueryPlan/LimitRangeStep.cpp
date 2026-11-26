@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitRangeStep.h>
+#include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -167,14 +168,14 @@ void LimitRangeStep::serialize(Serialization & ctx) const
     if (start_column_name)
     {
         if (ctx.for_cache_key)
-            writeIntBinary(conditions.getOutputIdentity(*start_column_name, ctx.input_header), ctx.out);
+            writeIntBinary(conditions.getOutputIdentity(*start_column_name, ctx.input_header, ctx.registry.folded_constants), ctx.out);
         else
             writeStringBinary(*start_column_name, ctx.out);
     }
     if (end_column_name)
     {
         if (ctx.for_cache_key)
-            writeIntBinary(conditions.getOutputIdentity(*end_column_name, ctx.input_header), ctx.out);
+            writeIntBinary(conditions.getOutputIdentity(*end_column_name, ctx.input_header, ctx.registry.folded_constants), ctx.out);
         else
             writeStringBinary(*end_column_name, ctx.out);
     }

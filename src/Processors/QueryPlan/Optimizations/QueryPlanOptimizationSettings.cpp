@@ -496,6 +496,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
     distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
+    query_folded_constants = from->getQueryFoldedConstantsCache();
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
     {
         if (auto cluster = from->tryGetCluster(cluster_name))

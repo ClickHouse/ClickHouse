@@ -3,6 +3,7 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryFoldedConstantsCache.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -297,19 +298,10 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 namespace
 {
 
-/// A lambda refers to a constant of the enclosing DAG by name: it is an input of the lambda's DAG, and the
-/// capture names it. That name spells the constant's value, so a build-independent key replaces it by the
-/// constant's source expression when it has one (see `Node::source_expression_hash`).
-UInt64 getCapturedConstantSourceHash(const ActionsDAG & lambda_dag, const String & name)
-{
-    for (const auto * input : lambda_dag.getInputs())
-        if (input->result_name == name)
-            return input->source_expression_hash;
-    return 0;
-}
-
-/// The capture's result name spells the constants of the lambda's body, so a build-independent key identifies
-/// the result by where it is among the outputs of the lambda's DAG, which that DAG's own hash describes.
+/// A lambda capture refers to its body by names composed from the body's nodes, so a name that a constant goes
+/// into spells the constant's value. A key that is to stay the same while a folded `now()` changes refers to those
+/// nodes otherwise: to the result by its position among the body's outputs, and not at all to a captured constant,
+/// which the body hashes as an input holding it.
 std::optional<size_t> getLambdaResultPosition(const ActionsDAG & lambda_dag, const String & return_name)
 {
     const auto & outputs = lambda_dag.getOutputs();
@@ -317,6 +309,14 @@ std::optional<size_t> getLambdaResultPosition(const ActionsDAG & lambda_dag, con
         if (outputs[i]->result_name == return_name)
             return i;
     return {};
+}
+
+bool isCapturedConstant(const ActionsDAG & lambda_dag, const String & captured_name)
+{
+    for (const auto * input : lambda_dag.getInputs())
+        if (input->result_name == captured_name)
+            return input->column != nullptr;
+    return false;
 }
 
 }
@@ -329,9 +329,15 @@ UInt64 ActionsDAG::Node::getHash() const
 }
 
 void ActionsDAG::Node::updateHash(
-    SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
+    SipHash & hash_state,
+    bool build_independent,
+    const Block * input_header,
+    bool with_variable_size_constant_values,
+    const QueryFoldedConstantsCache * folded_constants) const
 {
     hash_state.update(type);
+    if (!build_independent)
+        folded_constants = nullptr;
 
     /// A derived node's name is a label this build chose, not part of what the node computes - the type,
     /// the function and the children already say that - and it is branch-local: a query tree numbers its
@@ -356,9 +362,9 @@ void ActionsDAG::Node::updateHash(
     /// already the same in every build. Normalizing there would be all cost and no benefit: a column
     /// genuinely named `__table1.id` would be merged with one named `__table2.id`, and two different
     /// PREWHERE predicates would share a statistics entry.
-    /// An input carrying a constant identified by its source expression is identified by it (in the column
-    /// below) rather than by its name, which spells the value.
-    if (!result_name.empty() && (!build_independent || (type == ActionType::INPUT && !source_expression_hash)))
+    /// The name of an INPUT holding a constant can spell the constant's value: a lambda names a captured constant so.
+    const bool name_spells_constant = folded_constants && type == ActionType::INPUT && column;
+    if (!result_name.empty() && (!build_independent || type == ActionType::INPUT) && !name_spells_constant)
     {
         const bool normalize = build_independent && !(type == ActionType::INPUT && !input_header);
         hash_state.update(normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
@@ -392,18 +398,14 @@ void ActionsDAG::Node::updateHash(
     {
         const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
         {
-            if (auto position = getLambdaResultPosition(lambda_dag, capture.return_name))
+            if (auto position = folded_constants ? getLambdaResultPosition(lambda_dag, capture.return_name) : std::nullopt)
                 hash_state.update(*position);
             else
                 hash_state.update(normalizeGeneratedTableQualifiers(capture.return_name));
             hash_state.update(capture.return_type->getName());
             for (const auto & captured_name : capture.captured_names)
-            {
-                if (auto source_hash = getCapturedConstantSourceHash(lambda_dag, captured_name))
-                    hash_state.update(source_hash);
-                else
+                if (!folded_constants || !isCapturedConstant(lambda_dag, captured_name))
                     hash_state.update(normalizeGeneratedTableQualifiers(captured_name));
-            }
             for (const auto & captured_type : capture.captured_types)
                 hash_state.update(captured_type->getName());
             /// The lambda's own argument names are written by the user, so they are the same in every build.
@@ -412,7 +414,7 @@ void ActionsDAG::Node::updateHash(
                 hash_state.update(argument.name);
                 hash_state.update(argument.type->getName());
             }
-            lambda_dag.updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+            lambda_dag.updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values, folded_constants);
         };
 
         if (const auto * function_capture = typeid_cast<const FunctionCapture *>(function_base.get()))
@@ -452,13 +454,8 @@ void ActionsDAG::Node::updateHash(
         /// the DAG around them. Skipping only its value keeps the single-replica and parallel-replicas
         /// plan builds matching without dropping any other constant's value (it still serializes
         /// normally for distributed propagation).
-        ///
-        /// A non-deterministic constant folded from an expression is identified by that expression in a
-        /// build-independent hash: its value differs between two builds of the same query (`now()` is read
-        /// again by every analysis), so hashing it would keep a query that filters on `now()` from ever
-        /// reusing statistics, or even from matching its own parallel-replicas plan.
-        if (build_independent && source_expression_hash)
-            hash_state.update(source_expression_hash);
+        if (auto source = folded_constants ? folded_constants->tryGetSource(*column) : 0)
+            hash_state.update(source);
         else if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
             column->updateHashWithValue(0, hash_state);
 
@@ -487,10 +484,11 @@ void ActionsDAG::Node::updateHash(
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values, folded_constants);
 }
 
-UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header) const
+UInt64 ActionsDAG::getOutputIdentity(
+    const std::string & name, const Block * input_header, const QueryFoldedConstantsCache * folded_constants) const
 {
     const auto * node = tryFindInOutputs(name);
     /// Every caller names an output of its own DAG - a filter column, an array-joined column - so a
@@ -500,7 +498,7 @@ UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * inp
     SipHash hash;
     if (node)
     {
-        node->updateHash(hash, /*build_independent=*/true, input_header, /*with_variable_size_constant_values=*/false);
+        node->updateHash(hash, /*build_independent=*/true, input_header, /*with_variable_size_constant_values=*/false, folded_constants);
     }
     else
     {
@@ -521,7 +519,11 @@ UInt64 ActionsDAG::getHash() const
 }
 
 void ActionsDAG::updateHash(
-    SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
+    SipHash & hash_state,
+    bool build_independent,
+    const Block * input_header,
+    bool with_variable_size_constant_values,
+    const QueryFoldedConstantsCache * folded_constants) const
 {
     struct Frame
     {
@@ -538,7 +540,7 @@ void ActionsDAG::updateHash(
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+            frame.node->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values, folded_constants);
             stack.pop();
         }
         else
@@ -584,8 +586,6 @@ ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
-    /// The alias carries the child's constant, so it is identified the same way (see `Node::updateHash`).
-    node.source_expression_hash = child.source_expression_hash;
     node.children.emplace_back(&child);
 
     return node;
@@ -610,7 +610,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, UInt64 source_expression_hash)
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
 {
     Node node;
     node.type = ActionType::INPUT;
@@ -620,10 +620,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, UInt
     /// Only keep the column if it is a propagated constant.
     /// Non-const columns from block headers must not be stored in DAG nodes.
     if (const auto * column_const = column.column ? typeid_cast<const ColumnConst *>(column.column.get()) : nullptr)
-    {
         node.column = column_const->getPtr();
-        node.source_expression_hash = source_expression_hash;
-    }
 
     return addNode(std::move(node));
 }
@@ -634,8 +631,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     std::string name,
     bool is_deterministic_constant,
     bool is_masked_secret,
-    bool is_runtime_filter_id,
-    UInt64 source_expression_hash)
+    bool is_runtime_filter_id)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -653,7 +649,6 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     node.is_deterministic_constant = is_deterministic_constant;
     node.is_masked_secret = is_masked_secret;
     node.is_runtime_filter_id = is_runtime_filter_id;
-    node.source_expression_hash = source_expression_hash;
 
     return addNode(std::move(node));
 }
@@ -4686,7 +4681,7 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
                 /// its mark and hash its volatile value again.
                 result_node = &result_dag.addColumn(
                     node->column, node->result_type, node->result_name,
-                    node->is_deterministic_constant, node->is_masked_secret, node->is_runtime_filter_id, node->source_expression_hash);
+                    node->is_deterministic_constant, node->is_masked_secret, node->is_runtime_filter_id);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
@@ -5135,8 +5130,12 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
 
 
 static void serializeCapture(
-    const LambdaCapture & capture, const ActionsDAG & lambda_dag, WriteBuffer & out, bool for_cache_key, const Block * input_header)
+    const LambdaCapture & capture, const ActionsDAG & lambda_dag, WriteBuffer & out, const SerializedSetsRegistry & registry,
+    const Block * input_header)
 {
+    const bool for_cache_key = registry.for_cache_key;
+    /// See `getLambdaResultPosition`.
+    const bool by_source = for_cache_key && registry.folded_constants;
     /// `return_name` and the captured names are composed by `calculateActionNodeName`, so they carry the
     /// analyzer's table qualifiers: a lambda capturing `__table1.a` in one plan build captures
     /// `__table2.a` in the other. The lambda's own argument names below are written by the user and are
@@ -5149,9 +5148,7 @@ static void serializeCapture(
             writeStringBinary(name, out);
     };
 
-    /// As in `Node::updateHash`, a cache key does not take names that spell the value of a constant identified
-    /// by its source expression.
-    if (auto position = for_cache_key ? getLambdaResultPosition(lambda_dag, capture.return_name) : std::nullopt)
+    if (auto position = by_source ? getLambdaResultPosition(lambda_dag, capture.return_name) : std::nullopt)
         writeVarUInt(*position, out);
     else
         write_name(capture.return_name);
@@ -5160,8 +5157,8 @@ static void serializeCapture(
     writeVarUInt(capture.captured_names.size(), out);
     for (const auto & name : capture.captured_names)
     {
-        if (auto source_hash = for_cache_key ? getCapturedConstantSourceHash(lambda_dag, name) : 0)
-            writeBinaryLittleEndian(source_hash, out);
+        if (by_source && isCapturedConstant(lambda_dag, name))
+            writeStringBinary(String{}, out);
         else
             write_name(name);
     }
@@ -5276,7 +5273,7 @@ static void serializeConstant(
         /// the same header as the step whose payload this constant belongs to, so it is identified the same
         /// way too. Without the header a capture of `__table1.id` and one of `__table2.id` normalize onto
         /// one name and two different higher-order filters share a statistics entry.
-        serializeCapture(function_expression->getCapture(), function_expression->getAcionsDAG(), out, registry.for_cache_key, input_header);
+        serializeCapture(function_expression->getCapture(), function_expression->getAcionsDAG(), out, registry, input_header);
         function_expression->getAcionsDAG().serialize(out, registry, input_header);
 
         const auto & captured_columns = column_function->getCapturedColumns();
@@ -5295,6 +5292,16 @@ static void serializeConstant(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot serialize non-constant column {} as constant", value.getName());
+
+    /// See `Node::updateHash`.
+    if (registry.for_cache_key && registry.folded_constants)
+    {
+        if (auto source = registry.folded_constants->tryGetSource(*const_column))
+        {
+            writeBinaryLittleEndian(source, out);
+            return;
+        }
+    }
 
     const auto & data = const_column->getDataColumn();
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
@@ -5442,9 +5449,8 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// inputs apart - see `Node::updateHash`, which this mirrors.
         if (registry.for_cache_key)
         {
-            if (node.type == ActionType::INPUT && node.source_expression_hash)
-                writeStringBinary(String{}, out); /// The constant is identified by its source expression below.
-            else if (node.type == ActionType::INPUT)
+            /// See `Node::updateHash` for the name of an INPUT holding a constant.
+            if (node.type == ActionType::INPUT && !(registry.folded_constants && node.column))
                 writeCacheKeyColumnName(node.result_name, input_header, out);
             else
                 writeStringBinary(String{}, out);
@@ -5487,12 +5493,9 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
         /// execution costs more than the rest of planning. It also leaves out the value of the
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
-        /// stable identity. A non-deterministic constant folded from an expression is keyed by that
-        /// expression instead of its value, as in `Node::updateHash`. This output is hash-only and never
-        /// deserialized; the transmission path (`for_cache_key == false`) always writes the value.
-        if (has_column && registry.for_cache_key && node.source_expression_hash)
-            writeBinaryLittleEndian(node.source_expression_hash, out);
-        else if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
+        /// stable identity. This output is hash-only and never deserialized; the transmission path
+        /// (`for_cache_key == false`) always writes the value.
+        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
             serializeConstant(*node.result_type, *node.column, out, registry, input_header);
 
         if (node.type == ActionType::INPUT)
@@ -5521,7 +5524,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
             }
             if (function_capture)
             {
-                serializeCapture(function_capture->getCapture(), function_capture->getAcionsDAG(), out, registry.for_cache_key, input_header);
+                serializeCapture(function_capture->getCapture(), function_capture->getAcionsDAG(), out, registry, input_header);
                 function_capture->getAcionsDAG().serialize(out, registry, input_header);
             }
         }

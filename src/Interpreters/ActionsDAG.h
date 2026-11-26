@@ -48,6 +48,7 @@ namespace JSONBuilder
 class SortDescription;
 
 struct SerializedSetsRegistry;
+class QueryFoldedConstantsCache;
 struct DeserializedSetsRegistry;
 
 struct PartialEvaluationParameters
@@ -114,10 +115,6 @@ public:
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
         bool is_masked_secret = false;
-        /// For a non-deterministic constant: the hash of the expression it was folded from (see
-        /// `ConstantNode::getNonDeterministicSourceHash`), 0 if unknown. A build-independent hash identifies the
-        /// constant by it instead of by the value, which differs between two builds of the same query.
-        UInt64 source_expression_hash = 0;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -133,12 +130,13 @@ public:
         /// `input_header`, when given, is the header the DAG reads: an INPUT is then identified by where
         /// it sits in it as well as by its normalized name, which tells `__table1.id` and `__table2.id`
         /// apart after the qualifier index is erased. See `writeCacheKeyColumnName`.
-        /// See `ActionsDAG::updateHash` for `with_variable_size_constant_values`.
+        /// See `ActionsDAG::updateHash` for `with_variable_size_constant_values` and `folded_constants`.
         void updateHash(
             SipHash & hash_state,
             bool build_independent = false,
             const Block * input_header = nullptr,
-            bool with_variable_size_constant_values = true) const;
+            bool with_variable_size_constant_values = true,
+            const QueryFoldedConstantsCache * folded_constants = nullptr) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -173,7 +171,9 @@ public:
     /// serializing for a cache key: the name reads `greater(__table1.x, 5_UInt8)` in a shipped fragment
     /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
     /// position is not usable here - the same expression can sit at a different index in the two builds.
-    UInt64 getOutputIdentity(const std::string & name, const Block * input_header = nullptr) const;
+    /// `folded_constants` is `SerializedSetsRegistry::folded_constants` of that serialization.
+    UInt64 getOutputIdentity(
+        const std::string & name, const Block * input_header = nullptr, const QueryFoldedConstantsCache * folded_constants = nullptr) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 
@@ -204,16 +204,14 @@ public:
     static Node createAlias(const Node & child, std::string alias);
 
     const Node & addInput(std::string name, DataTypePtr type);
-    /// `source_expression_hash` is that of a constant `column` (see `Node::source_expression_hash`).
-    const Node & addInput(ColumnWithTypeAndName column, UInt64 source_expression_hash = 0);
+    const Node & addInput(ColumnWithTypeAndName column);
     const Node & addColumn(
         ColumnConstPtr column,
         DataTypePtr type,
         std::string name,
         bool is_deterministic_constant = true,
         bool is_masked_secret = false,
-        bool is_runtime_filter_id = false,
-        UInt64 source_expression_hash = 0);
+        bool is_runtime_filter_id = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -632,11 +630,18 @@ public:
     /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
     /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
     /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
+    ///
+    /// With `folded_constants` and `build_independent`, a constant that the query folded from a non-deterministic
+    /// expression is hashed as that expression rather than by its value (see `QueryFoldedConstantsCache::recordSource`),
+    /// and the name of an INPUT holding a constant, which can spell its value, is left out. The key is then the same
+    /// in the next execution of a query filtering on `now()`, but it no longer tells apart the values the two builds
+    /// of one query read, so it is not for matching them.
     void updateHash(
         SipHash & hash_state,
         bool build_independent = false,
         const Block * input_header = nullptr,
-        bool with_variable_size_constant_values = true) const;
+        bool with_variable_size_constant_values = true,
+        const QueryFoldedConstantsCache * folded_constants = nullptr) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 

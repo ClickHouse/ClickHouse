@@ -7,3 +7,5 @@ now_lambda_1	0	1	0
 now_lambda_2	0	0	1
 now_scalar_1	0	1	0
 now_scalar_2	0	0	1
+now_subquery_1	0	1	0
+now_subquery_2	0	0	1
