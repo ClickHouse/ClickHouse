@@ -18,6 +18,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="${CLICKHOUSE_TEST_UNIQUE_NAME}_user"
 backend_user="${CLICKHOUSE_TEST_UNIQUE_NAME}_backend"
 nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc"
+# A query `ON CLUSTER` another cluster than the one of a `Replicated` database is replicated by the database with the clause,
+# and its execution then fails with `ON CLUSTER is not allowed for Replicated database`. The test database is `Replicated`
+# in the `DBReplicated` runs, so the dictionaries created `ON CLUSTER` are in a separate `Atomic` database.
+atomic_db="${CLICKHOUSE_DATABASE}_atomic"
 
 function cleanup()
 {
@@ -28,7 +32,8 @@ function cleanup()
         DROP USER IF EXISTS $user;
         DROP USER IF EXISTS $backend_user;
         DROP NAMED COLLECTION IF EXISTS $nc;
-        DROP NAMED COLLECTION IF EXISTS ${nc}_query;"
+        DROP NAMED COLLECTION IF EXISTS ${nc}_query;
+        DROP DATABASE IF EXISTS ${atomic_db} SYNC;"
 }
 trap cleanup EXIT
 cleanup
@@ -86,7 +91,9 @@ echo '--- A named collection requires the privilege NAMED COLLECTION'
 $CLICKHOUSE_CLIENT --multiquery --query "
     CREATE NAMED COLLECTION $nc AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd';
     CREATE USER $user;
+    CREATE DATABASE ${atomic_db} ENGINE = Atomic;
     GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${CLICKHOUSE_DATABASE}.* TO $user;
+    GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${atomic_db}.* TO $user;
     GRANT CLUSTER ON *.* TO $user;"
 
 # Prints whether the `CREATE` was denied for the named collection, and whether the dictionary exists.
@@ -94,13 +101,15 @@ function create_as_user()
 {
     local on_cluster="$1"
     local name="$2"
+    local db="$CLICKHOUSE_DATABASE"
+    [ -n "$on_cluster" ] && db="$atomic_db"
     $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
-        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
+        CREATE DICTIONARY ${db}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
             SOURCE(MYSQL(NAME ${name} TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
         | grep -qE "necessary to have the grant NAMED COLLECTION ON \`?${nc}\`?\." && echo 1 || echo 0
     $CLICKHOUSE_CLIENT --multiquery --query "
-        SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'dict_nc';
-        DROP DICTIONARY IF EXISTS dict_nc;"
+        SELECT count() FROM system.tables WHERE database = '${db}' AND name = 'dict_nc';
+        DROP DICTIONARY IF EXISTS ${db}.dict_nc;"
 }
 
 echo 'Without the grant: denied, not created'
@@ -115,15 +124,17 @@ echo '--- The name of the collection cannot refer to other values of the definit
 # the collection named by the comment, while the grant is checked on the literal name.
 $CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON \`\${dictionary.comment}\` TO $user"
 for on_cluster in "" "ON CLUSTER test_shard_localhost"; do
+    db="$CLICKHOUSE_DATABASE"
+    [ -n "$on_cluster" ] && db="$atomic_db"
     # shellcheck disable=SC2016  # The pattern is the literal `${`.
     $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
-        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
+        CREATE DICTIONARY ${db}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
             SOURCE(MYSQL(NAME '\${dictionary.comment}')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)
             COMMENT '$nc'" 2>&1 \
         | grep -qF 'cannot contain `${`' && echo 1 || echo 0
     $CLICKHOUSE_CLIENT --multiquery --query "
-        SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'dict_nc';
-        DROP DICTIONARY IF EXISTS dict_nc;"
+        SELECT count() FROM system.tables WHERE database = '${db}' AND name = 'dict_nc';
+        DROP DICTIONARY IF EXISTS ${db}.dict_nc;"
 done
 echo 'With the grant: created'
 create_as_user "" "$nc"
