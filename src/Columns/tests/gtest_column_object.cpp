@@ -42,7 +42,7 @@ TEST(ColumnObject, HasOnlyTypeDefaults)
     auto & static_object = assert_cast<ColumnObject &>(*static_column);
 
     ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
-    static_object.insert(Object{});
+    static_object.insert(Object{{"a", Field{0u}}});
     static_object.insert(Object{{"a", Field{0u}}});
     ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
 
@@ -83,8 +83,8 @@ TEST(ColumnObject, InsertField)
     const auto & shared_data_nested_column = col_object.getSharedDataNestedColumn();
     const auto & shared_data_offsets = col_object.getSharedDataOffsets();
     const auto [shared_data_paths, shared_data_values] = col_object.getSharedDataPathsAndValues();
-    Object empty_object;
-    col_object.insert(empty_object);
+    Object default_object = {{"a.b", Array{}}, {"b.d", Field(0u)}};
+    col_object.insert(default_object);
     ASSERT_EQ(col_object[0], (Object{{"a.b", Array{}}, {"b.d", Field(0u)}}));
     ASSERT_EQ(typed_paths.at("a.b")->size(), 1);
     ASSERT_TRUE(typed_paths.at("a.b")->isDefaultAt(0));
@@ -94,7 +94,7 @@ TEST(ColumnObject, InsertField)
     ASSERT_EQ(shared_data_nested_column.size(), 1);
     ASSERT_TRUE(shared_data_nested_column.isDefaultAt(0));
 
-    Object object1 = {{"a.b", Array{String("Hello"), String("World")}}, {"a.c", Field(42)}};
+    Object object1 = {{"a.b", Array{String("Hello"), String("World")}}, {"b.d", Field(0u)}, {"a.c", Field(42)}};
     col_object.insert(object1);
     ASSERT_EQ(col_object[1], (Object{{"a.b", Array{String("Hello"), String("World")}}, {"b.d", Field(0u)}, {"a.c", Field(42)}}));
     ASSERT_EQ(typed_paths.at("a.b")->size(), 2);
@@ -109,7 +109,7 @@ TEST(ColumnObject, InsertField)
     ASSERT_EQ(shared_data_nested_column.size(), 2);
     ASSERT_TRUE(shared_data_nested_column.isDefaultAt(1));
 
-    Object object2 = {{"b.d", Field(142u)}, {"a.c", Field(43)}, {"a.d", Field("str")}, {"a.e", Field(242)}, {"a.f", Array{Field(42), Field(43)}}};
+    Object object2 = {{"a.b", Array{}}, {"b.d", Field(142u)}, {"a.c", Field(43)}, {"a.d", Field("str")}, {"a.e", Field(242)}, {"a.f", Array{Field(42), Field(43)}}};
     col_object.insert(object2);
     ASSERT_EQ(col_object[2], (Object{{"a.b", Array{}}, {"b.d", Field(142u)}, {"a.c", Field(43)}, {"a.d", Field("str")}, {"a.e", Field(242)}, {"a.f", Array{Field(42), Field(43)}}}));
     ASSERT_EQ(typed_paths.at("a.b")->size(), 3);
@@ -131,7 +131,7 @@ TEST(ColumnObject, InsertField)
     ASSERT_EQ((*shared_data_paths)[1], "a.f");
     ASSERT_EQ(deserializeFieldFromSharedData(shared_data_values, 1), (Array({Field(42), Field(43)})));
 
-    Object object3 = {{"b.a", Field("Str")}, {"b.b", Field(2)}, {"b.c", Field(Tuple{Field(42), Field("Str")})}};
+    Object object3 = {{"a.b", Array{}}, {"b.d", Field(0u)}, {"b.a", Field("Str")}, {"b.b", Field(2)}, {"b.c", Field(Tuple{Field(42), Field("Str")})}};
     col_object.insert(object3);
     ASSERT_EQ(col_object[3], (Object{{"a.b", Array{}}, {"b.d", Field(0u)}, {"b.a", Field("Str")}, {"b.b", Field(2)}, {"b.c", Field(Tuple{Field(42), Field("Str")})}}));
     ASSERT_EQ(typed_paths.at("a.b")->size(), 4);
@@ -153,7 +153,7 @@ TEST(ColumnObject, InsertField)
     ASSERT_EQ((*shared_data_paths)[4], "b.c");
     ASSERT_EQ(deserializeFieldFromSharedData(shared_data_values, 4), Field(Tuple{Field(42), Field("Str")}));
 
-    Object object4 = {{"c.c", Field(Null())}, {"c.d", Field(Null())}};
+    Object object4 = {{"a.b", Array{}}, {"b.d", Field(0u)}, {"c.c", Field(Null())}, {"c.d", Field(Null())}};
     col_object.insert(object4);
     ASSERT_TRUE(shared_data_nested_column.isDefaultAt(4));
 }
@@ -163,7 +163,7 @@ TEST(ColumnObject, InsertFrom)
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, b.d UInt32, a.b Array(String))");
     auto col = type->createColumn();
     auto & col_object = assert_cast<ColumnObject &>(*col);
-    col_object.insert(Object{{"a.a", Field(42)}});
+    col_object.insert(Object{{"a.a", Field(42)}, {"a.b", Array{}}, {"b.d", Field(0u)}});
 
     const auto & typed_paths = col_object.getTypedPaths();
     const auto & dynamic_paths = col_object.getDynamicPaths();
@@ -173,7 +173,7 @@ TEST(ColumnObject, InsertFrom)
 
     auto src_col1 = type->createColumn();
     auto & src_col_object1 = assert_cast<ColumnObject &>(*src_col1);
-    src_col_object1.insert(Object{{"b.d", Field(43u)}, {"a.c", Field("Str1")}});
+    src_col_object1.insert(Object{{"a.b", Array{}}, {"b.d", Field(43u)}, {"a.c", Field("Str1")}});
     col_object.insertFrom(src_col_object1, 0);
     ASSERT_EQ((*typed_paths.at("a.b"))[1], Field(Array{}));
     ASSERT_EQ((*typed_paths.at("b.d"))[1], Field(43u));
@@ -199,8 +199,8 @@ TEST(ColumnObject, InsertFrom)
 
     auto src_col3 = type->createColumn();
     auto & src_col_object3 = assert_cast<ColumnObject &>(*src_col3);
-    src_col_object3.insert(Object{{"a.h", Field("Str6")}, {"h.h", Field("Str7")}});
-    src_col_object3.insert(Object{{"a.a", Field("Str10")}, {"a.c", Field(45u)}, {"a.h", Field("Str6")}, {"h.h", Field("Str7")}, {"a.f", Field("Str8")}, {"a.g", Field("Str9")}, {"a.i", Field("Str11")}, {"a.u", Field(Null())}});
+    src_col_object3.insert(Object{{"a.b", Array{}}, {"b.d", Field(0u)}, {"a.h", Field("Str6")}, {"h.h", Field("Str7")}});
+    src_col_object3.insert(Object{{"a.a", Field("Str10")}, {"a.b", Array{}}, {"b.d", Field(0u)}, {"a.c", Field(45u)}, {"a.h", Field("Str6")}, {"h.h", Field("Str7")}, {"a.f", Field("Str8")}, {"a.g", Field("Str9")}, {"a.i", Field("Str11")}, {"a.u", Field(Null())}});
     col_object.insertFrom(src_col_object3, 1);
     ASSERT_EQ((*typed_paths.at("a.b"))[3], Field(Array{}));
     ASSERT_EQ((*typed_paths.at("b.d"))[3], Field(0u));
@@ -226,7 +226,7 @@ TEST(ColumnObject, InsertRangeFrom)
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, b.d UInt32, a.b Array(String))");
     auto col = type->createColumn();
     auto & col_object = assert_cast<ColumnObject &>(*col);
-    col_object.insert(Object{{"a.a", Field(42)}});
+    col_object.insert(Object{{"a.a", Field(42)}, {"a.b", Array{}}, {"b.d", Field(0u)}});
 
     const auto & typed_paths = col_object.getTypedPaths();
     const auto & dynamic_paths = col_object.getDynamicPaths();
@@ -236,9 +236,9 @@ TEST(ColumnObject, InsertRangeFrom)
 
     auto src_col1 = type->createColumn();
     auto & src_col_object1 = assert_cast<ColumnObject &>(*src_col1);
-    src_col_object1.insert(Object{{"b.d", Field(43u)}, {"a.c", Field("Str1")}});
-    src_col_object1.insert(Object{{"a.b", Field(Array{"Str1", "Str2"})}, {"a.a", Field("Str1")}});
-    src_col_object1.insert(Object{{"b.d", Field(45u)}, {"a.c", Field("Str2")}});
+    src_col_object1.insert(Object{{"a.b", Array{}}, {"b.d", Field(43u)}, {"a.c", Field("Str1")}});
+    src_col_object1.insert(Object{{"a.b", Field(Array{"Str1", "Str2"})}, {"b.d", Field(0u)}, {"a.a", Field("Str1")}});
+    src_col_object1.insert(Object{{"a.b", Array{}}, {"b.d", Field(45u)}, {"a.c", Field("Str2")}});
     col_object.insertRangeFrom(src_col_object1, 0, 3);
     ASSERT_EQ((*typed_paths.at("a.b"))[1], Field(Array{}));
     ASSERT_EQ((*typed_paths.at("a.b"))[2], Field(Array{"Str1", "Str2"}));
@@ -259,9 +259,9 @@ TEST(ColumnObject, InsertRangeFrom)
 
     auto src_col2 = type->createColumn();
     auto & src_col_object2 = assert_cast<ColumnObject &>(*src_col2);
-    src_col_object2.insert(Object{{"a.b", Array{"Str4", "Str5"}}, {"a.d", Field("Str2")}, {"a.e", Field("Str3")}});
-    src_col_object2.insert(Object{{"b.d", Field(44u)}, {"a.d", Field("Str22")}, {"a.e", Field("Str33")}});
-    src_col_object2.insert(Object{{"a.b", Array{"Str44", "Str55"}}, {"a.d", Field("Str222")}, {"a.e", Field("Str333")}});
+    src_col_object2.insert(Object{{"a.b", Array{"Str4", "Str5"}}, {"b.d", Field(0u)}, {"a.d", Field("Str2")}, {"a.e", Field("Str3")}});
+    src_col_object2.insert(Object{{"a.b", Array{}}, {"b.d", Field(44u)}, {"a.d", Field("Str22")}, {"a.e", Field("Str33")}});
+    src_col_object2.insert(Object{{"a.b", Array{"Str44", "Str55"}}, {"b.d", Field(0u)}, {"a.d", Field("Str222")}, {"a.e", Field("Str333")}});
     col_object.insertRangeFrom(src_col_object2, 0, 3);
     ASSERT_EQ((*typed_paths.at("a.b"))[4], Field(Array{"Str4", "Str5"}));
     ASSERT_EQ((*typed_paths.at("a.b"))[5], Field(Array{}));
@@ -294,10 +294,10 @@ TEST(ColumnObject, InsertRangeFrom)
 
     auto src_col3 = type->createColumn();
     auto & src_col_object3 = assert_cast<ColumnObject &>(*src_col3);
-    src_col_object3.insert(Object{{"a.h", Field("Str6")}, {"h.h", Field("Str7")}});
-    src_col_object3.insert(Object{{"a.h", Field("Str6")}, {"h.h", Field("Str7")}, {"a.f", Field("Str8")}, {"a.g", Field("Str9")}, {"a.i", Field("Str11")}});
-    src_col_object3.insert(Object{{"a.a", Field("Str10")}});
-    src_col_object3.insert(Object{{"a.h", Field("Str6")}, {"a.c", Field(45u)}, {"h.h", Field("Str7")}, {"a.i", Field("Str11")}});
+    src_col_object3.insert(Object{{"a.b", Array{}}, {"b.d", Field(0u)}, {"a.h", Field("Str6")}, {"h.h", Field("Str7")}});
+    src_col_object3.insert(Object{{"a.b", Array{}}, {"b.d", Field(0u)}, {"a.h", Field("Str6")}, {"h.h", Field("Str7")}, {"a.f", Field("Str8")}, {"a.g", Field("Str9")}, {"a.i", Field("Str11")}});
+    src_col_object3.insert(Object{{"a.a", Field("Str10")}, {"a.b", Array{}}, {"b.d", Field(0u)}});
+    src_col_object3.insert(Object{{"a.b", Array{}}, {"b.d", Field(0u)}, {"a.h", Field("Str6")}, {"a.c", Field(45u)}, {"h.h", Field("Str7")}, {"a.i", Field("Str11")}});
     col_object.insertRangeFrom(src_col_object3, 1, 3);
     ASSERT_EQ((*typed_paths.at("a.b"))[7], Field(Array{}));
     ASSERT_EQ((*typed_paths.at("a.b"))[8], Field(Array{}));
@@ -337,7 +337,7 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
     auto col = type->createColumn();
     auto & col_object = assert_cast<ColumnObject &>(*col);
     col_object.insert(Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}});
-    col_object.insert(Object{{"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}});
+    col_object.insert(Object{{"a.b", Array{}}, {"b.d", Field(0u)}, {"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}});
     col_object.insert(Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}});
 
     Arena arena;
@@ -381,11 +381,11 @@ TEST(ColumnObject, rollback)
 
     auto checkpoint = col_object.getCheckpoint();
 
-    col_object.insert(Object{{"a.a", Field{1u}}});
+    col_object.insert(Object{{"a.a", Field{1u}}, {"a.b", Field{0u}}});
     col_object.updateCheckpoint(*checkpoint);
 
-    col_object.insert(Object{{"a.b", Field{2u}}});
-    col_object.insert(Object{{"a.a", Field{3u}}});
+    col_object.insert(Object{{"a.a", Field{0u}}, {"a.b", Field{2u}}});
+    col_object.insert(Object{{"a.a", Field{3u}}, {"a.b", Field{0u}}});
 
     col_object.rollback(*checkpoint);
 
@@ -396,12 +396,12 @@ TEST(ColumnObject, rollback)
     ASSERT_EQ((*typed_paths.at("a.a"))[0], Field{1u});
     ASSERT_EQ((*typed_paths.at("a.b"))[0], Field{0u});
 
-    col_object.insert(Object{{"a.c", Field{"ccc"}}});
+    col_object.insert(Object{{"a.a", Field{0u}}, {"a.b", Field{0u}}, {"a.c", Field{"ccc"}}});
 
     checkpoint = col_object.getCheckpoint();
 
-    col_object.insert(Object{{"a.d", Field{"ddd"}}});
-    col_object.insert(Object{{"a.e", Field{"eee"}}});
+    col_object.insert(Object{{"a.a", Field{0u}}, {"a.b", Field{0u}}, {"a.d", Field{"ddd"}}});
+    col_object.insert(Object{{"a.a", Field{0u}}, {"a.b", Field{0u}}, {"a.e", Field{"eee"}}});
 
     assert_sizes(4);
     ASSERT_EQ(typed_paths.size(), 2);

@@ -24,7 +24,9 @@
 
 #include <Interpreters/convertFieldToType.h>
 
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 
 #include <limits>
 #include <mutex>
@@ -358,7 +360,18 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
     if (field && rhs_field)
         return field == rhs_field || *field == *rhs_field;
 
-    return getColumn()->compareAt(0, 0, *rhs_typed.getColumn(), 1) == 0;
+    if (getColumn()->compareAt(0, 0, *rhs_typed.getColumn(), 1) != 0)
+        return false;
+
+    /// The comparison ignores the source of a JSON type with `with_source=1`, which can be read as a subcolumn.
+    auto has_source = [](const IDataType & type)
+    {
+        const auto * object_type = typeid_cast<const DataTypeObject *>(&type);
+        return object_type && object_type->hasSource();
+    };
+    if (anyInTypeTree(*getResultType(), has_source))
+        return getValueName({}) == rhs_typed.getValueName({});
+    return true;
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const

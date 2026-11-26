@@ -127,7 +127,7 @@ void SerializationObject::checkSharedDataPathsAreNotReserved(const ColumnObject 
     {
         /// The paths of a row are sorted, but other paths can sort between the name and the paths nested
         /// in it (`__source-x` < `__source.x`), so both are looked up.
-        size_t start = offsets[row - 1];
+        size_t start = offsets[static_cast<ssize_t>(row) - 1];
         size_t end = offsets[row];
         size_t pos = lower_bound(start, end, name);
         if (pos != end && shared_data_paths->getDataAt(pos) == name)
@@ -1185,12 +1185,14 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
 
     auto & column_object = assert_cast<ColumnObject &>(column);
     auto & typed_paths = column_object.getTypedPaths();
+    /// Taken before reading: once read, the source column is shared with the substreams cache.
+    IColumn * source_column = column_object.hasSource() ? &column_object.getSourceColumn() : nullptr;
 
     if (source_serialization)
     {
-        if (!column_object.hasSource())
+        if (!source_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Object column {} doesn't have the source column", column_object.getName());
-        source_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSourceColumn(), limit, settings, object_state->source_state, cache);
+        source_serialization->deserializeBinaryBulkWithMultipleStreams(*source_column, limit, settings, object_state->source_state, cache);
     }
 
     if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
@@ -1233,11 +1235,11 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
                     limit);
         }
 
-        if (column_object.hasSource() && column_object.getSourceColumn().size() != prev_num_rows + limit)
+        if (source_column && source_column->size() != prev_num_rows + limit)
             throw Exception(
                 settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
                 "Unexpected size of the source column in flattened Object column: {}. Expected size {}",
-                column_object.getSourceColumn().size() - prev_num_rows,
+                source_column->size() - prev_num_rows,
                 limit);
 
         settings.path.pop_back();
@@ -1306,8 +1308,8 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
     }
 
-    if (column_object.hasSource() && column_object.getSourceColumn().size() != expected_size)
-        throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of the source column: {}. Expected size {}", column_object.getSourceColumn().size(), expected_size);
+    if (source_column && source_column->size() != expected_size)
+        throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of the source column: {}. Expected size {}", source_column->size(), expected_size);
 
     column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }

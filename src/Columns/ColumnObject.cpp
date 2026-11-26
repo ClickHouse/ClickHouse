@@ -487,6 +487,15 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
         }
     }
 
+    /// The source can be read as a subcolumn, so it distinguishes values (e.g. the action names of constants).
+    if (hasSource() && options.notFull(name_buf))
+    {
+        if (!first)
+            name_buf << ", ";
+        writeDoubleQuoted(std::string_view{DataTypeObject::SOURCE_SUBCOLUMN_NAME}, name_buf);
+        getSourceColumn().getValueNameImpl(name_buf, n, options);
+    }
+
     if (options.notFull(name_buf))
         name_buf << "}";
 }
@@ -1733,6 +1742,8 @@ void ColumnObject::updateHashFast(SipHash & hash) const
     for (const auto & [_, column] : dynamic_paths_ptrs)
         column->updateHashFast(hash);
     shared_data->updateHashFast(hash);
+    if (hasSource())
+        source->updateHashFast(hash);
 }
 
 ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) const

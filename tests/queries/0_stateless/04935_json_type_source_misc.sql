@@ -123,3 +123,15 @@ INSERT INTO t_json_reserved_filtered VALUES ('{"__source" : 1}'), ('{"a" : 1}');
 SELECT c, c.__source, JSONAllPaths(c) FROM (SELECT CAST(j AS JSON(with_source=1)) AS c FROM t_json_reserved_filtered WHERE isNull(j.__source));
 SELECT CAST(j AS JSON(with_source=1)) FROM t_json_reserved_filtered; -- { serverError INCORRECT_DATA }
 DROP TABLE t_json_reserved_filtered;
+
+SELECT 'a Wide part is read with the source';
+DROP TABLE IF EXISTS t_json_source_wide;
+CREATE TABLE t_json_source_wide (id UInt64, json JSON(with_source=1)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_json_source_wide VALUES (1, '{ "a" : 1 }');
+SELECT json, json.__source FROM t_json_source_wide;
+DROP TABLE t_json_source_wide;
+
+SELECT 'constants that differ only in the source keep their own source';
+SELECT materialize('{"a":1}'::JSON(with_source=1)).__source, materialize('{ "a" : 1 }'::JSON(with_source=1)).__source;
+SELECT tupleElement(materialize(tuple('{"a":1}'::JSON(with_source=1))), 1).__source, tupleElement(materialize(tuple('{ "a" : 1 }'::JSON(with_source=1))), 1).__source;
+SELECT materialize(['{"a":1}'::JSON(with_source=1)])[1].__source, materialize(['{ "a" : 1 }'::JSON(with_source=1)])[1].__source;
