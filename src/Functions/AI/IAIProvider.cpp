@@ -46,7 +46,8 @@ String IAIProvider::formatProviderError(int status_code, const String & response
                     if (Poco::icompare(header.name, "Authorization") != 0)
                         return false;
                     std::string_view value(header.value);
-                    const auto scheme_end = value.find_first_of(" \t");
+                    const auto scheme_begin = value.find_first_not_of(" \t");
+                    const auto scheme_end = value.find_first_of(" \t", scheme_begin);
                     if (scheme_end == std::string_view::npos)
                         return false;
                     const auto first = value.find_first_not_of(" \t", scheme_end);
