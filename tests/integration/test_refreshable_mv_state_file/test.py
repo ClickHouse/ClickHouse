@@ -234,6 +234,41 @@ def test_unusable_persisted_refresh_state_stops_the_view(payload):
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
+def test_a_persisted_running_refresh_is_cleared_on_restart():
+    """No refresh survives a restart, so a state file claiming one keeps its schedule.
+
+    An uncoordinated view has no replica name and no Keeper, so a refresh "running on another
+    replica" must not reach the branch that waits for that replica's ephemeral znode.
+    """
+    name = "rmv_running_on_restart"
+    before = create_daily_rmv(name)
+    try:
+        state_files = find_refresh_state_files(DB_DISK_PATH)
+        assert len(state_files) == 1
+
+        node.stop_clickhouse()
+        payload = read_state_file(state_files[0])
+        for field, value in (
+            ("refresh_running", "1"),
+            ("last_attempt_replica", "other"),
+        ):
+            payload, replaced = re.subn(
+                rf"^{field}: .*$", f"{field}: {value}", payload, flags=re.M
+            )
+            assert replaced == 1, payload
+        node.exec_in_container(
+            ["bash", "-c", f"printf '%s' {shlex.quote(payload)} > {state_files[0]}"]
+        )
+        node.start_clickhouse()
+
+        wait_for_refresh_info(name, "status", lambda x: x == "Scheduled")
+        time.sleep(3)
+        assert refresh_info(name, "status") == "Scheduled"
+        assert refresh_info(name, "last_success_time") == before
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
 def test_finished_refresh_is_not_published_when_the_state_cannot_be_persisted():
     """Blocking the write while a refresh is in flight covers the transition that publishes it.
 
@@ -439,9 +474,8 @@ def test_a_starting_refresh_is_not_persisted():
 
     A starting refresh publishes nothing a restart cannot recompute from the last persisted
     finish, and persisting it would release the task's mutex mid-start. Skipping it on the write
-    side is what makes `refresh_running: 0` an invariant of every payload ever written, because
-    the loader honours whatever the file says. This asserts it at the one moment the in-memory
-    value differs.
+    side keeps `refresh_running: 0` in every payload ever written. This asserts it at the one
+    moment the in-memory value differs.
     """
     name = "rmv_starting"
     renamed = "rmv_starting_renamed"

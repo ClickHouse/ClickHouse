@@ -2211,6 +2211,8 @@ RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState(const Loca
         {
             CoordinationZnode znode;
             znode.parse(readMetadataFile(location.disk, location.path), /*running_znode_exists=*/ false, getLogger());
+            /// No refresh survives a restart.
+            znode.refresh_running = false;
             result.znode = std::move(znode);
             return result;
         }
