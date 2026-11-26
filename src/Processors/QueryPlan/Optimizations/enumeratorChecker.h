@@ -222,6 +222,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         const MergeInputCandidate * left = nullptr;
         const MergeInputCandidate * right = nullptr;
         double cost = std::numeric_limits<double>::infinity();
+        double rows_cost = std::numeric_limits<double>::infinity();
         const auto left_candidates = mergeInputCandidates(lhs_subset, key);
         const auto right_candidates = mergeInputCandidates(rhs_subset, key);
         for (const auto & left_candidate : left_candidates)
@@ -230,9 +231,13 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
             {
                 const double candidate_cost = optimizer.mergeJoinCost(
                     left_candidate.input, left_mask, right_candidate.input, right_mask, key, key_classes, selectivity);
-                if (candidate_cost < cost)
+                /// The output rows of the join are the same for every pair, they are added below.
+                const double candidate_rows_cost = planAt(lhs_subset, left_candidate.plan).rows_cost
+                    + planAt(rhs_subset, right_candidate.plan).rows_cost;
+                if (!left || isCheaperPlan(candidate_cost, candidate_rows_cost, cost, rows_cost))
                 {
                     cost = candidate_cost;
+                    rows_cost = candidate_rows_cost;
                     left = &left_candidate;
                     right = &right_candidate;
                 }
@@ -240,14 +245,13 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         }
         if (!left)
             continue;
+        rows_cost += estimateJoinedRows(selectivity, left->input.rows, right->input.rows);
 
         /// Decide where the plan goes before building it, a plan that is not kept costs no allocation.
         auto & entry = dp_table[result_subset];
         const bool keeps_order = optimizer.isInterestingOrder(key, static_cast<UInt32>(result_subset));
         auto ordered_it = keeps_order ? std::ranges::find(entry.ordered, key, &Plan::order_class) : entry.ordered.end();
         const bool new_ordered = keeps_order && ordered_it == entry.ordered.end();
-        const double rows_cost = planAt(lhs_subset, left->plan).rows_cost + planAt(rhs_subset, right->plan).rows_cost
-            + estimateJoinedRows(selectivity, left->input.rows, right->input.rows);
         const bool better_ordered = keeps_order && !new_ordered && isCheaperPlan(cost, rows_cost, ordered_it->cost, ordered_it->rows_cost);
         const bool better_cheapest = isCheaperPlan(cost, rows_cost, entry.cost, entry.rows_cost);
         if (!new_ordered && !better_ordered && !better_cheapest)
