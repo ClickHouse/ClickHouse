@@ -806,6 +806,16 @@ private:
         return ColumnMap::create(std::move(nested_column));
     }
 
+    static void insertFromThenOrElse(
+        IColumn & result, const PaddedPODArray<UInt8> & cond, const IColumn & then_col, const IColumn & else_col)
+    {
+        const bool then_is_const = isColumnConst(then_col);
+        const bool else_is_const = isColumnConst(else_col);
+        const IColumn & then_source = then_is_const ? assert_cast<const ColumnConst &>(then_col).getDataColumn() : then_col;
+        const IColumn & else_source = else_is_const ? assert_cast<const ColumnConst &>(else_col).getDataColumn() : else_col;
+        result.insertFromEither(then_source, then_is_const, else_source, else_is_const, cond);
+    }
+
     static ColumnPtr executeGenericWithType(
         const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, const DataTypePtr & common_type)
     {
@@ -819,59 +829,7 @@ private:
         MutableColumnPtr result_column = common_type->createColumn();
         result_column->reserve(input_rows_count);
 
-        bool then_is_const = isColumnConst(*col_then);
-        bool else_is_const = isColumnConst(*col_else);
-
-        const auto & cond_array = cond_col->getData();
-
-        if (then_is_const && else_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else if (then_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-        else if (else_is_const)
-        {
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-
+        insertFromThenOrElse(*result_column, cond_col->getData(), *col_then, *col_else);
         return result_column;
     }
 
@@ -896,59 +854,7 @@ private:
         MutableColumnPtr result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
 
-        bool then_is_const = isColumnConst(*col_then);
-        bool else_is_const = isColumnConst(*col_else);
-
-        const auto & cond_array = cond_col->getData();
-
-        if (then_is_const && else_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else if (then_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-        else if (else_is_const)
-        {
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-
+        insertFromThenOrElse(*result_column, cond_col->getData(), *col_then, *col_else);
         return result_column;
     }
 

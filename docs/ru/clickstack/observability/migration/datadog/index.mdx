@@ -1,0 +1,184 @@
+---
+slug: /clickstack/observability/migration/datadog
+title: 'Миграция с Datadog'
+sidebarTitle: 'Миграция с Datadog'
+description: 'Отправка журналов, трассировок и метрик из существующих агентов Datadog в управляемый или самоуправляемый ClickHouse Observability.'
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['Datadog', 'агент Datadog', 'миграция', 'ClickHouse Observability']
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+Отправляйте журналы, трассировку и метрики из уже работающих агентов Datadog в ClickHouse Observability. Приложения могут и дальше использовать Datadog SDK. Выберите управляемую конечную точку или настройте приёмник Datadog в собственном коллекторе, а затем выполните описанные ниже шаги по настройке агента.
+
+## Предварительные требования {#prerequisites}
+
+* Управляемый или самоуправляемый сервис ClickHouse Observability.
+* Запущенный агент Datadog, который собирает сигналы, подлежащие миграции. Для трассировки ваше приложение должно уже отправлять трассировки этому агенту через Datadog SDK.
+* Сетевой доступ от агента к конечной точке вашего приёмника Datadog.
+
+## Настройка пункта назначения {#connection-details}
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Бета-версия" />
+
+    Откройте сервис и перейдите в **Team Settings → Data → Managed Telemetry**. Скопируйте **OTLP HTTP endpoint** и **ключ API**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Раздел Managed Telemetry с замаскированными конечной точкой OTLP HTTP и ключом API](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Конечная точка Datadog использует то же имя хоста и порт `8126`. Дополнительный коллектор не требуется. Используйте эти значения в конфигурации агента ниже:
+
+    | Настройка                | Значение                                  |
+    | ------------------------ | ----------------------------------------- |
+    | `YOUR_API_KEY`           | Ключ API вашего сервиса для приёма данных |
+    | `YOUR_DATADOG_URL`       | `https://YOUR_OTEL_HOST:8126`             |
+    | `YOUR_DATADOG_HOST_PORT` | `YOUR_OTEL_HOST:8126`                     |
+    | `logs_no_ssl`            | `false`                                   |
+  </Tab>
+
+  <Tab title="Самоуправляемый" id="self-managed">
+    [Коллектор ClickStack OpenTelemetry](/ru/clickstack/self-configured/ingesting-data/collector) включает [приёмник Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver). Настройте приёмник и подключите его к конвейерам журналов, трассировки и метрик.
+
+    Сохраните следующий дополнительный слой конфигурации в файл `datadog-collector.yaml`. Он добавляет приёмник Datadog в существующие конвейеры журналов, трассировки и метрик коллектора, сохраняя при этом приёмник OTLP:
+
+    ```yaml
+    receivers:
+      datadog:
+        endpoint: 0.0.0.0:8126
+
+    service:
+      pipelines:
+        logs/in:
+          receivers: [otlp/hyperdx, datadog]
+        traces:
+          receivers: [otlp/hyperdx, datadog]
+        metrics:
+          receivers: [otlp/hyperdx, datadog]
+    ```
+
+    Укажите параметры соединения с ClickHouse и запустите коллектор. При обычном запуске схема телеметрии создаётся в базе данных, указанной в `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`, поэтому пользователю ClickHouse нужны права на создание базы данных и таблиц. Если у вас уже есть база данных телеметрии, укажите её имя.
+
+    Для этого примера требуется Docker. В нём используется коллектор версии `2.40.0`, а приёмник Datadog публикуется только на локальном хосте:
+
+    ```shell
+    export CLICKHOUSE_ENDPOINT='https://YOUR_CLICKHOUSE_HOST:8443'
+    export CLICKHOUSE_USER='YOUR_CLICKHOUSE_USER'
+    export CLICKHOUSE_PASSWORD='YOUR_CLICKHOUSE_PASSWORD'
+    export HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE='default'
+
+    docker run --rm --name datadog-collector \
+      -e CLICKHOUSE_ENDPOINT \
+      -e CLICKHOUSE_USER \
+      -e CLICKHOUSE_PASSWORD \
+      -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/datadog-collector.yaml \
+      -v "$(pwd)/datadog-collector.yaml:/etc/datadog-collector.yaml:ro" \
+      -p 127.0.0.1:18126:8126 \
+      clickhouse/clickstack-otel-collector:2.40.0
+    ```
+
+    Не останавливайте коллектор в этом терминале, пока настраиваете и проверяете агента. Остальные команды выполняйте в отдельном терминале.
+
+    Для агента, работающего на том же хосте, используйте следующие значения:
+
+    | Настройка                | Значение                                                                                             |
+    | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+    | `YOUR_API_KEY`           | Любое непустое значение-заполнитель, например `local-test`; этот локальный приёмник его не проверяет |
+    | `YOUR_DATADOG_URL`       | `http://localhost:18126`                                                                             |
+    | `YOUR_DATADOG_HOST_PORT` | `localhost:18126`                                                                                    |
+    | `logs_no_ssl`            | `true`                                                                                               |
+
+    Порт хоста `18126` позволяет не пересекаться с прослушивающим обработчиком трасс приложений агента на порту `8126`. Если агент запущен в контейнере, подключите оба контейнера к одной сети Docker и укажите в качестве пункта назначения `http://datadog-collector:8126` и `datadog-collector:8126`.
+
+    В этом примере используется прослушивающий обработчик HTTP без аутентификации, доступный только с локального хоста. Для агентов на других хостах обеспечьте защищённый сетевой путь и настройте TLS и аутентификацию на уровне ingress, прежде чем открывать доступ к приёмнику. `OTLP_AUTH_TOKEN` настраивает аутентификацию OTLP в коллекторе, но не защищает этот прослушивающий обработчик Datadog.
+  </Tab>
+</Tabs>
+
+## Настройка агента Datadog {#configure-datadog-agent}
+
+Обновите [файл конфигурации `datadog.yaml`](https://docs.datadoghq.com/agent/configuration/agent-configuration-files/) агента. Обычно он находится в `/etc/datadog-agent/datadog.yaml` в Linux и в `/opt/datadog-agent/etc/datadog.yaml` в macOS.
+
+Добавьте следующие настройки в существующую конфигурацию, указав значения для пункта назначения с вкладки выше:
+
+```yaml
+api_key: "YOUR_API_KEY"
+
+# Metrics destination
+dd_url: "YOUR_DATADOG_URL"
+
+# Use the v2 metrics intake.
+use_v3_api:
+  series:
+    enabled: false
+
+# Trace destination
+apm_config:
+  enabled: true
+  apm_dd_url: "YOUR_DATADOG_URL"
+  features:
+    - disable-convert-traces
+
+# Log destination
+logs_enabled: true
+logs_config:
+  logs_dd_url: "YOUR_DATADOG_HOST_PORT"
+  force_use_http: true
+  logs_no_ssl: false # Set to true for the local HTTP receiver.
+
+remote_updates: false
+remote_configuration:
+  enabled: false
+```
+
+Замените `YOUR_DATADOG_URL` полным URL пункта назначения, а `YOUR_DATADOG_HOST_PORT` — его значением `hostname:port` без схемы. Задайте для `logs_no_ssl` значение, указанное для вашего пункта назначения.
+
+<Note>
+  `disable-convert-traces` обеспечивает совместимость полезных нагрузок трасс агента с приёмником Datadog. С агентом Datadog 7.85.2 и ядром коллектора 0.155.0 индексированная полезная нагрузка, которую агент использует по умолчанию, принималась с ответом HTTP 200, но не порождала ни одного спана. Для пересылки трасс используйте приведённую выше настройку и сохраните все остальные записи в существующем списке `apm_config.features`.
+</Note>
+
+Сохраните существующие интеграции для сбора журналов и конфигурацию трассировки приложений. Эти настройки меняют лишь то, куда агент отправляет телеметрию: они не включают сбор журналов для отдельных приложений и не добавляют инструментирование. Если вы настраиваете агент с помощью [переменных окружения](https://docs.datadoghq.com/agent/guide/environment-variables/), обновите соответствующие настройки и там, включая `DD_API_KEY`.
+
+Эта конфигурация перенаправляет журналы, трассировки и метрики агента из Datadog в ClickHouse Observability. Чтобы сначала проверить её, примените её к тестовому агенту, прежде чем обновлять остальное развертывание.
+
+## Перезапуск и проверка {#restart-and-verify}
+
+Чтобы применить конфигурацию, перезапустите агент. В Linux:
+
+```shell
+sudo systemctl restart datadog-agent
+sudo datadog-agent status
+```
+
+В macOS:
+
+```shell
+sudo launchctl kickstart -k system/com.datadoghq.agent
+```
+
+Если агент работает в контейнере, обновите его конфигурацию и повторно разверните контейнер.
+
+Сгенерируйте новую активность приложения, затем откройте ClickHouse Observability и выберите временной диапазон за последнее время:
+
+* **Журналы:** выберите источник журналов и отфильтруйте данные по `ServiceName` приложения.
+* **Трассировки:** выберите источник трассировок и отфильтруйте данные по `ServiceName` приложения.
+* **Метрики:** найдите метрику, которую отправляет ваше приложение или агент. Для проверки DogStatsD отправьте именованную метрику типа Gauge и проверьте её значение.
+
+Если данные не появляются, проверьте статус агента на наличие ошибок доставки. Проверьте имя хоста, порт, ключ API и настройки сетевого доступа вашего сервиса. Убедитесь, что агент собирает нужный тип сигнала и что все переопределения через переменные окружения указывают на тот же пункт назначения.
+
+Для трассировок проверяйте наличие конкретной известной трассы по её идентификатору, а не полагайтесь только на счётчики успешной доставки агента. Если трасса не отображается из-за фильтра по сервису, выполните поиск по `TraceId`: приёмник может использовать базовый сервис трассировщика в качестве имени сервиса ресурса, сохраняя при этом переопределение сервиса для отдельного спана в атрибуте спана `service.name`. Чтобы задать базовое имя сервиса приложения, укажите `DD_SERVICE` в конфигурации трассировки.
+
+## Поддерживаемые сигналы {#supported-signals}
+
+Приёмник Datadog является экспериментальным. Он преобразует журналы, трассировку и поддерживаемые метрики Datadog в модель данных OpenTelemetry, которую использует ClickHouse Observability. В приведённой выше конфигурации используется приём метрик через API v2; прочие возможности бэкенда Datadog в этот сценарий миграции не входят.
+
+Вы можете сохранить существующее инструментирование Datadog и переводить приложения на OpenTelemetry постепенно.

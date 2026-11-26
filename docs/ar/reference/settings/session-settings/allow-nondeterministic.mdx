@@ -12,15 +12,13 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متوفرة في [system.settings](/ar/reference/system-tables/settings)، وقد تم توليدها تلقائيًا من [ملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_nondeterministic_mutations">
-  ## allow_nondeterministic_mutations
-</div>
+## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-إعداد على مستوى المستخدم يتيح تنفيذ عمليات mutations على الجداول المُكرَّرة باستخدام دوال غير حتمية مثل `dictGet`.
+إعداد على مستوى المستخدم يتيح تنفيذ عمليات mutations على الجداول المُكرَّرة باستخدام دوال غير حتمية مثل `dictGet`، والأعمدة الافتراضية التي قد تختلف قيمها بين النسخ المتماثلة، مثل `_table` و`_database` و`_disk_name`.
 
-وبما أن القواميس قد تكون، على سبيل المثال، غير متزامنة بين العقد، فإن عمليات mutations التي تستمد منها قيَمًا تكون محظورة افتراضيًا على الجداول المُكرَّرة. ويتيح تفعيل هذا الإعداد هذا السلوك، ويجعل المستخدم مسؤولًا عن التأكد من أن البيانات المستخدمة متزامنة عبر جميع العقد.
+وبما أن القواميس قد تكون، على سبيل المثال، غير متزامنة بين العقد، فإن عمليات mutations التي تستمد منها قيَمًا تكون محظورة افتراضيًا على الجداول المُكرَّرة. ويتيح تفعيل هذا الإعداد هذا السلوك، ويجعل المستخدم مسؤولًا عن التأكد من أن البيانات المستخدمة متزامنة عبر جميع العقد.
 
 **مثال**
 
@@ -37,9 +35,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 </profiles>
 ```
 
-<div id="allow_nondeterministic_optimize_skip_unused_shards">
-  ## allow_nondeterministic_optimize_skip_unused_shards
-</div>
+## allow_nondeterministic_optimize_skip_unused_shards {#allow_nondeterministic_optimize_skip_unused_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

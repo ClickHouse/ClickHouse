@@ -727,11 +727,9 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
             {
                 if (read_step)
-                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
                 else if (object_storage_read_step && !descr.is_global_row_index)
-                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type);
+                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
             }
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
