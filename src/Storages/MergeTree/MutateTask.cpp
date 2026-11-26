@@ -1237,6 +1237,8 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet extra_columns_for_indices;
+        /// A column renamed by an earlier command of the batch is stored in the part under its old name.
+        std::unordered_map<String, std::pair<String, size_t>> renamed_in_batch; /// name -> (stored name, its RENAME_COLUMN in `for_file_renames`)
 
 
         for (const auto & command : commands)
@@ -1336,12 +1338,31 @@ static void splitAndModifyMutationCommands(
             else if (part_columns.has(command.column_name))
             {
                 if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    String stored_name = command.column_name;
+                    if (auto it = renamed_in_batch.find(command.column_name); it != renamed_in_batch.end())
+                    {
+                        stored_name = it->second.first;
+                        renamed_in_batch.erase(it);
+                    }
+                    renamed_in_batch[command.rename_to] = {std::move(stored_name), for_file_renames.size()};
                     part_columns.rename(command.column_name, command.rename_to);
+                }
 
                 /// CLEAR COLUMN must also go to the interpreter, because we might have projections/indexes/materialized
                 /// columns that depend on this column and should be rebuilt.
                 if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
+                {
                     for_interpreter.push_back(command);
+
+                    /// Clear the stored column instead of renaming it.
+                    if (auto it = renamed_in_batch.find(command.column_name); it != renamed_in_batch.end())
+                    {
+                        for_file_renames[it->second.second] = {.type = MutationCommand::Type::DROP_COLUMN, .column_name = it->second.first, .clear = true};
+                        renamed_in_batch.erase(it);
+                        continue;
+                    }
+                }
 
                 for_file_renames.push_back(command);
             }
