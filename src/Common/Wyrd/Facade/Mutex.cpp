@@ -1,20 +1,22 @@
 #include <Common/Wyrd/Facade/Mutex.h>
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 #    include <Common/Wyrd/Facade/Futex.h>
 #    include <Common/Wyrd/Strategies/Simulation/InjectFault.h>
 #    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
+#    include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
+#    include <Common/Wyrd/Strategies/Mode.h>
 #    include <fmt/format.h>
 #    include <utility>
-#elif defined(WYRD_ADVERSARY)
-#    include <Common/Wyrd/Facade/Futex.h>
-#    include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
 #endif
 
 namespace DB::Wyrd
 {
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
+
+namespace SimulationMode
+{
 
 void Mutex::lock(std::source_location location)
 {
@@ -51,7 +53,10 @@ void Mutex::setName(std::string name)
     locked.setName(std::move(name));
 }
 
-#elif defined(WYRD_ADVERSARY)
+}
+
+namespace AdversaryMode
+{
 
 void Mutex::lock(std::source_location location)
 {
@@ -75,6 +80,50 @@ void Mutex::unlock(std::source_location location)
 {
     locked.store(0, std::memory_order::seq_cst, location);
     futexWakeOne(locked, location);
+}
+
+}
+
+WyrdMutex::WyrdMutex()
+{
+    if (getMode() == Mode::Simulation)
+        simulation_impl.emplace();
+    else
+        adversary_impl.emplace();
+}
+
+void WyrdMutex::lock(std::source_location location)
+{
+    if (getMode() == Mode::Simulation)
+        simulation_impl->lock(location);
+    else
+        adversary_impl->lock(location);
+}
+
+bool WyrdMutex::try_lock(std::source_location location)
+{
+    if (getMode() == Mode::Simulation)
+        return simulation_impl->try_lock(location);
+    else
+        return adversary_impl->try_lock(location);
+}
+
+void WyrdMutex::unlock(std::source_location location)
+{
+    if (getMode() == Mode::Simulation)
+        simulation_impl->unlock(location);
+    else
+        adversary_impl->unlock(location);
+}
+
+SimulationMode::Mutex & WyrdMutex::simulation()
+{
+    return *simulation_impl;
+}
+
+AdversaryMode::Mutex & WyrdMutex::adversary()
+{
+    return *adversary_impl;
 }
 
 #endif

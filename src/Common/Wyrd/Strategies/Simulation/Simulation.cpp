@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Wyrd
+namespace Wyrd::SimulationMode
 {
 
 struct TraceRecord

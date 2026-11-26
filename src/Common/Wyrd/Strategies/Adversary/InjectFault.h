@@ -2,7 +2,7 @@
 
 #include <source_location>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::AdversaryMode
 {
 
 void injectFault(const char * operation, std::source_location location = std::source_location::current());

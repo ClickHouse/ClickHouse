@@ -1175,10 +1175,8 @@ if (ENABLE_TESTS)
     endif()
 
     get_property (wyrd_tests GLOBAL PROPERTY CLICKHOUSE_WYRD_TESTS)
-    foreach (strategy adversary simulation)
-        clickhouse_add_executable (unit_tests_wyrd_${strategy} ${wyrd_tests})
-        target_link_libraries (unit_tests_wyrd_${strategy} PRIVATE clickhouse_wyrd_${strategy} dbms)
-    endforeach ()
+    clickhouse_add_executable (unit_tests_wyrd ${wyrd_tests})
+    target_link_libraries (unit_tests_wyrd PRIVATE clickhouse_wyrd_enabled dbms)
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)

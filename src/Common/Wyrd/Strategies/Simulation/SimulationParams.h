@@ -3,7 +3,7 @@
 #include <Common/CoroutineStack.h>
 #include <base/types.h>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 struct SimulationParams

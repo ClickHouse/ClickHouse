@@ -13,11 +13,13 @@ struct TestParams
 {
     size_t runs = 1000;
     std::optional<UInt64> seed = std::nullopt;
-    SimulationParams simulation{};
-    AdversaryParams adversary{};
+    SimulationMode::SimulationParams simulation{};
+    AdversaryMode::AdversaryParams adversary{};
 };
 
 /// Runs a test body under the runtime of the wyrd.
 void runTest(std::function<void()> body, TestParams params = {});
+void runAdversaryTest(std::function<void()> body, TestParams params = {});
+void runSimulationTest(std::function<void()> body, TestParams params = {});
 
 }

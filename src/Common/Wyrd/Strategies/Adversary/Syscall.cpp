@@ -3,7 +3,7 @@
 
 #include <utility>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::AdversaryMode
 {
 
 void enterThread()

@@ -1,7 +1,7 @@
 #include <Common/Wyrd/Strategies/Simulation/FutexTable.h>
 #include <Common/Wyrd/Random.h>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 void FutexTable::park(void * address, SimulatedThread * thread)

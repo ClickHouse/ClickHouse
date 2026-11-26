@@ -5,7 +5,7 @@ namespace DB::Wyrd
 
 constexpr bool enabled()
 {
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+#if defined(WYRD_ENABLED)
     return true;
 #else
     return false;

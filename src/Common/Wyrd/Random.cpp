@@ -60,7 +60,13 @@ T popRandom(VectorWithMemoryTracking<T> & items)
     return item;
 }
 
+namespace SimulationMode
+{
+
 struct SimulatedThread;
-template SimulatedThread * popRandom(VectorWithMemoryTracking<SimulatedThread *> & items);
+
+}
+
+template SimulationMode::SimulatedThread * popRandom(VectorWithMemoryTracking<SimulationMode::SimulatedThread *> & items);
 
 }

@@ -2,7 +2,7 @@
 
 #include <Common/Wyrd/Strategies/Adversary/Adversary.h>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::AdversaryMode
 {
 
 Adversary * adversary();

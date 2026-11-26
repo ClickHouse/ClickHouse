@@ -1,19 +1,22 @@
 #include <Common/Wyrd/Facade/Futex.h>
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 #    include <Common/Wyrd/Strategies/Simulation/InjectFault.h>
 #    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
+#    include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
+#    include <Common/Wyrd/Strategies/Mode.h>
+#    include <Common/futex.h>
 #    include <fmt/format.h>
 #    include <limits>
-#elif defined(WYRD_ADVERSARY)
-#    include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
-#    include <Common/futex.h>
 #endif
 
 namespace DB::Wyrd
 {
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
+
+namespace SimulationMode
+{
 
 void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_location location)
 {
@@ -35,7 +38,10 @@ void futexWakeAll(Atomic<UInt32> & address, std::source_location location)
     futexWake(&address, std::numeric_limits<size_t>::max(), location);
 }
 
-#elif defined(WYRD_ADVERSARY)
+}
+
+namespace AdversaryMode
+{
 
 void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_location location)
 {
@@ -56,6 +62,32 @@ void futexWakeAll(Atomic<UInt32> & address, std::source_location location)
 {
     injectFault("futex::wakeAll", location);
     DB::futexWakeAll(address.underlying());
+}
+
+}
+
+void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_location location)
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::futexWaitFetch(address.simulation(), value, location);
+    else
+        AdversaryMode::futexWaitFetch(address.adversary(), value, location);
+}
+
+void futexWakeOne(Atomic<UInt32> & address, std::source_location location)
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::futexWakeOne(address.simulation(), location);
+    else
+        AdversaryMode::futexWakeOne(address.adversary(), location);
+}
+
+void futexWakeAll(Atomic<UInt32> & address, std::source_location location)
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::futexWakeAll(address.simulation(), location);
+    else
+        AdversaryMode::futexWakeAll(address.adversary(), location);
 }
 
 #endif

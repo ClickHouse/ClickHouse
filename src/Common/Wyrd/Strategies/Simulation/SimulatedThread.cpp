@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 SimulatedThread::SimulatedThread(UInt32 id_, size_t stack_size, std::function<void()> body_)

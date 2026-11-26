@@ -1,9 +1,9 @@
 #include <Common/Wyrd/Facade/SpinWait.h>
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 #    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
-#elif defined(WYRD_ADVERSARY)
 #    include <Common/Wyrd/Strategies/Adversary/InjectFault.h>
+#    include <Common/Wyrd/Strategies/Mode.h>
 #endif
 
 #include <algorithm>
@@ -34,22 +34,38 @@ void pauseRounds(size_t rounds)
 
 }
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 
-void SpinWait::spin(std::source_location location)
+namespace SimulationMode
+{
+
+static void spin(size_t & rounds, std::source_location location)
 {
     yield(location);
     pauseRounds(rounds);
     ++rounds;
 }
 
-#elif defined(WYRD_ADVERSARY)
+}
 
-void SpinWait::spin(std::source_location location)
+namespace AdversaryMode
+{
+
+static void spin(size_t & rounds, std::source_location location)
 {
     injectFault("spin_wait::spin", location);
     pauseRounds(rounds);
     ++rounds;
+}
+
+}
+
+void SpinWait::spin(std::source_location location)
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::spin(rounds, location);
+    else
+        AdversaryMode::spin(rounds, location);
 }
 
 #else

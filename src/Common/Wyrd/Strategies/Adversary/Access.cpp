@@ -2,7 +2,7 @@
 
 #include <memory>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::AdversaryMode
 {
 
 namespace

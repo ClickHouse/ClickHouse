@@ -1,46 +1,78 @@
 #include <Common/Wyrd/Testing/LockFreeScope.h>
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 #    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
-#elif defined(WYRD_ADVERSARY)
 #    include <Common/Wyrd/Strategies/Adversary/Syscall.h>
+#    include <Common/Wyrd/Strategies/Mode.h>
 #endif
 
 namespace DB::Wyrd
 {
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 
-LockFreeScope::LockFreeScope()
+namespace SimulationMode
+{
+
+static void enterScope()
 {
     enterLockFreeScope();
 }
 
-LockFreeScope::~LockFreeScope()
+static void leaveScope()
 {
     leaveLockFreeScope();
 }
 
-void progress()
+static void progress()
 {
     progressHint();
 }
 
-#elif defined(WYRD_ADVERSARY)
+}
 
-LockFreeScope::LockFreeScope()
+namespace AdversaryMode
+{
+
+static void enterScope()
 {
     enterLockFreeScope();
 }
 
-LockFreeScope::~LockFreeScope()
+static void leaveScope()
 {
     leaveLockFreeScope();
 }
 
-void progress()
+static void progress()
 {
     progressHint();
+}
+
+}
+
+LockFreeScope::LockFreeScope()
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::enterScope();
+    else
+        AdversaryMode::enterScope();
+}
+
+LockFreeScope::~LockFreeScope()
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::leaveScope();
+    else
+        AdversaryMode::leaveScope();
+}
+
+void progress()
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::progress();
+    else
+        AdversaryMode::progress();
 }
 
 #else

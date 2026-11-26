@@ -6,7 +6,7 @@ using namespace DB::Wyrd;
 
 TEST(Wyrd, EnabledOnlyUnderAStrategy)
 {
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+#if defined(WYRD_ENABLED)
     EXPECT_TRUE(enabled());
 #else
     EXPECT_FALSE(enabled());

@@ -4,7 +4,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 struct SimulatedThread;

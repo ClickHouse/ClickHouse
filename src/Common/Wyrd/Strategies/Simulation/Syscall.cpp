@@ -3,7 +3,7 @@
 
 #include <stdexcept>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 void sync(const char * operation, std::source_location location)

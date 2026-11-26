@@ -1,4 +1,4 @@
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 
 #include <Common/Wyrd/Facade/Atomic.h>
 #include <Common/Wyrd/Facade/Futex.h>
@@ -6,6 +6,7 @@
 #include <Common/Wyrd/Facade/Preemption.h>
 #include <Common/Wyrd/Facade/Thread.h>
 #include <Common/Wyrd/Strategies/Simulation/Simulation.h>
+#include <Common/Wyrd/Strategies/Mode.h>
 #include <Common/Wyrd/Testing/LockFreeScope.h>
 #include <Common/Wyrd/Testing/Test.h>
 #include <Common/Wyrd/Testing/Race.h>
@@ -15,6 +16,9 @@
 #include <stdexcept>
 
 using namespace DB::Wyrd;
+using SimulationMode::Simulation;
+using SimulationMode::SimulationParams;
+using SimulationMode::SimulationResult;
 
 namespace
 {
@@ -36,13 +40,15 @@ void incrementInThreeThreads()
 
 }
 
-WYRD_TEST(Wyrd, SimulationSameSeedGivesTheSameRun, .runs = 1, .seed = 1)
+WYRD_SIMULATION_TEST(Wyrd, SimulationSameSeedGivesTheSameRun, .runs = 1, .seed = 1)
 {
     incrementInThreeThreads();
 }
 
 TEST(Wyrd, SimulationDifferentSeedsGiveDifferentSchedules)
 {
+    setMode(Mode::Simulation);
+
     DB::SetWithMemoryTracking<UInt64> digests;
     for (UInt64 seed = 1; seed <= 16; ++seed)
     {
@@ -56,6 +62,8 @@ TEST(Wyrd, SimulationDifferentSeedsGiveDifferentSchedules)
 
 TEST(Wyrd, SimulationFindsLockOrderDeadlock)
 {
+    setMode(Mode::Simulation);
+
     auto lock_in_opposite_order = []
     {
         Mutex first;
@@ -99,6 +107,8 @@ TEST(Wyrd, SimulationFindsLockOrderDeadlock)
 
 TEST(Wyrd, SimulationReportsAnExceptionFromAThread)
 {
+    setMode(Mode::Simulation);
+
     SimulationParams params;
     params.seed = 3;
 
@@ -115,6 +125,8 @@ TEST(Wyrd, SimulationReportsAnExceptionFromAThread)
 
 TEST(Wyrd, SimulationStopsAtTheStepLimit)
 {
+    setMode(Mode::Simulation);
+
     SimulationParams params;
     params.max_steps = 50;
 
@@ -132,6 +144,8 @@ TEST(Wyrd, SimulationStopsAtTheStepLimit)
 
 TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 {
+    setMode(Mode::Simulation);
+
     SimulationParams params;
     params.collect_timeline = true;
     params.max_steps = 1000;
@@ -154,6 +168,8 @@ TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 
 TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
 {
+    setMode(Mode::Simulation);
+
     SimulationParams params;
     params.collect_timeline = true;
     params.lock_free_suspend_probability = 1.0;
@@ -187,6 +203,8 @@ TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
 
 TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
 {
+    setMode(Mode::Simulation);
+
     auto block_on_a_lock_free_peer = []
     {
         Atomic<UInt32> busy{0};
@@ -239,7 +257,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
     EXPECT_TRUE(found);
 }
 
-WYRD_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.spurious_failure_probability = 1.0})
+WYRD_SIMULATION_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.spurious_failure_probability = 1.0})
 {
     Atomic<int> value{0};
     int expected = 0;

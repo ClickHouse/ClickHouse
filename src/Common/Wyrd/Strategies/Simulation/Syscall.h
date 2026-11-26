@@ -6,7 +6,7 @@
 #include <source_location>
 #include <string>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 void sync(const char * operation, std::source_location location = std::source_location::current());

@@ -10,7 +10,7 @@
 #include <memory>
 #include <mutex>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::AdversaryMode
 {
 
 struct AdversaryResult

@@ -13,7 +13,7 @@
 #include <source_location>
 #include <string>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 struct SimulatedThread;

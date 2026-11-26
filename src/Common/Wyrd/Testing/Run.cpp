@@ -1,11 +1,14 @@
 #include <Common/Wyrd/Testing/Run.h>
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 #    include <Common/Wyrd/Strategies/Simulation/Simulation.h>
+#    include <Common/Wyrd/Strategies/Adversary/Access.h>
+#    include <Common/Wyrd/Strategies/Mode.h>
 #    include <Common/SetWithMemoryTracking.h>
 #    include <Common/VectorWithMemoryTracking.h>
 #    include <Common/randomSeed.h>
 #    include <base/EnumReflection.h>
+#    include <base/scope_guard.h>
 
 #    include <fmt/format.h>
 #    include <gtest/gtest-spi.h>
@@ -15,27 +18,20 @@
 #    include <cstdlib>
 #    include <exception>
 #    include <optional>
+#    include <semaphore>
 #    include <stdexcept>
 #    include <string>
 #    include <string_view>
-#    include <thread>
-#elif defined(WYRD_ADVERSARY)
-#    include <Common/Wyrd/Strategies/Adversary/Access.h>
-#    include <base/scope_guard.h>
-
-#    include <fmt/format.h>
-#    include <gtest/gtest.h>
-
-#    include <cstdlib>
-#    include <exception>
-#    include <semaphore>
 #    include <thread>
 #endif
 
 namespace DB::Wyrd
 {
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
+
+namespace SimulationMode
+{
 
 static std::optional<UInt64> seedFromEnvironment()
 {
@@ -83,8 +79,10 @@ struct RunnerOutcome
     std::exception_ptr error;
 };
 
-void runTest(std::function<void()> body, TestParams params)
+static void runTest(std::function<void()> body, TestParams params)
 {
+    setMode(Mode::Simulation);
+
     const std::optional<UInt64> fixed_seed = params.seed ? params.seed : seedFromEnvironment();
     const size_t runs = fixed_seed ? 1 : params.runs;
     const size_t threads = fixed_seed ? 1 : std::max<size_t>(1, std::min(runs, threadsFromEnvironment()));
@@ -199,10 +197,14 @@ void runTest(std::function<void()> body, TestParams params)
         throw std::runtime_error(shortest.error_message);
 }
 
-#elif defined(WYRD_ADVERSARY)
+}
 
-void runTest(std::function<void()> body, TestParams params)
+namespace AdversaryMode
 {
+
+static void runTest(std::function<void()> body, TestParams params)
+{
+    setMode(Mode::Adversary);
     setAdversary(params.adversary);
     SCOPE_EXIT({ resetAdversary(); });
 
@@ -249,9 +251,37 @@ void runTest(std::function<void()> body, TestParams params)
     fmt::print(stderr, "Wyrd adversary: runs={} yields={} suspends={} spurious_failures={}\n", params.runs, total.yields, total.suspends, total.spurious_failures);
 }
 
+}
+
+void runTest(std::function<void()> body, TestParams params)
+{
+    runAdversaryTest(body, params);
+    runSimulationTest(std::move(body), params);
+}
+
+void runAdversaryTest(std::function<void()> body, TestParams params)
+{
+    AdversaryMode::runTest(std::move(body), params);
+}
+
+void runSimulationTest(std::function<void()> body, TestParams params)
+{
+    SimulationMode::runTest(std::move(body), params);
+}
+
 #else
 
 void runTest(std::function<void()> body, TestParams)
+{
+    body();
+}
+
+void runAdversaryTest(std::function<void()> body, TestParams)
+{
+    body();
+}
+
+void runSimulationTest(std::function<void()> body, TestParams)
 {
     body();
 }

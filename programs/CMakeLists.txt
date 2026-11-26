@@ -274,7 +274,7 @@ if (BUILD_STRIPPED_BINARY)
 endif()
 
 if (ENABLE_TESTS)
-    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms unit_tests_wyrd_adversary unit_tests_wyrd_simulation)
+    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms unit_tests_wyrd)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()

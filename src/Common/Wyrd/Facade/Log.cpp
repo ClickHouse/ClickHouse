@@ -1,8 +1,8 @@
 #include <Common/Wyrd/Facade/Log.h>
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 #    include <Common/Wyrd/Strategies/Simulation/Syscall.h>
-#elif defined(WYRD_ADVERSARY)
+#    include <Common/Wyrd/Strategies/Mode.h>
 #    include <base/getThreadId.h>
 #    include <cstdio>
 #else
@@ -13,17 +13,33 @@
 namespace DB::Wyrd
 {
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_ENABLED)
 
-void logMessage(std::string message)
+namespace SimulationMode
+{
+
+static void logMessage(std::string message)
 {
     trace(std::move(message));
 }
 
-#elif defined(WYRD_ADVERSARY)
+}
 
-void logMessage(std::string)
+namespace AdversaryMode
 {
+
+static void logMessage(std::string)
+{
+}
+
+}
+
+void logMessage(std::string message)
+{
+    if (getMode() == Mode::Simulation)
+        SimulationMode::logMessage(std::move(message));
+    else
+        AdversaryMode::logMessage(std::move(message));
 }
 
 #else

@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-namespace DB::Wyrd
+namespace DB::Wyrd::SimulationMode
 {
 
 namespace
