@@ -2,3 +2,15 @@ stand-in	MergeTree	0
 stopped	MergeTree	1
 parts	2
 parts	1
+stand-in	alias	Alias	1
+stand-in	inner	MergeTree	0
+stand-in	mv	MaterializedView	1
+stand-in	target	MergeTree	0
+stopped	alias	Alias	1
+stopped	inner	MergeTree	1
+stopped	mv	MaterializedView	1
+stopped	target	MergeTree	1
+parts	inner	2
+parts	target	2
+parts	inner	1
+parts	target	1

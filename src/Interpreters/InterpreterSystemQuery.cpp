@@ -74,6 +74,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageProxy.h>
@@ -326,6 +327,29 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
 
+/// Loads the table that `getActionLock` of `table` takes the lock from, if a database with `lazy_load_tables`
+/// has not loaded it yet. That is the table itself, or the table a wrapper forwards the lock to: the inner
+/// table of a materialized view or the target of an `Alias`, which are deferred while the wrapper is not.
+/// A deferred table has no lock to give until it is loaded, so without this an explicit `SYSTEM STOP` would
+/// do nothing and the background work would start once the table is first accessed.
+void loadActionLockProvider(StoragePtr table)
+{
+    for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+    {
+        table = resolveStorageProxyLoading(table);
+        if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        {
+            if (!materialized_view->hasInnerTable())
+                return;
+            table = materialized_view->tryGetTargetTable();
+        }
+        else if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+            table = alias->tryGetTargetTable();
+        else
+            return;
+    }
+}
+
 }
 
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
@@ -357,9 +381,10 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
             {
                 /// A deferred table has no lock to take until it is loaded, so the command would do nothing and
                 /// the background work would start once the table is first accessed. Naming the table pays the
-                /// load cost, like the other `SYSTEM` commands addressed to a table. The lock is still kept for
-                /// the catalog object, so that `SYSTEM START` on the same table finds it.
-                resolveStorageProxyLoading(table);
+                /// load cost, like the other `SYSTEM` commands addressed to a table. This includes the table
+                /// behind a materialized view or an `Alias`, which forward the lock to it. The lock is still
+                /// kept for the catalog object that was named, so that `SYSTEM START` on the same table finds it.
+                loadActionLockProvider(table);
                 manager->add(table, action_type);
             }
         }
