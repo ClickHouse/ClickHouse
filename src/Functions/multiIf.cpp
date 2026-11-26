@@ -650,7 +650,8 @@ private:
                     /// Equivalent to below code. But it is able to utilize SIMD instructions.
                     /// if (!condition_null_map[row_i] && condition_nested_data[row_i])
                     ///     inserts[row_i] = i;
-                    inserts[row_i] += (~condition_null_map[row_i] & (!!condition_nested_data[row_i])) * (i - inserts[row_i]);
+                    /// The check of the NULL map is logical, not bitwise: a NULL map can hold any non-zero byte for NULL.
+                    inserts[row_i] += (static_cast<UInt8>(!condition_null_map[row_i]) & static_cast<UInt8>(!!condition_nested_data[row_i])) * (i - inserts[row_i]);
                 }
             }
         }
