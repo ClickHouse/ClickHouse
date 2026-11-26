@@ -343,22 +343,21 @@ public:
 
     /// Calls `func(const Key &, const TMapped &)` for the elements of a map from `position` in `forEachValue`
     /// order. A `func` returning false stops the traversal after that element. Leaves `position` at the next
-    /// unvisited element and returns whether the end was reached.
+    /// unvisited element and returns whether the end was reached, also when `func` stopped at the last
+    /// element.
     template <typename Func>
     requires (!is_set)
     bool forEachValueFrom(ValuePosition & position, Func && func) const
     {
-        /// Visits the remaining cells of one sub-table; returns false when `func` stopped the traversal.
+        bool stopped = false;
+        /// Visits the rest of one sub-table until `func` stops the traversal, and returns whether the
+        /// sub-table is exhausted. After a stop, the following sub-table is only checked for elements, so a
+        /// stop at the last element still reports the end.
         auto visit = [&](auto key_class, const auto & submap, auto & it)
         {
-            while (it != submap.end())
-            {
-                const auto & cell = *it;
-                ++it;
-                if (!func(iteratedKey<decltype(key_class)::value>(cell), cell.getMapped()))
-                    return false;
-            }
-            return true;
+            for (; !stopped && it != submap.end(); ++it)
+                stopped = !func(iteratedKey<decltype(key_class)::value>(*it), it->getMapped());
+            return it == submap.end();
         };
 
         switch (position.submap)

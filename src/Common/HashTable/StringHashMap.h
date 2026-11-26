@@ -159,21 +159,19 @@ public:
 
     /// Calls `func(key, mapped)` for the values from `position` in `forEachValue` order. A `func` returning false
     /// stops the traversal after that value. Leaves `position` at the next unvisited value and returns whether
-    /// the end was reached.
+    /// the end was reached, also when `func` stopped at the last value.
     template <typename Func>
     bool forEachValueFrom(ValuePosition & position, Func && func) const
     {
-        /// Visits the remaining values of one submap; returns false when `func` stopped the traversal.
+        bool stopped = false;
+        /// Visits the rest of one submap until `func` stops the traversal, and returns whether the submap is
+        /// exhausted. After a stop, the following submaps are only checked for values, so a stop at the last
+        /// value still reports the end.
         auto visit = [&](const auto & map, auto & it)
         {
-            while (it != map.end())
-            {
-                const auto & cell = *it;
-                ++it;
-                if (!func(cell.getKey(), cell.getMapped()))
-                    return false;
-            }
-            return true;
+            for (; !stopped && it != map.end(); ++it)
+                stopped = !func(it->getKey(), it->getMapped());
+            return it == map.end();
         };
 
         switch (position.submap)
@@ -181,8 +179,8 @@ public:
             case 0:
                 position.submap = 1;
                 position.it1 = this->m1.begin();
-                if (this->m0.size() && !func(std::string_view{}, this->m0.zeroValue()->getMapped()))
-                    return false;
+                if (this->m0.size())
+                    stopped = !func(std::string_view{}, this->m0.zeroValue()->getMapped());
                 [[fallthrough]];
             case 1:
                 if (!visit(this->m1, position.it1))
