@@ -411,12 +411,12 @@ Expression (Project names)
         Sorting
           Expression ((Before ORDER BY + Projection))
             Aggregating
-              Expression ((Before GROUP BY + WHERE))
-                JoinLogical (Shuffle HashJoin )
-                  JoinLogical (Shuffle HashJoin  swapped)
-                    Expression (Change column names to column identifiers)
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.lineitem)
+              Expression ((Before GROUP BY + ))
+                JoinLogical (Shuffle HashJoin  swapped)
+                  Expression (Change column names to column identifiers)
+                    ShuffleExchange
+                      ReadFromMergeTree (ParallelRead default.lineitem)
+                  JoinLogical (Shuffle HashJoin )
                     ShuffleExchange
                       JoinLogical (Shuffle HashJoin  swapped)
                         Expression (Change column names to column identifiers)
@@ -425,12 +425,12 @@ Expression (Project names)
                         Expression (Change column names to column identifiers)
                           ShuffleExchange
                             ReadFromMergeTree (ParallelRead default.customer)
-                  Expression ((Create the result of IN for the matched rows + (Project names + Projection)))
-                    Filter (HAVING)
-                      Aggregating
-                        Expression ((Before GROUP BY + Change column names to column identifiers))
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.lineitem)
+                    Expression ((WHERE + (Create the result of IN for the matched rows + (Project names + Projection))))
+                      Filter (HAVING)
+                        Aggregating
+                          Expression ((Before GROUP BY + Change column names to column identifiers))
+                            ShuffleExchange
+                              ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q19
 Expression ((Project names + Projection))
   MergingAggregated

@@ -9,6 +9,7 @@ storage_configuration:
       endpoint: http://minio1:9001/root/data/
       access_key_id: minio
       secret_access_key: ClickHouse_Minio_P@ssw0rd
+      persistent_removal_log: true
   policies:
     s3_policy:
       volumes:

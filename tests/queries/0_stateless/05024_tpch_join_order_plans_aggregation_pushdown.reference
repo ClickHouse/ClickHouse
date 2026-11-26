@@ -28,21 +28,21 @@ Expression (Project names)
         Sorting
           Expression ((Before ORDER BY + Projection))
             Aggregating
-              Expression ((Before GROUP BY + WHERE))
-                JoinLogical (Shuffle HashJoin )
-                  JoinLogical (Shuffle HashJoin  swapped)
+              JoinLogical (Shuffle HashJoin  swapped)
+                ShuffleExchange
+                  Aggregating
                     Expression (Change column names to column identifiers)
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.lineitem)
-                    ShuffleExchange
-                      JoinLogical (Shuffle HashJoin  swapped)
-                        Expression (Change column names to column identifiers)
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.orders)
-                        Expression (Change column names to column identifiers)
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.customer)
-                  Expression ((Create the result of IN for the matched rows + (Project names + Projection)))
+                      ReadFromMergeTree (ParallelRead default.lineitem)
+                JoinLogical (Shuffle HashJoin )
+                  ShuffleExchange
+                    JoinLogical (Shuffle HashJoin  swapped)
+                      Expression (Change column names to column identifiers)
+                        ShuffleExchange
+                          ReadFromMergeTree (ParallelRead default.orders)
+                      Expression (Change column names to column identifiers)
+                        ShuffleExchange
+                          ReadFromMergeTree (ParallelRead default.customer)
+                  Expression ((WHERE + (Create the result of IN for the matched rows + (Project names + Projection))))
                     Filter (HAVING)
                       Aggregating
                         Expression ((Before GROUP BY + Change column names to column identifiers))

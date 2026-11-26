@@ -9,13 +9,14 @@ tests_with_query_log=( $(
         xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_query_log[@]}"; do
-    grep -qE current_database.*currentDatabase "$test_case" || {
-        grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
+    {
+        grep -qE database.*currentDatabase "$test_case" || grep -qE database.*current_database "$test_case" || grep -qE 'database.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || {
-        grep -qE 'has\(databases\,\ currentDatabase\(\)\)' "$test_case"
+        # log_comment also includes database, and it is sometimes more convenient, since for remote queries current_database is not set
+        grep -qE 'log_comment.*currentDatabase' "$test_case" || grep -qE 'log_comment.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || {
-        grep -qE 'has\(databases\,\ current_database\(\)\)' "$test_case"
-    } || echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
+        echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
+    }
 done
 
 # Queries to system.text_log should have an event_time condition: the table is large on CI servers,
