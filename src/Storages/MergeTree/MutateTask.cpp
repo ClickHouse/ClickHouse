@@ -1618,10 +1618,12 @@ getColumnsForNewDataPart(
     for (const auto & [name, old_info] : serialization_infos)
     {
         auto it = renamed_columns_from_to.find(name);
-        auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
+        bool is_renamed = it != renamed_columns_from_to.end();
+        auto new_name = is_renamed ? it->second : name;
 
-        /// Column can be removed only in this data part by CLEAR COLUMN query.
-        if (!storage_columns_set.contains(new_name) || removed_columns.contains(name))
+        /// Column can be removed only in this data part by CLEAR COLUMN query. A renamed column's data moves
+        /// to `new_name`, so a removal under its old or new name removes another column.
+        if (!storage_columns_set.contains(new_name) || (!is_renamed && removed_columns.contains(name)))
             continue;
 
         /// In compact part we read all columns and all of them are in @updated_header.

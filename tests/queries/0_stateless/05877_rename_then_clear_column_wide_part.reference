@@ -21,4 +21,12 @@ s2-after	a	Sparse
 s2-after	k	Default
 s2-values	700	100	1000
 1
+s3-after	b	Sparse
+s3-after	k	Default
+s3-values	0	500	100	1000
+1
+s4-after	b	Sparse
+s4-after	k	Default
+s4-values	500	100	1000
+1
 0

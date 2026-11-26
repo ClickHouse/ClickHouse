@@ -78,6 +78,26 @@ SELECT 's2-values', sum(a), countIf(a = 7), count() FROM t_drop_rename_into_spar
 CHECK TABLE t_drop_rename_into_sparse SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_drop_rename_into_sparse;
 
+DROP TABLE IF EXISTS t_rename_into_cleared;
+CREATE TABLE t_rename_into_cleared (k UInt32, a UInt32, c UInt32) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+INSERT INTO t_rename_into_cleared SELECT number, if(number % 10 = 0, 5, 0), if(number % 10 = 0, 7, 0) FROM numbers(1000);
+ALTER TABLE t_rename_into_cleared RENAME COLUMN a TO b, RENAME COLUMN c TO a, CLEAR COLUMN a;
+SELECT 's3-after', column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_rename_into_cleared' AND active AND NOT startsWith(column, '_') ORDER BY column;
+SELECT 's3-values', sum(a), sum(b), countIf(b = 5), count() FROM t_rename_into_cleared;
+CHECK TABLE t_rename_into_cleared SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_rename_into_cleared;
+
+DROP TABLE IF EXISTS t_rename_swap_drop;
+CREATE TABLE t_rename_swap_drop (k UInt32, a UInt32, c UInt32) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+INSERT INTO t_rename_swap_drop SELECT number, if(number % 10 = 0, 5, 0), if(number % 10 = 0, 7, 0) FROM numbers(1000);
+ALTER TABLE t_rename_swap_drop RENAME COLUMN a TO b, RENAME COLUMN c TO a, DROP COLUMN a;
+SELECT 's4-after', column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_rename_swap_drop' AND active AND NOT startsWith(column, '_') ORDER BY column;
+SELECT 's4-values', sum(b), countIf(b = 5), count() FROM t_rename_swap_drop;
+CHECK TABLE t_rename_swap_drop SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_rename_swap_drop;
+
 DROP TABLE IF EXISTS t_rename_clear_rmt;
 CREATE TABLE t_rename_clear_rmt (k UInt8, q UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_rename_clear_rmt', 'r1') ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
