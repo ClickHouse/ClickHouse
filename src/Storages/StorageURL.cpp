@@ -835,7 +835,9 @@ StorageURLSource::StorageURLSource(
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
-        if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        /// The number of rows from the cache is returned without a request for the data, while the `_headers`
+        /// virtual column is the headers of the response to that request. Do the request when `_headers` is requested.
+        if (need_only_count && !need_headers_virtual_column && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)

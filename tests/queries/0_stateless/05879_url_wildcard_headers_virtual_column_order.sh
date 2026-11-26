@@ -61,6 +61,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Accept-Ranges', 'bytes')
         if status == 206:
             self.send_header('Content-Range', content_range)
+        self.send_header('Last-Modified', 'Thu, 01 Jan 2026 00:00:00 GMT')
         self.send_header('X-Test', 'hello')
         self.end_headers()
         if with_body:
@@ -110,4 +111,18 @@ FROM url('${GLOB_URL}', LineAsString, 's String') WHERE _size = 12 ORDER BY s;
 SELECT '-- the query of the AST fuzzer, with the condition negated to get rows';
 SELECT empty(_headers['X-Long']), s
 FROM url('${GLOB_URL}', LineAsString, 's String') WHERE NOT isNotDistinctFrom(_size, true) ORDER BY s;
+
+-- A read of only virtual columns can take the number of rows from the cache, without a request for
+-- the data, but not if \`_headers\` is requested: it is the headers of the response to that request.
+SELECT '-- the number of rows is in the cache';
+SELECT count()
+FROM url('${GLOB_URL}', LineAsString, 's String');
+
+SELECT '-- only virtual columns, _headers before other virtual columns';
+SELECT _headers['X-Test'], _size, _file
+FROM url('${GLOB_URL}', LineAsString, 's String');
+
+SELECT '-- only virtual columns, _headers after other virtual columns';
+SELECT _file, _size, _headers['X-Test']
+FROM url('${GLOB_URL}', LineAsString, 's String');
 "

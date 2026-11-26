@@ -10,3 +10,9 @@ hello	1
 1	1
 -- _headers before all the other virtual columns
 hello	1	1	/		1
+-- the number of rows is in the cache
+1
+-- only virtual columns, _headers before another virtual column
+hello	/
+-- only virtual columns, _headers after another virtual column
+/	hello

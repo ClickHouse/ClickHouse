@@ -31,3 +31,20 @@ WHERE NOT isNotDistinctFrom(_size, true);
 SELECT '-- _headers before all the other virtual columns';
 SELECT _headers['X-Test'], _size IS NULL OR _size > 0, _time IS NULL OR _time > '2000-01-01 00:00:00', _path, _file, s
 FROM url('http://127.0.0.1:8123/?query=SELECT+1&http_response_headers=%7B%27X-Test%27%3A%27hello%27%7D', LineAsString, 's String');
+
+-- A read of only virtual columns takes the number of rows from the cache without a request for the
+-- data, and `_headers` was empty then, while it is the headers of the response to that request.
+-- The cache is used for a URL without the `Last-Modified` header only with the setting below.
+SET schema_inference_cache_require_modification_time_for_url = 0;
+
+SELECT '-- the number of rows is in the cache';
+SELECT count()
+FROM url('http://127.0.0.1:8123/?query=SELECT+1&http_response_headers=%7B%27X-Test%27%3A%27hello%27%7D', LineAsString, 's String');
+
+SELECT '-- only virtual columns, _headers before another virtual column';
+SELECT _headers['X-Test'], _path
+FROM url('http://127.0.0.1:8123/?query=SELECT+1&http_response_headers=%7B%27X-Test%27%3A%27hello%27%7D', LineAsString, 's String');
+
+SELECT '-- only virtual columns, _headers after another virtual column';
+SELECT _path, _headers['X-Test']
+FROM url('http://127.0.0.1:8123/?query=SELECT+1&http_response_headers=%7B%27X-Test%27%3A%27hello%27%7D', LineAsString, 's String');

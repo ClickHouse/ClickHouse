@@ -13,3 +13,11 @@ hello	world
 -- the query of the AST fuzzer, with the condition negated to get rows
 1	hello
 1	world
+-- the number of rows is in the cache
+2
+-- only virtual columns, _headers before other virtual columns
+hello	12	part1.tsv
+hello	12	part1.tsv
+-- only virtual columns, _headers after other virtual columns
+part1.tsv	12	hello
+part1.tsv	12	hello
