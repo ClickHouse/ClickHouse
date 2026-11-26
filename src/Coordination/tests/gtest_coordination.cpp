@@ -34,6 +34,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Stopwatch.h>
 
@@ -44,6 +45,13 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event KeeperLogStoreAppend;
+    extern const Event KeeperSnapshotCreations;
+    extern const Event KeeperSnapshotWriteMicroseconds;
+}
 
 namespace DB::CoordinationSetting
 {
@@ -901,6 +909,26 @@ TEST_P(CoordinationTestWithCompression, TestStateMachineAndLogStore)
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 5000;
         testLogAndStateMachine(settings, 45, GetParam());
     }
+}
+
+TEST_P(CoordinationTestWithCompression, TestPhaseProfileEvents)
+{
+    using namespace DB;
+
+    const auto log_store_appends_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogStoreAppend];
+    const auto snapshot_write_us_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotWriteMicroseconds];
+    const auto snapshot_creations_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotCreations];
+
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
+    (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
+    (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+    testLogAndStateMachine(settings, 15, GetParam());
+
+    /// Only the count is checked for appends: the time is truncated to whole microseconds on each call, and an append can take less than that.
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperLogStoreAppend], log_store_appends_before);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotWriteMicroseconds], snapshot_write_us_before);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotCreations], snapshot_creations_before);
 }
 
 TEST_P(CoordinationTest, TestEphemeralNodeRemove)

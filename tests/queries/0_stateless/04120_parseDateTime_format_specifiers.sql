@@ -150,3 +150,42 @@ SELECT parseDateTime64InJodaSyntaxOrNull('bad', 'yyyy');
 
 SELECT '--- parseDateTime64 wrong type argument ---';
 SELECT parseDateTime64('2023', '%Y', 6); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- DateTime timestamps must fit UInt32 after applying the time zone, without constraining DateTime64.
+SELECT '--- DateTime timestamp range: issue 126868 ---';
+SELECT s, toUInt32(parseDateTimeOrNull(s, '%Y-%m-%d %H:%i:%s', 'UTC')), toUInt32(parseDateTimeOrZero(s, '%Y-%m-%d %H:%i:%s', 'UTC'))
+FROM (SELECT arrayJoin(['1969-12-31 23:59:59', '1970-01-01 00:00:00', '2024-01-01 00:00:00', '2106-02-07 06:28:15', '2106-02-07 06:28:16', '2106-12-31 00:00:00']) AS s) ORDER BY s;
+SELECT s, toUInt32(parseDateTimeInJodaSyntaxOrNull(s, 'yyyy-MM-dd HH:mm:ss', 'UTC')), toUInt32(parseDateTimeInJodaSyntaxOrZero(s, 'yyyy-MM-dd HH:mm:ss', 'UTC'))
+FROM (SELECT arrayJoin(['1969-12-31 23:59:59', '1970-01-01 00:00:00', '2024-01-01 00:00:00', '2106-02-07 06:28:15', '2106-02-07 06:28:16', '2106-12-31 00:00:00']) AS s) ORDER BY s;
+SELECT toUInt32(parseDateTime('2106-02-07 06:28:15', '%Y-%m-%d %H:%i:%s', 'UTC')),
+    toUInt32(parseDateTimeInJodaSyntax('2106-02-07 06:28:15', 'yyyy-MM-dd HH:mm:ss', 'UTC'));
+SELECT s, toUInt32(parseDateTimeOrNull(s, '%Y-%m-%d %H:%i:%s', 'Asia/Tokyo')), toUInt32(parseDateTimeOrZero(s, '%Y-%m-%d %H:%i:%s', 'Asia/Tokyo'))
+FROM (SELECT arrayJoin(['1970-01-01 08:59:59', '2106-02-07 15:28:15', '2106-02-07 15:28:16']) AS s) ORDER BY s;
+SELECT s, toUInt32(parseDateTimeInJodaSyntaxOrNull(s, 'yyyy-MM-dd HH:mm:ss', 'Asia/Tokyo')), toUInt32(parseDateTimeInJodaSyntaxOrZero(s, 'yyyy-MM-dd HH:mm:ss', 'Asia/Tokyo'))
+FROM (SELECT arrayJoin(['1970-01-01 08:59:59', '2106-02-07 15:28:15', '2106-02-07 15:28:16']) AS s) ORDER BY s;
+SELECT toUInt32(parseDateTime('2106-02-07 15:28:15 +0900', '%Y-%m-%d %H:%i:%s %z', 'UTC')),
+    isNull(parseDateTimeOrNull('2106-02-07 15:28:16 +0900', '%Y-%m-%d %H:%i:%s %z', 'UTC')),
+    toUInt32(parseDateTimeOrZero('2106-02-07 15:28:16 +0900', '%Y-%m-%d %H:%i:%s %z', 'UTC'));
+SELECT toUInt32(parseDateTimeInJodaSyntax('2106-02-07 15:28:15 +0900', 'yyyy-MM-dd HH:mm:ss Z', 'UTC')),
+    isNull(parseDateTimeInJodaSyntaxOrNull('2106-02-07 15:28:16 +0900', 'yyyy-MM-dd HH:mm:ss Z', 'UTC')),
+    toUInt32(parseDateTimeInJodaSyntaxOrZero('2106-02-07 15:28:16 +0900', 'yyyy-MM-dd HH:mm:ss Z', 'UTC'));
+SELECT toUInt32(parseDateTimeInJodaSyntax('2106-02-07 15:28:15 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC')),
+    isNull(parseDateTimeInJodaSyntaxOrNull('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC')),
+    toUInt32(parseDateTimeInJodaSyntaxOrZero('2106-12-31 09:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
+SELECT parseDateTimeInJodaSyntax('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTime('2106-02-07 06:28:16', '%Y-%m-%d %H:%i:%s', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTime('2106-12-31', '%F', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTime('1969-12-31', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('1970-01-01 08:59:59', '%Y-%m-%d %H:%i:%s', 'Asia/Tokyo'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeInJodaSyntax('2106-02-07 06:28:16', 'yyyy-MM-dd HH:mm:ss', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeInJodaSyntax('2106-12-31', 'yyyy-MM-dd', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeInJodaSyntax('1969-12-31', 'yyyy-MM-dd', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTimeInJodaSyntax('1970-01-01 08:59:59', 'yyyy-MM-dd HH:mm:ss', 'Asia/Tokyo'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTime64('2106-12-31 23:59:59.123456', '%Y-%m-%d %H:%i:%s.%f', 'UTC'),
+    parseDateTime64InJodaSyntax('2106-12-31 23:59:59.123456', 'yyyy-MM-dd HH:mm:ss.SSSSSS', 'UTC');
+SELECT parseDateTime64('1969-12-31 23:59:59.123456', '%Y-%m-%d %H:%i:%s.%f', 'UTC'),
+    parseDateTime64InJodaSyntax('1969-12-31 23:59:59.123456', 'yyyy-MM-dd HH:mm:ss.SSSSSS', 'UTC');
+SELECT toUInt32(parseDateTime('2024-01-01 00:00:00.123456', '%Y-%m-%d %H:%i:%s.%f', 'UTC')),
+    toUInt32(parseDateTimeInJodaSyntax('2024-01-01 00:00:00.123456', 'yyyy-MM-dd HH:mm:ss.SSSSSS', 'UTC')),
+    toUInt32(parseDateTime('2106-02-07 06:28:15.999999', '%Y-%m-%d %H:%i:%s.%f', 'UTC')),
+    toUInt32(parseDateTimeInJodaSyntax('2106-02-07 06:28:15.999999', 'yyyy-MM-dd HH:mm:ss.SSSSSS', 'UTC'));

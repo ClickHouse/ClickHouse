@@ -7,9 +7,7 @@ sidebarTitle: 'groupArrayResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## 説明
-</div>
+## 説明 {#description}
 
 [`Resample`](/ja/reference/functions/aggregate-functions/combinators#-resample)
 コンビネータは、[`groupArray`](/ja/reference/functions/aggregate-functions/sum) 集約関数に適用することで、
@@ -18,9 +16,7 @@ doc_type: 'reference'
 (最小のキーに対応する値) を選んで、結果のArrayを構築できます。
 これはすべての値を収集するのではなく、データをダウンサンプリングしたビューを作成します。
 
-<div id="example-usage">
-  ## 使用例
-</div>
+## 使用例 {#example-usage}
 
 例を見てみましょう。従業員の`name`、`age`、`wage`を格納するテーブルを作成し、
 そこにいくつかのデータを挿入します。
@@ -32,7 +28,7 @@ CREATE TABLE employee_data
     age UInt8,
     wage Float32
 ) ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -63,9 +59,7 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
 └───────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [`groupArray`](/ja/reference/functions/aggregate-functions/groupArray)
 * [`Resample コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-resample)

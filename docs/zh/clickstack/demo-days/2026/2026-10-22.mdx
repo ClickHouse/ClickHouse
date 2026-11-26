@@ -1,0 +1,138 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-22
+title: '演示日 - 2026-10-22'
+sidebarTitle: '2026-10-22'
+description: 'ClickStack 演示日（2026-10-22）'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## 通过临时仪表盘筛选条件在表和时间图表上点击筛选 {#click-to-filter-tables-time-charts}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+临时仪表盘筛选条件现已支持在表卡片和时间图表上点击筛选。此前，该操作仅限于搜索卡片。现在，无论查询使用的是构建器、原始 SQL 还是 PromQL，都可以点击表、折线图、堆叠条形图和堆叠折线图中的值来添加过滤条件。
+
+在表中，将鼠标悬停在可筛选的单元格上，然后选择包含或排除，操作方式与搜索表相同。group-by 列可筛选；聚合列则不可筛选，因为其他卡片不太可能使用相同的聚合。此外，条件使用的是底层表达式而非其别名，因此可以跨卡片生效。
+
+识别 group-by 列的方式取决于查询类型：
+
+* 构建器表使用每列在结果元数据中的位置，因为 ClickHouse 会对未设置别名的表达式进行规范化。
+* 原始 SQL 查询会先替换其中的宏和变量，再使用 `node-sql-parser` 进行解析。如果 `GROUP BY` 通过别名、名称、规范化表达式或位置 (例如 `GROUP BY 2`) 引用某列，则该列可筛选。
+* PromQL 表会将除时间列之外的非数值列视为标记。
+
+请注意，点击筛选目前尚不支持 `DateTime`、`Map` 或 `Array` 列——这些列需要自定义逻辑。
+
+原始 SQL 图表仍有一些不完善之处。`node-sql-parser` 并不支持完整的 ClickHouse 方言，包括参数化函数、`ARRAY JOIN` 以及部分连接语法。如果解析失败，或者查询没有 `GROUP BY`、使用了 `GROUP BY ALL` 或包含 `SELECT *`，则会回退到将 `String` 列视为可筛选列。
+
+这种回退机制并不完美。某些列可能无法点击，而另一些列添加的筛选键可能在其他卡片中并不存在。来自 CTE 的列也可能存在同样的问题，因为其他卡片未必定义了这些列。如果出现这种情况，可以移除相应条件。我们计划引入完整的 ClickHouse SQL 解析器来改进这一点。
+
+对于时间图表，数据系列的工具提示现在支持一键按该数据系列的所有标记进行筛选。如果图表按服务名称和严重级别分组，点击某个数据系列会同时添加这两个条件。**排除**仅在只有一个标记时可用。例如，若分别排除 `service = 'checkout'` 和 `severity = 'error'`，将隐藏所有 checkout 日志以及所有服务的全部错误，而不仅仅是 checkout 的错误。PromQL 折线图使用 Prometheus 返回的标记，但不包括 `__name__`。
+
+**相关 PRs：** [#3389](https://github.com/hyperdxio/hyperdx/pull/3389) 为表图表添加点击添加临时筛选条件功能，[#3405](https://github.com/hyperdxio/hyperdx/pull/3405) 支持将时间图表数据系列添加为临时仪表盘筛选条件
+
+## 折线插值显示设置 {#line-interpolation-display-setting}
+
+*演示者 [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=149" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+现在，您可以在显示设置中通过 **Smooth**、**Linear** 和 **Step** 插值选项，选择折线图连接数据点的方式。此前，常规折线图始终使用平滑曲线，而堆叠折线图则使用直线段。这两种方式仍为默认值，但您现在可以根据数据特点进行调整，或让各图表保持风格一致。
+
+该设置可在图表编辑器、外部 API 和 MCP 中使用。此外，我们还修复了一个缺陷：在编辑器中切换为堆叠条形图或堆叠折线图后，已保存卡片的显示类型未随之更新。
+
+**相关 PRs：** [#3393](https://github.com/hyperdxio/hyperdx/pull/3393) 添加折线插值显示设置 (smooth、linear、step)
+
+## 在搜索页面直方图中使用分组依据 {#search-page-histogram-group-by}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=194" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+搜索直方图现在可以按任意字段分组。此前，直方图始终按严重级别或状态码拆分，具体取决于 source。新的 **分组依据** 控件基于 [@elizabetdev](https://github.com/elizabetdev) 的设计，支持从筛选侧边栏所用的同一列表中选择多个字段和 Map 键。
+
+选择字段并应用后，直方图会重新分组，并通过图例显示各个分组。您可以重置为 source 的默认分组，也可以清除分组以查看普通的事件计数。如果所需字段不在列表中，或者您希望按计算值分组，也可以直接输入 SQL。
+
+切换 source 时，兼容的 group-by 会保持选中。例如，两个 source 中都存在的 `ServiceName` 字段或 Map 键会被沿用。否则，直方图会重置为新 source 的默认分组，这与切换 source 时保留兼容筛选条件采用的是同一套逻辑。
+
+[@elizabetdev](https://github.com/elizabetdev) 随后进一步改进，将该控件改为共享的拆分按钮，标签与所选值并排显示。
+
+**相关 PRs：** [#3407](https://github.com/hyperdxio/hyperdx/pull/3407) 为搜索页面直方图添加 group-by，[#3430](https://github.com/hyperdxio/hyperdx/pull/3430) 共享“分组依据”拆分按钮
+
+## 仪表板卡片描述 {#descriptions-on-dashboard-tiles}
+
+*演示者：[@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=318" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表板卡片现在支持添加描述，可用于说明图表展示的内容或解读方式。将鼠标悬停在卡片名称旁的信息图标上即可查看。未添加描述的卡片外观保持不变。
+
+感谢 [@felipe-carvalho12](https://github.com/felipe-carvalho12) 为外部仪表盘 API 增加了描述支持，以代码方式管理仪表盘时也可以设置描述。我们还在卡片编辑器的 **Chart Name** 旁新增了 **Description** 输入框。描述最多 1,024 个字符。
+
+后续更新将描述移至卡片的图表 config 中，与 `name` 并列，使编辑器能将其与其余配置一并保存。该更新还修复了一个缺陷：通过外部 API 提交且包含 `series` 的卡片会丢失描述。
+
+**相关 PRs：** [#3352](https://github.com/hyperdxio/hyperdx/pull/3352) 以工具提示形式显示可选的卡片描述；[#3403](https://github.com/hyperdxio/hyperdx/pull/3403) 在卡片编辑器中添加描述字段
+
+## 在用户偏好设置中选择时区 {#time-zone-selection}
+
+*演示者：[@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=358" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack 现在支持自选时区。此前，用户偏好设置中的 **Use UTC time** 开关只能在 UTC 和浏览器本地时区之间二选一。现在它改为可搜索的选择器，**Local** 和 **UTC** 固定在顶部，下方列出浏览器支持的所有时区。每个时区都会显示当前的 UTC 偏移量，并支持搜索，例如输入“los angeles”即可找到 `America/Los_Angeles`。
+
+所选时区将应用于搜索页面和仪表盘。侧边栏徽标和时间戳列标题会显示时区简称 (如 `PDT`) ；对于没有美国缩写的时区，则显示 UTC 偏移量 (如 `UTC+9`) 。ClickStack 会存储 IANA 时区名称，如果浏览器无法识别该名称，则回退到本地时间。
+
+如果只是在某次调查中临时需要切换时区，通过偏好设置来切换仍略显繁琐。此次改动为按搜索和按仪表盘设置时区覆盖配置奠定了基础，届时您可以按客户所在时区查看其数据，同时将自己的默认设置保持为本地时间或 UTC。这些覆盖配置目前尚未实现。
+
+**相关 PRs：** [#3445](https://github.com/hyperdxio/hyperdx/pull/3445) 按显示时区读取时间选择器的范围，[#3447](https://github.com/hyperdxio/hyperdx/pull/3447) 将时间显示设置存储为时区，[#3449](https://github.com/hyperdxio/hyperdx/pull/3449) 在用户偏好设置中添加时区选择器
+
+## MCP 服务健康状况工具 {#mcp-service-health-tool}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=463" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+MCP 服务器现已提供 `clickstack_service_health` 工具。我们注意到，agent 编写的原始 SQL 中有很大一部分是用来检查服务健康状况的，因此专门为此构建了一个工具。此前，agent 必须从多次 `clickstack_table` 和 `clickstack_timeseries` 调用中拼凑结果，再自行判断哪些变化需要关注。
+
+对于链路追踪数据源中的每个服务，该工具都会返回吞吐量、错误率、p50/p95/p99 延迟以及排名靠前的错误分组，并与之前的某个时间窗口进行对比。默认对比窗口为昨天的同一时段，agent 也可以选择其他窗口，例如前 15 分钟或上周的同一时段。最需要关注的服务排在最前面，并附带 `critical`、`degraded` 或 `healthy` 状态，以及说明原因的标志，例如 `error_rate_up`、`latency_up` 或 `traffic_drop`。固定阈值可避免将日常波动误报为回归问题。
+
+新出现或持续增长的错误分组排在最前面，并附带首次和最近出现时间，便于区分仍在持续的问题和已经平息的突发错误。在对比窗口中没有流量的操作会被标记为可能处于滚动发布中，其错误不会计为新错误。该工具默认只统计服务端跨度；设置 `spanKind: "all"` 则会统计所有 span。如果对比窗口中没有数据 (例如已超出保留期限) ，该工具会改用再前一个周期；若仍无数据，则回退为不带对比的报告。
+
+**相关 PRs：** [#3411](https://github.com/hyperdxio/hyperdx/pull/3411) Add clickstack&#95;service&#95;health tool
+
+## MCP 质量评分改进 {#mcp-quality-score-improvements}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=537" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+我们一直在使用 [Manufact](https://manufact.com) 的 MCP Quality Score 检查 ClickStack MCP 服务器；如果您也在运行 MCP 服务器，推荐试一试。经过三项改动，我们的评分从 80 提升到了 94。
+
+除原有的 `name` 和 `version` 外，服务器现在还会在 `serverInfo` 中提供标题、描述、网站 URL 和图标。图标采用应用的徽标 SVG。由于图标 URL 必须是绝对地址，未设置 `FRONTEND_URL` 时会省略图标。
+
+现在每个工具都会声明全部四种行为提示：`readOnlyHint`、`destructiveHint`、`idempotentHint` 和 `openWorldHint`，而此前每个工具只声明其中一种。我们针对只读工具、插入或更新工具以及幂等的破坏性工具 (例如 `delete_*` 和 `patch_dashboard`) 分别提供了一套预设。插入或更新工具并不幂等，因为不带 `id` 调用时每次都会创建一个新对象。`openWorldHint` 一律为 `false`，因为这些工具只访问团队自身的元数据和 ClickHouse 数据。注册类型现已强制要求全部四种提示，缺少任何一种都会导致编译错误。
+
+我们还整理了工具描述：现在每个输入都有描述，并缩短了四个超出 Claude Code 2048 字节截断限制的工具描述。例如，`clickstack_event_deltas` 从 3318 字节缩减到了 1796 字节。我们删除了单纯重复 schema 约束的文字，在 ID 字段中注明该 ID 由哪个工具提供，并补充说明了保存类工具的副作用，例如当新配置无法支持某个卡片的告警时，`patch_dashboard` 会删除这些告警。
+
+剩下的六分取决于 `outputSchema`。我们的工具目前以文本形式返回 JSON，而非使用 `structuredContent`，因此这部分暂且留待以后处理。
+
+**相关 PRs：** [#3394](https://github.com/hyperdxio/hyperdx/pull/3394) 公布服务器标题、描述、网站和图标，[#3395](https://github.com/hyperdxio/hyperdx/pull/3395) 为每个工具声明全部四种行为提示，[#3396](https://github.com/hyperdxio/hyperdx/pull/3396) 精简工具和输入描述
+
+## 在 MCP 服务器中批量执行 SQL 查询 {#mcp-batch-sql-queries}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=588" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+当 agent 需要使用原始 SQL 时，`clickstack_sql` 现在可以在一次调用中运行多个查询，无需为每个查询单独往返一次。可以像以前一样传入单个 `sql` 查询，也可以传入最多包含 10 个条目的 `queries` 数组。每个条目都有各自的 `sql`，以及可选的 `id`、`connectionId` 和 `sourceId`。所有查询共用 `startTime` 和 `endTime`。
+
+查询每次并发运行 5 个，整个批次的截止时间为 60 秒。超时后仍在队列中的查询不会被发送到 ClickHouse。结果按输入顺序返回，并附带 `ok`、`error` 或 `timeout` 状态，因此单个查询出错不会导致整个批次失败。只有当所有查询都失败时，才会设置 `isError`。整个批次共用 100k 字符的响应额度，单个查询上限为 50k，与现有的单查询限制一致。
+
+调用时必须且只能包含 `sql` 或 `queries` 其中之一。由于 `sql` 不再始终是必填项，该校验改由处理器执行，而不再依赖工具的必填参数列表。
+
+我们曾考虑采用 MCP 任务，但目前暂缓。SDK API 仍处于实验性阶段，且 `2026-07-28` 规范已将任务移至单独的扩展中，而服务器 SDK 尚未实现该扩展。此变更尚未合并。
+
+**相关 PRs：** [#3421](https://github.com/hyperdxio/hyperdx/pull/3421) 并行运行多个 clickstack&#95;sql 查询 (进行中)

@@ -47,7 +47,9 @@ The memory size at which the adaptive aggregator freezes a thread's local hash t
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Write add http CORS header.
+Adds the `Access-Control-Allow-Origin: *` header to responses of the HTTP interface, so that web applications served from another origin can read the query results in a browser.
+
+The header is added only if the request contains the `Origin` header and the `http_options_response` server configuration is not set. Because the setting is read from the settings of the authenticated user, the header is not added to responses for requests that fail authentication.
 
 ## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
 

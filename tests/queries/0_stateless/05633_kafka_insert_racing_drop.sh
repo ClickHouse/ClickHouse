@@ -7,6 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The stress test fuzzes every query: a fuzzed `DETACH ... ON CLUSTER` copy can run late, after the `ATTACH`, and leave a table detached.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0"
+
 # An INSERT into a Kafka table must fail, not succeed with rows missing, when DROP or DETACH stops it.
 
 name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -20,10 +23,14 @@ cleanup()
     trap - EXIT INT TERM
     set +e
 
-    for table in drop detach keeper down; do
+    # A kill between DETACH and ATTACH leaves ${name}_detach detached, which DROP TABLE IF EXISTS skips and DROP NAMED COLLECTION
+    # does not see. So it is attached back, and its collection kept if that fails.
+    local keep_collection=0
+    $CLICKHOUSE_CLIENT -q "ATTACH TABLE IF NOT EXISTS ${name}_detach; DROP TABLE IF EXISTS ${name}_detach" 2>/dev/null || keep_collection=1
+    for table in drop keeper down; do
         $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${name}_${table}" 2>/dev/null
     done
-    $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${name}" 2>/dev/null
+    [ "$keep_collection" = 0 ] && $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${name}" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${name}_down" 2>/dev/null
     timeout 10 rpk topic delete "$topic" --brokers "$broker" > /dev/null 2>&1
 

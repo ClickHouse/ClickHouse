@@ -326,6 +326,35 @@ void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, siz
     memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
+void ColumnFixedString::insertFromEither(
+    const IColumn & src_true_, bool src_true_is_const, const IColumn & src_false_, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    const ColumnFixedString & src_true = assert_cast<const ColumnFixedString &>(src_true_);
+    const ColumnFixedString & src_false = assert_cast<const ColumnFixedString &>(src_false_);
+
+    if (n != src_true.getN() || n != src_false.getN())
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
+
+    const size_t rows = condition.size();
+    const size_t old_size = chars.size();
+    chars.resize(old_size + rows * n);
+
+    UInt8 * out = chars.data() + old_size;
+    const UInt8 * true_data = src_true.chars.data();
+    const UInt8 * false_data = src_false.chars.data();
+    const size_t true_step = src_true_is_const ? 0 : n;
+    const size_t false_step = src_false_is_const ? 0 : n;
+    const UInt8 * condition_data = condition.data();
+
+    /// The writes overflow into the next values, which are written later, and into the padding of `chars`.
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const UInt8 * value_true = true_data + i * true_step;
+        const UInt8 * value_false = false_data + i * false_step;
+        memcpySmallAllowReadWriteOverflow15(out + i * n, condition_data[i] ? value_true : value_false, n);
+    }
+}
+
 ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t col_size = size();
