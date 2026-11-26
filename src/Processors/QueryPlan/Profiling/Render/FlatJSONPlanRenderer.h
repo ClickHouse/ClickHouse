@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/Profiling/Render/IPlanRenderer.h>
 #include <base/types.h>
+
+#include <string_view>
 
 namespace DB
 {
@@ -14,6 +17,12 @@ namespace DB
 /// that does not know it ignores it, and rows written by older servers stay readable either way,
 /// because `system.query_log` holds whatever version was current when each row was written.
 constexpr UInt64 QUERY_PLAN_JSON_VERSION = 1;
+
+/// Keys of the serialized form, not the display names `toString` returns, such as `I/O` and
+/// `input rows`: a key holding a space or a slash has to be backtick-quoted in a JSON path, which
+/// makes the stored statistics awkward to query.
+std::string_view jsonKey(MetricGroupKey key);
+std::string_view jsonKey(MetricKey key);
 
 /// Writes the captured plan as the JSON stored in `system.query_log.query_plan`.
 ///

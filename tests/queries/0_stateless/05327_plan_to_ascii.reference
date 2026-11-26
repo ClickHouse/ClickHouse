@@ -10,7 +10,8 @@ Expression (Project names)
    │  Type: inner
    │  Join conditions: k = k
    │  Cost: estimated 100.00 · actual 5.00 thousand
-   │  Left: rows estimated 50.00 · rows 5.00 thousand · matched 5.00 thousand · match rate 100.00% · fanout 1.00
+   │  Output rows: estimated 10.00 · actual 10.00 · q-error 1.00
+   │  Left: rows estimated 50.00 · rows 5.00 thousand · q-error 100.00 · matched 5.00 thousand · match rate 100.00% · fanout 1.00
    │  Right: rows estimated no stats · rows 40.00 · matched not collected
    │  Hash table: unique keys 40.00 · memory 4.10 KB
    │  FutureGroup: NewMetric 7
@@ -48,7 +49,6 @@ Expression (Project names)
    └──ReadFromSystemNumbers
          I/O: rows 0 → 40 · 0 B → 640 B
            time 0.00 ns (0.00%) · parallelism Unknown
-
 Output: k
 
 BuildRuntimeFilter
@@ -59,27 +59,30 @@ BuildRuntimeFilter
       Runtime filter (disabled: bloom filter saturated, size 524.29 KB, set bits 0.07%)
       Probe: checked 0.00 · passed 0.00 · skipped 1.00 thousand · before ready 10.00
       I/O: rows 100 → 100
-
 Output: x
 
 Expression
 └──ReadFromSystemOne
-
 Output: dummy
 
 ReadFromSystemOne
    I/O: rows 0 → 1 · 0 B → 1 B
-
 \N			
 Error: The query plan is too large
-
+Error: unsupported query plan version 99, this server reads version 1
+T
+T
+     time 10.00 ns · parallelism 0.00/0
 Row 1:
 ──────
 unquoted: T
    Hash table: unique keys 40.00 · memory 4.10 KB
    Time: step 1.00 us (50.00%) · branch 2.00 us (100.00%)
      time 2.00 us · parallelism 1.00/2
-
 same:     1
 1	1	1	1
 1	1	1
+Row 1:
+──────
+has_lines: 1
+same:      1

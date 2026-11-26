@@ -45,87 +45,99 @@ using JSONArrayPtr = Poco::JSON::Array::Ptr;
 /// as `EXPLAIN ANALYZE` does.
 constexpr std::string_view unknown_value_text = "Unknown";
 
-/// The keys under which `FlatJSONPlanRenderer` writes the groups, in the order `EXPLAIN ANALYZE`
+/// The groups that `FlatJSONPlanRenderer` writes under `jsonKey`, in the order `EXPLAIN ANALYZE`
 /// prints them. `system.query_log` stores the plan in a `JSON` column, which sorts the keys of every
 /// object, so the order of the document cannot be relied on. `IO`, `Time` and `Concurrency` are
 /// printed by `EXPLAIN ANALYZE` after every other group and have layouts of their own.
-constexpr std::array<std::pair<std::string_view, MetricGroupKey>, 14> group_keys = {{
-    {"Cost", MetricGroupKey::Cost},
-    {"Selectivity", MetricGroupKey::Selectivity},
-    {"Output", MetricGroupKey::Output},
-    {"Left", MetricGroupKey::Left},
-    {"Right", MetricGroupKey::Right},
-    {"HashTable", MetricGroupKey::HashTable},
-    {"Buffer", MetricGroupKey::Buffer},
-    {"Spill", MetricGroupKey::Spill},
-    {"Build", MetricGroupKey::Build},
-    {"RuntimeFilter", MetricGroupKey::RuntimeFilter},
-    {"Probe", MetricGroupKey::Probe},
-    {"Memory", MetricGroupKey::Memory},
-    {"InputLeft", MetricGroupKey::InputLeft},
-    {"InputRight", MetricGroupKey::InputRight},
-}};
+constexpr std::array group_keys = {
+    MetricGroupKey::Cost,
+    MetricGroupKey::Selectivity,
+    MetricGroupKey::Output,
+    MetricGroupKey::Left,
+    MetricGroupKey::Right,
+    MetricGroupKey::HashTable,
+    MetricGroupKey::Buffer,
+    MetricGroupKey::Spill,
+    MetricGroupKey::Build,
+    MetricGroupKey::RuntimeFilter,
+    MetricGroupKey::Probe,
+    MetricGroupKey::Memory,
+    MetricGroupKey::InputLeft,
+    MetricGroupKey::InputRight,
+};
 
-/// The keys under which the metrics of a group are written, in the order the steps report them.
-constexpr std::array<std::pair<std::string_view, MetricKey>, 41> metric_keys = {{
-    {"Value", MetricKey::Unnamed},
-    {"Estimated", MetricKey::Estimated},
-    {"Actual", MetricKey::Actual},
-    {"EstimatedNDV", MetricKey::EstimatedNDV},
-    {"ActualCartesian", MetricKey::ActualCartesian},
-    {"QError", MetricKey::QError},
-    {"RowsEstimated", MetricKey::RowsEstimated},
-    {"Rows", MetricKey::Rows},
-    {"Matched", MetricKey::Matched},
-    {"MatchRate", MetricKey::MatchRate},
-    {"Fanout", MetricKey::Fanout},
-    {"Type", MetricKey::FilterType},
-    {"Reason", MetricKey::Reason},
-    {"Replaced", MetricKey::ReplacedFilterType},
-    {"UniqueKeys", MetricKey::UniqueKeys},
-    {"Memory", MetricKey::Memory},
-    {"Bytes", MetricKey::Bytes},
-    {"Buckets", MetricKey::Buckets},
-    {"Rehashes", MetricKey::Rehashes},
-    {"Compressed", MetricKey::Compressed},
-    {"LeftSpilled", MetricKey::LeftSpilled},
-    {"RightSpilled", MetricKey::RightSpilled},
-    {"Spilled", MetricKey::Spilled},
-    {"Size", MetricKey::Size},
-    {"SetBits", MetricKey::SetBits},
-    {"RowsChecked", MetricKey::RowsChecked},
-    {"RowsPassed", MetricKey::RowsPassed},
-    {"PassRate", MetricKey::PassRate},
-    {"RowsSkipped", MetricKey::RowsSkipped},
-    {"RowsBeforeReady", MetricKey::RowsBeforeReady},
-    {"Blocks", MetricKey::Blocks},
-    {"Storage", MetricKey::Storage},
-    {"SortTime", MetricKey::SortTime},
-    {"SortShare", MetricKey::SortTimeShare},
-    {"InputRows", MetricKey::InputRows},
-    {"OutputRows", MetricKey::OutputRows},
-    {"InputBytes", MetricKey::InputBytes},
-    {"OutputBytes", MetricKey::OutputBytes},
-        {"Time", MetricKey::Time},
-        {"TimeShare", MetricKey::TimeShare},
-    {"Concurrency", MetricKey::Concurrency},
-}};
+/// The metrics of a group, in the order the analyzers report them. A join side reports `QError`
+/// right after `Rows` (`prependSideEstimate`), and the join output after `Estimated` and `Actual`.
+constexpr std::array metric_keys = {
+    MetricKey::Unnamed,
+    MetricKey::Estimated,
+    MetricKey::Actual,
+    MetricKey::EstimatedNDV,
+    MetricKey::ActualCartesian,
+    MetricKey::RowsEstimated,
+    MetricKey::Rows,
+    MetricKey::QError,
+    MetricKey::Matched,
+    MetricKey::MatchRate,
+    MetricKey::Fanout,
+    MetricKey::FilterType,
+    MetricKey::Reason,
+    MetricKey::ReplacedFilterType,
+    MetricKey::UniqueKeys,
+    MetricKey::Memory,
+    MetricKey::Bytes,
+    MetricKey::Buckets,
+    MetricKey::Rehashes,
+    MetricKey::Compressed,
+    MetricKey::LeftSpilled,
+    MetricKey::RightSpilled,
+    MetricKey::Spilled,
+    MetricKey::Size,
+    MetricKey::SetBits,
+    MetricKey::RowsChecked,
+    MetricKey::RowsPassed,
+    MetricKey::PassRate,
+    MetricKey::RowsSkipped,
+    MetricKey::RowsBeforeReady,
+    MetricKey::Blocks,
+    MetricKey::Storage,
+    MetricKey::SortTime,
+    MetricKey::SortTimeShare,
+    MetricKey::InputRows,
+    MetricKey::OutputRows,
+    MetricKey::InputBytes,
+    MetricKey::OutputBytes,
+    MetricKey::Time,
+    MetricKey::TimeShare,
+    MetricKey::Concurrency,
+};
 
-/// The document is the argument of the function, so a value that is not a number of the expected
-/// kind is an error of the argument. A `JSON` column may quote 64-bit integers when it is turned back
-/// into text, so a number can also arrive as a string.
+/// A value as it is quoted in an error message. `Poco::Dynamic::Var::toString` throws on the empty
+/// value that a JSON `null` parses to.
+String valueText(const Poco::Dynamic::Var & value)
+{
+    return value.isEmpty() ? "null" : value.toString();
+}
+
+/// The document is the argument of the function, so a value that is not a finite number is an error
+/// of the argument. A `JSON` column may quote 64-bit integers when it is turned back into text, so a
+/// number can also arrive as a string.
 double toDouble(const Poco::Dynamic::Var & value, std::string_view key)
 {
+    double result = 0;
     if (value.isString())
     {
-        double result;
         if (!tryParse(result, value.extract<std::string>()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of `{}` in the query plan is not a number: {}", key, value.toString());
-        return result;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of `{}` in the query plan is not a number: {}", key, valueText(value));
     }
-    if (!value.isNumeric())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of `{}` in the query plan is not a number: {}", key, value.toString());
-    return value.convert<double>();
+    else if (!value.isEmpty() && value.isNumeric())
+        result = value.convert<double>();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of `{}` in the query plan is not a number: {}", key, valueText(value));
+
+    if (!std::isfinite(result))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of `{}` in the query plan is not a finite number: {}", key, valueText(value));
+    return result;
 }
 
 /// Checked rather than `Poco::Dynamic::Var::convert`, which lets a double equal to 2^64 through its
@@ -135,12 +147,14 @@ UInt64 toUInt64(const Poco::Dynamic::Var & value, std::string_view key)
     const auto not_unsigned = [&]
     {
         return Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The value of `{}` in the query plan is not a non-negative integer that fits `UInt64`: {}", key, value.toString());
+            "The value of `{}` in the query plan is not a non-negative integer that fits `UInt64`: {}", key, valueText(value));
     };
 
+    if (value.isEmpty())
+        throw not_unsigned();
     if (value.isString())
     {
-        UInt64 result;
+        UInt64 result = 0;
         if (!tryParse(result, value.extract<std::string>()))
             throw not_unsigned();
         return result;
@@ -232,8 +246,9 @@ VectorWithMemoryTracking<String> formatMetrics(const Poco::JSON::Object & group)
     VectorWithMemoryTracking<String> parts;
     UnorderedSetWithMemoryTracking<std::string_view> known;
 
-    for (const auto & [json_key, key] : metric_keys)
+    for (const MetricKey key : metric_keys)
     {
+        const std::string_view json_key = jsonKey(key);
         known.insert(json_key);
         const std::string key_string(json_key);
         if (!group.has(key_string))
@@ -377,8 +392,8 @@ private:
 
         VectorWithMemoryTracking<String> replaced_prefixes;
         if (statistics)
-            for (const auto & [json_key, key] : group_keys)
-                if (statistics->has(std::string(json_key)))
+            for (const MetricGroupKey key : group_keys)
+                if (statistics->has(std::string(jsonKey(key))))
                     replaced_prefixes.push_back(fmt::format("{}: ", toString(key)));
 
         for (size_t i = 0; i < details->size(); ++i)
@@ -495,8 +510,9 @@ private:
     {
         UnorderedSetWithMemoryTracking<std::string_view> known = {"IO", "Time", "Concurrency", "Stages"};
 
-        for (const auto & [json_key, key] : group_keys)
+        for (const MetricGroupKey key : group_keys)
         {
+            const std::string_view json_key = jsonKey(key);
             known.insert(json_key);
             if (JSONObjectPtr group = statistics.getObject(std::string(json_key)))
             {
@@ -552,8 +568,9 @@ private:
             out << ", " << toUInt64(group.get("UniqueKeys"), "UniqueKeys") << " " << toString(MetricKey::UniqueKeys);
 
         UnorderedSetWithMemoryTracking<std::string_view> known = {"Type", "Reason", "Replaced", "UniqueKeys"};
-        for (const auto & [json_key, key] : metric_keys)
+        for (const MetricKey key : metric_keys)
         {
+            const std::string_view json_key = jsonKey(key);
             known.insert(json_key);
             const std::string key_string(json_key);
             if (key == MetricKey::FilterType || key == MetricKey::Reason || key == MetricKey::ReplacedFilterType
@@ -661,7 +678,7 @@ private:
                 if (JSONObjectPtr distribution = stage->getObject("ProcessorTimeNs"))
                     sum_elapsed_ns = numberOrZero(*distribution, "Sum");
 
-                const UInt64 processors = stage->has("Processors") ? toUInt64(stage->get("Processors"), "Processors") : 0;
+                const UInt64 processors = stage->has("Processors") && !stage->isNull("Processors") ? toUInt64(stage->get("Processors"), "Processors") : 0;
                 const UInt64 max_parallelism = max_threads ? std::min(*max_threads, processors) : processors;
                 out << fmt::format("{:.2f}/{}", sum_elapsed_ns / wall_clock_time_ns, max_parallelism);
             }
@@ -689,10 +706,16 @@ void renderDocument(const Poco::JSON::Object & document, WriteBuffer & out)
     if (!document.has("Version"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The query plan has no `Version`");
 
+    /// `system.query_log` keeps the rows of older versions until their TTL, and a query over the logs of
+    /// several servers can meet a newer version during a rolling upgrade. One such row must not fail the
+    /// whole query, so a version this server does not read renders as an error of its own row. For the
+    /// same reason, a later version of this function has to keep reading every version written before.
     const UInt64 version = toUInt64(document.get("Version"), "Version");
     if (version != QUERY_PLAN_JSON_VERSION)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The query plan has version {}, and this server reads version {}", version, QUERY_PLAN_JSON_VERSION);
+    {
+        out << "Error: unsupported query plan version " << version << ", this server reads version " << QUERY_PLAN_JSON_VERSION << "\n";
+        return;
+    }
 
     PlanRenderer(document, out).render();
 }
@@ -800,7 +823,13 @@ private:
             /// A value of an unexpected type, such as an object where a number was expected.
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot render the query plan: {}", e.displayText());
         }
-        return out.str();
+
+        /// Every line ends with a newline; the last one is dropped, as in the output of `EXPLAIN`, so
+        /// that a row-per-line format does not add an empty line after the tree.
+        String rendered = out.str();
+        if (rendered.ends_with('\n'))
+            rendered.pop_back();
+        return rendered;
     }
 };
 
@@ -813,7 +842,7 @@ Renders a query plan, as written to the `query_plan` column of [`system.query_lo
 
 The rendering is best effort: it shows the steps, their details, indexes, projections and per-step statistics that the plan holds. Projections are always shown, as `EXPLAIN ANALYZE projections = 1` does. The query summary that `EXPLAIN ANALYZE` prints above the tree is not shown, because the planning time, the rows and bytes read and the peak memory usage are not part of the plan. They are in other columns of `system.query_log`.
 
-An empty plan, such as the one of a `QueryStart` row, renders as an empty string. A plan that could not be logged renders as `Error: ` followed by the reason.
+An empty plan, such as the one of a `QueryStart` row, renders as an empty string. A plan that could not be logged renders as `Error: ` followed by the reason, and so does a plan of a version that this server does not read, so that one such row does not fail a query over many rows.
     )";
     FunctionDocumentation::Syntax syntax = "planToASCII(query_plan)";
     FunctionDocumentation::Arguments arguments = {

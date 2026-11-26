@@ -17,12 +17,6 @@
 namespace DB
 {
 
-namespace
-{
-
-/// Keys of the serialized form, not the display names `toString` returns, such as `I/O` and
-/// `input rows`: a key holding a space or a slash has to be backtick-quoted in a JSON path, which
-/// makes the stored statistics awkward to query.
 std::string_view jsonKey(MetricGroupKey key)
 {
     switch (key)
@@ -112,6 +106,9 @@ std::string_view jsonKey(MetricKey key)
         case MetricKey::RowsBeforeReady: return "RowsBeforeReady";
     }
 }
+
+namespace
+{
 
 /// A metric the step did not collect is written as null rather than as zero, which would read as a
 /// measurement that was taken and came out empty. The text form prints `not collected` for it.

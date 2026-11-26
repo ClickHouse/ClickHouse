@@ -25,7 +25,8 @@ SELECT planToASCII('{
          "Children": ["ReadFromMergeTree_0", "ReadFromSystemNumbers_1"],
          "Statistics": {
             "Right": {"Rows": 40, "RowsEstimated": null, "Matched": null},
-            "Left": {"Fanout": 1, "Rows": 5000, "RowsEstimated": 50, "MatchRate": 100, "Matched": 5000},
+            "Left": {"Fanout": 1, "QError": 100, "Rows": 5000, "RowsEstimated": 50, "MatchRate": 100, "Matched": 5000},
+            "Output": {"QError": 1, "Actual": 10, "Estimated": 10},
             "Cost": {"Estimated": 100, "Actual": 5000},
             "HashTable": {"UniqueKeys": 40, "Memory": 4096},
             "FutureGroup": {"NewMetric": 7},
@@ -88,10 +89,14 @@ SELECT planToASCII(NULL), planToASCII(''), planToASCII('{}'), planToASCII('{}'::
 -- A plan that could not be logged is replaced by its reason.
 SELECT planToASCII('{"Error": "The query plan is too large"}') FORMAT TSVRaw;
 
+-- A version this server does not read renders as an error of its own row, so the other rows of a
+-- query over `system.query_log` still render.
+SELECT planToASCII(arrayJoin(['{"Version": 99, "Root": "A", "Nodes": []}', '{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A"}]}'])) FORMAT TSVRaw;
+
 SELECT planToASCII('not json'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('[1, 2]'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
-SELECT planToASCII('{"Version": 99, "Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": null, "Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Version": 1, "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Version": 1, "Root": "A"}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Children": ["B"]}]}'); -- { serverError BAD_ARGUMENTS }
@@ -109,6 +114,11 @@ SELECT planToASCII('{"Version": "18446744073709551616", "Root": "A", "Nodes": []
 SELECT planToASCII('{"Version": "one", "Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {"Stages": [{"WallClockTimeNs": 10, "Processors": 18446744073709551616.0}]}}]}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {"HashTable": {"Memory": "lots"}}}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {"HashTable": {"Memory": "inf"}}}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {"Time": {"StepTimeNs": "nan"}}}]}'); -- { serverError BAD_ARGUMENTS }
+
+-- A `null` count is taken as absent, as a `JSON` column leaves it out.
+SELECT planToASCII('{"Version": 1, "Root": "A", "MaxThreads": null, "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {"Stages": [{"Name": "", "WallClockTimeNs": 10, "Processors": null}]}}]}') FORMAT TSVRaw;
 
 -- Numbers quoted as strings, as `toJSONString` writes them with `output_format_json_quote_64bit_integers = 1`,
 -- render the same as unquoted ones, in the format of their metric.
@@ -149,3 +159,41 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND position(query, '05327_projection_read') > 0;
 
 DROP TABLE t_05327_projection;
+
+-- The statistics lines of a logged join match those of `EXPLAIN ANALYZE` for the same query, with the
+-- numbers masked: the groups and their metrics come out in the order of the analyzers.
+DROP TABLE IF EXISTS t_05327_left;
+DROP TABLE IF EXISTS t_05327_right;
+CREATE TABLE t_05327_left (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_05327_right (k UInt64, w UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_05327_left SELECT number, number FROM numbers(1000);
+INSERT INTO t_05327_right SELECT number * 3, number FROM numbers(100);
+
+SELECT count() FROM t_05327_left AS l JOIN t_05327_right AS r ON l.k = r.k WHERE '05327_join' != ''
+SETTINGS max_threads = 1, enable_join_runtime_filters = 0, log_query_plans = 1 FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+
+-- The two runs are separate executions, and whether the right side collects its matches can differ
+-- between them, so the `Right` line is compared up to its `q-error`.
+SELECT
+    length(explained) > 0 AS has_lines,
+    explained = logged AS same
+FROM
+(
+    SELECT
+        arrayFilter(l -> match(l, '^(Cost|Selectivity|Output rows|Left|Right|Hash table):'),
+            arrayMap(l -> replaceRegexpOne(replaceRegexpAll(trimLeft(l, ' │├└─'), '[0-9]+(\\.[0-9]+)?(e-[0-9]+)?( (thousand|million|B|KB|MB))?', 'N'), '^(Right: .*?) · matched.*$', '\\1'),
+                (SELECT groupArray(explain) FROM (
+                    EXPLAIN ANALYZE SELECT count() FROM t_05327_left AS l JOIN t_05327_right AS r ON l.k = r.k WHERE '05327_join' != ''
+                    SETTINGS max_threads = 1, enable_join_runtime_filters = 0)))) AS explained,
+        arrayFilter(l -> match(l, '^(Cost|Selectivity|Output rows|Left|Right|Hash table):'),
+            arrayMap(l -> replaceRegexpOne(replaceRegexpAll(trimLeft(l, ' │├└─'), '[0-9]+(\\.[0-9]+)?(e-[0-9]+)?( (thousand|million|B|KB|MB))?', 'N'), '^(Right: .*?) · matched.*$', '\\1'),
+                splitByChar('\n', (
+                    SELECT planToASCII(query_plan) FROM system.query_log
+                    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND position(query, '05327_join') > 0 AND position(query, 'EXPLAIN') = 0
+                    ORDER BY event_time_microseconds DESC LIMIT 1)))) AS logged
+)
+FORMAT Vertical;
+
+DROP TABLE t_05327_left;
+DROP TABLE t_05327_right;
