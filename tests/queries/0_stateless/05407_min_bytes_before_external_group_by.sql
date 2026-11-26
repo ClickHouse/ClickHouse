@@ -1,4 +1,6 @@
 SET max_threads = 1;
+-- The adaptive aggregator also takes one thread, and the minimum is checked for the ordinary aggregation.
+SET enable_adaptive_aggregator = 0;
 SET max_block_size = 65536;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET max_bytes_before_external_group_by = 1;

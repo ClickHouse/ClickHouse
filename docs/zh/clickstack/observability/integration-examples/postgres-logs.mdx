@@ -1,0 +1,373 @@
+---
+slug: /clickstack/observability/integration-examples/postgres-logs
+title: '使用 ClickHouse Observability 监控 PostgreSQL 日志'
+sidebarTitle: 'PostgreSQL 日志'
+description: '使用 ClickHouse Observability 监控 PostgreSQL 日志，涵盖 ClickHouse Observability 及自管理部署的设置与配置。'
+doc_type: 'guide'
+keywords: ['PostgreSQL', 'Postgres', '日志', 'OTEL', 'ClickHouse Observability', '数据库监控']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+使用 OpenTelemetry 采集器收集 PostgreSQL CSV 日志，并将其发送到 ClickHouse Observability。借助[演示数据集](#demo-dataset)，无需安装 PostgreSQL 即可试用此集成。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* Docker，用于运行采集器示例
+* 如需采集您自己的日志：PostgreSQL 14 或更高版本，并具有其配置文件和日志文件的访问权限
+* 如需运行演示：`curl`，用于下载样本数据
+
+### 连接详情 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    打开 ClickHouse Observability，进入 **团队设置 → Data → Managed Telemetry**，复制您的 OTLP HTTP 端点和 API key。您可以点击 **Copy connection details** 复制配置，或点击 **Reveal key** 查看已隐藏的密钥。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    为配合下文的 OTLP 导出器示例，请在将要运行采集器的终端中设置以下变量：
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    将占位符替换为您服务的准确端点 (含端口) 和 API key。请使用基础 HTTP 端点，不要带 `/v1/logs` 后缀；导出器会自动追加信号路径。
+  </Tab>
+
+  <Tab title="自管理">
+    请使用采集器可访问的 OTLP HTTP 端点 (例如 `http://YOUR_COLLECTOR_HOST:4318`) 及相应的身份验证设置。如果您的采集器无需身份验证，请在下文配置中省略导出器的 `headers` 块。设置方法请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+采集器容器必须能够访问该端点。如果目标端采集器运行在本机上，请使用 `http://host.docker.internal:4318`。下文的 Docker 命令已包含主机映射。
+
+## 与现有 PostgreSQL 集成 {#existing-postgres}
+
+<Steps>
+  <Step title="配置 PostgreSQL 日志" id="configure-postgres">
+    以数据库管理员身份运行以下 SQL，查找您的配置文件：
+
+    ```sql
+    SHOW config_file;
+    ```
+
+    在 `postgresql.conf` 中添加或更新以下设置：
+
+    ```conf
+    logging_collector = on
+    log_destination = 'csvlog'
+    log_directory = '/var/log/postgresql'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_file_mode = 0640
+    log_timezone = 'UTC'
+    log_connections = on
+    log_disconnections = on
+    # Optional: log statements taking more than one second
+    # log_min_duration_statement = 1000
+    ```
+
+    创建日志目录，并为其设置合适的所有权和权限，使 PostgreSQL 能够写入、采集器能够读取。如果 PostgreSQL 运行在容器中，请挂载该目录，以便采集器访问相同的文件。注意，即使 `log_filename` 以 `.log` 结尾，CSV 输出文件仍会使用 `.csv` 扩展名。
+
+    按照您的部署流程重启 PostgreSQL，例如：
+
+    ```bash
+    sudo systemctl restart postgresql
+    # Or, for Docker:
+    docker restart <postgres-container>
+    ```
+
+    查看当前使用的 CSV 文件：
+
+    ```sql
+    SELECT pg_current_logfile('csvlog');
+    ```
+
+    以下解析器适用于 [26 列的 PostgreSQL CSV 格式](https://www.postgresql.org/docs/14/runtime-config-logging.html#RUNTIME-CONFIG-LOGGING-CSVLOG)。较早版本的 PostgreSQL 或其他日志格式需要使用不同的解析器。
+  </Step>
+
+  <Step title="配置采集器" id="configure-collector">
+    将以下内容保存为 `postgres-logs-monitoring.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/postgres:
+        include:
+          - /var/log/postgresql/postgresql-*.csv
+        start_at: end
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+        operators:
+          - type: csv_parser
+            parse_from: body
+            parse_to: attributes
+            header: 'log_time,user_name,database_name,process_id,connection_from,session_id,session_line_num,command_tag,session_start_time,virtual_transaction_id,transaction_id,error_severity,sql_state_code,message,detail,hint,internal_query,internal_query_pos,context,query,query_pos,location,application_name,backend_type,leader_pid,query_id'
+            lazy_quotes: true
+
+          - type: time_parser
+            parse_from: attributes.log_time
+            layout: '%Y-%m-%d %H:%M:%S.%L %Z'
+            location: UTC
+
+          - type: add
+            field: attributes.source
+            value: "postgresql"
+
+          - type: add
+            field: resource["service.name"]
+            value: "postgresql-service"
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/postgres:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, "info")
+              - set(log.severity_number, SEVERITY_NUMBER_INFO)
+              - set(log.severity_text, "debug") where IsMatch(log.attributes["error_severity"], "^DEBUG")
+              - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+              - set(log.severity_text, "warn") where log.attributes["error_severity"] == "WARNING"
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+              - set(log.severity_text, "error") where log.attributes["error_severity"] == "ERROR"
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"
+              - set(log.severity_text, "fatal") where log.attributes["error_severity"] == "FATAL" or log.attributes["error_severity"] == "PANIC"
+              - set(log.severity_number, SEVERITY_NUMBER_FATAL) where log.severity_text == "fatal"
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/postgres:
+          receivers: [filelog/postgres]
+          processors: [memory_limiter, transform/postgres, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    该接收器会解析多行 CSV 条目，保留其时间戳和正文，并添加值为 `postgresql-service` 的 `service.name`。`database_name`、`error_severity`、`message` 和 `query` 等字段仍可作为日志属性使用。
+  </Step>
+
+  <Step title="运行采集器" id="run-collector">
+    在包含该配置文件的目录中运行以下命令。如有需要，请调整主机上的日志目录。如果日志文件为组可读，请添加 `--group-add LOG_GROUP_ID`，其中的组 ID 取 `ls -ln /var/log/postgresql` 输出中显示的数字组 ID。
+
+    ```bash
+    docker run --rm --name postgres-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/postgres-logs-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/postgresql:/var/log/postgresql:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    请保持终端打开。由于接收器配置了 `start_at: end`，请在启动采集器之后新建一个数据库连接，或执行一条会产生错误的查询：
+
+    ```sql
+    SELECT 1 / 0;
+    ```
+  </Step>
+
+  <Step title="检查日志" id="verify-logs">
+    打开 **搜索** 页面，选择 **日志**，使用 `ServiceName:postgresql-service` 进行过滤，然后选择 **最近 15 分钟**。展开任一条记录，即可查看其 PostgreSQL 属性和严重级别。
+  </Step>
+</Steps>
+
+## 演示数据集 {#demo-dataset}
+
+该示例数据包含 21,325 条 PostgreSQL CSV 记录，涵盖连接活动、查询以及服务器错误。
+
+<Steps>
+  <Step title="下载样本数据集" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgresql.log
+    ```
+  </Step>
+
+  <Step title="配置演示采集器" id="configure-demo">
+    将以下内容保存为 `postgres-logs-demo.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/postgres:
+        include:
+          - /var/log/postgresql/postgresql.log
+        start_at: beginning
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+        operators:
+          - type: csv_parser
+            parse_from: body
+            parse_to: attributes
+            header: 'log_time,user_name,database_name,process_id,connection_from,session_id,session_line_num,command_tag,session_start_time,virtual_transaction_id,transaction_id,error_severity,sql_state_code,message,detail,hint,internal_query,internal_query_pos,context,query,query_pos,location,application_name,backend_type,leader_pid,query_id'
+            lazy_quotes: true
+
+          - type: time_parser
+            parse_from: attributes.log_time
+            layout: '%Y-%m-%d %H:%M:%S.%L %Z'
+            location: UTC
+
+          - type: add
+            field: attributes.source
+            value: "postgresql-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "postgresql-demo"
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/postgres:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, "info")
+              - set(log.severity_number, SEVERITY_NUMBER_INFO)
+              - set(log.severity_text, "debug") where IsMatch(log.attributes["error_severity"], "^DEBUG")
+              - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+              - set(log.severity_text, "warn") where log.attributes["error_severity"] == "WARNING"
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+              - set(log.severity_text, "error") where log.attributes["error_severity"] == "ERROR"
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"
+              - set(log.severity_text, "fatal") where log.attributes["error_severity"] == "FATAL" or log.attributes["error_severity"] == "PANIC"
+              - set(log.severity_number, SEVERITY_NUMBER_FATAL) where log.severity_text == "fatal"
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2025-11-10T23:59:47Z", "%Y-%m-%dT%H:%M:%SZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/postgres:
+          receivers: [filelog/postgres]
+          processors: [memory_limiter, transform/postgres, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    这个仅用于演示的时间戳处理器会将样本数据平移到过去 24 小时内，截止时间为摄取前两分钟。原始时间戳属性和日志消息体均保持不变。处理您自己的 PostgreSQL 日志时，请勿使用此处理器。
+  </Step>
+
+  <Step title="运行演示采集器" id="run-demo">
+    在包含配置文件和已下载日志文件的目录下，运行以下命令：
+
+    ```bash
+    docker run --rm --name postgres-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/postgres-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/postgresql.log:/var/log/postgresql/postgresql.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    验证摄取期间，请保持终端处于打开状态。完成后，按 **Ctrl+C** 停止采集器。再次运行演示时，会以刷新后的时间戳重新摄取样本数据。
+  </Step>
+
+  <Step title="验证演示日志" id="verify-demo">
+    打开**搜索**页面，选择**日志**，按 `ServiceName:postgresql-demo` 进行过滤，并选择**最近 2 天**。展开任意一条记录，即可查看 `database_name`、`error_severity`、`message` 和 `query` 等字段。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 搜索页面中的 PostgreSQL 演示日志](/images/clickstack/observability-postgres-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 仪表盘与可视化 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json" download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">下载仪表盘配置</TrackedLink>} id="download-dashboard" />
+
+  <Step title="导入仪表盘" id="import-dashboard">
+    1. 打开 **仪表盘**，点击右上角的 **Import**。
+    2. 上传 `postgresql-logs-dashboard.json`。
+    3. 将图表映射到您的 **日志** source，然后点击 **Finish Import**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![仪表盘 页面，其中 Import 按钮已突出显示](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="查看仪表盘" id="view-dashboard">
+    如使用示例数据，请选择 **最近 2 天**，并可按 `ServiceName:postgresql-demo` 进行过滤。如使用您自己的日志，请按 `ServiceName:postgresql-service` 进行过滤，并选择覆盖这些记录的时间范围。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![PostgreSQL 日志仪表盘，显示日志量、慢查询、数据库、错误、身份验证失败及查询类型](/images/clickstack/observability-postgres-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 故障排查 {#troubleshooting}
+
+### 采集器无法启动 {#collector-fails-to-start}
+
+检查采集器输出中是否有配置错误。在运行 Docker 的终端中，确认配置挂载和连接变量是否正确。
+
+### 未显示日志 {#no-logs}
+
+检查是否存在身份验证错误或导出错误。使用 `pg_current_logfile` 确认 CSV 路径，确保这些文件与接收器的 `include` 模式匹配，并检查采集器是否有权限读取这些文件。设置 `start_at: end` 时，只会采集新增的条目。如果使用演示数据，请添加时间戳处理器，并选择 **最近 2 天**。
+
+### 权限被拒绝 {#permission-denied}
+
+PostgreSQL 默认创建的日志文件仅所有者可访问。上述配置通过 `log_file_mode = 0640` 允许所属组读取；请使用 `--group-add` 将该文件的所属组添加到采集器容器中。已存在的文件仍保留原有权限。此外，请确保该目录也允许所属组访问。
+
+### CSV 解析错误 {#csv-parsing-errors}
+
+该解析器要求日志采用 PostgreSQL 14 及更高版本生成的 26 列格式。请确认已设置 `log_destination = 'csvlog'` 和 `log_timezone = 'UTC'`。如果使用较旧的版本或自定义格式，请相应调整表头定义；stderr 和 JSON 格式的日志无法使用此 CSV 解析器。
+
+## 后续步骤 {#next-steps}
+
+* 为错误和连接失败配置[告警](/zh/clickstack/observability/features/alerts)。
+* 将日志与 [PostgreSQL 指标](/zh/clickstack/observability/integration-examples/postgres-metrics)关联起来。

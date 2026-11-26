@@ -13,15 +13,11 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки определяют конфигурацию сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="s3queue_disable_streaming">
-  ## s3queue_disable_streaming
-</div>
+## s3queue_disable_streaming {#s3queue_disable_streaming}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Да" />Отключает стриминг в S3Queue, даже если таблица создана и к ней присоединены материализованные представления
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Да" />Отключает стриминг в S3Queue, даже если таблица создана и к ней присоединены materialized view
 
-<div id="s3queue_log">
-  ## s3queue_log
-</div>
+## s3queue_log {#s3queue_log}
 
 Параметры системной таблицы `s3queue_log`.
 
