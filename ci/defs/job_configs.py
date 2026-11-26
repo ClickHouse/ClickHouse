@@ -391,7 +391,7 @@ class JobConfigs:
         name=JobNames.LIBCXX_EXTERNAL_THREADING,
         runs_on=[],
         command="python3 ./ci/jobs/libcxx_external_threading_job.py {PARAMETER}",
-        run_in_docker="clickhouse/fasttest",
+        run_in_docker="clickhouse/fasttest+--security-opt seccomp=unconfined",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libcxx_external_threading_job.py",

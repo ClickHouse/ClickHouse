@@ -18,7 +18,7 @@ def main():
             name="Checkout Submodules",
             command=[
                 clone_submodules,
-                "git submodule update --init --depth 1 --single-branch -- contrib/silk contrib/librseq",
+                "git submodule update --init --depth 1 --single-branch -- contrib/silk contrib/librseq contrib/libucontext",
             ],
         )
     ]
