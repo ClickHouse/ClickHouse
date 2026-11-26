@@ -65,6 +65,8 @@ namespace DB::CoordinationSetting
 namespace ProfileEvents
 {
     extern const Event KeeperReadSnapshotStreamingSeeks;
+    extern const Event KeeperSnapshotApplys;
+    extern const Event KeeperSnapshotApplyMicroseconds;
 }
 
 namespace
@@ -469,7 +471,7 @@ struct IntNode
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
     IntNode copyFromSnapshotNode() { return *this; }
-    [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
+    [[nodiscard]] [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
 };
@@ -491,6 +493,15 @@ TEST(ACLMapTest, OverflowWraparound)
 
     auto id3 = acl_map.convertACLs({{1, "digest", "user3:pwd"}});
     EXPECT_EQ(id3, 2);
+
+    /// Restore the mappings, including the maximum ID, as a snapshot does.
+    DB::ACLMap restored;
+    for (const auto & [id, acls] : acl_map.getMapping())
+        restored.addMapping(id, acls);
+    EXPECT_EQ(restored.convertACLs({{1, "digest", "user2:pwd"}}), std::numeric_limits<DB::ACLId>::max());
+    auto id4 = restored.convertACLs({{1, "digest", "user4:pwd"}});
+    EXPECT_NE(id4, 0);
+    EXPECT_NE(id4, std::numeric_limits<DB::ACLId>::max());
 }
 
 TEST(ACLMapTest, RemoveUnusedACLs)
@@ -1496,6 +1507,30 @@ TEST_P(CoordinationTest, ApplySnapshotReplacesCommittedState)
     EXPECT_EQ(committedNodeData(storage, "/committed"), "from_snapshot");
     EXPECT_FALSE(committedNodeExists(storage, "/old"));
     EXPECT_EQ(state_machine->last_commit_index(), 1);
+}
+
+TEST_P(CoordinationTest, ApplySnapshotMicroseconds)
+{
+    ChangelogDirTest snapshots("./snapshots");
+
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+
+    auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*snapshot_storage, "/committed", "from_snapshot");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage->zxid) = 1;
+
+    nuraft::snapshot snapshot(1, 0, std::make_shared<nuraft::cluster_config>());
+    auto snapshot_buf = makeSnapshotBufferFromStorage(*snapshot_storage, 1, ctx);
+    saveSingleObjectSnapshot(*state_machine, snapshot, snapshot_buf);
+
+    const auto applies_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplys];
+    const auto apply_us_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplyMicroseconds];
+    EXPECT_TRUE(state_machine->apply_snapshot(snapshot));
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplys], applies_before);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplyMicroseconds], apply_us_before);
 }
 
 TEST_P(CoordinationTest, ApplySnapshotPreservesPreprocessedTailAboveSnapshotIndex)
@@ -3573,7 +3608,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsRejectedRecursiveRequ
 
     appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive("/")));
-    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(DB::keeper_system_path)));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(String(DB::keeper_system_path))));
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ true)));
     /// Control: the same recursive listing without a watch is valid and walks the pruned subtree.
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ false)));

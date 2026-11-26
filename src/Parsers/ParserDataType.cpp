@@ -131,7 +131,7 @@ bool parseEnumValues(
 class DynamicArgumentParser : public IParserBase
 {
 private:
-    const char * getName() const override { return "Dynamic data type optional argument"; }
+    [[nodiscard]] const char * getName() const override { return "Dynamic data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         ASTPtr identifier;
@@ -161,7 +161,7 @@ private:
 class ObjectArgumentParser : public IParserBase
 {
 private:
-    const char * getName() const override { return "JSON data type optional argument"; }
+    [[nodiscard]] const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         auto argument = make_intrusive<ASTObjectTypeArgument>();

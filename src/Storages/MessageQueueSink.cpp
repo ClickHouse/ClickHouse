@@ -4,13 +4,17 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
-#include <numeric>
-
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 MessageQueueSink::MessageQueueSink(
     SharedHeader header,
+    SharedHeader format_header_,
     const String & format_name_,
     size_t max_rows_per_message_,
     std::unique_ptr<IMessageProducer> producer_,
@@ -18,12 +22,14 @@ MessageQueueSink::MessageQueueSink(
     const ContextPtr & context_)
     : MessageQueueSink(
           header,
-          header,
+          format_header_,
           [&]()
           {
-              std::vector<size_t> identity_indices(header->columns());
-              std::iota(identity_indices.begin(), identity_indices.end(), size_t{0});
-              return identity_indices;
+              std::vector<size_t> indices;
+              indices.reserve(format_header_->columns());
+              for (const auto & column : *format_header_)
+                  indices.push_back(header->getPositionByName(column.name));
+              return indices;
           }(),
           format_name_,
           max_rows_per_message_,
@@ -56,16 +62,7 @@ MessageQueueSink::MessageQueueSink(
 MessageQueueSink::~MessageQueueSink()
 {
     if (isCancelled())
-    {
-        if (format)
-            format->cancel();
-
-        if (buffer)
-            buffer->cancel();
-
-        if (producer)
-            producer->cancel();
-    }
+        cancelProducing();
 }
 
 void MessageQueueSink::onStart()
@@ -84,6 +81,14 @@ void MessageQueueSink::onStart()
 
     format = FormatFactory::instance().getOutputFormat(format_name, *buffer, *format_header, context, format_settings);
     row_format = dynamic_cast<IRowOutputFormat *>(format.get());
+
+    /// `consume` moves to the next row only inside a message, so a row-based format needs at least one row per message.
+    if (row_format && max_rows_per_message == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The maximum number of rows per message for the {} table engine must be at least 1. "
+            "Check the `*_max_rows_per_message` setting of the table, or `output_format_avro_rows_in_file` for the `Avro` format",
+            storage_name);
 }
 
 void MessageQueueSink::onFinish()
@@ -98,7 +103,17 @@ void MessageQueueSink::onFinish()
 
 void MessageQueueSink::onException(std::exception_ptr /* exception */)
 {
-    onFinish();
+    cancelProducing();
+}
+
+void MessageQueueSink::cancelProducing() noexcept
+{
+    if (format)
+        format->cancel();
+    if (buffer)
+        buffer->cancel();
+    if (producer)
+        producer->cancel();
 }
 
 Columns MessageQueueSink::extractFormatColumns(const Columns & columns) const

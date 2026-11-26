@@ -6,9 +6,7 @@ title: 'gRPC-интерфейс'
 doc_type: 'reference'
 ---
 
-<div id="grpc-interface-introduction">
-  ## Введение
-</div>
+## Введение {#grpc-interface-introduction}
 
 ClickHouse поддерживает [gRPC](https://grpc.io/) интерфейс. Это система удалённого вызова процедур с открытым исходным кодом, использующая HTTP/2 и [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). Реализация gRPC в ClickHouse поддерживает:
 
@@ -23,9 +21,7 @@ ClickHouse поддерживает [gRPC](https://grpc.io/) интерфейс.
 
 Спецификация интерфейса описана в [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
 
-<div id="grpc-interface-configuration">
-  ## Конфигурация gRPC
-</div>
+## Конфигурация gRPC {#grpc-interface-configuration}
 
 Чтобы использовать gRPC-интерфейс, задайте `grpc_port` в основной [конфигурации сервера](/ru/concepts/features/configuration/server-config/configuration-files). Другие параметры конфигурации приведены в следующем примере:
 
@@ -34,36 +30,31 @@ ClickHouse поддерживает [gRPC](https://grpc.io/) интерфейс.
     <grpc>
         <enable_ssl>false</enable_ssl>
 
-        <!-- Следующие два файла используются только при включённом SSL -->
+        <!-- The following two files are used only if SSL is enabled -->
         <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
         <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
 
-        <!-- Запрашивает ли сервер сертификат у клиента -->
+        <!-- Whether server requests client for a certificate -->
         <ssl_require_client_auth>false</ssl_require_client_auth>
 
-        <!-- Следующий файл используется только при ssl_require_client_auth=true -->
+        <!-- The following file is used only if ssl_require_client_auth=true -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- Алгоритм сжатия по умолчанию (применяется, если клиент не указал другой алгоритм; см. result_compression в QueryInfo).
-             Поддерживаемые алгоритмы: none, deflate, gzip, stream_gzip -->
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
         <compression>deflate</compression>
 
-        <!-- Уровень сжатия по умолчанию (применяется, если клиент не указал другой уровень; см. result_compression в QueryInfo).
-             Поддерживаемые уровни: none, low, medium, high -->
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
         <compression_level>medium</compression_level>
 
-        <!-- Ограничения на размер отправляемых/получаемых сообщений в байтах. -1 означает без ограничений -->
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-
-        <!-- Включите для получения подробных журналов -->
-        <verbose_logs>false</verbose_logs>
     </grpc>
 ```
 
-<div id="grpc-client">
-  ## Встроенный клиент
-</div>
+## Встроенный клиент {#grpc-client}
 
 Вы можете написать клиент на любом из языков программирования, поддерживаемых gRPC, используя предоставленную [спецификацию](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
 Или можно использовать встроенный клиент Python. Он находится в [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) в репозитории. Для встроенного клиента требуются Python-модули [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart).

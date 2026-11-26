@@ -22,6 +22,7 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/WindowDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -39,7 +40,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context);
@@ -144,16 +145,12 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
-/// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise return empty.
-/// If the window frame is set in sql, use it anyway.
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
-
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 /// Remove query plan steps that don't affect the number of rows in the result.
 /// Returns true if the query always returns at least 1 row.
-bool optimizePlanForExists(QueryPlan & query_plan);
+/// `is_correlated` means the remaining plan is decorrelated rather than executed as is.
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated);
 
 /// Create ExpressionStep that projects only used columns
 QueryPlanStepPtr projectOnlyUsedColumns(
