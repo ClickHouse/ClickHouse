@@ -144,13 +144,17 @@ Cuando una parte de datos se escribe con la serialización `with_buckets`:
 
 Cuando una consulta lee una clave específica (`m['key']`), el optimizador reescribe la expresión como una subcolumna de clave (`m.key_<serialized_key>`).
 La capa de serialización calcula a qué bucket pertenece la clave solicitada y lee solo ese bucket desde el disco.
+Esta reescritura solo se produce en tablas que usan la serialización `with_buckets`: con la serialización `basic`, leer una subcolumna de clave
+implica leer igualmente el `Map` completo.
 
-Cuando se lee el mapa completo (por ejemplo, `SELECT m`), se leen todos los buckets y se reconstruye el mapa original. Esto es más lento que la serialización `basic` debido a la sobrecarga de leer y fusionar varios subflujos.
+Cuando se lee el Map completo (por ejemplo, `SELECT m`), se leen todos los buckets y se reconstruye el Map original. Esto es más lento que la serialización `basic` debido a la sobrecarga de leer y fusionar varios subflujos.
+
+Un `Map` cuyo tipo de clave contenga `JSON` o `Dynamic` siempre se escribe en un único bucket, y al buscar una de sus claves se lee el Map completo.
 
 <Note>
-  Desde la versión 26.8, la serialización `with_buckets` conserva el orden original de las claves: un subflujo adicional `bucket_indexes` registra de qué bucket procede cada par clave-valor, por lo que el mapa se reconstruye en el orden en que se escribió, en lugar de en orden de bucket.
+  Desde la versión 26.8, la serialización `with_buckets` conserva el orden original de las claves: un subflujo adicional `bucket_indexes` registra de qué bucket procede cada par clave-valor, por lo que el Map se reconstruye en el orden en que se escribió, en lugar de en orden de bucket.
 
-  Las partes escritas por versiones anteriores no contienen ese subflujo. Sus mapas se siguen reconstruyendo en orden de bucket, y no es posible restaurar su orden original de claves porque nunca se almacenó en disco; reescribir una de esas partes (mediante una fusión o `OPTIMIZE FINAL`) fija el orden de bucket que tiene actualmente en lugar de recuperar el orden de inserción. Con la serialización `basic`, siempre se ha conservado el orden de las claves de los mapas insertados.
+  Las partes escritas por versiones anteriores no contienen ese subflujo. Sus Maps se siguen reconstruyendo en orden de bucket, y no es posible restaurar su orden original de claves porque nunca se almacenó en disco; reescribir una de esas partes (mediante una fusión o `OPTIMIZE FINAL`) fija el orden de bucket que tiene actualmente en lugar de recuperar el orden de inserción. Con la serialización `basic`, siempre se ha conservado el orden de las claves de los Maps insertados.
 </Note>
 
 El número de buckets puede variar entre partes. Cuando se fusionan partes con distintos números de buckets, el número de buckets de la nueva parte se vuelve a calcular a partir de las estadísticas fusionadas. Las partes con serialización `basic` y `with_buckets` pueden coexistir en la misma tabla y se fusionan de forma transparente.

@@ -1,13 +1,37 @@
 ---
-title: 'ClickHouse에 비용 기반 옵티마이저가 있습니까'
+title: 'ClickHouse에는 비용 기반 최적화기(Cost-Based Optimizer)가 있습니까?'
+sidebarTitle: '비용 기반 최적화기(Cost-Based Optimizer)'
 toc_hidden: true
 toc_priority: 10
 slug: /faq/general/cost-based
-description: 'ClickHouse에는 일부 비용 기반 최적화 메커니즘이 있습니다'
-doc_type: '참고'
-keywords: ['CBE', 'optimizer']
+description: 'ClickHouse에는 자동으로 수집되는 컬럼 통계(Column Statistics)를 기반으로 조인 순서(Join Order), JOIN 빌드 측, PREWHERE 조건 순서를 결정하는 비용 기반 최적화기(Cost-Based Optimizer)가 있습니다'
+doc_type: 'reference'
+keywords: ['CBO', 'cost-based optimizer', 'optimizer', 'statistics', 'join reordering']
 ---
 
-ClickHouse에는 일부 비용 기반 최적화 메커니즘이 있습니다. 예를 들어, 컬럼을 읽는 순서는 디스크에서 압축된 데이터 범위를 읽는 비용에 따라 결정됩니다.
+예. ClickHouse에는 비용 기반 최적화기(Cost-Based Optimizer, CBO)가 있습니다. 이 최적화기는 컬럼 통계(Column Statistics)를 바탕으로 쿼리의 각 단계에서 생성되는 행(rows) 수를 추정하고, 이 추정치를 사용해 동등한 쿼리 계획 중 하나를 선택합니다.
 
-또한 ClickHouse는 컬럼 통계(column statistics)를 기반으로 JOIN 순서를 재조정하기도 하지만, 이는 (2025년 기준) Postgres, Oracle, MS SQL Server의 CBE만큼 발전된 수준은 아닙니다.
+비용을 기반으로 결정되는 항목은 다음과 같습니다.
+
+* **조인 순서(Join Order).** 여러 테이블을 조인하는 쿼리에서 플래너는 예상 비용이 가장 낮은 조인 순서(Join Order)를 탐색합니다. 기본적으로 `dpsub` 동적 프로그래밍 알고리즘을 사용하며, 이 알고리즘은 `LEFT`, `RIGHT`, `FULL`, `SEMI`, `ANTI` 조인이 포함된 순서를 비롯해 유효한 모든 조인 순서(Join Order)를 고려합니다. 탐색 범위는 최대 10개 테이블로 구성된 그룹이며, 이 값은 `query_plan_optimize_join_order_limit`으로 설정합니다. 이보다 많은 테이블을 조인하는 쿼리는 여러 그룹으로 분할되어 그룹별로 따로 최적화됩니다. 이 제한 값을 12보다 크게 설정하면 12개를 초과하는 테이블로 구성된 그룹에는 대신 탐욕(greedy) 알고리즘이 사용됩니다. [`query_plan_optimize_join_order_algorithm`](/ko/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) 및 [`query_plan_optimize_join_order_limit`](/ko/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)을 참고하십시오.
+* **JOIN 빌드 측.** 해시 조인에서 플래너는 쿼리에 테이블을 작성한 순서와 관계없이 예상 크기가 더 작은 입력을 해시 테이블에 넣습니다. [`query_plan_join_swap_table`](/ko/reference/settings/session-settings/query-plan#query_plan_join_swap_table)을 참고하십시오.
+* **JOIN 알고리즘.** 조인 대상 테이블을 조인 키 순서대로 읽을 수 있는 경우, 플래너는 비용을 기준으로 해시 조인과 `full_sorting_merge` 중 하나를 선택하며, 정렬된 출력을 이후 조인에서 활용할 수 있는 계획을 우선합니다. [`query_plan_join_order_use_interesting_orders`](/ko/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders)를 참고하십시오.
+* **필터 순서.** `WHERE`의 조건은 [`PREWHERE`](/ko/optimize/prewhere)로 이동하며, 컬럼의 압축된 크기와 각 조건의 예상 선택도(Selectivity)를 바탕으로 비용이 낮고 선택도가 높은 조건부터 평가되도록 정렬됩니다.
+
+## 추정치는 어디에서 오나요? {#where-do-the-estimates-come-from}
+
+`MergeTree` 테이블은 파트가 머지될 때 각 데이터 파트(data part)에 대한 컬럼 통계(Column Statistics)를 자동으로 수집하며, 크기가 [`materialize_statistics_on_insert_max_table_size`](/ko/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size)(기본값 25 GiB)보다 작은 테이블에서는 삽입 시에도 수집합니다. 따라서 `ANALYZE`를 실행하거나 통계를 수동으로 관리할 필요가 없습니다. 통계 유형은 [`auto_statistics_types`](/ko/reference/settings/merge-tree-settings/other#auto_statistics_types) 테이블 설정(table setting)으로 지정하며, 기본값은 `basic`(최솟값과 최댓값, 기본값 및 `NULL` 값의 개수, 문자열의 총 길이)과 `uniq_v2`(고유 값(distinct values)의 개수)입니다. `tdigest`(값 분포), `countmin`(개별 값의 빈도) 등의 유형을 추가하면 편향된 데이터에서 범위 조건과 동등 조건에 대한 추정 정확도가 높아집니다. 자세한 내용은 [컬럼 통계(Column Statistics)](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)를 참고하세요.
+
+통계는 [`use_statistics`](/ko/reference/settings/session-settings/use-statistics#use_statistics)가 활성화되어 있을 때 사용되며, 기본적으로 활성화되어 있습니다. 조인 순서(Join Order) 최적화기는 컬럼 통계(Column Statistics) 외에도 동일한 조인을 이전에 실행할 때 관측된 해시 테이블(hash tables) 크기([`use_hash_table_stats_for_join_reordering`](/ko/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering))와 Iceberg 매니페스트 파일에 포함된 통계([`use_datalake_metadata_statistics`](/ko/reference/settings/session-settings/use))도 활용할 수 있습니다.
+
+## 최적화기가 수행한 작업은 어떻게 확인할 수 있습니까? {#how-can-i-see-what-the-optimizer-did}
+
+선택된 계획을 확인하려면 [`EXPLAIN`](/ko/reference/statements/explain)을 사용하고, 쿼리를 실행하여 각 단계의 실제 메트릭을 확인하려면 [`EXPLAIN ANALYZE`](/ko/reference/statements/explain#explain-analyze)를 사용하십시오. `EXPLAIN ANALYZE`는 조인 단계(join step)에 대해 [추정 행 수(row count)와 실제 행 수를 비교](/ko/reference/statements/explain#explain-analyze-join-estimation)하여 보여 줍니다.
+
+## 최적화기는 언제 중요합니까? {#when-does-the-optimizer-matter}
+
+ClickHouse 성능의 상당 부분은 최적화기와 무관합니다. 프라이머리 키, 스킵 인덱스, 파티션 프루닝, 벡터화 실행(vectorized execution)만으로도 계획 탐색 없이 쿼리가 빠르게 실행됩니다. 비용 기반 최적화기(Cost-Based Optimizer)가 가장 큰 역할을 하는 것은 TPC-H, TPC-DS, Join Order Benchmark 워크로드처럼 많은 테이블을 조인하는 쿼리입니다.
+
+<Tip>
+  JOIN 계획 수립을 제어하는 설정의 전체 목록은 [JOIN 설정](/ko/concepts/features/operations/select/join-settings)을 참조하십시오.
+</Tip>

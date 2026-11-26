@@ -71,30 +71,47 @@ REPORT_LOCAL_SERVER_SETTINGS = [
     "--memory_worker_use_cgroup=0",
 ]
 
-GET_HISTORICAL_TRESHOLDS_QUERY = """\
-SELECT test, query_index,
-    quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-    quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    query_display_name
-FROM query_metrics_v2
--- We use results at least one week in the past, so that the current
--- changes do not immediately influence the statistics, and we have
--- some time to notice that something is wrong.
-WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
-    AND metric = 'client_time'
-    AND pr_number = 0
-    AND workflow_name = 'MasterCI'
-    -- The same runs, selected by the key prefix so that the PR runs are not read.
-    AND new_sha IN (
-        SELECT new_sha FROM perf_test_times_v1
-        -- The job writes both tables, so their dates differ by a day at most.
-        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
-                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
-            AND pr_number = 0
-            AND workflow_name = 'MasterCI')
--- The display name is part of the key: compare.sh joins this file on all three.
-GROUP BY test, query_index, query_display_name
-HAVING count() > 100"""
+# The learned per-query thresholds: 1.5 times the 0.99 quantile of what `MasterCI`
+# measured for the query over a month. The job does not compute them: that reads
+# every metric of a month of master runs, over 1 TB, which the `play` user may not
+# (`TOO_MANY_BYTES`), and the answer is the same for every job of a day. CIDB
+# computes them once a day instead. The refreshable materialized view
+# `perf_query_thresholds_mv` appends the result of this query to
+# `HISTORICAL_THRESHOLDS_TABLE`, with the time of the refresh in `computed_at`:
+#
+#     SELECT test, query_index,
+#         quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+#         quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
+#         query_display_name
+#     FROM query_metrics_v2
+#     -- We use results at least one week in the past, so that the current
+#     -- changes do not immediately influence the statistics, and we have
+#     -- some time to notice that something is wrong.
+#     WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
+#         AND metric = 'client_time'
+#         AND pr_number = 0
+#         AND workflow_name = 'MasterCI'
+#         -- The same runs, selected by the key prefix so that the PR runs are not read.
+#         AND new_sha IN (
+#             SELECT new_sha FROM perf_test_times_v1
+#             -- The job writes both tables, so their dates differ by a day at most.
+#             WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+#                     AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+#                 AND pr_number = 0
+#                 AND workflow_name = 'MasterCI')
+#     -- The display name is part of the key: compare.sh joins this file on all three.
+#     GROUP BY test, query_index, query_display_name
+#     HAVING count() > 100
+HISTORICAL_THRESHOLDS_TABLE = "perf_query_thresholds_v1"
+
+GET_HISTORICAL_TRESHOLDS_QUERY = f"""\
+SELECT test, query_index, max_diff, max_stat_threshold, query_display_name
+FROM {HISTORICAL_THRESHOLDS_TABLE}
+-- The newest snapshot. One that was not refreshed for a week is not used: the
+-- answer is then empty, and the queries are judged without their learned thresholds.
+WHERE computed_at = (
+    SELECT max(computed_at) FROM {HISTORICAL_THRESHOLDS_TABLE}
+    WHERE computed_at >= now() - INTERVAL 1 WEEK)"""
 
 INSERT_HISTORICAL_DATA = """\
 INSERT INTO query_metrics_v2
@@ -214,6 +231,14 @@ RUN_TREND_MIN_GROWTH = 1.2
 RUN_TREND_README = (
     "https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/README.md"
     "#queries-whose-time-keeps-growing-with-each-run"
+)
+# It also fails when such a query is unstable: marked changed or unstable by the report if both servers run the same
+# code and ran the query, else with at least RUN_TREND_MIN_RUNS tested runs whose stddev is above this fraction of
+# their median.
+UNSTABLE_MAX_RELATIVE_STDDEV = 0.5
+UNSTABLE_README = (
+    "https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/README.md"
+    "#unstable-queries-in-a-new-or-changed-test"
 )
 # A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
 JOB_START = time.monotonic()
@@ -994,6 +1019,14 @@ def get_binary_commit_sha(binary):
     return sha
 
 
+def get_binary_link_flags(binary):
+    # A downloaded binary may lack the executable bit.
+    os.chmod(binary, 0o755)
+    return Shell.get_output_or_raise(
+        f"{local_command(binary)} -q \"SELECT value FROM system.build_options WHERE name='LINK_FLAGS'\""
+    )
+
+
 def write_ci_logs_sender_user(config_dir, binary):
     """Write the `ci_logs_sender` user, which the export views run as, into a
     server's users.d - without the settings that build does not know.
@@ -1682,6 +1715,29 @@ def write_thread_stack_alignment(servers, path):
             f.write("\t".join(row) + "\n")
 
 
+def reference_timeout_warnings(workdir):
+    """A warning for each SQL query that only reads and ran out of its time limit on the reference server only.
+
+    `perf.py` measures such a query on the tested server, as a `partial` query that the report does not compare,
+    and writes a `reference-timeout` line (query index, `prewarm` or `run`, limit in seconds) to the raw output of
+    the test. A time limit exceeded on the tested server is an error of the test instead.
+    """
+    warnings = []
+    for path in sorted(Path(workdir).glob("*-raw.tsv")):
+        test = path.name.removesuffix("-raw.tsv")
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                fields = line.rstrip("\n").split("\t")
+                if fields[0] != "reference-timeout" or len(fields) < 4:
+                    continue
+                run = "the prewarm run" if fields[2] == "prewarm" else "a measured run"
+                warnings.append(
+                    f"Query {fields[1]} of test '{test}' ran out of its time limit ({fields[3]} s) on the reference "
+                    f"server in {run}: it is measured on the tested server only and is not compared"
+                )
+    return warnings
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Performance Tests Job")
     parser.add_argument("--ch-path", help="Path to clickhouse binary", default=temp_dir)
@@ -1693,6 +1749,11 @@ def parse_args():
     parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Optional test name pattern", default="")
     parser.add_argument("--reference-path", help="Local reference clickhouse binary", default="")
+    parser.add_argument(
+        "--allow-non-thinlto",
+        action="store_true",
+        help="Compare a tested binary built without ThinLTO with the ThinLTO reference anyway",
+    )
     return parser.parse_args()
 
 
@@ -1828,7 +1889,8 @@ def find_performance_reference_build(commits, build_type):
 
 
 def find_prev_build(info, build_type):
-    """The reference build link and the master commits from the tested one down to the reference."""
+    """The reference build link, the master commits from the tested one down to the reference, and whether the
+    reference is a performance reference build of the sources of the tested master commit."""
     commits = info.get_kv_data("master_track_commits_sha") or []
     if not commits and info.is_local_run:
         # for a local run let's check 50 commits
@@ -1839,11 +1901,11 @@ def find_prev_build(info, build_type):
         link, index = find_performance_reference_build(commits, build_type)
         if link:
             print(f"Reference: performance reference build {link}")
-            return link, commits[: index + 1]
+            return link, commits[: index + 1], index == 0
         print("WARNING: no performance reference build, the reference is the official build")
     link, index = find_master_build(commits, build_type)
     if link or not info.is_local_run:
-        return link, commits[: index + 1] if link else []
+        return link, commits[: index + 1] if link else [], False
 
     # `build_master_head_hook` publishes these release binaries even when the
     # master tip has no build yet. No local history or GitHub credentials are needed.
@@ -1851,9 +1913,9 @@ def find_prev_build(info, build_type):
     link = f"{LATEST_MASTER_BUILD_PREFIX}{arch}/clickhouse"
     if Shell.check(f"curl --connect-timeout 5 --max-time 15 -sfI {link} > /dev/null"):
         print(f"WARNING: {LOCAL_REFERENCE_FALLBACK_WARNING} Reference: {link}")
-        return link, []
+        return link, [], False
     print(f"WARNING: latest master reference build is also unavailable: {link}")
-    return None, []
+    return None, [], False
 
 
 def stale_reference_warning(reference_chain):
@@ -2476,11 +2538,11 @@ def _reference_rises(reference):
     )
 
 
-def find_run_trends(query_runs_path, test_names):
-    """The queries of `test_names` that get slower run over run on the tested server (`version` 1).
+def read_query_runs(query_runs_path, test_names):
+    """The runs of the queries of `test_names` in compare.sh's `test, query_index, query_id, version, time` rows, as
+    {(test, query_index): ([(run, time)] of the reference server, [(run, time)] of the tested one)}.
 
-    Reads compare.sh's `test, query_index, query_id, version, time` rows. Returns a dict per
-    flagged query in (test, query_index) order; raises on a row of `test_names` that does not parse.
+    Raises on a row of `test_names` that does not parse.
     """
     series = {}
     with open(query_runs_path, encoding="utf-8", newline="") as f:
@@ -2492,7 +2554,14 @@ def find_run_trends(query_runs_path, test_names):
                 raise ValueError(f"unexpected row in [{query_runs_path}]: {fields!r}")
             query_index, version, run, time_s = row
             series.setdefault((fields[0], query_index), ([], []))[version].append((run, time_s))
+    return series
 
+
+def find_run_trends(series):
+    """The queries of `series` (see `read_query_runs`) that get slower run over run on the tested server.
+
+    Returns a dict per flagged query in (test, query_index) order.
+    """
     trends = []
     for (test, query_index), (reference, tested) in sorted(series.items()):
         if len(tested) < RUN_TREND_MIN_RUNS:
@@ -2517,15 +2586,66 @@ def find_run_trends(query_runs_path, test_names):
     return trends
 
 
-def run_trend_gate(info, test_files, workdir):
-    """The run-trend check of the tests this PR adds or changes in this shard:
-    `(fail, message suffix, Check Results children)`."""
+def find_unstable_queries(workdir, series, test_names, tests_only, skip):
+    """The unstable queries of `test_names`, except the `(test, query_index)` pairs of `skip`, as a dict per query in
+    (test, query_index) order.
+
+    With `tests_only` (both servers run the same code), the queries `report/all-queries.tsv` marks changed or
+    unstable; raises on a row that does not parse, unless it names another test. Otherwise, and with `tests_only` for
+    the queries that ran only on the tested server (the report does not compare them), the queries of `series` (see
+    `read_query_runs`) whose runs on the tested server have a standard deviation above
+    `UNSTABLE_MAX_RELATIVE_STDDEV` of their median.
+    """
+    unstable = []
+    if tests_only:
+        path = f"{workdir}/report/all-queries.tsv"
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            lines = f.read().split("\n")
+        # changed_fail, unstable_fail, left, right, times_change, diff, stat_threshold, test, query_index, query_display_name
+        for fields in (line.split("\t") for line in filter(None, lines)):
+            if len(fields) > 7 and fields[7] not in test_names:
+                continue
+            if (
+                len(fields) != 10
+                or fields[0] not in ("0", "1")
+                or fields[1] not in ("0", "1")
+                or not _TSV_UINT_RE.fullmatch(fields[8])
+                or not all(_TSV_FLOAT_RE.fullmatch(fields[k]) for k in (2, 3, 5, 6))
+            ):
+                raise ValueError(f"unexpected row in [{path}]: {fields!r}")
+            if "1" in fields[:2] and (fields[7], int(fields[8])) not in skip:
+                left, right, diff, stat_threshold = (float(fields[k]) for k in (2, 3, 5, 6))
+                verdict = "changed" if fields[0] == "1" else "unstable"
+                unstable.append({"test": fields[7], "query_index": int(fields[8]), "verdict": verdict, "left": left,
+                                 "right": right, "diff": diff, "stat_threshold": stat_threshold})
+
+    for (test, query_index), (reference, tested) in sorted(series.items()):
+        times = [t for _, t in sorted(tested)]
+        if (
+            (test, query_index) in skip
+            or (tests_only and reference)
+            or len(times) < RUN_TREND_MIN_RUNS
+            or statistics.median(times) <= 0
+        ):
+            continue
+        spread = statistics.pstdev(times) / statistics.median(times)
+        if spread > UNSTABLE_MAX_RELATIVE_STDDEV:
+            unstable.append(
+                {"test": test, "query_index": query_index, "spread": spread, "tested": times, "same_code": tests_only}
+            )
+    return sorted(unstable, key=lambda q: (q["test"], q["query_index"]))
+
+
+def changed_tests_gate(info, test_files, workdir, same_build):
+    """The checks of the tests this PR adds or changes in this shard: queries whose time keeps growing with each run,
+    and unstable queries. `same_build` is whether the reference is a performance reference build of the sources of the
+    tested master commit.
+    Returns `(fail, message suffix, Check Results children)`."""
     changed_files = info.get_changed_files()
     if changed_files is None:
-        print("WARNING: the changed files are unknown, not checking changed tests for query times that keep growing")
+        print("WARNING: the changed files are unknown, not checking the tests this PR adds or changes")
         info.add_workflow_warning(
-            "Performance comparison: the changed files are unknown, so the tests this PR adds or changes "
-            "were not checked for query times that keep growing with each run"
+            "Performance comparison: the changed files are unknown, so the tests this PR adds or changes were not checked"
         )
         return False, "", []
     try:
@@ -2534,14 +2654,22 @@ def run_trend_gate(info, test_files, workdir):
             for name in test_discovery.changed_tests(changed_files, "./tests/performance/")
             if name in test_files
         }
-        trends = find_run_trends(f"{workdir}/analyze/query-runs.tsv", names) if names else []
-        # A PR that changes only tests runs the same server code on both servers: a rise on the tested server alone is its own drift.
-        if all(f.removeprefix("./").startswith("tests/") for f in changed_files):
-            trends = [t for t in trends if t["reference_rises"]]
+        trends, unstable = [], []
+        if names:
+            query_runs = read_query_runs(f"{workdir}/analyze/query-runs.tsv", names)
+            trends = find_run_trends(query_runs)
+            # A PR that changes only tests, compared with a build made like its own, runs the same code on both servers.
+            tests_only = same_build and all(f.removeprefix("./").startswith("tests/") for f in changed_files)
+            unstable = find_unstable_queries(
+                workdir, query_runs, names, tests_only, {(t["test"], t["query_index"]) for t in trends}
+            )
+            # Then a rise on the tested server alone is its own drift.
+            if tests_only:
+                trends = [t for t in trends if t["reference_rises"]]
     except Exception as e:
         traceback.print_exc()
-        return True, f"; could not check whether query times of the tests this PR adds or changes keep growing: {e}", []
-    if not trends:
+        return True, f"; could not check the queries of the tests this PR adds or changes: {e}", []
+    if not trends and not unstable:
         return False, "", []
 
     def series(times):
@@ -2563,10 +2691,45 @@ def run_trend_gate(info, test_files, workdir):
         )
         for t in trends
     ]
+    for q in unstable:
+        if "verdict" in q:
+            name = f"Query {q['test']} #{q['query_index']} is unstable"
+            text = (
+                "This pull request changes only tests, so both servers run the same code, yet the report marks the "
+                f"query {q['verdict']}: median time {q['left']:.4g} s on the reference server, {q['right']:.4g} s on "
+                f"the tested one, relative difference {q['diff']:+.3f}, randomization threshold "
+                f"{q['stat_threshold']:.3f}."
+            )
+        else:
+            name = f"Query {q['test']} #{q['query_index']} time varies too much from run to run"
+            why = (
+                "The query ran only on the tested server (it failed on the reference server), so the report does not "
+                "compare it"
+                if q["same_code"]
+                else "The two servers do not run the same build"
+            )
+            text = (
+                f"Run times on the tested server, s: {series(q['tested'])}; their standard deviation is "
+                f"{q['spread']:.0%} of their median (the check fails above {UNSTABLE_MAX_RELATIVE_STDDEV:.0%}). "
+                f"{why}, so the test is judged by its runs on the tested server; after the merge both servers of "
+                "master run this code, so the query would vary as much on both."
+            )
+        text += (
+            " Usually the query runs for a few milliseconds or waits for something besides its own work, such as "
+            'Keeper or the network; make each run do more work. See "Unstable queries in a new or changed test" in '
+            "tests/performance/README.md."
+        )
+        children.append(Result(name=name, status=Result.Status.FAIL, info=text, links=[UNSTABLE_README]))
     for child in children:
         print(f"{child.name}: {child.info}")
-    subject = "1 query" if len(trends) == 1 else f"{len(trends)} queries"
-    return True, f"; the time of {subject} of the tests this PR adds or changes keeps growing with each run", children
+    suffix = ""
+    if trends:
+        subject = "1 query" if len(trends) == 1 else f"{len(trends)} queries"
+        suffix += f"; the time of {subject} of the tests this PR adds or changes keeps growing with each run"
+    if unstable:
+        subject = "1 query" if len(unstable) == 1 else f"{len(unstable)} queries"
+        suffix += f"; {subject} of the tests this PR adds or changes {'is' if len(unstable) == 1 else 'are'} unstable"
+    return True, suffix, children
 
 
 # Outcomes of fetching one previous result artifact from S3.
@@ -2902,6 +3065,20 @@ def _perf_client(port):
     )
 
 
+def remove_outdated_parts(client, table, timeout=120):
+    # A cleanup thread that finds little to remove sleeps up to max_cleanup_delay_period (300 s); START CLEANUP wakes it.
+    database, name = table.split(".")
+    # `_state` also lists the parts being deleted, which `active = 0` does not.
+    query = f"SELECT count() FROM system.parts WHERE database = '{database}' AND table = '{name}' AND _state != 'Active'"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        Shell.check(f'{client} --query "SYSTEM START CLEANUP {table}"', strict=True)
+        time.sleep(1)
+        if Shell.get_output_or_raise(f'{client} --query "{query}"') == "0":
+            return
+    raise RuntimeError(f"remove_outdated_parts: the replaced parts of {table} are still on disk after {timeout}s")
+
+
 def rebuild_table(port, source, destination):
     # Re-insert an attached dataset through the running server so its parts are
     # written by that server's own binary and settings (sparse columns,
@@ -2933,12 +3110,15 @@ def rebuild_table(port, source, destination):
     # Variable granularity would make the merged part's granules follow how the parallel INSERT split the
     # rows, which differs between the two servers; a constant one gives both the same layout.
     Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING use_const_adaptive_granularity = 1"', strict=True, verbose=True)
+    # Parts replaced by merges would otherwise stay on disk for 8 minutes, taking the space of the tests that start meanwhile.
+    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING old_parts_lifetime = 0"', strict=True, verbose=True)
     Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
     # A timed-out OPTIMIZE FINAL is a no-op that still exits 0, so without optimize_throw_if_noop
     # the swap below can run on a table whose parts are still being merged.
     Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1"', strict=True, verbose=True)
+    remove_outdated_parts(client, target)
     # The merged part keeps its granules; the reset keeps `CREATE TABLE ... AS` clones on the default.
-    Shell.check(f'{client} --query "ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity"', strict=True, verbose=True)
+    Shell.check(f'{client} --query "ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity, old_parts_lifetime"', strict=True, verbose=True)
     if target != destination:
         old = f"{destination}_old"
         Shell.check(f'{client} --query "DROP TABLE IF EXISTS {old} SYNC"', strict=True, verbose=True)
@@ -3119,6 +3299,7 @@ def main():
     # Before any stage: a job without a usable timeout fails now, not after the benchmarks.
     end = job_end(info) if compare_against_master and not info.is_local_run else None
     reference_chain = []
+    same_build = False
 
     # Read before any stage, so that a resume attributes the same commits.
     if nightly:
@@ -3131,7 +3312,7 @@ def main():
         link_for_ref_ch = ""
     elif Utils.is_arm():
         if compare_against_master:
-            link_for_ref_ch, reference_chain = find_prev_build(info, "build_arm_release")
+            link_for_ref_ch, reference_chain, same_build = find_prev_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
@@ -3140,7 +3321,7 @@ def main():
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            link_for_ref_ch, reference_chain = find_prev_build(info, "build_amd_release")
+            link_for_ref_ch, reference_chain, same_build = find_prev_build(info, "build_amd_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
@@ -3409,6 +3590,28 @@ def main():
         )
         res = results[-1].is_ok()
 
+    # A PR run builds `amd_release` without ThinLTO, PGO and BOLT when it skips the AMD
+    # performance comparison (`configure_amd_release_thinlto` in `filter_job.py`).
+    # CI does not run this job on such a build, but a local run (`praktika run ... --pr N
+    # --sha SHA`) downloads the variant that the run at that commit built. Comparing a
+    # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
+    # refuse it, unless the run compares with its own `--reference-path` binary or opts
+    # out explicitly. This does not depend on the stages: a run resumed at any stage
+    # (`--param restart`) can measure the binary that was downloaded for it. Even the
+    # `report` and `check_results` stages run the changed queries again to confirm them
+    # (`confirm_changes` in `compare.sh`).
+    if res and not args.reference_path and not args.allow_non_thinlto:
+        link_flags = get_binary_link_flags(f"{ch_path}/clickhouse")
+        results.append(
+            Result(
+                name="Tested binary is a ThinLTO build",
+                status=Result.Status.OK if "-flto=thin" in link_flags else Result.Status.FAIL,
+                info=f"LINK_FLAGS: {link_flags}"
+                + ("" if "-flto=thin" in link_flags else "; pass --allow-non-thinlto to compare it anyway"),
+            )
+        )
+        res = results[-1].is_ok()
+
     if not nightly:
         reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
@@ -3477,8 +3680,7 @@ def main():
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
                 )
                 return True
-            # The query takes 8 to 10 s, so a 10 s timeout lost the thresholds
-            # of about half of the runs.
+            # A read of the daily snapshot, about 7500 rows.
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY,
                 timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
@@ -3711,6 +3913,8 @@ def main():
         def run_tests():
             last_flush = time.monotonic()
             for test in test_files:
+                # Both servers store their data under perf_wd.
+                print(f"Free disk space before {test}: {shutil.disk_usage(perf_wd).free / 2**30:.1f} GiB")
                 clean = CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=0 if nightly or test in all_query_tests else 10,
@@ -3780,7 +3984,8 @@ def main():
                     f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
                 )
         with open(f"{perf_wd}/run-warnings.tsv", "w", encoding="utf-8") as warnings:
-            warnings.write(reference_warning + "\n" if reference_warning else "")
+            for warning in ([reference_warning] if reference_warning else []) + reference_timeout_warnings(perf_wd):
+                warnings.write(warning + "\n")
         right_commit = f"echo tested binary commit {tested_sha}" if nightly else "git log -1 HEAD"
         Shell.check(f"{right_commit} > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
@@ -4120,16 +4325,18 @@ def main():
         elif not message:
             status = Result.Status.FAIL
             message = "No message in report."
-        trend_children = []
+        changed_tests_children = []
         if compare_against_master and not nightly and not TABLE_ENGINE and info.pr_number > 0 and not info.is_local_run:
-            trend_fail, trend_suffix, trend_children = run_trend_gate(info, test_files, perf_wd)
-            if trend_fail:
+            changed_tests_fail, changed_tests_suffix, changed_tests_children = changed_tests_gate(
+                info, test_files, perf_wd, same_build
+            )
+            if changed_tests_fail:
                 status = Result.Status.FAIL
-            message += trend_suffix
+            message += changed_tests_suffix
         # Copy slower/unstable queries into Check Results so that Praktika
         # attaches per-query CIDB history links in the report.
         check_sub_results = build_dashboard_results_children(dashboard_regressions)
-        check_sub_results += trend_children
+        check_sub_results += changed_tests_children
         # Find the "Tests" sub-result that holds per-query results
         tests_result = None
         for r in results:

@@ -150,15 +150,15 @@ const std::unordered_set<String> & WriteTransaction::getTimestampNtzPaths() cons
 void WriteTransaction::create(const DB::Names & partition_columns)
 {
     auto * engine_builder = kernel_helper->createBuilder();
-    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = DeltaLake::KernelUtils::unwrapResult(::builder_build(engine_builder), "builder_build");
 
     auto * new_transaction = DeltaLake::KernelUtils::unwrapResult(
-        ffi::transaction(
+        ::transaction(
             DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
             engine.get()),
         "transaction");
     transaction = DeltaLake::KernelUtils::unwrapResult(
-        ffi::with_engine_info(
+        ::with_engine_info(
             new_transaction,
             DeltaLake::KernelUtils::toDeltaString(engine_info),
             engine.get()),
@@ -168,7 +168,7 @@ void WriteTransaction::create(const DB::Names & partition_columns)
     {
         /// Unpartitioned tables: let the kernel build the write context.
         unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
+            ::get_unpartitioned_write_context(transaction.get(), engine.get()),
             "get_unpartitioned_write_context");
         auto write_schema_result = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
         write_schema = std::move(write_schema_result.schema);
@@ -183,7 +183,7 @@ void WriteTransaction::create(const DB::Names & partition_columns)
     }
 
     /// The reader resolves every committed `add.path` against `getDataPath`, so write under it too.
-    /// `ffi::get_write_path` would add nothing here: it returns the table root the transaction
+    /// `::get_write_path` would add nothing here: it returns the table root the transaction
     /// was opened with (i.e. `getTableLocation`), and exists only for the unpartitioned context.
     path_prefix = kernel_helper->getDataPath();
     /// `add.path` is the written file path with the prefix cut off, which needs the separator.
@@ -232,7 +232,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
         const size_t end = begin + rows;
 
         /// The structs are declared with the C data interface types and only cast to the kernel's identical
-        /// `ffi::FFI_Arrow*` types when passed to it: the `release` callbacks must be called through the
+        /// `::FFI_Arrow*` types when passed to it: the `release` callbacks must be called through the
         /// function type they are defined with, otherwise it is undefined behavior (`-fsanitize=function`).
         ::ArrowArray array{};
         ::ArrowSchema schema{};
@@ -249,9 +249,9 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
         {
             /// Takes ownership of `array` (but not `schema`) if successfully called.
             engine_data = DeltaLake::KernelUtils::unwrapResult(
-                ffi::get_engine_data(
-                    *reinterpret_cast<ffi::FFI_ArrowArray *>(&array),
-                    reinterpret_cast<ffi::FFI_ArrowSchema *>(&schema),
+                ::get_engine_data(
+                    *reinterpret_cast<::FFI_ArrowArray *>(&array),
+                    reinterpret_cast<::FFI_ArrowSchema *>(&schema),
                     &KernelUtils::allocateError),
                 "get_engine_data");
         }
@@ -262,19 +262,19 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
             throw;
         }
 
-        ffi::add_files(transaction.get(), engine_data.release());
+        ::add_files(transaction.get(), engine_data.release());
     } while (begin < write_metadata.num_rows);
 
     fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
         throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
     });
 
-    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<::ExclusiveCommittedTransaction, ::free_committed_transaction>;
     KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
-        ffi::commit(transaction.release(), engine.get()),
+        ::commit(transaction.release(), engine.get()),
         "commit"));
     auto * committed_handle = committed.get();
-    auto version = ffi::committed_transaction_version(&committed_handle);
+    auto version = ::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
 }
@@ -288,17 +288,17 @@ void WriteTransaction::createTable()
     kernel_helper->prepareForTableCreation();
 
     auto * engine_builder = kernel_helper->createBuilder();
-    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = DeltaLake::KernelUtils::unwrapResult(::builder_build(engine_builder), "builder_build");
 
     DeltaLake::KernelCreateSchemaState schema_state;
     schema_state.schema_list = &table_schema;
     auto engine_schema = DeltaLake::buildKernelEngineSchema(schema_state);
 
-    using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTableBuilder, ffi::free_create_table_builder>;
-    using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
-    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+    using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<::ExclusiveCreateTableBuilder, ::free_create_table_builder>;
+    using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<::ExclusiveCreateTransaction, ::create_table_free_transaction>;
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<::ExclusiveCommittedTransaction, ::free_committed_transaction>;
 
-    auto builder_result = ffi::get_create_table_builder(
+    auto builder_result = ::get_create_table_builder(
         DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
         &engine_schema,
         DeltaLake::KernelUtils::toDeltaString(engine_info),
@@ -321,15 +321,15 @@ void WriteTransaction::createTable()
 
     /// `create_table_builder_build` consumes the builder on both success and failure, so release() is correct here.
     KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(
-        ffi::create_table_builder_build(builder.release(), engine.get()),
+        ::create_table_builder_build(builder.release(), engine.get()),
         "create_table_builder_build"));
 
     /// `create_table_commit` likewise consumes the transaction handle.
     KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
-        ffi::create_table_commit(create_txn.release(), engine.get()),
+        ::create_table_commit(create_txn.release(), engine.get()),
         "create_table_commit"));
     auto * committed_handle = committed.get();
-    auto version = ffi::committed_transaction_version(&committed_handle);
+    auto version = ::committed_transaction_version(&committed_handle);
 
     LOG_TRACE(log, "Created table at version {}", version);
 }
