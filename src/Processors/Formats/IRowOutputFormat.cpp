@@ -128,6 +128,9 @@ private:
         WriteBufferFromStringWithMemoryTracking buf(cached.bytes);
         (values_serialization.get()->*serialize)(*values, 0, buf, settings);
         buf.finalize();
+        /// Lets a short default use the inline buffer of the string, which is cheaper to read on every row.
+        if (cached.bytes.size() <= MAX_INLINE_WRITE_SIZE)
+            cached.bytes.shrink_to_fit();
         cached.settings = &settings;
     }
 
