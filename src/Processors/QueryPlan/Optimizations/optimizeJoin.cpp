@@ -37,6 +37,7 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
@@ -1091,6 +1092,54 @@ static const QueryPlan::Node * findColumnThroughRenames(const QueryPlan::Node & 
     }
 }
 
+/// Estimate the bytes carried by this input before the hash table is built. For a stored
+/// String, use its average uncompressed serialized width as a proxy for its in-memory width.
+static std::optional<Float64> estimateJoinInputBytes(const QueryPlan::Node & node, size_t estimated_rows)
+{
+    Float64 row_width = 0;
+    for (const auto & column : *node.step->getOutputHeader())
+    {
+        String name = column.name;
+        const auto * source = findColumnThroughRenames(node, name);
+        const auto * read = source ? typeid_cast<const ReadFromMergeTree *>(source->step.get()) : nullptr;
+        if (!read)
+            return std::nullopt;
+
+        if (column.type->haveMaximumSizeOfValue())
+        {
+            row_width += static_cast<Float64>(column.type->getMaximumSizeOfValueInMemory());
+            continue;
+        }
+
+        if (!WhichDataType(column.type).isString())
+            return std::nullopt;
+
+        auto analyzed_result = read->getAnalyzedResultForEstimation();
+        const auto & parts = analyzed_result ? analyzed_result->parts_with_ranges : read->getParts();
+        Float64 sampled_rows = 0;
+        Float64 sampled_bytes = 0;
+        for (const auto & part : parts)
+        {
+            if (!part.data_part->rows_count)
+                continue;
+            const auto bytes = part.data_part->getColumnSize(name).data_uncompressed;
+            if (!bytes)
+                return std::nullopt;
+            sampled_rows += static_cast<Float64>(part.data_part->rows_count);
+            sampled_bytes += static_cast<Float64>(bytes);
+        }
+        if (sampled_rows == 0)
+            return std::nullopt;
+        row_width += sampled_bytes / sampled_rows;
+    }
+
+    if (row_width == 0)
+        return std::nullopt;
+    /// Approximate the per-row hash table cost with a key and a row reference.
+    constexpr auto hash_table_bytes_per_row = sizeof(UInt64) + sizeof(void *);
+    return (row_width + hash_table_bytes_per_row) * static_cast<Float64>(estimated_rows);
+}
+
 /// Whether the column `name` of `node` is the column `column` of the read below, only renamed by expressions and filters: a
 /// key `optimizeJoinByShards` can split by, which matches it to the primary key exactly, not through a monotonic function.
 static bool isReadColumn(const QueryPlan::Node & node, const QueryPlan::Node & reading, String name, const String & column)
@@ -1404,10 +1453,21 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
-            bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
-                ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
-                    && lhs_estimation.value() < rhs_estimation.value();
+            bool swap_on_sizes = optimization_settings.join_swap_table.value_or(false);
+            if (!optimization_settings.join_swap_table.has_value() && entry->join_method == JoinMethod::Hash
+                && lhs_estimation && rhs_estimation)
+            {
+                swap_on_sizes = *lhs_estimation < *rhs_estimation;
+                /// Keep row-based costing for join graphs. For a single join, account for
+                /// the data held by the build side when both MergeTree inputs can be estimated.
+                if (input_nodes.size() == 2 && join_operator.strictness == JoinStrictness::All && !join_operator.expression.empty())
+                {
+                    const auto left_bytes = estimateJoinInputBytes(*left_child_node, *lhs_estimation);
+                    const auto right_bytes = estimateJoinInputBytes(*right_child_node, *rhs_estimation);
+                    if (left_bytes && right_bytes && *left_bytes != *right_bytes)
+                        swap_on_sizes = *left_bytes < *right_bytes;
+                }
+            }
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
             /// A merge join keeps the sides the optimizer chose, the later joins rely on the order of its left input.
