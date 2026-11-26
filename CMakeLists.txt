@@ -248,8 +248,7 @@ endif()
 # Provides faster linking and lower binary size.
 # Tradeoff is the inability to debug some source files with e.g. gdb
 # (empty stack frames and no local variables).
-# In Release builds (which have no debug info by default), this option has
-# no effect -- it only reduces debug info for RelWithDebInfo and MinSizeRel.
+# It has no effect in builds without debug info (Release, MinSizeRel, DISABLE_ALL_DEBUG_SYMBOLS).
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
@@ -525,6 +524,13 @@ set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
 endif()
+
+# OMIT_HEAVY_DEBUG_SYMBOLS gives the heavy targets -g1, which comes after the build type's flags. In a build
+# without debug info (Release, MinSizeRel, DISABLE_ALL_DEBUG_SYMBOLS) that would add line tables instead.
+if (OMIT_HEAVY_DEBUG_SYMBOLS AND (DISABLE_ALL_DEBUG_SYMBOLS
+    OR NOT (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")))
+    set (OMIT_HEAVY_DEBUG_SYMBOLS OFF)
+endif ()
 
 if (OS_DARWIN)
     # On Darwin the optimizatiosns to reduce the debug size are off by default. `-fno-standalone-debug` enables them
@@ -949,9 +955,10 @@ if (ENABLE_RUST)
     endif()
 endif()
 
+# $CACHE{}: the option is shadowed to OFF above in builds without debug info.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
     AND NOT SANITIZE AND NOT ENABLE_FUZZING
-    AND OMIT_HEAVY_DEBUG_SYMBOLS AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
+    AND $CACHE{OMIT_HEAVY_DEBUG_SYMBOLS} AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT OFF)
