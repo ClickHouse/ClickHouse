@@ -98,7 +98,7 @@ def dind_containment_env(job_mem):
 integration_dind_env = dind_containment_env(LIMITED_MEM)
 
 BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host"
+    "clickhouse/binary-builder"
     f"+--memory={Utils.physical_memory() * 95 // 100}"
     f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
     f"+--volume=.:/ClickHouse"
@@ -381,8 +381,7 @@ class JobConfigs:
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
+        run_in_docker="clickhouse/fasttest+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         needs_submodules=True,
@@ -1026,7 +1025,7 @@ class JobConfigs:
         runs_on=None,  # set per ParamSet
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
+        run_in_docker="clickhouse/stateless-test+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
         # No digest_config: the Bugfix Validation verdict is intentionally NOT
         # cacheable. Its inputs are not captured by any set of repository files -
         # it depends on (1) the PR's source fix and (2) the master-HEAD binary
@@ -2212,7 +2211,7 @@ class JobConfigs:
                 "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
-        run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
+        run_in_docker="clickhouse/stateless-test+--shm-size=16g",
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_RELEASE,
@@ -2557,7 +2556,7 @@ class JobConfigs:
         name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
         runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
-        run_in_docker=BINARY_DOCKER_COMMAND,
+        run_in_docker=BINARY_DOCKER_COMMAND + "+--network=host",
         timeout=8 * 3600,
         digest_config=Job.CacheDigestConfig(
             include_paths=[

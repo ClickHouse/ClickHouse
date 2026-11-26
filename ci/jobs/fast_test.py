@@ -265,6 +265,10 @@ def main():
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
     info = Info()
+    # In the main repo's CI, access the sccache S3 bucket anonymously (no
+    # credentials required). Other repositories keep using their own credentials.
+    if info.repo_name == "ClickHouse/ClickHouse":
+        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
