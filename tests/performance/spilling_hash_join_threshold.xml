@@ -1,0 +1,12 @@
+<test>
+    <settings>
+        <max_threads>16</max_threads>
+        <join_algorithm>hash</join_algorithm>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <!-- The right side takes 2.28 GiB in memory, mostly stored blocks: it fits, and spilled at half of the threshold. -->
+    <query>SELECT count(), sum(length(r.s)) FROM (SELECT number AS k FROM numbers_mt(8000000)) AS l INNER JOIN (SELECT number AS k, repeat(toString(number % 10), 200) AS s FROM numbers_mt(8000000)) AS r USING (k) SETTINGS max_bytes_before_external_join = 3400000000 FORMAT Null</query>
+    <!-- The right side takes 317 MiB in memory, mostly the hash table: it fits, and spilled at half of the threshold. -->
+    <query>SELECT count() FROM (SELECT number AS k FROM numbers_mt(8000000)) AS l INNER JOIN (SELECT number AS k FROM numbers_mt(8000000)) AS r USING (k) SETTINGS max_bytes_before_external_join = 480000000 FORMAT Null</query>
+</test>
