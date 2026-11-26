@@ -1,34 +1,31 @@
-#include <Common/Wyrd/Testing/Run.h>
-
 #if defined(WYRD_ENABLED)
-#    include <Common/Wyrd/Strategies/Simulation/Simulation.h>
-#    include <Common/Wyrd/Strategies/Adversary/Access.h>
-#    include <Common/Wyrd/Strategies/Mode.h>
-#    include <Common/SetWithMemoryTracking.h>
-#    include <Common/VectorWithMemoryTracking.h>
-#    include <Common/randomSeed.h>
-#    include <base/EnumReflection.h>
-#    include <base/scope_guard.h>
 
-#    include <fmt/format.h>
-#    include <gtest/gtest-spi.h>
-#    include <gtest/gtest.h>
+#include <Common/Wyrd/Testing/Run.h>
+#include <Common/Wyrd/Strategies/Simulation/Simulation.h>
+#include <Common/Wyrd/Strategies/Adversary/Access.h>
+#include <Common/Wyrd/Strategies/Mode.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/randomSeed.h>
+#include <base/EnumReflection.h>
+#include <base/scope_guard.h>
 
-#    include <algorithm>
-#    include <cstdlib>
-#    include <exception>
-#    include <optional>
-#    include <semaphore>
-#    include <stdexcept>
-#    include <string>
-#    include <string_view>
-#    include <thread>
-#endif
+#include <fmt/format.h>
+#include <gtest/gtest-spi.h>
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <cstdlib>
+#include <exception>
+#include <optional>
+#include <semaphore>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <thread>
 
 namespace DB::Wyrd
 {
-
-#if defined(WYRD_ENABLED)
 
 namespace SimulationMode
 {
@@ -253,12 +250,6 @@ static void runTest(std::function<void()> body, TestParams params)
 
 }
 
-void runTest(std::function<void()> body, TestParams params)
-{
-    runAdversaryTest(body, params);
-    runSimulationTest(std::move(body), params);
-}
-
 void runAdversaryTest(std::function<void()> body, TestParams params)
 {
     AdversaryMode::runTest(std::move(body), params);
@@ -269,23 +260,6 @@ void runSimulationTest(std::function<void()> body, TestParams params)
     SimulationMode::runTest(std::move(body), params);
 }
 
-#else
-
-void runTest(std::function<void()> body, TestParams)
-{
-    body();
-}
-
-void runAdversaryTest(std::function<void()> body, TestParams)
-{
-    body();
-}
-
-void runSimulationTest(std::function<void()> body, TestParams)
-{
-    body();
 }
 
 #endif
-
-}

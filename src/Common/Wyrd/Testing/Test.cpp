@@ -40,11 +40,11 @@ private:
     TestParams params;
 };
 
-void registerTestOfMode(const char * suite, const char * name, const char * mode_name, const char * file, int line, Runner runner, std::function<void()> body, TestParams params)
+void registerTestOfMode(const char * suite, const char * mode_name, const char * name, const char * file, int line, Runner runner, std::function<void()> body, TestParams params)
 {
-    const std::string test_name = fmt::format("{}/{}", name, mode_name);
+    const std::string suite_name = fmt::format("{}.{}", suite, mode_name);
     testing::RegisterTest(
-        suite, test_name.c_str(), nullptr, nullptr, file, line,
+        suite_name.c_str(), name, nullptr, nullptr, file, line,
         [runner, body, params]() -> testing::Test * { return new RegisteredTest(runner, body, params); });
 }
 
@@ -59,13 +59,13 @@ bool registerTest(const char * suite, const char * name, const char * file, int 
 
 bool registerAdversaryTest(const char * suite, const char * name, const char * file, int line, std::function<void()> body, TestParams params)
 {
-    registerTestOfMode(suite, name, "adversary", file, line, runAdversaryTest, std::move(body), params);
+    registerTestOfMode(suite, "Adversary", name, file, line, runAdversaryTest, std::move(body), params);
     return true;
 }
 
 bool registerSimulationTest(const char * suite, const char * name, const char * file, int line, std::function<void()> body, TestParams params)
 {
-    registerTestOfMode(suite, name, "simulation", file, line, runSimulationTest, std::move(body), params);
+    registerTestOfMode(suite, "Simulation", name, file, line, runSimulationTest, std::move(body), params);
     return true;
 }
 

@@ -1,10 +1,9 @@
 #include <Common/Wyrd/Facade/Enabled.h>
-
-#include <gtest/gtest.h>
+#include <Common/Wyrd/Testing/Test.h>
 
 using namespace DB::Wyrd;
 
-TEST(Wyrd, EnabledOnlyUnderAStrategy)
+WYRD_TEST(Wyrd, EnabledOnlyUnderAStrategy, .runs = 1)
 {
 #if defined(WYRD_ENABLED)
     EXPECT_TRUE(enabled());

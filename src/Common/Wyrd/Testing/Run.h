@@ -17,8 +17,6 @@ struct TestParams
     AdversaryMode::AdversaryParams adversary{};
 };
 
-/// Runs a test body under the runtime of the wyrd.
-void runTest(std::function<void()> body, TestParams params = {});
 void runAdversaryTest(std::function<void()> body, TestParams params = {});
 void runSimulationTest(std::function<void()> body, TestParams params = {});
 

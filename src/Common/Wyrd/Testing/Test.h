@@ -29,15 +29,9 @@ bool registerSimulationTest(const char * suite, const char * name, const char * 
 
 #else
 
-#define WYRD_TEST(test_suite_name, test_name, ...) \
-    static void wyrdTestBody_##test_suite_name##_##test_name(); \
-    TEST(test_suite_name, test_name) \
-    { \
-        ::DB::Wyrd::runTest(wyrdTestBody_##test_suite_name##_##test_name, ::DB::Wyrd::TestParams{__VA_ARGS__}); \
-    } \
-    static void wyrdTestBody_##test_suite_name##_##test_name()
+#define WYRD_TEST(test_suite_name, test_name, ...) TEST(test_suite_name, test_name)
 
-#define WYRD_ADVERSARY_TEST(...) WYRD_TEST(__VA_ARGS__)
-#define WYRD_SIMULATION_TEST(...) WYRD_TEST(__VA_ARGS__)
+#define WYRD_ADVERSARY_TEST(test_suite_name, test_name, ...) [[maybe_unused]] static void wyrdTestBody_##test_suite_name##_##test_name()
+#define WYRD_SIMULATION_TEST(test_suite_name, test_name, ...) [[maybe_unused]] static void wyrdTestBody_##test_suite_name##_##test_name()
 
 #endif
