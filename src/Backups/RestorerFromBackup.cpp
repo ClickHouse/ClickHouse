@@ -567,13 +567,16 @@ void RestorerFromBackup::checkDefinitionsOfDatabasesToCreate()
     }
 
     /// The named collections are restored after the checks and before the databases are created, so a definition is checked with
-    /// a collection that the restore installs, read from the backup when a definition first names a collection.
+    /// a collection that the restore installs. The backup is read only when a definition first names such a collection: the
+    /// initiating host of `ON CLUSTER` may not be able to read the entries that the hosts restore.
     std::optional<NamedCollectionsInBackup> named_collections_to_restore;
     const GetNamedCollectionFn get_named_collection = [&](const String & collection_name) -> NamedCollectionPtr
     {
+        if (!doesRestoreInstallNamedCollection(restore_settings, collection_name))
+            return nullptr;
         if (!named_collections_to_restore)
             named_collections_to_restore = readNamedCollectionsToRestore(*this, findNamedCollectionsDataPathInBackup());
-        return getNamedCollectionToRestore(restore_settings, *named_collections_to_restore, collection_name);
+        return getNamedCollectionInBackup(*named_collections_to_restore, collection_name);
     };
 
     for (auto & [database_name, definition] : definitions_to_check)

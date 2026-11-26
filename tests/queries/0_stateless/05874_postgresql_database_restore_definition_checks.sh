@@ -153,3 +153,16 @@ for on_cluster in "" "ON CLUSTER test_shard_localhost"; do
     exists locked
     collection_exists
 done
+
+echo "--- an existing named collection, which only the 'replace' mode replaces with the restored one, locally and ON CLUSTER"
+${CLICKHOUSE_CLIENT} --query "CREATE NAMED COLLECTION ${NC_RESTORED} AS ${NC_KEYS}"
+for on_cluster in "" "ON CLUSTER test_shard_localhost"; do
+    ${CLICKHOUSE_CLIENT} --query "
+        RESTORE DATABASE ${DB}_locked, TABLE system.named_collections ${on_cluster} FROM $(backup_of locked)
+        SETTINGS create_named_collection = 'replace' FORMAT Null" 2>&1 \
+        | grep -o -m1 'Override not allowed'
+    exists locked
+done
+${CLICKHOUSE_CLIENT} --query "
+    RESTORE DATABASE ${DB}_locked, TABLE system.named_collections FROM $(backup_of locked) FORMAT Null"
+exists locked

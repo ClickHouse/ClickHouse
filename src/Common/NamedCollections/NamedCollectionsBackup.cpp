@@ -597,22 +597,25 @@ NamedCollectionsInBackup readNamedCollectionsToRestore(RestorerFromBackup & rest
 }
 
 
-NamedCollectionPtr getNamedCollectionToRestore(
-    const RestoreSettings & restore_settings, const NamedCollectionsInBackup & collections_in_backup, const String & collection_name)
+bool doesRestoreInstallNamedCollection(const RestoreSettings & restore_settings, const String & collection_name)
+{
+    if (!restore_settings.shouldRestoreNamedCollections())
+        return false;
+
+    /// The decisions of `restoreNamedCollections`: an existing collection is kept, unless it is replaced. A collection of the
+    /// server configuration is never replaced, and the 'create' mode fails on an existing collection, so the existing one stays.
+    const auto existing = NamedCollectionFactory::instance().tryGet(collection_name);
+    return !existing
+        || (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kReplace
+            && existing->getSourceId() != NamedCollection::SourceId::CONFIG);
+}
+
+
+NamedCollectionPtr getNamedCollectionInBackup(const NamedCollectionsInBackup & collections_in_backup, const String & collection_name)
 {
     const auto it = collections_in_backup.find(collection_name);
     if (it == collections_in_backup.end())
         return nullptr;
-
-    /// The decisions of `restoreNamedCollections`: an existing collection is kept, unless it is replaced. A collection of the
-    /// server configuration is never replaced, and the 'create' mode fails on an existing collection, so the existing one stays.
-    if (const auto existing = NamedCollectionFactory::instance().tryGet(collection_name))
-    {
-        if (restore_settings.create_named_collection != RestoreNamedCollectionCreationMode::kReplace
-            || existing->getSourceId() == NamedCollection::SourceId::CONFIG)
-            return nullptr;
-    }
-
     return NamedCollectionFromSQL::create(it->second->as<const ASTCreateNamedCollectionQuery &>());
 }
 

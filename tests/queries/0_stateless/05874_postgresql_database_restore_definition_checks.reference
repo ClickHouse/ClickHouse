@@ -25,3 +25,9 @@ Override not allowed
 Override not allowed
 0
 0
+--- an existing named collection, which only the 'replace' mode replaces with the restored one, locally and ON CLUSTER
+Override not allowed
+0
+Override not allowed
+0
+1

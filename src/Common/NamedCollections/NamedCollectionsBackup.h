@@ -51,16 +51,18 @@ void registerNamedCollectionsDirForRestore(RestorerFromBackup & restorer, const 
 /// stage barrier that follows (see reloadNamedCollectionsAfterRestore).
 bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
+/// Whether the restore installs the named collection `collection_name` if the backup holds it, as `restoreNamedCollections` decides
+/// by `create_named_collection`: false if a definition that the restore creates resolves to the collection that this server has.
+[[nodiscard]] bool doesRestoreInstallNamedCollection(const RestoreSettings & restore_settings, const String & collection_name);
+
 /// Reads the named collections that `restoreNamedCollections` would restore from the backup, without restoring them, for the checks
-/// of a definition that the restore creates before the collections are restored, see `getNamedCollectionToRestore`. Empty if the
-/// restore does not restore named collections.
+/// of a definition that the restore creates before the collections are restored. Empty if the restore does not restore named
+/// collections.
 [[nodiscard]] NamedCollectionsInBackup readNamedCollectionsToRestore(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
-/// Returns the named collection `collection_name` that a definition created by the restore resolves to, if the restore installs it
-/// from `collections_in_backup` (read by `readNamedCollectionsToRestore`), as `restoreNamedCollections` decides by
-/// `create_named_collection`: nullptr if the definition resolves to the collection that this server has.
-[[nodiscard]] NamedCollectionPtr getNamedCollectionToRestore(
-    const RestoreSettings & restore_settings, const NamedCollectionsInBackup & collections_in_backup, const String & collection_name);
+/// Returns the named collection `collection_name` of `collections_in_backup` (read by `readNamedCollectionsToRestore`), or nullptr
+/// if the backup does not hold it.
+[[nodiscard]] NamedCollectionPtr getNamedCollectionInBackup(const NamedCollectionsInBackup & collections_in_backup, const String & collection_name);
 
 /// Makes the named collections restored by another host visible on this host. With a replicated
 /// storage only one host writes the restored collections, and the other hosts observe the write
