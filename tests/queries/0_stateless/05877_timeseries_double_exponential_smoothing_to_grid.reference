@@ -1,0 +1,27 @@
+-- disabled by default
+-- three argument forms
+[NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]
+[NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]
+[NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]
+-- other factors
+[NULL,NULL,1,1.5,2.40625,4,NULL,NULL,5.75]
+-- Float32 values
+[NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]
+-- factors as Decimal and String
+[NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]
+-- partial states merge
+[NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]
+-- window not a multiple of the step
+[NULL,NULL,1,2,4.5,4,NULL,NULL,6.5]
+-- window shorter than the step
+[NULL,1,NULL,NULL,8]
+-- unsorted and duplicate timestamps
+[NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]
+-- fewer than two samples
+[NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL]
+-- factor out of range
+-- factor not checked without samples
+[NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL]
+-- NaN factor is accepted
+[NULL,NULL,nan,nan,nan,nan,NULL,NULL,nan]
+-- invalid parameters and arguments

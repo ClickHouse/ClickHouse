@@ -83,6 +83,18 @@ SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[4
 SELECT '-- subquery';
 SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(max_over_time(m[15s])[45s:15s], 0.5, 0.5)', 90, 210, 15) ORDER BY ALL;
 
+-- A fixed `@` makes every step use the window that ends at 150 seconds, which gives 3.25.
+SELECT '-- fixed @ modifier';
+SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[45s] @ 150, 0.5, 0.5)', 90, 210, 15) ORDER BY ALL;
+
+-- With an offset of one step, every step gets the result of the step before it.
+SELECT '-- offset';
+SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[45s] offset 15s, 0.5, 0.5)', 90, 210, 15) ORDER BY ALL;
+
+-- Like in Prometheus, a NaN factor is not an error and gives NaN.
+SELECT '-- NaN factor';
+SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[45s], NaN, 0.5)', 90, 210, 15) ORDER BY ALL;
+
 SELECT '-- wrong number of arguments';
 SELECT * FROM prometheusQuery('ts_positive', 'double_exponential_smoothing(http_requests[1m])', 8000); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('ts_positive', 'double_exponential_smoothing(http_requests[1m], 0.01)', 8000); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
