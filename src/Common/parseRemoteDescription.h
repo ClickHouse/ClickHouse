@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 
-#include <cstddef>
 #include <optional>
 #include <vector>
 
