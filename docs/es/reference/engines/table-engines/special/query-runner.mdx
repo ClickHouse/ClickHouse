@@ -11,9 +11,7 @@ Los registros insertados en una tabla `QueryRunner` representan consultas que ej
 El motor puede usarse para la ejecución asíncrona de consultas, la ejecución en lote de consultas generadas,
 el envío de consultas a clústeres remotos, benchmarks, fuzzing y pruebas con tráfico espejo.
 
-<div id="creating-a-table">
-  ## Crear una tabla
-</div>
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE runner
@@ -41,9 +39,7 @@ La columna `query` es obligatoria y las demás columnas son opcionales.
 | `database` | `String`              | La base de datos predeterminada para la consulta. Si está vacía, se usa la base de datos predeterminada del servidor. |
 | `settings` | `Map(String, String)` | Ajustes aplicados a la consulta.                                                                                      |
 
-<div id="engine-settings">
-  ## Configuración del motor
-</div>
+## Configuración del motor {#engine-settings}
 
 | Configuración    | Predeterminado   | Significado                                                                                                                                                                                                                                 |
 | ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -53,9 +49,7 @@ La columna `query` es obligatoria y las demás columnas son opcionales.
 | `threads`        | `4`              | Número de hilos en segundo plano que ejecutan las consultas.                                                                                                                                                                                |
 | `max_queue_size` | `1000`           | Número máximo de consultas en cola. Cuando la cola está llena, las consultas recién insertadas se descartan y se registra un error.                                                                                                         |
 
-<div id="details">
-  ## Detalles
-</div>
+## Detalles {#details}
 
 La tabla solo permite consultas `INSERT`.
 Las consultas se ejecutan en modo &quot;fire and forget&quot;: en caso de excepción, no hay reintentos
@@ -72,24 +66,21 @@ Cuando la consulta que se va a ejecutar es a su vez un `INSERT`, sus datos deben
 `INSERT ... SELECT ...` o `INSERT ... FORMAT ...` con los datos en el texto de la consulta. Un `INSERT` que
 espera recibir los datos desde un stream independiente no es compatible.
 
-<div id="local-mode-and-sql-security">
-  ## Modo local y SQL SECURITY
-</div>
+## Modo local y SQL SECURITY {#local-mode-and-sql-security}
 
 Sin la configuración `cluster`, las consultas se ejecutan en el servidor local.
 El usuario con cuyos permisos se ejecutan lo determina la cláusula `SQL SECURITY`:
 
-* `INVOKER` (predeterminado): las consultas se ejecutan en nombre del usuario que realizó el `INSERT`.
+* `INVOKER` (predeterminado): las consultas se ejecutan en nombre del usuario que realizó el `INSERT`. Se rechaza cualquier INSERT sin usuario, por ejemplo, el que procede de una vista materializada sobre una tabla de log del sistema.
 * `DEFINER`: las consultas se ejecutan en nombre del usuario `DEFINER` especificado. Como las consultas insertadas son arbitrarias, conceder `INSERT` en una tabla de este tipo delega todos los privilegios del definidor.
-* `NONE`: las consultas se ejecutan con acceso total, sin usuario. Requiere el privilegio `ALLOW_SQL_SECURITY_NONE` al crear la tabla.
+* `NONE`: las consultas se ejecutan con acceso total, sin usuario. Requiere el permiso `ALLOW_SQL_SECURITY_NONE` al crear la tabla.
 
-<div id="cluster-mode">
-  ## Modo de clúster
-</div>
+## Modo de clúster {#cluster-mode}
 
 Cuando se especifica la configuración `cluster`, las consultas se envían al clúster especificado.
+Para crear una tabla de este tipo e insertar datos en ella se requiere el permiso `READ, WRITE ON REMOTE`.
 
-El segmento de destino se selecciona mediante `shard`: un índice fijo de base 1 (`'1'` de forma predeterminada), `'random'` para elegir un
+El segmento de destino se selecciona mediante `shard`: un índice fijo basado en 1 (`'1'` de forma predeterminada), `'random'` para elegir un
 segmento aleatorio para cada consulta, o `'all'` para ejecutar cada consulta en todos los segmentos del clúster. La réplica dentro
 del segmento se elige según la configuración `load_balancing` del servidor.
 
@@ -97,20 +88,23 @@ La columna `database` establece la base de datos predeterminada de la conexión 
 base de datos predeterminada se establece una vez por conexión, cada valor distinto de `database` usa su propio
 pool de conexiones, que se crea en el primer uso y se reutiliza durante toda la vida útil de la tabla.
 
-`DEFINER` y `SQL SECURITY` solo tienen efecto en el modo local, y combinarlos con la
-configuración `cluster` es un error. En los servidores remotos, las consultas se autentican con las
-credenciales de la configuración del clúster y se ejecutan como consultas iniciales normales: se registran en
-`system.query_log` con `is_initial_query = 1` y su propio `query_id` (no vinculado al INSERT que
-las produjo). En el servidor iniciador, las consultas despachadas se registran en `system.query_log`
-con `is_internal = 1`.
+El usuario con el que se ejecutan las consultas en los servidores remotos depende de si el
+clúster tiene un `secret`:
 
-Como el motor descarta los resultados de las consultas, siempre ejecuta las consultas despachadas con
+* Sin un `secret`, las consultas se ejecutan con el usuario definido en la configuración del clúster,
+  y no se puede usar `SQL SECURITY`.
+* Con un `secret`, la cláusula `SQL SECURITY` determina el usuario.
+  Este usuario debe existir en los servidores remotos.
+
+En los servidores remotos, las consultas se ejecutan como consultas iniciales normales: se registran en `system.query_log`
+con `is_initial_query = 1` y su propio `query_id` (no vinculado al INSERT que las produjo).
+En el servidor iniciador, las consultas enviadas se registran en `system.query_log` con `is_internal = 1`.
+
+Como el motor descarta los resultados de las consultas, siempre ejecuta las consultas enviadas con
 `discard_query_data = 1`, por lo que los datos de resultado de las consultas SELECT no se transfieren por la red
 (esto sustituye cualquier valor de `discard_query_data` establecido en la columna `settings`).
 
-<div id="waiting-for-queries-to-finish">
-  ## Esperar a que finalicen las consultas
-</div>
+## Esperar a que finalicen las consultas {#waiting-for-queries-to-finish}
 
 En modo asíncrono, se puede usar la siguiente consulta para bloquear hasta que terminen todas las consultas enviadas a la tabla hasta ese momento:
 
@@ -118,9 +112,7 @@ En modo asíncrono, se puede usar la siguiente consulta para bloquear hasta que 
 SYSTEM WAIT QUERY RUNNER runner;
 ```
 
-<div id="example">
-  ## Ejemplo
-</div>
+## Ejemplo {#example}
 
 Volver a ejecutar consultas `SELECT` recientes del registro de consultas:
 

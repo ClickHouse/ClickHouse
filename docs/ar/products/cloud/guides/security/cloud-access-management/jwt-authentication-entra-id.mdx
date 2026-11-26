@@ -4,10 +4,8 @@ slug: /cloud/security/jwt-authentication-entra-id
 title: 'المصادقة باستخدام JWT مع Microsoft Entra ID'
 description: 'كيفية تهيئة Microsoft Entra ID لإصدار رموز JWT لخدمة ClickHouse Cloud، مع ربط أدوار التطبيق في Entra ID بأدوار ClickHouse'
 doc_type: 'guide'
-keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'أدوار التطبيق', 'المصادقة', 'موفّر الهوية']
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'أدوار التطبيق', 'المصادقة', 'مزوّد الهوية']
 ---
-
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -20,7 +18,7 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 يوضّح هذا الدليل كيفية إعداد **Microsoft Entra ID** (المعروف سابقًا باسم Azure Active Directory) بحيث يتصل المستخدمون والتطبيقات بخدمة ClickHouse Cloud باستخدام رموز وصول Entra ID بدلًا من كلمات مرور قاعدة البيانات. تُربَط أدوار التطبيقات في Entra ID بأدوار ClickHouse، ومن ثَمّ تتحكم في الوصول بتعيين المستخدمين والمجموعات والتطبيقات لأدوار التطبيقات في Entra ID.
 
 <Tip>
-  يتناول هذا الدليل الإعدادات المطلوبة في Entra ID والقيم التي يجب إدخالها في ClickHouse Cloud. للاطلاع على معلومات عامة حول موفّري JWT، راجع [إعداد المصادقة باستخدام JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). وللاطلاع على مطالبات الرموز وآلية عمل المستخدمين المؤقتين، راجع المرجع [المصادقة باستخدام JWT](/ar/concepts/features/security/external-authenticators/jwt).
+  يتناول هذا الدليل الإعدادات المطلوبة في Entra ID والقيم التي يجب إدخالها في ClickHouse Cloud. للاطلاع على معلومات عامة حول مزوّدي JWT، راجع [إعداد المصادقة باستخدام JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). وللاطلاع على مطالبات الرموز وآلية عمل المستخدمين المؤقتين، راجع المرجع [المصادقة باستخدام JWT](/ar/concepts/features/security/external-authenticators/jwt).
 </Tip>
 
 ## قبل أن تبدأ {#before-you-begin}
@@ -56,7 +54,11 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
     * **Supported account types**: مستأجر واحد. تبعًا لإصدار البوابة، يظهر هذا الخيار باسم **Single tenant only** أو **Accounts in this organizational directory only**.
     * **Redirect URI**: اتركه فارغًا. يسجّل المستخدمون الدخول عبر تدفق رمز الجهاز (device code flow)، وهو لا يستخدم عنوان URI لإعادة التوجيه.
 
-    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="نموذج تسجيل تطبيق في مركز إدارة Microsoft Entra بنوع حساب لمستأجر واحد ومن دون عنوان URI لإعادة التوجيه" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![نموذج تسجيل تطبيق في مركز إدارة Microsoft Entra بنوع حساب لمستأجر واحد ومن دون عنوان URI لإعادة التوجيه](/images/cloud/security/jwt/entra-register-application.webp)
+      </Frame>
+    </div>
 
     اختر **Register**. في صفحة **Overview**، انسخ القيم التالية:
 
@@ -72,7 +74,11 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
     * صيغة Microsoft Graph: الخاصية `requestedAccessTokenVersion` ضمن القسم `api`.
     * صيغة Azure AD Graph: الخاصية `accessTokenAcceptedVersion` في المستوى الأعلى (top-level)، كما هو موضّح في لقطة الشاشة أدناه.
 
-    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="محرر ملف بيان التطبيق مع ضبط accessTokenAcceptedVersion على 2" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![محرر ملف بيان التطبيق مع ضبط accessTokenAcceptedVersion على 2](/images/cloud/security/jwt/entra-manifest-token-version.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="إتاحة واجهة برمجة تطبيقات" id="expose-an-api">
@@ -80,7 +86,11 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 
     1. بجوار **Application ID URI**، اختر **Add**، واقبل القيمة الافتراضية `api://<CLIENT_ID>`، ثم احفظ. يستخدم العملاء عنوان URI هذا لطلب رموز الوصول إلى ClickHouse. ولا يؤثر ذلك في مطالبة `aud` ضمن رموز الإصدار v2.0، إذ تظل قيمتها معرّف العميل.
 
-       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="صفحة Expose an API مع لوحة Application ID URI التي تعرض قيمة api:// الافتراضية" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![صفحة Expose an API مع لوحة Application ID URI التي تعرض قيمة api:// الافتراضية](/images/cloud/security/jwt/entra-application-id-uri.webp)
+         </Frame>
+       </div>
 
     2. اختر **Add a scope** واملأ النموذج. يطلب المستخدمون هذا النطاق عند تسجيل الدخول، أما التطبيقات التي تصادق بهويتها الخاصة فلا تستخدمه.
 
@@ -92,7 +102,11 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
        | **Admin consent description**  | أي وصف                                                     |
        | **State**                      | **Enabled**                                                |
 
-       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="لوحة Add a scope تعرض النطاق access_as_application، مع اقتصار الموافقة على المسؤولين، وضبط الحالة على Enabled" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![لوحة Add a scope تعرض النطاق access_as_application، مع اقتصار الموافقة على المسؤولين، وضبط الحالة على Enabled](/images/cloud/security/jwt/entra-add-scope.webp)
+         </Frame>
+       </div>
   </Step>
 
   <Step title="امنح تطبيق العميل صلاحية تسجيل دخول المستخدمين" id="authorize-client-application">
@@ -100,7 +114,11 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 
     في **Expose an API**، ضمن **Authorized client applications**، اختر **Add a client application**. أدخل `04b07795-8ddb-461a-bbee-02f9e1bf7b46`، واختر النطاق `api://<CLIENT_ID>/access_as_application`، ثم اختر **Add application**.
 
-    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="لوحة إضافة تطبيق عميل مع تحديد معرّف عميل Azure CLI والنطاق access_as_application" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة إضافة تطبيق عميل مع تحديد معرّف عميل Azure CLI والنطاق access_as_application](/images/cloud/security/jwt/entra-authorize-client-application.webp)
+      </Frame>
+    </div>
 
     <Note>
       لاستخدام تطبيق عميل خاص بك بدلاً من Azure CLI، سجّل تطبيقاً منفصلاً، واضبط **Allow public client flows** على **Yes** ضمن **Authentication**، ثم فوّض معرّف العميل الخاص به مسبقاً هنا. بعد ذلك مرّر معرّف العميل هذا عبر الخيار `--oauth-client-id` عند [تسجيل الدخول باستخدام clickhouse-client](#sign-in-with-clickhouse-client). وإذا كان المستأجر لديك لا يسمح بموافقة المستخدمين، فيتعيّن على أحد المسؤولين أيضاً منح الموافقة على الصلاحيات `openid` و`profile` و`offline_access` الخاصة بهذا التطبيق.
@@ -122,19 +140,31 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 
     يعرّف المثال التالي ثلاثة أدوار تطبيق، قيمها أسماء أدوار في ClickHouse:
 
-    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="صفحة App roles تعرض ClickHouse Admin وClickHouse Analyst DB وClickHouse Read Only بالقيم ch_admin وch_analyst وch_readonly" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة App roles تعرض ClickHouse Admin وClickHouse Analyst DB وClickHouse Read Only بالقيم ch_admin وch_analyst وch_readonly](/images/cloud/security/jwt/entra-app-roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="اشتراط التعيين" id="require-assignment">
     افتراضيًا، يمكن لأي مستخدم في المستأجر الخاص بك الحصول على رمز مميز للتطبيق. ولقصر الرموز المميزة على المستخدمين والمجموعات والتطبيقات التي تُسندها إلى دور تطبيق، افتح **Enterprise applications**، واختر التطبيق الذي يحمل اسم تسجيل التطبيق نفسه، ثم افتح **Properties**، واضبط **Assignment required?** على **Yes**، ثم اختر **Save**.
 
-    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="خصائص تطبيق المؤسسة مع ضبط Assignment required على Yes" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![خصائص تطبيق المؤسسة مع ضبط Assignment required على Yes](/images/cloud/security/jwt/entra-assignment-required.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="تعيين المستخدمين والمجموعات لأدوار التطبيق" id="assign-users-and-groups">
     في تطبيق المؤسسة نفسه، افتح **Users and groups** واختر **Add user/group**. اختر مستخدمًا أو مجموعة، ثم اختر دور تطبيق، وبعدها اختر **Assign**. كرّر هذه الخطوات لكل مستخدم أو مجموعة.
 
-    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="صفحة Users and groups في تطبيق المؤسسة، وتظهر فيها مستخدمًا مُسنَدًا إليه دور التطبيق ClickHouse Read Only" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة Users and groups في تطبيق المؤسسة، وتظهر فيها مستخدمًا مُسنَدًا إليه دور التطبيق ClickHouse Read Only](/images/cloud/security/jwt/entra-assign-users-and-groups.webp)
+      </Frame>
+    </div>
 
     إذا أُسنِدت إلى المستخدم عدة أدوار تطبيق، سواء مباشرةً أو عبر المجموعات، فإنه يحصل عليها جميعًا في المطالبة `roles`.
 

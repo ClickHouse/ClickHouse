@@ -97,11 +97,15 @@ if ! grep -q 'Ready for connections' "$DIR/data/server.log" 2>/dev/null || ! gre
     cat "$DIR/server.out" "$DIR/data/server.err.log" >&2
     exit 1
 fi
+# With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+# namespace, is inside. Otherwise that process is inside.
+INSIDE=$PID
+[ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
-echo "token: $(cat "/proc/$PID/root$DIR/serviceaccount/token" 2>&1)"
-echo "config in /tmp: $(cat "/proc/$PID/root$TMP_CONFIG" 2>&1)"
-echo "unrelated file in /tmp: $([ -e "/proc/$PID/root$TMP_UNRELATED" ] && echo visible || echo hidden)"
-echo "/tmp is writable: $(touch "/proc/$PID/root/tmp/${CLICKHOUSE_DATABASE}_write" 2>/dev/null && echo yes || echo no)"
+echo "token: $(cat "/proc/$INSIDE/root$DIR/serviceaccount/token" 2>&1)"
+echo "config in /tmp: $(cat "/proc/$INSIDE/root$TMP_CONFIG" 2>&1)"
+echo "unrelated file in /tmp: $([ -e "/proc/$INSIDE/root$TMP_UNRELATED" ] && echo visible || echo hidden)"
+echo "/tmp is writable: $(touch "/proc/$INSIDE/root/tmp/${CLICKHOUSE_DATABASE}_write" 2>/dev/null && echo yes || echo no)"
 
 # As the kubelet does it (`AtomicWriter`): the new token in a new directory, a new link to it renamed over `..data`,
 # and the old directory removed.
@@ -111,9 +115,9 @@ ln -s "..2026_01_02_00_00_00.2" "$DIR/serviceaccount/..data_tmp"
 mv -T "$DIR/serviceaccount/..data_tmp" "$DIR/serviceaccount/..data"
 rm -rf "$DIR/serviceaccount/..2026_01_01_00_00_00.1"
 
-echo "rotated token: $(cat "/proc/$PID/root$DIR/serviceaccount/token" 2>&1)"
+echo "rotated token: $(cat "/proc/$INSIDE/root$DIR/serviceaccount/token" 2>&1)"
 
-if [ -z "$AWS_MARKER" ] || [ -e "/proc/$PID/root$AWS_MARKER" ]; then
+if [ -z "$AWS_MARKER" ] || [ -e "/proc/$INSIDE/root$AWS_MARKER" ]; then
     echo ".aws in the home directory without HOME: visible"
 else
     echo ".aws in the home directory without HOME: hidden"
