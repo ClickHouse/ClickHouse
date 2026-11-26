@@ -211,7 +211,7 @@ private:
     void checkHasColumns();
 
     /// Whether the children of `node` can borrow its path: nothing below it can be requested.
-    bool canLendPath(const TraversalNode & node) const;
+    [[nodiscard]] bool canLendPath(const TraversalNode & node) const;
 
     void processSubtree(TraversalNode & node);
 
