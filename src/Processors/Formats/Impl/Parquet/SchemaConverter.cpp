@@ -63,6 +63,35 @@ SchemaConverter::SchemaConverter(
     }
 }
 
+bool SchemaConverter::isAbsentFromFile(const String & path) const
+{
+    const auto & encoding = column_mapper->getStorageColumnEncoding();
+    auto field_id = encoding.find(path);
+    if (field_id == encoding.end())
+        return false;
+
+    const std::optional<UnorderedSetWithMemoryTracking<Int64>> * level_field_ids = &top_level_field_ids;
+    if (const String parent = column_mapper->getIcebergParentPath(path); !parent.empty())
+    {
+        auto it = struct_field_ids.find(parent);
+        if (it == struct_field_ids.end())
+        {
+            /// The struct is not in the file either: the field has a value only if the struct has a default.
+            const Field * parent_default = column_mapper->getIcebergInitialDefault(parent);
+            return parent_default && parent_default->getType() == Field::Types::Tuple && isAbsentFromFile(parent);
+        }
+        level_field_ids = &it->second;
+    }
+    return level_field_ids->has_value() && !(*level_field_ids)->contains(field_id->second);
+}
+
+std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & field, const String & path, const DataTypePtr & type) const
+{
+    if (!column_mapper || !column_mapper->getIcebergInitialDefault(field) || !isAbsentFromFile(field))
+        return {};
+    return column_mapper->getIcebergInitialDefault(field, path, type);
+}
+
 void SchemaConverter::checkHasColumns()
 {
     if (file_metadata.schema.size() < 2)
@@ -78,10 +107,15 @@ void SchemaConverter::prepareForReading()
 
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
+    top_level_field_ids.emplace();
     for (size_t i = 0; i < top_level_columns; ++i)
     {
         TraversalNode node;
         processSubtree(node);
+        if (!node.element->__isset.field_id)
+            top_level_field_ids.reset();
+        else if (top_level_field_ids)
+            top_level_field_ids->insert(node.element->field_id);
     }
 
     /// Check that all requested columns were found.
@@ -118,17 +152,21 @@ void SchemaConverter::prepareForReading()
     {
         if (found_columns[i])
             continue;
-        if (!options.format.parquet.allow_missing_columns)
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
-        if (addMissingElementOfTupleInArray(i))
+        const auto & missing_column = sample_block->getByPosition(i);
+        const String field = column_mapper ? column_mapper->getIcebergFieldPath(missing_column.name) : String{};
+        auto missing_column_default = getAbsentFieldDefault(field, missing_column.name, missing_column.type);
+        if (!options.format.parquet.allow_missing_columns && !missing_column_default)
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", missing_column.name);
+        if (!missing_column_default && addMissingElementOfTupleInArray(i))
             continue;
 
         OutputColumnInfo & missing_output = output_columns.emplace_back();
         missing_output.idx_in_output_block = i;
-        missing_output.name = sample_block->getByPosition(i).name;
-        missing_output.input_type = sample_block->getByPosition(i).type;
+        missing_output.name = missing_column.name;
+        missing_output.input_type = missing_column.type;
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
+        missing_output.missing_column_default = std::move(missing_column_default);
     }
 
 }
@@ -224,8 +262,6 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
 {
     const parq::SchemaElement & group = file_metadata.schema.at(group_schema_idx);
     const size_t first_child_idx = group_schema_idx + 1;
-    if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
 
     UnorderedSetWithMemoryTracking<std::string_view> seen_names;
     for (size_t i = 0; i < size_t(group.num_children); ++i)
@@ -298,8 +334,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.type_hint)
         chassert(node.requested);
-    if (schema_idx >= file_metadata.schema.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
     node.element = &file_metadata.schema.at(schema_idx);
     schema_idx += 1;
     const size_t leaves_start = leaves_in_arrays.size();
@@ -326,7 +360,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             std::optional<size_t> pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
             if (pos.has_value())
             {
-                if (node.requested)
+                if (node.requested || node.inside_skipped_map_element)
                     throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Requested column {} is part of another requested column", node.getNameForLogging());
 
                 node.requested = true;
@@ -339,6 +373,11 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 chassert(!node.type_hint);
                 node.type_hint = sample_block->getByPosition(pos.value()).type;
                 outer_type_hint = node.type_hint; // before unwrapping arrays
+
+                if (options.map_columns_read_by_keys.contains(node.name))
+                    node.map_element_to_skip = 1;
+                else if (options.map_columns_read_by_values.contains(node.name))
+                    node.map_element_to_skip = 0;
 
                 for (size_t i = 1; i < levels.size(); ++i)
                 {
@@ -705,7 +744,29 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
     /// `my_map.key_value.key` to `my_map.key`.
     TraversalNode subnode = node.prepareToRecurse(no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple, array_type_hint);
+    if (!no_map)
+        subnode.map_element_to_skip = node.map_element_to_skip;
+    const size_t schema_idx_before_map = schema_idx;
+    const size_t primitive_column_idx_before_map = primitive_column_idx;
+    const size_t primitive_columns_before_map = primitive_columns.size();
+    const size_t output_columns_before_map = output_columns.size();
+    const size_t leaves_in_arrays_before_map = leaves_in_arrays.size();
+    const size_t tuples_in_arrays_before_map = tuples_in_arrays.size();
     processSubtree(subnode);
+
+    /// The offsets of a map come from a leaf of the side that is read. If that side has no leaf in the file, read the whole map.
+    if (!no_map && node.map_element_to_skip.has_value() && subnode.output_idx.has_value()
+        && output_columns.at(*subnode.output_idx).primitive_start == output_columns.at(*subnode.output_idx).primitive_end)
+    {
+        schema_idx = schema_idx_before_map;
+        primitive_column_idx = primitive_column_idx_before_map;
+        primitive_columns.resize(primitive_columns_before_map);
+        output_columns.resize(output_columns_before_map);
+        leaves_in_arrays.resize(leaves_in_arrays_before_map);
+        tuples_in_arrays.resize(tuples_in_arrays_before_map);
+        subnode = node.prepareToRecurse(SchemaContext::MapTuple, array_type_hint);
+        processSubtree(subnode);
+    }
 
     if (!node.requested || !subnode.output_idx.has_value())
         return true;
@@ -794,7 +855,7 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
 
-    if (column_mapper && schema_idx < file_metadata.schema.size())
+    if (column_mapper)
     {
         const auto & elem_schema = file_metadata.schema.at(schema_idx);
         if (elem_schema.__isset.field_id)
@@ -825,8 +886,6 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
     /// schema is a flattened pre-order tree; num_children counts direct children, laid out
     /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
     /// remaining-children counters for the groups we descended into.
-    if (root_idx >= schema.size())
-        return false;
     VectorWithMemoryTracking<size_t> stack;
     stack.push_back(size_t(schema.at(root_idx).num_children));
     size_t idx = root_idx + 1;
@@ -837,8 +896,6 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
             stack.pop_back();
             continue;
         }
-        if (idx >= schema.size())
-            return false; // malformed schema; caller handles elsewhere
         stack.back() -= 1;
         const parq::SchemaElement & elem = schema.at(idx);
         if (elem.repetition_type != parq::FieldRepetitionType::REQUIRED)
@@ -850,6 +907,7 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
     return true;
 }
 
+/// The index after the subtree of `schema[idx]`, or `std::nullopt` if the subtree does not fit in `schema`.
 static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `parq::FileMetaData::schema` is a thrift-generated std::vector
 {
     size_t remaining = 1;
@@ -870,13 +928,65 @@ static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> &
     return idx;
 }
 
+void checkSchemaTree(const parq::FileMetaData & file_metadata)
+{
+    /// A file without a schema is rejected later, by `SchemaConverter::checkHasColumns`.
+    /// Elements after the tree are ignored, as in Arrow.
+    if (!file_metadata.schema.empty() && !subtreeEnd(file_metadata.schema, 0).has_value())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Parquet schema tree: the numbers of children do not match the {} schema elements in the file", file_metadata.schema.size());
+}
+
+bool schemaHasLeaf(const parq::FileMetaData & file_metadata, std::string_view path)
+{
+    const auto & schema = file_metadata.schema;
+    if (schema.size() < 2 || schema[0].num_children <= 0)
+        return false;
+    /// Only the groups whose path is a prefix of `path` are entered, so the stack is not deeper
+    /// than `path` has components, and each element is visited or skipped once.
+    struct Group
+    {
+        size_t remaining_children;
+        /// The length of the prefix of `path` that the path of the group and the '.' after it match.
+        size_t matched;
+    };
+    VectorWithMemoryTracking<Group> stack{{size_t(schema[0].num_children), 0}};
+    size_t idx = 1;
+    while (!stack.empty())
+    {
+        Group & group = stack.back();
+        if (group.remaining_children == 0)
+        {
+            stack.pop_back();
+            continue;
+        }
+        group.remaining_children -= 1;
+        const parq::SchemaElement & element = schema.at(idx);
+        const std::string_view rest = path.substr(group.matched);
+        if (rest.starts_with(element.name))
+        {
+            if (isPrimitiveNode(element))
+            {
+                if (rest.size() == element.name.size())
+                    return true;
+            }
+            else if (rest.size() > element.name.size() && rest[element.name.size()] == '.')
+            {
+                const size_t matched = group.matched + element.name.size() + 1;
+                stack.push_back({size_t(element.num_children), matched});
+                idx += 1;
+                continue;
+            }
+        }
+        idx = subtreeEnd(schema, idx).value();
+    }
+    return false;
+}
+
 bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
 {
     if (node.element->num_children != 2 && node.element->num_children != 3)
         return false;
     const size_t num_children = size_t(node.element->num_children);
-    if (num_children > file_metadata.schema.size() - schema_idx)
-        return false;
 
     const bool group_annotated_variant = node.element->logicalType.__isset.VARIANT;
 
@@ -903,10 +1013,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
         schema_idx_of_role[role] = child_schema_idx;
         role_of_child[i] = role;
 
-        std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_schema_idx);
-        if (!end.has_value())
-            return false;
-        child_schema_idx = *end;
+        child_schema_idx = subtreeEnd(file_metadata.schema, child_schema_idx).value();
     }
 
     if (!schema_idx_of_role[Metadata].has_value())
@@ -918,10 +1025,17 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     auto is_variant_blob_leaf = [&](size_t idx)
     {
         const parq::SchemaElement & element = file_metadata.schema[idx];
-        return isPrimitiveNode(element)
+        const bool is_blob = isPrimitiveNode(element)
             && element.type == parq::Type::BYTE_ARRAY
             && element.repetition_type != parq::FieldRepetitionType::REPEATED
-            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+            && !element.__isset.logicalType
+            && !element.__isset.converted_type;
+        if (!is_blob && group_annotated_variant)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Malformed Parquet variant column {}: `{}` must be an unannotated BYTE_ARRAY leaf",
+                node.getNameForLogging(), element.name);
+        return is_blob;
     };
 
     if (!is_variant_blob_leaf(*schema_idx_of_role[Metadata]))
@@ -1095,11 +1209,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         }
     }
 
-    /// `num_children` comes directly from untrusted input file, need to sanity-check before doing
-    /// `elements.resize(num_children)`.
-    if (node.element->num_children < 0 || size_t(node.element->num_children) > file_metadata.schema.size() - schema_idx)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", node.getNameForLogging(), node.element->num_children, file_metadata.schema.size() - schema_idx);
-
     if (!lookup_by_name && node.requested)
         elements.resize(size_t(node.element->num_children), UINT64_MAX);
 
@@ -1115,8 +1224,14 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     size_t output_start = output_columns.size();
     size_t skipped_unsupported_columns = 0;
     VectorWithMemoryTracking<String> element_names_in_file;
+    std::optional<UnorderedSetWithMemoryTracking<Int64>> element_field_ids{std::in_place};
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
+        if (!file_metadata.schema.at(schema_idx).__isset.field_id)
+            element_field_ids.reset();
+        else if (element_field_ids)
+            element_field_ids->insert(file_metadata.schema.at(schema_idx).field_id);
+
         bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
             useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
@@ -1131,14 +1246,16 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", node.getNameForLogging(), element_name);
         }
 
-        DataTypePtr element_type_hint;
-        if (tuple_type_hint && idx_in_output_tuple.has_value())
-            element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
+        const bool skip_map_element = node.schema_context == SchemaContext::MapTuple && node.map_element_to_skip == i;
+        const bool element_requested = node.requested && idx_in_output_tuple.has_value() && !skip_map_element;
 
-        const bool element_requested = node.requested && idx_in_output_tuple.has_value();
+        DataTypePtr element_type_hint;
+        if (tuple_type_hint && idx_in_output_tuple.has_value() && element_requested)
+            element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
 
         TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, element_type_hint);
         subnode.requested = element_requested;
+        subnode.inside_skipped_map_element |= skip_map_element;
         if (node.schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
             subnode.schema_context = SchemaContext::MapKey;
 
@@ -1182,6 +1299,11 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         }
     }
 
+    /// Only for a struct that is the field of the mapper with its id: one with another id can have the same name.
+    if (column_mapper && column_mapper->hasIcebergInitialDefaults() && node.element->__isset.field_id
+        && column_mapper->getFieldIdToClickHouseName().contains(node.element->field_id))
+        struct_field_ids[node.name] = std::move(element_field_ids);
+
     if (!node.requested)
     {
         if (is_tuple_in_array)
@@ -1204,15 +1326,21 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         {
             if (elements[i] != UINT64_MAX)
                 continue;
-            if (!options.format.parquet.allow_missing_columns)
+            String missing_name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+            const DataTypePtr & missing_type = tuple_type_hint->getElement(i);
+            auto missing_column_default = getAbsentFieldDefault(missing_name, missing_name, missing_type);
+            /// A map element that is not read is filled with defaults, sized by the offsets of the other one.
+            const bool skipped_map_element = node.schema_context == SchemaContext::MapTuple && node.map_element_to_skip == i;
+            if (!options.format.parquet.allow_missing_columns && !missing_column_default && !skipped_map_element)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), node.getNameForLogging(), element_names_in_file);
 
             elements[i] = output_columns.size();
             OutputColumnInfo & missing_output = output_columns.emplace_back();
-            missing_output.name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
-            missing_output.input_type = tuple_type_hint->getElement(i);
+            missing_output.name = std::move(missing_name);
+            missing_output.input_type = missing_type;
             missing_output.output_type = missing_output.input_type;
             missing_output.is_missing_column = true;
+            missing_output.missing_column_default = std::move(missing_column_default);
         }
         output_type = node.type_hint;
     }
@@ -1391,10 +1519,7 @@ bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
         bool not_in_schema = false;
         const std::string_view child_name = useColumnMapperIfNeeded(file_metadata.schema.at(child_idx), tuple->name, not_in_schema);
         through_existing_element = !not_in_schema && (names_equal(rest, child_name) || is_path_prefix(rest, child_name));
-        const std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_idx);
-        if (!end.has_value())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
-        child_idx = *end;
+        child_idx = subtreeEnd(file_metadata.schema, child_idx).value();
     }
     if (through_existing_element)
         return false;
@@ -2281,7 +2406,7 @@ void SchemaConverter::processPrimitiveColumn(
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected compound logical type for leaf column: {}", thriftToString(element));
     }
-    else if (logical.__isset.UNKNOWN)
+    else if (logical.__isset.UNKNOWN || (converted && static_cast<int>(*converted) == LEGACY_NULL_CONVERTED_TYPE))
     {
         /// This means all values are nulls. We could use DataTypeNothing here, or fall through to
         /// dispatch by physical type. Either way seems fine, currently we do the latter.
@@ -2311,7 +2436,7 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (converted == CONV::INTERVAL)
     {
-        /// TODO [parquet]: Support. For now, fall through to reading as FixedString(12).
+        /// Deprecated converted type with no logical type: fall through to reading as `FixedString(12)`.
     }
     else if (element.__isset.logicalType || element.__isset.converted_type)
     {

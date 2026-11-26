@@ -22,13 +22,9 @@ Para una descripción de todos los permisos, consulte [Console roles and permiss
     En ClickHouse Cloud, ve a los detalles de tu organización.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Pestaña Activity de ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Pestaña Activity de ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
+      </Frame>
     </div>
 
     <br />
@@ -41,17 +37,13 @@ Para una descripción de todos los permisos, consulte [Console roles and permiss
 
     * **Activity:** Un fragmento de texto que describe el evento
     * **User:** El usuario que inició el evento
-    * **IP Address:** Cuando corresponde, este campo muestra la dirección IP del usuario que inició el evento
+    * **Dirección IP:** Cuando corresponde, este campo muestra la dirección IP del usuario que inició el evento
     * **Time:** La marca temporal del evento
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Tabla Activity de ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Tabla Activity de ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
+      </Frame>
     </div>
 
     <br />
@@ -64,13 +56,9 @@ Para una descripción de todos los permisos, consulte [Console roles and permiss
 
 <div class="eighty-percent">
   <div className="ch-image-lg">
-
-  <Frame>
-
-  ![Exportación CSV de Activity de ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
-
-  </Frame>
-
+    <Frame>
+      ![Exportación CSV de Activity de ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
+    </Frame>
   </div>
 </div>
 
@@ -84,3 +72,7 @@ de eventos de auditoría. Encontrarás más detalles en la [Referencia de la API
 Puede usar la API para integrarse con la plataforma de logging que prefiera. Los siguientes ofrecen conectores compatibles listos para usar:
 
 * [Complemento de auditoría de ClickHouse Cloud para Splunk](/es/integrations/connectors/data-integrations/integrations/splunk)
+
+## Retención del registro de auditoría {#audit-log-retention}
+
+ClickHouse Cloud no aplica un time-to-live (TTL) a las entradas del registro de auditoría de la consola. Las entradas no se eliminan automáticamente en función de su antigüedad.

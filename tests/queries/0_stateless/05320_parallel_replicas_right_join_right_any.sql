@@ -2,6 +2,7 @@
 -- the same rows as without them. Evaluated on each replica, every replica picked a right row for each left row
 -- from its own share of the right table, so a left row was emitted once per replica.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET automatic_parallel_replicas_mode = 0;
 SET any_join_distinct_right_table_keys = 1;
 SET explain_query_plan_default = 'legacy';

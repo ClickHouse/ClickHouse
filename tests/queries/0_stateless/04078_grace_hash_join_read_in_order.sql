@@ -12,7 +12,6 @@ CREATE TABLE t2 (key UInt32, a UInt32, attr String) ENGINE = MergeTree ORDER BY 
 INSERT INTO t1 VALUES (1, 10, 'alpha'), (2, 15, 'beta'), (3, 20, 'gamma');
 INSERT INTO t2 VALUES (1, 5, 'ALPHA'), (2, 10, 'beta'), (4, 25, 'delta');
 
-SET allow_experimental_join_condition = 1;
 SET join_use_nulls = 0;
 SET join_algorithm = 'grace_hash';
 SET grace_hash_join_initial_buckets = 8;

@@ -17,38 +17,28 @@ import DataTypeMapping from '/snippets/ar/data-types-matching.mdx';
 | ------- | ------- | -------------- |
 | ✔       | ✔       |                |
 
-<div id="description">
-  ## الوصف
-</div>
+## الوصف {#description}
 
 [Apache Avro](https://avro.apache.org/) هو تنسيق تسلسل موجّه نحو الصفوف يستخدم الترميز الثنائي لمعالجة البيانات بكفاءة. يدعم تنسيق `Avro` قراءة [ملفات بيانات Avro](https://avro.apache.org/docs/current/specification/#object-container-files) وكتابتها. يفترض هذا التنسيق رسائل ذاتية الوصف تتضمن مخططًا مضمّنًا. إذا كنت تستخدم Avro مع سجل مخططات، فارجع إلى تنسيق [`AvroConfluent`](/ar/reference/formats/Avro/AvroConfluent).
 
-<div id="data-type-mapping">
-  ## مطابقة أنواع البيانات
-</div>
+## مطابقة أنواع البيانات {#data-type-mapping}
 
 <DataTypeMapping />
 
-<div id="format-settings">
-  ## إعدادات التنسيق
-</div>
+## إعدادات الصيغة {#format-settings}
 
 | الإعداد                                    | الوصف                                                                                                                                                | الافتراضي |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
 | `input_format_avro_allow_missing_fields`   | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند عدم العثور على حقل في المخطط.                                                           | `0`       |
 | `input_format_avro_null_as_default`        | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند إدراج قيمة `null` في عمود لا يقبل القيم الفارغة.                                        | `0`       |
-| `output_format_avro_codec`                 | خوارزمية الضغط لملفات إخراج Avro. القيم الممكنة: `null`, `deflate`, `snappy`, `zstd`.                                                                |           |
+| `output_format_avro_codec`                 | خوارزمية الضغط لملفات إخراج Avro. القيم الممكنة: `null`, `deflate`, `snappy`, `zstd`, `bzip2`, `xz`.                                                 |           |
 | `output_format_avro_sync_interval`         | فاصل المزامنة في ملفات Avro (بالبايت).                                                                                                               | `16384`   |
-| `output_format_avro_string_column_pattern` | تعبير نمطي لتحديد أعمدة `String` عند مواءمة نوع السلسلة في Avro. بشكل افتراضي، تُكتب أعمدة `String` في ClickHouse على أنها من النوع `bytes` في Avro. |           |
+| `output_format_avro_string_column_pattern` | تعبير نمطي لتحديد أعمدة `String` عند تعيين نوع السلسلة في Avro. بشكل افتراضي، تُكتب أعمدة `String` في ClickHouse على أنها من النوع `bytes` في Avro. |           |
 | `output_format_avro_rows_in_file`          | الحد الأقصى لعدد الصفوف في كل ملف إخراج Avro. عند بلوغ هذا الحد، يُنشأ ملف جديد (إذا كان نظام التخزين يدعم تقسيم الملفات).                           | `1`       |
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
-<div id="reading-avro-data">
-  ### قراءة بيانات Avro
-</div>
+### قراءة بيانات Avro {#reading-avro-data}
 
 لقراءة البيانات من ملف Avro واستيرادها إلى جدول في ClickHouse:
 
@@ -63,11 +53,11 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 قد تختلف أنواع بيانات أعمدة جدول ClickHouse عن الحقول المناظرة لها في بيانات Avro المُدرَجة. عند إدراج البيانات، يفسّر ClickHouse أنواع البيانات وفقًا للجدول أعلاه ثم [يحوّل](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) البيانات إلى نوع العمود المناظر.
 
+السجل المكوَّن من حقلين فقط من النوع `bytes` هما `metadata` و`value`، وهي الطريقة التي يخزّن بها Iceberg v3 النوع `variant` في Avro، يُقرأ إلى عمود من النوع [`Dynamic`](/ar/reference/data-types/dynamic) أو [`JSON`](/ar/reference/data-types/newjson) باستخدام [الترميز الثنائي لـ Variant](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md)، بالطريقة نفسها المتبعة مع عمود `VARIANT` في الصيغة `Parquet`.
+
 أثناء استيراد البيانات، إذا لم يُعثر على حقل في المخطط وكان الإعداد [`input_format_avro_allow_missing_fields`](/ar/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) مُمكّنًا، فستُستخدم القيمة الافتراضية بدلًا من إصدار خطأ.
 
-<div id="writing-avro-data">
-  ### كتابة البيانات بتنسيق Avro
-</div>
+### كتابة البيانات بتنسيق Avro {#writing-avro-data}
 
 لكتابة بيانات من جدول ClickHouse إلى ملف Avro:
 
@@ -82,9 +72,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 يمكن ضبط ضغط الإخراج وفاصل المزامنة لملفات Avro باستخدام الإعدادين [`output_format_avro_codec`](/ar/reference/settings/formats/output-format#output_format_avro_codec) و[`output_format_avro_sync_interval`](/ar/reference/settings/formats/output-format#output_format_avro_sync_interval) على التوالي.
 
-<div id="inferring-the-avro-schema">
-  ### استنتاج مخطط Avro
-</div>
+### استنتاج مخطط Avro {#inferring-the-avro-schema}
 
 باستخدام الدالة [`DESCRIBE`](/ar/reference/statements/describe-table) في ClickHouse، يمكنك بسرعة عرض البنية المستنتجة لملف Avro كما في المثال التالي.
 يتضمن هذا المثال عنوان URL لملف Avro متاحًا للعامة ضمن حاوية S3 العامة الخاصة بـ ClickHouse:

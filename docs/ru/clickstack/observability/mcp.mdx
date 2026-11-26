@@ -1,0 +1,147 @@
+---
+slug: /clickstack/observability/mcp
+title: 'MCP-сервер ClickStack'
+sidebarTitle: 'MCP-сервер'
+description: 'Подключение ИИ-ассистентов к ClickHouse Observability с помощью MCP-сервера ClickStack (Model Context Protocol)'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'MCP', 'Model Context Protocol', 'AI', 'observability', 'ClickStack UI', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+MCP-сервер ClickStack использует [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), чтобы ИИ-ассистенты могли работать с вашими данными в ClickHouse Observability. После подключения ИИ-ассистент может выполнять запросы к журналам, трассировкам и метрикам, управлять панелями мониторинга и оповещениями, изучать источники данных и работать с сохранёнными поисками — и всё это с помощью запросов на естественном языке.
+
+Это позволяет использовать такие инструменты, как [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/) или любой MCP-совместимый клиент, чтобы расследовать инциденты, создавать панели мониторинга и управлять настройками обсервабилити, не покидая среду разработки.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+## Подключение к ClickHouse Observability {#managed-clickstack}
+
+ClickHouse Observability подключается через облачную конечную точку MCP по адресу `https://mcp.clickhouse.cloud/clickstack` и использует для аутентификации OAuth 2.0. Аутентификация по ключу API для этой конечной точки не поддерживается.
+
+### Предварительные требования {#managed-prerequisites}
+
+* Работающий сервис ClickHouse Cloud с [включенной обсервабилити](/ru/clickstack/observability/getting-started)
+* [Включенный MCP](/ru/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) в этом сервисе: откройте консоль Cloud, нажмите **Подключение**, выберите **Подключение через MCP** и включите переключатель
+
+### Конечная точка {#managed-endpoint}
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+Для аутентификации используется OAuth 2.0. При первом подключении MCP-клиент открывает окно браузера, где нужно войти с помощью учётных данных ClickHouse Cloud. Ключ API не требуется.
+
+### Подключение клиента MCP {#managed-connecting-a-client}
+
+Чтобы скопировать конфигурацию для MCP-клиента, откройте **Team Settings → API &amp; Agents** в своем сервисе ClickHouse Observability. Сгенерированная конфигурация содержит идентификатор сервиса, поэтому запросы направляются именно в этот сервис.
+
+Также можно воспользоваться одним из примеров ниже. При подключении клиент предложит пройти аутентификацию OAuth.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    Запустите Claude Code, выполните `/mcp`, затем выберите `clickstack`, чтобы завершить OAuth-поток.
+  </Tab>
+
+  <Tab title="Cursor">
+    Добавьте в `.cursor/mcp.json` следующее:
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    Добавьте в `.vscode/mcp.json` следующее:
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    Добавьте в `opencode.json` следующее:
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    Добавьте в `librechat.yaml` следующее:
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="Другое">
+    Подключиться может любой MCP-клиент, поддерживающий **Streamable HTTP** с OAuth. Укажите в его настройках:
+
+    * **URL:** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+### Указание конкретного сервиса {#managed-service-override}
+
+Без заголовка `x-service-id` запросы по умолчанию направляются в первый сервис обсервабилити, подготовленный и предоставленный для вашего аккаунта и используемый в нём. Чтобы изменить сервис по умолчанию, откройте **User Preferences** в ClickStack и выберите нужный сервис.
+
+Чтобы направлять запросы в конкретный сервис из отдельного MCP-клиента, укажите заголовок `x-service-id: <YOUR_SERVICE_ID>` в его конфигурации. Этот заголовок переопределяет сервис по умолчанию.
+
+## Что можно делать с помощью MCP? {#capabilities}
+
+После подключения ваш ИИ-ассистент получает доступ к набору инструментов, охватывающих основные функции сервиса. В их числе:
+
+* **Выполнение запросов к данным** — поиск и агрегирование журналов, трассировок и метрик с помощью конструктора запросов, синтаксиса поиска или Raw SQL.
+* **Источники данных** — получение списка доступных источников данных, подключений к базам данных, схем столбцов и ключей атрибутов.
+* **Панели мониторинга** — создание, обновление, удаление и просмотр панелей мониторинга и их плиток.
+* **Оповещения** — создание, обновление и просмотр оповещений и истории их вычислений.
+* **Сохранённые поиски** — создание, обновление и просмотр определений сохранённого поиска для повторного использования.
+* **Вебхуки** — получение списка вебхуков, доступных в качестве пунктов назначения для уведомлений об оповещениях.
+* **Команды** — получение списка команд, в которые входит текущий пользователь, и определение активной команды.
+
+Со временем набор инструментов может расширяться. MCP-клиент автоматически обнаруживает доступные инструменты при подключении.
+
+## Устранение неполадок {#troubleshooting}
+
+<Accordion title="OAuth-поток не завершается">
+  * Убедитесь, что ваш MCP-клиент поддерживает OAuth 2.0. Клиенты, которые поддерживают только Bearer-токен или транспорт stdio, не могут пройти аутентификацию на конечной точке Cloud.
+  * Проверьте, не блокирует ли браузер всплывающее окно или перенаправление OAuth.
+  * Убедитесь, что у вашего аккаунта ClickHouse Cloud есть доступ к организации и сервису.
+</Accordion>
+
+<Accordion title="MCP включен, но клиент не может подключиться">
+  * Убедитесь, что вы используете конечную точку для обсервабилити (`https://mcp.clickhouse.cloud/clickstack`), а не общую облачную конечную точку MCP (`https://mcp.clickhouse.cloud/mcp`).
+  * Убедитесь, что для сервиса в консоли Cloud [включен MCP](/ru/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
+</Accordion>
+
+<Accordion title="Запросы отправляются не в тот сервис">
+  Если заголовок `x-service-id` не указан, запросы по умолчанию направляются в первый сервис обсервабилити, который был подготовлен и предоставлен и используется вашим аккаунтом. Сервис по умолчанию можно изменить в разделе **User Preferences** в ClickStack. Также можно передать этот заголовок, чтобы направлять запросы в конкретный сервис. См. раздел [Указание конкретного сервиса](#managed-service-override).
+</Accordion>
