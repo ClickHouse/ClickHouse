@@ -25,9 +25,20 @@ import { CommunityMaintainedBadge } from '/snippets/components/CommunityMaintain
 
 Native TLS on port `9440` is included as a configuration reference.
 
+## Authentication and privileges {#authentication-and-privileges}
+
+Use a dedicated database user with a password over TLS and grant `SELECT` on the table or view used by the rule. For the example, [prepare the sample data](#prepare-the-sample-data) first, then run these statements as a ClickHouse administrator. Replace the example password before running them.
+
+```sql
+CREATE USER nightingale_reader IDENTIFIED WITH sha256_password BY 'replace-with-a-strong-password';
+GRANT SELECT ON n9e_demo.requests TO nightingale_reader;
+```
+
+Use `nightingale_reader` in the data source. Run the example's `CREATE` and `INSERT` statements with a separate privileged account.
+
 ## Connect Nightingale to ClickHouse {#connect-nightingale-to-clickhouse}
 
-In Nightingale, open **Integrations** → **Data sources** → **Add** and select **ClickHouse**. Enter a name and provide the ClickHouse **User** and **Password**. In **Nodes**, enter one `host:port` without a URL scheme or path.
+In Nightingale, open **Integrations** → **Data sources** → **Add** and select **ClickHouse**. Enter a name and provide the ClickHouse **User** and **Password** for the read-only account. In **Nodes**, enter one `host:port` without a URL scheme or path. In **Associated alerting engine cluster**, select the cluster that runs the rule. Use `default` for a single-engine installation with the default configuration.
 
 <Tabs>
 <Tab title="ClickHouse Cloud" id="clickhouse-cloud">
@@ -56,20 +67,11 @@ Use the actual listener port if it differs. [Network ports](/guides/sre/network-
 </Tab>
 </Tabs>
 
-Test the connection when saving. Nightingale runs `SHOW DATABASES`. A successful connection check still requires the alert query to have access to its table.
-
-## Authentication and privileges {#authentication-and-privileges}
-
-Use a dedicated database user with a password over TLS. The ClickHouse data source form has no fields for client certificates or keys. Grant only `SELECT` on the table or view used by the rule. For the example, create the table below, then run these statements as a ClickHouse administrator. Replace the example password before running them.
-
-```sql
-CREATE USER nightingale_reader IDENTIFIED WITH sha256_password BY 'replace-with-a-strong-password';
-GRANT SELECT ON n9e_demo.requests TO nightingale_reader;
-```
-
-Use `nightingale_reader` in the data source. Run the example's `CREATE` and `INSERT` statements with a separate privileged account.
+Click **Save & test** to run the `SHOW DATABASES` connection check. Then use the rule editor's **Preview** to verify the account can read the target table and return the expected columns.
 
 ## Alert on recent HTTP errors {#alert-on-recent-http-errors}
+
+### Prepare the sample data {#prepare-the-sample-data}
 
 Create a table and add a baseline. The twelve old errors fall outside the rule's one-minute window. The recent `200` response is inside the window but does not count as an error.
 
@@ -91,6 +93,10 @@ SELECT now() - INTERVAL 2 MINUTE, 'checkout', 503 FROM numbers(12);
 INSERT INTO n9e_demo.requests VALUES (now(), 'checkout', 200);
 ```
 
+Create the [read-only user](#authentication-and-privileges) and [save its data source](#connect-nightingale-to-clickhouse) before creating the rule.
+
+### Build and preview the rule {#build-and-preview-the-rule}
+
 In **Alerts & Notifications** → **Alert rules**, add a rule in your business group. Choose **ClickHouse** as the data source type and select the data source you saved. Paste this SQL as query `A`.
 
 ```sql
@@ -103,7 +109,13 @@ WHERE requests.service = 'checkout'
   AND event_time <= now()
 ```
 
-Set **Value field** to `error_count` and the optional **Label field** to `service`. Preview the query to check that it returns one numeric value, `0`. Set the trigger expression to `$A.error_count >= 10`, with any severity, an evaluation interval of 15 seconds, and zero trigger and recovery delay. Keep the default recovery behavior. Enable the rule and wait for its first evaluation.
+In the query's auxiliary settings, set **Value field** to `error_count` and **Label field** to `service`. Click **Preview** and check that query `A` returns `0` with the label `service=checkout`.
+
+Set the trigger expression to `$A.error_count >= 10` and choose a severity. Set the evaluation interval to 15 seconds, use zero trigger and recovery delay, and keep the default recovery behavior. The interval controls when Nightingale runs the query. The `WHERE` clause sets the one-minute lookback window.
+
+### Verify firing and recovery {#verify-firing-and-recovery}
+
+Enable the rule and wait for an evaluation record showing `0`.
 
 Insert twelve recent errors using the privileged account.
 
@@ -118,15 +130,23 @@ In the Cloud test, Nightingale verified the data source when saving it. The sche
 
 Disable or delete the demo rule when finished. See [Nightingale's SQL-backed rules guide](https://n9e.io/docs/alerting/sql-rules) for rule settings.
 
+## Keep scheduled queries bounded {#keep-scheduled-queries-bounded}
+
+- Filter on a sorting or partition key where possible. In the example, the `WHERE` clause restricts both `service` and `event_time` to match the table's `ORDER BY` key.
+- Aggregate to one row per label set you want to evaluate. Return the numeric values and label columns the rule uses.
+- Measure query time with the same account and a representative time window before choosing an evaluation interval. For costly queries that need frequent evaluation, point the rule at a pre-aggregated table.
+
 ## Known limits {#known-limits}
 
 - In the open-source edition, the ClickHouse data source is available only in the SQL alert-rule editor.
 - Nightingale uses the first entry in **Nodes**. Point it at a service endpoint if your deployment needs failover.
+- The data source form supports password authentication only.
 - Use a finite scalar number for the value field. A complex value such as an array, tuple, or map cannot be compared directly. Aggregate it or extract a number in SQL. Values are converted to `Float64`, so very large integers can lose precision.
-- The default result limit is 500 rows. Nightingale first counts the rows in a subquery and rejects results above the configured cap. The Cloud check returned 500 points for a 500-row query and rejected a 501-row query. Keep the window bounded on a sorting or partition key and aggregate to a small result. A small result does not limit the amount of data ClickHouse reads.
+- The default result limit is 500 rows. Nightingale first counts the rows in a subquery and rejects results above the configured cap. The Cloud check returned 500 points for a 500-row query and rejected a 501-row query. Use the SQL predicates to bound how much data ClickHouse reads.
 
 ## Troubleshooting {#troubleshooting}
 
 - **Connection or TLS test fails.** Verify the protocol and listener port, the network path from Nightingale, and any Cloud IP filters. For certificate errors, verify the hostname and trust chain. Keep certificate verification enabled.
 - **Connection test succeeds but the query fails.** Check the table grant, use a fully qualified name such as `n9e_demo.requests`, and verify the SQL with the same read-only account.
-- **The rule does not fire or recover.** Inspect the rule's evaluation records. Check the time window, the exact alias in **Value field**, and the expression reference. A grouped query can return no rows when a group disappears. Return a zero for the same label if recovery should follow a comparison with zero.
+- **Preview succeeds but the rule has no evaluation records.** Check that the rule is enabled and the data source is associated with a running alerting engine cluster.
+- **The rule does not fire or recover as expected.** Inspect the rule's evaluation records for the query value and label. Check the time window, the exact alias in **Value field**, and the expression reference. A grouped query can drop a label when the group is absent. If that should keep the alert firing, select the **Recovery configuration** option that requires data and a trigger condition that is no longer met.
