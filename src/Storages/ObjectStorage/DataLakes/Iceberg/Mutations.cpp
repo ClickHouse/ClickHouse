@@ -81,6 +81,8 @@ extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 namespace DB::FailPoints
 {
 extern const char iceberg_writes_cleanup[];
+extern const char iceberg_mutation_lose_metadata_commit_request[];
+extern const char iceberg_mutation_lose_metadata_commit_response[];
 }
 
 namespace DB::Iceberg
@@ -319,29 +321,29 @@ static Poco::JSON::Object::Ptr addRowLineageFields(const Poco::JSON::Object::Ptr
 
 static void addRowLineageColumns(Block & data_block, const Block & source_block)
 {
+    const auto lineage_type = makeNullable(std::make_shared<DataTypeInt64>());
     const auto & source_row_ids = source_block.getByName(row_id_column).column;
-    auto row_ids = ColumnInt64::create();
-    auto & row_ids_data = row_ids->getData();
-    row_ids_data.reserve(source_row_ids->size());
+    auto row_ids = lineage_type->createColumn();
+    row_ids->reserve(source_row_ids->size());
     for (size_t row = 0; row < source_row_ids->size(); ++row)
     {
         if (source_row_ids->isNullAt(row))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg format-version 3 mutation read a row without _row_id");
-        row_ids_data.push_back(static_cast<Int64>(source_row_ids->getUInt(row)));
+            row_ids->insertDefault();
+        else
+            row_ids->insert(static_cast<Int64>(source_row_ids->getUInt(row)));
     }
-    data_block.insert(ColumnWithTypeAndName(std::move(row_ids), std::make_shared<DataTypeInt64>(), row_id_column));
+    data_block.insert(ColumnWithTypeAndName(std::move(row_ids), lineage_type, row_id_column));
 
-    const auto sequence_number_type = makeNullable(std::make_shared<DataTypeInt64>());
     data_block.insert(ColumnWithTypeAndName(
-        sequence_number_type->createColumnConstWithDefaultValue(source_row_ids->size())->convertToFullColumnIfConst(),
-        sequence_number_type,
+        lineage_type->createColumnConstWithDefaultValue(source_row_ids->size())->convertToFullColumnIfConst(),
+        lineage_type,
         last_updated_sequence_number_column));
 }
 
 static SharedHeader addRowLineageColumns(const SharedHeader & sample_block)
 {
     Block result = *sample_block;
-    result.insert(ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), row_id_column));
+    result.insert(ColumnWithTypeAndName(makeNullable(std::make_shared<DataTypeInt64>()), row_id_column));
     result.insert(ColumnWithTypeAndName(makeNullable(std::make_shared<DataTypeInt64>()), last_updated_sequence_number_column));
     return std::make_shared<const Block>(std::move(result));
 }
@@ -771,6 +773,7 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
             manifests_without_live_files.insert(manifest_index);
     }
     std::sort(position_deletes.begin(), position_deletes.end());
+    const auto position_deletes_by_data_file = groupPositionDeletesByDataFile(position_deletes);
 
     std::unordered_set<size_t> manifests_to_rewrite;
     for (auto & [path, positions] : positions_by_data_file)
@@ -783,17 +786,14 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
 
         auto object_info = std::make_shared<IcebergDataObjectInfo>(
             data_file, persistent_table_components.path_resolver.resolve(data_file_path), current_schema_id, std::vector<std::pair<String, Field>>{});
-        for (const auto & position_delete : defineDeletesSpan(data_file, position_deletes, /* is_equality_delete */ false, log))
+        auto add_position_delete = [&](const ProcessedManifestFileEntryPtr & position_delete)
         {
             const auto & delete_entry = *position_delete->parsed_entry;
-            if (!positionDeleteMayReferenceDataFile(delete_entry, data_file_path))
-                continue;
-
             const auto resolved_delete_path = persistent_table_components.path_resolver.resolve(delete_entry.file_path_key);
             if (delete_entry.isDeletionVector())
             {
                 if (delete_entry.referenced_data_file_path != data_file_path)
-                    continue;
+                    return;
                 object_info->addDeletionVector(position_delete, resolved_delete_path);
                 changes.data_files_with_replaced_vectors.insert(path);
                 changes.replaced_rows += delete_entry.record_count;
@@ -803,7 +803,17 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
             {
                 object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
             }
+        };
+
+        if (auto it = position_deletes_by_data_file.single_data_file.find(data_file_path);
+            it != position_deletes_by_data_file.single_data_file.end())
+        {
+            for (const auto & position_delete : defineDeletesSpan(data_file, it->second, /* is_equality_delete */ false, log))
+                add_position_delete(position_delete);
         }
+        for (const auto & position_delete : defineDeletesSpan(data_file, position_deletes_by_data_file.other, /* is_equality_delete */ false, log))
+            if (positionDeleteMayReferenceDataFile(*position_delete->parsed_entry, data_file_path))
+                add_position_delete(position_delete);
 
         if (object_info->info.hasPositionDeletes())
             positions |= readDeletedPositions(object_info, object_storage, format_settings, context);
@@ -897,7 +907,7 @@ static std::vector<DeleteManifestListEntry> writeDeletionVectorManifests(
             /* per_file_statistics */ {},
             /* data_file_sort_order_ids */ {},
             /* per_file_entry_lineage */ {},
-            /* schema_to_serialize */ nullptr,
+            persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id),
             /* per_file_fresh_statistics */ nullptr,
             locations);
         buffer->finalize();
@@ -1036,6 +1046,7 @@ static bool writeMetadataFiles(
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
     std::optional<String> statistics_file_path;
+    bool commit_outcome_unknown = false;
 
     auto cleanup = [object_storage, &delete_files, &data_files, deletion_vectors, &path_resolver, manifest_entries_in_storage,
                     storage_manifest_list_name, &statistics_file_path]()
@@ -1192,46 +1203,56 @@ static bool writeMetadataFiles(
                 updated_rows_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, path_resolver,
                 object_storage, context);
 
-        std::string json_representation = stringifyJSON(metadata, 4);
-
         fiu_do_on(FailPoints::iceberg_writes_cleanup,
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
         });
 
-        const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        if (!catalog_writes_metadata_file)
+        const auto read_latest_metadata = [&]
         {
-            if (!writeMetadataFileAndVersionHint(
-                    path_resolver,
-                    metadata_info,
-                    json_representation,
-                    hint_path,
-                    object_storage,
-                    context,
-                    use_version_hint))
-            {
-                cleanup();
-                return false;
-            }
-        }
+            const auto latest = getLatestMetadataFileAndVersionWithCatalog(
+                object_storage,
+                catalog,
+                table_id.getTableName(),
+                persistent_table_components.table_path,
+                data_lake_settings,
+                persistent_table_components.metadata_cache,
+                context,
+                getLogger("IcebergMutations").get(),
+                persistent_table_components.table_uuid,
+                persistent_table_components.metadata_compression_method,
+                /* ignore_metadata_pointer_overrides */ true);
+            return getMetadataJSONObject(
+                latest.path, object_storage, nullptr, context, getLogger("IcebergMutations"), latest.compression_method, std::nullopt);
+        };
 
-        if (catalog)
+        if (!commitMetadataFile(
+                path_resolver,
+                metadata_info,
+                hint_path,
+                metadata,
+                new_snapshot,
+                base_catalog_metadata_location,
+                catalog,
+                table_id,
+                use_version_hint,
+                read_latest_metadata,
+                {.lose_request = FailPoints::iceberg_mutation_lose_metadata_commit_request,
+                 .lose_response = FailPoints::iceberg_mutation_lose_metadata_commit_response},
+                "mutation",
+                commit_outcome_unknown,
+                object_storage,
+                context,
+                getLogger("IcebergMutations")))
         {
-            auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
-            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
-            {
-                if (!catalog_writes_metadata_file)
-                    removeRejectedMetadataFile(path_resolver, metadata_info, object_storage);
-                cleanup();
-                return false;
-            }
+            cleanup();
+            return false;
         }
     }
     catch (...)
     {
-        cleanup();
+        if (!commit_outcome_unknown)
+            cleanup();
         throw;
     }
     return true;

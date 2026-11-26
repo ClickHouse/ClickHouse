@@ -200,8 +200,11 @@ PositionDeletesByDataFile groupPositionDeletesByDataFile(const std::vector<Proce
     PositionDeletesByDataFile result;
     for (const auto & position_delete : position_deletes)
     {
-        const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
-        if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
+        const auto & entry = *position_delete->parsed_entry;
+        const auto & lower = entry.lower_reference_data_file_path;
+        if (entry.isDeletionVector() && entry.referenced_data_file_path.has_value())
+            result.single_data_file[*entry.referenced_data_file_path].push_back(position_delete);
+        else if (lower.has_value() && lower == entry.upper_reference_data_file_path)
             result.single_data_file[*lower].push_back(position_delete);
         else
             result.other.push_back(position_delete);

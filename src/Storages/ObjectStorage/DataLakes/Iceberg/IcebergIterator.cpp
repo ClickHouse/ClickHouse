@@ -508,7 +508,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         };
         if (suitable_position_deletes != 0)
         {
-            /// Both bounds are this data file path, so no bounds check is needed.
+            /// These deletes reference only this data file, so no bounds check is needed.
             if (auto it = position_deletes_by_data_file.single_data_file.find(data_file_path);
                 it != position_deletes_by_data_file.single_data_file.end())
             {
