@@ -21,18 +21,26 @@ SELECT 'uniform', round(sum(1 / bs)) < 70,
     sum(h) = (SELECT sum(cityHash64(s, u)) FROM t_pass_ratio_uniform WHERE s != '' SETTINGS optimize_move_to_prewhere = 0)
 FROM (SELECT blockSize() AS bs, cityHash64(s, u) AS h FROM t_pass_ratio_uniform PREWHERE s != '');
 
--- The rows that pass come in runs of 32 granules after 48 granules without them: the first read of a run stays bounded.
-CREATE TABLE t_pass_ratio_runs (id UInt64, f UInt8, s1 String, s2 String) ENGINE = MergeTree ORDER BY id
+-- With `f`, the rows that pass come in runs of 32 granules after 48 granules without them: the read after a read
+-- in which no row passed, which may start a run, is not scaled.
+-- With `f OR g`, one row of every granule passes too, so no read is fully filtered: the first read of a run stays bounded.
+CREATE TABLE t_pass_ratio_runs (id UInt64, f UInt8, g UInt8, s1 String, s2 String) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     ratio_of_defaults_for_sparse_serialization = 1, use_const_adaptive_granularity = 0, enable_block_number_column = 0,
     enable_block_offset_column = 0, string_serialization_version = 'single_stream';
-INSERT INTO t_pass_ratio_runs SELECT number, (number % 81920) >= 49152, leftPad(toString(number), 48, 'a'), leftPad(toString(number), 48, '-')
+INSERT INTO t_pass_ratio_runs SELECT number, (number % 81920) >= 49152, (number % 1024) = 0,
+    leftPad(toString(number), 48, 'a'), leftPad(toString(number), 48, '-')
 FROM numbers(327680);
 OPTIMIZE TABLE t_pass_ratio_runs FINAL;
 
-SELECT 'runs', max(bs) <= 8 * 2048,
+SELECT 'runs', max(bs) <= 4096,
     sum(h) = (SELECT sum(cityHash64(s1, s2)) FROM t_pass_ratio_runs WHERE f SETTINGS optimize_move_to_prewhere = 0)
 FROM (SELECT blockSize() AS bs, cityHash64(s1, s2) AS h FROM t_pass_ratio_runs PREWHERE f)
+SETTINGS preferred_block_size_bytes = 125000;
+
+SELECT 'runs after sparse matches', max(bs) <= 12288,
+    sum(h) = (SELECT sum(cityHash64(s1, s2)) FROM t_pass_ratio_runs WHERE f OR g SETTINGS optimize_move_to_prewhere = 0)
+FROM (SELECT blockSize() AS bs, cityHash64(s1, s2) AS h FROM t_pass_ratio_runs PREWHERE f OR g)
 SETTINGS preferred_block_size_bytes = 125000;
 
 -- The column of PREWHERE is wide and is not read later: the read stays within the preferred size.
