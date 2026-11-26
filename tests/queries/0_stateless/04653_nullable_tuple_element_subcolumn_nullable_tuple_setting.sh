@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # With the setting on, the whole tuple alternative is itself exposed as Nullable, while the requested
 # tuple element keeps its own Nullable. Both must be readable.
-${CLICKHOUSE_LOCAL} --allow_nullable_tuple_in_extracted_subcolumns=1 --enable_variant_type=1 --query "
+${CLICKHOUSE_LOCAL} --allow_nullable_tuple_in_extracted_subcolumns=1 --query "
 CREATE TABLE t_var (id UInt64, value Variant(Tuple(a Nullable(UInt32), b String), String)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_var VALUES (1, CAST(tuple(CAST(1, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
 INSERT INTO t_var VALUES (2, CAST(tuple(CAST(NULL, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));

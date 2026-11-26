@@ -1,0 +1,112 @@
+---
+slug: /clickstack/observability/managing/config
+title: '配置选项'
+description: '在全托管的 ClickHouse Observability 中管理服务访问权限、遥测source，以及 API 和 agent 连接。'
+keywords: ['ClickHouse Observability', '托管配置', 'source', 'Managed Telemetry']
+doc_type: 'guide'
+sidebarTitle: '配置选项'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Beta 版服务" />
+
+在 ClickHouse Observability 中打开 **团队设置**，即可管理数据访问、API 和 agent 连接、集成以及查询设置。以下各节与应用中的选项卡一一对应。数据摄取、schema、基础设施和扩缩容均由 ClickHouse 负责管理。
+
+## 数据 {#data}
+
+打开 **团队设置 → 数据**，即可查看您的source以及发送遥测数据所需的连接详情。
+
+### source {#datasource-settings}
+
+**source** 部分列出了您的 managed service 所提供的source：
+
+| source          | 数据           |
+| ------------ | ------------ |
+| **Logs**     | 日志事件         |
+| **Traces**   | 分布式链路追踪 span |
+| **Metrics**  | 指标数据         |
+| **Sessions** | 浏览器会话回放数据    |
+
+每个source都会显示其关联的只读连接，以及表名 (如适用) 。通过source右侧的开关可启用或禁用该source。禁用后，source的配置会被保留，但它将不再显示在source选择器中，也不会被自动选中。禁用不会停止遥测数据摄取，也不会删除已存储的数据。重新启用后，该source会再次出现在选择器中。
+
+### Managed Telemetry {#managed-telemetry}
+
+在 **source** 下方，**Managed Telemetry** 部分会显示存储和 OpenTelemetry 收集器的状态，以及向您的服务发送数据所需的连接详情。
+
+* 选择 **URL**、**Collector config** 或 **Env vars**，即可按所需格式查看连接详情。
+* 点击 **Copy connection details** 复制配置。如需查看已隐藏的凭证，请选择 **Reveal key**。
+* 点击 **Send a Test Log** 向服务发送一条样本日志。
+
+有关如何配置应用程序和采集器，请参阅 [摄取数据](/zh/clickstack/observability/ingesting-data/overview)。
+
+### IP 访问列表 {#ip-access-list}
+
+在 **Managed Telemetry** 下，通过 **IP 访问列表 → 编辑** 控制哪些 IP 地址或 CIDR 范围可以访问您的采集器端点。
+
+### 私有端点 {#private-endpoints}
+
+点击 **设置私有端点** 即可为采集器配置私有连接。对于 AWS 部署，此功能基于 AWS PrivateLink 实现。点击 **私有端点** 链接，可在 Cloud 控制台中打开该组织的私有端点。
+
+### 危险区域 {#service-settings}
+
+**Delete warehouse** 会删除可观测性仓库及其所有服务。系统会先删除只读服务，再删除主服务。请仅在不再需要该仓库或其数据时执行此操作。
+
+## 成员与角色 {#members-and-roles}
+
+打开 **团队设置 → 成员与角色**，即可查看 RBAC 角色以及新用户的默认角色。如需在 ClickHouse Cloud 中管理团队成员，请点击 **在控制台中管理**。详见 [基于角色的访问控制](/zh/clickstack/observability/managing/rbac)。
+
+## API 与 agent {#api-and-agents}
+
+打开 **团队设置 → API 与 agent**，即可管理摄取密钥、查找服务标识符、连接agent以及配置 AI 功能。
+
+### 摄取 API 密钥 {#ingestion-api-keys}
+
+**API 密钥** 部分会显示您的 **Team ID**、**服务 ID** 和摄取密钥。摄取密钥用于对发送到 OpenTelemetry 收集器的遥测数据进行身份验证。
+
+输入名称并选择 **Create key**，即可为某个 source 或环境签发密钥。每个现有密钥都提供 **Reveal key**、**Copy key**、**Freeze** 和 **Revoke** 操作。更改大约在一分钟内生效。
+
+另外，**Manage API 密钥** 链接会打开 ClickHouse Cloud 组织设置，用于管理调用管理 API 所用的密钥。
+
+### 连接agent {#connect-an-agent}
+
+在 **Connect your AI agents** 下，可通过 **Enable MCP for this service** 开启或关闭远程 MCP 服务器。选择您的客户端并复制为其生成的配置，该配置包含服务 ID，可确保agent的请求发送到您的服务。点击 **Manage sessions** 会打开 Cloud 控制台，供您查看 MCP 会话。云端 MCP 端点采用 OAuth 认证：客户端提示时，请使用您的 ClickHouse Cloud 账户登录。有关设置说明及已支持的客户端，请参阅[连接 MCP 客户端](/zh/clickstack/observability/mcp#managed-connecting-a-client)。
+
+### 使用 API {#use-the-api}
+
+使用 [ClickHouse Observability API](/zh/clickstack/observability/api-reference) 以编程方式管理仪表盘、告警及其他资源。API 请求采用 HTTP 基本身份验证，凭借 ClickHouse Cloud API 密钥 ID 和 secret 进行身份验证。有关所需权限及密钥配置，请参阅 [API 身份验证](/zh/clickstack/observability/api-reference#authentication)。
+
+这些 API 凭据与 **数据 → Managed Telemetry** 下的摄取 API key 相互独立。MCP 客户端使用 OAuth 进行身份验证，不使用上述任何一种 API key。
+
+### 导出到 Terraform {#export-to-terraform}
+
+**导出到 Terraform** 目前标记为 **Experimental**。选择要包含的资源类型，然后通过 **Download import file** 将其添加到 Terraform 项目中。UI 会提供使用 ClickHouse 提供商生成资源配置的命令。由平台托管的连接将导出为仅供引用的 locals。
+
+### 配置生成式 AI {#generative-ai}
+
+通过 **配置生成式 AI** 为该服务启用或禁用生成式 AI 功能，包括 Chart Explorer 中的 Chart AI 助手以及 [AI 笔记本](/zh/clickstack/observability/notebooks)。
+
+## 集成 {#integrations}
+
+打开 **团队设置 → 集成** 即可管理 Webhook。点击 **Add Webhook** 可添加用于发送告警通知的集成。有关告警配置的详细信息，请参阅 [告警](/zh/clickstack/observability/features/alerts)。
+
+## 查询设置 {#query-settings}
+
+打开 **团队设置 → 查询设置**，即可调整应用程序查询 ClickHouse 的方式。点击某个设置旁边的 **编辑** 即可修改。该选项卡在 UI 中标记为 **Experimental**。
+
+| 设置项                                   | 用途                                          |
+| ------------------------------------- | ------------------------------------------- |
+| **Search Row Limit**                  | 限制**搜索**页面及搜索类仪表板面板中每个查询返回的行数。              |
+| **Query Timeout (seconds)**           | 设置查询的最大执行时间。                                |
+| **Max Rows to Read (METADATA ONLY)**  | 限制元数据查询扫描的表行数。                              |
+| **Filter Keys Fetch Limit**           | 控制在**搜索**页面中点击 **More filters** 时拉取的过滤器键数量。 |
+| **Field Metadata Queries**            | 控制应用程序是否从 ClickHouse 拉取字段元数据。               |
+| **Parallelize Queries When Possible** | 允许符合条件的窗口化查询并行运行。这可能会提高 ClickHouse 的峰值负载。   |
+
+该选项卡还提供用于设置搜索直方图软性阻断阈值和搜索窗口时长的控件。点击 **Reset to default** 可将查询设置恢复为默认值。
+
+## 模式迁移 {#schema-migrations}
+
+打开 **团队设置 → 模式迁移**，即可查看迁移历史记录。
+
+有关自管理 source 和 schema 设置，请参阅 [自管理 source 和 schema 设置](/zh/clickstack/self-configured/managing/config)。

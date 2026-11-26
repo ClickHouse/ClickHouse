@@ -111,6 +111,8 @@ Uma política de linha é um filtro que define quais linhas ficam disponíveis p
 
 Uma política de linha é aplicada quando os dados da tabela são lidos localmente. Para uma tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed) ou outra tabela que delega a leitura a servidores remotos, defina a política nas tabelas subjacentes de cada servidor: uma política na própria tabela com dados remotos não pode ser aplicada à consulta enviada, e as leituras por meio dela são rejeitadas. Essa política em uma tabela subjacente não é aplicada quando o iniciador envia um plano de leitura já criado; portanto, mantenha [`serialize_query_plan = 0`](/pt-BR/reference/settings/session-settings/serialize#serialize_query_plan) para usuários cujas políticas de linha devem ser aplicadas (consulte a [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
+Uma política de linha filtra as linhas que uma consulta retorna, mas não oculta as contagens de linhas: metadados da tabela, como `total_rows` em [`system.tables`](/pt-BR/reference/system-tables/tables) e `rows` em [`system.parts`](/pt-BR/reference/system-tables/parts), e estatísticas de consulta, como [`EXPLAIN ESTIMATE`](/pt-BR/reference/statements/explain#explain-estimate), `read_rows` no progresso da consulta e o limite [`max_rows_to_read`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_to_read), podem incluir linhas ocultadas pela política.
+
 <Note>
   As políticas de linha só fazem sentido se você tiver acesso somente leitura. Se você puder modificar a tabela ou copiar partições entre tabelas, isso invalida as restrições das políticas de linha.
 </Note>

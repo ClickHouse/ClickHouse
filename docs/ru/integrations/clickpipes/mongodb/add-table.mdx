@@ -13,9 +13,7 @@ integration:
 
 В некоторых случаях полезно добавить в пайп определённые таблицы. По мере роста транзакционной или аналитической рабочей нагрузки это требуется всё чаще.
 
-<div id="add-tables-steps">
-  ## Шаги по добавлению определённых таблиц в ClickPipe
-</div>
+## Шаги по добавлению определённых таблиц в ClickPipe {#add-tables-steps}
 
 Это можно сделать следующим образом:
 
@@ -27,17 +25,13 @@ integration:
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
+  </Frame>
 </div>
 
 5. Нажмите update.
-6. После успешного обновления пайп последовательно перейдёт в статусы `Setup`, `Snapshot` и `Running`. Начальную загрузку таблицы можно отслеживать на вкладке **Tables**.
+6. После успешного обновления пайп последовательно перейдёт в статусы `Setup`, `Snapshot` и `Running`. Начальную загрузку таблицы можно отслеживать на вкладке **Таблицы**.
 
 <Info>
   CDC для существующих таблиц автоматически возобновится после завершения снимка новой таблицы.

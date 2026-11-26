@@ -1,0 +1,90 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-22
+title: '데모 데이 - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: '2026-05-22 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## ClickCannon 데이터 생성 업데이트 {#clickcannon-data-generation-update}
+
+*데모 진행자: [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon)은 ClickHouse 내부에서 용량 산정 작업에 사용하는 도구입니다. 대량의 OpenTelemetry 데이터를 생성하면서 여러 쿼리를 동시에 실행하여, 특정 수집 및 쿼리 워크로드에 고객이 필요로 하는 리소스를 추정합니다. OpenHouse에서 이 도구를 공식 발표했으며, Spencer가 최신 버전을 소개했습니다.
+
+이제 디스크에 데이터를 미리 준비해 둘 필요 없이 generator를 인라인으로 구성할 수 있습니다. generator를 활성화하고 스레드 수, 블록당 행 수, 전체 초당 행 수, 그리고 몇 가지 메모리 제약 조건만 설정하면 됩니다. 기존에는 2테라바이트에 달하는 테스트 데이터를 먼저 디스크에 준비해야 했기 때문에 도구를 공유하기 어려웠지만, 이제는 그럴 필요가 없습니다.
+
+앞으로 자체 용량 산정이 필요한 사용자에게 ClickCannon을 적극 안내할 예정입니다. 리포지토리는 [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon)에서 확인할 수 있습니다.
+
+## 전체 화면 타일용 날짜 입력 및 소스 범위 필터 {#date-input-for-full-screen-tiles-and-source-scoped-filters}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+서로 관련된 두 가지 대시보드 개선 사항이 함께 반영되었습니다. 이제 타일 하나를 전체 화면으로 표시하면, 대시보드 자체의 시간 범위와는 별도로 동작하는 전용 시간 선택기와 세분화 수준 셀렉터를 사용할 수 있습니다. 따라서 대시보드의 다른 타일을 모두 갱신하지 않고도 특정 메트릭 하나(예: ClickHouse 클러스터 대시보드의 차트 하나)의 장기 이력을 확대해 살펴볼 수 있습니다. 또한 이제 브라우저 탭 제목에 대시보드 이름이 표시됩니다.
+
+두 번째는 대시보드 필터의 소스 범위 지정 기능입니다. 필터를 모든 타일에 전역으로 적용하는 대신, 특정 소스를 기반으로 하는 타일에만 브로드캐스트되도록 제한할 수 있습니다. 예를 들어 로그와 trace를 함께 사용하는 혼합 소스 대시보드에서 필터가 관련 없는 타일에까지 적용되는 것을 막을 수 있습니다.
+
+**관련 풀 리퀘스트:** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: Minor dashboard improvements, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
+
+## lower(Body)에 정의된 텍스트 인덱스 인식 {#text-index-recognised-on-lower-body}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+대소문자를 구분하지 않는 검색의 정확성 문제를 바로잡은, 작지만 실질적인 수정 사항입니다. 소스에 전처리기 인수 없이 `lower(Body)`에 대한 텍스트 인덱스가 정의되어 있으면, 기존에는 쿼리 플래너가 `hasAllTokens(Body, ...)` 조건을 생성했습니다. 이 표현식이 인덱스 표현식과 일치하지 않았기 때문에 텍스트 인덱스가 사용되지 않았고, 쿼리는 스캔(Scan) 방식으로 실행되었습니다.
+
+이제는 인덱스 표현식과 일치하는 `hasAllTokens(lower(Body), ...)` 형태로 쿼리가 생성됩니다. 따라서 이와 같이 구성된 소스에서도 대소문자를 구분하지 않는 검색이 텍스트 인덱스를 통해 올바르게 가속됩니다.
+
+**관련 풀 리퀘스트:** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: support text index on lower(Body) with no preprocessor
+
+## 더 간편해진 이벤트 차이 사용 환경 {#simpler-event-deltas-experience}
+
+*데모 진행자: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+기존에는 이벤트 차이를 사용하려면 단계를 하나 더 거쳐야 했습니다. 히트맵에서 영역을 드래그하여 선택하기 전에 먼저 버튼을 클릭해 비교 모드로 전환해야 했습니다. 이제는 이 단계가 사라졌습니다. 페이지를 불러오자마자 분포 막대 차트가 표시되며, 히트맵에서 영역을 드래그하는 즉시 막대 차트가 선택 영역 대 배경 비교 모드로 전환됩니다. 선택 영역 바깥을 클릭하면 전체 스팬 보기로 돌아갑니다.
+
+이 변경 사항은 몇 주 전 OSS에 먼저 반영되었지만, Managed ClickStack에는 일부가 빠져 있었습니다. 이번에 이 공백을 메워 두 에디션 모두에서 동일하게 간편한 흐름을 사용할 수 있습니다.
+
+**관련 풀 리퀘스트:** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: always-on attribute distribution mode
+
+## 대시보드 목차 및 일괄 접기 {#dashboard-table-of-contents-and-bulk-collapse}
+
+*데모 진행자: [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+대시보드의 섹션이 몇 개를 넘어가면 탐색이 번거로워집니다. 섹션은 대규모 대시보드를 정리하는 수단이므로 섹션이 늘어나는 것 자체는 바람직합니다. Tom은 모든 섹션을 나열하고 원하는 섹션으로 바로 이동할 수 있는 목차를 오른쪽 사이드 패널에 추가했습니다. 또한 모든 섹션의 내용을 한 번에 숨길 수 있는 일괄 접기/펼치기 기능도 제공되므로, 긴 대시보드 전체를 스크롤하지 않고도 구조를 빠르게 훑어볼 수 있습니다.
+
+아직 초안 단계이지만, 기본 제공되는 ClickHouse 클러스터 및 Kubernetes 뷰의 다중 섹션 대시보드에서 이미 유용하게 쓰이고 있습니다.
+
+**관련 풀 리퀘스트:** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): add Table of Contents right rail with bulk collapse/expand
+
+## 세션(Sessions) 간 컬럼 크기 조정 상태 영구 저장 {#column-resize-persisted-across-sessions}
+
+*데모 진행자 [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+어제 한 고객이 결과 테이블에서 컬럼 크기를 조정하면 그 크기가 유지되어야 한다는 의견을 보내왔습니다. 이제 그렇게 동작합니다. 조정된 너비는 테이블 ID를 키로 하여 로컬 스토리지(local storage)에 저장되므로, 테이블마다 컬럼 레이아웃이 독립적으로 유지됩니다. 브라우저를 닫았다가 나중에 다시 열어도 컬럼은 마지막으로 설정한 상태 그대로 남아 있습니다. 또한 테이블에 컬럼을 추가하거나 제거해도 다른 컬럼의 너비는 초기화되지 않습니다.
+
+**관련 풀 리퀘스트:** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) fix: persist column widths in search results table

@@ -15,7 +15,7 @@ doc_type: 'reference'
 </Tip>
 
 <div id="modes">
-  ## Режимы
+  ## Режимы {#modes}
 </div>
 
 | значение | имя                | описание                                   |
@@ -34,7 +34,7 @@ doc_type: 'reference'
 | **lz4** 1.9.2     | 2.1         | 740 MB/s    | 4530 MB/s     |
 
 <div id="block">
-  ## Блок
+  ## Блок {#block}
 </div>
 
 | поле                | тип     | описание                                                                                   |
@@ -46,13 +46,9 @@ doc_type: 'reference'
 | compressed&#95;data | binary  | Блок сжатых данных                                                                         |
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Диаграмма, иллюстрирующая структуру блока сжатия ClickHouse](/images/data-compression/ch_compression_block.webp)
-
-</Frame>
-
+  <Frame>
+    ![Диаграмма, иллюстрирующая структуру блока сжатия ClickHouse](/images/data-compression/ch_compression_block.webp)
+  </Frame>
 </div>
 
 Заголовок имеет вид (raw&#95;size + data&#95;size + mode), а raw&#95;size равен len(header + compressed&#95;data).
@@ -60,7 +56,7 @@ doc_type: 'reference'
 Контрольная сумма вычисляется как `hash(header + compressed_data)` с использованием [ClickHouse CityHash](/ru/resources/develop-contribute/native-protocol/hash).
 
 <div id="none-mode">
-  ## Режим None
+  ## Режим None {#none-mode}
 </div>
 
 Если используется режим *None*, `compressed_data` совпадает с исходными данными.

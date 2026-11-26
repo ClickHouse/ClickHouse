@@ -113,13 +113,19 @@ To disable the split of `Resize` nodes, set this setting to 0. This will prevent
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "New setting: the minimum number of right-side rows for a hash join that would hash every left key, that is a key of an average length of more than 15 bytes, or of unknown length, without a runtime filter. `enable_packed_string_keys_in_hash_join` also needs a hash table larger than the L2 cache. 0 packs every join."}]}]}/>
 
-The minimum number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. A join whose right side is estimated at fewer rows compares its `String` keys exactly. The hash table of a small right side stays in the CPU cache, so packed keys save little there. Hashing the keys of 16 bytes or more costs more than that.
+A hash join whose right side has a row estimate packs its `String` keys (see `enable_packed_string_keys_in_hash_join`) only when the hash table with exact keys would be larger than about the L2 cache of the CPU, or when this setting is 0. The size of the table is the number of right-side rows times the bytes of one row: a cell of 32 bytes plus the average length of the key, which adds 0 when unknown. Smaller joins gain little from packed keys, and can be slower.
 
-The estimate is the number of right rows seen in an earlier run of the same join, when `collect_hash_table_stats_during_joins` keeps such statistics. Otherwise it is the row estimate of the query optimizer. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate uses packed keys.
+A packed key of more than 15 bytes is hashed for every row of the left side. A join with a runtime filter that passes mostly the rows with a match (see `enable_join_runtime_filters`) hashes only the rows that match, so it needs no minimum. Without such a filter, this setting is the minimum number of right-side rows. It applies when the average length of the key is more than 15 bytes, and when the length is unknown, because it then counts as long. The length is known from the `basic` column statistics of the key. `MergeTree` tables collect them by default, see `auto_statistics_types`.
 
-0 means no minimum.
+The key has no statistics when it is a column of a `Memory` table, the result of an aggregate function of a subquery, or the result of an expression in `ON`, such as `concat(k, 'x')` or `hex(k)`. A join with `OR` does not use them. A subquery that only passes the column on, or groups by it, keeps them.
+
+A `LEFT` join other than `SEMI` and `ANTI`, and a `FULL` join, keep all rows of their left side, so they get no runtime filter. The filter of a `LEFT ANTI` join passes the rows without a match, so it does not count.
+
+The number of rows is the right-side rows of an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate, which `parallel_hash_join_threshold` uses too. Without an optimizer estimate, it is the estimate of this server for its own read of the right table. A join with neither packs the keys, unless the server that planned the query estimated the right side below this minimum. Each server of a distributed query decides from its own estimate, statistics and cache size.
+
+0 packs the keys of every join.
 
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
