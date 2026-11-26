@@ -3802,7 +3802,7 @@ bool isSelfContainedConstantExpression(const QueryTreeNodePtr & node, const Iden
         return true;
 
     const auto * function_node = node->as<FunctionNode>();
-    if (!function_node || function_node->isWindowFunction() || scope.hasFunctionAlias(function_node->getFunctionName()))
+    if (!function_node || function_node->isWindowCall() || scope.hasFunctionAlias(function_node->getFunctionName()))
         return false;
 
     auto is_self_contained = [&](const QueryTreeNodePtr & child) { return isSelfContainedConstantExpression(child, scope); };
@@ -3901,7 +3901,7 @@ std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantCond
   */
 bool QueryAnalyzer::isLambdaCall(const FunctionNode & function_node, IdentifierResolveScope & scope)
 {
-    if (function_node.isWindowFunction())
+    if (function_node.isWindowCall())
         return false;
 
     return tryResolveIdentifier({Identifier{function_node.getFunctionName()}, IdentifierLookupContext::FUNCTION}, scope).isResolved();
