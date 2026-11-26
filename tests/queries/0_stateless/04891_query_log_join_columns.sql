@@ -7,6 +7,7 @@
 -- The algorithm is set explicitly wherever it is asserted, because the choice among the algorithms
 -- allowed by `join_algorithm` is made at run time and depends on the number of threads.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET log_queries = 1;
 -- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which changes which
 -- operators spill and so the `spilled_to_disk` list this test asserts on.

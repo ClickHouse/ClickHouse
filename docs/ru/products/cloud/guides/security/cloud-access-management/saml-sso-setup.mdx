@@ -45,13 +45,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
     Нажмите переключатель рядом с `Enable SAML single sign-on`. Оставьте этот экран открытым: в процессе настройки вам нужно будет несколько раз к нему возвращаться.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Начало настройки SAML](/images/cloud/security/saml-self-serve-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Начало настройки SAML](/images/cloud/security/saml-self-serve-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -68,13 +64,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
     </Tip>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Создание приложения провайдера идентификации](/images/cloud/security/saml-self-serve-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Создание приложения провайдера идентификации](/images/cloud/security/saml-self-serve-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -82,13 +74,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
     Получите `Metadata URL` у своего SAML-провайдера. Вернитесь в ClickHouse Cloud, нажмите `Next: Provide metadata URL` и вставьте URL в текстовое поле.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Добавьте URL метаданных](/images/cloud/security/saml-self-serve-3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Добавьте URL метаданных](/images/cloud/security/saml-self-serve-3.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -96,13 +84,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
     Нажмите `Next: Verify your domains`. Введите свой домен в текстовое поле и нажмите `Check domain`. Система сгенерирует случайный код подтверждения, который нужно добавить в TXT-запись у вашего DNS-провайдера.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Добавьте домен для подтверждения](/images/cloud/security/saml-self-serve-4.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Добавьте домен для подтверждения](/images/cloud/security/saml-self-serve-4.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -114,13 +98,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Подтвердите свой домен](/images/cloud/security/saml-self-serve-5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Подтвердите свой домен](/images/cloud/security/saml-self-serve-5.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -230,13 +210,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
     1. Перейдите в консоль администратора Google (admin.google.com).
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Google SAML App](/images/cloud/security/saml-google-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Google SAML App](/images/cloud/security/saml-google-app.webp)
+         </Frame>
        </div>
 
     2. Нажмите **Apps**, затем слева выберите **Web and mobile apps**.
@@ -292,13 +268,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
     5. Введите имя и выберите **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**, затем нажмите **Create**.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Приложение Azure не из коллекции](/images/cloud/security/saml-azure-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Приложение Azure не из коллекции](/images/cloud/security/saml-azure-app.webp)
+         </Frame>
        </div>
 
     6. Нажмите **Users and groups** слева и назначьте пользователей.
@@ -326,13 +298,9 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
         | (U) /identity/claims/name            | Omitted       | user.mail        |
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![Атрибуты и утверждения](/images/cloud/security/saml-azure-claims.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Атрибуты и утверждения](/images/cloud/security/saml-azure-claims.webp)
+          </Frame>
         </div>
 
     11. Скопируйте metadata URL и вернитесь к разделу [Добавить metadata URL в конфигурацию SAML](#add-metadata-url), чтобы продолжить.

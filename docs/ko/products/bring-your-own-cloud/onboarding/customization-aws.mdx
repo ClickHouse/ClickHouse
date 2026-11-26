@@ -4,11 +4,11 @@ slug: /cloud/reference/byoc/onboarding/customization-aws
 sidebarTitle: 'AWS 사용자 지정 설정'
 keywords: ['BYOC', '클라우드', 'bring your own cloud', '온보딩', 'AWS', 'VPC']
 description: '기존 AWS VPC에 ClickHouse BYOC를 배포'
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
 <div id="customer-managed-vpc-aws">
-  ## AWS용 고객 관리형 VPC(BYO-VPC)
+  ## AWS용 고객 관리형 VPC(BYO-VPC) {#customer-managed-vpc-aws}
 </div>
 
 ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용해 ClickHouse BYOC를 배포하려면 아래 단계를 따르십시오. 이 방식은 네트워크 구성에 대한 제어 범위를 넓혀 주며, ClickHouse BYOC를 기존 네트워크 인프라에 통합할 수 있도록 합니다.
@@ -21,23 +21,15 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     4. 각 서브넷에 `kubernetes.io/role/internal-elb=1` 및 `clickhouse-byoc="true"` 태그를 추가하여 로드 밸런서가 올바르게 구성되도록 합니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC VPC 서브넷](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC VPC 서브넷](/images/cloud/reference/byoc-subnet-1.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC VPC 서브넷 태그](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC VPC 서브넷 태그](/images/cloud/reference/byoc-subnet-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,13 +37,9 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     VPC에 S3 Gateway Endpoint가 아직 구성되어 있지 않다면, VPC와 Amazon S3 간의 안전한 프라이빗 통신을 위해 이를 생성해야 합니다. 이 엔드포인트를 사용하면 ClickHouse 서비스가 퍼블릭 인터넷을 거치지 않고 S3에 액세스할 수 있습니다. 예시 구성은 아래 스크린샷을 참고하십시오.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC S3 Endpoint](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC S3 Endpoint](/images/cloud/reference/byoc-s3-endpoint.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -81,7 +69,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
       ClickHouse 실행에 필요한 스토리지 버킷, Kubernetes 클러스터, 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 이러한 항목은 이후 단계에서 프로비저닝됩니다. VPC는 직접 제어하더라도, ClickHouse Cloud는 AWS 계정에서 Kubernetes 클러스터, 서비스 계정용 IAM 역할, S3 버킷 및 기타 필수 리소스를 생성하고 관리할 수 있는 IAM 권한이 여전히 필요합니다.
     </Note>
 
-#### Terraform 모듈
+#### Terraform 모듈 {#terraform-module-aws}
 
     CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
 
@@ -118,13 +106,9 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     5. **Set up Infrastructure**를 클릭하여 프로비저닝을 시작합니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Use existing VPC가 선택된 ClickHouse Cloud BYOC 설정 UI](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Use existing VPC가 선택된 ClickHouse Cloud BYOC 설정 UI](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+      </Frame>
     </div>
 
     <Note>

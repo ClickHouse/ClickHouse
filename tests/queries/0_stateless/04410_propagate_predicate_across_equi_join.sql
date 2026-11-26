@@ -1,4 +1,5 @@
 -- Tags: long
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET enable_join_runtime_filters = 0;
 -- The pass under test is randomized in CI; the arms below turn it off per query to get their
 -- reference, so the session value has to be on.

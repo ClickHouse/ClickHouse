@@ -1,6 +1,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/123756: with `use_aggregation_memory_tracker = 0` the two-level conversion of `GROUP BY` also counts the memory held by the rest of the query.
 
 SET max_threads = 1;
+-- The adaptive aggregator also takes one thread and does not convert to two-level by these thresholds.
+SET enable_adaptive_aggregator = 0;
 SET max_untracked_memory = 0;
 SET max_bytes_before_external_group_by = 1000000000;
 SET max_bytes_ratio_before_external_group_by = 0;

@@ -61,6 +61,8 @@ WHERE database = currentDatabase() AND table = 't_prune_in_table' ORDER BY mutat
 -- `ALIAS` columns against the storage, so the raw predicate mentions only the column name while the
 -- set is still evaluated twice. A bare table identifier is not a subquery node, so such a column
 -- definition passes the validation that rejects subqueries in column defaults.
+-- `max_replicated_mutations_in_queue = 0` keeps the `is_hit` mutations below pending even when the queue stop
+-- is lifted (a replica restart, a server restart): they hit https://github.com/ClickHouse/ClickHouse/issues/117276
 CREATE TABLE t_prune_in_table_alias
 (
     p UInt8,
@@ -70,7 +72,8 @@ CREATE TABLE t_prune_in_table_alias
     is_hit_stored UInt8 DEFAULT p IN t_prune_in_table_keys
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_in_table_alias', 'r1')
-PARTITION BY p ORDER BY x;
+PARTITION BY p ORDER BY x
+SETTINGS max_replicated_mutations_in_queue = 0;
 
 -- The stored column is written explicitly: evaluating a deferred set in a column default on insert
 -- is a separate problem, https://github.com/ClickHouse/ClickHouse/issues/117276
@@ -107,7 +110,8 @@ CREATE TABLE t_prune_in_table_sub
     t_prune_in_table_sub Tuple(is_hit UInt8) ALIAS tuple(p IN t_prune_in_table_keys)
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_in_table_sub', 'r1')
-PARTITION BY p ORDER BY x;
+PARTITION BY p ORDER BY x
+SETTINGS max_replicated_mutations_in_queue = 0;
 
 INSERT INTO t_prune_in_table_sub VALUES (1, 1), (2, 2);
 
