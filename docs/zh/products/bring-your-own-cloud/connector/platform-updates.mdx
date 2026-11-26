@@ -29,23 +29,19 @@ executor 绝不会应用未经你批准的支持包。若某次平台同步缺�
 ## 批准平台更新 {#approve-a-platform-update}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse 连接器平台审批流程](/images/cloud/reference/byoc-connector-platform-approval.svg)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse 连接器平台批准流程](/images/cloud/reference/byoc-connector-platform-approval.svg)
+  </Frame>
 </div>
 
 ### Registry 凭证 {#registry-credentials}
 
-Registry 身份验证方式取决于为你的环境注册的镜像分发模式：
+Registry 身份验证方式取决于为您的环境注册的镜像分发模式：
 
-* **直接访问 ClickHouse 的 registry。** 在连接器的 EC2 VM 上执行批准。`approve` 与 executor 的平台同步都会使用来自 EC2 instance metadata 服务的凭证，assume 你所在环境的只读 ECR puller role。该 role 用于登录 chart registry；executor 还会用它 check 平台镜像是否存在。工作站上的 AWS profiles、环境凭证或 SSO 凭证均无法替代 instance profile。用于应用 权限部分 的 cluster-admin 凭证仍由你的 kubeconfig 单独提供。
-* **Charts 位于其他 ECR registry，包括你自建的 mirror。** Chart 登录使用运行 `approve` 或 executor 的进程所具备的 ambient AWS 凭证，这些凭证必须有权读取该 registry。
+* **直接访问 ClickHouse 的 registry。** 请在连接器所在的 EC2 VM 上执行批准操作。`approve` 和 executor 的平台同步都会使用 EC2 实例元数据服务提供的凭证，代入您环境中的只读 ECR 拉取角色。该角色用于登录 chart registry；executor 还会借助它检查平台镜像是否存在。工作站上的 AWS 配置档、环境变量凭证或 SSO 凭证均无法替代实例配置文件。应用权限部分所需的 cluster-admin 凭证仍由您的 kubeconfig 单独提供。
+* **Chart 位于其他 ECR registry 中 (包括您自己的 mirror) 。** 登录 chart registry 时，使用的是运行 `approve` 或 executor 的进程所具有的环境隐式 AWS 凭证。这些凭证必须具备该 registry 的读取权限。
 
-只有在启用了 Kubernetes 平台批准的 mirror registry 部署中，才需要使用下面的 Kubernetes 工作站流程。若采用直接访问方式，请先联系你的客户团队，确认执行环境受支持并具备所需的 EC2 instance profile。
+下方的 Kubernetes 工作站操作流程仅适用于已启用 Kubernetes 平台批准、且使用镜像 registry 的部署。如需直接访问，请先联系您的客户团队，确认是否具备配有所需 EC2 实例配置文件的受支持执行环境。
 
 <Steps>
   <Step title="查找已暂存的支持包" id="find-the-staged-bundle">

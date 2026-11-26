@@ -14,15 +14,14 @@ doc_type: 'reference'
 
 ```sql
 ntile (buckets)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+  OVER ([[PARTITION BY grouping_column] ORDER BY sorting_column] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] ORDER BY sorting_column)
 ```
 
-参数 `buckets` 必须是一个常量正整数。
+对于每个分区，ntile 使用该分区按窗口顺序排列的第一行中的正整数桶数；后续行的值将被忽略
 
-必须指定 `ORDER BY` 子句。窗口帧必须覆盖整个分区 (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`) ；如果未显式指定，默认使用的也是这个窗口帧。
+必须指定 `ORDER BY` 子句。该函数始终读取整个分区；如果指定了窗口帧，则会被忽略。
 
 有关窗口函数语法的更多信息，请参见：[Window Functions - Syntax](/zh/reference/functions/window-functions/index#syntax)。
 

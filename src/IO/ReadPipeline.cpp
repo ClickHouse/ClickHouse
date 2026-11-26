@@ -19,6 +19,7 @@
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
 #include <IO/FileEncryptionCommon.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
@@ -852,8 +853,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
 {
     /// -- Stage 6: Decryption (may have multiple layers for double encryption) --
 #if USE_SSL
+    const size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
+
     /// Bound the source before reading the headers. Every encryption layer adds a header in front of the data it wraps.
-    size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
     /// Bounding the header reads to the headers keeps a filesystem cache below from creating a segment for the header
     /// read that spans the range (it aligns segments outward to its boundary). Without such a cache the bound would
     /// only change which bytes a request covers, not the caching, and a view's reads of one file share no stream: a
@@ -866,9 +868,21 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
         impl->setReadUntilPosition(headers_size);
         impl->setReadBounds(0, headers_size);
     }
-    else if (layers && !initial_read_bounds && initial_read_until_position)
+    else if (layers && initial_read_until_position)
     {
         impl->setReadUntilPosition(*initial_read_until_position + layers * FileEncryption::Header::kSize);
+    }
+
+    /// The header of a file never changes: the cache is only set for disks where every write creates a new blob, so it is
+    /// keyed by the blob path. With a cached header the source is not read here, and `ReadBufferFromEncryptedFile` moves it
+    /// past the header before its first read. Only for a single layer, whose header is at the front of the first blob, and
+    /// for a blob known to hold a header.
+    const String * header_cache_key = nullptr;
+    if (encryption_header_cache && layers == 1 && source && !source->objects.empty())
+    {
+        const auto & blob = source->objects.front();
+        if (!blob.remote_path.empty() && blob.bytes_size != StoredObject::UnknownSize && blob.bytes_size >= FileEncryption::Header::kSize)
+            header_cache_key = &blob.remote_path;
     }
 
     for (const auto & dec : decryption_stages)
@@ -876,15 +890,32 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
         if (!dec.key_finder)
             continue;
 
-        if (impl->eof())
+        FileEncryption::Header header;
+        if (header_cache_key)
+        {
+            /// Concurrent readers of a file wait for one of them to read its header, which is checked before it is cached.
+            String header_bytes = encryption_header_cache->getOrSet(*header_cache_key, [&]
+            {
+                String bytes(FileEncryption::Header::kSize, '\0');
+                impl->readStrict(bytes.data(), bytes.size());
+                ReadBufferFromString in(bytes);
+                header.read(in);
+                return bytes;
+            });
+            ReadBufferFromString in(header_bytes);
+            header.read(in);
+        }
+        else if (impl->eof())
         {
             /// Empty encrypted file — no header, return empty buffer.
             return std::make_unique<ReadBufferFromFileDecorator>(
                 std::make_unique<ReadBufferFromString>(std::string_view{}), dec.path);
         }
+        else
+        {
+            header.read(*impl);
+        }
 
-        FileEncryption::Header header;
-        header.read(*impl);
         auto key = dec.key_finder(header.key_fingerprint, dec.path);
 
         impl = std::make_unique<ReadBufferFromEncryptedFile>(

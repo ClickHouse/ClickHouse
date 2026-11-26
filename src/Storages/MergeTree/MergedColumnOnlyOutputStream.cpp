@@ -112,7 +112,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     for (const String & removed_file : removed_files)
     {
-        new_part->getDataPartStorage().removeFileIfExists(removed_file);
+        files_to_remove_after_finish.insert(removed_file);
         all_checksums.files.erase(removed_file);
     }
 
@@ -123,6 +123,10 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 void MergedColumnOnlyOutputStream::finish(bool sync)
 {
     writer->finish(sync);
+
+    /// Only after the writer finishes: a disk transaction registers a written file when its buffer is finalized.
+    for (const auto & file : files_to_remove_after_finish)
+        data_part_storage->removeFileIfExists(file);
 }
 
 void MergedColumnOnlyOutputStream::cancel() noexcept

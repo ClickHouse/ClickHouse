@@ -54,13 +54,9 @@ ClickHouse の浮動小数点型には、次の別名があります。
 
 テーブルの作成時には、浮動小数点数の数値パラメータを指定できます (例: `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`) が、ClickHouse はそれらを無視します。
 
-<div id="using-floating-point-numbers">
-  ## 浮動小数点数の使用
-</div>
+## 浮動小数点数の使用 {#using-floating-point-numbers}
 
 * 浮動小数点数を用いた計算では、丸め誤差が生じることがあります。
-
-{/* */}
 
 ```sql
 SELECT 1 - 0.9
@@ -74,15 +70,11 @@ SELECT 1 - 0.9
 * 浮動小数点計算では、無限大 (`Inf`) や「非数」(`NaN`) のような値になることがあります。計算結果を処理する際は、この点を考慮する必要があります。
 * テキストから浮動小数点数をパースする場合、結果がマシンで表現可能な最も近い数値にならないことがあります。
 
-<div id="nan-and-inf">
-  ## NaN と Inf
-</div>
+## NaN と Inf {#nan-and-inf}
 
 ClickHouse では、標準SQLとは異なり、次のカテゴリの浮動小数点数をサポートしています。
 
 * `Inf` – 無限大。
-
-{/* */}
 
 ```sql
 SELECT 0.5 / 0
@@ -94,8 +86,6 @@ SELECT 0.5 / 0
 
 * `-Inf` — 負の無限大。
 
-{/* */}
-
 ```sql
 SELECT -0.5 / 0
 
@@ -105,8 +95,6 @@ SELECT -0.5 / 0
 ```
 
 * `NaN` — 非数。
-
-{/* */}
 
 ```sql
 SELECT 0 / 0
@@ -118,9 +106,7 @@ SELECT 0 / 0
 
 `NaN` のソート規則については、[ORDER BY 句](/ja/reference/statements/select/order-by)のセクションを参照してください。
 
-<div id="nan-values-in-set-semantics">
-  ## 集合セマンティクスにおける NaN 値
-</div>
+## 集合セマンティクスにおける NaN 値 {#nan-values-in-set-semantics}
 
 IEEE 754 標準では、スカラー比較 `NaN = NaN` が `false` を返すように `NaN` が定義されています。
 ClickHouse も `=` 演算子ではこの規則に従います。
@@ -163,9 +149,7 @@ FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
 
 同じアプローチは、`DISTINCT`、`GROUP BY`、`JOIN` のキーにも適用できます。
 
-<div id="bfloat16">
-  ## BFloat16
-</div>
+## BFloat16 {#bfloat16}
 
 `BFloat16` は、8 ビットの指数と符号、および 7 ビットの仮数を持つ 16 ビット浮動小数点データ型です。
 機械学習や AI アプリケーションで役立ちます。

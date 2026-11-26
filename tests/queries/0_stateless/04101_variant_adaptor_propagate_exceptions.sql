@@ -3,7 +3,6 @@
 -- from FunctionVariantAdaptor instead of being incorrectly wrapped as LOGICAL_ERROR.
 -- See https://github.com/ClickHouse/ClickHouse/issues/93960
 
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 -- Path 1: Single variant type, no NULLs → castColumn for Variant result
