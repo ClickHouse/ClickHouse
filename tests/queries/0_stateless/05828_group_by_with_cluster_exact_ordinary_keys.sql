@@ -1,7 +1,7 @@
 -- Ordinary `GROUP BY` keys partition the clusters by their exact values, as in ordinary aggregation.
 -- `IColumn::compareAt` treats some distinct values as equal: aggregate function states (also inside
--- `Variant` and `Dynamic`), distinct NaN payloads, and `-0.0` / `+0.0`. Rows that differ in such keys
--- must not be merged into one cluster. Every query below has two exact partitions of one row each.
+-- `Variant` and `Dynamic`) and distinct NaN payloads. Rows that differ in such keys must not be merged
+-- into one cluster. Every query below has two exact partitions of one row each, except for the last section.
 
 SET enable_analyzer = 1;
 SET allow_experimental_group_by_with_cluster = 1;
@@ -19,10 +19,6 @@ GROUP BY g, number WITH CLUSTER 1 ORDER BY 1;
 
 SELECT min(x), count()
 FROM (SELECT reinterpretAsFloat64(toUInt64(9221120237041090561 + number)) AS g, number AS x FROM numbers(2))
-GROUP BY g, x WITH CLUSTER 1 ORDER BY 1;
-
-SELECT min(x), count()
-FROM (SELECT if(number = 0, -0.0, 0.0) AS g, number AS x FROM numbers(2))
 GROUP BY g, x WITH CLUSTER 1 ORDER BY 1;
 
 -- The same with `distance = 0` and with many rows per partition, which exercises bucket merging.
@@ -52,10 +48,6 @@ SELECT min(s), count()
 FROM (SELECT ['abc', 'abd'][number + 1] AS s, reinterpretAsFloat64(toUInt64(9221120237041090561 + number)) AS g FROM numbers(2))
 GROUP BY g, s WITH CLUSTER 1 ORDER BY 1;
 
-SELECT min(s), count()
-FROM (SELECT ['abc', 'abd'][number + 1] AS s, if(number = 0, -0.0, 0.0) AS g FROM numbers(2))
-GROUP BY g, s WITH CLUSTER 1 ORDER BY 1;
-
 SELECT '2D cluster key';
 
 SELECT min(x), count()
@@ -74,4 +66,13 @@ GROUP BY g, x WITH CLUSTER 1;
 
 SELECT min(s), count()
 FROM (SELECT ['abc', 'abd'][number + 1] AS s, CAST(initializeAggregation('sumState', 1::UInt64), 'Dynamic') AS g FROM numbers(2))
+GROUP BY g, s WITH CLUSTER 1;
+
+-- `-0.0` and `+0.0` are the same key in ordinary aggregation, so they are one partition here as well.
+SELECT min(x), count()
+FROM (SELECT if(number = 0, -0.0, 0.0) AS g, number AS x FROM numbers(2))
+GROUP BY g, x WITH CLUSTER 1;
+
+SELECT min(s), count()
+FROM (SELECT ['abc', 'abd'][number + 1] AS s, if(number = 0, -0.0, 0.0) AS g FROM numbers(2))
 GROUP BY g, s WITH CLUSTER 1;

@@ -24,21 +24,21 @@ public:
         children[1] = std::move(node);
     }
 
-    ASTPtr getClusterDistance() const
+    [[nodiscard]] ASTPtr getClusterDistance() const
     {
         if (children.size() > 1)
             return children[1];
         return {};
     }
 
-    ASTPtr getExpression() const
+    [[nodiscard]] ASTPtr getExpression() const
     {
         return children[0];
     }
 
-    String getID(char) const override { return "GroupByElement"; }
+    [[nodiscard]] String getID(char) const override { return "GroupByElement"; }
 
-    ASTPtr clone() const override
+    [[nodiscard]] ASTPtr clone() const override
     {
         auto res = make_intrusive<ASTGroupByElement>(*this);
         res->cloneChildren();

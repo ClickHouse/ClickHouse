@@ -515,7 +515,7 @@ protected:
 class ParserGroupByElement : public IParserBase
 {
 protected:
-    const char * getName() const override { return "element of GROUP BY expression"; }
+    [[nodiscard]] const char * getName() const override { return "element of GROUP BY expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

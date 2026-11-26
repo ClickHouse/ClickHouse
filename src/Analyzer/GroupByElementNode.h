@@ -16,7 +16,7 @@ class GroupByElementNode final : public IQueryTreeNode
 public:
     explicit GroupByElementNode(QueryTreeNodePtr expression_, bool with_cluster_ = false, Float64 cluster_distance_ = 0);
 
-    const QueryTreeNodePtr & getExpression() const
+    [[nodiscard]] const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
@@ -26,17 +26,17 @@ public:
         return children[expression_child_index];
     }
 
-    bool withCluster() const
+    [[nodiscard]] bool withCluster() const
     {
         return with_cluster;
     }
 
-    Float64 getClusterDistance() const
+    [[nodiscard]] Float64 getClusterDistance() const
     {
         return cluster_distance;
     }
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::GROUP_BY_ELEMENT;
     }
@@ -44,13 +44,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     static constexpr size_t expression_child_index = 0;

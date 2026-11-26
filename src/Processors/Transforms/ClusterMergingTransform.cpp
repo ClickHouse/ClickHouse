@@ -168,7 +168,7 @@ public:
         }
     }
 
-    bool equals(size_t a, size_t b) const
+    [[nodiscard]] bool equals(size_t a, size_t b) const
     {
         return positions.empty() || keys[a] == keys[b];
     }
@@ -181,7 +181,7 @@ public:
         hash.update(keys[row].data(), keys[row].size());
     }
 
-    int compare(size_t a, size_t b) const
+    [[nodiscard]] int compare(size_t a, size_t b) const
     {
         for (size_t pos : positions)
         {
@@ -565,7 +565,7 @@ Chunk ClusterMergingTransform::generate1D()
         }
 
         Chunk result(std::move(result_columns), result_rows);
-        finalizeChunk(result, aggregates_mask);
+        finalizeChunk(result, aggregates_mask, output.getHeader());
         return result;
     }
 
@@ -717,7 +717,7 @@ Chunk ClusterMergingTransform::generate1D()
     }
 
     Chunk result(std::move(result_columns), result_rows);
-    finalizeChunk(result, aggregates_mask);
+    finalizeChunk(result, aggregates_mask, output.getHeader());
     return result;
 }
 
@@ -1114,7 +1114,7 @@ Chunk ClusterMergingTransform::generate2D()
     }
 
     Chunk result(std::move(result_columns), result_rows);
-    finalizeChunk(result, aggregates_mask);
+    finalizeChunk(result, aggregates_mask, output.getHeader());
     return result;
 }
 
@@ -1176,7 +1176,7 @@ Chunk ClusterMergingTransform::generateString()
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
                 result_columns[col_idx]->insertFrom(*merged_columns[col_idx], i);
         Chunk result(std::move(result_columns), total_rows);
-        finalizeChunk(result, aggregates_mask);
+        finalizeChunk(result, aggregates_mask, output.getHeader());
         return result;
     }
 
@@ -1379,7 +1379,7 @@ Chunk ClusterMergingTransform::generateString()
     }
 
     Chunk result(std::move(result_columns), result_rows);
-    finalizeChunk(result, aggregates_mask);
+    finalizeChunk(result, aggregates_mask, output.getHeader());
     return result;
 }
 

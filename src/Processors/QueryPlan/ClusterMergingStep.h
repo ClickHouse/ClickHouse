@@ -21,7 +21,7 @@ public:
         Float64 cluster_distance_,
         size_t dimensions_);
 
-    String getName() const override { return "ClusterMerging"; }
+    [[nodiscard]] String getName() const override { return "ClusterMerging"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

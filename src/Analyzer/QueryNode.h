@@ -290,17 +290,17 @@ public:
         is_group_by_all = is_group_by_all_value;
     }
 
-    bool hasGroupByWithCluster() const
+    [[nodiscard]] bool hasGroupByWithCluster() const
     {
         return group_by_cluster_key_index >= 0;
     }
 
-    int getGroupByClusterKeyIndex() const
+    [[nodiscard]] int getGroupByClusterKeyIndex() const
     {
         return group_by_cluster_key_index;
     }
 
-    Float64 getGroupByClusterDistance() const
+    [[nodiscard]] Float64 getGroupByClusterDistance() const
     {
         return group_by_cluster_distance;
     }
@@ -312,7 +312,7 @@ public:
     }
 
     /// 1 — scalar key, 2 — inline `(x, y)` tuple (Euclidean clustering).
-    size_t getGroupByClusterDimensions() const { return group_by_cluster_dimensions; }
+    [[nodiscard]] size_t getGroupByClusterDimensions() const { return group_by_cluster_dimensions; }
     void setGroupByClusterDimensions(size_t dims) { group_by_cluster_dimensions = dims; }
 
     void setGroupByClusterKeyIndex(int key_index) { group_by_cluster_key_index = key_index; }

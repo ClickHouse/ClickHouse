@@ -21,7 +21,7 @@ public:
         Float64 cluster_distance_,
         size_t dimensions_);
 
-    String getName() const override { return "ClusterMergingTransform"; }
+    [[nodiscard]] String getName() const override { return "ClusterMergingTransform"; }
 
 protected:
     void consume(Chunk chunk) override;

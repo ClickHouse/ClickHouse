@@ -4898,7 +4898,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     /// lets the aggregation drop keys before clustering, which would silently produce a wrong
     /// result. Reject it instead of clustering a truncated set of groups. (The default trivial
     /// `GROUP BY ... LIMIT` optimization is disabled for `WITH CLUSTER` in
-    /// `OptimizeTrivialGroupByLimitPass` so it never reaches this cap implicitly.)
+    /// `getTrivialGroupByLimit` so it never reaches this cap implicitly.)
     if (query_node_typed.hasGroupByWithCluster()
         && scope.context->getSettingsRef()[Setting::max_rows_to_group_by] != 0
         && scope.context->getSettingsRef()[Setting::group_by_overflow_mode] != OverflowMode::THROW)
