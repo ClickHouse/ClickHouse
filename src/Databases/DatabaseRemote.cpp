@@ -412,7 +412,7 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                         local_tables = local_database->getLightweightTablesIterator(query_context);
                     else
                     {
-                        /// The name hints run inside the load job of a table, so they take the names
+                        /// The name hints can run inside the load job of a table, so they take the names
                         /// without waiting for the tables to load.
                         for (auto & table_name : local_database->getAllTableNames(query_context))
                             local_tables.emplace_back(LightWeightTableDetails{std::move(table_name)});
