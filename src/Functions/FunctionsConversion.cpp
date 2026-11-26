@@ -4016,7 +4016,6 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
 {
     try
     {
-        /// A failure here only means that there is no conversion, so it must not be recorded in `system.errors`.
         Exception::SuppressErrorCodesScope suppress_error_codes;
         /// We can avoid try/catch here if we will implement check that 2 types can be cast, but it
         /// requires quite a lot of work. By now let's simply use try/catch.
