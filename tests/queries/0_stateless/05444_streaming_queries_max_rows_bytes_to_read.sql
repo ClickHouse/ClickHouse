@@ -9,6 +9,7 @@ SET async_insert = 0, max_insert_threads = 1, max_block_size = 65505, max_insert
 DROP TABLE IF EXISTS t_stream_round_limits;
 DROP TABLE IF EXISTS t_stream_round_limits_partitioned;
 DROP TABLE IF EXISTS t_stream_round_limits_merged;
+DROP TABLE IF EXISTS t_stream_round_limits_result;
 
 CREATE TABLE t_stream_round_limits (k UInt64, ts DateTime DEFAULT toDateTime(k))
 ENGINE = MergeTree ORDER BY k
@@ -57,13 +58,18 @@ SELECT 'bytes 1', count(), min(k), max(k) FROM t_stream_round_limits STREAM BOUN
 SETTINGS max_bytes_to_read = 1;
 
 -- An unbounded stream reads all rows exactly once over several rounds.
-SELECT 'unbounded rows 30', count(), uniqExact(k), sum(k)
-FROM (SELECT k FROM t_stream_round_limits STREAM LIMIT 100)
-SETTINGS max_rows_to_read = 30;
+-- It does not support aggregation, so its rows are collected into a table first.
+CREATE TABLE t_stream_round_limits_result (k UInt64) ENGINE = Memory;
 
-SELECT 'unbounded bytes 1', count(), uniqExact(k), sum(k)
-FROM (SELECT k FROM t_stream_round_limits STREAM LIMIT 100)
+INSERT INTO t_stream_round_limits_result SELECT k FROM t_stream_round_limits STREAM LIMIT 100
+SETTINGS max_rows_to_read = 30;
+SELECT 'unbounded rows 30', count(), uniqExact(k), sum(k) FROM t_stream_round_limits_result;
+TRUNCATE TABLE t_stream_round_limits_result;
+
+INSERT INTO t_stream_round_limits_result SELECT k FROM t_stream_round_limits STREAM LIMIT 100
 SETTINGS max_bytes_to_read = 1;
+SELECT 'unbounded bytes 1', count(), uniqExact(k), sum(k) FROM t_stream_round_limits_result;
+TRUNCATE TABLE t_stream_round_limits_result;
 
 -- The tightest limit of the query and its parent queries applies.
 SELECT 'outer rows 30', count(), min(k), max(k)
@@ -86,9 +92,10 @@ SETTINGS max_bytes_to_read = 1;
 SELECT 'watermark rows 30', count(), min(k), max(k) FROM t_stream_round_limits STREAM BOUNDED WATERMARK FOR ts AS ts - INTERVAL 10 SECOND
 SETTINGS max_rows_to_read = 30;
 
-SELECT 'watermark unbounded rows 30', count(), uniqExact(k), sum(k)
-FROM (SELECT k FROM t_stream_round_limits STREAM WATERMARK FOR ts AS ts - INTERVAL 10 SECOND LIMIT 100)
+INSERT INTO t_stream_round_limits_result SELECT k FROM t_stream_round_limits STREAM WATERMARK FOR ts AS ts - INTERVAL 10 SECOND LIMIT 100
 SETTINGS max_rows_to_read = 30;
+SELECT 'watermark unbounded rows 30', count(), uniqExact(k), sum(k) FROM t_stream_round_limits_result;
+TRUNCATE TABLE t_stream_round_limits_result;
 
 DROP TABLE t_stream_round_limits;
 
@@ -124,14 +131,16 @@ SETTINGS max_rows_to_read = 30, max_threads = 4;
 SELECT 'partitioned rows 70', count(), uniqExact(_partition_id) FROM t_stream_round_limits_partitioned STREAM BOUNDED
 SETTINGS max_rows_to_read = 70, max_threads = 4;
 
-SELECT 'partitioned unbounded rows 30', count(), uniqExact(k), sum(k)
-FROM (SELECT k FROM t_stream_round_limits_partitioned STREAM LIMIT 100)
+INSERT INTO t_stream_round_limits_result SELECT k FROM t_stream_round_limits_partitioned STREAM LIMIT 100
 SETTINGS max_rows_to_read = 30, max_threads = 4;
+SELECT 'partitioned unbounded rows 30', count(), uniqExact(k), sum(k) FROM t_stream_round_limits_result;
+TRUNCATE TABLE t_stream_round_limits_result;
 
 -- With a watermark, a partition left out of a round is still read later.
-SELECT 'partitioned watermark unbounded rows 30', count(), uniqExact(k), sum(k)
-FROM (SELECT k FROM t_stream_round_limits_partitioned STREAM WATERMARK FOR ts AS ts - INTERVAL 10 SECOND LIMIT 100)
+INSERT INTO t_stream_round_limits_result SELECT k FROM t_stream_round_limits_partitioned STREAM WATERMARK FOR ts AS ts - INTERVAL 10 SECOND LIMIT 100
 SETTINGS max_rows_to_read = 30, max_threads = 4;
+SELECT 'partitioned watermark unbounded rows 30', count(), uniqExact(k), sum(k) FROM t_stream_round_limits_result;
+TRUNCATE TABLE t_stream_round_limits_result;
 
 DROP TABLE t_stream_round_limits_partitioned;
 
@@ -158,3 +167,4 @@ FROM t_stream_round_limits_merged STREAM BOUNDED CURSOR {'0': {'block_number': 2
 SETTINGS max_rows_to_read = 1;
 
 DROP TABLE t_stream_round_limits_merged;
+DROP TABLE t_stream_round_limits_result;
