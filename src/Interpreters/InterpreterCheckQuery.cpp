@@ -288,26 +288,35 @@ private:
     }
 
     /// `isMergeTree` loads a table that a database with `lazy_load_tables` has not loaded yet, also when it is
-    /// asked through an `Alias`. A user without the right to check the table must not be able to load it, so for
-    /// such a user the question is answered from the engine name, which the stand-in knows from the `CREATE`
-    /// query. A `MergeTree` table is still returned, and the check of it is denied before the table is loaded.
+    /// asked through an `Alias`. A user without the right to check the table must not be able to load it, and
+    /// checking through an `Alias` requires the right on every table of its chain. So when the chain ends in
+    /// a table that is not loaded and the user lacks the right on any table of the chain, the question is answered
+    /// from the engine name, which the stand-in knows from the `CREATE` query. A `MergeTree` table is still
+    /// returned, and the check of it is denied before the table is loaded.
     bool isMergeTree(StoragePtr table, const String & database_name, const String & table_name) const
     {
-        if (context->getAccess()->isGranted(AccessType::CHECK, database_name, table_name))
-            return table->isMergeTree();
+        const auto access = context->getAccess();
+        bool granted = access->isGranted(AccessType::CHECK, database_name, table_name);
 
-        for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+        table = resolveStorageProxy(table);
+        if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
         {
-            table = resolveStorageProxy(table);
-            if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()); proxy && proxy->isLazyStandIn())
-                return table->getName().ends_with("MergeTree");
+            const auto chain = alias->getTargetChain();
+            if (chain.empty())
+                return false;
+            for (const auto & [target_database, target_table] : chain)
+                granted = granted && access->isGranted(AccessType::CHECK, target_database, target_table);
 
-            const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
-            if (!alias)
-                return table->isMergeTree();
-            table = alias->tryGetTargetTable();
+            /// The last table of the chain is an `Alias` only if the chain is a cycle.
+            table = DatabaseCatalog::instance().tryGetTable(StorageID(chain.back().first, chain.back().second), context);
+            if (!table || dynamic_cast<const StorageAlias *>(table.get()))
+                return false;
+            table = resolveStorageProxy(table);
         }
-        return false;
+
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()); proxy && proxy->isLazyStandIn() && !granted)
+            return table->getName().ends_with("MergeTree");
+        return table->isMergeTree();
     }
 
     DatabasePtr getNextDatabase()
