@@ -481,11 +481,11 @@ static IQueryPlanStep * findReadingStep(QueryPlan::Node & node, StepStack & back
 /// -> id -> __table1.id` chain that merged projections build over `SELECT * FROM (SELECT * FROM t)`.
 static bool hasShadowedInputNameCrossingSplit(const ActionsDAG & dag)
 {
-    std::unordered_set<std::string_view> input_names;
+    UnorderedSetWithMemoryTracking<std::string_view> input_names;
     for (const auto * input : dag.getInputs())
         input_names.insert(input->result_name);
 
-    std::unordered_set<const ActionsDAG::Node *> shadowing_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> shadowing_nodes;
     for (const auto & node : dag.getNodes())
         if (node.type != ActionsDAG::ActionType::INPUT && input_names.contains(node.result_name))
             shadowing_nodes.insert(&node);
