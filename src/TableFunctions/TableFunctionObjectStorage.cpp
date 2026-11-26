@@ -352,7 +352,10 @@ class TableFunctionGCS : public TableFunctionObjectStorage<GCSDefinition, Storag
 public:
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override
     {
-        if (context->getSettingsRef()[Setting::use_native_gcs])
+        /// A replayed stored definition (`CREATE TABLE ... AS gcs(...)`) always uses the S3-compatibility backend: a new
+        /// one cannot be created with `use_native_gcs` (see `checkCanBeUsedToCreateTable`), so it was created on that
+        /// backend, and the setting of the session that attaches it must not change the backend.
+        if (context->getSettingsRef()[Setting::use_native_gcs] && !arguments_from_stored_definition)
         {
 #if USE_GOOGLE_CLOUD
             configuration = std::make_shared<StorageGCSConfiguration>();
@@ -373,7 +376,7 @@ public:
     /// it is chosen again by `use_native_gcs` of the session that attaches it, or of the server on startup, so a native
     /// table would turn into an S3-compatibility one (another API and other credentials). Refuse to create one, as
     /// `ENGINE = GCS` stays on the S3-compatibility backend for the same reason. A stored definition is not refused: it
-    /// was created without the setting.
+    /// was created without the setting, and it is attached on the S3-compatibility backend whatever the setting is.
     void checkCanBeUsedToCreateTable(const ContextPtr & context) const override
     {
         if (!arguments_from_stored_definition && context->getSettingsRef()[Setting::use_native_gcs])
