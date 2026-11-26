@@ -1251,14 +1251,14 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & columns) co
 
 bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
 {
+    /// disallow arrayJoin expressions to be moved to PREWHERE for now
+    if (node.getArrayJoinArgument())
+        return true;
+
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
         auto function_name = function_node.getFunctionName();
-
-        /// disallow arrayJoin expressions to be moved to PREWHERE for now
-        if (function_name == "arrayJoin")
-            return true;
 
         /// Disallow GLOBAL IN conditions from being moved to PREWHERE.
         /// GLOBAL IN sets are populated via external tables attached by `ReadFromRemote`;
