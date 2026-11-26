@@ -248,8 +248,7 @@ endif()
 # Provides faster linking and lower binary size.
 # Tradeoff is the inability to debug some source files with e.g. gdb
 # (empty stack frames and no local variables).
-# In Release builds (which have no debug info by default), this option has
-# no effect -- it only reduces debug info for RelWithDebInfo and MinSizeRel.
+# It has no effect in builds without debug info (Release, MinSizeRel, DISABLE_ALL_DEBUG_SYMBOLS).
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
@@ -445,9 +444,14 @@ endif()
 # every `src/` library plus the libFuzzer and Address Sanitizer runtimes into one image already just
 # under the 2 GiB reach of `R_X86_64_PC32`, which the extra prologues push over; the fuzzers are never
 # shipped, and Address Sanitizer reports stack buffer overflows earlier and in more detail than an abort.
+# The Rust crates get the same canaries (see contrib/corrosion-cmake).
 if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+    list (APPEND RUSTFLAGS_ADD "-Zstack-protector=strong")
 endif()
+
+# Rust wraps integer overflow silently in release builds; panic instead, which the FFI boundaries catch.
+list (APPEND RUSTFLAGS_ADD "-C" "overflow-checks=yes")
 
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
@@ -521,6 +525,13 @@ if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
 endif()
 
+# OMIT_HEAVY_DEBUG_SYMBOLS gives the heavy targets -g1, which comes after the build type's flags. In a build
+# without debug info (Release, MinSizeRel, DISABLE_ALL_DEBUG_SYMBOLS) that would add line tables instead.
+if (OMIT_HEAVY_DEBUG_SYMBOLS AND (DISABLE_ALL_DEBUG_SYMBOLS
+    OR NOT (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")))
+    set (OMIT_HEAVY_DEBUG_SYMBOLS OFF)
+endif ()
+
 if (OS_DARWIN)
     # On Darwin the optimizatiosns to reduce the debug size are off by default. `-fno-standalone-debug` enables them
     set (DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -fno-standalone-debug")
@@ -551,6 +562,7 @@ if (DISABLE_OMIT_FRAME_POINTER)
     set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
+    list (APPEND RUSTFLAGS_ADD "-C" "force-frame-pointers=yes")
 endif()
 
 # Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
@@ -647,6 +659,13 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
         # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
+        # lld caches the native object of each ThinLTO backend job, so a later link optimizes only the modules whose inputs changed.
+        option (ENABLE_THINLTO_CACHE "Cache the ThinLTO backend results of lld between links" ON)
+        set (THINLTO_CACHE_DIR "${CMAKE_BINARY_DIR}/thinlto-cache" CACHE PATH "Directory of the ThinLTO cache")
+        if (ENABLE_THINLTO_CACHE)
+            # lld removes the least recently used entries above this size after each link.
+            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--thinlto-cache-dir=${THINLTO_CACHE_DIR} -Wl,--thinlto-cache-policy=prune_interval=0s:cache_size_bytes=40g")
+        endif ()
     endif()
 
     if (ENABLE_CFI)
@@ -943,9 +962,10 @@ if (ENABLE_RUST)
     endif()
 endif()
 
+# $CACHE{}: the option is shadowed to OFF above in builds without debug info.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
     AND NOT SANITIZE AND NOT ENABLE_FUZZING
-    AND OMIT_HEAVY_DEBUG_SYMBOLS AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
+    AND $CACHE{OMIT_HEAVY_DEBUG_SYMBOLS} AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT OFF)
