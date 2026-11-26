@@ -24,7 +24,7 @@ SELECT 'old analyzer', count()
 FROM direct_any_inner_fact AS f ANY INNER JOIN direct_any_inner_dict AS d ON f.id = d.id
 SETTINGS enable_analyzer = 0, join_algorithm = 'direct,hash';
 
-SELECT 'new analyzer', count()
+SELECT 'analyzer', count()
 FROM direct_any_inner_fact AS f ANY INNER JOIN direct_any_inner_dict AS d ON f.id = d.id
 SETTINGS enable_analyzer = 1, join_algorithm = 'direct,hash';
 
