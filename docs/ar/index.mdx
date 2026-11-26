@@ -257,7 +257,7 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-      /* شريط Integrations: حدود بلون مميز في كلا الوضعين */
+      /* شريط التكاملات: حدود بلون مميز في كلا الوضعين */
       html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
       html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
       .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
@@ -403,7 +403,7 @@ export const PageWrapper = ({ children }) => {
 
         <HeroCard title="مستودعات البيانات" galaxyEvent="docs.home.data-warehousing" description="حلّل البيانات واستكشفها فورًا لاستخراج الرؤى وتشغيل التطبيقات. توسّع أسرع عبر نقل أعباء العمل الثقيلة." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="التحليلات المعتمدة على الوكلاء" galaxyEvent="docs.home.agentic-analytics" description="اسمح لوكلاء الذكاء الاصطناعي بالاستعلام مباشرة عن بياناتك اللحظية لتقديم رؤى فورية وحوارية وتصوّرات مرئية" href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="الوكلاء" galaxyEvent="docs.home.agentic-analytics" description="اسمح لوكلاء الذكاء الاصطناعي بالاستعلام مباشرة عن بياناتك اللحظية لتقديم رؤى فورية وحوارية وتصوّرات مرئية" href={localizeHref("/agents")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
@@ -442,7 +442,7 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="حزمة observability متكاملة all in one ومدعومة من ClickHouse، تمنحك استعلامات فائقة السرعة وaggregations قوية على logs وmetrics وtraces وsession replay والأخطاء." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="حزمة observability متكاملة all in one ومدعومة من ClickHouse، تمنحك استعلامات فائقة السرعة وaggregations قوية على logs وmetrics وtraces وsession replay والأخطاء." href={localizeHref("/clickstack/observability/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
             <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="خدمة Postgres سريعة وقابلة للتوسّع وبمستوى المؤسسات، ومتكاملة أصلاً مع ClickHouse. اجمع بسهولة بين Postgres للمعاملات وClickHouse من أجل analytics." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>

@@ -47,4 +47,3 @@
 2	3	7	2	7	3
 -- FILTER agrees with the -If combinator
 0	0	3000
--- FILTER is only for aggregates

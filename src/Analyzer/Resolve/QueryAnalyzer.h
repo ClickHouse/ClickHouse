@@ -15,6 +15,7 @@
 
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -164,6 +165,7 @@ private:
 
     bool copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);

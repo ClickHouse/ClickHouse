@@ -1,0 +1,25 @@
+---
+slug: /clickstack/observability/migration/elastic
+title: 'Elastic에서 ClickHouse Observability로 마이그레이션'
+sidebarTitle: '개요'
+description: 'Elastic Stack에서 완전 관리형 ClickHouse Observability로 마이그레이션하는 방법을 안내합니다. 자가 관리형 배포에 대한 지침은 별도로 제공합니다.'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'landing-page'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="베타 제공" />
+
+Elastic Stack에서 권장 기본 환경인 **완전 관리형 ClickHouse Observability**로의 마이그레이션(migration)을 계획하십시오. 먼저 소개와 검색 비교를 살펴본 다음 데이터, 에이전트, SDK 마이그레이션 가이드를 차례로 따르십시오. 단계가 다른 부분에서는 자가 관리형 배포에 해당하는 자가 관리형 탭을 참고하십시오.
+
+| 섹션                                                                          | 설명                                                      |
+| --------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [소개](/ko/clickstack/observability/migration/elastic/intro)                     | 마이그레이션 시 고려 사항 및 플랫폼 간 차이점                              |
+| [검색](/ko/clickstack/observability/migration/elastic/search)                    | 검색 쿼리 변환 및 스키마와 결측 필드 관련 차이점 이해                         |
+| [데이터 마이그레이션](/ko/clickstack/observability/migration/elastic/migrating-data)    | 병렬 수집, 보존 기간 및 과거 데이터 마이그레이션 계획                         |
+| [에이전트 마이그레이션](/ko/clickstack/observability/migration/elastic/migrating-agents) | Beats, Elastic Agent 또는 OpenTelemetry 수집기의 마이그레이션 경로 선택 |
+| [SDK 마이그레이션](/ko/clickstack/observability/migration/elastic/migrating-sdks)    | 애플리케이션 instrumentation을 Elastic APM에서 OpenTelemetry로 이전 |
+
+완전 관리형 ClickHouse Observability는 기반 스키마(schemas)와 스토리지 구성을 자동으로 관리합니다. 이러한 내부 구성 요소를 직접 관리하는 경우 [동등한 개념](/ko/clickstack/self-configured/migration/elastic/concepts)과 [타입 매핑(type mapping)](/ko/clickstack/self-configured/migration/elastic/types)을 검토하십시오.

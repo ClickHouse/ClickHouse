@@ -36,7 +36,7 @@ Contiene información sobre todos los ajustes de la caché del sistema de archiv
 * `invalidated_entries_cleanup_interval_ms` ([UInt64](/es/reference/data-types/int-uint)) — Intervalo de inactividad, en milisegundos, de la tarea en segundo plano que purga las entradas invalidadas (eliminadas de forma diferida) de la cola de prioridad
 * `invalidated_entries_cleanup_threshold` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas invalidadas acumuladas en la cola de prioridad que desencadena su eliminación en segundo plano
 * `invalidated_entries_cleanup_remove_batch` ([UInt64](/es/reference/data-types/int-uint)) — Número máximo de entradas invalidadas de la cola de prioridad que se eliminan con un único bloqueo de escritura por iteración en segundo plano
-* `enable_filesystem_query_cache_limit` ([UInt8](/es/reference/data-types/int-uint)) — Habilita la limitación del tamaño máximo de la caché que puede escribirse durante una consulta
+* `enable_filesystem_query_cache_limit` ([UInt8](/es/reference/data-types/int-uint)) — Configuración obsoleta, ignorada. Se eliminó el límite de escritura en la caché por consulta
 * `cache_hits_threshold` ([UInt64](/es/reference/data-types/int-uint)) — Configuración obsoleta
 * `enable_bypass_cache_with_threshold` ([UInt8](/es/reference/data-types/int-uint)) — Sin documentar. No se recomienda su uso
 * `bypass_cache_threshold` ([UInt64](/es/reference/data-types/int-uint)) — Sin documentar. No se recomienda su uso
