@@ -1,0 +1,29 @@
+| s | n | l | ln | nn |
+|:-|:-|:-|:-|:-|
+| a\|b\*c | a\|b\*c | a\|b\*c | a\|b\*c | \N |
+| v | d | d_shared | nf | ne | nb |
+|:-|:-|:-|:-|:-|:-|
+| a\|b\*c | a\|b\*c | a\|b\*c | a\|b | a\|b | true |
+id	Default
+s	Sparse
+| s |
+|:-|
+|  |
+| a\|b\*c |
+| a\|b\*c |
+| s |
+|:-|
+|  |
+| a\|b\*c |
+| a\|b\*c |
+| s | a |
+|:-|-:|
+| a\|b\*c | 1 |
+| a\|b\*c | 2 |
+| s | a |
+|:-|-:|
+| a\|b\*c | 1 |
+| a\|b\*c | 2 |
+| n | l | v | d |
+|:-|:-|:-|:-|
+| a|b*c | a|b*c | a|b*c | a|b*c |

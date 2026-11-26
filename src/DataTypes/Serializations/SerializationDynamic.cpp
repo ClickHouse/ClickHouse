@@ -1397,6 +1397,21 @@ void SerializationDynamic::serializeTextXML(const IColumn & column, size_t row_n
     serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
+void SerializationDynamic::serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    {
+        serialization.serializeTextMarkdown(col, row, buf, settings);
+    };
+
+    auto serialize_null = [&settings](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullEscaped(buf, settings);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
+}
+
 SerializationPtr SerializationDynamic::createSerializationForType(const DataTypePtr & type) const
 {
     return type->getSerialization(serialization_info_settings);

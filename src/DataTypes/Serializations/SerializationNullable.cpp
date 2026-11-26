@@ -328,6 +328,16 @@ void SerializationNullable::serializeTextRaw(const IColumn & column, size_t row_
         nested->serializeTextRaw(col.getNestedColumn(), row_num, ostr, settings);
 }
 
+void SerializationNullable::serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    if (col.isNullAt(row_num))
+        serializeNullEscaped(ostr, settings);
+    else
+        nested->serializeTextMarkdown(col.getNestedColumn(), row_num, ostr, settings);
+}
+
 void SerializationNullable::serializeNullRaw(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
 {
     writeString(settings.tsv.null_representation, ostr);

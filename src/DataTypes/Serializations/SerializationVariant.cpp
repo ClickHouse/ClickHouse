@@ -1477,6 +1477,16 @@ void SerializationVariant::serializeTextXML(const IColumn & column, size_t row_n
         variant_serializations[global_discr]->serializeTextXML(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
 }
 
+void SerializationVariant::serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
+    auto global_discr = col.globalDiscriminatorAt(row_num);
+    if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        SerializationNullable::serializeNullEscaped(ostr, settings);
+    else
+        variant_serializations[global_discr]->serializeTextMarkdown(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
+}
+
 size_t SerializationVariant::allocatedBytes() const
 {
     size_t bytes = sizeof(*this);

@@ -925,6 +925,11 @@ void SerializationLowCardinality::serializeTextRaw(const IColumn & column, size_
     serializeImpl(column, row_num, &ISerialization::serializeTextRaw, ostr, settings);
 }
 
+void SerializationLowCardinality::serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &ISerialization::serializeTextMarkdown, ostr, settings);
+}
+
 template <typename... Params, typename... Args>
 void SerializationLowCardinality::serializeImpl(
     const IColumn & column, size_t row_num, SerializationLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
