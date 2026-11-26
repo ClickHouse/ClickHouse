@@ -1032,6 +1032,30 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
+    /// The map methods' batch when the only aggregate is `count()`, kept in the hash table cell.
+    template <bool prefetch, bool top_k, typename Method, typename State>
+    void executeImplBatchSimpleCount(
+        Method & method,
+        State & state,
+        const ColumnRawPtrs & key_columns,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        bool no_more_keys,
+        bool all_keys_are_const,
+        AggregateDataPtr overflow_row) const;
+
+    template <bool prefetch, typename Method, typename State>
+    void executeImplBatchCountPositions(
+        Method & method,
+        State & state,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        bool no_more_keys,
+        AggregateDataPtr overflow_row,
+        size_t prefetch_look_ahead) const;
+
     /// Registers keys without building aggregate states; shared by the set methods and by the
     /// no-aggregates fast path of the map methods.
     template <bool prefetch, bool top_k, typename Method, typename State>
