@@ -226,7 +226,47 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 }
 
 
-int HTTPSession::fillBuffer()
+int HTTPSession::sendNow(const char* buffer, std::streamsize length)
+{
+	try
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atStart((int) length);
+		const int result = _socket.impl()->sendNow(buffer, (int) length);
+		if (_sendDataHooks)
+		{
+			if (result > 0)
+				_sendDataHooks->atFinish(result);
+			else
+				_sendDataHooks->atFail();
+		}
+		return result;
+	}
+	catch (Poco::Exception& exc)
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atFail();
+		setException(exc);
+		throw;
+	}
+}
+
+
+void HTTPSession::throwHeldSendError()
+{
+	try
+	{
+		_socket.impl()->throwHeldSendError();
+	}
+	catch (Poco::Exception& exc)
+	{
+		setException(exc);
+		throw;
+	}
+}
+
+
+int HTTPSession::prepareBufferSpace()
 {
 	if (!_pBuffer)
 	{
@@ -240,7 +280,13 @@ int HTTPSession::fillBuffer()
 		_pCurrent = _pBuffer.get();
 		_pEnd = _pCurrent + unread;
 	}
-	const int space = HTTP_DEFAULT_BUFFER_SIZE - unread;
+	return HTTP_DEFAULT_BUFFER_SIZE - unread;
+}
+
+
+int HTTPSession::fillBuffer()
+{
+	const int space = prepareBufferSpace();
 	if (space == 0)
 		return 0;
 	try
@@ -260,6 +306,43 @@ int HTTPSession::fillBuffer()
 			_receiveDataHooks->atFinish(result);
 		if (result == 0)
 			return -1;
+		_pEnd += result;
+		return result;
+	}
+	catch (Poco::Exception& exc)
+	{
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFail();
+		setException(exc);
+		throw;
+	}
+}
+
+
+int HTTPSession::fillBufferNow()
+{
+	const int space = prepareBufferSpace();
+	if (space == 0)
+		return 0;
+	try
+	{
+		if (_receiveDataHooks)
+			_receiveDataHooks->atStart(space);
+		const int result = _socket.impl()->receiveNow(_pEnd, space);
+		if (result == 0)
+		{
+			if (_receiveDataHooks)
+				_receiveDataHooks->atFail();
+			return 0;
+		}
+		if (result < 0)
+		{
+			if (_receiveDataHooks)
+				_receiveDataHooks->atFinish(0);
+			return -1;
+		}
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFinish(result);
 		_pEnd += result;
 		return result;
 	}
