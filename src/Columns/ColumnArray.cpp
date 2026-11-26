@@ -69,6 +69,98 @@ static constexpr size_t max_array_size_as_field = 1000000;
 static constexpr size_t max_average_array_size_to_gather = 16;
 static constexpr size_t max_elements_to_gather_at_once = 65536;
 
+namespace
+{
+
+/// Gathers `limit` rows of an array column, the row `i` of the result is the row `source_row(i)` of the column.
+/// `source_row` is called with non-decreasing `i` in each of the passes over the rows, and every pass starts from 0.
+template <typename SourceRow>
+ColumnPtr gatherArrayRows(const IColumn & data, const ColumnArray::Offsets & offsets, size_t limit, SourceRow && source_row)
+{
+    if (limit == 0)
+        return ColumnArray::create(data.cloneEmpty());
+
+    auto offset_at = [&](size_t row) -> size_t { return offsets[static_cast<ssize_t>(row) - 1]; };
+    auto size_at = [&](size_t row) -> size_t { return offsets[row] - offsets[static_cast<ssize_t>(row) - 1]; };
+
+    auto res_offsets_column = ColumnArray::ColumnOffsets::create(limit);
+    ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
+    ColumnArray::Offset total_size = 0;
+    for (size_t i = 0; i < limit; ++i)
+    {
+        if (common::addOverflow(total_size, static_cast<ColumnArray::Offset>(size_at(source_row(i))), total_size))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large total size of arrays: the number of elements overflows");
+        res_offsets[i] = total_size;
+    }
+    const size_t current_offset = total_size;
+
+    if (current_offset > limit * max_average_array_size_to_gather)
+    {
+        auto res_data = data.cloneEmpty();
+        for (size_t i = 0; i < limit; ++i)
+        {
+            const size_t row = source_row(i);
+            res_data->insertRangeFrom(data, offset_at(row), size_at(row));
+        }
+        return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+    }
+
+    /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
+    /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
+    MutableColumnPtr res_data;
+    auto append = [&](ColumnPtr part)
+    {
+        if (res_data)
+            res_data->insertRangeFrom(*part, 0, part->size());
+        else
+            res_data = IColumn::mutate(std::move(part));
+    };
+
+    auto nested_indexes_column = ColumnUInt64::create(std::min(current_offset, max_elements_to_gather_at_once));
+    UInt64 * nested_indexes = nested_indexes_column->getData().data();
+
+    size_t begin = 0;
+    while (begin < limit)
+    {
+        const size_t chunk_start = res_offsets[static_cast<ssize_t>(begin) - 1];
+        const size_t end = std::upper_bound(
+            res_offsets.begin() + begin, res_offsets.begin() + limit, chunk_start + max_elements_to_gather_at_once) - res_offsets.begin();
+
+        if (end == begin)
+        {
+            if (!res_data)
+                res_data = data.cloneEmpty();
+            const size_t row = source_row(begin);
+            res_data->insertRangeFrom(data, offset_at(row), size_at(row));
+            ++begin;
+            continue;
+        }
+
+        const size_t chunk_size = res_offsets[end - 1] - chunk_start;
+        if (chunk_size != 0)
+        {
+            UInt64 * out = nested_indexes;
+            for (size_t i = begin; i < end; ++i)
+            {
+                const size_t row = source_row(i);
+                const size_t offset = offset_at(row);
+                const size_t size = size_at(row);
+                for (size_t j = 0; j < size; ++j)
+                    out[j] = offset + j;
+                out += size;
+            }
+            append(data.index(*nested_indexes_column, chunk_size));
+        }
+        begin = end;
+    }
+
+    if (!res_data)
+        res_data = data.cloneEmpty();
+    return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+}
+
+}
+
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
@@ -1489,78 +1581,7 @@ template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
     chassert(limit <= indexes.size());
-    if (limit == 0)
-        return ColumnArray::create(data->cloneEmpty());
-
-    auto res_offsets_column = ColumnOffsets::create(limit);
-    Offsets & res_offsets = res_offsets_column->getData();
-    Offset total_size = 0;
-    for (size_t i = 0; i < limit; ++i)
-    {
-        if (common::addOverflow(total_size, static_cast<Offset>(sizeAt(indexes[i])), total_size))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large total size of arrays: the number of elements overflows");
-        res_offsets[i] = total_size;
-    }
-    const size_t current_offset = total_size;
-
-    if (current_offset > limit * max_average_array_size_to_gather)
-    {
-        auto res_data = data->cloneEmpty();
-        for (size_t i = 0; i < limit; ++i)
-            res_data->insertRangeFrom(*data, offsetAt(indexes[i]), sizeAt(indexes[i]));
-        return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
-    }
-
-    /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
-    /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
-    MutableColumnPtr res_data;
-    auto append = [&](ColumnPtr part)
-    {
-        if (res_data)
-            res_data->insertRangeFrom(*part, 0, part->size());
-        else
-            res_data = IColumn::mutate(std::move(part));
-    };
-
-    auto nested_indexes_column = ColumnUInt64::create(std::min(current_offset, max_elements_to_gather_at_once));
-    UInt64 * nested_indexes = nested_indexes_column->getData().data();
-
-    size_t begin = 0;
-    while (begin < limit)
-    {
-        const size_t chunk_start = res_offsets[static_cast<ssize_t>(begin) - 1];
-        const size_t end = std::upper_bound(
-            res_offsets.begin() + begin, res_offsets.begin() + limit, chunk_start + max_elements_to_gather_at_once) - res_offsets.begin();
-
-        if (end == begin)
-        {
-            if (!res_data)
-                res_data = data->cloneEmpty();
-            res_data->insertRangeFrom(*data, offsetAt(indexes[begin]), sizeAt(indexes[begin]));
-            ++begin;
-            continue;
-        }
-
-        const size_t chunk_size = res_offsets[end - 1] - chunk_start;
-        if (chunk_size != 0)
-        {
-            UInt64 * out = nested_indexes;
-            for (size_t i = begin; i < end; ++i)
-            {
-                const size_t offset = offsetAt(indexes[i]);
-                const size_t size = sizeAt(indexes[i]);
-                for (size_t j = 0; j < size; ++j)
-                    out[j] = offset + j;
-                out += size;
-            }
-            append(data->index(*nested_indexes_column, chunk_size));
-        }
-        begin = end;
-    }
-
-    if (!res_data)
-        res_data = data->cloneEmpty();
-    return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+    return gatherArrayRows(*data, getOffsets(), limit, [&](size_t i) -> size_t { return indexes[i]; });
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
@@ -1876,19 +1897,20 @@ ColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return cloneEmpty();
 
-    PaddedPODArray<UInt64> indexes(replicate_offsets.back());
-    UInt64 * out = indexes.data();
-
-    IColumn::Offset prev_offset = 0;
-    for (size_t i = 0; i < col_size; ++i)
+    /// The source row of a replicated row, found by a cursor over `replicate_offsets` that restarts with every pass.
+    size_t row = 0;
+    size_t last = 0;
+    auto source_row = [&](size_t i) -> size_t
     {
-        size_t size_to_replicate = replicate_offsets[i] - prev_offset;
-        prev_offset = replicate_offsets[i];
-        std::fill_n(out, size_to_replicate, i);
-        out += size_to_replicate;
-    }
+        if (i < last)
+            row = 0;
+        last = i;
+        while (replicate_offsets[row] <= i)
+            ++row;
+        return row;
+    };
 
-    return indexImpl(indexes, indexes.size());
+    return gatherArrayRows(*data, getOffsets(), replicate_offsets.back(), source_row);
 }
 
 

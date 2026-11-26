@@ -73,3 +73,7 @@ FROM
     )
 )
 SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
+
+-- Replication gathers the rows without an index of every replicated row.
+SELECT sum(length(a)) FROM (SELECT materialize([[]::Array(UInt8)]) AS a FROM numbers(2000000))
+SETTINGS max_threads = 1, max_block_size = 2000000, max_memory_usage = 70000000;
