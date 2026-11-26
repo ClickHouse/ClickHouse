@@ -165,10 +165,11 @@ BlockIO InterpreterDeleteQuery::execute()
         /// point at a different remote, so dropping it would delete from only the initiator's remote
         /// while reporting success. Reject it rather than mutate a narrower scope than requested.
         /// (The `ALTER TABLE ... ON CLUSTER ... DELETE` form takes the distributed path instead.)
-        /// The classification is read from `resolved_table`: a `StorageTableFunctionProxy` /
-        /// `StorageTableProxy` forwards `supportsDelete`/`mutate` to the engine but reports
-        /// `isExternalDatabase() == false` itself, so checking `table` would miss the proxy path.
-        if (!delete_query.cluster.empty() && resolved_table->isExternalDatabase())
+        /// `isExternalDatabase()` is forwarded by `StorageProxy`, so this classifies the wrapped
+        /// engine through both a `StorageTableProxy` (`ENGINE = PostgreSQL`) and a
+        /// `StorageTableFunctionProxy` (`CREATE TABLE t AS postgresql(...)`); the latter is not
+        /// unwrapped by `resolveStorageProxyLoading`, so `resolved_table` alone would miss it.
+        if (!delete_query.cluster.empty() && table->isExternalDatabase())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "DELETE ... ON CLUSTER is not supported for the external-database table {}; "
                 "use ALTER TABLE ... ON CLUSTER ... DELETE", table->getStorageID().getFullTableName());

@@ -2174,6 +2174,22 @@ def test_postgres_delete_on_cluster_rejected(started_cluster):
     cursor.execute("SELECT count(*) FROM test_delete_cluster")
     assert cursor.fetchall() == [(5,)]
 
+    # Same rejection must hold when the engine is reached through a table-function proxy
+    # (CREATE TABLE ... AS postgresql(...)). That proxy is not unwrapped by
+    # resolveStorageProxyLoading, so the guard relies on isExternalDatabase() being forwarded
+    # through StorageProxy; otherwise the ON CLUSTER clause would be silently dropped.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_cluster_tf AS "
+        f"postgresql('postgres1:5432', 'postgres', 'test_delete_cluster', 'postgres', '{pg_pass}')"
+    )
+    error_tf = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_cluster_tf ON CLUSTER test_shard_localhost WHERE id = 1"
+    )
+    assert "ON CLUSTER is not supported" in error_tf
+    cursor.execute("SELECT count(*) FROM test_delete_cluster")
+    assert cursor.fetchall() == [(5,)]
+
+    node1.query("DROP TABLE test.pg_delete_cluster_tf")
     node1.query("DROP TABLE test.pg_delete_cluster")
     cursor.execute("DROP TABLE test_delete_cluster")
 

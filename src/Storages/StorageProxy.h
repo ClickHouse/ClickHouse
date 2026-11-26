@@ -28,6 +28,11 @@ public:
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
+    /// Forwarded so callers can classify the wrapped engine through the proxy. In particular a
+    /// `StorageTableFunctionProxy` is never unwrapped by `resolveStorageProxyLoading` (it does not
+    /// set `isLazyStandIn`), so without this `CREATE TABLE t AS postgresql(...)` would report
+    /// `isExternalDatabase() == false` and bypass the external-database mutation guards.
+    bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
     bool readRequiresAnalyzedQuery() const override { return getNested()->readRequiresAnalyzedQuery(); }
     std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
