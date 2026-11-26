@@ -114,6 +114,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
@@ -884,7 +885,12 @@ void Server::beforeStartingThreads()
     /// right after this, starts them again.
     Jemalloc::setBackgroundThreads(false);
 #endif
-    isolateFilesystem(mode, [&] { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory, fs::current_path().string()); });
+    const std::string startup_directory = fs::current_path().string();
+    isolateFilesystem(
+        mode,
+        [&](bool with_supervisor)
+        { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory, startup_directory, with_supervisor); },
+        getFilesystemIsolationPidFile(config(), config_path, original_working_directory, startup_directory));
 }
 
 void Server::uninitialize()
@@ -1415,6 +1421,7 @@ try
     registerParsers();
     registerFunctions();
     registerAggregateFunctions();
+    registerWindowFunctions();
     registerTableFunctions();
     registerDatabases();
     registerStorages();
@@ -1507,7 +1514,9 @@ try
                 "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
                 "did not register the rseq area");
 
-        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
+        Silk::initialize(
+            config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE),
+            Poco::Logger::parseLevel(server_settings[ServerSetting::logger_level]));
     }
 #endif
 
@@ -1948,11 +1957,23 @@ try
     {
         if (filesystem_isolation->isolated)
         {
-            LOG_INFO(
-                log,
-                "Isolated the filesystem of this process{}. Only these paths are visible: {}",
-                filesystem_isolation->created_user_namespace ? " in a new user and mount namespace" : " in a new mount namespace",
-                fmt::join(filesystem_isolation->visible_paths, ", "));
+            if (filesystem_isolation->created_pid_namespace)
+            {
+                LOG_INFO(
+                    log,
+                    "Isolated the filesystem of this process in new PID and mount namespaces. This process has the PID {} in its "
+                    "PID namespace and {} outside of it, and the supervisor outside, which owns the pid file, has the PID {}. "
+                    "Only these paths are visible: {}",
+                    getpid(),
+                    filesystem_isolation->serving_host_pid,
+                    filesystem_isolation->supervisor_pid,
+                    fmt::join(filesystem_isolation->visible_paths, ", "));
+            }
+            else
+                LOG_INFO(
+                    log,
+                    "Isolated the filesystem of this process in new user and mount namespaces. Only these paths are visible: {}",
+                    fmt::join(filesystem_isolation->visible_paths, ", "));
             if (!filesystem_isolation->lost_capabilities.empty())
                 LOG_WARNING(
                     log,
@@ -3288,6 +3309,7 @@ try
             return global_context->getConfigRef();
         };
 
+        /// `updateServers` does not recreate Keeper listeners, so a config reload must not stop them.
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -3314,7 +3336,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 false),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -3341,7 +3364,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 true),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -3378,7 +3402,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
             }
 
@@ -3415,7 +3440,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
@@ -5133,6 +5159,7 @@ void Server::updateServers(
         {
             std::string port_name = server->getPortName();
             bool has_host = false;
+            bool has_explicit_host = false;
             bool is_http = false;
             bool is_non_keeper_prometheus = false;
             bool is_prometheus = false;
@@ -5142,7 +5169,8 @@ void Server::updateServers(
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
-                has_host = config.has(protocol + ".host");
+                has_explicit_host = config.has(protocol + ".host");
+                has_host = has_explicit_host && config.getString(protocol + ".host") == server->getListenHost();
 
                 /// Whether any handler in the `impl` chain actually consumes the default session
                 /// user, so that a `default_session_user` change does not restart listeners that
@@ -5237,12 +5265,13 @@ void Server::updateServers(
                 is_non_keeper_prometheus = is_prometheus && !server_settings[ServerSetting::prometheus_keeper_metrics_only];
             }
 
-            if (!has_host)
+            if (!has_explicit_host)
             {
                 const auto & server_listen_hosts =
 #if USE_GRPC || USE_ARROWFLIGHT
                     (port_name == "grpc_port" || port_name == "arrowflight_port") ? grpc_listen_hosts :
 #endif
+                    (port_name == "interserver_http_port" || port_name == "interserver_https_port") ? interserver_listen_hosts :
                     listen_hosts;
                 has_host = std::find(server_listen_hosts.begin(), server_listen_hosts.end(), server->getListenHost()) != server_listen_hosts.end();
             }

@@ -27,6 +27,8 @@ import { DeprecatedBadge } from "/snippets/ru/components/DeprecatedBadge/Depreca
 Добавленный в: v20.1.0
 
 Возвращает полное доменное имя сервера ClickHouse.
+Если функция выполняется в контексте distributed таблицы, она формирует обычный столбец со значениями, относящимися к каждому сегменту.
+В противном случае она возвращает константное значение.
 
 <Note>
   Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
@@ -6361,11 +6363,11 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **Аргументы**
 
-* `uniqThetaSketch` — объект типа uniqThetaSketch. [`Tuple`](/ru/reference/data-types/tuple) или [`Array`](/ru/reference/data-types/array) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`String`](/ru/reference/data-types/string) или [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal`](/ru/reference/data-types/decimal)
+* `uniqThetaSketch` — объект типа uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction)
 
 **Возвращаемое значение**
 
-Новый uniqThetaSketch, содержащий результат пересечения. [`UInt64`](/ru/reference/data-types/int-uint)
+Новый uniqThetaSketch, содержащий результат пересечения. [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction)
 
 **Примеры**
 
@@ -6397,11 +6399,11 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **Аргументы**
 
-* `uniqThetaSketch` — объект типа uniqThetaSketch. [`Tuple`](/ru/reference/data-types/tuple) или [`Array`](/ru/reference/data-types/array) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`String`](/ru/reference/data-types/string) или [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal`](/ru/reference/data-types/decimal)
+* `uniqThetaSketch` — объект типа uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction)
 
 **Возвращаемое значение**
 
-Возвращает новый uniqThetaSketch, содержащий результат a&#95;not&#95;b. [`UInt64`](/ru/reference/data-types/int-uint)
+Возвращает новый uniqThetaSketch, содержащий результат a&#95;not&#95;b. [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction)
 
 **Примеры**
 
@@ -6433,11 +6435,11 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **Аргументы**
 
-* `uniqThetaSketch` — объект типа uniqThetaSketch. [`Tuple`](/ru/reference/data-types/tuple) или [`Array`](/ru/reference/data-types/array) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`String`](/ru/reference/data-types/string) или [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal`](/ru/reference/data-types/decimal)
+* `uniqThetaSketch` — объект типа uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction)
 
 **Возвращаемое значение**
 
-Возвращает новый uniqThetaSketch, содержащий результат объединения. [`UInt64`](/ru/reference/data-types/int-uint)
+Возвращает новый uniqThetaSketch, содержащий результат объединения. [`AggregateFunction(uniqTheta, T)`](/ru/reference/data-types/aggregatefunction)
 
 **Примеры**
 

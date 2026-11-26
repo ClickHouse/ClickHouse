@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -282,8 +283,9 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
+        /// Do not reserve `size` entries upfront: it comes from untrusted data and can be arbitrarily large.
+        /// A state with a wrong size fails on reading after the end of the buffer instead.
         VectorWithMemoryTracking<Entry> batch;
-        batch.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -291,6 +293,13 @@ struct AggregateFunctionMergedJSONPatchData
             readStringBinary(lv.path, buf);
             readStringBinary(lv.value_blob, buf);
             lv.sort_key.deserialize(buf);
+
+            /// `serialize` writes `entries`, which are sorted by path and have no duplicate paths.
+            /// A duplicate path would be inserted into the result twice for a single row of JSON.
+            if (i > 0 && batch[i - 1].path >= lv.path)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Paths in a serialized state of aggregate function mergedJSONPatch are not sorted or have duplicates (at path '{}')",
+                    lv.path);
         }
 
         insertBatchAtomic(batch);
@@ -298,13 +307,17 @@ struct AggregateFunctionMergedJSONPatchData
 
     void insertResultInto(
         IColumn & to,
+        const IDataType & result_type,
         const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
         if (entries.empty())
         {
-            result_column.insertDefault();
+            if (result_type.isDefaultInsertTrivial())
+                result_column.insertDefault();
+            else
+                result_type.insertDefaultInto(result_column);
             return;
         }
 
@@ -420,7 +433,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to, typed_path_serializations);
+        this->data(place).insertResultInto(to, *this->result_type, typed_path_serializations);
     }
 };
 

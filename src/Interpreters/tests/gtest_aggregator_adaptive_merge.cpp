@@ -142,7 +142,8 @@ Aggregator::Params makeAdaptiveParams(const Names & keys, const AggregateDescrip
         /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5, StatsCollectingParams{},
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
         /*serialize_string_with_zero_byte_=*/false, /*enable_parallel_single_level_merge_=*/false,
-        /*enable_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
+        /*enable_parallel_single_level_merge_by_index_=*/true,
+        /*enable_packed_string_keys_=*/true, /*enable_fixed_and_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
         /*adaptive_aggregator_freeze_threshold_=*/1, /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
         /*adaptive_aggregator_disable_thaw_=*/false, /*use_aggregation_memory_tracker_=*/true);
 }
@@ -211,7 +212,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
                     task,
                     /*final=*/true,
                     bucket,
-                    aggregator.parallelMergeThreshold(session.get()),
+                    aggregator.parallelMergeThreshold(session.get(), /*workers=*/1),
                     cancelled,
                     /*updater=*/nullptr,
                     /*merged_group_count=*/nullptr);
@@ -285,8 +286,9 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
     for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
     {
         const auto chunks = aggregator.mergeAndConvertAdaptiveBucket(
-            prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket), aggregator.parallelMergeThreshold(session.get()),
-            cancelled, /*updater=*/nullptr, /*merged_group_count=*/nullptr);
+            prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket),
+            aggregator.parallelMergeThreshold(session.get(), /*workers=*/1), cancelled, /*updater=*/nullptr,
+            /*merged_group_count=*/nullptr);
         for (const auto & converted : chunks)
         {
             const auto & columns = converted.chunk.getColumns();

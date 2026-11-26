@@ -21,6 +21,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -44,6 +45,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
@@ -322,6 +324,10 @@ void StorageBuffer::read(
 {
     storage_snapshot->check(column_names);
 
+    /// The query can name a table that forwards the read here (a materialized view, an `Alias` or another `Buffer`).
+    const auto * query_table_node = query_info.table_expression ? query_info.table_expression->as<TableNode>() : nullptr;
+    const auto query_storage_id = query_table_node ? query_table_node->getStorageID() : getStorageID();
+
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
@@ -334,7 +340,8 @@ void StorageBuffer::read(
         for (const auto & node : table_nodes)
         {
             const auto & table_node = node->as<TableNode &>();
-            if (table_node.getStorageID().getFullNameNotQuoted() == current_storage_id.getFullNameNotQuoted())
+            const auto table_name = table_node.getStorageID().getFullNameNotQuoted();
+            if (table_name == current_storage_id.getFullNameNotQuoted() || table_name == query_storage_id.getFullNameNotQuoted())
             {
                 count_of_current_storage++;
                 if (count_of_current_storage > 1)
@@ -640,14 +647,19 @@ void StorageBuffer::read(
             = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
         /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
+        /// Name it as the query does, so the buffers' analyzer swaps it in and applies that table's filters.
         auto storage = std::make_shared<StorageValues>(
-                getStorageID(),
+                query_storage_id,
                 storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
+        /// The buffers' analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree = query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
+
         auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+            = InterpreterSelectQueryAnalyzer(queryNodeToSelectQuery(query_tree), local_context, buffers_select_query_options, storage);
         interpreter.addStorageLimits(*query_info.storage_limits);
         buffers_plan = std::move(interpreter).extractQueryPlan();
     }
@@ -997,7 +1009,12 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
+        /// The allocation can shrink after sorting.
+        size_t new_bytes = buffer.data.allocatedBytes();
+        if (new_bytes >= old_bytes)
+            storage.total_writes.bytes += new_bytes - old_bytes;
+        else
+            storage.total_writes.bytes -= old_bytes - new_bytes;
     }
 };
 

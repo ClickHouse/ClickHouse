@@ -1088,6 +1088,74 @@ def test_workload_entity_keeper_storage():
         check_consistency()
 
 
+def test_drop_does_not_remove_entity_of_other_kind():
+    node.query(
+        """
+        create resource io_read (read disk s3_no_resource);
+        create workload all;
+        create workload development in all;
+        create user drop_workload_user not identified;
+        grant drop workload on *.* to drop_workload_user;
+        create user drop_resource_user not identified;
+        grant drop resource on *.* to drop_resource_user;
+    """
+    )
+    try:
+        assert "doesn't exist" in node.query_and_get_error("drop workload io_read", user="drop_workload_user")
+        node.query("drop workload if exists io_read", user="drop_workload_user")
+        assert "doesn't exist" in node.query_and_get_error("drop resource development", user="drop_resource_user")
+        node.query("drop resource if exists development", user="drop_resource_user")
+
+        definitions = node.query(
+            "select value from system.zookeeper where path = '/clickhouse/workload' and name = 'definitions.sql'"
+        )
+        assert "CREATE RESOURCE io_read" in definitions
+        assert "CREATE WORKLOAD development" in definitions
+        assert node.query("select count() from system.resources where name = 'io_read'") == "1\n"
+        assert node.query("select count() from system.workloads where name in ('all', 'development')") == "2\n"
+
+        node.query("drop workload development", user="drop_workload_user")
+        node.query("drop resource io_read", user="drop_resource_user")
+    finally:
+        node.query("drop user if exists drop_workload_user; drop user if exists drop_resource_user")
+
+
+def test_workload_and_resource_with_same_name():
+    node.query(
+        """
+        create resource io (read disk s3_no_resource);
+        create workload io settings max_io_requests = 10 for io;
+    """
+    )
+    try:
+        definitions = node.query(
+            "select value from system.zookeeper where path = '/clickhouse/workload' and name = 'definitions.sql'"
+        )
+        assert "CREATE RESOURCE io" in definitions
+        assert "CREATE WORKLOAD io" in definitions
+
+        def check_both_exist():
+            assert node.query("select count() from system.resources where name = 'io'") == "1\n"
+            assert node.query("select count() from system.workloads where name = 'io'") == "1\n"
+            assert (
+                node.query(
+                    "select count() from system.scheduler where resource = 'io' and path ilike '%/io/%' and type = 'inflight_limit' and max_requests = 10"
+                )
+                == "1\n"
+            )
+
+        check_both_exist()
+        node.restart_clickhouse()  # Both are loaded back from Keeper
+        check_both_exist()
+
+        assert "referenced by" in node.query_and_get_error("drop resource io")
+        node.query("drop workload io")
+        assert node.query("select count() from system.resources where name = 'io'") == "1\n"
+        node.query("drop resource io")
+    finally:
+        node.query("drop workload if exists io; drop resource if exists io")
+
+
 def test_throw_on_unknown_workload():
     node.query(
         """
