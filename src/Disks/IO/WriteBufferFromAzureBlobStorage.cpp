@@ -10,6 +10,7 @@
 #include <Common/Throttler.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceGuard.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <base/sleep.h>
 
 
@@ -18,6 +19,7 @@ namespace ProfileEvents
     extern const Event AzureUpload;
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
+    extern const Event WriteBufferFromAzureBytes;
 
     extern const Event DiskAzureUpload;
     extern const Event DiskAzureStageBlock;
@@ -186,9 +188,14 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         if (detached_part_data.size() == 1 && detached_part_data.front().data_size <= max_single_part_upload_size)
         {
             auto part_data = std::move(detached_part_data.front());
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromAzureBytes, part_data.data_size);
             Azure::Core::IO::MemoryBodyStream memory_stream(
                 reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
 
+            /// One row is written for the whole `execWithRetry` sequence, so when a write is
+            /// retried the connection columns of that row report zeroes: its elapsed time covers
+            /// every attempt, and no single socket describes it.
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -252,6 +259,10 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         {
             Azure::Core::IO::MemoryBodyStream memory_stream(nullptr, 0);
 
+            /// One row is written for the whole `execWithRetry` sequence, so when a write is
+            /// retried the connection columns of that row report zeroes: its elapsed time covers
+            /// every attempt, and no single socket describes it.
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -334,6 +345,10 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
+        /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
+        /// the connection columns of that row report zeroes: its elapsed time covers every
+        /// attempt, and no single socket describes it.
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;
@@ -534,9 +549,14 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         ProfileEvents::increment(ProfileEvents::AzureStageBlock);
         if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromAzureBytes, data_size);
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);
 
+        /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
+        /// the connection columns of that row report zeroes: its elapsed time covers every
+        /// attempt, and no single socket describes it.
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;

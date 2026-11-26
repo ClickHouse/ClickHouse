@@ -3,6 +3,10 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
+#include <base/arithmeticOverflow.h>
+
+#include <limits>
+
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
@@ -226,6 +230,7 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
          KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
          KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
+         KeyCondition::RPNElement::FUNCTION_ATOM_GROUP,
          KeyCondition::RPNElement::FUNCTION_IS_NULL,
          KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
          KeyCondition::RPNElement::ALWAYS_FALSE});
@@ -368,7 +373,11 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     }
     else
     {
-        auto min_granules_to_select = n * index_granularity;
+        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
+        size_t min_granules_to_select = 0;
+        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
+            min_granules_to_select = std::numeric_limits<size_t>::max();
+
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
@@ -444,7 +453,11 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     }
     else
     {
-        auto min_granules_to_select = n * index_granularity;
+        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
+        size_t min_granules_to_select = 0;
+        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
+            min_granules_to_select = std::numeric_limits<size_t>::max();
+
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {

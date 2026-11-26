@@ -1,14 +1,12 @@
 ---
 title: "Profilage de ClickHouse avec XRay de LLVM"
 date: 2024-11-13
-description: "Découvrez comment profiler ClickHouse à l’aide de l’outil de profilage par instrumentation XRay de LLVM, visualiser les traces et analyser les performances."
-tags: ['Performances et optimisations', 'Outils et utilitaires']
+description: "Découvrez comment profiler ClickHouse à l’aide du profileur par instrumentation XRay de LLVM, visualiser les traces et analyser les performances."
+tags: ['Performance and Optimizations', 'Tools and Utilities']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="types-of-profilers">
-  ## Types de profilers
+  ## Types de profilers {#types-of-profilers}
 </div>
 
 LLVM inclut déjà un outil qui instrumente le code et permet de faire du [profilage par
@@ -23,9 +21,7 @@ prenant périodiquement des instantanés pour observer l&#39;état de l&#39;appl
 fonctions en cours d&#39;exécution au moment de la prise de l&#39;instantané sont prises en compte.
 [perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) est un profiler statistique très connu.
 
-<div id="profiling-clickhouse-using-xray-integration">
-  ## Profilage de ClickHouse à l’aide de l’intégration XRay
-</div>
+## Profilage de ClickHouse à l’aide de l’intégration XRay {#profiling-clickhouse-using-xray-integration}
 
 Dans ClickHouse 25.12, XRay est intégré pour ajouter de manière transparente de nouveaux points d’instrumentation aux fonctions.
 Ainsi, toute version officielle inclut déjà cette fonctionnalité, qui peut être déclenchée à la demande, sans
@@ -54,19 +50,21 @@ Chrome](/fr/reference/system-tables/trace_log#chrome-event-trace-format) afin de
 les visualiser dans [Perfetto](https://ui.perfetto.dev). Notez query&#95;id, cpu&#95;id et stacktrace pour
 chaque entrée.
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
+<div className="ch-image-md">
+  <Frame>
+    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+  </Frame>
+</div>
 
 <div id="profiling-a-native-application-using-xray">
-  ## Profilage d&#39;une application native avec XRay
+  ## Profilage d&#39;une application native avec XRay {#profiling-a-native-application-using-xray}
 </div>
 
 La section suivante est conservée à titre de référence pour comprendre le fonctionnement interne de XRay et comment l&#39;utiliser tel quel pour profiler une application native.
 
-<div id="instrument-the-code">
-  ### Instrumenter le code
-</div>
+### Instrumenter le code {#instrument-the-code}
 
-Imaginez le code source suivant :
+Imaginez le code source suivant :
 
 ```cpp
 #include <chrono>
@@ -97,7 +95,7 @@ int main()
 }
 ```
 
-Pour instrumenter avec XRay, il faut ajouter certaines options :
+Pour instrumenter avec XRay, il faut ajouter certaines options :
 
 ```bash
 clang++ -o test test.cpp -fxray-instrument -fxray-instruction-threshold=1
@@ -109,7 +107,7 @@ clang++ -o test test.cpp -fxray-instrument -fxray-instruction-threshold=1
   instructions](https://llvm.org/docs/XRay.html#instrumenting-your-c-c-objective-c-application).
 
 On peut vérifier que le code a bien été instrumenté en s’assurant de la présence d’une nouvelle section dans le
-binaire :
+binaire :
 
 ```bash
 objdump -h -j xray_instr_map test
@@ -123,7 +121,7 @@ Idx Name          Size      VMA               LMA               File off  Algn
 ```
 
 <div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
-  ### Exécutez le processus avec les bonnes valeurs de variables d’environnement pour collecter la trace
+  ### Exécutez le processus avec les bonnes valeurs de variables d’environnement pour collecter la trace {#run-the-process-with-proper-env-var-values-to-collect-the-trace}
 </div>
 
 Par défaut, il n’y a pas de collecte par le profiler, sauf si elle est explicitement demandée. Autrement dit, tant
@@ -139,7 +137,7 @@ Finish
 ```
 
 <div id="convert-the-trace">
-  ### Convertir la trace
+  ### Convertir la trace {#convert-the-trace}
 </div>
 
 Les traces de XRay peuvent être converties en plusieurs formats. Le format `trace_event` est très utile, car
@@ -150,7 +148,7 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 ```
 
 <div id="visualize-the-trace">
-  ### Visualiser la trace
+  ### Visualiser la trace {#visualize-the-trace}
 </div>
 
 Nous pouvons utiliser des UI web comme [speedscope.app](https://www.speedscope.app/) ou
@@ -159,26 +157,32 @@ Nous pouvons utiliser des UI web comme [speedscope.app](https://www.speedscope.a
 Si Perfetto facilite la visualisation de plusieurs threads et l’interrogation des données, speedscope est plus adapté à la
 génération d’un flamegraph et d’une vue en sandwich de vos données.
 
-<div id="time-order">
-  #### Ordre temporel
+#### Ordre temporel {#time-order}
+
+<div className="ch-image-md">
+  <Frame>
+    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+  </Frame>
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="ordre-temporel" />
+#### Left Heavy {#left-heavy}
 
-<div id="left-heavy">
-  #### Plus lourd à gauche
+<div className="ch-image-md">
+  <Frame>
+    ![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+  </Frame>
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="plus-lourd-à-gauche" />
+#### Sandwich {#sandwitch}
 
-<div id="sandwitch">
-  #### Sandwich
+<div className="ch-image-md">
+  <Frame>
+    ![sandwich](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+  </Frame>
 </div>
-
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="sandwich" />
 
 <div id="check-out-the-docs">
-  ## Consultez la documentation
+  ## Consultez la documentation {#check-out-the-docs}
 </div>
 
 * [SYSTEM INSTRUMENT](/fr/reference/statements/system#instrument) — Ajoutez

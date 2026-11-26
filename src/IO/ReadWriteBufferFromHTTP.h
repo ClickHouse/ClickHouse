@@ -23,12 +23,16 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 
+#include <chrono>
 #include <condition_variable>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
+
+class HTTPHeaderFilter;
 
 /// Identifies an exception produced by stopping one HTTP request after its owner was cancelled.
 /// This marker belongs to the request, not to every reader sharing its Cancellation.
@@ -62,6 +66,8 @@ public:
         // nullopt if the server doesn't report it.
         std::optional<size_t> file_size;
         std::optional<time_t> last_modified;
+        /// The `Date` of the response: the time by the clock of the server that reported `last_modified`.
+        std::optional<time_t> response_date;
         bool seekable = false;
     };
 
@@ -133,6 +139,9 @@ public:
 
     const Poco::URI & getCurrentURI() const { return current_uri; }
 
+    /// Whether a response was received from another resource than the initial URI (by following a redirect).
+    bool wasRedirected() const { return redirects > 0; }
+
 private:
     /// Byte range, including right bound [begin, end].
     struct HTTPRange
@@ -150,6 +159,10 @@ private:
     const ProxyConfiguration proxy_config;
     const ReadSettings read_settings;
     const ConnectionTimeouts timeouts;
+
+    /// The request ends by it: each try's socket timeouts are capped at the time left, and no try or backoff
+    /// starts after it. Not strict against a reply that trickles in: each received byte restarts the receive timeout.
+    const std::optional<std::chrono::steady_clock::time_point> deadline;
 
     const Poco::Net::HTTPBasicCredentials & credentials;
     const RemoteHostFilter * remote_host_filter;
@@ -185,6 +198,12 @@ private:
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;
 
+    /// If not empty, every response must come from the initial URI without a redirect and carry exactly this `ETag`,
+    /// otherwise the read fails with `FILE_CHANGED_DURING_READ`: the bytes are of another generation of the resource
+    /// than the one that the caller has seen (and e.g. keys a cache on). An `ETag` identifies a generation only of
+    /// one resource, so it cannot validate the bytes of another resource that a redirect leads to.
+    String expected_etag;
+
     size_t offset_from_begin_pos = 0;
     HTTPRange read_range;
     std::optional<HTTPFileInfo> file_info;
@@ -199,6 +218,8 @@ private:
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const;
 
+    /// `mute_logging` mutes the messages about the final error, which the caller handles; the
+    /// retries are logged anyway.
     void doWithRetries(
         std::function<void()> && callable,
         std::function<void()> on_retry = nullptr,
@@ -207,6 +228,15 @@ private:
 
     /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
     bool waitBeforeRetry(size_t milliseconds) const;
+
+    /// `timeouts` capped at the time left before `deadline`.
+    [[nodiscard]] ConnectionTimeouts getTimeoutsForTry() const;
+
+    [[noreturn]] static void throwDeadlineExceeded(const Poco::URI & uri, const String & error_message);
+
+    /// Throws `ReadInterruptedException` for a read that is cancelled or whose query reached its soft time limit; the
+    /// deadline exits call it first.
+    static void throwIfInterrupted(const CancellationPtr & cancellation, std::exception_ptr exception);
 
     /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
     bool isReadCancelled() const;
@@ -255,6 +285,7 @@ private:
         ProxyConfiguration proxy_config_,
         ReadSettings read_settings_,
         ConnectionTimeouts timeouts_,
+        std::optional<std::chrono::steady_clock::time_point> deadline_,
         const Poco::Net::HTTPBasicCredentials & credentials_,
         const RemoteHostFilter * remote_host_filter_,
         size_t buffer_size_,
@@ -268,7 +299,8 @@ private:
         HTTPHeaderEntries http_header_entries_,
         RedirectCallback redirect_callback_,
         bool delay_initialization,
-        std::optional<HTTPFileInfo> file_info_);
+        std::optional<HTTPFileInfo> file_info_,
+        String expected_etag_);
 
 public:
     bool nextImpl() override;
@@ -297,6 +329,10 @@ public:
 
     std::optional<time_t> tryGetLastModificationTime();
 
+    /// The `Date` of the response which the file metadata came from, if the metadata is already known.
+    /// Does not send any request.
+    std::optional<time_t> tryGetResponseDateOfFileInfo() const { return file_info ? file_info->response_date : std::nullopt; }
+
     bool hasNotFoundURL() const { return has_not_found_url; }
 
     HTTPFileInfo getFileInfo();
@@ -316,6 +352,7 @@ class BuilderRWBufferFromHTTP
     bool bypass_proxy = false;
     ReadSettings read_settings{};
     ConnectionTimeouts timeouts{};
+    std::optional<std::chrono::steady_clock::time_point> deadline{};
     const RemoteHostFilter * remote_host_filter = nullptr;
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t max_redirects = 0;
@@ -328,6 +365,7 @@ class BuilderRWBufferFromHTTP
     HTTPHeaderEntries http_header_entries{};
     ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
+    String expected_etag;
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -347,6 +385,7 @@ public:
     setterMember(withBypassProxy, bypass_proxy)
     setterMember(withSettings, read_settings)
     setterMember(withTimeouts, timeouts)
+    setterMember(withDeadline, deadline)
     setterMember(withHostFilter, remote_host_filter)
     setterMember(withBufSize, buffer_size)
     setterMember(withRedirects, max_redirects)
@@ -359,23 +398,28 @@ public:
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
+    setterMember(withExpectedETag, expected_etag)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
     /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 
+    /// Same, with the credentials given as strings (no header is sent when the user is empty).
+    ReadWriteBufferFromHTTPPtr createWithBasicCredentials(std::string_view user_, std::string_view password_);
+
     /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
-    ReadWriteBufferFromHTTPPtr createWithBearerToken(const std::string & bearer_token_);
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(std::string_view bearer_token_);
 
     /// Authenticate with the bearer token when it is non-empty, otherwise with the Basic
     /// credentials: both occupy the `Authorization` header, so a request carries one or the
     /// other, never both.
     ReadWriteBufferFromHTTPPtr createWithBearerToken(
-        const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
+        std::string_view bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri);
+/// Throws if `header_filter` forbids the `Authorization` header, which sends them, and the userinfo has a username.
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter);
 
 }

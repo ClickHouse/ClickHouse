@@ -1,0 +1,31 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks may differ with random settings.
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis. -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+FORMAT TSVRaw;
+{%- endmacro %}
+
+-- A comparison converts a `FixedString` constant into the type of the other side, here `UInt64`, but no
+-- conversion leads from a number back into `FixedString`. Index analysis checks whether the normalization
+-- of a constant into the key space lost information by casting it back, so the missing conversion has to
+-- leave that question unanswered instead of failing the query. Each value repeats in four granules, so an
+-- exact atom excludes the granules that hold only `123` for `!=`.
+
+-- A top-level string constant is judged by the conversion of the comparison itself, so the atom over the
+-- injective `toString` stays exact and `!=` prunes.
+CREATE TABLE t_scalar (n UInt64) ENGINE = MergeTree ORDER BY toString(n)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_scalar SELECT [1, 12, 123, 1234, 12345][intDiv(number, 4) + 1] FROM numbers(20);
+{{ check('t_scalar', "n != toFixedString('123', 3)") }}
+
+-- A constant nested in a `Tuple` gets a relaxed atom, which prunes for `=` only.
+CREATE TABLE t_tuple (t Tuple(UInt64, UInt64)) ENGINE = MergeTree ORDER BY toString(t)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_tuple SELECT (n, 5) FROM t_scalar;
+{{ check('t_tuple', "t = (toFixedString('123', 3), 5)") }}
+{{ check('t_tuple', "t != (toFixedString('123', 3), 5)") }}

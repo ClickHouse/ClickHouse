@@ -11,8 +11,11 @@ namespace DB
 
 class ParserCreateIndexQuery : public IParserBase
 {
+public:
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
+
 protected:
-    const char * getName() const override { return "CREATE INDEX query"; }
+    [[nodiscard]] const char * getName() const override { return "CREATE INDEX query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -24,7 +27,7 @@ public:
     ParserCreateIndexDeclaration() = default;
 
 protected:
-    const char * getName() const override { return "index declaration in create index"; }
+    [[nodiscard]] const char * getName() const override { return "index declaration in create index"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

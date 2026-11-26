@@ -26,6 +26,9 @@ namespace ErrorCodes
 void TableFunctionFactory::registerFunction(
     const std::string & name, Value value, Case case_sensitiveness)
 {
+    if (value.secret_arguments.hasArgumentSecrets())
+        lowercase_names_with_argument_secrets.insert(Poco::toLower(name));
+
     if (!table_functions.emplace(name, value).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
 
@@ -39,7 +42,8 @@ void TableFunctionFactory::registerFunction(
 
 TableFunctionPtr TableFunctionFactory::get(
     const ASTPtr & ast_function,
-    ContextPtr context) const
+    ContextPtr context,
+    bool is_replayed_definition) const
 {
     const auto * table_function = ast_function->as<ASTFunction>();
     if (!table_function)
@@ -55,6 +59,7 @@ TableFunctionPtr TableFunctionFactory::get(
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
     }
 
+    res->setReplayedDefinition(is_replayed_definition);
     res->parseArguments(ast_function, context);
     return res;
 }
@@ -107,6 +112,11 @@ const SecretArgumentsSpec * TableFunctionFactory::tryGetSecretArgumentsSpec(cons
     if (auto it = case_insensitive_table_functions.find(Poco::toLower(name)); it != case_insensitive_table_functions.end())
         return &it->second.secret_arguments;
     return nullptr;
+}
+
+bool TableFunctionFactory::hasArgumentSecretsIgnoringCase(const String & name) const
+{
+    return lowercase_names_with_argument_secrets.contains(Poco::toLower(name));
 }
 
 std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentation(const String & name) const

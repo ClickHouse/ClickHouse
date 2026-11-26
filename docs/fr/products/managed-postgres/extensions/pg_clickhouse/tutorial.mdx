@@ -94,12 +94,13 @@ ORDER BY pickup_datetime;
 
 ## Ajouter le jeu de données {#add-the-data-set}
 
-Importez ensuite les données :
+Importez ensuite les données :
 
 ```sql
 INSERT INTO taxi.trips
 SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+    'NOSIGN',
     'TabSeparatedWithNames', "
     trip_id UInt32,
     vendor_id Enum8(
@@ -154,7 +155,7 @@ SELECT * FROM s3(
 ") SETTINGS input_format_try_infer_datetimes = 0
 ```
 
-Vérifiez que nous pouvons l’interroger, puis quittez le client :
+Vérifiez que nous pouvons l’interroger, puis quittez le client :
 
 ```sql
 SELECT count() FROM taxi.trips;
@@ -174,16 +175,28 @@ mot de passe ClickHouse, puis sélectionnez la base de données Postgres et le s
 tables ClickHouse doivent être importées. Cliquez sur **Connect** pour créer le serveur foreign
 et importer le schéma.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Formulaire de configuration de pg_clickhouse pour la base de données taxi dans la ClickHouse Cloud console" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Formulaire de configuration de pg_clickhouse pour la base de données taxi dans la ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+  </Frame>
+</div>
 
 Une fois la configuration terminée, la console affiche une confirmation et le serveur foreign
 apparaît dans la liste des serveurs.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Configuration de pg_clickhouse terminée pour la base de données taxi dans la ClickHouse Cloud console" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Configuration de pg_clickhouse terminée pour la base de données taxi dans la ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+  </Frame>
+</div>
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Liste des serveurs foreign affichant la connexion pg_clickhouse de taxi" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Liste des serveurs foreign affichant la connexion pg_clickhouse de taxi](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+  </Frame>
+</div>
 
-Vous pouvez maintenant ouvrir la **SQL console** Postgres et interroger les tables importées :
+Vous pouvez maintenant ouvrir la **SQL console** Postgres et interroger les tables importées :
 
 ```sql
 SELECT * FROM <schema>.<table>;
@@ -323,27 +336,27 @@ Server: taxi_srv
 FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 ```
 
-Exécutez maintenant une requête sur la table :
+Exécutez maintenant une requête sur la table :
 
 ```pgsql
- SELECT count(*) FROM taxi.trips;
-   count
- ---------
-  1999657
- (1 row)
+SELECT count(*) FROM taxi.trips;
+  count
+---------
+ 1999657
+(1 row)
 ```
 
 Notez la rapidité d’exécution de la requête. pg&#95;clickhouse transmet l’intégralité de la
 requête, y compris l’agrégat `COUNT()`, à ClickHouse, de sorte qu’elle s’y exécute et ne
-renvoie qu’une seule ligne à Postgres. Utilisez [EXPLAIN] pour le constater :
+renvoie qu’une seule ligne à Postgres. Utilisez [EXPLAIN] pour le constater :
 
 ```pgsql
- EXPLAIN select count(*) from taxi.trips;
-                    QUERY PLAN
- -------------------------------------------------
-  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-    Relations: Aggregate on (trips)
- (2 rows)
+EXPLAIN select count(*) from taxi.trips;
+                   QUERY PLAN
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+   Relations: Aggregate on (trips)
+(2 rows)
 ```
 
 Notez que &quot;Foreign Scan&quot; apparaît à la racine du plan, ce qui signifie que l’intégralité de la
@@ -518,7 +531,7 @@ Les quartiers sont associés aux noms des cinq boroughs de New York
 
 Voici un extrait du fichier CSV que vous utilisez, présenté sous forme de tableau. La
 colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
-`dropoff_nyct2010_gid` de votre table des trajets :
+`dropoff_nyct2010_gid` de votre table des trajets :
 
 | LocationID | Borough       | Zone                    | service&#95;zone |
 | ---------: | ------------- | ----------------------- | ---------------- |
@@ -530,7 +543,7 @@ colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
 
 1. Toujours dans Postgres, utilisez la fonction `clickhouse_raw_query` pour créer un
    [dictionnaire] ClickHouse nommé `taxi_zone_dictionary` et le renseigner à
-   partir du fichier CSV stocké dans S3 :
+   partir du fichier CSV stocké dans S3 :
 
    ```sql
    CALL clickhouse_perform('taxi_srv', $$
@@ -554,14 +567,14 @@ colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
      LIFETIME](/fr/reference/statements/create/dictionary/lifetime).
    </Note>
 
-   2. Importez-le maintenant :
+   2. Importez-le maintenant :
 
    ```sql
    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
    FROM SERVER taxi_srv INTO taxi;
    ```
 
-   3. Vérifiez que nous pouvons l’interroger :
+   3. Vérifiez que nous pouvons l’interroger :
 
    ```pgsql
    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
@@ -575,7 +588,7 @@ colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
 
    4. Excellent. Utilisez maintenant la fonction `dictGet` pour récupérer le
       nom d’un borough dans une requête. Cette requête additionne le nombre de trajets
-      en taxi par borough qui se terminent à l’aéroport de LaGuardia ou à JFK :
+      en taxi par borough qui se terminent à l’aéroport de LaGuardia ou à JFK :
 
    ```pgsql
    taxi=# SELECT

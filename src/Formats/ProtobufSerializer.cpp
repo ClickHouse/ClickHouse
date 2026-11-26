@@ -1,5 +1,6 @@
 #include <Formats/ProtobufSerializer.h>
 #include <Common/Arena.h>
+#include <base/sanitizer_defs.h>
 
 #if USE_PROTOBUF
 #    include <AggregateFunctions/IAggregateFunction.h>
@@ -37,8 +38,10 @@
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <base/range.h>
+#    include <base/scope_guard.h>
 #    include <base/sort.h>
 #    include <Common/PODArray.h>
+#    include <Common/checkStackSize.h>
 #    include <Common/logger_useful.h>
 #    include <Common/quoteString.h>
 
@@ -65,6 +68,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -73,6 +77,146 @@ namespace
     using MessageDescriptor = google::protobuf::Descriptor;
     using FieldTypeId = google::protobuf::FieldDescriptor::Type;
     using OneofDescriptor = google::protobuf::OneofDescriptor;
+
+    /// Returns a mutable reference to a column that is borrowed from the caller.
+    /// Used in `ProtobufSerializer` where columns are passed for mutation during deserialization,
+    /// but the caller retains a reference for lifetime management, so `use_count > 1`.
+    /// The caller guarantees mutability by contract.
+    ///
+    /// We do not assert on `use_count` here: legitimate ownership in `ProtobufSerializer`
+    /// includes the caller's storage, the message-level `mutable_columns` cache, and
+    /// each leaf field serializer's stored `ColumnPtr` for the same column, which can
+    /// add up to more than two owners even on the happy path.
+    ///
+    /// Mutability is instead validated at the read-mode entry point in
+    /// `ProtobufSerializerMessage::setColumns(const MutableColumnPtr *)`: that overload
+    /// chasserts that each input column has `use_count() == 1`, which is the contract
+    /// of `MutableColumnPtr` (move-only, unique-ownership). Internal sharing past that
+    /// point is bounded by `ProtobufSerializer` itself and is safe to mutate through
+    /// this helper.
+    IColumn & borrowColumnRef(const ColumnPtr & col)
+    {
+        return const_cast<IColumn &>(*col);
+    }
+
+    /// Removes the last `n` rows of a column while a partially read row is rolled back.
+    /// The sub-columns of a composite column are also held by the serializers of its nested
+    /// fields, so `IColumn::popBack` of the composite column would reach them through the
+    /// non-const `WrappedPtr` dereference and fail its exclusive-ownership assertion.
+    /// Walk the composite columns through the borrowed sub-column pointers instead.
+    void popBackBorrowed(IColumn & column, size_t n)
+    {
+        if (n == 0)
+            return;
+
+        if (auto * column_array = typeid_cast<ColumnArray *>(&column))
+        {
+            const auto & const_array = std::as_const(*column_array);
+            const auto & offsets = const_array.getOffsets();
+            if (n > offsets.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, column.getName(), offsets.size());
+            size_t nested_n = offsets.back() - (n == offsets.size() ? 0 : offsets[offsets.size() - n - 1]);
+            popBackBorrowed(borrowColumnRef(const_array.getDataPtr()), nested_n);
+            borrowColumnRef(const_array.getOffsetsPtr()).popBack(n);
+        }
+        else if (auto * column_tuple = typeid_cast<ColumnTuple *>(&column))
+        {
+            /// A tuple without elements keeps its own length and has no sub-columns to borrow.
+            /// Otherwise its size is the size of its elements.
+            if (column_tuple->tupleSize() == 0)
+            {
+                column_tuple->popBack(n);
+                return;
+            }
+            for (const auto & element : std::as_const(*column_tuple).getColumns())
+                popBackBorrowed(borrowColumnRef(element), n);
+        }
+        else if (auto * column_map = typeid_cast<ColumnMap *>(&column))
+        {
+            popBackBorrowed(borrowColumnRef(std::as_const(*column_map).getNestedColumnPtr()), n);
+        }
+        else if (auto * column_nullable = typeid_cast<ColumnNullable *>(&column))
+        {
+            const auto & const_nullable = std::as_const(*column_nullable);
+            popBackBorrowed(borrowColumnRef(const_nullable.getNestedColumnPtr()), n);
+            borrowColumnRef(const_nullable.getNullMapColumnPtr()).popBack(n);
+        }
+        else
+        {
+            column.popBack(n);
+        }
+    }
+    /// Appends a default row to a column, walking composite columns through the borrowed
+    /// sub-column pointers for the same reason as `popBackBorrowed`: `IColumn::insertDefault`
+    /// of a composite column would reach sub-columns that are also held by the serializers
+    /// of its nested fields through the non-const `WrappedPtr` dereference.
+    /// Exception-safe: on failure, the already appended sub-columns are rolled back.
+    /// With `type`, a scalar gets the default of its type (e.g. the first element of an `Enum`), not the column's.
+    void insertDefaultBorrowed(IColumn & column, const IDataType * type = nullptr)
+    {
+        if (auto * column_array = typeid_cast<ColumnArray *>(&column))
+        {
+            /// A default array is empty: only the offsets grow.
+            auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(borrowColumnRef(std::as_const(*column_array).getOffsetsPtr())).getData();
+            auto last_offset = offsets.back(); /// By value: `push_back` may reallocate.
+            offsets.push_back(last_offset);
+        }
+        else if (auto * column_tuple = typeid_cast<ColumnTuple *>(&column))
+        {
+            /// A tuple without elements keeps its own length and has no sub-columns to borrow.
+            if (column_tuple->tupleSize() == 0)
+            {
+                column_tuple->insertDefault();
+                return;
+            }
+            const auto & elements = std::as_const(*column_tuple).getColumns();
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type);
+            size_t i = 0;
+            try
+            {
+                for (; i < elements.size(); ++i)
+                    insertDefaultBorrowed(borrowColumnRef(elements[i]), tuple_type ? tuple_type->getElement(i).get() : nullptr);
+            }
+            catch (...)
+            {
+                for (size_t rollback = 0; rollback < i; ++rollback)
+                    popBackBorrowed(borrowColumnRef(elements[rollback]), 1);
+                throw;
+            }
+        }
+        else if (auto * column_map = typeid_cast<ColumnMap *>(&column))
+        {
+            insertDefaultBorrowed(borrowColumnRef(std::as_const(*column_map).getNestedColumnPtr()));
+        }
+        else if (auto * column_nullable = typeid_cast<ColumnNullable *>(&column))
+        {
+            const auto & const_nullable = std::as_const(*column_nullable);
+            auto & nested_column = borrowColumnRef(const_nullable.getNestedColumnPtr());
+            insertDefaultBorrowed(nested_column);
+            try
+            {
+                assert_cast<ColumnUInt8 &>(borrowColumnRef(const_nullable.getNullMapColumnPtr())).getData().push_back(true);
+            }
+            catch (...)
+            {
+                popBackBorrowed(nested_column, 1);
+                throw;
+            }
+        }
+        else if (type)
+        {
+            type->insertDefaultInto(column);
+        }
+        else
+        {
+            column.insertDefault();
+        }
+    }
+
+    /// The maximum nesting depth of messages we process. The schema is provided by the user,
+    /// and a chain of distinct messages, each having a field of the type of the next one, is not limited
+    /// by the protobuf library, while the functions below process it recursively.
+    constexpr size_t MAX_PROTOBUF_MESSAGE_NESTING_DEPTH = 1000;
 
 
     /// Compares column's name with protobuf field's name.
@@ -229,6 +373,12 @@ namespace
             column = columns[0]->getPtr();
         }
 
+        /// Returns a mutable reference to the column for deserialization.
+        /// The column is borrowed from the caller who guarantees mutability,
+        /// but it is stored as `ColumnPtr` (shared with the caller), so we cannot use `assumeMutableRef`.
+        /// Routed through `borrowColumnRef` so all single-value field serializers share the same helper.
+        [[nodiscard]] IColumn & columnRef() const { return borrowColumnRef(column); }
+
         template <typename NumberType>
         void writeInt(NumberType value)
         {
@@ -281,7 +431,7 @@ namespace
         void readStrAndAppend(PaddedPODArray<UInt8> & str) { reader->readStringAndAppend(str); }
 
         template <typename DestType>
-        DestType parseFromStr(std::string_view str) const
+        [[nodiscard]] DestType parseFromStr(std::string_view str) const
         {
             try
             {
@@ -297,7 +447,7 @@ namespace
         }
 
         template <typename DestType, typename SrcType>
-        DestType castNumber(SrcType value) const
+        [[nodiscard]] DestType castNumber(SrcType value) const
         {
             if constexpr (std::is_same_v<DestType, SrcType>)
                 return value;
@@ -375,7 +525,7 @@ namespace
         void readRow(size_t row_num) override
         {
             NumberType value = read_function();
-            auto & column_vector = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -384,7 +534,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertValue(getDefaultNumber());
@@ -631,7 +781,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_string = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_string = assert_cast<ColumnType &>(columnRef());
             const size_t old_size = column_string.size();
             typename ColumnType::Chars & data = column_string.getChars();
             const size_t old_data_size = data.size();
@@ -674,6 +824,8 @@ namespace
                 }
                 try
                 {
+                    if (row_num < old_size)
+                        data.insert(text_buffer.data(), text_buffer.data() + text_buffer.size());
                     column_string.getOffsets().push_back(data.size());
                 }
                 catch (...)
@@ -687,7 +839,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_string = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_string = assert_cast<ColumnType &>(columnRef());
             const size_t old_size = column_string.size();
             if (row_num < old_size)
                 return;
@@ -1048,7 +1200,7 @@ namespace
 
         void checkEnumDataTypeValue(NumberType value)
         {
-            enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
+            (void)enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
@@ -1178,7 +1330,7 @@ namespace
         void readRow(size_t row_num) override
         {
             DecimalType decimal = read_function();
-            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_decimal = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_decimal.size())
                 column_decimal.getElement(row_num) = decimal;
             else
@@ -1187,7 +1339,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_decimal = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_decimal.size())
                 return;
             column_decimal.insertValue(getDefaultDecimal());
@@ -1749,7 +1901,7 @@ namespace
         void readRow(size_t row_num) override
         {
             UUID value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -1758,7 +1910,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertDefault();
@@ -1825,7 +1977,7 @@ namespace
         void readRow(size_t row_num) override
         {
             IPv6 value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -1834,7 +1986,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertDefault();
@@ -1909,7 +2061,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
+            auto & column_af = assert_cast<ColumnAggregateFunction &>(columnRef());
             Arena & arena = column_af.createOrGetArena();
             AggregateDataPtr data = nullptr;
             readStr(text_buffer);
@@ -1926,7 +2078,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
+            auto & column_af = assert_cast<ColumnAggregateFunction &>(columnRef());
             if (row_num < column_af.size())
                 return;
 
@@ -1967,9 +2119,9 @@ namespace
         {
             size_t size_of_state = aggregate_function->sizeOfData();
             AggregateDataPtr data = arena.alignedAlloc(size_of_state, aggregate_function->alignOfData());
+            aggregate_function->create(data);
             try
             {
-                aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
                 aggregate_function->deserialize(data, buf, std::nullopt, &arena);
                 return data;
@@ -2012,7 +2164,7 @@ namespace
             {
                 if (i == presence_column_idx)
                 {
-                    presence_column = columns[presence_column_idx]->assumeMutable();
+                    presence_column = borrowColumnRef(columns[presence_column_idx]).getPtr();
                 }
                 else
                 {
@@ -2039,31 +2191,55 @@ namespace
 
         void readRow(size_t row_num) override
         {
+            bool presence_inserted = false;
             if (presence_column)
             {
                 if (row_num < presence_column->size())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
                 presence_column->insert(presence_value);
+                presence_inserted = true;
             }
             if (nested_serializer)
-                nested_serializer->readRow(row_num);
+                readNestedWithRollback(presence_inserted, [&] { nested_serializer->readRow(row_num); });
         }
 
         void insertDefaults(size_t row_num) override
         {
             /// Sibling `oneof` wrappers share this column; another branch may have
             /// already inserted the value for the current row.
+            bool presence_inserted = false;
             if (row_num >= presence_column->size())
+            {
                 presence_column->insert(0);
+                presence_inserted = true;
+            }
 
             if (nested_serializer)
-                nested_serializer->insertDefaults(row_num);
+                readNestedWithRollback(presence_inserted, [&] { nested_serializer->insertDefaults(row_num); });
         }
 
         void resetState() override
         {
             if (nested_serializer)
                 nested_serializer->resetState();
+        }
+
+        /// The presence tag is published before the selected branch payload is read. If the nested
+        /// step throws, take the tag back so the presence column does not run one row ahead of the
+        /// branch columns (the same row-level rollback the `Nullable` and array serializers do).
+        template <typename F>
+        void readNestedWithRollback(bool presence_inserted, F && read_nested)
+        {
+            try
+            {
+                read_nested();
+            }
+            catch (...)
+            {
+                if (presence_inserted)
+                    presence_column->popBack(1);
+                throw;
+            }
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2088,8 +2264,8 @@ namespace
     class ProtobufSerializerNullable : public ProtobufSerializer
     {
     public:
-        explicit ProtobufSerializerNullable(std::unique_ptr<ProtobufSerializer> nested_serializer_)
-            : nested_serializer(std::move(nested_serializer_))
+        ProtobufSerializerNullable(DataTypePtr nested_type_, std::unique_ptr<ProtobufSerializer> nested_serializer_)
+            : nested_type(std::move(nested_type_)), nested_serializer(std::move(nested_serializer_))
         {
         }
 
@@ -2121,9 +2297,13 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
-            auto & nested_column = column_nullable.getNestedColumn();
-            auto & null_map = column_nullable.getNullMapData();
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
+            /// The nested column and null-map column are stored inside `ColumnNullable` as `WrappedPtr`s,
+            /// and the leaf serializer holds its own `ColumnPtr` to the nested column, so `use_count > 1`.
+            /// Bypass the `assumeMutableRef` assertion by borrowing through the column pointers directly.
+            auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
+            auto & null_map_column = assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr()));
+            auto & null_map = null_map_column.getData();
             size_t old_size = null_map.size();
 
             nested_serializer->readRow(row_num);
@@ -2143,7 +2323,7 @@ namespace
                 }
                 catch (...)
                 {
-                    nested_column.popBack(1);
+                    popBackBorrowed(nested_column, 1);
                     throw;
                 }
             }
@@ -2151,19 +2331,46 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
-            column_nullable.insertDefault();
+            /// `ColumnNullable::insertDefault` goes through `getNestedColumn()` non-const, which dereferences
+            /// the nested `WrappedPtr` and triggers the `use_count == 1` assertion; the nested serializer
+            /// holds an additional `ColumnPtr` to the same column, so we borrow through pointers instead.
+            /// The nested column can itself be composite (e.g. `Nullable(Tuple(...))`) with sub-columns
+            /// held by the nested serializers, so it is also filled through the borrowed pointers.
+            auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
+            insertDefaultBorrowed(nested_column);
+            /// Mirror `ColumnNullable::insertDefault`: keep the nested column and the null map
+            /// in sync even if appending to the null map throws (e.g. on a memory limit).
+            try
+            {
+                assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(true);
+            }
+            catch (...)
+            {
+                popBackBorrowed(nested_column, 1);
+                throw;
+            }
         }
 
         void insertNestedDefaults(size_t row_num)
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
-            column_nullable.getNestedColumn().insertDefault();
-            column_nullable.getNullMapData().push_back(false);
+            auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
+            insertDefaultBorrowed(nested_column, nested_type.get());
+            /// Same rollback contract as in `insertDefaults` above.
+            try
+            {
+                assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(false);
+            }
+            catch (...)
+            {
+                popBackBorrowed(nested_column, 1);
+                throw;
+            }
         }
 
         void resetState() override
@@ -2178,6 +2385,7 @@ namespace
         }
 
     private:
+        const DataTypePtr nested_type;
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
         ColumnPtr column;
     };
@@ -2262,7 +2470,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(column->assumeMutableRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(borrowColumnRef(column));
 
             if (!read_value_column_set)
             {
@@ -2275,7 +2483,7 @@ namespace
                 read_value_column_set = true;
             }
 
-            read_value_column->popBack(read_value_column->size());
+            popBackBorrowed(*read_value_column, read_value_column->size());
             nested_serializer->readRow(0);
 
             if (row_num < column_lc.size())
@@ -2290,7 +2498,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(column->assumeMutableRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(borrowColumnRef(column));
             if (row_num < column_lc.size())
                 return;
 
@@ -2357,13 +2565,13 @@ namespace
         {
             const auto & column_array = assert_cast<const ColumnArray &>(*column);
             const auto & offsets = column_array.getOffsets();
-            for (size_t i : collections::range(offsets[row_num - 1], offsets[row_num]))
+            for (size_t i : collections::range(offsets[static_cast<ssize_t>(row_num) - 1], offsets[row_num]))
                 element_serializer->writeRow(i);
         }
 
         void readRow(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(column->assumeMutableRef());
+            auto & column_array = assert_cast<ColumnArray &>(borrowColumnRef(column));
             auto & offsets = column_array.getOffsets();
             size_t old_size = offsets.size();
             if (row_num + 1 < old_size)
@@ -2386,7 +2594,7 @@ namespace
             catch (...)
             {
                 if (data_column->size() > old_data_size)
-                    data_column->assumeMutableRef().popBack(data_column->size() - old_data_size);
+                    popBackBorrowed(borrowColumnRef(data_column), data_column->size() - old_data_size);
                 if (offsets.size() > old_size)
                     column_array.getOffsetsColumn().popBack(offsets.size() - old_size);
                 throw;
@@ -2395,7 +2603,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(column->assumeMutableRef());
+            auto & column_array = assert_cast<ColumnArray &>(borrowColumnRef(column));
             if (row_num < column_array.size())
                 return;
             column_array.insertDefault();
@@ -2466,7 +2674,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(column->assumeMutableRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(borrowColumnRef(column));
 
             size_t old_size = column_tuple.size();
             if (row_num >= old_size)
@@ -2491,7 +2699,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(column->assumeMutableRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(borrowColumnRef(column));
             size_t old_size = column_tuple.size();
 
             if (row_num > old_size)
@@ -2506,9 +2714,9 @@ namespace
             {
                 for (size_t i : collections::range(tuple_size))
                 {
-                    auto element_column = column_tuple.getColumnPtr(i)->assumeMutable();
-                    if (element_column->size() > old_size)
-                        element_column->popBack(element_column->size() - old_size);
+                    auto & element_column = borrowColumnRef(column_tuple.getColumnPtr(i));
+                    if (element_column.size() > old_size)
+                        popBackBorrowed(element_column, element_column.size() - old_size);
                 }
                 throw;
             }
@@ -2613,7 +2821,7 @@ namespace
             {
                 mutable_columns.resize(num_columns_);
                 for (size_t i : collections::range(num_columns_))
-                    mutable_columns[i] = columns_[i]->assumeMutable();
+                    mutable_columns[i] = borrowColumnRef(columns_[i]).getPtr();
 
                 std::vector<UInt8> column_is_missing;
                 column_is_missing.resize(num_columns_, true);
@@ -2627,6 +2835,19 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns_, size_t num_columns_) override
         {
+            /// This is the read-mode entry point. `MutableColumnPtr` is move-only and represents
+            /// unique ownership, so the caller's mutability claim is equivalent to `use_count() == 1`
+            /// at this exact moment (before we add any references of our own via `getPtr()`).
+            ///
+            /// Validating here gives us a debug ownership check for the entire read path without
+            /// false-positives from `ProtobufSerializer`-internal sharing (the message-level
+            /// `mutable_columns` cache and each leaf field serializer's stored `ColumnPtr`), which
+            /// only accrue after this point.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            for (size_t i : collections::range(num_columns_))
+                chassert(columns_[i]->use_count() == 1);
+#endif
+
             Columns cols;
             cols.reserve(num_columns_);
             for (size_t i : collections::range(num_columns_))
@@ -2671,14 +2892,14 @@ namespace
             else
                 reader->startMessage(with_length_delimiter);
 
-            if (!field_infos.empty())
+            size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
+            try
             {
-                last_field_index = 0;
-                last_field_tag = field_infos[0].field_tag;
-                size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
-
-                try
+                if (!field_infos.empty())
                 {
+                    last_field_index = 0;
+                    last_field_tag = field_infos[0].field_tag;
+
                     int field_tag = 0;
                     while (reader->readFieldNumber(field_tag))
                     {
@@ -2711,37 +2932,42 @@ namespace
                         }
                     }
                 }
-                catch (...)
-                {
-                    for (auto & column : mutable_columns)
-                    {
-                        if (column->size() > old_size)
-                            column->popBack(column->size() - old_size);
-                    }
-                    resetState();
-                    throw;
-                }
+
+                if (parent_field_descriptor || has_envelope_as_parent)
+                    reader->endNestedMessage();
+                else
+                    reader->endMessage(false);
+
+                addDefaultsToMissingColumns(row_num);
             }
-
-            if (parent_field_descriptor || has_envelope_as_parent)
-                reader->endNestedMessage();
-            else
-                reader->endMessage(false);
-
-            addDefaultsToMissingColumns(row_num);
+            catch (...)
+            {
+                popRowsAddedSince(old_size);
+                resetState();
+                throw;
+            }
         }
 
         void insertDefaults(size_t row_num) override
         {
-            for (const FieldInfo & info : field_infos)
+            size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
+            try
             {
-                if (info.field_serializer)
+                for (const FieldInfo & info : field_infos)
                 {
-                    info.field_serializer->insertDefaults(row_num);
+                    if (info.field_serializer)
+                    {
+                        info.field_serializer->insertDefaults(row_num);
+                    }
                 }
-            }
 
-            addDefaultsToMissingColumns(row_num);
+                addDefaultsToMissingColumns(row_num);
+            }
+            catch (...)
+            {
+                popRowsAddedSince(old_size);
+                throw;
+            }
         }
 
         void resetState() override
@@ -2791,6 +3017,7 @@ namespace
         }
 
     private:
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         size_t findFieldIndexByFieldTag(int field_tag)
         {
             while (true)
@@ -2816,6 +3043,15 @@ namespace
         {
             if (has_missing_columns)
                 missing_columns_filler->addDefaults(mutable_columns, row_num);
+        }
+
+        void popRowsAddedSince(size_t old_size)
+        {
+            for (auto & column : mutable_columns)
+            {
+                if (column->size() > old_size)
+                    popBackBorrowed(*column, column->size() - old_size);
+            }
         }
 
         bool isNullGoogleWrapper(size_t row_num)
@@ -3081,7 +3317,7 @@ namespace
         void writeRow(size_t row_num) override
         {
             const auto & offset_column0 = assert_cast<const ColumnArray::ColumnOffsets &>(*offset_columns[0]);
-            size_t start_offset = offset_column0.getElement(row_num - 1);
+            size_t start_offset = row_num ? offset_column0.getElement(row_num - 1) : 0;
             size_t end_offset = offset_column0.getElement(row_num);
             for (size_t i : collections::range(start_offset, end_offset))
                 message_serializer->writeRow(i);
@@ -3105,12 +3341,12 @@ namespace
                 if (row_num < old_size)
                 {
                     for (auto & offset_column : offset_columns)
-                        assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().back() = data_size;
+                        assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().back() = data_size;
                 }
                 else
                 {
                     for (auto & offset_column : offset_columns)
-                        assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().push_back(data_size);
+                        assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().push_back(data_size);
                 }
             }
             catch (...)
@@ -3118,12 +3354,12 @@ namespace
                 for (auto & data_column : data_columns)
                 {
                     if (data_column->size() > old_data_size)
-                        data_column->assumeMutableRef().popBack(data_column->size() - old_data_size);
+                        popBackBorrowed(borrowColumnRef(data_column), data_column->size() - old_data_size);
                 }
                 for (auto & offset_column : offset_columns)
                 {
                     if (offset_column->size() > old_size)
-                        offset_column->assumeMutableRef().popBack(offset_column->size() - old_size);
+                        const_cast<IColumn &>(*offset_column).popBack(offset_column->size() - old_size);
                 }
                 throw;
             }
@@ -3139,14 +3375,14 @@ namespace
             {
                 size_t data_size = data_columns[0]->size();
                 for (auto & offset_column : offset_columns)
-                    assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().push_back(data_size);
+                    assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().push_back(data_size);
             }
             catch (...)
             {
                 for (auto & offset_column : offset_columns)
                 {
                     if (offset_column->size() > old_size)
-                        offset_column->assumeMutableRef().popBack(offset_column->size() - old_size);
+                        const_cast<IColumn &>(*offset_column).popBack(offset_column->size() - old_size);
                 }
                 throw;
             }
@@ -3191,7 +3427,7 @@ namespace
         std::unique_ptr<ProtobufSerializer> buildMessageSerializer(
             const Strings & column_names,
             const DataTypes & data_types,
-            std::vector<size_t> & missing_column_indices,
+            VectorWithMemoryTracking<size_t> & missing_column_indices,
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
             bool with_envelope,
@@ -3456,6 +3692,18 @@ namespace
             bool columns_are_reordered_outside,
             bool check_nested_while_filling_missing_columns)
         {
+            checkStackSize();
+
+            if (message_nesting_depth >= MAX_PROTOBUF_MESSAGE_NESTING_DEPTH)
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Protobuf messages are nested too deeply (more than {} levels) at the message {}",
+                    MAX_PROTOBUF_MESSAGE_NESTING_DEPTH,
+                    quoteString(message_descriptor.full_name()));
+
+            ++message_nesting_depth;
+            SCOPE_EXIT({ --message_nesting_depth; });
+
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
 
@@ -3869,10 +4117,8 @@ namespace
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
             if (reader_or_writer.reader)
             {
-                if (check_nested_while_filling_missing_columns)
-                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
-                else
-                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
+                missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(
+                    num_columns, column_names, data_types, check_nested_while_filling_missing_columns);
                 if (columns_are_reordered_outside && oneof_presence)
                 {
                     ::sort(used_column_indices.begin(), used_column_indices.end());
@@ -3961,7 +4207,7 @@ namespace
                         oneof_presence);
                     if (!nested_serializer)
                         return nullptr;
-                    return std::make_unique<ProtobufSerializerNullable>(std::move(nested_serializer));
+                    return std::make_unique<ProtobufSerializerNullable>(nullable_data_type.getNestedType(), std::move(nested_serializer));
                 }
 
                 case TypeIndex::LowCardinality:
@@ -4159,6 +4405,9 @@ namespace
         const ProtobufReaderOrWriter reader_or_writer;
         std::function<String(size_t)> get_root_desc_function;
         std::shared_ptr<ProtobufSerializer *> root_serializer_ptr;
+
+        /// The current depth of recursion of `buildMessageSerializerImpl`.
+        size_t message_nesting_depth = 0;
     };
 
     template <typename Type>
@@ -4182,7 +4431,18 @@ namespace
         bool allow_repeat,
         std::unordered_set<const google::protobuf::FieldDescriptor *> & unresolved_descriptors)
     {
+        checkStackSize();
+
         chassert(unresolved_descriptors.contains(field_descriptor));
+
+        /// `unresolved_descriptors` contains the chain of fields of nested messages leading to the current field.
+        /// It protects only from recursive types, but not from long chains of distinct messages.
+        if (unresolved_descriptors.size() > MAX_PROTOBUF_MESSAGE_NESTING_DEPTH)
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "Protobuf messages are nested too deeply (more than {} levels) at the field {}",
+                MAX_PROTOBUF_MESSAGE_NESTING_DEPTH,
+                quoteString(field_descriptor->full_name()));
         if (allow_repeat && field_descriptor->is_map())
         {
             /// We don't add the same unresolved descriptor again since we are trying to re-resolve and put in under a Tuple
@@ -4191,6 +4451,9 @@ namespace
             if (!name_and_type)
                 return std::nullopt;
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type->type.get());
+            /// The key or the value of the map entry was skipped as unsupported, so the map is skipped as a whole.
+            if (tuple_type->getElements().size() != 2)
+                return std::nullopt;
             return NameAndTypePair{name_and_type->name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
         }
 
@@ -4273,11 +4536,14 @@ namespace
                             nested_field_descriptor->full_name());
                     }
 
+                    /// Remove the descriptor on every exit, including skipping an unsupported field,
+                    /// so that `unresolved_descriptors` contains only the chain of fields leading to the current one.
+                    SCOPE_EXIT({ unresolved_descriptors.erase(nested_field_descriptor); });
+
                     auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
                         nested_field_descriptor, skip_unsupported_fields, true, unresolved_descriptors);
                     if (!nested_name_and_type)
                         return std::nullopt;
-                    unresolved_descriptors.erase(nested_field_descriptor);
                     return NameAndTypePair{fmt::format("{}_{}", field_descriptor->name(), nested_name_and_type->name), nested_name_and_type->type};
                 }
 
@@ -4294,11 +4560,12 @@ namespace
                             "ClickHouse doesn't support type recursion ({})",
                             message_descriptor->field(i)->full_name());
                     }
+                    SCOPE_EXIT({ unresolved_descriptors.erase(message_descriptor->field(i)); });
+
                     auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
                         message_descriptor->field(i), skip_unsupported_fields, true, unresolved_descriptors);
                     if (!nested_name_and_type)
                         continue;
-                    unresolved_descriptors.erase(message_descriptor->field(i));
                     nested_types.push_back(nested_name_and_type->type);
                     nested_names.push_back(nested_name_and_type->name);
                 }
@@ -4329,7 +4596,7 @@ namespace
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
     const DataTypes & data_types,
-    std::vector<size_t> & missing_column_indices,
+    VectorWithMemoryTracking<size_t> & missing_column_indices,
     const ProtobufSchemas::DescriptorHolder & descriptor,
     bool with_length_delimiter,
     bool with_envelope,
@@ -4357,7 +4624,7 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     bool defaults_for_nullable_google_wrappers,
     ProtobufWriter & writer)
 {
-    std::vector<size_t> missing_column_indices;
+    VectorWithMemoryTracking<size_t> missing_column_indices;
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(
         column_names, data_types, missing_column_indices,
         *descriptor.message_descriptor,

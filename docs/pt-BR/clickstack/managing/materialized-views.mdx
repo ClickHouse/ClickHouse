@@ -8,12 +8,11 @@ keywords: ['clickstack', 'observabilidade', 'visões materializadas', 'desempenh
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge />
 
 <div id="introduction">
-  ## Introdução
+  ## Introdução {#introduction}
 </div>
 
 O ClickStack pode aproveitar [visões materializadas incrementais (IMV)](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para acelerar visualizações que dependem de consultas com agregação intensa, como calcular a duração média das requisições por minuto ao longo do tempo. Esse recurso pode melhorar drasticamente o desempenho das consultas e, em geral, é mais vantajoso em implantações maiores, na faixa de 10 TB por dia ou mais, além de permitir escalar para a faixa de petabytes por dia. Visões materializadas incrementais estão em Beta e devem ser usadas com cautela.
@@ -24,9 +23,7 @@ O ClickStack pode aproveitar [visões materializadas incrementais (IMV)](/pt-BR/
   Reduzir o tempo de execução pode ser benéfico tanto em termos de responsividade quanto de consumo de recursos.
 </Note>
 
-<div id="what-are-incremental-materialized-views">
-  ## O que são visões materializadas incrementais
-</div>
+## O que são visões materializadas incrementais {#what-are-incremental-materialized-views}
 
 Visões materializadas incrementais permitem transferir o custo de computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` significativamente mais rápidas.
 
@@ -36,7 +33,11 @@ A principal motivação para usar visões materializadas é que os dados gravado
 
 As visões materializadas no ClickHouse são atualizadas continuamente à medida que os dados fluem para a tabela de origem, comportando-se mais como índices sempre atualizados. Isso difere de muitos outros bancos de dados, nos quais visões materializadas são snapshots estáticos que precisam ser atualizados periodicamente, de forma semelhante às [visões materializadas atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view) do ClickHouse.
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de visão materializada" />
+<div className="ch-image-md">
+  <Frame>
+    ![Diagrama de visão materializada](/images/materialized-view/materialized-view-diagram.webp)
+  </Frame>
+</div>
 
 Visões materializadas incrementais computam apenas as alterações na visão à medida que novos dados chegam, transferindo a computação para o momento da inserção. Como o ClickHouse é altamente otimizado para ingestão, o custo incremental de manter a visão para cada bloco inserido é pequeno em relação à economia obtida durante a execução das consultas. O custo de computar a agregação é amortizado ao longo das inserções, em vez de ser pago repetidamente a cada leitura. Portanto, consultar os resultados pré-agregados é muito menos custoso do que recomputá-los, resultando em menor custo operacional e desempenho quase em tempo real para visualizações que consomem esses dados, mesmo em escala de petabytes.
 
@@ -51,14 +52,14 @@ Cada visão materializada introduz uma sobrecarga adicional no momento da inser�
 </Tip>
 
 <Note>
-  Uma única visão materializada pode computar múltiplas métricas para diferentes agrupamentos, por exemplo, duração mínima, máxima e p95 por service name em buckets de um minuto. Isso permite que uma única visão atenda a muitas visualizações, e não apenas a uma. Portanto, consolidar métricas em visões compartilhadas é importante para maximizar o valor de cada visão e garantir que ela seja reutilizada entre dashboards e fluxos de trabalho.
+  Uma única visão materializada pode computar múltiplas métricas para diferentes agrupamentos, por exemplo, duração mínima, máxima e p95 por nome do serviço em buckets de um minuto. Isso permite que uma única visão atenda a muitas visualizações, e não apenas a uma. Portanto, consolidar métricas em visões compartilhadas é importante para maximizar o valor de cada visão e garantir que ela seja reutilizada entre dashboards e fluxos de trabalho.
 </Note>
 
 Antes de prosseguir, recomendamos que você se familiarize mais a fundo com visões materializadas no ClickHouse.
 Consulte nosso guia sobre [Visões materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para mais detalhes.
 
 <div id="selecting-visualizatons-for-acceleration">
-  ## Selecionando visualizações para aceleração
+  ## Selecionando visualizações para aceleração {#selecting-visualizatons-for-acceleration}
 </div>
 
 Antes de criar qualquer visão materializada, é importante entender quais visualizações você quer acelerar e quais fluxos de trabalho são mais críticos para seus usuários.
@@ -68,21 +69,21 @@ No ClickStack, as visões materializadas são projetadas para **acelerar visuali
 Em geral, recomenda-se o seguinte:
 
 <div id="identify-high-impact-visualizations">
-  ### Identifique visualizações de alto impacto
+  ### Identifique visualizações de alto impacto {#identify-high-impact-visualizations}
 </div>
 
 Os melhores candidatos à aceleração normalmente se enquadram em uma das seguintes categorias:
 
 * Visualizações de dashboard atualizadas com frequência e exibidas continuamente, como dashboards de monitoramento de alto nível mostrados em monitores de parede.
 * Fluxos de diagnóstico usados em runbooks, nos quais gráficos específicos são consultados repetidamente durante a resposta a incidentes e precisam retornar resultados rapidamente.
-* Experiências centrais do HyperDX, incluindo:
+* Experiências centrais da interface do ClickStack, incluindo:
   * Visualizações de histograma na página de busca.
   * Visualizações usadas em dashboards predefinidos, como as visões de APM, Services ou Kubernetes.
 
 Essas visualizações costumam ser executadas repetidas vezes, por vários usuários e em diferentes intervalos de tempo, o que as torna alvos ideais para deslocar o processamento do momento da consulta para o momento da inserção.
 
 <div id="balance-benefit-against-insert-time-cost">
-  ### Equilibre o benefício com o custo no momento da inserção
+  ### Equilibre o benefício com o custo no momento da inserção {#balance-benefit-against-insert-time-cost}
 </div>
 
 Visões materializadas geram trabalho adicional no momento da inserção, portanto devem ser criadas de forma seletiva e criteriosa. Nem toda visualização se beneficia de pré-agregação, e acelerar gráficos raramente usados geralmente não compensa a sobrecarga. Você deve manter o número total de visões materializadas abaixo de 20.
@@ -94,7 +95,7 @@ Visões materializadas geram trabalho adicional no momento da inserção, portan
 Depois de identificar as visualizações mais importantes, a próxima etapa é a consolidação.
 
 <div id="consolidate-visualizations-into-shared-views">
-  ### Consolide as visualizações em visões compartilhadas
+  ### Consolide as visualizações em visões compartilhadas {#consolidate-visualizations-into-shared-views}
 </div>
 
 Todas as visões materializadas no ClickStack devem agrupar os dados por um intervalo de tempo usando funções como [`toStartOfMinute`](/pt-BR/reference/functions/regular-functions/date-time-functions#toStartOfMinute). No entanto, muitas visualizações também compartilham chaves de agrupamento adicionais, como nome do serviço, nome do span ou código de status. Quando várias visualizações usam as mesmas dimensões de agrupamento, muitas vezes elas podem ser atendidas por uma única visão materializada.
@@ -118,16 +119,18 @@ Consolidar visões dessa forma reduz a sobrecarga no momento da inserção, limi
 
 Nesta etapa, **concentre-se nas consultas** que serão executadas pelas visualizações que você deseja acelerar. Na próxima seção, você verá um exemplo de como várias consultas de agregação podem ser combinadas em uma única visão materializada.
 
-<div id="creating-a-materialized-view">
-  ## Criando uma visão materializada
-</div>
+## Criando uma visão materializada {#creating-a-materialized-view}
 
 Depois de identificar uma visualização, ou um conjunto de visualizações, que você deseja acelerar, a próxima etapa é identificar as consultas subjacentes. Na prática, isso significa inspecionar a configuração da visualização e revisar o SQL gerado, prestando bastante atenção às métricas de agregação usadas e às funções aplicadas.
 
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="SQL gerado" />
+<div className="ch-image-lg">
+  <Frame>
+    ![SQL gerado](/images/clickstack/materialized_views/generated_sql.webp)
+  </Frame>
+</div>
 
 <Note>
-  Nos casos em que um painel de depuração não estiver disponível no HyperDX para um componente, os usuários podem inspecionar o console do navegador, onde todas as consultas são registradas.
+  Nos casos em que um painel de depuração não estiver disponível na Interface do ClickStack para um componente, os usuários podem inspecionar o console do navegador, onde todas as consultas são registradas.
 </Note>
 
 Depois de consolidar as consultas necessárias, você deve se familiarizar com as [**funções de estado de agregação**](/pt-BR/reference/data-types/aggregatefunction) no ClickHouse. As visões materializadas dependem dessas funções para transferir o processamento do momento da consulta para o momento da inserção. Em vez de armazenar valores agregados finais, uma visão materializada calcula e armazena **estados intermediários de agregação**, que depois são mesclados e finalizados no momento da consulta. Em geral, eles serão muito menores do que a tabela original. Esses estados têm tipos de dados dedicados e precisam ser representados explicitamente no schema da tabela de destino.
@@ -148,7 +151,7 @@ Você pode ver um exemplo de como usar o AggregatingMergeTree e funções de agr
 É **altamente recomendável** se familiarizar com esses conceitos antes de prosseguir.
 
 <div id="example-materialized-view">
-  ### Exemplo de visão materializada
+  ### Exemplo de visão materializada {#example-materialized-view}
 </div>
 
 Considere a consulta original a seguir, que calcula a duração média, a duração máxima, a contagem de eventos e percentis por minuto, agrupada por nome do serviço e código de status:
@@ -214,28 +217,34 @@ Esta visão materializada consiste em duas partes:
 O resultado é uma tabela compacta que armazena estados de agregação por minuto para cada nome de serviço e código de status. Seu tamanho cresce de forma previsível ao longo do tempo e com a cardinalidade e, após as mesclagens em segundo plano, ela representa o mesmo resultado de executar a agregação original sobre os dados brutos. Consultar essa tabela é significativamente mais barato do que agregar diretamente da tabela de origem de traces, possibilitando um desempenho de visualização rápido e consistente em escala.
 
 <div id="materialized-view-usage-in-clickstack">
-  ## Usando visões materializadas no ClickStack
+  ## Usando visões materializadas no ClickStack {#materialized-view-usage-in-clickstack}
 </div>
 
 Depois de criadas no ClickHouse, as visões materializadas devem ser registradas no ClickStack para que possam ser usadas automaticamente por visualizações, dashboards e alertas.
 
-<div id="registering-a-view">
-  ### Registrando uma visão materializada para uso
-</div>
+### Registrando uma visão materializada para uso {#registering-a-view}
 
-As visões materializadas devem ser registradas na **fonte** do HyperDX que corresponde à **tabela de origem original** da qual a visão foi derivada.
+As visões materializadas devem ser registradas na **fonte** da Interface do ClickStack que corresponde à **tabela de origem original** da qual a visão foi derivada.
 
 <Steps>
   <Step title="Edite a fonte" id="edit-the-source">
-    Navegue até a **fonte** relevante no HyperDX e abra a caixa de diálogo **Editar configuração**. Role até a seção de visões materializadas.
+    Navegue até a **fonte** relevante na Interface do ClickStack e abra a caixa de diálogo **Editar configuração**. Role até a seção de visões materializadas.
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Editar fontes" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editar fontes](/images/clickstack/materialized_views/edit_source.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Adicione a visão materializada" id="add-the-materialized-view">
     Selecione **Adicionar visão materializada** e, em seguida, escolha o banco de dados e a tabela de destino que dão suporte à visão materializada.
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Editar fontes" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editar fontes](/images/clickstack/materialized_views/add_view.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Selecione as métricas" id="select-metrics">
@@ -248,24 +257,36 @@ As visões materializadas devem ser registradas na **fonte** do HyperDX que corr
 
     Para dimensões, especifique todas as colunas, além do timestamp, pelas quais a visão agrupa.
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Selecionar métricas" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Selecionar métricas](/images/clickstack/materialized_views/select_metrics.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Selecione a granularidade de tempo" id="select-time-granularity">
     Selecione a **granularidade de tempo** da visão materializada, por exemplo, um minuto.
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Selecionar granularidade de tempo" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Selecionar granularidade de tempo](/images/clickstack/materialized_views/select_time_granularity.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Selecione a data mínima" id="specify-the-minimum-date">
     Especifique a data mínima para a qual a visão materializada contém dados. Isso representa o timestamp mais antigo disponível na visão e, em geral, corresponde ao momento em que a visão foi criada, supondo que a ingestão tenha sido contínua.
 
     <Note>
-      As visões materializadas **não são preenchidas retroativamente automaticamente** quando são criadas, portanto conterão apenas linhas geradas a partir de dados inseridos após a criação.
-      Um guia completo sobre preenchimento retroativo de visões materializadas pode ser encontrado em [&quot;Carga retroativa de dados.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
+      As visões materializadas **não recebem carregamento de dados históricos automaticamente** quando são criadas, portanto conterão apenas linhas geradas a partir de dados inseridos após a criação.
+      Um guia completo sobre carregamento de dados históricos de visões materializadas pode ser encontrado em [&quot;Carregamento de dados históricos.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="Selecionar tempo mínimo" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Selecionar tempo mínimo](/images/clickstack/materialized_views/select_min_time.webp)
+      </Frame>
+    </div>
 
     Se o horário exato de início não estiver claro, você pode determiná-lo consultando o timestamp mínimo da tabela de destino, por exemplo:
 
@@ -277,15 +298,17 @@ As visões materializadas devem ser registradas na **fonte** do HyperDX que corr
   <Step title="Salve a fonte" id="save-the-source">
     Salve a configuração da fonte.
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Salvar fonte" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Salvar fonte](/images/clickstack/materialized_views/save_source.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 Depois que uma visão materializada é registrada, ela é usada automaticamente pelo ClickStack sempre que uma consulta se qualificar, sem exigir alterações em dashboards, visualizações ou alertas. O ClickStack avalia cada consulta no momento da execução e determina se uma visão materializada pode ser aplicada.
 
-<div id="verifying-acceleration-in-dashboards-and-visualizations">
-  ### Verificando a aceleração em dashboards e visualizações
-</div>
+### Verificando a aceleração em dashboards e visualizações {#verifying-acceleration-in-dashboards-and-visualizations}
 
 É importante lembrar que visões materializadas incrementais contêm apenas dados inseridos **depois que a visão materializada foi criada**. Elas não são preenchidas retroativamente automaticamente, o que as mantém leves e baratas de manter. Por esse motivo, os usuários precisam especificar explicitamente o intervalo de tempo válido de uma visão materializada ao registrá-la.
 
@@ -300,7 +323,11 @@ O ClickStack fornece indicadores visuais claros para confirmar se uma visão mat
 * **Raio verde** indica que a consulta está sendo acelerada por uma visão materializada.
 * **Raio laranja** indica que a consulta é executada na tabela de origem.
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Visualização acelerada" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Visualização acelerada](/images/clickstack/materialized_views/accelerated_visual.webp)
+  </Frame>
+</div>
 
 2. **Inspecione os detalhes da otimização**  Clique no ícone de raio para abrir um painel de detalhes mostrando:
 
@@ -318,7 +345,7 @@ O ClickStack fornece indicadores visuais claros para confirmar se uma visão mat
 Esses indicadores facilitam confirmar se uma visualização está acelerada, entender por que uma determinada visão materializada foi selecionada e diagnosticar por que uma visão materializada não estava qualificada para uso.
 
 <div id="how-views-are-selected">
-  ### Como as visões materializadas são selecionadas para visualizações
+  ### Como as visões materializadas são selecionadas para visualizações {#how-views-are-selected}
 </div>
 
 Quando uma visualização é executada, o ClickStack pode ter vários candidatos disponíveis, incluindo a tabela base e várias visões materializadas. Para garantir o melhor desempenho, o ClickStack avalia e seleciona automaticamente a opção mais eficiente usando o mecanismo [`EXPLAIN ESTIMATE`](/pt-BR/reference/statements/explain#explain-estimate) do ClickHouse.
@@ -348,7 +375,7 @@ Essa abordagem minimiza de forma consistente o volume de dados lidos e oferece d
 As visões materializadas continuam elegíveis mesmo quando as visualizações incluem filtros, restrições de pesquisa ou agrupamento temporal em buckets, desde que todas as dimensões necessárias estejam presentes na visão. Isso permite que as visões acelerem dashboards, histogramas e charts filtrados sem exigir alterações nas definições das visualizações.
 
 <div id="example-of-choosing-materialized-view">
-  #### Exemplo de como escolher visões materializadas
+  #### Exemplo de como escolher visões materializadas {#example-of-choosing-materialized-view}
 </div>
 
 Considere duas visões materializadas criadas na mesma fonte de traces:
@@ -407,13 +434,13 @@ Como `otel_traces_1m` é menor e examina menos grânulos, ela é selecionada aut
 Ambas as visões materializadas ainda têm desempenho superior ao de consultar a tabela base diretamente, mas selecionar a menor visão suficiente proporciona o melhor desempenho.
 
 <div id="alerts">
-  ### Alertas
+  ### Alertas {#alerts}
 </div>
 
 As consultas de alertas usam automaticamente visões materializadas quando compatíveis. A mesma lógica de otimização se aplica, proporcionando uma avaliação mais rápida dos alertas.
 
 <div id="backfilling-a-materialized-view">
-  ## Preenchimento retroativo de uma visão materializada
+  ## Preenchimento retroativo de uma visão materializada {#backfilling-a-materialized-view}
 </div>
 
 Como observado anteriormente, visões materializadas incrementais contêm apenas os dados inseridos **depois que a visão é criada** e não são preenchidas retroativamente de forma automática. Esse design mantém as visões leves e baratas de manter, mas também significa que elas não podem ser usadas para consultas que exigem dados anteriores ao timestamp mínimo da visão.
@@ -433,7 +460,7 @@ Se recursos adicionais não forem provisionados, o preenchimento retroativo pode
 Em resumo, muitas vezes o preenchimento retroativo não compensa o custo e o risco operacional. Ele deve ser considerado apenas em casos excepcionais em que a aceleração do histórico seja crítica. Se você optar por prosseguir, recomenda-se seguir a abordagem controlada descrita abaixo para equilibrar desempenho, custo e impacto na produção.
 
 <div id="backfilling-approaches">
-  ### Abordagens de preenchimento retroativo
+  ### Abordagens de preenchimento retroativo {#backfilling-approaches}
 </div>
 
 <Info>
@@ -463,7 +490,7 @@ GROUP BY
 Como discutido anteriormente, visões materializadas incrementais não passam por backfill automaticamente. Os processos a seguir são recomendados para fazer o backfill de dados históricos com segurança, preservando o comportamento incremental para novos dados.
 
 <div id="direct-backfill">
-  #### Backfill direto usando `INSERT INTO SELECT`
+  #### Backfill direto usando `INSERT INTO SELECT` {#direct-backfill}
 </div>
 
 Essa abordagem é mais adequada para **conjuntos de dados menores** ou **consultas de agregação relativamente leves**, em que o backfill completo pode ser concluído em um tempo razoável sem esgotar os recursos do cluster. Em geral, ela é apropriada quando a consulta de backfill pode ser executada em minutos, ou no máximo em algumas horas, e quando aumentos temporários no uso de CPU e de I/O são aceitáveis. Para conjuntos de dados maiores ou agregações mais custosas, considere, em vez disso, as abordagens de backfill incremental ou em blocos abaixo.
@@ -524,7 +551,7 @@ Essa abordagem é mais adequada para **conjuntos de dados menores** ou **consult
 </Steps>
 
 <div id="incremental-backfill-null-table">
-  #### Preenchimento retroativo incremental usando uma tabela Null
+  #### Preenchimento retroativo incremental usando uma tabela Null {#incremental-backfill-null-table}
 </div>
 
 Para datasets maiores ou consultas de agregação mais intensivas em recursos, um preenchimento retroativo direto com um único `INSERT INTO SELECT` pode ser impraticável ou inseguro. Nesses casos, recomenda-se uma abordagem de **preenchimento retroativo incremental**. Esse método reflete mais de perto como as visões materializadas incrementais normalmente funcionam, processando os dados em blocos gerenciáveis em vez de agregar todo o dataset histórico de uma vez.
@@ -606,34 +633,34 @@ A ideia central é usar uma [**tabela Null**](/pt-BR/reference/engines/table-eng
 </Steps>
 
 <div id="recommendations">
-  ## Recomendações
+  ## Recomendações {#recommendations}
 </div>
 
 As recomendações a seguir resumem as boas práticas para projetar e operar visões materializadas no ClickStack. Seguir essas diretrizes ajudará a garantir que as visões materializadas sejam eficazes, previsíveis e tenham boa relação custo-benefício.
 
 <div id="granularity-selection-and-alignment">
-  ### Seleção e alinhamento da granularidade
+  ### Seleção e alinhamento da granularidade {#granularity-selection-and-alignment}
 </div>
 
-As VIEWs materializadas só são usadas quando a granularidade da visualização ou do alerta é um **múltiplo exato** da granularidade da VIEW. A forma de determinar essa granularidade depende do tipo de gráfico:
+As visões materializadas só são usadas quando a granularidade da visualização ou do alerta é um **múltiplo exato** da granularidade da visão. A forma de determinar essa granularidade depende do tipo de gráfico:
 
 * **Gráficos de tempo** (gráficos de linha ou de barras com tempo no eixo x):
-  A granularidade explícita do gráfico precisa ser um múltiplo da granularidade da VIEW materializada.
-  Por exemplo, um gráfico de 10 minutos pode usar VIEWs materializadas com granularidade de 10, 5, 2 ou 1 minuto, mas não VIEWs de 20 minutos nem de 3 minutos.
+  A granularidade explícita do gráfico precisa ser um múltiplo da granularidade da visão materializada.
+  Por exemplo, um gráfico de 10 minutos pode usar visões materializadas com granularidade de 10, 5, 2 ou 1 minuto, mas não visões de 20 minutos nem de 3 minutos.
 
 * **Gráficos sem eixo temporal** (gráficos de número, tabela ou resumo):
-  A granularidade efetiva é calculada como `(intervalo de tempo / 80)`, arredondada para cima até a granularidade mais próxima com suporte no HyperDX. Essa granularidade calculada também precisa ser um múltiplo da granularidade da VIEW materializada.
+  A granularidade efetiva é calculada como `(intervalo de tempo / 80)`, arredondada para cima até a granularidade mais próxima com suporte na Interface do ClickStack. Essa granularidade calculada também precisa ser um múltiplo da granularidade da visão materializada.
 
 Por causa dessas regras:
 
-* **Não crie VIEWs materializadas com granularidade de 10 minutos**.
-  O ClickStack oferece suporte à granularidade de 15 minutos para gráficos e alertas, mas não à de 10 minutos. Portanto, uma VIEW materializada de 10 minutos seria incompatível com visualizações e alertas comuns de 15 minutos.
+* **Não crie visões materializadas com granularidade de 10 minutos**.
+  O ClickStack oferece suporte à granularidade de 15 minutos para gráficos e alertas, mas não à de 10 minutos. Portanto, uma visão materializada de 10 minutos seria incompatível com visualizações e alertas comuns de 15 minutos.
 * Prefira granularidades de **1 minuto** ou **1 hora**, que se encaixam bem na maioria das configurações de gráficos e alertas.
 
-Uma granularidade maior (por exemplo, 1 hora) produz VIEWs menores e reduz a sobrecarga de armazenamento, enquanto uma granularidade menor (por exemplo, 1 minuto) oferece mais flexibilidade para análises detalhadas. Escolha a menor granularidade que atenda aos seus fluxos de trabalho críticos.
+Uma granularidade maior (por exemplo, 1 hora) produz visões menores e reduz a sobrecarga de armazenamento, enquanto uma granularidade menor (por exemplo, 1 minuto) oferece mais flexibilidade para análises detalhadas. Escolha a menor granularidade que atenda aos seus fluxos de trabalho críticos.
 
 <div id="limit-and-consolidate-materialized-views">
-  ### Limite e consolide visões materializadas
+  ### Limite e consolide visões materializadas {#limit-and-consolidate-materialized-views}
 </div>
 
 Cada VIEW materializada introduz uma sobrecarga adicional no momento da inserção e aumenta a pressão sobre parts e mesclagens.
@@ -646,7 +673,7 @@ As diretrizes a seguir são recomendadas:
 Sempre que possível, calcule várias métricas e dê suporte a vários gráficos a partir da mesma VIEW materializada.
 
 <div id="choose-dimensions-carefully">
-  ### Escolha as dimensões com cuidado
+  ### Escolha as dimensões com cuidado {#choose-dimensions-carefully}
 </div>
 
 Inclua apenas dimensões normalmente usadas para agrupamento ou filtragem:
@@ -662,7 +689,7 @@ Inclua apenas dimensões normalmente usadas para agrupamento ou filtragem:
 </Info>
 
 <div id="naming-conventions-for-aggregation-columns">
-  ### Convenções de nomenclatura para colunas de agregação
+  ### Convenções de nomenclatura para colunas de agregação {#naming-conventions-for-aggregation-columns}
 </div>
 
 As colunas de agregação de uma VIEW materializada devem seguir uma convenção de nomenclatura rigorosa para permitir a inferência automática:
@@ -676,7 +703,7 @@ As colunas de agregação de uma VIEW materializada devem seguir uma convenção
 O ClickStack usa essa convenção para mapear corretamente as consultas às colunas da VIEW materializada.
 
 <div id="quantiles-and-sketch-selection">
-  ### Quantis e seleção de sketch
+  ### Quantis e seleção de sketch {#quantiles-and-sketch-selection}
 </div>
 
 Diferentes funções de quantil têm características distintas de desempenho e armazenamento:
@@ -687,7 +714,7 @@ Diferentes funções de quantil têm características distintas de desempenho e 
 Você pode especificar um tamanho de sketch (por exemplo, `quantile(0.5)`) no momento da inserção para ambas as funções. O sketch resultante ainda pode ser consultado depois para outros valores de quantil, por exemplo `quantile(0.95)`. Recomenda-se fazer testes para encontrar o melhor equilíbrio para sua carga de trabalho.
 
 <div id="validate-effectiveness-continously">
-  ### Validar a eficácia continuamente
+  ### Validar a eficácia continuamente {#validate-effectiveness-continously}
 </div>
 
 Sempre verifique se as visões materializadas estão trazendo benefícios reais:
@@ -699,7 +726,7 @@ Sempre verifique se as visões materializadas estão trazendo benefícios reais:
 As visões materializadas devem ser tratadas como otimizações de desempenho que exigem revisões e ajustes periódicos à medida que os padrões de consulta evoluem.
 
 <div id="advanced-configurations">
-  ### Configurações avançadas
+  ### Configurações avançadas {#advanced-configurations}
 </div>
 
 Para cargas de trabalho mais complexas, várias visões materializadas podem ser usadas para atender a diferentes padrões de acesso. Exemplos incluem:
@@ -712,32 +739,32 @@ Esses padrões podem melhorar significativamente o desempenho quando aplicados d
 Seguir essas recomendações ajudará a garantir que as visões materializadas continuem eficazes, fáceis de manter e alinhadas ao modelo de execução do ClickStack.
 
 <div id="limitations">
-  ## Limitações
+  ## Limitações {#limitations}
 </div>
 
 <div id="common-incompatibility-reasons">
-  ### Motivos comuns de incompatibilidade
+  ### Motivos comuns de incompatibilidade {#common-incompatibility-reasons}
 </div>
 
-Uma VIEW materializada **não** será usada se qualquer uma das seguintes condições for atendida:
+Uma visão materializada **não** será usada se qualquer uma das seguintes condições for atendida:
 
 * **Intervalo de tempo da consulta**
-  O início do intervalo de tempo da consulta ocorre antes do timestamp mínimo da VIEW materializada. Como as VIEWs não recebem backfill automaticamente, elas só podem atender consultas para intervalos de tempo que cobrem integralmente.
+  O início do intervalo de tempo da consulta ocorre antes do timestamp mínimo da visão materializada. Como as visões não recebem carga de dados históricos automaticamente, elas só podem atender consultas para intervalos de tempo que cobrem integralmente.
 
 * **Incompatibilidade de granularidade**
-  A granularidade efetiva da visualização deve ser um múltiplo exato da granularidade da VIEW materializada. Especificamente:
+  A granularidade efetiva da visualização deve ser um múltiplo exato da granularidade da visão materializada. Especificamente:
 
-  * Para **gráficos de tempo** (gráficos de linha ou de barras com tempo no eixo x), a granularidade selecionada no gráfico deve ser um múltiplo da granularidade da VIEW. Por exemplo, um gráfico de 10 minutos pode usar VIEWs materializadas de 10, 5, 2 ou 1 minuto, mas não VIEWs de 20 minutos ou de 3 minutos.
-  * Para **gráficos sem eixo temporal** (gráficos de número ou tabelas), a granularidade efetiva é calculada como `(time range / 80)`, arredondada para cima até a granularidade mais próxima suportada pelo HyperDX, e também deve ser um múltiplo da granularidade da VIEW.
+  * Para **gráficos de tempo** (gráficos de linha ou de barras com tempo no eixo x), a granularidade selecionada no gráfico deve ser um múltiplo da granularidade da visão. Por exemplo, um gráfico de 10 minutos pode usar visões materializadas de 10, 5, 2 ou 1 minuto, mas não visões de 20 minutos ou de 3 minutos.
+  * Para **gráficos sem eixo temporal** (gráficos de número ou tabelas), a granularidade efetiva é calculada como `(time range / 80)`, arredondada para cima até a granularidade mais próxima suportada pela Interface do ClickStack, e também deve ser um múltiplo da granularidade da visão.
 
 * **Funções de agregação sem suporte**
-  A consulta solicita uma agregação que não está presente na VIEW materializada. Somente as agregações explicitamente calculadas e armazenadas na VIEW podem ser usadas.
+  A consulta solicita uma agregação que não está presente na visão materializada. Somente as agregações explicitamente calculadas e armazenadas na visão podem ser usadas.
 
 * **Expressões de contagem personalizadas**
-  Consultas que usam expressões como `count(if(...))` ou outras contagens condicionais não podem ser derivadas de estados de agregação padrão e, portanto, não podem usar VIEWs materializadas.
+  Consultas que usam expressões como `count(if(...))` ou outras contagens condicionais não podem ser derivadas de estados de agregação padrão e, portanto, não podem usar visões materializadas.
 
 <div id="design-and-operational-constraints">
-  ### Restrições de design e operação
+  ### Restrições de design e operação {#design-and-operational-constraints}
 </div>
 
 * **Sem backfilling automático**
@@ -755,11 +782,11 @@ Uma VIEW materializada **não** será usada se qualquer uma das seguintes condi�
 Estar ciente dessas limitações ajuda a garantir que VIEWs materializadas sejam aplicadas onde oferecem benefício real e evita configurações que passam silenciosamente a usar consultas mais lentas na tabela de origem.
 
 <div id="troubleshooting">
-  ## Solução de problemas
+  ## Solução de problemas {#troubleshooting}
 </div>
 
 <div id="materialied-view-not-being-used">
-  ### Visão materializada não está sendo usada
+  ### Visão materializada não está sendo usada {#materialied-view-not-being-used}
 </div>
 
 **Verificação 1: intervalo de datas**
@@ -784,7 +811,7 @@ Estar ciente dessas limitações ajuda a garantir que VIEWs materializadas sejam
 * Verifique &quot;Colunas disponíveis para agrupar/filtrar&quot; no modal de otimização.
 
 <div id="slow-mv-queries">
-  ### Consultas lentas em visão materializada
+  ### Consultas lentas em visão materializada {#slow-mv-queries}
 </div>
 
 **Problema 1: granularidade da visão materializada fina demais**
@@ -803,7 +830,7 @@ Estar ciente dessas limitações ajuda a garantir que VIEWs materializadas sejam
 * Solução: remova MVs que raramente são usadas ou que são sempre ignoradas.
 
 <div id="config-errors">
-  ### Erros de configuração
+  ### Erros de configuração {#config-errors}
 </div>
 
 **Erro: &quot;É necessária pelo menos uma coluna agregada&quot;**
