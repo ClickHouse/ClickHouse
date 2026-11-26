@@ -118,6 +118,7 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
+    bool insertFromColumns(const Columns & columns, size_t max_keys, size_t & rows_taken);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 
     void fillSetElements();
@@ -163,6 +164,10 @@ public:
     /// notably the two plan builds that automatic parallel replicas performs for one query.
     /// Returns null for a multi-column (tuple) set, which has no single-column range representation.
     std::shared_ptr<const PlainRanges> getPlainRanges() const;
+
+    /// The explicit elements sorted by their columns in order (ascending, NULLs last), as `MergeTreeSetIndex` orders them.
+    /// The copy is shared while someone holds it; the set keeps it only weakly.
+    std::shared_ptr<const Columns> getSortedSetElements() const;
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -223,6 +228,10 @@ private:
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements = false;
 
+    /// Whether `insertFromColumns` finds the keys a block adds with a filter of all its rows, which is cheaper when most of
+    /// them are new, or with the numbers of the rows that add a key. Decided by the previous block.
+    bool find_new_set_elements_by_filter = true;
+
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 
@@ -236,6 +245,9 @@ private:
     mutable std::shared_ptr<const PlainRanges> plain_ranges;
     mutable OnceFlag plain_ranges_once;
 
+    mutable std::mutex sorted_set_elements_mutex;
+    mutable std::weak_ptr<const Columns> sorted_set_elements;
+
     /// Protects the keys of the set. `insertFromBlock` takes it exclusively and `execute` shares it; they
     /// run at the same time only for `StorageSet`, whose inserts can run while queries use the set.
     /// Scheduler spills also take it exclusively while building, including explicit-element updates.
@@ -246,7 +258,7 @@ private:
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
-    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, size_t & rows_taken);
     ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
     /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
@@ -256,22 +268,26 @@ private:
     ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
 
     template <typename Method>
-    void insertFromBlockImpl(
+    size_t insertFromBlockImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        ColumnUInt64::Container * out_new_rows,
+        size_t max_keys);
 
-    template <typename Method, typename State, bool has_null_map, bool build_filter>
-    void insertFromBlockImplCase(
+    template <typename Method, typename State, bool has_null_map, bool build_filter, bool collect_new_rows>
+    size_t insertFromBlockImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        ColumnUInt64::Container * out_new_rows,
+        size_t max_keys);
 
     template <typename Method>
     void executeImpl(
@@ -370,7 +386,8 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(
+        const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set = nullptr);
 
     [[nodiscard]] size_t size() const { return ordered_set.at(0)->size(); }
 
@@ -442,6 +459,8 @@ private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
+    /// Keeps the sorted copy shared with the source set alive while this index uses it.
+    std::shared_ptr<const Columns> shared_ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.

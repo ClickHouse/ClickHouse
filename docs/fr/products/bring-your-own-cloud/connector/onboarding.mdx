@@ -88,13 +88,9 @@ ClickHouse Cloud délivre ensuite votre connector endpoint, un jeton d’inscrip
     `init --enroll` consomme votre token, obtient un certificat client signé ainsi que le grant cluster-wide de l&#39;executor, puis installe et vérifie le connector.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Flux d’enrollment du ClickHouse Connector](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
-
-    </Frame>
-
+      <Frame>
+        ![Flux d’enrollment du ClickHouse Connector](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
+      </Frame>
     </div>
 
     Dans un terminal, `init` demande `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` avec `yes` présélectionné. Passez `--managed` pour ignorer le prompt, ou `--no-managed` pour une installation en observation seule, sans l&#39;executor. Une installation neuve non assistée sans aucun de ces flags laisse le mode Managed désactivé (une réexécution avec `--force` conserve la posture de la configuration remplacée) : passez donc toujours `--managed` dans vos scripts.

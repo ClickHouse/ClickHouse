@@ -13,7 +13,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePl
 
 ClickHouse Cloud は、Security Assertion Markup Language (SAML) によるシングルサインオン (SSO) をサポートしています。これにより、アイデンティティプロバイダー (IdP) で認証することで、ClickHouse Cloud 組織に安全にサインインできます。
 
-サービスプロバイダー開始型 SSO、個別の connection を使用する複数の組織、ならびにジャストインタイムプロビジョニングをサポートしています。また、[Okta](/ja/products/cloud/guides/security/cloud-access-management/scim-setup) および [Microsoft Entra ID](/ja/products/cloud/guides/security/cloud-access-management/scim-setup-entra) を使用した SCIM Provisioning もサポートしています。現時点では、属性マッピングには対応していません。
+サービスプロバイダー開始型 SSO、個別の 接続 を使用する複数の組織、ならびにジャストインタイムプロビジョニングをサポートしています。また、[Okta](/ja/products/cloud/guides/security/cloud-access-management/scim-setup) および [Microsoft Entra ID](/ja/products/cloud/guides/security/cloud-access-management/scim-setup-entra) を使用した SCIM Provisioning もサポートしています。現時点では、属性マッピングには対応していません。
 
 SAML インテグレーションを有効にすると、新規ユーザーに割り当てるデフォルトのロールを指定したり、セッションタイムアウトの設定を調整したりすることもできます。
 
@@ -45,13 +45,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
     `Enable SAML single sign-on` の横にあるトグルをクリックします。セットアップ中にこの画面を何度か参照するため、このまま開いておいてください。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![SAMLセットアップを開始](/images/cloud/security/saml-self-serve-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![SAMLセットアップを開始](/images/cloud/security/saml-self-serve-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -68,13 +64,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
     </Tip>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ID プロバイダーのアプリケーションを作成する](/images/cloud/security/saml-self-serve-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ID プロバイダーのアプリケーションを作成する](/images/cloud/security/saml-self-serve-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -82,13 +74,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
     SAMLプロバイダから`Metadata URL`を取得します。ClickHouse Cloudに戻り、`Next: Provide metadata URL`をクリックして、URLをテキストボックスに貼り付けます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![メタデータURLを追加](/images/cloud/security/saml-self-serve-3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![メタデータURLを追加](/images/cloud/security/saml-self-serve-3.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -96,13 +84,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
     `Next: Verify your domains` をクリックします。テキストボックスにドメインを入力し、`Check domain` をクリックします。DNS プロバイダで TXT レコードに追加するためのランダムな検証コードが生成されます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![検証するドメインを追加](/images/cloud/security/saml-self-serve-4.webp)
-
-    </Frame>
-
+      <Frame>
+        ![検証するドメインを追加](/images/cloud/security/saml-self-serve-4.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -114,13 +98,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ドメインを確認する](/images/cloud/security/saml-self-serve-5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ドメインを確認する](/images/cloud/security/saml-self-serve-5.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -230,13 +210,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
     1. Google Admin console (admin.google.com) に移動します。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Google SAML App](/images/cloud/security/saml-google-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Google SAML App](/images/cloud/security/saml-google-app.webp)
+         </Frame>
        </div>
 
     2. **Apps** をクリックし、左側の **Web and mobile apps** をクリックします。
@@ -292,13 +268,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
     5. 名前を入力し、**Integrate any other application you don&#39;t find in the gallery (Non-gallery)** を選択して、**Create** をクリックします。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Azure Non-Gallery App](/images/cloud/security/saml-azure-app.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Azure Non-Gallery App](/images/cloud/security/saml-azure-app.webp)
+         </Frame>
        </div>
 
     6. 左側の **Users and groups** をクリックし、ユーザーを割り当てます。
@@ -326,13 +298,9 @@ SAML がすでに有効になっていて管理者アクセスが必要な場合
         | (U) /identity/claims/name            | Omitted       | user.mail |
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![Attributes and Claims](/images/cloud/security/saml-azure-claims.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Attributes and Claims](/images/cloud/security/saml-azure-claims.webp)
+          </Frame>
         </div>
 
     11. metadata URL をコピーし、[Add the metadata URL to your SAML configuration](#add-metadata-url) に戻って手順を続けます。

@@ -157,8 +157,15 @@ std::optional<UInt64> Aggregator::adaptiveLocalTopKCount(AggregatedDataVariants 
     std::vector<UInt64> counts;
     const auto append_table_counts = [&](auto & method)
     {
-        if constexpr (MapAggregationMethod<std::decay_t<decltype(method)>>)
+        using Method = std::decay_t<decltype(method)>;
+        if constexpr (MapAggregationMethod<Method>)
+        {
             method.data.forEachMapped([&](AggregateDataPtr & mapped) { counts.push_back(getInlineCountState(mapped)); });
+            /// The NULL key is a group of the table outside its cells (see `keeps_null_key_slot`).
+            if constexpr (keeps_null_key_slot<Method>)
+                if (method.data.hasNullKeyData())
+                    counts.push_back(getInlineCountState(method.data.getNullKeyData()));
+        }
     };
 #define M(NAME) \
     else if (table.type == AggregatedDataVariants::Type::NAME) \
