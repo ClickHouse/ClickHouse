@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <unordered_set>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
@@ -241,6 +242,23 @@ DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_f
             break;
     }
     return filter;
+}
+
+/// Readable listed tables kept by `keep_table_name`, each once: a catalog can list a table more than once.
+Names getVisibleTableNames(const DataLake::CatalogTables & catalog_tables, const IDatabase::FilterByNameFunction & keep_table_name)
+{
+    Names names;
+    std::unordered_set<std::string_view> seen;
+    for (const auto & catalog_table : catalog_tables)
+    {
+        if (!catalog_table.is_readable)
+            continue;
+        if (keep_table_name && !keep_table_name(catalog_table.name))
+            continue;
+        if (seen.insert(catalog_table.name).second)
+            names.push_back(catalog_table.name);
+    }
+    return names;
 }
 
 }
@@ -1655,17 +1673,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
     /// The catalog listing is scoped by namespace at best, so drop the names the query cannot
     /// ask for here too - each surviving name costs a per-table metadata fetch below.
-    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
-
-    DB::Names iceberg_tables;
-    for (const auto & catalog_table : catalog_tables)
-    {
-        if (!catalog_table.is_readable)
-            continue;
-        if (keep_table_name && !keep_table_name(catalog_table.name))
-            continue;
-        iceberg_tables.push_back(catalog_table.name);
-    }
+    const DB::Names iceberg_tables = getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter));
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
@@ -1807,18 +1815,8 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
-    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
-
-    for (const auto & catalog_table : catalog_tables)
-    {
-        /// Skip tables ClickHouse cannot read, so SHOW TABLES stays consistent with the
-        /// full getTablesIterator path without a per-table metadata fetch.
-        if (!catalog_table.is_readable)
-            continue;
-        if (keep_table_name && !keep_table_name(catalog_table.name))
-            continue;
-        result.emplace_back(catalog_table.name);
-    }
+    for (auto & name : getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter)))
+        result.emplace_back(std::move(name));
 
     ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, result.size());
     return result;

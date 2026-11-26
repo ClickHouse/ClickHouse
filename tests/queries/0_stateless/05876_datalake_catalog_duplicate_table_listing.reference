@@ -1,0 +1,8 @@
+a.x
+b.y
+b.z
+a.x
+"a.x",""
+"b.y",""
+"b.z",""
+loads: a.x:1 b.y:1 b.z:1
