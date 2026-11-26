@@ -1027,6 +1027,40 @@ def test_schema_and_count_cache_hits_are_authorized(started_cluster):
     assert int(hits) > 0 and int(metadata_requests) > 0, (hits, metadata_requests)
 
 
+def test_parquet_cache_hits_are_authorized(started_cluster):
+    """The Parquet footer and columns caches can answer a read without a request for the object, and
+    their keys have no identity of the credentials. A read of an object found by a listing (which needs
+    only `storage.objects.list`) must still ask for its metadata with the reader's own credentials, also
+    with the filesystem, page and row-count caches disabled."""
+    node = started_cluster.instances["node"]
+    url = gcs_url(f"parquet_cache_auth/{uuid.uuid4()}/data.parquet")
+    glob = url.rsplit("/", 1)[0] + "/*.parquet"
+    node.query(
+        f"INSERT INTO FUNCTION gcs('{url}', NOSIGN, 'Parquet', 'a UInt64') "
+        "SELECT number FROM numbers(1000) SETTINGS use_native_gcs = 1"
+    )
+    settings = (
+        "SETTINGS use_native_gcs = 1, enable_filesystem_cache = 0, use_page_cache_for_object_storage = 0, "
+        "remote_filesystem_read_method = 'read', use_cache_for_count_from_files = 0, use_columns_cache = 1"
+    )
+
+    for query, expected in [
+        (f"SELECT count() FROM gcs('{glob}', NOSIGN, 'Parquet', 'a UInt64') {settings}", "1000"),
+        (f"SELECT sum(a) FROM gcs('{glob}', NOSIGN, 'Parquet', 'a UInt64') {settings}", str(sum(range(1000)))),
+    ]:
+        assert node.query(query).strip() == expected  # warms the caches
+        query_id = f"gcs_parquet_cache_auth_{uuid.uuid4()}"
+        assert node.query(query, query_id=query_id).strip() == expected
+        node.query("SYSTEM FLUSH LOGS query_log")
+        metadata_requests = int(
+            node.query(
+                "SELECT ProfileEvents['GCSGetObjectMetadata'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+        assert metadata_requests > 0, query
+
+
 def test_profile_events(started_cluster):
     """The native backend must account its requests, the way `S3GetObject` and friends do for the
     S3-compatibility path. Without these the backend is unobservable: there is no way to see request

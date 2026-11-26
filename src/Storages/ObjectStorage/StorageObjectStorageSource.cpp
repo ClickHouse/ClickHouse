@@ -2770,10 +2770,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         }
     }
 
-    /// The filesystem cache key has no identity of the credentials either, so a cached native GCS read is authorized
-    /// the same way: a listing needs only `storage.objects.list`, and the size and generation it returns do not prove
-    /// that this reader may read the object another identity has put into the cache.
-    if (use_filesystem_cache && object_storage->getType() == ObjectStorageType::GCS && !metadata_is_fetched_by_this_read)
+    /// A native GCS read is authorized the same way whatever serves it. A listing needs only `storage.objects.list`, and the
+    /// size and generation it returns do not prove that this reader may read the object, while the caches keyed by the
+    /// content without an identity of the credentials (the filesystem cache, and the caches of the input formats such as
+    /// the Parquet footer and columns caches) can serve data that another identity has read, without a request of this one.
+    if (object_storage->getType() == ObjectStorageType::GCS && !metadata_is_fetched_by_this_read)
     {
         ObjectAttributes tags = std::move(object_info.metadata->tags);
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
