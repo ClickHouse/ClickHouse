@@ -177,12 +177,12 @@ public:
     }
 
     /// The number of elements of the command array, including the command name itself.
-    Int64 getCommandLen() const { return static_cast<Int64>(arguments.size()); }
+    [[nodiscard]] Int64 getCommandLen() const { return static_cast<Int64>(arguments.size()); }
 
-    CommandType getCommand() const { return command; }
+    [[nodiscard]] CommandType getCommand() const { return command; }
 
     /// Argument 0 is the command name.
-    const String & getArgument(size_t index) const { return arguments[index]; }
+    [[nodiscard]] const String & getArgument(size_t index) const { return arguments[index]; }
 
 private:
     CommandType command = CommandType::COMMAND;
@@ -201,7 +201,7 @@ public:
         db = DB::parse<UInt32>(request.getArgument(1));
     }
 
-    UInt32 getDB() const { return db; }
+    [[nodiscard]] UInt32 getDB() const { return db; }
 
 private:
     RedisRequest & request;
@@ -220,7 +220,7 @@ public:
         input = request.getArgument(1);
     }
 
-    const String & getCommandInput() const { return input; }
+    [[nodiscard]] const String & getCommandInput() const { return input; }
 
 private:
     RedisRequest & request;
@@ -254,7 +254,7 @@ public:
     }
 
     /// The key is not copied out of the request, as for `MGetRequest`.
-    const String & getKey() const { return request.getArgument(1); }
+    [[nodiscard]] const String & getKey() const { return request.getArgument(1); }
 
 private:
     RedisRequest & request;
@@ -273,9 +273,9 @@ public:
 
     /// The keys are not copied out of the request: for a command with many keys the copy alone
     /// would double the memory occupied by the command.
-    size_t getKeysCount() const { return static_cast<size_t>(request.getCommandLen()) - 1; }
+    [[nodiscard]] size_t getKeysCount() const { return static_cast<size_t>(request.getCommandLen()) - 1; }
 
-    const String & getKey(size_t index) const { return request.getArgument(index + 1); }
+    [[nodiscard]] const String & getKey(size_t index) const { return request.getArgument(index + 1); }
 
 private:
     RedisRequest & request;
@@ -293,9 +293,9 @@ public:
     }
 
     /// The key and the field are not copied out of the request, as for `MGetRequest`.
-    const String & getKey() const { return request.getArgument(1); }
+    [[nodiscard]] const String & getKey() const { return request.getArgument(1); }
 
-    const String & getField() const { return request.getArgument(2); }
+    [[nodiscard]] const String & getField() const { return request.getArgument(2); }
 
 private:
     RedisRequest & request;
@@ -312,12 +312,12 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'hmget' command");
     }
 
-    const String & getKey() const { return request.getArgument(1); }
+    [[nodiscard]] const String & getKey() const { return request.getArgument(1); }
 
     /// The fields are not copied out of the request, as for `MGetRequest`.
-    size_t getFieldsCount() const { return static_cast<size_t>(request.getCommandLen()) - 2; }
+    [[nodiscard]] size_t getFieldsCount() const { return static_cast<size_t>(request.getCommandLen()) - 2; }
 
-    const String & getField(size_t index) const { return request.getArgument(index + 2); }
+    [[nodiscard]] const String & getField(size_t index) const { return request.getArgument(index + 2); }
 
 private:
     RedisRequest & request;
@@ -344,9 +344,9 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'auth' command");
     }
 
-    const String & getUser() const { return user; }
+    [[nodiscard]] const String & getUser() const { return user; }
 
-    const String & getPassword() const { return password; }
+    [[nodiscard]] const String & getPassword() const { return password; }
 
 private:
     RedisRequest & request;
