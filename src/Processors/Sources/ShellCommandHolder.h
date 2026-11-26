@@ -231,7 +231,7 @@ public:
         pool.reset();
     }
 
-    ShellCommandHolder * get() const { return holder.get(); }
+    [[nodiscard]] ShellCommandHolder * get() const { return holder.get(); }
     ShellCommandHolder * operator->() const { return holder.get(); }
     ShellCommandHolder & operator*() const { return *holder; }
     explicit operator bool() const { return holder != nullptr; }

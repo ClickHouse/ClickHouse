@@ -323,7 +323,7 @@ namespace
                 uncharge(charged_bytes);
         }
 
-        size_t amount() const { return charged_bytes; }
+        [[nodiscard]] size_t amount() const { return charged_bytes; }
 
     private:
         size_t charged_bytes = 0;

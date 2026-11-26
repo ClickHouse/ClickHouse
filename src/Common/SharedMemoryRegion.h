@@ -134,21 +134,21 @@ public:
     void recommitUpToLength();
 
     char * data() { return region_data; }
-    const char * data() const { return region_data; }
+    [[nodiscard]] const char * data() const { return region_data; }
 
     /// The mapped size: what `data` covers and what the transport may use.
-    size_t size() const { return region_size; }
+    [[nodiscard]] size_t size() const { return region_size; }
 
     /// The length of the file as last seen: never less than `size`, and greater after a growth
     /// that committed its pages but could not map them - or after the command extended the file
     /// (see `refreshFootprint`). This is what the region costs, so memory accounting goes by this
     /// figure, not by `size`.
-    size_t backingSize() const { return backing_size; }
+    [[nodiscard]] size_t backingSize() const { return backing_size; }
 
     /// The footprint as last seen (see `refreshFootprint`): never less than `backingSize`, and
     /// never less than a page - a file holds whole pages, whatever its length. This is what the
     /// region costs, so memory accounting goes by this figure and by its changes.
-    size_t footprint() const { return footprint_size; }
+    [[nodiscard]] size_t footprint() const { return footprint_size; }
 
     /// The length up to which the server itself has committed the file's pages: at creation and
     /// at every growth of its own (`posix_fallocate` from the previous such length to the new one).
@@ -157,7 +157,7 @@ public:
     /// is the one baseline from which the cost of the server's next `posix_fallocate` can be
     /// bounded: the pages between here and the new length, at most, whatever the command did
     /// past here.
-    size_t reservedSize() const { return reserved_size; }
+    [[nodiscard]] size_t reservedSize() const { return reserved_size; }
 
     /// What committing the file's pages up to `length` - a growth to it, or mapping it whole -
     /// could add to the footprint, in whole pages. The fill commits the pages between what the
@@ -170,7 +170,7 @@ public:
     /// only make the fill cost less, except for the one page `reservedSize` ends in when it is not
     /// page-aligned: the fill starts inside it and commits it again if the command freed it. The
     /// next re-read after the fill finds that page.
-    size_t fillCostUpTo(size_t length) const
+    [[nodiscard]] size_t fillCostUpTo(size_t length) const
     {
         const size_t reserved = roundUpToPages(reserved_size);
         const size_t target = roundUpToPages(length);
@@ -205,7 +205,7 @@ public:
     /// to the length of the file (`fillCostUpTo`). The figure a cap is compared with, and the one
     /// to report when a region is over it - its length and its footprint can both be within the
     /// cap while this is not.
-    size_t costOnceMappedWhole() const { return footprint_size + fillCostUpTo(backing_size); }
+    [[nodiscard]] size_t costOnceMappedWhole() const { return footprint_size + fillCostUpTo(backing_size); }
 
     /// Whether the region, as last read (`refreshFootprint`), is over a cap of `max_size` bytes.
     /// Three comparisons. The length of the file in bytes against the cap in bytes: the length is
@@ -217,14 +217,14 @@ public:
     /// mapping it whole entails: a file the command stretched to the cap without committing a page
     /// and then filled with as many pages past its end holds a cap's worth of pages and would hold
     /// two - and the server must not be the one to commit the second.
-    bool isOverTheCap(size_t max_size) const
+    [[nodiscard]] bool isOverTheCap(size_t max_size) const
     {
         return backing_size > max_size || costOnceMappedWhole() > roundUpToPages(max_size);
     }
 
     /// The descriptor, for handing to the command's process at `exec`. Close-on-exec in this
     /// process; the hand-over `dup2`s it into the child, which clears the flag on the copy.
-    int fd() const { return region_fd; }
+    [[nodiscard]] int fd() const { return region_fd; }
 
     /// The path under which a process that inherited the descriptor as `child_fd` can open it.
     static std::string pathForChildFd(int child_fd);

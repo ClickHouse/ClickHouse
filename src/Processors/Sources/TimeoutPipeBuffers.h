@@ -89,26 +89,26 @@ public:
         /// `stderr_reaction = throw`, fails it.
         bool stderr_has_unread_output = false;
 
-        bool isClean() const { return !stdout_has_unread_output && !stdout_hung_up && !stderr_has_unread_output; }
+        [[nodiscard]] bool isClean() const { return !stdout_has_unread_output && !stdout_hung_up && !stderr_has_unread_output; }
     };
 
     /// Whether a pipe holds bytes nobody has read: what a pooled process wrote after its last answer.
     static bool pipeHasPendingOutput(int fd) noexcept { return (ShellCommand::pendingEvents(fd) & POLLIN) != 0; }
 
     /// Whether the command's stderr holds bytes nobody has read, whatever the reaction.
-    bool stderrHasPendingOutput() const noexcept { return pipeHasPendingOutput(stderr_fd); }
+    [[nodiscard]] bool stderrHasPendingOutput() const noexcept { return pipeHasPendingOutput(stderr_fd); }
 
     /// `consider_buffered_output` says whether bytes this buffer has read but not handed on count
     /// as unread output. They do for the shared-memory transport, where every byte of the response
     /// frame is accounted for and a leftover is a protocol violation. They do not for the pipe
     /// transport, where a format reader may legitimately hold buffered bytes it did not parse, and
     /// only what is still in the kernel pipe is evidence that the command spoke out of turn.
-    ChannelState channelState(bool consider_buffered_output = true) const noexcept;
+    [[nodiscard]] ChannelState channelState(bool consider_buffered_output = true) const noexcept;
 
     /// The same read as `consumePendingStderr`, without putting what it finds through the reaction.
     /// For a caller that has to clear the pipe of somebody else's output - see
     /// `discardStderrLeftByAPreviousBorrow`.
-    String consumePendingStderrWithoutReaction() const { return readPendingStderr(); }
+    [[nodiscard]] String consumePendingStderrWithoutReaction() const { return readPendingStderr(); }
 
     /// Reads whatever is sitting unread on stderr right now, so a caller that is about to throw the
     /// command away can report it. Best-effort and non-blocking - the descriptor is in non-blocking
@@ -126,16 +126,16 @@ public:
     /// the diagnostic, rather than terminate the server over it.
     String consumePendingStderr();
 
-    String readPendingStderr() const { return readWhatThePipeHolds(stderr_fd, MAX_PENDING_STDERR_SIZE); }
+    [[nodiscard]] String readPendingStderr() const { return readWhatThePipeHolds(stderr_fd, MAX_PENDING_STDERR_SIZE); }
 
     /// Whether anything is done with the command's stderr beyond taking it off the pipe. `NONE`
     /// drops what it reads, so a caller that would only read in order to drop has nothing to do.
-    bool stderrIsObserved() const { return stderr_reaction != ExternalCommandStderrReaction::NONE; }
+    [[nodiscard]] bool stderrIsObserved() const { return stderr_reaction != ExternalCommandStderrReaction::NONE; }
 
     /// Whether stderr the command writes fails the query. The one reaction under which a byte of
     /// stderr that was not attributed to the query that caused it is a wrong verdict, and not just
     /// a log line in the wrong place.
-    bool stderrThrows() const { return stderr_reaction == ExternalCommandStderrReaction::THROW; }
+    [[nodiscard]] bool stderrThrows() const { return stderr_reaction == ExternalCommandStderrReaction::THROW; }
 
     /// Reads stderr until the pipe is empty or `budget_milliseconds` runs out.
     ///
@@ -158,7 +158,7 @@ public:
     /// Whether the stderr pipe has - counting `bytes_already_read` that were just taken off it - less
     /// than `PIPE_BUF` bytes free: the only state in which the command can be blocked writing to it.
     /// Answered "yes" where the pipe cannot be measured, which only costs the wait.
-    bool stderrPipeIsNearlyFull(size_t bytes_already_read) const;
+    [[nodiscard]] bool stderrPipeIsNearlyFull(size_t bytes_already_read) const;
 
     /// Clears what a pooled worker left on its stderr after the response of an earlier borrow, before
     /// this borrow sends its first request, and logs it against nobody: those bytes are the earlier
@@ -206,7 +206,7 @@ private:
     /// A monotonic deadline `timeout_milliseconds` from now. Clamped, because
     /// `command_read_timeout` is not bounded anywhere: a huge value would wrap the multiplication
     /// or the addition and put the deadline in the past, turning every wait into a probe.
-    UInt64 readDeadlineNs() const noexcept { return monotonicDeadlineNs(timeout_milliseconds); }
+    [[nodiscard]] UInt64 readDeadlineNs() const noexcept { return monotonicDeadlineNs(timeout_milliseconds); }
 
     static size_t remainingMs(UInt64 deadline_ns) noexcept { return millisecondsUntil(deadline_ns); }
 
