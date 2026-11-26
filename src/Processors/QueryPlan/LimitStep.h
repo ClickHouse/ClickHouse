@@ -44,6 +44,8 @@ public:
     [[nodiscard]] size_t getLimitForSorting() const { return getLimitWithOffset().value_or(0); }
 
     [[nodiscard]] bool withTies() const { return with_ties; }
+    /// The columns compared for `WITH TIES`.
+    [[nodiscard]] const SortDescription & getWithTiesDescription() const { return description; }
     [[nodiscard]] bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void markAsShardLimit() { is_shard_limit = true; }

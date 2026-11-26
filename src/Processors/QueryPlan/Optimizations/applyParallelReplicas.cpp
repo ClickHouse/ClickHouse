@@ -685,6 +685,24 @@ public:
                 limit_node.children = {&partial_sorting_node};
                 fragment_root = &limit_node;
             }
+            /// `WITH TIES` leaves the sort unbounded. The rows of the query come from the top rows with ties of each
+            /// replica. As a shard limit, it lets `rows_before_limit_at_least` count the rows of the local replica.
+            else if (const auto * limit_with_ties = limitWithTiesAboveSort())
+            {
+                auto & limit_node = nodes.emplace_back();
+                auto limit_step = std::make_unique<LimitStep>(
+                    fragment_root->step->getOutputHeader(),
+                    *limit_with_ties->getLimitWithOffset(),
+                    0,
+                    read_till_end,
+                    /*with_ties=*/true,
+                    limit_with_ties->getWithTiesDescription());
+                limit_step->markAsShardLimit();
+                limit_node.step = std::move(limit_step);
+                limit_node.step->setStepDescription("local top-N");
+                limit_node.children = {fragment_root};
+                fragment_root = &limit_node;
+            }
 
             auto & new_split_node = nodes.emplace_back();
             new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(fragment_root->step->getOutputHeader());
@@ -725,6 +743,17 @@ public:
     }
 
 private:
+    /// The `LIMIT ... WITH TIES` right above the sorted split, or `nullptr`.
+    [[nodiscard]] const LimitStep * limitWithTiesAboveSort() const
+    {
+        if (stack.size() < 3)
+            return nullptr;
+        const auto * limit = typeid_cast<const LimitStep *>(stack[stack.size() - 3].node->step.get());
+        if (!limit || !limit->withTies() || limit->getLimitWithOffset().value_or(0) == 0)
+            return nullptr;
+        return limit;
+    }
+
     /// The `Limit` of `GROUP BY ... ORDER BY ... LIMIT`: the node of the frame `index`, or of one of the two frames above it,
     /// with the sort and the expression in between.
     [[nodiscard]] QueryPlan::Node * limitAbove(size_t index) const
