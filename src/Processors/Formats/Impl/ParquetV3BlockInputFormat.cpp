@@ -170,7 +170,10 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     , object_with_metadata(object_with_metadata_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
-    read_options.bytes_per_read_task = min_bytes_for_seek * 4;
+    /// Saturate: `min_bytes_for_seek` comes from an unrestricted setting.
+    read_options.bytes_per_read_task = min_bytes_for_seek > std::numeric_limits<size_t>::max() / 4
+        ? std::numeric_limits<size_t>::max()
+        : min_bytes_for_seek * 4;
     read_options.is_remote_fs = is_remote_fs_;
 
     if (!format_filter_info)
@@ -235,11 +238,25 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
             /// The cell may have been evicted and replaced since the split, then share nothing.
             if (has_bucket_footer && footer_cache_cell->footer != buckets_to_read->file_footer)
                 shared_column_chunks = nullptr;
-            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks, shared_column_chunks);
+            /// Offset indexes lie outside the footer: use and keep them only under a key that identifies the file content.
+            const bool key_identifies_content = object_with_metadata->metadata->getContentCacheToken().has_value();
+            new_reader->reader.setFileFooter(
+                footer_cache_cell->footer,
+                footer_cache_cell->column_chunks,
+                shared_column_chunks,
+                key_identifies_content ? footer_cache_cell->kept_offset_indexes : nullptr);
             if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
             {
                 metadata_cache_cell = footer_cache_cell;
                 metadata_cache_key = *footer_cache_key;
+            }
+            /// Only a hit may add to the cell.
+            if (footer_cache_hit && key_identifies_content)
+            {
+                new_reader->reader.max_read_offset_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingBytes();
+                new_reader->reader.max_read_column_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingColumnIndexBytes();
+                if (new_reader->reader.max_read_offset_indexes_bytes || new_reader->reader.max_read_column_indexes_bytes)
+                    offset_indexes_cache_cell = footer_cache_cell;
             }
         }
         else if (has_bucket_footer)
@@ -484,6 +501,11 @@ Chunk ParquetV3BlockInputFormat::read()
         return chunk;
     }
     auto res = reader->read();
+    if (!res.chunk && offset_indexes_cache_cell)
+    {
+        metadata_cache->keepOffsetIndexes(*footer_cache_key, offset_indexes_cache_cell, reader->reader.takeReadOffsetIndexes());
+        offset_indexes_cache_cell.reset();
+    }
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
     return std::move(res.chunk);
@@ -606,6 +628,7 @@ void ParquetV3BlockInputFormat::resetParser()
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
         metadata_cache_key.reset();
+        offset_indexes_cache_cell.reset();
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();

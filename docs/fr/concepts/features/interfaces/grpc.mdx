@@ -3,12 +3,10 @@ description: "Documentation sur l’interface gRPC de ClickHouse"
 sidebarTitle: "interface gRPC"
 slug: /interfaces/grpc
 title: "interface gRPC"
-doc_type: "référence"
+doc_type: 'guide'
 ---
 
-<div id="grpc-interface-introduction">
-  ## Introduction
-</div>
+## Introduction {#grpc-interface-introduction}
 
 ClickHouse prend en charge l’interface [gRPC](https://grpc.io/). Il s’agit d’un système open source d’appels de procédure à distance qui utilise HTTP/2 et les [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). L’implémentation de gRPC dans ClickHouse prend en charge :
 
@@ -23,11 +21,9 @@ ClickHouse prend en charge l’interface [gRPC](https://grpc.io/). Il s’agit d
 
 La spécification de l’interface est décrite dans [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
 
-<div id="grpc-interface-configuration">
-  ## Configuration de gRPC
-</div>
+## Configuration de gRPC {#grpc-interface-configuration}
 
-Pour utiliser l’interface gRPC, définissez `grpc_port` dans la [configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) principale. Les autres options de configuration sont présentées dans l’exemple suivant :
+Pour utiliser l’interface gRPC, définissez `grpc_port` dans la [configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) principale. Les autres options de configuration sont présentées dans l’exemple suivant :
 
 ```xml
 <grpc_port>9100</grpc_port>
@@ -55,15 +51,10 @@ Pour utiliser l’interface gRPC, définissez `grpc_port` dans la [configuration
         <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-
-        <!-- Enable if you want to get detailed logs -->
-        <verbose_logs>false</verbose_logs>
     </grpc>
 ```
 
-<div id="grpc-client">
-  ## Client intégré
-</div>
+## Client intégré {#grpc-client}
 
 Vous pouvez écrire un client dans n’importe quel langage de programmation pris en charge par gRPC à l’aide de la [spécification](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto) fournie.
 Vous pouvez aussi utiliser un client Python intégré. Il se trouve dans [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) dans le dépôt. Le client intégré nécessite les modules Python [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart).

@@ -1,0 +1,175 @@
+---
+slug: /clickstack/observability/integration-partners/telflo
+title: '使用 Telflo 将 OpenTelemetry 数据发送到 ClickHouse Observability'
+sidebarTitle: 'Telflo'
+description: '使用 Telflo 管理 OpenTelemetry 收集器，将遥测数据发送至全托管或自管理的 ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['Telflo', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **TL;DR**
+
+  本指南介绍如何将 Telflo 所管理的 OpenTelemetry 收集器中的遥测数据发送到 ClickHouse Observability。您将学习如何：
+
+  * 通过 Telflo 的可视化编辑器或命令行客户端构建采集器配置
+  * 将遥测数据发送到全托管或自管理的 ClickHouse Observability
+  * 将配置远程部署到采集器机群
+  * 确认遥测数据已可在 ClickHouse Observability 中查看
+
+  所需时间：15-20 分钟
+</Info>
+
+{/* vale off */}
+
+## 什么是 Telflo？ {#what-is-telflo}
+
+{/* vale on */}
+
+Telflo 是一个面向 OpenTelemetry 收集器的厂商中立控制平面，可对整个机群的采集器配置进行集中管理。凭借可视化编辑器、管道测试和配置远程部署等功能，Telflo 让大规模机群也能轻松管理。Telflo 管理的是标准的上游 OpenTelemetry 收集器构建，既没有 Telflo 专属发行版，也没有专有 agent，因此团队现有的采集器无需更换构建版本。
+
+除了浏览器之外，Telflo 还可以通过[命令行接口](https://docs.telflo.com/docs/cli/)访问。再结合 [ClickStack MCP 服务器](/zh/clickstack/observability/mcp)，负责查询遥测数据的 agent 就能直接修复生成这些数据的管道。
+
+{/* vale off */}
+
+## 为什么选择 Telflo + ClickHouse Observability？ {#why-telflo-clickstack}
+
+{/* vale on */}
+
+全托管的 ClickHouse Observability 负责处理摄取、schema、存储和扩缩容。使用自管理的 ClickHouse Observability 时，您可以自行控制摄取和数据库配置，而底层基础设施则由 ClickHouse Cloud 负责管理。Telflo 负责管理 OpenTelemetry 采集器，由这些采集器将遥测数据从您的主机、集群和区域发送到上述任一部署。
+
+Telflo 提供：
+
+* 跨主机、容器和 Kubernetes 集中管理 OpenTelemetry 采集器
+* 可视化编辑管道，并支持向整个机群或单个分组进行受控的滚动发布
+* 变更在推送到生产环境采集器之前，先基于样本遥测数据完成验证
+* 将同一份遥测数据同时路由到 ClickHouse Observability 及其他目标端
+* 机群可见性：清楚掌握哪些采集器在线、各采集器正在运行什么，以及哪些已发生漂移
+
+<Tip>
+  **要点总结**
+
+  * **ClickHouse Observability 提供存储与调查体验**
+  * **Telflo 负责运维为其输送数据的采集器集群**
+</Tip>
+
+## 前置条件 {#prerequisites}
+
+* 一个[全托管 ClickHouse Observability 服务](/zh/clickstack/observability/getting-started)或[自管理部署](/zh/clickstack/self-configured/getting-started/managed)
+* 一个 Telflo 账户 ([在 telflo.com 创建账户](https://telflo.com))
+* 用于运行采集器的环境：VM 或 Kubernetes 集群
+* **全托管**：OTLP HTTP 端点和摄取 API key，可在 **团队设置 → 数据 → Managed Telemetry** 中获取
+* **自管理**：ClickHouse Cloud 服务端点 (端口 `8443`) 和一个[摄取用户](/zh/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured)，或现有独立采集器的端点及其 `OTLP_AUTH_TOKEN`
+* Telflo 托管的采集器能够通过网络访问目标端端点
+
+{/* vale off */}
+
+## 将 ClickHouse Observability 与 Telflo 集成 {#integrate-telflo-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="创建采集器配置" id="build-configuration">
+    1. 登录 Telflo。在 **Configurations** 列表中，点击 **New Configuration**，然后选择 **Blank configuration**。
+    2. 在 **Name Your Configuration** 中输入名称，然后点击 **Create**。
+    3. 添加接收器：针对要采集的每种遥测数据，分别从组件面板中拖一个接收器到画布上。
+    4. 添加处理器：**Memory Limiter** 和 **Batch**，以及在数据离开采集器之前对其进行处理所需的其他处理器。请参阅 [Telflo 支持的处理器完整列表](https://docs.telflo.com/docs/build/components#processors)。
+  </Step>
+
+  <Step title="添加导出器" id="add-exporter">
+    为您的部署选择导出器。全托管的 ClickHouse Observability 通过其托管 OTLP 端点接收遥测数据。对于自管理部署，您可以直接写入 ClickHouse，也可以将 OTLP 数据发送到您现有的采集器。
+
+    <Tabs>
+      <Tab title="全托管">
+        <BetaBadge label="Beta 产品" />
+
+        使用托管 OTLP 端点。ClickHouse 负责摄取、schema、存储和扩缩容；由 Telflo 管理的采集器负责从您的环境中采集并转发遥测数据。
+
+        1. 将 **OTLP/HTTP** 导出器拖到画布上。
+        2. 将 **Endpoint** 设置为您的托管 OTLP HTTP 端点，并包含端口 `4318`，例如 `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`。
+        3. 在 **HTTP Headers** 下，点击 **Add header**，然后在 **Header name** 中输入 `Authorization`，在 **Header value** 中输入 `Bearer ${env:CLICKSTACK_INGESTION_KEY}`。安装采集器时，Telflo 会要求您提供该环境变量的值。请将您的摄取 API 密钥作为 `CLICKSTACK_INGESTION_KEY` 的值提供，不要包含 `Bearer` 前缀。
+
+        对于全托管部署，请使用 OTLP 导出器，而不是直接写入的 ClickHouse 导出器。
+      </Tab>
+
+      <Tab title="自管理">
+        使用自管理的 ClickHouse Observability 时，需要您自行管理摄取。通过 ClickHouse 导出器直接写入仅适用于自管理部署。您在此处配置的采集器将充当[摄取网关](/zh/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured)：为其添加一个 **OTLP** 接收器并搭配 ClickHouse 导出器，它便会将数据写入您的 ClickHouse Cloud 服务。之后，您的 SDK 和 agent 采集器即可通过 `4318` (HTTP) 或 `4317` (gRPC) 端口向其发送 OTLP 数据。
+
+        1. 将 **ClickHouse** 导出器拖到画布上。
+        2. 在 **Endpoint** 中填写您的 ClickHouse Cloud 服务端点 (端口 `8443`) ，将 **Database** 设置为 `default`，并将 **Username** 设置为您的摄取用户。
+        3. 将 **Password** 设置为 `${env:CLICKHOUSE_PASSWORD}`。安装采集器时，Telflo 会要求您提供该值，因此配置中只引用环境变量，而不会包含密码本身。
+        4. 在 **Schema &amp; Tables** 下：如果[遥测数据表](/zh/clickstack/self-configured/ingesting-data/schemas)尚不存在，请保持 **Create Schema on Startup** 开启，导出器会自动创建这些表。表创建完成后，请将其关闭。
+
+        请将 **Batch** 保留在导出器上游：ClickHouse 在批量插入时性能最佳。
+
+        如果您已在运行[独立的 OpenTelemetry 采集器](/zh/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)，请改用 **OTLP/HTTP** 导出器。将 **Endpoint** 设置为该采集器的 OTLP HTTP 地址 (端口 `4318`) ，并添加一个值为 `${env:OTLP_AUTH_TOKEN}` 的 `Authorization` 请求头。安装由 Telflo 管理的采集器时，请提供[您在采集器上配置的认证令牌](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)。请勿为此令牌添加 `Bearer` 前缀。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Telflo 编辑器中已配置 ClickHouse 导出器的自管理采集器管道](/images/clickstack/telflo/telflo-configuration.webp)
+          </Frame>
+        </div>
+      </Tab>
+    </Tabs>
+
+    从接收器经由处理器到导出器绘制连线，每种信号各对应一条管道。状态栏会显示 **config valid** 或待修复的错误数量，**YAML** 选项卡则会显示生成的配置。
+
+    在正式上线之前，您可以让示例遥测数据流经该配置，并检查最终输出。请参阅[在 Telflo 中进行测试](https://docs.telflo.com/docs/testing/overview)。此外，您也可以直接描述想要实现的目标，由 Telflo AI 助手 (点击工具栏中的 **AI** 按钮打开) 为您构建、验证并测试配置。您自己的 agent 也可以通过 [Telflo 命令行客户端](https://docs.telflo.com/docs/cli/)完成同样的操作。
+  </Step>
+
+  <Step title="发布版本" id="publish-version">
+    单击工具栏中的 **Publish**。已发布的版本为只读；如需继续迭代，请单击 **Create New Version**。
+  </Step>
+
+  <Step title="创建机群并部署" id="deploy-collectors">
+    1. 进入 **Fleet**，点击 **New Fleet**，然后选择采集器的运行环境：VM 或 Kubernetes。输入 **Name**，再点击 **Create fleet**。
+    2. 在机群的 **Deploy Groups** 选项卡中，找到要部署的分组并点击 **Assign**，然后选择已发布的配置及版本。建议先在小分组中验证摄取是否正常，再滚动发布到机群中的其余分组。
+    3. 在该分组上点击 **Install**，并为配置中引用的每个环境变量填写值；Telflo 会将这些值添加到安装命令中。[按照 Telflo 的安装说明](https://docs.telflo.com/docs/fleet-management/install-collectors)，在采集器所要运行的位置执行该命令。该命令包含机群的安装令牌以及你填写的值，因此请将其作为敏感信息妥善处理。
+    4. 在 **Collectors** 选项卡中，采集器的状态会依次显示为 **Pending pickup**、**Applying** 和 **In sync**。
+
+    如需滚动发布变更，请发布新版本并将其分配给该分组；如需回滚，请分配之前部署过的版本。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![滚动发布后所有采集器均已同步的 Telflo 机群](/images/clickstack/telflo/telflo-fleet.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="验证遥测数据" id="verify-telemetry">
+    在 ClickHouse Cloud 控制台中打开对应服务的 ClickHouse Observability。在 **搜索** 视图中搜索您的某个服务；如需查看指标，请使用 **Chart Explorer**。在将该配置推广到机群中的其余实例之前，请先确认预期的日志、链路追踪和指标均已到达。
+  </Step>
+</Steps>
+
+## 高级配置 {#advanced-configuration}
+
+### 扇出路由 {#fan-out-routing}
+
+同一份遥测数据可以同时发送到多个目标：发送到 ClickHouse Observability 进行长期存储，在迁移期间发送到另一个平台，以及发送到 SIEM 进行安全分析。在画布上添加导出器，并将其连接到为其提供数据的流水线；也可以直接基于 [Telflo 流程库](https://telflo.com/flows)中的预构建管道开始配置。
+
+### 压缩与性能 {#compression-and-performance}
+
+* **OTLP/HTTP 和 OTLP 导出器**：将 **压缩** 保持为 gzip。
+* **ClickHouse 导出器 (仅限自管理部署)&#x20;**：保持 **异步插入** 开启，**压缩** 保持为 lz4，并在其上游添加一个 **批次** 处理器。请参阅[优化插入操作](/zh/clickstack/self-configured/ingesting-data/collector#optimizing-inserts-self-configured)。
+
+## 后续步骤 {#next-steps}
+
+* **构建仪表盘**：在 ClickHouse Observability 中为日志、指标和链路追踪创建可视化
+* **设置告警**：在 ClickHouse Observability 中针对关键状况配置告警
+* **借助 Telflo AI 助手优化**：让它调整管道或给出测试建议
+* **从其他供应商迁移**：[flows](https://telflo.com/flows) 覆盖整个切换过程，可替换机群中已部署的 agent，并在对比评估期间将数据双写到两个后端
+
+## 延伸阅读 {#read-more}
+
+* [Telflo 文档](https://docs.telflo.com/docs)
+* [快速入门：从空白画布到部署采集器](https://docs.telflo.com/docs/getting-started/quickstart)
+* [测试采集器配置](https://docs.telflo.com/docs/testing/overview)
+* [Telflo 中的集群管理](https://docs.telflo.com/docs/fleet-management/overview)
+* [安装采集器](https://docs.telflo.com/docs/fleet-management/install-collectors)
+* [使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry)
+* [自管理表结构](/zh/clickstack/self-configured/ingesting-data/schemas)
