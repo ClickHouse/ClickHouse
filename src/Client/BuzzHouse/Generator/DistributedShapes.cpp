@@ -286,6 +286,8 @@ struct ShapeTable
     DB::Strings cols;
     /// Known for the tables the shapes create themselves
     String sorting_key;
+    /// Not through an `Alias` table
+    bool supports_prewhere = true;
 
     [[nodiscard]] String name() const { return DB::backQuote(database) + "." + DB::backQuote(table); }
 };
@@ -332,13 +334,16 @@ public:
             }
             case 1: {
                 const String from = source(t1, "", virtuals);
+                /// Only a read of the table itself takes `PREWHERE`, and its filter keeps to the columns of the table
+                const bool prewhere = source_is_table && t1.supports_prewhere && rg.nextSmallNumber() < 4;
+                const bool filter_virtuals = virtuals && !prewhere;
                 return fmt::format(
                     "SELECT {} FROM {} {} {}{}",
                     aggregate(t1, "", virtuals),
                     from,
-                    rg.nextSmallNumber() < 4 && !virtuals ? "PREWHERE" : "WHERE",
-                    predicate(t1, "", virtuals),
-                    rg.nextSmallNumber() < 3 ? " AND " + predicate(t1, "", virtuals) : "");
+                    prewhere ? "PREWHERE" : "WHERE",
+                    predicate(t1, "", filter_virtuals),
+                    rg.nextSmallNumber() < 3 ? " AND " + predicate(t1, "", filter_virtuals) : "");
             }
             case 2:
                 return join(t1, t2, m);
@@ -530,6 +535,8 @@ private:
     const DB::Strings & clusters;
     uint32_t depth = 0;
     static constexpr uint32_t max_depth = 3;
+    /// Whether the last `source` reads the table itself, rather than something reading it
+    bool source_is_table = false;
 
     const ShapeTable & table() { return rg.pickRandomly(tables); }
 
@@ -576,9 +583,11 @@ private:
         const uint32_t pick = rg.nextMediumNumber();
 
         virtuals = false;
+        source_is_table = false;
         if (pick < 71 || depth >= max_depth)
         {
             virtuals = true;
+            source_is_table = true;
             return t.name() + as;
         }
         if (pick < 81)
@@ -806,11 +815,11 @@ static String createShapeTable(RandomGenerator & rg, const uint32_t i)
         rg.nextBool() ? "0" : "1000000000");
 }
 
-static String fillShapeTable(RandomGenerator & rg, const uint32_t i)
+static String fillShapeTable(RandomGenerator & rg, const uint32_t i, const bool insert_only)
 {
     static const std::vector<uint32_t> rows = {1, 100, 1000, 10000, 100000};
 
-    switch (rg.randomInt<uint32_t>(0, 9))
+    switch (insert_only ? 9 : rg.randomInt<uint32_t>(0, 9))
     {
         case 0:
             return fmt::format("OPTIMIZE TABLE `default`.`shape{}`{};", i, rg.nextBool() ? " FINAL" : "");
@@ -820,35 +829,44 @@ static String fillShapeTable(RandomGenerator & rg, const uint32_t i)
         default:
             return fmt::format(
                 "INSERT INTO `default`.`shape{}` SELECT number, number % 7, toString(number % 100), if(number % 5 = 0, NULL, number), "
-                "range(number % 4), toDateTime('2026-01-01 00:00:00') + number * 600 FROM numbers({}, {});",
+                "range(number % 4), toDateTime('2026-01-01 00:00:00') + number * 600 FROM numbers({}, {}) "
+                /// Session settings the fuzzer sets that fail the insert
+                "SETTINGS make_distributed_plan = 0, function_range_max_elements_in_block = DEFAULT, max_rows_to_read = DEFAULT, "
+                "max_bytes_to_read = DEFAULT, max_execution_time = DEFAULT, max_partitions_per_insert_block = DEFAULT;",
                 i,
                 rg.randomInt<uint32_t>(0, 1000000),
                 rg.pickRandomly(rows));
     }
 }
 
-DB::Strings StatementGenerator::generateShapedQueries(RandomGenerator & rg)
+DB::Strings StatementGenerator::generateShapeSetup(RandomGenerator & rg, bool & creates) const
 {
     DB::Strings res;
-    std::vector<ShapeTable> sources;
 
     /// Created again now and then: the fuzzer may drop or truncate them, knowing nothing about them
-    if (!shape_tables_created || rg.nextMediumNumber() < 4)
+    creates = !shape_tables_created || rg.nextMediumNumber() < 4;
+    if (creates)
     {
         for (uint32_t i = 0; i < num_shape_tables; i++)
         {
             res.emplace_back(createShapeTable(rg, i));
             for (uint32_t j = 0; j < 3; j++)
             {
-                res.emplace_back(fillShapeTable(rg, i));
+                res.emplace_back(fillShapeTable(rg, i, true));
             }
         }
-        shape_tables_created = true;
     }
-    if (rg.nextMediumNumber() < 16)
+    else if (rg.nextMediumNumber() < 16)
     {
-        res.emplace_back(fillShapeTable(rg, rg.randomInt<uint32_t>(0, num_shape_tables - 1)));
+        res.emplace_back(fillShapeTable(rg, rg.randomInt<uint32_t>(0, num_shape_tables - 1), false));
     }
+    return res;
+}
+
+String StatementGenerator::generateShapedQuery(RandomGenerator & rg)
+{
+    std::vector<ShapeTable> sources;
+
     for (uint32_t i = 0; i < num_shape_tables; i++)
     {
         sources.push_back({"default", fmt::format("shape{}", i), {"`k`", "`g`", "`s`", "`n`", "`a`", "`d`"}, shape_sorting_keys[i]});
@@ -859,7 +877,7 @@ DB::Strings StatementGenerator::generateShapedQueries(RandomGenerator & rg)
 
         if (!cols.empty())
         {
-            sources.push_back({t->getDatabaseName(), t->getBaseName(false), std::move(cols), ""});
+            sources.push_back({t->getDatabaseName(), t->getBaseName(false), std::move(cols), "", t->isMergeTreeFamily(false)});
         }
     }
     ShapeBuilder builder(rg, sources, fc.parallel_replicas_clusters);
@@ -873,8 +891,7 @@ DB::Strings StatementGenerator::generateShapedQueries(RandomGenerator & rg)
         first = false;
     }
     query += " FORMAT Null;";
-    res.emplace_back(std::move(query));
-    return res;
+    return query;
 }
 
 }

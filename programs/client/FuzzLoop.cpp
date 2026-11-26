@@ -1258,18 +1258,29 @@ bool Client::buzzHouse()
                     {50 * static_cast<uint32_t>(!fuzz_config->parallel_replicas_clusters.empty()),
                      [&]()
                      {
-                         const DB::Strings statements = gen.generateShapedQueries(rg);
+                         bool creates = false;
+                         bool setup_success = true;
 
-                         for (const auto & statement : statements)
+                         for (const auto & statement : gen.generateShapeSetup(rg, creates))
                          {
                              fuzz_config->outf << statement << std::endl;
                              server_up &= processBuzzHouseQuery(statement);
+                             setup_success &= server_up && !have_error;
                          }
+                         if (creates)
+                         {
+                             /// Created again on the next shaped query, if any of the tables is missing or empty
+                             gen.setShapeTablesCreated(setup_success);
+                         }
+                         const String query = gen.generateShapedQuery(rg);
+
+                         fuzz_config->outf << query << std::endl;
+                         server_up &= processBuzzHouseQuery(query);
                          if (gen.takeRepeatStatement() && server_up && !have_error)
                          {
                              /// The first run collected the statistics automatic parallel replicas decides on
-                             fuzz_config->outf << statements.back() << std::endl;
-                             server_up &= processBuzzHouseQuery(statements.back());
+                             fuzz_config->outf << query << std::endl;
+                             server_up &= processBuzzHouseQuery(query);
                          }
                      }},
                     {910,
