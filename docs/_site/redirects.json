@@ -4808,8 +4808,12 @@
     "source": "/integrations/data-ingestion/etl-tools"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
+    "destination": "/integrations/connectors/data-ingestion/etl-tools/dlt/dlt-oss",
     "source": "/integrations/data-ingestion/etl-tools/dlt-and-clickhouse"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/etl-tools/dlt/dlt-oss",
+    "source": "/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse"
   },
   {
     "destination": "/integrations/connectors/data-ingestion/streamkap/sql-server-clickhouse",
@@ -4932,7 +4936,7 @@
     "source": "/integrations/deltalake"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
+    "destination": "/integrations/connectors/data-ingestion/etl-tools/dlt/dlt-oss",
     "source": "/integrations/dlt"
   },
   {

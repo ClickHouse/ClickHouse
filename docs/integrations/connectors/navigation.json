@@ -158,7 +158,7 @@
         },
         "integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         { "$ref": "data-ingestion/etl-tools/dbt/navigation.json" },
-        "integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
+        { "$ref": "data-ingestion/etl-tools/dlt/navigation.json" },
         {
           "group": "Fivetran",
           "pages": [
