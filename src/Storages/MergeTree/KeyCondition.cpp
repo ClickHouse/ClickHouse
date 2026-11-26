@@ -7533,9 +7533,8 @@ BoolMask KeyCondition::checkInRange(
 
 /// A type conversion between native integers, applied to a Field directly, without executing the function.
 /// UInt8/16/32/64 are stored as UInt64 in Field, Int8/16/32/64 as Int64, and `DateTime` (seconds, as UInt32) as UInt64.
-/// The conversion of a column keeps the low `result_size` bytes and extends them with the sign of the result type.
-/// A conversion of a signed or wider integer to `DateTime` saturates (or throws) instead, and one to `Bool` maps every nonzero
-/// value to 1, so they keep only the values from 0 to `max_kept_value` and are applied only to those.
+/// The conversion of a column keeps the low `result_size` bytes and extends them with the sign of the result type,
+/// except one with a `max_kept_value`: it keeps only the values from 0 to `max_kept_value` and is applied only to those.
 struct IntegerCastOnField
 {
     size_t from_size = 0;
@@ -7629,7 +7628,7 @@ static std::optional<IntegerCastOnField> getIntegerCastOnField(
     /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
     if (to.isUInt8() && (isBool(*to_nested) || isSimpleAggregateFunctionOfBool(**to_nested)))
         cast.max_kept_value = 1;
-    /// A conversion of a signed or wider integer to `DateTime` saturates instead of wrapping around.
+    /// A conversion of a signed or wider integer to `DateTime` saturates (or throws) instead of wrapping around.
     else if (to.isDateTime() && !cast.keepsValue())
         cast.max_kept_value = std::numeric_limits<UInt32>::max();
 
