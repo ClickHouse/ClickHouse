@@ -9,6 +9,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -36,6 +37,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int UNKNOWN_IDENTIFIER;
 extern const int UNSUPPORTED_METHOD;
 }
 
@@ -82,6 +84,15 @@ bool isVariadic(const ASTPtr & arg)
 {
     return arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
         || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>();
+}
+
+/// `EXCEPT (a, b)` and `t.COLUMNS(a, b)` match column names, their identifiers are not parameters.
+bool isColumnNameList(const IAST & parent, const IAST & child)
+{
+    if (child.as<ASTColumnsExceptTransformer>())
+        return true;
+    const auto * matcher = parent.as<ASTQualifiedColumnsListMatcher>();
+    return matcher && &child == matcher->column_list.get();
 }
 }
 
@@ -184,8 +195,25 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         auto ast_node_to_update = ast_nodes_to_update.top();
         ast_nodes_to_update.pop();
 
+        /// `COLUMNS(a, b)` resolves each name to a column, so a parameter there must be passed an identifier.
+        if (const auto * matcher = ast_node_to_update->as<ASTColumnsListMatcher>(); matcher && matcher->column_list)
+        {
+            for (const auto & column : matcher->column_list->children)
+            {
+                auto column_name = tryGetIdentifierName(column);
+                auto argument_it = column_name ? identifier_name_to_function_argument.find(*column_name) : identifier_name_to_function_argument.end();
+                if (argument_it != identifier_name_to_function_argument.end() && !argument_it->second->as<ASTIdentifier>())
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Identifier '{}' inside COLUMNS matcher must resolve into a column, but function {} passes {}",
+                        *column_name, function.name, argument_it->second->formatForErrorMessage());
+            }
+        }
+
         for (auto & child : ast_node_to_update->children)
         {
+            if (isColumnNameList(*ast_node_to_update, *child))
+                continue;
+
             if (auto * inner_function = child->as<ASTFunction>())
             {
                 auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
