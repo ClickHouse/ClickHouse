@@ -4389,9 +4389,8 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             outputs.erase(std::ranges::find(outputs, predicate));
         }
 
-        /// An output of that name may remain: the filter column itself (e.g. it appears in SELECT), or another
-        /// column of that name passed through. The caller resolves it by name, so it turns the FilterStep into
-        /// an ExpressionStep, which keeps the outputs but no longer filters.
+        /// An output of that name may remain: the filter column itself (e.g. used in SELECT) or a passed-through column.
+        /// Callers resolve the filter column by name, so they then turn the FilterStep into a non-filtering ExpressionStep.
         is_filter_const = tryFindInOutputs(predicate->result_name) != nullptr;
     }
     else
