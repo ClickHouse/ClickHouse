@@ -131,8 +131,9 @@ struct SharedExteriorRows
         return {std::move(result), count};
     }
 
-    /// Returns false if the intersection became empty.
-    bool insert(Chunk chunk, const char * function_name)
+    /// Returns false if the intersection became empty. Does not enforce the point budget: the caller
+    /// does it with `enforcePointBudget` once the complete update has been inserted.
+    bool insertWithoutBudget(Chunk chunk, const char * function_name)
     {
         while (true)
         {
@@ -153,13 +154,19 @@ struct SharedExteriorRows
                 return false;
             chunk = std::move(combined);
         }
-        /// Overlap between tiers can make their sum larger than the actual intersection.
+        return true;
+    }
+
+    /// Overlap between tiers can make their sum larger than the actual intersection, so the budget applies
+    /// to the reduced state. Returns false if the intersection is empty.
+    bool enforcePointBudget(const char * function_name)
+    {
         return points <= MAX_POINTS_IN_POLYGONAL_STATE || reduceAll(function_name);
     }
 
     bool add(const CartesianMultiPolygon & row, const char * function_name)
     {
-        return insert({row, countMultiPolygonPoints(row)}, function_name);
+        return insertWithoutBudget({row, countMultiPolygonPoints(row)}, function_name) && enforcePointBudget(function_name);
     }
 
     /// Returns false if the intersection is empty. Otherwise leaves exactly one chunk within the point budget.
@@ -653,13 +660,22 @@ struct GroupPolygonIntersectData
 
         if (other.shared_rows && shared_rows && equalExteriorCycles(shared_rows->exterior, other.shared_rows->exterior))
         {
+            /// A later chunk of the other state can simplify the geometry that an earlier one introduces,
+            /// and the other state is within the budget only as a whole. Enforce the budget after all of
+            /// its chunks have been inserted, so that the outcome does not depend on whether the other
+            /// state arrives as it was accumulated or reduced by serialization.
             for (const auto & chunk : other.shared_rows->chunks)
             {
-                if (!shared_rows->insert(chunk, function_name))
+                if (!shared_rows->insertWithoutBudget(chunk, function_name))
                 {
                     setEmpty();
                     return;
                 }
+            }
+            if (!shared_rows->enforcePointBudget(function_name))
+            {
+                setEmpty();
+                return;
             }
             total_points = shared_rows->points;
             return;
