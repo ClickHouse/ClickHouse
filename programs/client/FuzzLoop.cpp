@@ -5,6 +5,7 @@
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <Common/quoteString.h>
 
 #include <cstdio>
 #include <unistd.h>
@@ -1027,7 +1028,8 @@ bool Client::buzzHouse()
                                      || strategy == BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION))
                              {
                                  /// After a mutation the parts must pass `CHECK TABLE`
-                                 fuzz_config->checkTablesIntegrity("TABLE " + tbl.get().getFullName(true));
+                                 fuzz_config->checkTablesIntegrity(
+                                     "TABLE " + DB::backQuote(tbl.get().getDatabaseName()) + "." + DB::backQuote(tbl.get().getBaseName(false)));
                              }
                          }
                      }},

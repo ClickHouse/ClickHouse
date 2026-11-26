@@ -552,7 +552,9 @@ class HTTPClient(QueryClient):
         headers = {"X-ClickHouse-User": self.user}
         # Sometimes a compressed response, and progress in the headers, which only the HTTP handler has.
         if random.random() < 0.25:
-            params += [("enable_http_compression", "1")]
+            # The server cancels the compressor after an exception in the middle of the response, and the
+            # exception block stays inside it, so buffer the whole response to get the error in the headers
+            params += [("enable_http_compression", "1"), ("wait_end_of_query", "1")]
             headers["Accept-Encoding"] = random.choice(list(HTTP_RESPONSE_DECOMPRESSORS))
         if random.random() < 0.25:
             params += [("send_progress_in_http_headers", "1")]
