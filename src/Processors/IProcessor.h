@@ -343,6 +343,7 @@ public:
     /// output port instead of throwing it. The exception is then rethrown by a processor further down,
     /// so the executor takes it from here to know which processor it came from.
     void setPassedOnException(std::exception_ptr exception) { passed_on_exception = std::move(exception); }
+    bool hasPassedOnException() const { return static_cast<bool>(passed_on_exception); }
     std::exception_ptr takePassedOnException() { return std::exchange(passed_on_exception, nullptr); }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }

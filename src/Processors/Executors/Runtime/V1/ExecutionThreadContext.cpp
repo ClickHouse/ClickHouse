@@ -241,22 +241,20 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
         success = false;
     }
 
-    /// Taken on the thread that ran the work, which is the only one writing it.
-    if (step_profiler)
+    /// Taken on the thread that ran the work, which is the only one writing it. Checked before it is
+    /// taken, so that a job that passed nothing on costs no more than the check.
+    if (step_profiler && processor->hasPassedOnException())
     {
-        if (auto passed_on_exception = processor->takePassedOnException())
+        /// A diagnostic: the exception is already on its way, and is what the query must fail with,
+        /// even if it is the one of running out of memory.
+        MemoryTrackerBlockerInThread block_memory_tracker;
+        try
         {
-            /// A diagnostic: the exception is already on its way, and is what the query must fail with,
-            /// even if it is the one of running out of memory.
-            MemoryTrackerBlockerInThread block_memory_tracker;
-            try
-            {
-                step_profiler->addPassedOnException(std::move(passed_on_exception), *processor);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            step_profiler->addPassedOnException(processor->takePassedOnException(), *processor);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 

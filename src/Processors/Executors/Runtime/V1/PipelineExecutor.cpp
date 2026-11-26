@@ -307,32 +307,41 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
     SCOPE_EXIT({
         if (tasks.isFinished() || std::uncaught_exceptions() > uncaught_exceptions)
             detachSpillables();
-        /// A single thread runs the steps, so on an exception nothing is running anymore.
-        if (std::uncaught_exceptions() > uncaught_exceptions)
-            finishProfilingOnException();
     });
-    if (!is_execution_initialized)
+
+    try
     {
-        initializeExecution(1, true);
+        if (!is_execution_initialized)
+        {
+            initializeExecution(1, true);
 
-        // Acquire slot until we are done
-        single_thread_cpu_slot = cpu_slots->acquire();
-        tasks.upscale(single_thread_cpu_slot->slot_id);
-        chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
+            // Acquire slot until we are done
+            single_thread_cpu_slot = cpu_slots->acquire();
+            tasks.upscale(single_thread_cpu_slot->slot_id);
+            chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
 
-        if (yield_flag && *yield_flag)
+            if (yield_flag && *yield_flag)
+                return true;
+        }
+
+        executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
+
+        if (!tasks.isFinished())
             return true;
+
+        /// Execution can be stopped because of exception. Check and rethrow if any.
+        logAndRethrowException();
+
+        finalizeExecution();
     }
-
-    executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
-
-    if (!tasks.isFinished())
-        return true;
-
-    /// Execution can be stopped because of exception. Check and rethrow if any.
-    logAndRethrowException();
-
-    finalizeExecution();
+    catch (...)
+    {
+        /// A single thread runs the steps, so on an exception nothing is running anymore. Done here
+        /// rather than in the scope guard above, so that the path without an exception, taken once
+        /// per block, is not changed by it.
+        finishProfilingOnException();
+        throw;
+    }
 
     return false;
 }
