@@ -140,6 +140,9 @@ Chunks RollupTransform::mergeLevel(Chunks && chunks, size_t num_keys, bool is_in
     ThreadPool pool(
         CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, num_parts);
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::AGGREGATOR_POOL);
+    /// Reserve the tracking of the jobs of both stages, so that `enqueueAndKeepTrack` can only throw before the pool
+    /// accepts a job, and the runner waits for every accepted job. `waitForAllToFinishAndRethrowFirstError` keeps the capacity.
+    runner.reserve(std::max(state->input.size(), num_parts));
 
     /// Split each input chunk by the hash of the level's keys, so that equal keys land in the same part.
     for (size_t chunk_idx = 0; chunk_idx < state->input.size(); ++chunk_idx)

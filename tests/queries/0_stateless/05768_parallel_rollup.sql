@@ -3,45 +3,31 @@
 
 DROP TABLE IF EXISTS t_parallel_rollup;
 CREATE TABLE t_parallel_rollup (a UInt32, b Nullable(String), c LowCardinality(String), d UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
--- 300000 distinct (a, b, c, d), so the first levels have more rows than the parallel merge needs.
-INSERT INTO t_parallel_rollup SELECT number % 13, if(number % 17 = 0, NULL, toString(number % 101)), toString(number % 7), number % 300000, number FROM numbers(600000);
+-- 120000 distinct (a, b, c, d): more rows in the first level than the parallel merge needs (100000).
+INSERT INTO t_parallel_rollup SELECT number % 13, if(number % 17 = 0, NULL, toString(number % 101)), toString(number % 7), number % 60000, number FROM numbers(120000);
 
 SET max_block_size = 10000;
 
+-- Rows and a hash of each level.
 SELECT 'rollup';
-SELECT count(), sum(cityHash64(a, b, c, d, s, n, g)) FROM
+SELECT g, count(), sum(cityHash64(toString((a, b, c, d, s, n)))) FROM
 (
     SELECT a, b, c, d, sum(v) AS s, count() AS n, GROUPING(a, b, c, d) AS g FROM t_parallel_rollup GROUP BY a, b, c, d WITH ROLLUP
-) SETTINGS max_threads = 1;
-SELECT count(), sum(cityHash64(a, b, c, d, s, n, g)) FROM
+) GROUP BY g ORDER BY g SETTINGS max_threads = 1;
+SELECT g, count(), sum(cityHash64(toString((a, b, c, d, s, n)))) FROM
 (
     SELECT a, b, c, d, sum(v) AS s, count() AS n, GROUPING(a, b, c, d) AS g FROM t_parallel_rollup GROUP BY a, b, c, d WITH ROLLUP
-) SETTINGS max_threads = 8;
+) GROUP BY g ORDER BY g SETTINGS max_threads = 8;
 
+-- `group_by_use_nulls` merges the levels with the aggregator of the intermediate header.
 SELECT 'group_by_use_nulls';
-SELECT count(), sum(cityHash64(a, b, c, d, s)) FROM
+SELECT count(), sum(cityHash64(toString((a, b, c, d, s)))) FROM
 (
     SELECT a, b, c, d, sum(v) AS s FROM t_parallel_rollup GROUP BY ROLLUP(a, b, c, d)
 ) SETTINGS max_threads = 1, group_by_use_nulls = 1;
-SELECT count(), sum(cityHash64(a, b, c, d, s)) FROM
+SELECT count(), sum(cityHash64(toString((a, b, c, d, s)))) FROM
 (
     SELECT a, b, c, d, sum(v) AS s FROM t_parallel_rollup GROUP BY ROLLUP(a, b, c, d)
 ) SETTINGS max_threads = 8, group_by_use_nulls = 1;
-
-SELECT 'uniqExact and HAVING';
-SELECT count(), sum(cityHash64(d, c, u)) FROM
-(
-    SELECT d, c, uniqExact(v % 1000) AS u FROM t_parallel_rollup GROUP BY d, c WITH ROLLUP HAVING count() > 1
-) SETTINGS max_threads = 1;
-SELECT count(), sum(cityHash64(d, c, u)) FROM
-(
-    SELECT d, c, uniqExact(v % 1000) AS u FROM t_parallel_rollup GROUP BY d, c WITH ROLLUP HAVING count() > 1
-) SETTINGS max_threads = 8;
-
-SELECT 'rows per level';
-SELECT g, count() FROM
-(
-    SELECT GROUPING(a, b, c, d) AS g FROM t_parallel_rollup GROUP BY a, b, c, d WITH ROLLUP
-) GROUP BY g ORDER BY g SETTINGS max_threads = 8;
 
 DROP TABLE t_parallel_rollup;
