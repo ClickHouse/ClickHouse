@@ -1,4 +1,9 @@
-1
+-- DROP PART
+0
 0
 120
 1	1
+-- DROP PART that does not happen because a merge takes the part
+NO_SUCH_DATA_PART
+121
+121
