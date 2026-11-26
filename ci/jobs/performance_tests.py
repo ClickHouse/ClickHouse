@@ -224,7 +224,8 @@ FALLBACK_SHARED_MIN_FRACTION = 0.8
 FALLBACK_SHARED_DAYS = 7
 # A PR fails when a query of a test it adds or changes has at least this many runs on the
 # tested server and corr(run number, time) and time(last run) / time(first run) above these.
-# If the PR changes only files under tests/, the reference server's runs must also have one of the two above these.
+# If the PR changes only files under tests/ and the reference is a build made like its own, the reference server's
+# runs must also have one of the two above these.
 RUN_TREND_MIN_RUNS = 5
 RUN_TREND_MIN_CORR = 0.8
 RUN_TREND_MIN_GROWTH = 1.2
@@ -2660,12 +2661,12 @@ def changed_tests_gate(info, test_files, workdir, same_build):
             trends = find_run_trends(query_runs)
             # A PR that changes only tests, compared with a build made like its own, runs the same code on both servers.
             tests_only = same_build and all(f.removeprefix("./").startswith("tests/") for f in changed_files)
-            unstable = find_unstable_queries(
-                workdir, query_runs, names, tests_only, {(t["test"], t["query_index"]) for t in trends}
-            )
             # Then a rise on the tested server alone is its own drift.
             if tests_only:
                 trends = [t for t in trends if t["reference_rises"]]
+            unstable = find_unstable_queries(
+                workdir, query_runs, names, tests_only, {(t["test"], t["query_index"]) for t in trends}
+            )
     except Exception as e:
         traceback.print_exc()
         return True, f"; could not check the queries of the tests this PR adds or changes: {e}", []
