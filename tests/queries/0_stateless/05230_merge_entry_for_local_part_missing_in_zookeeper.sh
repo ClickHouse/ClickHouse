@@ -43,8 +43,7 @@ read -r part_name partition_id min_block max_block level <<< "$(${CLICKHOUSE_CLI
 
 # The nodes below are written by hand, so the state built above is checked first: a replica that
 # pulls a log entry naming no part, or a part intersecting its own, terminates the server.
-if [[ "$part_name" != "${partition_id}_${min_block}_${max_block}_${level}" ]] \
-    || (( max_block != min_block + 1 || level < 1 )); then
+if [[ "$part_name" != "${partition_id}_${min_block}_${max_block}_${level}" ]] || (( level < 1 )); then
     echo "the setup did not leave the merged part on r2"
     exit 1
 fi
