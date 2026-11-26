@@ -107,7 +107,8 @@ struct MergeTreeBlockSizePredictor
     {
         if (read_bytes_per_row <= 0 || static_cast<double>(bytes_quota) >= static_cast<double>(std::numeric_limits<size_t>::max()))
             return 0;
-        return static_cast<size_t>(static_cast<double>(bytes_quota) / std::max(1.0, read_bytes_per_row));
+        return static_cast<size_t>(
+            static_cast<double>(bytes_quota) / std::max(1.0, read_bytes_per_row + subcolumns_bytes_per_row_global));
     }
 
     void updateReadBytesPerRow(size_t rows_was_read, size_t bytes_was_read, double decay = calculateDecay())
@@ -144,6 +145,8 @@ protected:
 
     std::vector<ColumnInfo> dynamic_columns_infos;
     size_t fixed_columns_bytes_per_row = 0;
+    /// Reading a subcolumn may deserialize more than it returns (the whole `Map` for a key), which `read_bytes_per_row` misses.
+    double subcolumns_bytes_per_row_global = 0;
 
     double max_size_per_row_fixed = 0;
     double max_size_per_row_dynamic = 0;
