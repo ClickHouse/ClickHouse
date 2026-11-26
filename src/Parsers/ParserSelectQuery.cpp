@@ -1340,6 +1340,10 @@ If the query includes `ORDER BY`, those results are returned in the requested or
 When `DISTINCT` uses input sorted by a prefix of its keys, it does not spill. A large group of rows
 with the same prefix can still use substantial memory.
 
+A `DISTINCT` over a source that never ends by itself, such as a `STREAM` subscription, `system.numbers` or
+`generateRandom`, does not spill either. After spilling, it could return the remaining rows only at the end of
+its input, which never comes, so a `LIMIT` could not finish the query.
+
 As with `optimize_distinct_in_order`, spilling may deduplicate floating-point values that have
 different binary representations but compare equal, including `0.0` and `-0.0`, or `NaN` values
 with different payloads.
@@ -3793,6 +3797,10 @@ is not defined, and the rows returned after spilling starts are grouped by the `
 
 When `LIMIT BY` uses input sorted by its keys, it keeps the count of one group at a time and does not
 spill.
+
+A `LIMIT BY` over a source that never ends by itself, such as a `STREAM` subscription, `system.numbers` or
+`generateRandom`, does not spill either. After spilling, it could return the remaining rows only at the end of
+its input, which never comes, so a `LIMIT` could not finish the query.
 
 A negative limit or offset does not spill: `LIMIT -n BY` keeps the rows it may still return in memory until
 the input ends. When a negative limit or offset is combined with a positive one, as in `LIMIT -n OFFSET m BY`

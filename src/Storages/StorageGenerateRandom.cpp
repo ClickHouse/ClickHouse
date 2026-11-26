@@ -1885,6 +1885,9 @@ public:
 
     String getName() const override { return "GenerateRandom"; }
 
+    /// Every call generates a block: only a consumer that stops reading ends the source.
+    bool isUnboundedSource() const override { return true; }
+
 protected:
     Chunk generate() override
     {

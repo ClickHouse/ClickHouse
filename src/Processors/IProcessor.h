@@ -389,6 +389,12 @@ public:
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
+    /// Whether the processor is a source that does not end by itself, such as a `STREAM` subscription or a
+    /// full scan of `system.numbers`: it produces data until its consumers stop reading. An operator that
+    /// returns rows only at the end of its input, such as a spilled `DISTINCT`, would never return any over
+    /// such a source.
+    virtual bool isUnboundedSource() const { return false; }
+
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
     virtual void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /* counter */) { }

@@ -165,12 +165,14 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     /// the threshold or when a memory scheduler asks. The sorted-stream transform keeps one group at a time and
     /// never needs to. A step from a release that predates the input-order flag may need its input order,
     /// which that release keeps by in-memory execution. Such a step stays in memory, since a spill could
-    /// lose the order.
+    /// lose the order. A spilled `LIMIT BY` returns its remaining rows only at the end of its input, so it
+    /// stays in memory over an input that may never end (see `QueryPipelineBuilder::isUnbounded`), where an
+    /// outer `LIMIT` or a streaming consumer needs the rows as they come.
     const UInt64 group_limit_end = computeGroupLimitEnd(group_length, group_offset);
     const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
         settings.max_bytes_before_external_limit_by, settings.max_bytes_ratio_before_external_limit_by,
         "max_bytes_ratio_before_external_limit_by");
-    const bool external = !external_limit_by_disabled && !input_order_unknown
+    const bool external = !input_order_unknown && !pipeline.isUnbounded()
         && (external_threshold || build_settings.isSchedulerSpillingEnabled());
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk;

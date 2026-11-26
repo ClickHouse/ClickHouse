@@ -817,8 +817,6 @@ void Planner::buildPlanForUnionNode()
             false /*pre distinct*/);
         if (add_pre_distinct)
             distinct_step->setStepDescription("DISTINCT");
-        if (has_unbounded_arm)
-            distinct_step->disableExternalDistinct();
         query_plan.addStep(std::move(distinct_step));
     }
 

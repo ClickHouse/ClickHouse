@@ -41,6 +41,9 @@ public:
 
     String getName() const override { return "Zeros"; }
 
+    /// A limit of 0 reads the table without a size, which only a consumer that stops reading ends.
+    bool isUnboundedSource() const override { return limit == 0; }
+
 protected:
     Chunk generate() override
     {

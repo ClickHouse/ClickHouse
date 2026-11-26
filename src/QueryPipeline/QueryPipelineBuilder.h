@@ -237,6 +237,15 @@ public:
 
     const Processors & getProcessors() const { return pipe.getProcessors(); }
 
+    /// Whether the stream of the pipeline may never end: a source on its data path does not end by itself
+    /// (see `IProcessor::isUnboundedSource`), and no later step, such as `LIMIT`, ends the stream. Pipelines
+    /// that only feed a dependency of the stream, such as the build side of a hash join or a set for `IN`,
+    /// do not count.
+    bool isUnbounded() const { return unbounded; }
+    /// Marks the stream bounded, for a step whose output ends after a fixed number of rows whatever its
+    /// input, such as `LIMIT`.
+    void markBounded() { unbounded = false; }
+
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
 
@@ -302,6 +311,8 @@ private:
 
     bool concurrency_control = false;
     bool read_stream_count_was_reduced = false;
+    /// See `isUnbounded`.
+    bool unbounded = false;
 
     QueryStatusPtr process_list_element;
     StepProfilerPtr step_profiler;

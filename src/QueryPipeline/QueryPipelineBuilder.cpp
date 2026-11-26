@@ -44,6 +44,8 @@
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -74,6 +76,9 @@ void QueryPipelineBuilder::init(Pipe pipe_)
     if (pipe_.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't initialize pipeline with empty pipe");
 
+    /// A new pipeline holds the processors of the sources that start its stream, which decide whether it may
+    /// never end. A caller that unites several streams sets `unbounded` from theirs instead.
+    unbounded = std::ranges::any_of(pipe_.getProcessors(), [](const ProcessorPtr & processor) { return processor->isUnboundedSource(); });
     pipe = std::move(pipe_);
 }
 
@@ -273,6 +278,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     bool will_limit_max_threads = true;
     size_t max_threads = 0;
     bool concurrency_control = false;
+    bool unbounded = false;
     Pipes pipes;
     QueryPlanResourceHolder resources;
 
@@ -294,11 +300,16 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
         // Use concurrency control if at least one of pipelines is using it
         concurrency_control = concurrency_control || pipeline.getConcurrencyControl();
+
+        unbounded = unbounded || pipeline.unbounded;
     }
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
     pipeline.addResources(resources);
+    /// The scan of `init` would also count the sources whose streams a step of their own pipeline ends, such
+    /// as `LIMIT`. The united stream may never end exactly when one of the united streams may never end.
+    pipeline.unbounded = unbounded;
 
     if (will_limit_max_threads)
     {
@@ -338,6 +349,8 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     left->pipe.header = left->pipe.output_ports.front()->getSharedHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     left->resources = std::move(right->resources);
+    /// Both inputs feed the output, so it may never end when one of them may never end.
+    left->unbounded = left->unbounded || right->unbounded;
     return left;
 }
 
@@ -380,6 +393,9 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::selectPipeline(
     /// Transfer resources so they stay alive while processors execute.
     signal->resources.append(true_pipeline->resources);
     signal->resources.append(false_pipeline->resources);
+
+    /// The output comes from one of the two pipelines, and the signal only chooses which.
+    signal->unbounded = true_pipeline->unbounded || false_pipeline->unbounded;
 
     signal->pipe.resize(num_streams);
     return signal;
@@ -539,6 +555,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->pipe.header = left->pipe.output_ports.front()->getSharedHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     left->resources = std::move(right->resources);
+    /// A merge join reads both sides together, so the output may never end when one side may never end.
+    left->unbounded = left->unbounded || right->unbounded;
 
     assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
     return left;
@@ -898,6 +916,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     left->resources = std::move(right->resources);
     left->pipe.header = left->pipe.output_ports.front()->getSharedHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+    /// The join reads the whole right side before it outputs rows, so the output ends when the left side
+    /// ends, and `unbounded` stays that of the left side.
     return left;
 }
 
@@ -989,6 +1009,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     left->resources = std::move(right->resources);
     left->pipe.header = left->pipe.output_ports.front()->getSharedHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+    /// As in `joinPipelinesRightLeft`, `unbounded` stays that of the left side.
     return left;
 }
 

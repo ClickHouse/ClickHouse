@@ -111,9 +111,6 @@ public:
     /// This affects only performance, so it is not serialized.
     void coalesceOutput() { coalesce_output = true; }
 
-    /// Never spill to disk: deduplicate in memory only.
-    void disableExternalDistinct() { external_distinct_disabled = true; }
-
 private:
     void updateOutputHeader() override;
 
@@ -133,7 +130,6 @@ private:
     /// not show that the order has no meaning. See `transformPipeline`.
     bool input_order_unknown = false;
     bool coalesce_output = false;
-    bool external_distinct_disabled = false;
 };
 
 }

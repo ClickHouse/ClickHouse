@@ -108,6 +108,11 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
     if (is_shard_limit)
         transform->markAsShardLimit();
     pipeline.addTransform(std::move(transform));
+
+    /// The stream ends after the limit, unless the transform reads its whole input or extends the limit to
+    /// the rows that tie with the last one.
+    if (!always_read_till_end && !with_ties)
+        pipeline.markBounded();
 }
 
 void LimitStep::describeActions(FormatSettings & settings) const

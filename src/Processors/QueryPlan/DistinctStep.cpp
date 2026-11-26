@@ -199,8 +199,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         "max_bytes_ratio_before_external_distinct");
     /// Constant keys produce at most one row and need no external storage. A step from a release that
     /// predates the input-order flag may need its input order, which that release keeps by in-memory
-    /// execution. Such a step stays in memory, since a spill could lose the order.
-    const bool external = !pre_distinct && !external_distinct_disabled && !input_order_unknown
+    /// execution. Such a step stays in memory, since a spill could lose the order. A spilled `DISTINCT`
+    /// returns its remaining rows only at the end of its input, so it stays in memory over an input that may
+    /// never end (see `QueryPipelineBuilder::isUnbounded`), where an outer `LIMIT` or a streaming consumer
+    /// needs the rows as they come.
+    const bool external = !pre_distinct && !input_order_unknown && !pipeline.isUnbounded()
         && (external_threshold || build_settings.isSchedulerSpillingEnabled())
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
 

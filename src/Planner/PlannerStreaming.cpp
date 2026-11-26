@@ -12,8 +12,6 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/traverseQueryTree.h>
 
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <Interpreters/Context.h>
@@ -24,7 +22,6 @@
 #include <Core/Settings.h>
 
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -110,17 +107,13 @@ void buildStreamingPlan(
     addExpressionStep(planner_context, query_plan, projection.projection_actions, projection.correlated_subtrees, select_query_options, "Projection", useful_sets);
 
     if (query_node.isDistinct())
-    {
         addDistinctStep(query_plan, query_analysis_result, planner_context, projection.projection_column_names, query_node, false, false);
-        typeid_cast<DistinctStep &>(*query_plan.getRootNode()->step).disableExternalDistinct();
-    }
 
     if (expression_analysis_result.hasLimitBy())
     {
         auto & limit_by = expression_analysis_result.getLimitBy();
         addExpressionStep(planner_context, query_plan, limit_by.before_limit_by_actions, {}, select_query_options, "Before LIMIT BY", useful_sets);
         addLimitByStep(query_plan, limit_by, query_analysis_result, planner_context, query_node, false);
-        typeid_cast<LimitByStep &>(*query_plan.getRootNode()->step).disableExternalLimitBy();
     }
 
     if (query_node.hasLimit())
