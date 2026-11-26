@@ -49,7 +49,7 @@ A new TDE service uses the default KEK of its infrastructure. To use your own ke
 
 The service restarts to apply the key. During the change, the current key unwraps the DEK and your key wraps it again. The data itself is not re-encrypted.
 
-To rotate the key, repeat these steps with a new key. Keep the previous key enabled for a while before you delete it.
+To rotate the key, repeat these steps with a new key. Services restored from this service's backups keep the key they were restored with, so change their key too. Delete the previous key only after no service uses it and each service has restarted with its new key.
 
 <Warning>
 Permanently deleting the key makes the service data and its backups unrecoverable. Each key management service keeps a deleted key recoverable for a waiting period. See [KMS key poller](/products/cloud/guides/security/cmek#kms-key-poller) for the waiting periods and how to recover a key.
@@ -61,4 +61,4 @@ Every 10 minutes, ClickHouse checks that the TDE delegate can still use the key.
 
 ## Backup and restore {#backup-and-restore}
 
-Backups of a TDE service stay encrypted. Restoring one creates a TDE service that uses the same key, and you can [change the key](#cmek) afterwards.
+Backups of a TDE service stay encrypted. Restoring one creates a TDE service that uses the source service's current key, and you can [change the key](#cmek) afterwards.
