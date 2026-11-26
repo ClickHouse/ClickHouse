@@ -872,8 +872,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const TableExpressionNodePtr & table_expression_node,
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierResolveScope & scope,
-    size_t identifier_column_qualifier_parts,
-    bool can_be_not_found)
+    size_t identifier_column_qualifier_parts)
 {
     const auto & identifier = identifier_lookup.identifier;
 
@@ -914,31 +913,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     bool clone_is_needed = true;
 
-    /// `table_expression_name` is the alias when the table expression has one, so a query that lost a comma
-    /// in the FROM clause - `FROM date_dim AS dt, store_sales item` - reports that `item.i_brand` cannot be
-    /// resolved from "table with name item" while a table named `item` does exist. Name the table the alias
-    /// actually refers to, which is what makes the mistake visible.
-    String table_expression_source = table_expression_data.table_expression_description;
-    if (!table_expression_data.table_expression_name.empty())
-    {
-        table_expression_source += " with name " + table_expression_data.table_expression_name;
-
-        /// A materialized CTE is a table node over a temporary table whose name is generated, so use the
-        /// name the user wrote instead of leaking `_materialized_cte_<name>_<rng>`.
-        String underlying_name = table_expression_data.table_name;
-        if (const auto * table_node = table_expression_node->as<TableNode>())
-            if (table_node->isMaterializedCTE())
-                underlying_name = table_node->getMaterializedCTE()->cte_name;
-
-        const bool name_is_an_alias = !underlying_name.empty()
-            && table_expression_data.table_expression_name != underlying_name
-            && table_expression_data.table_expression_name
-                != table_expression_data.database_name + "." + underlying_name;
-
-        if (name_is_an_alias)
-            table_expression_source += " (an alias of " + underlying_name + ")";
-    }
-
     if (!result_expression)
     {
         /// Here we try to create Nested from Array columns with the `identifier` prefix.
@@ -953,24 +927,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
 
     if (!result_expression)
-    {
-        if (can_be_not_found)
-            return {};
-        std::unordered_set<Identifier> valid_identifiers;
-        TypoCorrection::collectTableExpressionValidIdentifiers(
-            identifier,
-            *table_expression_node,
-            table_expression_data,
-            valid_identifiers);
-
-        auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
-
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
-            identifier.getFullName(),
-            table_expression_source,
-            getHintsErrorMessageSuffix(hints),
-            scope.scope_node->formatASTForErrorMessage());
-    }
+        return {};
 
     if (clone_is_needed)
     {
@@ -1093,17 +1050,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
-                1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+                1 /*identifier_column_qualifier_parts*/);
             if (alias_prefix_result.resolved_identifier)
                 return alias_prefix_result;
         }
     }
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
-       * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
-       * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
+       * 1. Try to bind identifier first part to column in table, if true get full identifier from table or return nothing.
+       * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or return nothing.
        * Storage alias works for subquery, table function as well.
-       * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
+       * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or return nothing.
        */
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
@@ -1112,12 +1069,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
-          * In cases where the subcolumn cannot be found we want to have `nullptr` instead of exception.
-          * So, we set `can_be_not_found = true` to have an attempt to resolve the identifier from another table expression.
+          * When the subcolumn cannot be found, the lookup returns nothing, so another table expression is tried.
           * Example: `SELECT t.t from (SELECT 1 as t) AS a FULL JOIN (SELECT 1 as t) as t ON a.t = t.t;`
           * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
           */
-        auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+        auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
         if (lookup_result.resolved_identifier)
             return lookup_result;
     }
@@ -1128,50 +1084,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    /** The identifier first part can match a table name or an alias of one table expression and at the same
-      * time be the database name of some table expression in the scope. Then the identifier as a whole can be
-      * qualified with the table name or the alias, with the database name and the table name, or refer to
-      * another table expression from that database.
-      * Resolution with a single-part qualifier is attempted first, but it must be allowed to fail, so that the
-      * other interpretations are attempted next.
+    /** A qualifier that matches this table expression does not own the identifier: a miss returns nothing, so that
+      * a database-qualified reading, another table expression, or a parent scope is tried.
       * Example: SELECT db1.db1.id FROM db1.db1;
-      * Example: SELECT db1.tbl.id FROM db1.db1 JOIN db1.tbl USING (id);
-      * Example: SELECT db1.tbl.id FROM (SELECT 1 AS id) AS db1 JOIN db1.tbl USING (id);
-      * Parent scopes participate as well: resolution from a parent scope (a correlated identifier) is
-      * attempted only after the current scope returns no result, so an early exception here would make
-      * the outer interpretation unreachable.
       * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
-      * The fall-through is only valid when there is an actual database-and-table interpretation to try:
-      * some table expression in this scope or in a parent scope is the table `identifier[1]` inside the
-      * database `path_start`. Without such a candidate a failed lookup must throw as before; e.g. a
-      * two-part `db.x` against the table `db` with no table `x` in the database `db` must not fall
-      * through to a column literally named `db.x` of a sibling table expression.
-      * For a two-part identifier the database-and-table interpretation is the table expression itself,
-      * which is not a valid column expression, so an expression lookup must still throw
-      * (e.g. plain `db.db` selected from the table `db.db`). The only exception is the qualifier of
-      * a qualified matcher (`db.db.*`): it is resolved as an expression first, and that lookup must be
-      * allowed to fail so that the matcher can resolve the qualifier as a table expression next.
-      * The candidate check is evaluated lazily, only after a failed qualifier lookup, to avoid
-      * scanning the scope chain on the hot path of successful resolution.
       */
-    auto identifier_can_fall_through_to_database_and_table = [&]() -> bool
-    {
-        if (identifier.getPartsSize() == 2 && !identifier_lookup.is_matcher_qualifier)
-            return false;
-
-        for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-        {
-            for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
-            {
-                if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
-                    && identifier[1] == other_table_expression_data.table_name)
-                    return true;
-            }
-        }
-
-        return false;
-    };
-
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
     {
         auto lookup_result = tryResolveIdentifierFromStorage(
@@ -1179,20 +1096,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             table_expression_node,
             table_expression_data,
             scope,
-            1 /*identifier_column_qualifier_parts*/,
-            true /*can_be_not_found*/);
+            1 /*identifier_column_qualifier_parts*/);
 
         if (lookup_result.resolved_identifier)
             return lookup_result;
-
-        /// No other interpretation is possible: repeat the lookup to throw the proper exception.
-        if (!identifier_can_fall_through_to_database_and_table())
-            return tryResolveIdentifierFromStorage(
-                identifier_lookup,
-                table_expression_node,
-                table_expression_data,
-                scope,
-                1 /*identifier_column_qualifier_parts*/);
     }
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
@@ -1205,19 +1112,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 table_expression_node,
                 table_expression_data,
                 scope,
-                1 /*identifier_column_qualifier_parts*/,
-                true /*can_be_not_found*/);
+                1 /*identifier_column_qualifier_parts*/);
 
             if (lookup_result.resolved_identifier)
                 return lookup_result;
-
-            if (!identifier_can_fall_through_to_database_and_table())
-                return tryResolveIdentifierFromStorage(
-                    identifier_lookup,
-                    table_expression_node,
-                    table_expression_data,
-                    scope,
-                    1 /*identifier_column_qualifier_parts*/);
         }
     }
 
@@ -1226,6 +1124,91 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
+
+    return {};
+}
+
+String IdentifierResolver::describeTableExpressionForErrorMessage(
+    const TableExpressionNodePtr & table_expression_node,
+    const AnalysisTableExpressionData & table_expression_data)
+{
+    /// Name the table an alias refers to, so that a lost comma in `FROM date_dim AS dt, store_sales item`
+    /// is visible from "cannot be resolved from table with name item (an alias of store_sales)".
+    String table_expression_source = table_expression_data.table_expression_description;
+    if (table_expression_data.table_expression_name.empty())
+        return table_expression_source;
+
+    table_expression_source += " with name " + table_expression_data.table_expression_name;
+
+    /// Use the CTE name instead of the generated `_materialized_cte_<name>_<rng>` of a materialized CTE.
+    String underlying_name = table_expression_data.table_name;
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        if (table_node->isMaterializedCTE())
+            underlying_name = table_node->getMaterializedCTE()->cte_name;
+
+    const bool name_is_an_alias = !underlying_name.empty()
+        && table_expression_data.table_expression_name != underlying_name
+        && table_expression_data.table_expression_name != table_expression_data.database_name + "." + underlying_name;
+
+    if (name_is_an_alias)
+        table_expression_source += " (an alias of " + underlying_name + ")";
+
+    return table_expression_source;
+}
+
+IdentifierResolver::QualifyingTableExpression IdentifierResolver::tryFindTableExpressionByQualifier(
+    const Identifier & identifier,
+    const IdentifierResolveScope & scope)
+{
+    const size_t parts_size = identifier.getPartsSize();
+    if (parts_size < 2)
+        return {};
+
+    const auto & path_start = identifier[0];
+
+    /// The longest qualifier wins: database and table over the whole scope chain first, then a single-part qualifier.
+    for (const bool database_and_table : {true, false})
+    {
+        if (database_and_table && parts_size < 3)
+            continue;
+
+        for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+        {
+            TableExpressionNodePtr join_tree_node = current_scope->expression_join_tree_node;
+            if (!join_tree_node)
+                if (const auto * query_node = current_scope->scope_node->as<QueryNode>(); query_node && query_node->getJoinTreeNode())
+                    join_tree_node = query_node->getJoinTreeNodeTyped();
+            if (!join_tree_node)
+                continue;
+
+            for (const auto & table_expression_node : extractTableExpressions(join_tree_node))
+            {
+                auto it = current_scope->table_expression_node_to_data.find(table_expression_node);
+                if (it == current_scope->table_expression_node_to_data.end())
+                    continue;
+
+                const auto & data = it->second;
+
+                bool matches = false;
+                if (database_and_table)
+                {
+                    matches = !data.database_name.empty() && path_start == data.database_name && identifier[1] == data.table_name;
+                }
+                else
+                {
+                    matches = (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias())
+                        || (!data.table_name.empty() && path_start == data.table_name);
+
+                    if (!matches)
+                        if (const auto * table_node = table_expression_node->as<TableNode>())
+                            matches = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
+                }
+
+                if (matches)
+                    return {table_expression_node, &data};
+            }
+        }
+    }
 
     return {};
 }

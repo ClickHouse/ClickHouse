@@ -7,14 +7,10 @@ keywords: ['postgres', 'postgresql', 'логическая репликация'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
-
 ClickHouse Cloud теперь предлагает ClickPipes для миграции внешней базы данных PostgreSQL в сервис Managed Postgres. Эта встроенная интеграция упрощает подключение к исходной базе данных, экспорт схемы, её импорт в Managed Postgres и настройку непрерывной репликации.
 
 <div id="prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#prerequisites}
 </div>
 
 * Доступ к вашей исходной базе данных PostgreSQL с учетной записью пользователя, у которой есть права на репликацию. Следуйте руководству по настройке для соответствующего источника:
@@ -31,7 +27,7 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 * На локальной машине должны быть установлены `pg_dump` и `psql`. Оба входят в стандартный набор клиентских инструментов PostgreSQL.
 
 <div id="considerations">
-  ## Что нужно учесть перед миграцией
+  ## Что нужно учесть перед миграцией {#considerations}
 </div>
 
 * **Распространение DDL**: непрерывная репликация (CDC) фиксирует операции DML и `ADD COLUMN`. Другие изменения DDL, такие как `DROP COLUMN` и `ALTER COLUMN`, не распространяются автоматически, и их нужно применять на целевой стороне вручную.
@@ -45,37 +41,25 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 Откройте [консоль ClickHouse Cloud](https://clickhouse.cloud) и выберите свой сервис Managed Postgres.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Карточка сервиса Managed Postgres в списке сервисов ClickHouse Cloud](/images/managed-postgres/pgpg/servicecard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Карточка сервиса Managed Postgres в списке сервисов ClickHouse Cloud](/images/managed-postgres/pgpg/servicecard.webp)
+  </Frame>
 </div>
 
 На левой боковой панели нажмите **источник данных**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Пункт источник данных на боковой панели сервиса Managed Postgres](/images/managed-postgres/pgpg/overview.webp)
-
-</Frame>
-
+  <Frame>
+    ![Пункт источник данных на боковой панели сервиса Managed Postgres](/images/managed-postgres/pgpg/overview.webp)
+  </Frame>
 </div>
 
 Нажмите **Start import**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Страница источник данных с кнопкой Start import](/images/managed-postgres/pgpg/startimport.webp)
-
-</Frame>
-
+  <Frame>
+    ![Страница источник данных с кнопкой Start import](/images/managed-postgres/pgpg/startimport.webp)
+  </Frame>
 </div>
 
 Заполните сведения о подключении к исходной базе данных PostgreSQL: host, port, username, password и имя базы данных. Включите **TLS**, если это требуется для исходной базы.
@@ -89,13 +73,9 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 * **CDC only** — пропускает начальное копирование и реплицирует только новые изменения, начиная с этого момента.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 1: форма подключения к исходной базе данных с вариантами метода ингестии](/images/managed-postgres/pgpg/migrationform.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 1: форма подключения к исходной базе данных с вариантами метода ингестии](/images/managed-postgres/pgpg/migrationform.webp)
+  </Frame>
 </div>
 
 Нажмите **Next**.
@@ -103,13 +83,9 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 ## Автоматизированная миграция схемы {#automated-schema-migration}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 2: автоматизированная миграция схемы с выбором целевой базы данных](/images/managed-postgres/pg_dump_restore/automated.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 2: автоматизированная миграция схемы с выбором целевой базы данных](/images/managed-postgres/pg_dump_restore/automated.webp)
+  </Frame>
 </div>
 
 При выборе этого варианта ClickPipe автоматически получит схему исходной базы данных и применит её к сервису Managed Postgres на этапе [Setup](/ru/integrations/clickpipes/postgres/lifecycle#setup) после создания ClickPipe.
@@ -119,13 +95,9 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 Выберите целевую базу данных в раскрывающемся списке или нажмите **Create a new database**, чтобы создать её.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Диалог создания новой базы данных Postgres](/images/managed-postgres/pg_dump_restore/newdb.webp)
-
-</Frame>
-
+  <Frame>
+    ![Диалоговое окно создания новой базы данных Postgres](/images/managed-postgres/pg_dump_restore/newdb.webp)
+  </Frame>
 </div>
 
 ### Мониторинг {#monitoring}
@@ -141,13 +113,9 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 Если в целевой базе данных уже есть данные или вам нужна более индивидуальная настройка, а не чистое состояние, которое предполагает автоматический режим, выберите режим **Manual**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 2: ручная миграция схемы с помощью команды экспорта pg_dump](/images/managed-postgres/pg_dump_restore/manual.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 2: ручная миграция схемы с помощью команды экспорта pg_dump](/images/managed-postgres/pg_dump_restore/manual.webp)
+  </Frame>
 </div>
 
 ### Экспортируйте схему базы данных {#step-2-export-schema}
@@ -155,13 +123,9 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 Мастер покажет команду `pg_dump`, уже заполненную сведениями о подключении к исходной базе данных. Выполните её в терминале:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 2: команда pg_dump для экспорта схемы](/images/managed-postgres/pgpg/nextexport.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 2: команда pg_dump для экспорта схемы](/images/managed-postgres/pgpg/nextexport.webp)
+  </Frame>
 </div>
 
 ```shell
@@ -176,13 +140,9 @@ pg_dump \
 В результате в текущем каталоге будет создан файл `pg.sql`.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Вывод терминала после выполнения pg_dump](/images/managed-postgres/pgpg/psqlexport.webp)
-
-</Frame>
-
+  <Frame>
+    ![Вывод терминала после выполнения pg_dump](/images/managed-postgres/pgpg/psqlexport.webp)
+  </Frame>
 </div>
 
 Нажмите **Next**.
@@ -194,13 +154,9 @@ pg_dump \
 Мастер покажет команду `psql` для применения дампа схемы к вашему сервису Managed Postgres. Выполните её в терминале:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 3: команда psql для импорта схемы](/images/managed-postgres/pgpg/nextimport.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 3: команда psql для импорта схемы](/images/managed-postgres/pgpg/nextimport.webp)
+  </Frame>
 </div>
 
 ```shell
@@ -213,13 +169,9 @@ psql \
 ```
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Вывод терминала после выполнения импорта схемы через psql](/images/managed-postgres/pgpg/psqlimport.webp)
-
-</Frame>
-
+  <Frame>
+    ![Вывод терминала после выполнения импорта схемы через psql](/images/managed-postgres/pgpg/psqlimport.webp)
+  </Frame>
 </div>
 
 Нажмите **Next**.
@@ -239,13 +191,9 @@ psql \
 | Количество таблиц для снимков в параллельном режиме | 1                     | Количество таблиц, для которых снимки создаются одновременно |
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 4: форма параметров ингестии с публикацией и расширенными параметрами репликации](/images/managed-postgres/pgpg/advancedsettings.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 4: форма параметров ингестии с публикацией и расширенными параметрами репликации](/images/managed-postgres/pgpg/advancedsettings.webp)
+  </Frame>
 </div>
 
 Нажмите **Далее**.
@@ -255,13 +203,9 @@ psql \
 Выберите таблицы, которые нужно реплицировать. Таблицы сгруппированы по схемам. Вы можете выбрать отдельные таблицы или развернуть схему, чтобы выбрать все таблицы в ней.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 5: панель выбора таблиц, сгруппированных по схемам, с кнопкой Create migration](/images/managed-postgres/pgpg/tablepicker.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 5: панель выбора таблиц, сгруппированных по схемам, с кнопкой Create migration](/images/managed-postgres/pgpg/tablepicker.webp)
+  </Frame>
 </div>
 
 Нажмите **Create migration**.
@@ -271,30 +215,22 @@ psql \
 После создания миграции она появится в списке **источников данных** со статусом **Running**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Список источников данных с миграцией в статусе Running](/images/managed-postgres/pgpg/migrationlist.webp)
-
-</Frame>
-
+  <Frame>
+    ![Список источников данных с миграцией в статусе Running](/images/managed-postgres/pgpg/migrationlist.webp)
+  </Frame>
 </div>
 
 Нажмите на миграцию, чтобы открыть подробное представление. На вкладке **Tables** отображается ход начальной загрузки для каждой таблицы, включая количество обработанных строк, число партиций и среднее время на партицию. На вкладке **Metrics** после запуска CDC отображаются задержка репликации и пропускная способность.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Подробное представление миграции со статистикой начальной загрузки по таблицам](/images/managed-postgres/pgpg/initialload.webp)
-
-</Frame>
-
+  <Frame>
+    ![Подробное представление миграции со статистикой первоначальной загрузки по каждой таблице](/images/managed-postgres/pgpg/initialload.webp)
+  </Frame>
 </div>
 
 ## Переключение трафика {#cutover}
 
-После завершения начальной загрузки и, если используется CDC, при значении задержки репликации, близком к нулю, можно переключить трафик с исходной исходной базы данных Postgres на ваш сервис Managed Postgres. Откройте подробное представление миграция и перейдите на вкладку **Post-migration steps**. Этот мастер проведёт вас по шести шагам, необходимым для безопасного завершения миграция. Шаги нужно выполнять строго по порядку: перейти к следующему можно только после завершения предыдущего.
+После завершения первоначальной загрузки (а при использовании CDC — когда задержка репликации приблизится к нулю) можно переключить трафик с исходной базы данных Postgres на управляемый сервис Postgres. Откройте представление подробных сведений о миграции и перейдите на вкладку **Post-migration steps**. Пошаговый мастер проведёт вас через шесть этапов, необходимых для безопасного завершения миграции. Шаги выполняются строго по порядку: перейти к следующему можно только после завершения текущего.
 
 ### Шаг 1. Переведите исходную базу данных Postgres в режим только для чтения {#cutover-read-only}
 
@@ -320,13 +256,9 @@ WHERE datname = '<source_db>'
 Нажмите **Mark as completed**, чтобы продолжить.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 1 после миграции: перевод исходной базы данных в режим только для чтения](/images/managed-postgres/pgpg/post-migration/readonly.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг после миграции 1: перевод исходной базы данных в режим только для чтения](/images/managed-postgres/pgpg/post-migration/readonly.webp)
+  </Frame>
 </div>
 
 ### Шаг 2: проверка количества строк {#cutover-validate}
@@ -334,13 +266,9 @@ WHERE datname = '<source_db>'
 Выберите реплицированные таблицы, которые нужно проверить. ClickPipes подсчитывает строки в каждой выбранной таблице как в источнике, так и в целевой системе, и сравнивает результаты. Для больших таблиц количество может быть приблизительным. Нажмите **Select all tables**, чтобы проверить все таблицы, либо найдите и отметьте отдельные таблицы, после чего нажмите **Count rows**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 2 после миграции: выбор таблиц и проверка количества строк между источником и целевой системой](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 2 после миграции: выбор таблиц и проверка количества строк в источнике и целевой системе](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
+  </Frame>
 </div>
 
 ### Шаг 3: приостановите пайп {#cutover-pause}
@@ -348,13 +276,9 @@ WHERE datname = '<source_db>'
 Приостановите ClickPipe, чтобы репликация прекратилась до того, как вы сбросите последовательности и переключите трафик. Нажмите **Pause ClickPipe** и, прежде чем продолжить, дождитесь, пока пайп будет приостановлен.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 3 после миграции: приостановка ClickPipe для остановки репликации](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 3 после миграции: приостановка ClickPipe для остановки репликации](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
+  </Frame>
 </div>
 
 ### Шаг 4: сброс последовательностей {#cutover-reset-sequences}
@@ -362,13 +286,9 @@ WHERE datname = '<source_db>'
 Сбросьте последовательности в пункте назначения, чтобы новые вставки продолжались с корректных значений. Нажмите **Reset sequences**, чтобы привести каждую последовательность в соответствие с текущим максимальным значением в её таблице.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 4 после миграции: сброс последовательностей в пункте назначения](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 4 после миграции: сброс последовательностей в пункте назначения](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
+  </Frame>
 </div>
 
 ### Шаг 5: Переключение трафика {#cutover-traffic}
@@ -376,13 +296,9 @@ WHERE datname = '<source_db>'
 Переведите операции чтения и записи на ваш сервис Managed Postgres, изменив URL базы данных в приложении на строку подключения Managed Postgres. Мастер предоставляет сведения о подключении в нескольких форматах — **url**, **psql**, **env**, **yaml** и **jdbc**, — так что вы можете скопировать тот, который подходит для вашего стека. После обновления приложения нажмите **Mark as completed**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Шаг 5 после миграции: переключение трафика с использованием строки подключения Managed Postgres](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 5 после миграции: переключение трафика с использованием строки подключения Managed Postgres](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
+  </Frame>
 </div>
 
 ### Шаг 6: Очистка {#cutover-cleanup}
@@ -396,13 +312,9 @@ SELECT pg_drop_replication_slot('<slot_name>');
 Затем нажмите **Delete ClickPipe migration**, чтобы удалить миграцию из раздела **источник данных**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Post-migration step 6: clean up by dropping the replication slot and deleting the migration](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
-
-</Frame>
-
+  <Frame>
+    ![Шаг 6 после миграции: очистка — удаление слота репликации и миграции](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
+  </Frame>
 </div>
 
 ## Следующие шаги {#next-steps}

@@ -2560,9 +2560,9 @@ static std::optional<std::pair<ColumnPtr, ColumnPtr>> neighbouringDecimalValues(
 }
 
 /// Whether the converted cast values have the bits of the floats they were cast from, and the converted neighbours of each
-/// cast value have other bits, all as `Float`. The bits, because a `Set` compares them (`bitEquals`): `-0.0` is not `0.0`
-/// there, so `d NOT IN (SELECT -0.0)` holds for `d = 0`, while the cast of `-0.0` is `0`. A comparison sees no other
-/// difference: a cast value never converts to `-0.0` or a NaN.
+/// cast value have other bits, all as `Float`. The bits are compared (`bitEquals`) to stay conservative: the cast of `-0.0`
+/// is `0`, which converts back to `0.0`, so a set holding `-0.0` is not used by the index, although a `Set` matches `-0.0`
+/// with `0.0`. A comparison sees no other difference: a cast value never converts to `-0.0` or a NaN.
 template <typename Float>
 static bool castValuesAreTheOnlyMatches(const IColumn & floats, const IColumn & cast_values, const IColumn & below, const IColumn & above)
 {
@@ -3466,6 +3466,25 @@ bool deterministicTransformMapsFloatZerosAlike(
     return (*transformed_zeros_column)[0] == (*transformed_zeros_column)[1];
 }
 
+/// Whether an element of a set, converted to the input type of `dag`, holds a float zero of any sign at any depth.
+/// An element that cannot be converted answers `true`, so that the caller stays conservative.
+bool setElementsHaveFloatZero(const ColumnPtr & set_column, const DataTypePtr & set_element_type, const DeterministicKeyTransformDag & dag)
+{
+    if (!anyInTypeTree(*dag.input_type, [](const IDataType & type) { return isFloat(type); }))
+        return false;
+
+    ColumnPtr input_column;
+    DataTypePtr input_type;
+    bool cast_is_exact = true;
+    if (!convertColumnForDeterministicDag(set_column, set_element_type, dag, input_column, input_type, cast_is_exact))
+        return true;
+
+    for (size_t i = 0; i < input_column->size(); ++i)
+        if (anyFieldSatisfies((*input_column)[i], isFloatZeroField))
+            return true;
+    return false;
+}
+
 }
 
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicKeyFunctions(
@@ -3830,6 +3849,14 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *mapping.set_transform;
+
+            /// A `Set` matches a float zero with the zero of the other sign. When the transform tells the two apart
+            /// (`toString(-0.0)` is `'-0'`), the transformed element describes only one of them, and the index would
+            /// prune the rows holding the other one, as for a constant in `transformConstantByDeterministicKeyFunctions`.
+            if (setElementsHaveFloatZero(set_column, set_element_type, set_transforming_dag)
+                && !deterministicTransformMapsFloatZerosAlike(set_transforming_dag, set_transforming_dag.input_type, set_transforming_dag.input_name))
+                return false;
+
             bool dag_cast_is_exact = true;
             if (!applyDeterministicDagToColumn(
                     set_column,
@@ -6075,6 +6102,11 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
         }
     }
 
+    /// A `Tuple` compares a `Dynamic` or `Variant` element as its active member, with that member's own conversion,
+    /// which the cast of the constant into a key expression's input type in the sources below does not reproduce.
+    if (isTuple(const_type) && typeHasValueCarriers(*const_type))
+        return candidates;
+
     /// 2. The monotonic constant transform infers key constraints by transforming the
     /// constant with key functions. Such candidates are always relaxed, because the
     /// transformed range is a superset of the exact matches. A relaxed atom under a
@@ -8208,6 +8240,21 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
 
         for (size_t key_column : element.key_columns)
             if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(element, hyperrectangle[key_column], key_types, key_column))
+                return true;
+    }
+
+    return false;
+}
+
+bool KeyCondition::mayClaimNestedNullOrNaN(const DataTypes & key_types) const
+{
+    for (const auto & element : expandAtomGroups(rpn))
+    {
+        if (!atomIsNullForNullArgument(element.function) || !atomMayClaimNestedNullOrNaN(element))
+            continue;
+
+        for (size_t key_column : element.key_columns)
+            if (key_column < key_types.size() && key_types[key_column] && keyTypeMayHoldNestedNullOrNaN(key_types[key_column]))
                 return true;
     }
 

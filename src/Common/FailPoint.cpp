@@ -118,6 +118,7 @@ static struct InitFiu
     REGULAR(azure_inject_poco_network_error) \
     ONCE(azure_inject_poco_network_error_once) \
     REGULAR(azure_inject_bad_request) \
+    REGULAR(check_data_part_retryable_error) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -280,6 +281,7 @@ static struct InitFiu
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(async_insert_pause_before_schedule) \
+    ONCE(async_insert_throw_before_schedule) \
     PAUSEABLE_ONCE(async_insert_flush_pause_after_set_user) \
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
@@ -377,6 +379,7 @@ static struct InitFiu
     PAUSEABLE(sc_drop_intention_pause) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
+    REGULAR(system_log_flush_throw) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     ONCE(database_replicated_restore_table_created_by_other_replica) \

@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
-
 -- union<struct<a:tinyint>, string> with a null struct payload, read with an explicit schema whose
 -- Tuple field needs a value-checking cast (Int8 -> Enum8). The null-struct row becomes a Variant
 -- NULL, so its placeholder tuple field must not be validated by the branch-repair cast. Rows:

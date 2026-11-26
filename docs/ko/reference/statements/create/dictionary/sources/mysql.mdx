@@ -81,6 +81,7 @@ doc_type: 'reference'
 | `ssl_ca_pem`                    | MySQL 서버 인증서를 검증하는 데 사용하는 CA 인증서의 내용입니다. 선택 사항입니다.                                                                                                                                                                                                      |
 | `ssl_cert_pem`                  | 인증서 기반 인증에 사용하는 클라이언트 인증서의 내용입니다. 선택 사항입니다.                                                                                                                                                                                                             |
 | `ssl_key_pem`                   | `ssl_cert_pem`에 해당하는 private key의 내용입니다. 선택 사항입니다.                                                                                                                                                                                                      |
+| `ssl_key_passphrase`            | 암호화된 `ssl_key` / `ssl_key_pem`의 패스프레이스입니다. 선택 사항입니다.                                                                                                                                                                                                    |
 | `ssl_ca`, `ssl_cert`, `ssl_key` | 동일한 자격 증명을 서버의 파일 경로로 지정합니다. 서버 설정 파일에 정의된 딕셔너리 또는 거기에 정의된 명명된 컬렉션을 통해서만 허용되며, 아래를 참조하십시오. 선택 사항입니다.                                                                                                                                                    |
 
 <Note>
@@ -99,7 +100,11 @@ doc_type: 'reference'
   명시적인 `secure` 매개변수는 없습니다. SSL 연결을 설정할 때 보안은 필수입니다.
 </Note>
 
-MySQL은 소켓을 통해 로컬 호스트에 연결할 수 있습니다. 이를 위해서는 `host`와 `socket`을 설정하십시오.
+MySQL은 소켓을 통해 로컬 호스트에서 연결할 수 있습니다. 이렇게 하려면 `host`를 `localhost`로 설정하고 `socket`을 지정하십시오. 그 외의 `host`에서는 `socket`이 무시되며 TCP를 통해 연결됩니다. `socket`을 지정하지 않으면 `localhost`에서도 TCP를 통해 `port`로 연결됩니다.
+
+<Note>
+  `remote_url_allow_hosts`는 `host`와 `port`만 검사하며, `socket`의 경로는 검사하지 않습니다.
+</Note>
 
 설정 예시:
 
