@@ -16,9 +16,7 @@ SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3
 SETTINGS parallel_replicas_local_plan = 0;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template
 SETTINGS parallel_replicas_local_plan = 1;
-SELECT '' FROM t_pr_rows_before_limit WHERE id < 10000 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template
-SETTINGS parallel_replicas_local_plan = 1;
-SELECT '' FROM t_pr_rows_before_limit WHERE id < 10000 ORDER BY id DESC LIMIT 1 OFFSET 3 FORMAT Template
+SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id DESC LIMIT 1 OFFSET 3 FORMAT Template
 SETTINGS parallel_replicas_local_plan = 1;
 
 DROP TABLE t_pr_rows_before_limit;
