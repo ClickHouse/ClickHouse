@@ -178,6 +178,26 @@ def test_async_insert_flush_timeout_returns_503():
     )
 
 
+def test_sync_insert_timeout_returns_503():
+    # The default sleeps 2 seconds per row, so the insert exceeds a 1-second `max_execution_time`.
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SAMPLES INNER COLUMNS (slow SimpleAggregateFunction(any, UInt8) DEFAULT sleepEachRow(2))"
+    )
+
+    time_series = [({"__name__": "slow_metric"}, {1724112000: 1.5})]
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?max_execution_time=1",
+        convert_time_series_to_protobuf(time_series),
+    )
+
+    # A timed-out insert must be retryable too, so it maps to 503, not 408.
+    assert response.status_code == 503
+    assert "Timeout exceeded" in response.text
+
+
 def test_async_insert_flush_timeout_is_clamped():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
