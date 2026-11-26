@@ -1,0 +1,152 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-08-21
+title: 'Demo days - 2026-08-21'
+sidebarTitle: '2026-08-21'
+description: 'ClickStack demo days del 2026-08-21'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Fórmulas de métricas en el editor de gráficos {#metric-formulas-in-the-chart-editor}
+
+*Demostración a cargo de [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tSCoW-GGXTU" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los gráficos de métricas ya admiten operaciones aritméticas. Hasta esta semana, dos métricas en el mismo gráfico eran simplemente dos líneas, sin forma de combinarlas.
+
+Las series de un gráfico se etiquetan como `A`, `B`, `C`, etc. Una fila de fórmula permite construir una serie derivada a partir de esas referencias. Con `A / (A + B + C) * 100` se obtiene una tasa de utilización de una cola. Del mismo modo, puede calcular la saturación a partir de los recuentos de datos recibidos y enviados por un recolector.
+
+Puede añadir varias fórmulas a un mismo gráfico, elegir si mostrar las series de operandos junto al resultado o solo la fórmula, y combinar series de distintas métricas. Las alertas también funcionan con fórmulas.
+
+La aritmética en sí se realiza en ClickHouse. Cada fórmula se compila a partir de un AST validado y se integra en la consulta de métricas compuesta, de modo que ClickHouse la calcula como parte de una única consulta, en lugar de que la aplicación combine los resultados después. Cada serie se convierte en una CTE y la fórmula se evalúa sobre el resultado combinado.
+
+Los operandos ausentes cuentan como cero, por lo que un grupo sin errores muestra 0% en lugar de N/A. Todo denominador de una división se envuelve en `nullif(..., 0)`, de modo que un denominador cero o ausente se representa como un hueco en lugar de un cero o un error.
+
+Un cambio posterior trasladó `HAVING`, `ORDER BY` y `LIMIT` a la unión final, en lugar de aplicarlos a cada rama de `UNION`. Antes, esas cláusulas se ejecutaban en un alcance en el que los nombres de salida visibles para el usuario no existían. Como consecuencia, cada serie se filtraba de forma independiente antes de la unión, mientras que el orden final de las filas seguía siendo no determinista.
+
+Por ahora, la entrada acepta referencias mediante letras y aritmética sencilla, no SQL arbitrario. Las referencias a series desconocidas, las expresiones mal formadas y las expresiones compuestas solo por constantes se señalan en tiempo real debajo de la entrada. La misma validación impide guardar y ejecutar, por lo que una expresión no válida nunca llega a ClickHouse.
+
+Los operadores a nivel de bits y las funciones de ClickHouse aún no son compatibles. No hay ningún motivo de fondo: simplemente es donde se quedó la primera versión, y ampliar la compatibilidad con expresiones es algo que podríamos abordar a continuación.
+
+En la discusión surgieron dos cuestiones que no se han implementado. Las fórmulas no pueden hacer referencia a otras fórmulas, por lo que no es posible encadenar `F1` con `F2`. Además, unos controles para mostrar u ocultar cada serie por separado serían más útiles que el conmutador de operandos que afecta a todo el gráfico. Lo que realmente se busca es ocultar `A` y `B` sin dejar de usarlas en la fórmula.
+
+También se planteó una pregunta legítima sobre hasta dónde se pueden llevar las uniones antes de que dejen de ser útiles. Quien haya usado la división en PromQL conocerá el problema: una unión que no coincide como se esperaba y no devuelve datos sin dar ningún aviso.
+
+**PR relacionados:** [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) generar las fórmulas en la consulta de métricas compuesta, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) interfaz de usuario del editor de gráficos para fórmulas de métricas, [#2946](https://github.com/hyperdxio/hyperdx/pull/2946) aplicar HAVING/ORDER BY/LIMIT a la unión de métricas compuesta, no a las ramas de cada serie, [#2952](https://github.com/hyperdxio/hyperdx/pull/2952) compatibilidad con fórmulas en todas las superficies de la API, [#2953](https://github.com/hyperdxio/hyperdx/pull/2953) compatibilidad con fórmulas para fuentes de eventos de logs/trazas
+
+## Variables del panel dependientes y macros {#dependent-dashboard-variables-and-macros}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0CaapNH1Vc" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Ya están disponibles dos de las peticiones surgidas en la demo de la semana pasada.
+
+Las definiciones de filtros ahora pueden hacer referencia a otras variables en su cláusula `WHERE`, de modo que una lista desplegable puede acotar otra. Un filtro de gravedad que hace referencia al filtro de nombre del servicio aparece vacío al principio. En cuanto elige un servicio, solo ofrece las gravedades que existen para ese servicio.
+
+Las opciones se siguen consultando cuando una variable referenciada no tiene nada seleccionado. Use `$__filters` o `$__conditionalAll` si desea que los valores se pueblen en ese estado. Una expresión simple `<expression> IN ($var)` no devuelve nada hasta que `$var` tenga una selección. Ahora un tooltip explica el motivo, en lugar de mostrarle una lista vacía sin ninguna explicación. El autocompletado de variables y macros también funciona en el campo `WHERE` del modal de filtros.
+
+Es posible crear dependencias circulares, pero no causan ningún problema real, ya que las variables se reemplazan por sus selecciones en lugar de evaluarse de forma recursiva.
+
+Las macros ahora expanden las variables pasadas como argumentos, por lo que `$__timeFilter($TimeColumn)` funciona. Si elige una columna de marca de tiempo mediante una variable, la macro se expande en el filtro de marca de tiempo completo sobre esa columna. Las variables pasadas a `$__filter` y `$__conditionalAll` ahora deben usar la forma `$var`. Antes se aceptaba un `var` simple, una permisividad que sobre todo generaba confusión.
+
+Tanto la API externa v2 como el servidor MCP admiten variables, lo que significa que Terraform también. Un agente puede crear un panel de control con filtros de variable y de difusión, listas desplegables dependientes y bloques que hacen referencia a esas variables directamente o mediante una macro. Las herramientas de creación, guardado y modificación avisan cuando se usan variables en lugares donde no funcionarán.
+
+Las herramientas de consulta de bloques también aceptan valores de variables, de modo que un agente puede comprobar sus propias sustituciones antes de entregar el panel de control.
+
+**PR relacionadas:** [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) compatibilidad con consultas de valores de variables dependientes, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) compatibilidad con macros anidadas y referencias a variables en macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) incorporación de variables del panel a la API externa, [#2951](https://github.com/hyperdxio/hyperdx/pull/2951) compatibilidad con variables del panel en el servidor MCP
+
+## Esquemas de herramientas MCP que aceptan los clientes estrictos {#mcp-tool-schemas-that-strict-clients-accept}
+
+*Demostración a cargo de [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W4dvgYj47ZM" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Un cliente nos informó de que no podía usar de ninguna manera nuestro servidor MCP con su agente.
+
+Algunos frameworks de agentes listan las herramientas disponibles y validan cada esquema de entrada antes de enviarlos al provider del modelo. Si un solo esquema no es válido, el framework rechaza la lista completa de herramientas en lugar de solo la herramienta problemática, con lo que el servidor parece no funcionar en absoluto.
+
+Muchos entornos de ejecución de agentes son más permisivos, pero no todos. Para los clientes afectados, la única forma de que el agente volviera a funcionar era desvincular el servidor.
+
+Ahora hay una prueba que comprueba que el esquema de entrada de cada herramienta es un JSON Schema draft 2020-12 válido, de modo que ninguna herramienta nueva pueda volver a romper los clientes estrictos de esta forma.
+
+**PRs relacionados:** [#2925](https://github.com/hyperdxio/hyperdx/pull/2925) emite esquemas de entrada de herramientas válidos según draft-2020-12, [#2971](https://github.com/hyperdxio/hyperdx/pull/2971) expone el nivel de cuantil como un enum de tipo cadena
+
+## Claves personales de acceso a la API rotables {#rotatable-personal-api-access-keys}
+
+*Demostración a cargo de [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tHQoaFaVPpY" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Ahora las claves personales de acceso a la API pueden rotarse desde Configuración del equipo → API &amp; Agents.
+
+La clave se utiliza como token Bearer para la API externa v2 y el servidor MCP. Hasta ahora, se generaba una única vez al crear la cuenta y no podía cambiarse. Ante una clave filtrada, la única solución era eliminar el usuario.
+
+La rotación es inmediata, sin período de gracia, y la sesión del navegador se mantiene iniciada. Tenga cuidado: la clave pertenece a la cuenta, no a un equipo. Si pertenece a varios equipos, deberá actualizar todo lo que utilice esa clave en cualquiera de ellos.
+
+En Enterprise se muestra una advertencia que lo explica. En una instalación open source con un único equipo no hay nada de lo que advertir, por lo que la advertencia no aparece.
+
+Existen dos limitaciones intencionadas. La ruta `PATCH /me/accessKey` no acepta ningún identificador de usuario, ya que el ID se obtiene de la sesión. Por tanto, solo puede rotar la clave del propio llamador.
+
+Además, la ruta no se expone a través de la API externa v2 autenticada mediante bearer. En ella, una clave filtrada ya puede usarse para leerse a sí misma. Si además pudiera rotarse, cualquiera podría impedir al propietario el acceso a sus propias herramientas.
+
+**PR relacionadas:** [#2926](https://github.com/hyperdxio/hyperdx/pull/2926) hacer rotables las claves personales de acceso a la API
+
+## Claves en orden alfabético en la pestaña Column Values {#alphabetical-keys-in-the-column-values-tab}
+
+*Demostración a cargo de [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/9RfTL-dtZF0" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las claves de la pestaña Column Values del panel lateral de la fila ahora se ordenan alfabéticamente en todos los niveles de anidamiento, tanto en los log como en las trazas.
+
+Anteriormente, el árbol JSON mostraba las claves según el orden de almacenamiento físico de ClickHouse, que en la práctica resultaba aleatorio. Una columna `Map` como `ProfileEvents`, con 125 claves, carecía de un orden reconocible, por lo que encontrar una clave obligaba a recorrer toda la lista.
+
+La parte menos evidente del problema era que cada nivel está limitado a 50 filas, y el recorte se aplicaba antes de la ordenación. Las 50 claves visibles eran un subconjunto arbitrario, y la única forma de acceder al resto era mediante &quot;Expand 75 more properties&quot;.
+
+Ahora la ordenación se realiza en `TreeNode` antes de recortar la lista. Además, tiene en cuenta los números, de modo que `key2` aparece antes que `key10`.
+
+**PRs relacionados:** [#2943](https://github.com/hyperdxio/hyperdx/pull/2943) ordenar alfabéticamente las claves del visor JSON
+
+## Storybook como sistema de diseño navegable {#storybook-as-a-browsable-design-system}
+
+*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/mnHtrsuKsC8" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Storybook ha dejado de ser un sandbox de componentes para convertirse en un sistema de diseño navegable. La barra lateral sigue el orden Guidelines → Brand → Icons → Design Tokens → Components.
+
+Guidelines renderiza directamente el Markdown de `agent_docs`, de modo que el estilo de código, la tematización, la disposición de las páginas y los colores de visualización de datos están reunidos en un único lugar. Esto beneficia tanto a los agentes como a las personas. Remitir a un agente al mismo documento que lee un nuevo miembro del equipo ayuda a que los componentes generados sean coherentes con todo lo que ya existe.
+
+Brand e Icons contienen los logotipos de HyperDX y ClickStack y nuestros iconos personalizados, incluido `IconAiNotebook`. Puede copiar o descargar los SVG, y encontrará indicaciones sobre cuándo usar un icono de contorno compatible con Tabler y cuándo usar un logotipo de marca.
+
+Este trabajo empezó por los iconos, porque en las diapositivas se usaba cualquier cosa que se pareciera lo suficiente. Si necesita un logotipo para una presentación, tómelo de aquí.
+
+Una barra de herramientas Brand permite alternar entre HyperDX y ClickStack, y otra barra de herramientas Theme, entre los temas claro y oscuro. Así, los nuevos componentes pueden comprobarse en todas las combinaciones antes de publicarse. Las historias de componentes que estaban sin categorizar ahora se agrupan bajo `Components/`, junto con los componentes de tarjeta de gráfico.
+
+Por el camino salieron a la luz dos cuestiones. Las variables CSS de fuentes de Storybook ahora se definen en `<html>`, igual que en la aplicación, por lo que el texto del cuerpo y las ventanas emergentes renderizadas en portales ya no se muestran en Times.
+
+Además, no estamos usando el conjunto de iconos de Tabler de forma coherente. Probablemente PromQL necesite un icono propio, y las métricas y las trazas se representan actualmente con iconos distintos según el lugar. A partir de ahora, Storybook es la referencia que se debe seguir.
+
+Ejecútelo localmente con `yarn workspace @hyperdx/app storybook`.
+
+**PR relacionados:** [#2935](https://github.com/hyperdxio/hyperdx/pull/2935) convierte Storybook en un sistema de diseño navegable
+
+## Paleta categórica en gráficos de histograma {#categorical-palette-on-histogram-charts}
+
+*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wybAadS6ms0" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los gráficos de histograma, incluido Request Latency en el panel de control Services, tenían el color `#50FA7B` codificado de forma fija. Ese verde neón no forma parte de la paleta de gráficos y no ofrecía suficiente contraste. Además, el tooltip mostraba «Number of events» en ese mismo color.
+
+Ahora el gráfico resuelve `chart-blue` mediante `getColorFromCSSToken`. Su tooltip utiliza los componentes compartidos `ChartTooltipContainer` y `ChartTooltipItem`, con lo que queda en consonancia con los gráficos de líneas, de barras y circulares.
+
+Se ha eliminado el enlace **View events** del tooltip. El histograma interno y el tooltip aceptaban `generateSearchUrl`, pero `DBHistogramChart` nunca se lo pasaba, así que el enlace nunca llegó a aparecer en producción.
+
+El único llamador no dispone de un constructor de URL de búsqueda para un bucket de duración, y filtrar eventos por un rango de latencia constituye una funcionalidad nueva, no una simple corrección de conexiones.
+
+Pequeños retoques, pero todo suma.
+
+**PRs relacionados:** [#2949](https://github.com/hyperdxio/hyperdx/pull/2949) usar la paleta categórica en los gráficos de histograma

@@ -241,8 +241,13 @@ NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metad
     auto add = [&](const TTLDescription & ttl)
     {
         for (const auto & column : ttl.expression_columns)
-            if (columns.hasPhysical(column.name))
-                res.insert(column.name);
+        {
+            /// The expression may read a subcolumn (`t.d`), which is stored as part of its parent column.
+            auto column_in_storage = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column.name);
+            const auto & name_in_storage = column_in_storage ? column_in_storage->getNameInStorage() : column.name;
+            if (columns.hasPhysical(name_in_storage))
+                res.insert(name_in_storage);
+        }
     };
 
     if (metadata.hasRowsTTL())

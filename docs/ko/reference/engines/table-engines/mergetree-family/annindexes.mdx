@@ -149,8 +149,8 @@ ORDER BY [...]
 다음 HNSW 전용 매개변수를 사용할 수 있습니다:
 
 * `<quantization>`은 근접 그래프에서 벡터의 양자화를 제어합니다. 가능한 값은 `f64`, `f32`, `f16`, `bf16`, `i8`, `b1`입니다. 기본값은 `bf16`입니다. 이 매개변수는 기반 컬럼에 저장된 벡터의 표현에는 영향을 주지 않습니다.
-* `<hnsw_max_connections_per_layer>`는 그래프 노드당 이웃 수를 제어하며, HNSW 하이퍼매개변수 `M`이라고도 합니다. 기본값은 `32`입니다. 값 `0`은 기본값을 사용함을 의미합니다.
-* `<hnsw_candidate_list_size_for_construction>`는 HNSW 그래프를 구성하는 동안 동적 후보 목록의 크기를 제어하며, HNSW 하이퍼매개변수 `ef_construction`이라고도 합니다. 기본값은 `128`입니다. 값 `0`은 기본값을 사용함을 의미합니다.
+* `<hnsw_max_connections_per_layer>`는 그래프 노드당 이웃 수를 제어하며, HNSW 하이퍼파라미터 `M`이라고도 합니다. 기본값은 `32`입니다. 값 `0`은 기본값을 사용함을 의미합니다. 최댓값은 `512`입니다.
+* `<hnsw_candidate_list_size_for_construction>`는 HNSW 그래프를 구성하는 동안 동적 후보 목록의 크기를 제어하며, HNSW 하이퍼파라미터 `ef_construction`이라고도 합니다. 기본값은 `128`입니다. 값 `0`은 기본값을 사용함을 의미합니다. 최댓값은 `3200`입니다.
 
 모든 HNSW 전용 매개변수의 기본값은 대부분의 사용 사례에서 무난하게 잘 작동합니다.
 따라서 HNSW 전용 매개변수는 사용자 지정하지 않는 것을 권장합니다.
@@ -160,8 +160,9 @@ ORDER BY [...]
 * 벡터 유사성 인덱스는 [Array(Float32)](/ko/reference/data-types/array), [Array(Float64)](/ko/reference/data-types/array), [Array(BFloat16)](/ko/reference/data-types/array) 타입의 컬럼에만 생성할 수 있습니다. `Array(Nullable(Float32))` 및 `Array(LowCardinality(Float32))`와 같은 널 허용 또는 LowCardinality float 배열은 허용되지 않습니다.
 * 벡터 유사성 인덱스는 단일 컬럼에만 생성해야 합니다.
 * 벡터 유사성 인덱스는 계산 표현식(예: `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`)에 생성할 수도 있지만, 이렇게 생성한 인덱스는 이후 근사 최근접 이웃 검색에 사용할 수 없습니다.
-* 벡터 유사성 인덱스를 생성하려면 기반 컬럼의 모든 배열에 `<dimension>`개의 요소가 있어야 하며, 이는 인덱스 생성 시 확인됩니다. 이 요구 사항 위반을 가능한 한 빨리 감지하려면 벡터 컬럼에 [제약 조건](/ko/reference/statements/create/table#constraints)을 추가할 수 있습니다. 예: `CONSTRAINT same_length CHECK length(vectors) = 256`.
+* 벡터 유사성 인덱스를 생성하려면 기반 컬럼의 모든 배열에 `<dimension>`개의 원소가 있어야 하며, 이는 인덱스 생성 시 확인됩니다. 이 요구 사항 위반을 가능한 한 빨리 감지하려면 벡터 컬럼에 [제약 조건](/ko/reference/statements/create/table#constraints)을 추가할 수 있습니다. 예: `CONSTRAINT same_length CHECK length(vectors) = 256`.
 * 마찬가지로 기반 컬럼의 배열 값은 비어 있어서는 안 되며(`[]`), 기본값(역시 `[]`)이어서도 안 됩니다.
+* 벡터 유사성 인덱스는 엔진이 `MergeTree` 또는 `ReplicatedMergeTree`인 테이블에만 생성할 수 있습니다. `ReplacingMergeTree`나 `CollapsingMergeTree` 같은 동일 계열의 다른 엔진은 인덱스 사용 시 `SELECT ... FINAL`이 잘못된 결과를 반환할 수 있으므로 허용되지 않습니다. 다만 MergeTree 설정 `allow_vector_similarity_index_in_specialized_merge_tree`를 활성화하면 이러한 엔진에서도 생성할 수 있습니다.
 
 **스토리지 및 메모리 사용량 추정**
 
@@ -175,7 +176,7 @@ ORDER BY [...]
 Storage consumption = Number of vectors * Dimension * Size of column data type
 ```
 
-[dbpedia 데이터셋](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 예시:
+[dbpedia 데이터 세트](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 예시:
 
 ```text
 Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
@@ -187,24 +188,24 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 벡터 인덱스를 로드하는 데 필요한 메모리 사용량:
 
 ```text
-인덱스 내 벡터의 메모리 (mv) = 벡터 수 * 차원 * 양자화된 데이터 타입의 크기
-인메모리 그래프의 메모리 (mg) = 벡터 수 * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
 
-메모리 사용량: mv + mg
+Memory consumption: mv + mg
 ```
 
-[dbpedia 데이터셋](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 예시:
+[dbpedia 데이터 세트](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 예시:
 
 ```text
-인덱스 내 벡터 메모리 (mv) = 1 million * 1536 * 2 (BFloat16 기준) = 3072 MB
-인메모리 그래프 메모리 (mg) = 1 million * 64 * 2 * 4 = 512 MB
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 
-메모리 사용량 = 3072 + 512 = 3584 MB
+Memory consumption = 3072 + 512 = 3584 MB
 ```
 
 위 공식에는 벡터 유사성 인덱스가 미리 할당된 버퍼와 캐시 같은 런타임 데이터 구조를 할당하는 데 필요한 추가 메모리가 고려되어 있지 않습니다.
 
-#### 벡터 유사도 인덱스 사용하기 {#using-a-vector-similarity-index}
+#### 벡터 유사성 인덱스 사용하기 {#using-a-vector-similarity-index}
 
 <Note>
   벡터 유사성 인덱스를 사용하려면 [compatibility](/ko/reference/settings/session-settings/compatibility#compatibility) 설정이 `''`(기본값)이거나 `'25.1'` 이상이어야 합니다.
@@ -267,7 +268,7 @@ LIMIT 10;
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-이 예시에서는 [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)의 벡터 100만 개가 575개의 그래뉼에 저장되며, 각 벡터의 차원은 1536이고 그래뉼당 약 1,700개의 행이 포함됩니다.
+이 예시에서는 [dbpedia 데이터 세트](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)의 벡터 100만 개가 575개의 그래뉼에 저장되며, 각 벡터의 차원은 1536이고 그래뉼당 약 1,700개의 행이 포함됩니다.
 해당 쿼리는 10개의 최근접 이웃을 요청하며, 벡터 유사성 인덱스는 10개의 개별 그래뉼에서 이 10개의 이웃을 찾아냅니다.
 쿼리 실행 시 이 10개의 그래뉼이 읽힙니다.
 
@@ -276,7 +277,7 @@ LIMIT 10;
 건너뛸 수 있는 그래뉼이 많을수록 인덱스 활용 효율이 높아집니다.
 
 <Tip>
-  인덱스 사용을 강제하려면 [force&#95;data&#95;skipping&#95;indices](/ko/reference/settings/session-settings/force#force_data_skipping_indices) 설정을 사용해 SELECT 쿼리를 실행할 수 있습니다(설정 값으로 인덱스 이름을 지정하십시오).
+  인덱스 사용을 강제하려면 [force&#95;data&#95;skipping&#95;indices](/ko/reference/settings/session-settings/force#force_data_skipping_indexes) 설정을 사용해 SELECT 쿼리를 실행할 수 있습니다(설정 값으로 인덱스 이름을 지정하십시오).
 </Tip>
 
 **포스트 필터링 및 프리 필터링**
