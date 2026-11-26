@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ## Geometry {#geometry}
 
-As funções de Geometry permitem calcular o perímetro e a área de tipos geométricos como POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING e POINT. Use geometrias no tipo Geometry. Se o valor de entrada for `NULL`, todas as funções abaixo retornarão 0.
+As funções de Geometry permitem calcular o perímetro, a área e o comprimento de tipos geométricos como POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING e POINT. Use geometrias no tipo Geometry. Se o valor de entrada for `NULL`, todas as funções abaixo retornarão 0.
 
 ## perimeterCartesian {#perimetercartesian}
 
@@ -136,4 +136,108 @@ SELECT areaSpherical(geom) FROM geo_dst;
 ┌─areaSpherical(geom)────┐
 │ -0.0003046096848622019 │
 └────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+Calcula o comprimento das linhas de um objeto Geometry no sistema de coordenadas cartesiano (plano): a soma das distâncias entre pontos consecutivos.
+O comprimento de um `MultiLineString` é a soma do comprimento de suas linhas, e um `Ring` é medido como a linha que passa por seus pontos, assim como um array de pontos sem nome do tipo, que tem o tipo `Ring`.
+Pontos, polígonos e multipolígonos não têm comprimento, portanto a função retorna 0 para eles: use [perimeterCartesian](#perimetercartesian) para obter o perímetro de um polígono.
+Para medir um array de arrays de pontos, converta-o para `MultiLineString`: sem um nome do tipo, ele tem o tipo `Polygon`.
+
+Alias: `ST_Length`.
+
+**Sintaxe**
+
+```sql
+lengthCartesian(geom)
+```
+
+**Argumentos**
+
+* `geom` — Objeto Geometry. [Geometry](/pt-BR/reference/data-types/geo).
+
+**Valores retornados**
+
+* Número — Comprimento das linhas nas unidades do sistema de coordenadas. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+Calcula o comprimento das linhas de um objeto Geometry na superfície de uma esfera, com pontos fornecidos como (longitude, latitude) em graus.
+O resultado é um ângulo em radianos, que corresponde ao comprimento em uma esfera de raio 1, assim como o resultado de [perimeterSpherical](#perimeterspherical).
+Multiplique-o pelo raio médio da Terra, 6371008.8 metros, para obter um comprimento aproximado em metros, ou use [lengthSpheroid](#lengthspheroid) para obter um valor exato.
+Assim como [lengthCartesian](#lengthcartesian), retorna 0 para pontos, polígonos e multipolígonos.
+
+**Sintaxe**
+
+```sql
+lengthSpherical(geom)
+```
+
+**Argumentos**
+
+* `geom` — Objeto Geometry. [Geometry](/pt-BR/reference/data-types/geo).
+
+**Valores retornados**
+
+* Número — Comprimento das linhas em radianos. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+Calcula o comprimento das linhas de um objeto Geometry, em metros, no esferoide WGS84, o modelo da Terra usado pelo GPS, com os pontos fornecidos como (longitude, latitude) em graus.
+Cada segmento é o caminho mais curto entre seus pontos no esferoide (uma geodésica), calculado com o algoritmo de Karney, como na GeographicLib.
+Assim como [lengthCartesian](#lengthcartesian), retorna 0 para pontos, polígonos e multipolígonos.
+Para coordenadas armazenadas como (latitude, longitude), como a entrada de `ST_Length_Spheroid` no DuckDB, inverta-as primeiro com [flipCoordinates](/pt-BR/reference/functions/regular-functions/geo/flipCoordinates); caso contrário, o resultado será o comprimento de outra linha.
+Se uma coordenada for NaN ou infinita, ou se uma latitude estiver fora de [-90, 90], o resultado será NaN.
+
+**Sintaxe**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**Argumentos**
+
+* `geom` — Objeto Geometry. [Geometry](/pt-BR/reference/data-types/geo).
+
+**Valores retornados**
+
+* Número — Comprimento das linhas em metros. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+O comprimento de uma linha que vai de Londres a Berlim, passando por Paris:
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
 ```

@@ -29,7 +29,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 في ClickHouse Cloud، لا يمكنك إدارة إعداد `compatibility` الافتراضي على مستوى الخدمة لخدمتك بشكل مباشر، إذ يجب عليك [التواصل مع ClickHouse Support](https://clickhouse.com/support/program) إذا كنت ترغب في تغيير الإصدار المحدد لإعداد `compatibility` الافتراضي لخدمتك. ومع ذلك، يمكنك تجاوز إعداد `compatibility` على مستوى المستخدم أو الدور أو profile أو الاستعلام أو الجلسة باستخدام آليات إعدادات ClickHouse القياسية، مثل `SET compatibility = '26.8'` في جلسة أو `SETTINGS [other settings,] compatibility = '26.8'` في استعلام.
 
 <div id="maintenance-mode">
-  ## وضع الصيانة
+  ## وضع الصيانة {#maintenance-mode}
 </div>
 
 قد نحتاج أحيانًا إلى تحديث خدمتك، وقد يتطلب ذلك تعطيل بعض الميزات مثل التوسعة أو الخمول التلقائي. وفي حالات نادرة، قد نحتاج إلى اتخاذ إجراء بشأن خدمة تواجه مشكلات لإعادتها إلى حالة سليمة. أثناء هذه الصيانة، سترى إشعارًا على صفحة الخدمة يقول *&quot;الصيانة جارية&quot;*. وقد يظل بإمكانك استخدام الخدمة لتنفيذ الاستعلامات خلال هذا الوقت.
@@ -37,7 +37,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 لن تُفرض عليك أي رسوم عن الفترة التي تكون فيها الخدمة قيد الصيانة. ويُعد *وضع الصيانة* حالة نادرة، ولا ينبغي الخلط بينه وبين ترقيات الخدمة المعتادة.
 
 <div id="release-channels-upgrade-schedule">
-  ## قنوات الإصدار (جدول الترقية)
+  ## قنوات الإصدار (جدول الترقية) {#release-channels-upgrade-schedule}
 </div>
 
 يمكن للمستخدمين تحديد جدول الترقية لخدمة ClickHouse Cloud الخاصة بهم من خلال الاشتراك في قناة إصدار محددة. توجد ثلاث قنوات إصدار، كما يمكن للمستخدم تحديد يوم ووقت محددين من الأسبوع لإجراء الترقيات باستخدام ميزة **الترقيات المجدولة**.
@@ -63,17 +63,13 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 * تلقّي أحدث إصدارات ClickHouse
 * تلقّي ترقيات بوتيرة أعلى مع اختبار الإصدارات الجديدة
 
-يمكنك تعديل جدول إصدار الخدمة في Cloud Console كما هو موضح أدناه:
+يمكنك تعديل الجدول الزمني لإصدارات الخدمة في Cloud Console كما هو موضح أدناه:
 
 <div class="eighty-percent">
   <div className="ch-image-lg">
-
-  <Frame>
-
-  ![اختر نوع قناة الإصدار](/images/cloud/manage/fast_release.webp)
-
-  </Frame>
-
+    <Frame>
+      ![اختر نوع قناة الإصدار](/images/cloud/manage/fast_release.webp)
+    </Frame>
   </div>
 </div>
 
@@ -82,7 +78,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 تُعد قناة **الإصدار السريع** هذه مناسبة لاختبار الميزات الجديدة في البيئات غير الحرجة. **ولا يُنصح بها لأعباء العمل في بيئات الإنتاج التي تتطلب زمن تشغيل وموثوقية بمستوى عالٍ.**
 
 <div id="regular-release-channel">
-  ### قناة الإصدار العادية
+  ### قناة الإصدار العادية {#regular-release-channel}
 </div>
 
 بالنسبة إلى جميع الخدمات ضمن فئتَي Scale وEnterprise التي لم يُضبط لها قناة إصدار أو جدول ترقية، فستُنفَّذ الترقيات كجزء من إصدار قناة الإصدار العادية. ويُنصح بهذا لبيئات الإنتاج.
@@ -94,7 +90,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### قناة الإصدار البطيء (الترقيات المؤجلة)
+  ### قناة الإصدار البطيء (الترقيات المؤجلة) {#slow-release-channel-deferred-upgrades}
 </div>
 
 <EnterprisePlanFeatureBadge feature="قناة الإصدار البطيء" />
@@ -115,23 +111,19 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   * لن يؤدي الانتقال إلى قناة أبطأ إلى خفض إصدار خدمتك، بل سيُبقيها على إصدارها الحالي إلى أن يتوفر إصدار أحدث على تلك القناة، أي: من العادي إلى البطيء، أو من السريع إلى العادي أو البطيء
 </Note>
 
-## الترقيات المجدولة {#scheduled-upgrades}
+## الترقية المجدولة {#scheduled-upgrades}
 
 <EnterprisePlanFeatureBadge feature="الترقيات المجدولة" linking_verb_are="true" />
 
 يمكنك تكوين نافذة ترقية للخدمات ضمن فئة Enterprise.
 
-حدِّد الخدمة التي تريد تعيين جدول ترقية لها، ثم اختر `Settings` من القائمة اليسرى. بعد ذلك، مرّر إلى `Scheduled upgrades`.
+حدِّد الخدمة التي تريد تعيين جدول ترقية لها، ثم اختر `Settings` من القائمة اليسرى. بعد ذلك، مرّر إلى `Scheduled upgrades`.
 
 <div class="eighty-percent">
   <div className="ch-image-lg">
-
-  <Frame>
-
-  ![الترقيات المجدولة](/images/cloud/manage/scheduled_upgrades.webp)
-
-  </Frame>
-
+    <Frame>
+      ![الترقية المجدولة](/images/cloud/manage/scheduled_upgrades.webp)
+    </Frame>
   </div>
 </div>
 
@@ -141,18 +133,14 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 <div class="eighty-percent">
   <div className="ch-image-lg">
-
-  <Frame>
-
-  ![نافذة الترقية المجدولة](/images/cloud/manage/scheduled_upgrade_window.webp)
-
-  </Frame>
-
+    <Frame>
+      ![نافذة الترقية المجدولة](/images/cloud/manage/scheduled_upgrade_window.webp)
+    </Frame>
   </div>
 </div>
 
 <br />
 
 <Note>
-  مع أن الترقيات المجدولة تتبع الجدول الزمني المحدد، فإن هناك استثناءات تتعلق بالتصحيحات الأمنية الحرجة وإصلاحات الثغرات، وكذلك بالحالات التي قد تؤدي فيها المشكلات المحتملة إلى تلف البيانات أو فقدانها. وإذا جرى تحديد مشكلة أمنية عاجلة، فقد تُنفَّذ الترقيات خارج النافذة المجدولة. وسيُخطَر العملاء بهذه الاستثناءات عند الحاجة.
+  مع أن الترقية المجدولة تتبع الجدول الزمني المحدد، فإن هناك استثناءات تتعلق بالتصحيحات الأمنية الحرجة وإصلاحات الثغرات، وكذلك بالحالات التي قد تؤدي فيها المشكلات المحتملة إلى تلف البيانات أو فقدانها. وإذا جرى تحديد مشكلة أمنية عاجلة، فقد تُنفَّذ الترقيات خارج النافذة المجدولة. وسيُخطَر العملاء بهذه الاستثناءات عند الحاجة.
 </Note>

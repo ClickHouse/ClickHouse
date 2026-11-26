@@ -17,11 +17,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 <CommunityMaintainedBadge />
 
 ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة خادم ClickHouse، وفحص
-جداول `system`، وتشغيل استعلامات SQL. يتصل بواجهة ClickHouse HTTP عبر شبكة الجهاز
+جداول `system`، وتشغيل استعلامات SQL. يتصل بواجهة HTTP في ClickHouse عبر شبكة الجهاز
 أو من خلال مضيف bastion عبر SSH؛ ولا يتطلب خادم ترحيل.
 
 <div id="before-you-begin">
-  ## قبل البدء
+  ## قبل البدء {#before-you-begin}
 </div>
 
 * ثبّت [ProbeDeck من App Store](https://apps.apple.com/app/id6791261174).
@@ -40,7 +40,7 @@ ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة
 23.3 أو إصدارًا أحدث. يضع ProbeDeck علامة «محدود» على القسم المتأثر عندما يكون مصدره غير متاح.
 
 <div id="how-it-works">
-  ## آلية العمل
+  ## آلية العمل {#how-it-works}
 </div>
 
 1. يرسل ProbeDeck طلبات SQL إلى نقطة نهاية ClickHouse عبر HTTP(S).
@@ -49,7 +49,7 @@ ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة
    اتصال HTTP(S) نفسه عندما لا يتوفر مسار مباشر إلى نقطة النهاية من الجهاز.
 
 <div id="connect-to-clickhouse-cloud">
-  ## الاتصال بـ ClickHouse Cloud
+  ## الاتصال بـ ClickHouse Cloud {#connect-to-clickhouse-cloud}
 </div>
 
 <Steps>
@@ -74,19 +74,15 @@ ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة
     ونقاط نهاية واجهة برمجة تطبيقات الاستعلام. ولا يستخدم مسار اتصال SQL في ProbeDeck هذه المفاتيح.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![نموذج اتصال ProbeDeck مُهيأ لاستخدام HTTPS على المنفذ 8443 مع اسم مستخدم ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
-
-    </Frame>
-
+      <Frame>
+        ![نموذج اتصال ProbeDeck مُهيأ لاستخدام HTTPS على المنفذ 8443 مع اسم مستخدم ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="connect-to-self-hosted-clickhouse">
-  ## الاتصال بـ ClickHouse المستضاف ذاتيًا
+  ## الاتصال بـ ClickHouse المستضاف ذاتيًا {#connect-to-self-hosted-clickhouse}
 </div>
 
 <Steps>
@@ -113,7 +109,7 @@ ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة
 </Steps>
 
 <div id="connect-through-an-ssh-bastion">
-  ## الاتصال عبر مضيف Bastion لـ SSH
+  ## الاتصال عبر مضيف Bastion لـ SSH {#connect-through-an-ssh-bastion}
 </div>
 
 فعّل **SSH Tunnel** في نموذج الاتصال وأدخل:
@@ -127,7 +123,7 @@ ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة
 بالقيمة التي يزوّدك بها مسؤول الخادم قبل قبولها.
 
 <div id="configure-authentication-and-tls">
-  ## تهيئة المصادقة وTLS
+  ## تهيئة المصادقة وTLS {#configure-authentication-and-tls}
 </div>
 
 يرسل ProbeDeck اسم مستخدم قاعدة البيانات وكلمة المرور في ترويسات الطلب `X-ClickHouse-User` و
@@ -143,9 +139,7 @@ CA خاصة، يعرض ProbeDeck بصمة SHA-256 والجهة المُصدِر�
 
 يخزن ProbeDeck أسرار الاتصال ومواد المفاتيح المستوردة في سلسلة مفاتيح iOS على الجهاز.
 
-<div id="monitor-clickhouse">
-  ## مراقبة ClickHouse
-</div>
+## مراقبة ClickHouse {#monitor-clickhouse}
 
 افتح الاتصال المحفوظ واختر **المراقبة**. تعرض لوحة المعلومات ملخصًا للمصادر التالية:
 
@@ -159,30 +153,20 @@ CA خاصة، يعرض ProbeDeck بصمة SHA-256 والجهة المُصدِر�
 | المعدلات السابقة للاستعلامات والأقراص                               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![لوحة معلومات ProbeDeck للمراقبة تعرض الاستعلامات قيد التشغيل والنسخ المتماثل والأقراص والأجزاء والطفرات وعمليات الدمج ومعدل الاستعلامات والذاكرة](/images/integrations/sql-clients/probedeck-dashboard.png)
-
-</Frame>
-
+  <Frame>
+    ![لوحة معلومات ProbeDeck للمراقبة تعرض الاستعلامات قيد التشغيل والنسخ المتماثل والأقراص والأجزاء والطفرات وعمليات الدمج ومعدل الاستعلامات والذاكرة](/images/integrations/sql-clients/probedeck-dashboard.png)
+  </Frame>
 </div>
 
 انقر على **الاستعلامات قيد التشغيل** لفرز الاستعلامات النشطة حسب الوقت المنقضي، وفحص الذاكرة والصفوف المقروءة.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![قائمة الاستعلامات قيد التشغيل في ProbeDeck مرتبة حسب الوقت المنقضي](/images/integrations/sql-clients/probedeck-running-queries.png)
-
-</Frame>
-
+  <Frame>
+    ![قائمة الاستعلامات قيد التشغيل في ProbeDeck مرتّبة حسب الوقت المنقضي](/images/integrations/sql-clients/probedeck-running-queries.png)
+  </Frame>
 </div>
 
-<div id="query-the-uk-property-price-dataset">
-  ## الاستعلام عن مجموعة بيانات UK Property Price
-</div>
+## الاستعلام عن مجموعة بيانات UK Property Price {#query-the-uk-property-price-dataset}
 
 يستخدم هذا المثال [مجموعة بيانات UK Property Price](/ar/get-started/sample-datasets/uk-price-paid).
 حمّل مجموعة البيانات إلى `uk_price_paid`، ثم:
@@ -205,7 +189,7 @@ LIMIT 10
 يجب أن تتضمن النتيجة عشر بلدات مع عدد المعاملات ومتوسط الأسعار لكل منها.
 
 <div id="known-limits">
-  ## القيود المعروفة
+  ## القيود المعروفة {#known-limits}
 </div>
 
 * يعمل ProbeDeck على نظامَي iOS وiPadOS بالإصدار 17.0 أو أحدث.
@@ -220,7 +204,7 @@ LIMIT 10
   وعبارات الكتابة وDDL، والإجراءات التشغيلية الأخرى ProbeDeck Pro.
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <Accordion title="فشلت المصادقة">
@@ -244,9 +228,7 @@ LIMIT 10
   نقطة نهاية مختلفة أو مسار اعتراض TLS.
 </Accordion>
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
-* اطّلع على [موقع ProbeDeck الإلكتروني](https://probedeck.app) للحصول على تفاصيل خاصة بالمنتج.
- * اطّلع على [وثائق واجهة ClickHouse HTTP](/ar/concepts/features/interfaces/http) لمعرفة إعدادات الخادم.
+* راجع [موقع ProbeDeck](https://probedeck.app) للاطلاع على التفاصيل الخاصة بالمنتج.
+* راجع [وثائق واجهة HTTP في ClickHouse](/ar/concepts/features/interfaces/http) لمعرفة كيفية تكوين الخادم.

@@ -9,9 +9,7 @@ doc_type: 'reference'
 As funções de janela permitem realizar cálculos em um conjunto de linhas relacionadas à linha atual.
 Elas podem ser usadas para realizar cálculos semelhantes aos feitos com funções de agregação, mas diferem no fato de que uma função de janela não faz com que as linhas sejam agrupadas em uma única saída — as linhas individuais ainda são retornadas.
 
-<div id="standard-window-functions">
-  ## Funções de janela padrão
-</div>
+## Funções de janela padrão {#standard-window-functions}
 
 O ClickHouse oferece suporte à gramática SQL padrão para janelas e funções de janela.
 A tabela abaixo mostra quais recursos têm suporte no momento:
@@ -32,9 +30,7 @@ A tabela abaixo mostra quais recursos têm suporte no momento:
 | `lag/lead(value, offset)`                                                             | ✅          | Você também pode usar uma das seguintes alternativas:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`, ou `FOLLOWING` em vez de `PRECEDING` para `lead` <br /> 2) `lagInFrame/leadInFrame`, que são análogas, mas respeitam o frame da janela. Para obter um comportamento idêntico a `lag/lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
 | [`ntile(buckets)`](/pt-BR/reference/functions/window-functions/ntile)                       | ✅          | Especifique a janela como, por exemplo, `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                                           |
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```text
 aggregate_function (column_name)
@@ -70,9 +66,7 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-<div id="functions">
-  ## Funções utilizáveis apenas como funções de janela
-</div>
+## Funções utilizáveis apenas como funções de janela {#functions}
 
 As funções a seguir só podem ser usadas como funções de janela. A maioria é de funções SQL padrão; `lagInFrame`, `leadInFrame` e `nonNegativeDerivative` são extensões do ClickHouse.
 
@@ -93,15 +87,11 @@ As funções a seguir só podem ser usadas como funções de janela. A maioria �
 | [`ntile(buckets)`](/pt-BR/reference/functions/window-functions/ntile)                                                                             | Divide as linhas ordenadas dentro de uma partição no número especificado de buckets e retorna o número do bucket da linha atual. |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/pt-BR/reference/functions/window-functions/nonNegativeDerivative) | Calcula a derivada não negativa de `metric_column` em relação a `timestamp_column`. Específico do ClickHouse.                    |
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 Veja alguns exemplos de como as funções de janela podem ser usadas.
 
-<div id="numbering-rows">
-  ### Numeração de linhas
-</div>
+### Numeração de linhas {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -159,9 +149,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-<div id="aggregation-functions">
-  ### Funções de agregação
-</div>
+### Funções de agregação {#aggregation-functions}
 
 Compare o salário de cada jogador com a média do seu time.
 
@@ -207,9 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-<div id="partitioning-by-column">
-  ### Particionamento por coluna
-</div>
+### Particionamento por coluna {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -242,9 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-<div id="frame-bounding">
-  ### Delimitação do frame
-</div>
+### Delimitação do frame {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -286,7 +270,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -335,7 +319,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -527,9 +511,7 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-<div id="groups-frame">
-  ### Frame GROUPS
-</div>
+### Frame GROUPS {#groups-frame}
 
 Um frame `GROUPS` conta *grupos de pares* completos — conjuntos de linhas iguais na chave `ORDER BY` — em vez de linhas físicas (`ROWS`) ou valores de `ORDER BY` (`RANGE`). `N PRECEDING` e `N FOLLOWING` contam `N` grupos de pares antes e depois do grupo de pares da linha atual, e cada grupo de pares incluído sempre contribui com todas as suas linhas.
 
@@ -565,15 +547,11 @@ Cada modo interpreta os limites de maneira diferente:
 * `RANGE` conta valores de `order`, portanto `1 PRECEDING` e `1 FOLLOWING` abrangem linhas cujo `order` está a uma distância de até 1 do valor da linha atual. Com lacunas de 10, nenhuma linha vizinha se qualifica, então o frame contém apenas as linhas que têm o mesmo `order` da linha atual.
 * `GROUPS` conta grupos de pares, portanto `1 PRECEDING` e `1 FOLLOWING` sempre incluem integralmente os grupos adjacentes, independentemente das lacunas entre os valores de `order`.
 
-<div id="real-world-examples">
-  ## Exemplos práticos
-</div>
+## Exemplos práticos {#real-world-examples}
 
 Os exemplos a seguir mostram como resolver problemas comuns em cenários reais.
 
-<div id="maximumtotal-salary-per-department">
-  ### Salário máximo/total por departamento
-</div>
+### Salário máximo/total por departamento {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -629,9 +607,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-<div id="cumulative-sum">
-  ### Soma cumulativa
-</div>
+### Soma cumulativa {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -640,7 +616,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory
+ENGINE = Memory;
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -672,9 +648,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-<div id="moving--sliding-average-per-3-rows">
-  ### Média móvel/deslizante (a cada 3 linhas)
-</div>
+### Média móvel/deslizante (a cada 3 linhas) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -722,9 +696,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-seconds">
-  ### Média móvel/deslizante (a cada 10 segundos)
-</div>
+### Média móvel/deslizante (a cada 10 segundos) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -750,9 +722,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-days">
-  ### Média móvel / deslizante (a cada 10 dias)
-</div>
+### Média móvel / deslizante (a cada 10 dias) {#moving--sliding-average-per-10-days}
 
 A temperatura é armazenada com precisão de segundos, mas, ao usar `Range` e `ORDER BY toDate(ts)`, formamos um frame de 10 unidades e, como usamos `toDate(ts)`, a unidade é o dia.
 
@@ -807,21 +777,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-<div id="references">
-  ## Referências
-</div>
+## Referências {#references}
 
-<div id="github-issues">
-  ### Issues no GitHub
-</div>
+### Issues no GitHub {#github-issues}
 
 O plano para o suporte inicial a funções de janela está [nesta issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 Todas as issues do GitHub relacionadas a funções de janela têm a label [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions).
 
-<div id="tests">
-  ### Testes
-</div>
+### Testes {#tests}
 
 Estes testes contêm exemplos da gramática atualmente suportada:
 
@@ -829,9 +793,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-<div id="postgres-docs">
-  ### Documentação do Postgres
-</div>
+### Documentação do Postgres {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -841,9 +803,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-<div id="mysql-docs">
-  ### Documentação do MySQL
-</div>
+### Documentação do MySQL {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -851,9 +811,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Trabalhando com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Blog: [Funções de janela e array para sequências de commits do Git](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

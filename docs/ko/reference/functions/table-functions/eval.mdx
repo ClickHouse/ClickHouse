@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 `eval` 테이블 함수는 인수를 쿼리 문자열로 평가한 후, 해당 문자열을 단일 `SELECT` 쿼리로 실행합니다.
 
-이 테이블 함수는 실험적 기능이며 기본적으로 비활성화되어 있습니다. 사용하려면 `allow_experimental_eval_table_function` 설정을 활성화하십시오:
+이 테이블 함수는 실험적 기능이며 기본적으로 비활성화되어 있습니다. 사용하려면 `enable_eval_table_function` 설정을 활성화하십시오:
 
 ```sql
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 ```
 
 ## 구문 {#syntax}
@@ -112,4 +112,4 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 ## 관련 항목 {#related}
 
 * [`view` 테이블 함수](/ko/reference/functions/table-functions/view)
-* `allow_experimental_eval_table_function` 설정
+* `enable_eval_table_function` 설정

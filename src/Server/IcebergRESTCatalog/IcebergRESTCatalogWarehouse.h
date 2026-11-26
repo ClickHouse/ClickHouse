@@ -31,6 +31,7 @@ public:
     const String base_location;
     const ObjectStoragePtr object_storage;
 
+    /// For a table or namespace location. It must be inside `base_location`.
     void validateLocation(const String & location) const;
     [[nodiscard]] String objectKey(const String & location) const;
 
@@ -44,7 +45,11 @@ public:
     [[nodiscard]] std::vector<IcebergNamespaceName> listNamespaces(const IcebergNamespaceName & parent) const;
 
     using CreateTableResult = KeeperIcebergRESTCatalogStore::CreateTableResult;
-    [[nodiscard]] CreateTableResult createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer) const;
+    using CreateTableOutcome = KeeperIcebergRESTCatalogStore::CreateTableOutcome;
+    [[nodiscard]] CreateTableOutcome
+    createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer, const String & table_root) const;
+    [[nodiscard]] std::optional<CreateTableOutcome>
+    checkForLocationConflict(const IcebergNamespaceName & ns, const String & table, const String & table_root) const;
     [[nodiscard]] std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
     [[nodiscard]] bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
     [[nodiscard]] std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
@@ -53,8 +58,9 @@ public:
     [[nodiscard]] RenameTableResult renameTable(
         const IcebergNamespaceName & source_ns, const String & source, const IcebergNamespaceName & dest_ns, const String & dest) const;
     using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
-    [[nodiscard]] UpdateTableResult updateTable(
-        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const;
+    using TableUpdate = KeeperIcebergRESTCatalogStore::TableUpdate;
+    using UpdateTablesResult = KeeperIcebergRESTCatalogStore::UpdateTablesResult;
+    [[nodiscard]] UpdateTablesResult updateTables(const std::vector<TableUpdate> & updates) const;
 
     /// Checks that the role was assumed, then lists one key under `base_location`. This proves that the role can read the location.
     void checkStorageAccess() const;
