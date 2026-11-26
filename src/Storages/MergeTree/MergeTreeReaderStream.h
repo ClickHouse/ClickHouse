@@ -26,8 +26,8 @@ struct RuntimeDataflowStatisticsBlock;
 
 /// The ranges of the files the readers of a read load, counted into its statistics, each range once however many readers
 /// load it. The memory the ranges hold is charged to `automatic_parallel_replicas_max_counted_ranges` as it grows; past
-/// it, the counting stops, the ranges are freed, and the statistics record that the input was not measured. The ranges
-/// still kept unmerged are counted when the registry is destroyed, before the statistics are, since it holds them.
+/// it, the counting stops, the ranges are freed, and the statistics record that the input was not measured. The bytes of
+/// the ranges are counted once, when the registry is destroyed, before the statistics are, since it holds them.
 class ReadRangesRegistry
 {
 public:
@@ -41,34 +41,28 @@ public:
     class ReadRanges
     {
     public:
-        /// The bytes of the ranges not counted yet that become counted: those merged, and those extending the last
-        /// merged range. Clears the ranges. `capacity_grown` is how many ranges the memory kept for them grew by.
-        size_t add(CompressedBlockRanges & ranges, size_t & capacity_grown);
-        /// Merges the appended ranges into the merged ones and returns the bytes they add.
-        size_t merge() noexcept;
+        /// Appends the ranges and clears them. Returns how many ranges the memory kept for them grew by.
+        size_t add(CompressedBlockRanges & ranges);
+        /// Merges the appended ranges into the merged ones and returns the bytes of all the ranges.
+        size_t mergeAndCount() noexcept;
         /// Frees the ranges, once the counting stopped.
         void release() noexcept;
 
     private:
-        size_t mergeLocked() noexcept TSA_REQUIRES(mutex);
+        void mergeLocked() noexcept TSA_REQUIRES(mutex);
 
         std::mutex mutex;
         /// Up to `merged`: sorted by their begin, neither overlapping nor touching. After it: appended since the last merge.
         CompressedBlockRanges united_ranges TSA_GUARDED_BY(mutex);
         size_t merged TSA_GUARDED_BY(mutex) = 0;
-        /// The bytes of the merged ranges.
-        size_t merged_bytes TSA_GUARDED_BY(mutex) = 0;
     };
 
-    /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
-    ReadRanges & getReadRanges(const String & path);
+    /// The counted ranges of the file at the path, valid as long as this object, or nullptr once the counting stopped. A
+    /// reader looks it up once by stream.
+    ReadRanges * getReadRanges(const String & path);
 
-    /// Returns the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet.
-    /// Clears `ranges`.
-    size_t registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
-    /// Adds to the statistics the bytes `registerRanges` returned. Only to save atomic operations: a reader sums what it
-    /// counted from all its files since the last `registerReadRanges` and adds it at once, instead of once per file.
-    void commit(size_t bytes);
+    /// Adds `ranges`, which a reader loaded from the file of `file_ranges`, to the counted ones, and clears them.
+    void registerRanges(ReadRanges * file_ranges, CompressedBlockRanges & ranges);
 
     /// Past the limit: nothing is counted any more, and the readers stop collecting the ranges.
     [[nodiscard]] bool stopped() const;
@@ -98,8 +92,6 @@ private:
         std::equal_to<>,
         AllocatorWithMemoryTracking<std::pair<const UInt128, std::unique_ptr<ReadRanges>>>>
         read_ranges_by_path TSA_GUARDED_BY(mutex);
-    /// Given out for the files looked up once the counting stopped, which then keep nothing.
-    static ReadRanges not_registered;
 };
 
 using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;

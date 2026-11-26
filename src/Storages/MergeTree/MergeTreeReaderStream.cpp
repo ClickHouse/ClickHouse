@@ -348,8 +348,6 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-ReadRangesRegistry::ReadRanges ReadRangesRegistry::not_registered;
-
 ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
     : block(std::move(block_))
     , duplicated(duplicated_)
@@ -372,32 +370,31 @@ ReadRangesRegistry::~ReadRangesRegistry()
     size_t bytes = 0;
     std::lock_guard lock(mutex);
     for (auto & [_, read_ranges] : read_ranges_by_path)
-        bytes += read_ranges->merge();
+        bytes += read_ranges->mergeAndCount();
     (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
 }
 
-ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
+ReadRangesRegistry::ReadRanges * ReadRangesRegistry::getReadRanges(const String & path)
 {
     const UInt128 key = sipHash128(path.data(), path.size());
     {
         std::lock_guard lock(mutex);
         if (auto it = read_ranges_by_path.find(key); it != read_ranges_by_path.end())
-            return *it->second;
+            return it->second.get();
         if (reserve(units_per_file))
         {
             auto read_ranges = std::make_unique<ReadRanges>();
-            return *read_ranges_by_path.emplace(key, std::move(read_ranges)).first->second;
+            return read_ranges_by_path.emplace(key, std::move(read_ranges)).first->second.get();
         }
     }
     releaseAll();
-    return not_registered;
+    return nullptr;
 }
 
-size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges, size_t & capacity_grown)
+size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
 {
     std::lock_guard lock(mutex);
     const size_t capacity_before = united_ranges.capacity();
-    size_t bytes = 0;
     for (const auto & [begin, end] : ranges)
     {
         chassert(begin <= end);
@@ -408,11 +405,6 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges, size_
             auto & [last_begin, last_end] = united_ranges.back();
             if (last_begin <= begin && begin <= last_end)
             {
-                if (united_ranges.size() == merged && end > last_end)
-                {
-                    bytes += end - last_end;
-                    merged_bytes += end - last_end;
-                }
                 last_end = std::max(last_end, end);
                 continue;
             }
@@ -422,23 +414,26 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges, size_
         /// Merged in bulk, once the appended ranges are as many as the merged ones, so that each merge is paid for by
         /// the ranges appended since the last one.
         if (united_ranges.size() - merged > std::max<size_t>(merged, 64))
-            bytes += mergeLocked();
+            mergeLocked();
     }
     ranges.clear();
-    capacity_grown = united_ranges.capacity() - capacity_before;
+    return united_ranges.capacity() - capacity_before;
+}
+
+size_t ReadRangesRegistry::ReadRanges::mergeAndCount() noexcept
+{
+    std::lock_guard lock(mutex);
+    mergeLocked();
+    size_t bytes = 0;
+    for (const auto & [begin, end] : united_ranges)
+        bytes += end - begin;
     return bytes;
 }
 
-size_t ReadRangesRegistry::ReadRanges::merge() noexcept
-{
-    std::lock_guard lock(mutex);
-    return mergeLocked();
-}
-
-size_t ReadRangesRegistry::ReadRanges::mergeLocked() noexcept
+void ReadRangesRegistry::ReadRanges::mergeLocked() noexcept
 {
     if (merged == united_ranges.size())
-        return 0;
+        return;
 
     const auto appended = united_ranges.begin() + merged;
     std::sort(appended, united_ranges.end());
@@ -446,62 +441,42 @@ size_t ReadRangesRegistry::ReadRanges::mergeLocked() noexcept
     std::inplace_merge(united_ranges.begin(), appended, united_ranges.end());
 
     size_t last = 0;
-    size_t bytes = 0;
     for (size_t i = 1; i < united_ranges.size(); ++i)
     {
         if (united_ranges[i].first <= united_ranges[last].second)
-        {
             united_ranges[last].second = std::max(united_ranges[last].second, united_ranges[i].second);
-        }
         else
-        {
-            bytes += united_ranges[last].second - united_ranges[last].first;
             united_ranges[++last] = united_ranges[i];
-        }
     }
-    bytes += united_ranges[last].second - united_ranges[last].first;
     united_ranges.resize(last + 1);
     merged = united_ranges.size();
-
-    chassert(bytes >= merged_bytes);
-    const size_t added = bytes - merged_bytes;
-    merged_bytes = bytes;
-    return added;
 }
 
-size_t ReadRangesRegistry::registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
+void ReadRangesRegistry::registerRanges(ReadRanges * file_ranges, CompressedBlockRanges & ranges)
 {
     /// A file looked up once the counting stopped keeps nothing.
-    if (ranges.empty() || &file_ranges == &not_registered)
+    if (ranges.empty() || !file_ranges)
     {
         ranges.clear();
-        return 0;
+        return;
     }
 
     if (stopped())
     {
         ranges.clear();
         /// Also what was added to the file after the others were freed.
-        file_ranges.release();
+        file_ranges->release();
         releaseAll();
-        return 0;
+        return;
     }
 
-    size_t grown = 0;
-    const size_t bytes = file_ranges.add(ranges, grown);
     /// Charged by the memory the ranges hold, which merging does not give back.
+    const size_t grown = file_ranges->add(ranges);
     if (grown && !reserve(grown))
     {
-        file_ranges.release();
+        file_ranges->release();
         releaseAll();
     }
-    return bytes;
-}
-
-void ReadRangesRegistry::commit(size_t bytes)
-{
-    if (bytes)
-        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
 }
 
 void ReadRangesRegistry::ReadRanges::release() noexcept
@@ -509,7 +484,6 @@ void ReadRangesRegistry::ReadRanges::release() noexcept
     std::lock_guard lock(mutex);
     CompressedBlockRanges().swap(united_ranges);
     merged = 0;
-    merged_bytes = 0;
 }
 
 void ReadRangesRegistry::releaseAll()
