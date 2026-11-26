@@ -24,6 +24,26 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+/// `readonly` is read from the query context: a client `--readonly 1` raises it there only, while a
+/// mid-session `SET readonly = 1` also reaches it because a query context inherits session settings.
+void throwIfReadonlyRestrictsSetRole(const ContextPtr & context, std::string_view statement)
+{
+    if (context->getAccessControl().doesReadonlyRestrictSetRole() && context->getSettingsRef()[Setting::readonly])
+    {
+        throw Exception(
+            ErrorCodes::READONLY,
+            "Cannot execute {} in readonly mode. "
+            "This restriction is enabled by access_control_improvements.readonly_restricts_set_role",
+            statement);
+    }
+}
+
+}
+
+
 BlockIO InterpreterSetRoleQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTSetRoleQuery &>();
@@ -39,14 +59,7 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 {
     auto session_context = getContext()->getSessionContext();
 
-    /// `readonly` is read from the query context: a client `--readonly 1` raises it there only, while a
-    /// mid-session `SET readonly = 1` also reaches it because a query context inherits session settings.
-    if (getContext()->getAccessControl().doesReadonlyRestrictSetRole()
-        && getContext()->getSettingsRef()[Setting::readonly])
-        throw Exception(
-            ErrorCodes::READONLY,
-            "Cannot execute SET ROLE in readonly mode. "
-            "This restriction is enabled by access_control_improvements.readonly_restricts_set_role");
+    throwIfReadonlyRestrictsSetRole(getContext(), "SET ROLE");
 
     if (query.kind == ASTSetRoleQuery::Kind::SET_ROLE_DEFAULT)
         session_context->setCurrentRolesDefault();
@@ -57,6 +70,11 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 
 void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 {
+    /// The default roles are what the next session of the user starts with, so changing them is a way around the
+    /// restriction of `SET ROLE` if it is not restricted as well. The access check below does not catch it for the
+    /// user's own default roles: `TO CURRENT_USER` requires no grant, so `readonly` has nothing to deny there.
+    throwIfReadonlyRestrictsSetRole(getContext(), "SET DEFAULT ROLE");
+
     getContext()->getAccess()->checkCanAdministerDefaultRoles();
     getContext()->checkAccess(query.to_users->collectRequiredGrants(AccessType::ALTER_USER));
 
