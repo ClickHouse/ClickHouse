@@ -131,8 +131,9 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
             String key_name;
             if (const auto * literal = key->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
                 key_name = literal->value.safeGet<String>();
-            else
-                tryGetIdentifierNameInto(key, key_name);
+            /// Outside the named collection form the argument can be a sharding key such as `rand() % 2 = 0`, which is not a constant.
+            else if (!tryGetIdentifierNameInto(key, key_name) && throw_unknown_collection)
+                key_name = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(key, context), "key");
             if (key_name == "database" || key_name == "db")
                 throwIfUnknownTableFunction(equals->arguments->children[1], context);
         }

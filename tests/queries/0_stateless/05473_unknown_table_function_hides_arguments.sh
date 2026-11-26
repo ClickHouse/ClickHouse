@@ -92,4 +92,13 @@ for key in database db; do
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "DESCRIBE TABLE remote($locked, $key = s3Clustr('TopSecretValue'))" 2>&1 | grep -o -m1 -e 'Unknown table function s3Clustr' -e TopSecretValue
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.errors WHERE query_id = '$query_id' AND position(last_error_message, 'TopSecretValue') > 0"
 done
+# A computed key is resolved as the named collection resolves it; a sharding key outside that form is not evaluated.
+n=0
+for key in "concat('data', 'base')" "lower('DB')"; do
+    n=$((n + 1))
+    query_id="${CLICKHOUSE_DATABASE}_unknown_nested_table_function_locked_computed_$n"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "DESCRIBE TABLE remote($locked, $key = s3Clustr('TopSecretValue'))" 2>&1 | grep -o -m1 -e 'Unknown table function s3Clustr' -e TopSecretValue
+    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.errors WHERE query_id = '$query_id' AND position(last_error_message, 'TopSecretValue') > 0"
+done
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM remote('127.0.0.{1,2}', system.one, rand() % 2 = 0)"
 $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION $locked"
