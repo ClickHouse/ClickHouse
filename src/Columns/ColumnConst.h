@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
@@ -81,6 +82,11 @@ public:
         return data->getDataAt(0);
     }
 
+    bool supportsGetDataAt() const override
+    {
+        return data->supportsGetDataAt();
+    }
+
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
@@ -127,7 +133,11 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
-        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
+        /// `data` is shared with `ColumnConst` instances cloned via `cut`, etc.,
+        /// so dereferencing the non-const `WrappedPtr` would fail the
+        /// `use_count() == 1` assertion. `compareAt` is a const method, so
+        /// access via the underlying immutable pointer.
+        chassert(!typeid_cast<const ColumnConst *>(&src) || std::as_const(*this).data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -183,6 +193,33 @@ public:
         return data->serializeValueIntoMemory(0, memory, settings);
     }
 
+    void serializeAsComparable(size_t, String & out) const override
+    {
+        data->serializeAsComparable(0, out);
+    }
+
+    /// All rows are identical: encode row 0 once and append to every output row.
+    /// Permutation is irrelevant for a constant column. Rows masked by `null_map`
+    /// (set by a Nullable wrapper) are skipped, matching the other columns.
+    void batchSerializeAsComparable(
+        size_t num_rows,
+        VectorWithMemoryTracking<String> & out,
+        const IColumn::Permutation * permutation,
+        const UInt8 * null_map) const override
+    {
+        /// Match the base class no-op for empty batches: avoid touching the payload
+        /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).
+        if (num_rows == 0)
+            return;
+
+        String encoded;
+        data->serializeAsComparable(0, encoded);
+        /// All rows share `encoded`; `src` only matters for the null-map check.
+        batchSerializeAsComparableImpl(
+            num_rows, out, permutation, null_map,
+            [&encoded](size_t /*src*/, String & dst) { dst.append(encoded); });
+    }
+
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
         data->deserializeAndInsertFromArena(in, settings);
@@ -190,17 +227,12 @@ public:
         ++s;
     }
 
-    void skipSerializedInArena(ReadBuffer & in) const override
-    {
-        data->skipSerializedInArena(in);
-    }
-
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
     }
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -218,6 +250,7 @@ public:
                         size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     size_t byteSize() const override
     {
@@ -241,6 +274,11 @@ public:
 #endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
+    }
+
+    int compareAtWithCollation(size_t, size_t, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override
+    {
+        return data->compareAtWithCollation(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint, collator);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -298,6 +336,11 @@ public:
         return data->isDefaultAt(0) ? s : 0;
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return s == 0 || data->hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         if (!data->isDefaultAt(0))
@@ -310,18 +353,25 @@ public:
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }
-    bool onlyNull() const override { return data->isNullAt(0); }
+    /// Delegate to `data->onlyNull` so that e.g. `Const(Nullable(Nothing))` reports itself as only-null.
+    bool onlyNull() const override { return data->isNullAt(0) || data->onlyNull(); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
     std::string_view getRawData() const override { return data->getRawData(); }
+    /// `getRawData` holds one row, not `size()` rows, so there are no planes to read by number.
+    ColumnPlanes getPlanes() const override { return ColumnPlanes(ColumnPlanes::Shape::Rows, this); }
 
     /// Not part of the common interface.
 
     IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
+
+    /// Replace the single broadcast value (the number of rows is unchanged). `value` must have exactly one row.
+    /// Only valid while building the column (uniquely owned), e.g. when a serialization fills the value it read.
+    void setValue(const ColumnPtr & value);
 
     Field getField() const { return getDataColumn()[0]; }
 

@@ -30,7 +30,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 SETTINGS disk = disk(type = web, endpoint = 'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/store/cf7/cf712b4f-2ca8-435c-ac23-c4393efe52f7/'), table_disk=1;
 SELECT count() FROM uk_price_paid SETTINGS optimize_trivial_count_query = 1;
 
-ALTER TABLE uk_price_paid MODIFY SETTING table_disk = 0; -- { serverError TABLE_IS_READ_ONLY }
+ALTER TABLE uk_price_paid MODIFY SETTING table_disk = 0; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
 -- drop does not hung
 DROP TABLE uk_price_paid;

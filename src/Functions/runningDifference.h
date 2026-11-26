@@ -12,7 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -46,7 +45,7 @@ struct FunctionRunningDifferenceName<false>
   * So, result of function depends on partition of data to columns and on order of data in columns.
   */
 template <bool is_first_line_zero>
-class FunctionRunningDifferenceImpl : public IFunction
+class FunctionRunningDifferenceImpl final : public IFunction
 {
 private:
     /// It is possible to track value from previous columns, to calculate continuously across all columns. Not implemented.
@@ -73,17 +72,42 @@ private:
                 continue;
             }
 
+            Src cur = src[i];
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(src[i]);
-                prev = src[i];
+                dst[i] = is_first_line_zero ? Dst{} : static_cast<Dst>(cur);
+                prev = cur;
                 has_prev_value = true;
             }
             else
             {
-                auto cur = src[i];
-                /// Overflow is Ok.
-                dst[i] = static_cast<Dst>(cur) - prev;
+                if constexpr (is_integer<Src> && is_unsigned_v<Src> && sizeof(Src) >= sizeof(Dst))
+                {
+                    /// `Src` is unsigned and `Dst` is no wider than `Src`
+                    /// (e.g. `UInt64 -> Int64`, `UInt128 -> Int128`,
+                    /// `UInt256 -> Int256`). Subtract in the source domain
+                    /// where wrapping is well defined, then reinterpret the
+                    /// result into `Dst`. This preserves the historical
+                    /// behaviour (which relied on usual arithmetic
+                    /// conversions promoting both operands to `Src`) and
+                    /// avoids signed-overflow undefined behaviour for
+                    /// values near the boundary of the signed range.
+                    Src diff = cur - prev;
+                    dst[i] = static_cast<Dst>(diff);
+                }
+                else
+                {
+                    /// `Dst` is strictly wider than `Src` (e.g. `UInt32 -> Int64`,
+                    /// `Int32 -> Int64`), or the types match (floating point,
+                    /// same-width signed integers). Subtraction in `Dst`
+                    /// preserves the mathematical result for widened cases
+                    /// and matches the pre-existing behaviour otherwise.
+                    /// Same-width signed overflow (e.g. `Int64 -> Int64`)
+                    /// remains tolerated under `NO_SANITIZE_UNDEFINED`. The
+                    /// explicit casts on both operands avoid the
+                    /// `-Wdouble-promotion` warning for floating sources.
+                    dst[i] = static_cast<Dst>(cur) - static_cast<Dst>(prev);
+                }
                 prev = cur;
             }
         }
@@ -145,43 +169,59 @@ public:
         if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Function {} is deprecated since its usage is error-prone (see docs). "
                 "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
                 name);
 
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isStateful() const override
+    [[nodiscard]] bool isStateful() const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isDeterministic() const override
+    [[nodiscard]] bool isDeterministic() const override
     {
         return false;
     }
 
-    bool isDeterministicInScopeOfQuery() const override
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Documentation-only — pairwise difference of consecutive rows; result
+    /// widens to fit a signed difference (`UInt8` → `Int16`, `Date` → `Int32`,
+    /// `Float*` → `Float64`, …). The widening rule isn't expressible in the DSL.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(MaybeNullable(Number | Date | DateTime)) -> MaybeNullable(Number)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr res;
         dispatchForSourceType(*removeNullable(arguments[0]), [&](auto field_type_tag)
@@ -195,7 +235,7 @@ public:
         return res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & src = arguments.at(0);
 

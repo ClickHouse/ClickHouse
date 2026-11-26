@@ -6,6 +6,7 @@
 
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/SecretString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
@@ -38,6 +39,8 @@ public:
     String getEngineName() const override { return "PostgreSQL"; }
     UUID getUUID() const override { return db_uuid; }
 
+    bool isRemoteDatabase() const override { return true; }
+
     String getMetadataPath() const override { return metadata_path; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
@@ -56,6 +59,9 @@ public:
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
+    void detachTablePermanently(ContextPtr context, const String & table_name) override;
+    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void drop(ContextPtr /*context*/) override;
     void shutdown() override;
@@ -68,7 +74,7 @@ protected:
 
 private:
     String metadata_path;
-    ASTPtr database_engine_define;
+    SecretString database_engine_define;
     StoragePostgreSQL::Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;

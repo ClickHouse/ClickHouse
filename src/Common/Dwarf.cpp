@@ -27,6 +27,7 @@
 
 #if defined(OS_DARWIN)
 #include <Common/MachO.h>
+#include <base/sanitizer_defs.h>
 #endif
 
 #define DW_CHILDREN_no 0
@@ -253,16 +254,16 @@ uint64_t readULEB(std::string_view & sp, uint8_t & shift, uint8_t & val)
 
 uint64_t readULEB(std::string_view & sp)
 {
-    uint8_t shift;
-    uint8_t val;
+    uint8_t shift = 0;
+    uint8_t val = 0;
     return readULEB(sp, shift, val);
 }
 
 // Read SLEB (signed) varint value; algorithm from the DWARF spec
-int64_t readSLEB(std::string_view & sp)
+int64_t NO_SANITIZE_UNSIGNED_OVERFLOW readSLEB(std::string_view & sp)
 {
-    uint8_t shift;
-    uint8_t val;
+    uint8_t shift = 0;
+    uint8_t val = 0;
     uint64_t r = readULEB(sp, shift, val);
 
     if (shift < 64 && (val & 0x40))
@@ -1016,8 +1017,8 @@ std::optional<std::pair<std::optional<Dwarf::CompilationUnit>, uint64_t>> Dwarf:
     const CompilationUnit & cu, const Die & die, uint64_t attr_name) const
 {
     bool found = false;
-    uint64_t value;
-    uint64_t form;
+    uint64_t value = 0;
+    uint64_t form = 0;
     forEachAttribute(cu, die, [&](const Attribute & attr)
     {
         if (attr.spec.name == attr_name)
@@ -1067,7 +1068,7 @@ bool Dwarf::findLocation(
     const LocationInfoMode mode,
     CompilationUnit & cu,
     LocationInfo & info,
-    std::vector<SymbolizedFrame> & inline_frames,
+    VectorWithMemoryTracking<SymbolizedFrame> & inline_frames,
     bool assume_in_cu_range) const
 {
     Die die = getDieAtOffset(cu, cu.first_die);
@@ -1181,7 +1182,7 @@ bool Dwarf::findLocation(
             // they can be used for the second last location when we don't have
             // enough inline frames for all inline functions call stack.
             const size_t max_size = Dwarf::kMaxInlineLocationInfoPerFrame + 1;
-            std::vector<CallLocation> call_locations;
+            VectorWithMemoryTracking<CallLocation> call_locations;
             call_locations.reserve(Dwarf::kMaxInlineLocationInfoPerFrame + 1);
 
             findInlinedSubroutineDieForAddress(cu, subprogram, line_vm, address, base_addr_cu, call_locations, max_size);
@@ -1319,7 +1320,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
     const LineNumberVM & line_vm,
     uint64_t address,
     std::optional<uint64_t> base_addr_cu,
-    std::vector<CallLocation> & locations,
+    VectorWithMemoryTracking<CallLocation> & locations,
     const size_t max_size) const
 {
     if (locations.size() >= max_size)
@@ -1491,7 +1492,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
 }
 
 bool Dwarf::findAddress(
-    uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const
+    uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode, VectorWithMemoryTracking<SymbolizedFrame> & inline_frames) const
 {
     locationInfo = LocationInfo();
 
@@ -1952,7 +1953,7 @@ void Dwarf::LineNumberVM::init()
 
 bool Dwarf::LineNumberVM::next(std::string_view & program)
 {
-    Dwarf::LineNumberVM::StepResult ret;
+    Dwarf::LineNumberVM::StepResult ret = {};
     do
     {
         ret = step(program);
@@ -2121,7 +2122,7 @@ bool Dwarf::LineNumberVM::nextDefineFile(std::string_view & program, FileName & 
     return false;
 }
 
-Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & program)
+Dwarf::LineNumberVM::StepResult NO_SANITIZE_UNSIGNED_OVERFLOW Dwarf::LineNumberVM::step(std::string_view & program)
 {
     auto opcode = read<uint8_t>(program);
 

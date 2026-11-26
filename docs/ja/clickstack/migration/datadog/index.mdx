@@ -1,0 +1,268 @@
+---
+slug: /use-cases/observability/clickstack/migration/datadog
+title: 'Datadog から ClickStack への移行'
+sidebarTitle: 'Datadog からの移行'
+description: 'ClickStack OpenTelemetry collector の Datadog receiver を使って Datadog から ClickStack へ移行する'
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['Datadog', 'Datadog receiver', 'Datadog agent', 'OpenTelemetry collector', '移行', 'オブザーバビリティ', 'ClickStack']
+---
+
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+オブザーバビリティプラットフォームの移行は、通常、データの保存先を変えるだけでは済みません。Datadog のエージェントや SDK は、すでに何千ものアプリケーション、ホスト、仮想マシン、Kubernetes ポッドにデプロイされていることがあります。別のバックエンドを評価する前にそれらすべてを再インストルメントしなければならないとなると、価値を生み出す前から移行は大規模なプロジェクトになってしまいます。
+
+OpenTelemetry (OTel) collector の ClickStack ディストリビューションに組み込まれている **Datadog receiver** は、その初期コストを不要にします。既存の Datadog エージェントや SDK は、そのまま変更せずに動かし続けられます。Datadog にテレメトリーを送信する代わりに、送信先を receiver に向けるだけで、Datadog のネイティブな log、トレース、メトリクス のペイロードが OpenTelemetry のデータモデルに変換され、標準の collector パイプライン を通じて ClickStack に渡されます。
+
+receiver は通常の collector パイプライン 内にあるため、次のような用途に使えます。
+
+* アプリケーションコードに手を加えることなく、既存のエージェントを使って同じテレメトリーを両方のプラットフォームに送信し、**Datadog と併用しながら ClickStack を評価する**。
+* 現在の収集レイヤーを維持したまま ClickStack へ移行しつつ、OpenTelemetry インストルメンテーションを段階的に導入して、**移行をスムーズに進める**。
+* 長期的に **両方のスタックを並列に運用し**、それぞれのプラットフォームを得意分野に応じて使い分ける。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Datadog エージェントの移行](/images/use-cases/observability/migrating_datadog_agents.png)
+  </Frame>
+</div>
+
+## Datadog と併用して ClickStack を運用する理由 {#why-run-clickstack-alongside-datadog}
+
+多くのチームが Datadog からオブザーバビリティデータを移行する理由は、コストです。アプリケーションの規模が拡大し、計装済みのサービスが増えるにつれてログやトレースの量も増え続けるため、支出の増加を受け入れるか、生成したテレメトリーの保持量を減らすかのどちらかを選ばざるを得なくなります。そして、こうしたコスト削減策は、調査時に把握できる情報を制限することになります。サンプリングされたトレース、索引付けされていないログ、集約されたメトリクス、短い保持期間はいずれも、最も必要なときに利用できるコンテキストを損ないます。
+
+[ClickStack](/ja/clickstack/overview) は ClickHouse 上に構築されており、大規模なログおよびトレーシングのワークロードでは、Datadog と比べて 100 倍以上のコスト効率を実現できます。このストレージコストの差こそが、Datadog と併用して ClickStack を運用する価値を生み出します。
+
+* **より長い保持期間。** 予算ではなく運用上のニーズに応じて保持期間を設定でき、数週間後や数か月後に必要になるかもしれないイベントも保持できます。
+* **完全な忠実度のデータ。** すべてのログとトレースをサンプリングせずに保存するため、一部のデータではなく完全なデータに基づいて調査できます。
+* **API レート制限なし。** 従量課金の API を経由せず、データベースとしてテレメトリーに直接クエリを実行できます。クエリ単位やエンドポイント単位のスロットリングもありません。
+* **完全な SQL アクセス。** SQL でログ、メトリクス、トレースを分析し、ClickHouse にすでに格納されているビジネスデータやインフラストラクチャデータと結合できます。
+* **エージェント型ワークロード。** [ClickStack MCPサーバー](/ja/clickstack/mcp) を通じて AIエージェントにテレメトリーを公開し、ClickHouse に対して無制限に分析クエリを直接実行できます。
+
+完全な忠実度のテレメトリーは、エージェント型の調査において特に大きな価値を持ちます。エージェントは、調査開始前に破棄されたイベントについて推論することはできません。また、現在のインシデントを過去の障害や挙動の変化、長期的なパターンと比較するには、十分な履歴が必要です。
+
+## Datadog receiver の仕組み {#how-the-datadog-receiver-works}
+
+一般的な OpenTelemetry のデプロイメントでは、テレメトリーはバックエンドに到達する前に OpenTelemetry collector に送られます。collector は、agent モードの collector や、アプリケーションをインストルメントする [OpenTelemetry SDKs](/ja/clickstack/ingesting-data/sdks/index) からデータを受け取り、必要に応じてフィルタリングや変換を適用し、イベントをバッチ化して、目的の宛先にエクスポートします。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![シンプルな OTel パイプライン](/images/use-cases/observability/simple_otel_pipeline.png)
+  </Frame>
+</div>
+
+[Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) は、このアーキテクチャに新たな入力経路を追加します。Datadog エージェント や SDK で使われるプロトコルを理解するエンドポイントを公開し、受信した Datadog ペイロードを OpenTelemetry のデータモデルに変換します。以降は、他のテレメトリーと同様に通常の collector パイプラインを通ります。
+
+既存の Datadog エージェント は、ClickStack collector 上で稼働する receiver にログとトレースを送信するよう再設定するだけで済みます。アプリケーションは既存の Datadog SDK をそのまま使い続けられ、インフラストラクチャ全体にすでにデプロイされている agent もそのまま維持できます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Datadog から OpenTelemetry へ](/images/use-cases/observability/datadog_to_otel.png)
+  </Frame>
+</div>
+
+collector パイプラインでは複数のエクスポーターを利用できるため、同じテレメトリーを Datadog と ClickStack の両方に同時に送信できます。これにより、並行的な評価や長期的な並行運用が可能になります。つまり、同一のデータで両方のプラットフォームを比較したうえで、移行するかどうかを独立して判断できます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Datadog エージェントの移行](/images/use-cases/observability/migrating_datadog_agents.png)
+  </Frame>
+</div>
+
+## receiver が処理する内容 {#what-the-receiver-handles}
+
+receiver は Datadog のペイロードを適切な OpenTelemetry 表現に変換します。そのため ClickStack は、Datadog 固有のロジックを必要とせずにデータを解釈し、相関付け、クエリを実行できます。
+
+* **ログレコード。** Datadog のミリ秒単位のタイムスタンプはナノ秒に変換され、OpenTelemetry のタイムスタンプ、観測タイムスタンプ、ボディ、severity の各フィールドの値として使用されます。これにより、レコードが Unix エポックの時刻で表示されることはなくなります。
+* **リソース属性と severity。** `info`、`warn`、`error` などの Datadog のステータスは、対応する OpenTelemetry の `SeverityNumber` および `SeverityText` にマッピングされます。ホスト名、サービス名、環境、および既知のコンテナ、クラウド、Kubernetes のタグは、標準のリソース属性に昇格されます。
+* **トレースとログの相関付け。** `dd.trace_id` および `dd.span_id` フィールドの値は OpenTelemetry のトレース識別子とスパン識別子に設定され、receiver は Datadog の分割表現から完全な 128 ビットのトレースIDを再構築します。この機能はデフォルトで有効になっており、Datadog 由来のログとスパンを、OpenTelemetry で計装済みのサービスと相関付けることができます。
+* **構造化された JSON ログ。** `decode_json_message` オプション(デフォルトで有効)は、通常 Datadog のバックエンドで行われる JSON 処理を実行し、ボディ、タイムスタンプ、severity、トレース識別子、リソースフィールド、および残りの属性を抽出します。
+* **最新のエージェントとの互換性。** Datadog Agent 7.59 以降は、デフォルトで HTTP ペイロードを Zstandard で圧縮します。receiver は gzip に加えて Zstandard にも対応しているため、最新のエージェントもペイロードを拒否されることなく接続できます。
+
+これらの変更は ClickStack コレクターのディストリビューションに含まれており、自動的に設定されます。また、[OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) プロジェクトでも利用できます。
+
+## Datadog receiver の有効化 {#enabling-the-datadog-receiver}
+
+Datadog receiver は ClickStack 版の OpenTelemetry collector に含まれており、ポート `8126` で待ち受けます。デフォルトでは無効になっており、`ENABLE_DATADOG_RECEIVER` 環境変数で有効化します。
+
+有効化したら、Datadog エージェント の接続先を receiver に向け、ClickStack のインターフェイス (ClickStack UI) で生成されたインジェスト key を使って認証します。
+
+Open Source ClickStack では、スタック のデプロイ時に生成されるインジェスト key を使用して、collector がその エンドポイント を保護します。receiver を有効にし、ClickStack のインターフェイス (ClickStack UI) からその key をコピーして、Datadog エージェント の API key として使用します。
+
+<Steps>
+  <Step title="receiver を有効にした collector を起動する" id="start-collector-oss">
+    以下の例では、[all-in-one イメージ](/ja/clickstack/deployment/all-in-one)を使用します。別の ディストリビューション モデルを使用している場合は、collector を実行しているコンテナーにも同じ flag が適用されていることを確認してください。
+
+    `ENABLE_DATADOG_RECEIVER=true` を設定し、ポート `8126` を公開します。
+
+    ```shell
+    docker run --name clickstack \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      -p 8126:8126 \
+      -e ENABLE_DATADOG_RECEIVER=true \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    receiver は `http://localhost:8126` で利用可能になります。
+
+    <Note>
+      **ローカルの Datadog エージェント を実行している場合**
+
+      Datadog エージェント もポート `8126` で待ち受けます。agent が collector と同じ ホスト で動作している場合は、競合を避けるため、collector を別の ホスト ポートにマッピングしてください。たとえば `-p 18126:8126` を使用し、agent の接続先もそのポートに変更します。
+    </Note>
+
+    残りのセットアップ手順は、[open source getting started guide](/ja/clickstack/getting-started/oss#navigate-to-hyperdx-ui)の説明に従って完了してください。
+  </Step>
+
+  <Step title="インジェスト API key をコピーする" id="copy-ingestion-key-oss">
+    ClickStack のインターフェイス (ClickStack UI) で、左下のユーザーを選択し、**Team Settings &gt; API Keys** に移動して、**Ingestion API Key** をコピーします。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickStack インジェスト key](/images/use-cases/observability/hyperdx_ingestion_key.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Datadog agent を設定する" id="configure-datadog-agent-oss">
+    `/opt/datadog-agent/etc/datadog.yaml` の agent 設定ファイルを更新し、ログ、トレース、メトリクス を receiver に送信するようにします。ClickStack のインジェスト key を API key として使用し、各宛先が receiver エンドポイント を指すように設定してください。
+
+    ```yaml
+    api_key: "<YOUR_CLICKSTACK_INGESTION_KEY>"
+
+    # Metrics destination
+    dd_url: "http://localhost:8126"
+
+    # ClickStack currently supports the Datadog v2 metrics intake.
+    use_v3_api:
+      series:
+        enabled: false
+
+    # Trace destination
+    apm_config:
+      enabled: true
+      apm_dd_url: "http://localhost:8126"
+
+    # Log destination
+    logs_enabled: true
+
+    logs_config:
+      logs_dd_url: "http://localhost:8126"
+      force_use_http: true
+
+    # These require Datadog's backend, which we aren't using, so we disable them.
+    remote_updates: false
+
+    remote_configuration:
+      enabled: false
+    ```
+
+    この設定により、次のようになります。
+
+    * メトリクス、トレース、ログ は Datadog ではなく receiver に送信されます。
+    * receiver は Datadog v2 メトリクス エンドポイント をサポートしているため、v3 メトリクス intake は無効になります。
+    * Datadog バックエンド に依存する remote updates と remote configuration は無効になります。
+  </Step>
+
+  <Step title="agent を再起動する" id="restart-agent-oss">
+    新しい設定を反映するため、Datadog エージェント を再起動します。macOS の場合:
+
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    ```
+
+    これで agent からのテレメトリーが ClickStack に取り込まれ、ClickStack UI で確認できるようになります。
+  </Step>
+</Steps>
+
+## 実践例 {#worked-example}
+
+以下の例では、サンプルアプリケーションを使って、計装済みのアプリから Datadog エージェント を経由して ClickStack に至るまでの一連の流れを示します。
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/i4wj8C8yqYw" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+<Steps>
+  <Step title="サンプルアプリをクローンして実行する" id="clone-sample-app">
+    この例では、`datadog-instrumentation` ブランチで Datadog により計装済みの [Hacker News demo app](https://github.com/ClickHouse/hn-news-analyzer) を使用します。まず、そのブランチをクローンします。
+
+    ```shell
+    git clone --branch datadog-instrumentation https://github.com/ClickHouse/hn-news-analyzer.git
+    ```
+
+    アプリの実行方法は、[README の手順](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) を参照してください。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ローカルで実行中の HackerNews Analyzer アプリケーション](/images/clickstack/getting-started/hackernews_main.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="receiver を有効にして ClickStack を起動する" id="launch-clickstack-example">
+    Datadog receiver を有効にして all-in-one イメージを起動します。ここでは、同じく `8126` を使用するローカルの Datadog エージェント と競合しないよう、receiver をホストのポート `18126` にマッピングします。
+
+    ```shell
+    docker run --name clickstack \
+      -p 8080:8080 \
+      -p 8123:8123 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      -p 127.0.0.1:18126:8126 \
+      -e ENABLE_DATADOG_RECEIVER=true \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    receiver は `http://127.0.0.1:18126` で利用できます。
+  </Step>
+
+  <Step title="Datadog エージェント をインストールして設定する" id="install-agent-example">
+    [Datadog エージェント をインストール](https://docs.datadoghq.com/agent/?tab=Host-based) します。macOS の場合は次を実行します。
+
+    ```shell
+    DD_SITE="datadoghq.com" bash -c "$(curl -L https://install.datadoghq.com/scripts/install_mac_os.sh)"
+    ```
+
+    `/opt/datadog-agent/etc/datadog.yaml` を更新して、ポート `18126` の receiver を参照するよう設定し、API key として ClickStack のインジェスト key を使用します。その後、agent を再起動します。
+
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    ```
+
+    agent の完全な設定例とインジェスト key の確認場所については、[Datadog receiver を有効にする](#enabling-the-datadog-receiver) を参照してください。
+  </Step>
+
+  <Step title="ClickStack でテレメトリーを確認する" id="explore-telemetry">
+    [http://localhost:8080](http://localhost:8080) で ClickStack UI を開き、Datadog エージェント から収集されたトレース、ログ、メトリクスを確認します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![clickstack の Datadog トレース 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
+      </Frame>
+    </div>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![clickstack の Datadog トレース 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
+      </Frame>
+    </div>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![clickstack の Datadog トレース 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+<div id="what-you-can-migrate-today">
+  ## 現在移行できるもの {#what-you-can-migrate-today}
+</div>
+
+Datadog receiver は OpenTelemetry Collector Contrib の alpha コンポーネントであり、ClickStack collector ディストリビューションでは Experimental とされているため、有効にするにはフィーチャーフラグが必要です。
+
+この receiver は **ログとトレース** のワークロードで広範にテストされており、これらのシグナルで ClickStack を評価する際に推奨されます。**メトリクス** も動作しますが、さらなるテストと開発が必要です。現在、この receiver は Datadog の v1 および v2 のメトリクス取り込み endpoint をサポートしており、新しい protocol version を使用する Datadog エージェントは、サポート対象の endpoint 経由でメトリクスを送信するよう明示的に設定する必要があります。
+
+現時点では、この receiver により、アプリケーションがすでに Datadog SDKs を使用している場合や、インフラストラクチャで Datadog エージェントが稼働している場合に、ClickStack を手早く評価できます。両方のパイプラインを並列に実行し、データが ClickStack でどのように表現され、どのようにクエリできるかを検証したうえで、より広範な移行に進むかどうかを判断してください。評価の結果、明確なメリットが確認できた場合は、同じアーキテクチャで段階的に移行することも可能です。既存の Datadog インストルメンテーションはそのまま維持しつつ、各サービスを時間をかけて OpenTelemetry へ移行できます。

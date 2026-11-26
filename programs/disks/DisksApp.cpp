@@ -2,11 +2,11 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getConfigPath.h>
 #include <Common/Macros.h>
 #include <DisksClient.h>
 #include <ICommand.h>
@@ -32,6 +32,8 @@
 #include <Utils.h>
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
+#include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Poco/FileChannel.h>
 
@@ -46,7 +48,7 @@ namespace ErrorCodes
 
 LineReader::Patterns DisksApp::query_extenders = {"\\"};
 LineReader::Patterns DisksApp::query_delimiters = {""};
-String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
+[[clang::no_destroy]] String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
 
 CommandPtr DisksApp::getCommandByName(const String & command) const
 {
@@ -206,7 +208,7 @@ bool DisksApp::processQueryText(const String & text)
     {
         return true;
     }
-    if (exit_strings.contains(text))
+    if (isExitString(text))
         return false;
     CommandPtr command;
 
@@ -326,14 +328,17 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("link", makeCommandLink());
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
+    command_descriptions.emplace("sed", makeCommandSed());
+    command_descriptions.emplace("read-bitmap", makeCommandReadBitmap());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
+    command_descriptions.emplace("du", makeCommandDiskUsage());
+    command_descriptions.emplace("wc", makeCommandWordCount());
+    command_descriptions.emplace("read-checksums", makeCommandReadChecksums());
     command_descriptions.emplace("help", makeCommandHelp(*this));
-#if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
-#endif
     for (const auto & [command_name, command_ptr] : command_descriptions)
     {
         if (command_name != command_ptr->command_name)
@@ -430,19 +435,6 @@ void DisksApp::initializeHistoryFile()
     else
         history_file = home_path + "/.disks-file-history";
 
-    if (!history_file.empty() && !fs::exists(history_file))
-    {
-        try
-        {
-            FS::createFile(history_file);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.getErrno() != EEXIST)
-                throw;
-        }
-    }
-
     history_max_entries = config().getUInt("history-max-entries", 1000000);
 }
 
@@ -473,9 +465,13 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     auto component_guard = Coordination::setCurrentComponent("DisksApp");
     std::vector<std::string> keys;
     config().keys(keys);
-    if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
+    /// A configuration file can be written in XML or in YAML, so the default one is looked up with
+    /// every supported extension, not only with `.xml`.
+    const bool has_explicit_config = config().has("config-file");
+    const String config_path = has_explicit_config ? config().getString("config-file")
+                                                   : getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
+    if (has_explicit_config || fs::exists(config_path))
     {
-        String config_path = config().getString("config-file", getDefaultConfigFileName());
         try
         {
             ConfigProcessor config_processor(config_path, false, false);
@@ -555,8 +551,12 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
 
         fatal_log = createLogger("DisksApp", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+        /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+        /// for - and the blocking read of that pipe is all the listener thread does.
         signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
         signal_listener_thread.start(*signal_listener);
+#endif
     }
 
     if (config().has("macros"))
@@ -593,8 +593,10 @@ DisksApp::~DisksApp()
 
     try
     {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
+#endif
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -624,8 +626,16 @@ void DisksApp::runInteractive()
 }
 }
 
+int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv)
 {
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
+
     try
     {
         DB::DisksApp app;

@@ -3,15 +3,25 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
+#include <Columns/MaskOperations.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -20,7 +30,7 @@ namespace
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
-class FunctionCaseWithExpression : public IFunction
+class FunctionCaseWithExpression final : public IFunction
 {
 public:
     static constexpr auto name = "caseWithExpression";
@@ -37,42 +47,49 @@ public:
         , fun_array(FunctionFactory::instance().get("array", context_))
         , fun_transform(FunctionFactory::instance().get("transform", context_))
         , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
+        , use_variant_as_common_type(context_->getSettingsRef()[Setting::use_variant_as_common_type])
     {
     }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
-    String getName() const override { return name; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
-        if (args.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 arguments", getName());
+        /// The expression and every WHEN value are needed to choose a branch. THEN values and
+        /// ELSE can be evaluated lazily by the `multiIf` path in `executeImpl`.
+        settings.arguments_with_disabled_lazy_execution.insert(0);
+        for (size_t i = 1; i + 1 < number_of_arguments; i += 2)
+            settings.arguments_with_disabled_lazy_execution.insert(i);
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
+        settings.force_enable_lazy_execution = false;
+        return true;
+    }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
 
-        /// We expect an even number of arguments, with the first argument being the expression,
-        /// and the last argument being the ELSE branch, with the rest being pairs of WHEN and THEN branches.
-        if (args.size() < 4 || args.size() % 2 != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects an even number of arguments: (expr, when1, then1, ..., else)", getName());
+    [[nodiscard]] String getSignatureString() const override
+    {
+        /// Arguments: expr, when1, then1, when2, then2, ..., else.
+        /// The fixed group matches (expr, when1, then1), the ellipsis repeats (when, then),
+        /// and the trailing E is the else branch. The when-positions are matched as Any
+        /// since CASE WHEN equality semantics handles arbitrary types.
+        /// A Variant result means the values have no supertype, so it is built by the `multiIf` fallback, not `transform`.
+        if (use_variant_as_common_type)
+            return "(Any, Any, V1, ..., E) -> leastSupertypeOrVariant(V1, ..., E)";
+        return "(Any, Any, V1, ..., E) -> leastSupertype(V1, ..., E)";
+    }
 
-        /// See the comments in executeImpl() to understand why we actually have to
-        /// get the return type of a transform function.
-
-        /// Get the types of the arrays that we pass to the transform function.
-        DataTypes dst_array_types;
-
-        for (size_t i = 2; i < args.size() - 1; i += 2)
-            dst_array_types.push_back(args[i]);
-
-        // Type of the ELSE branch
-        dst_array_types.push_back(args.back());
-
-        return getLeastSupertype(dst_array_types);
+    /// Before the declarative signature, an empty call was `TOO_FEW_ARGUMENTS_FOR_FUNCTION` and any
+    /// other unusable arity - fewer than four arguments, or an odd number of them - was
+    /// `BAD_ARGUMENTS`. Both codes are pinned by the tests of the `CASE` construction.
+    [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+    {
+        return number_of_arguments == 0 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::BAD_ARGUMENTS;
     }
 
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
-    ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
     {
         // for CASE WHEN semantics, NULL should match NULL
         // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
@@ -102,7 +119,7 @@ public:
         if (equals_return_type->isNullable())
         {
             const auto & if_null_func = fun_if_null;
-            auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+            ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             ColumnsWithTypeAndName if_null_args
             {
                 {equals_result, equals_return_type, ""},
@@ -113,7 +130,7 @@ public:
         }
 
         // if (isNull(when)) then 0 else (expr = when)
-        auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
         ColumnsWithTypeAndName inner_if_args
         {
             {is_null_when, std::make_shared<DataTypeUInt8>(), ""},
@@ -134,7 +151,7 @@ public:
             ->execute(outer_if_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
@@ -164,6 +181,7 @@ public:
         /// - It requires a common supertype for all WHEN values and all THEN values.
         /// - It doesn't support types larger than 8 bytes (e.g. Int128).
         /// When `transform` is not applicable, we fall through to the `multiIf` path.
+        /// A lazy default is reduced below only for rows that do not match a WHEN value.
         if (all_when_then_values_constant)
         {
             ColumnsWithTypeAndName src_array_elems;
@@ -197,19 +215,15 @@ public:
             /// `Decimal(9, 2)` (`Decimal32`).
             dst_array_types.push_back(args.back().type);
 
-            /// Check whether `transform` can handle these types.
-            /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
-            /// but the expression is non-Nullable, the cast will fail on NULLs.
+            /// `transform` uses standard equality (`NULL != NULL`), so skip it when WHEN values
+            /// are Nullable; `multiIf` via `caseWhenEquals` handles CASE's `NULL = NULL` semantics.
+            /// See https://github.com/ClickHouse/ClickHouse/issues/101262.
+            /// Also skip Dynamic/Variant: their hash-based lookup keys on type discriminator.
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
-
-            /// The `transform` function cannot handle Dynamic/Variant types because its
-            /// hash-based lookup includes the type discriminator, so values with the same
-            /// logical content but different stored subtypes (e.g. Dynamic(UInt8(1)) vs
-            /// Dynamic(Int64(1))) produce different hashes and never match.
             auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
-                && !(src_supertype->isNullable() && !args.front().type->isNullable())
+                && !isNullableOrLowCardinalityNullable(src_supertype)
                 && !isDynamic(expr_type)
                 && !isVariant(expr_type);
 
@@ -241,7 +255,35 @@ public:
                 }
 
                 if (function_base)
+                {
+                    if (checkAndGetShortCircuitArgument(transform_args.back().column))
+                    {
+                        auto mask_type = std::make_shared<DataTypeUInt8>();
+                        ColumnsWithTypeAndName mask_array_elems;
+                        mask_array_elems.reserve(src_array_elems.size());
+                        for (size_t i = 0; i < src_array_elems.size(); ++i)
+                        {
+                            mask_array_elems.push_back(
+                                {mask_type->createColumnConst(input_rows_count, 1u), mask_type, ""});
+                        }
+
+                        auto mask_array_type = std::make_shared<DataTypeArray>(mask_type);
+                        ColumnWithTypeAndName mask_array_col{nullptr, mask_array_type, ""};
+                        mask_array_col.column = fun_array->build(mask_array_elems)
+                            ->execute(mask_array_elems, mask_array_type, input_rows_count, /* dry_run = */ false);
+
+                        ColumnWithTypeAndName zero{
+                            mask_type->createColumnConst(input_rows_count, 0u), mask_type, ""};
+                        ColumnsWithTypeAndName match_args{args.front(), src_array_col, mask_array_col, zero};
+                        auto matched = fun_transform->build(match_args)
+                            ->execute(match_args, mask_type, input_rows_count, /* dry_run = */ false);
+
+                        IColumn::Filter unmatched(input_rows_count, 1);
+                        auto unmatched_info = extractInvertedMask(unmatched, matched);
+                        maskedExecute(transform_args.back(), unmatched, unmatched_info);
+                    }
                     return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
+                }
             }
         }
 
@@ -273,6 +315,7 @@ private:
     FunctionOverloadResolverPtr fun_array;
     FunctionOverloadResolverPtr fun_transform;
     FunctionOverloadResolverPtr fun_multi_if;
+    bool use_variant_as_common_type;
 };
 
 }

@@ -1,0 +1,44 @@
+---
+description: '`median*` 関数は、対応する `quantile*` 関数の別名です。数値データのサンプルの中央値を計算します。'
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: 'reference'
+---
+
+`median*` 関数は、対応する `quantile*` 関数の別名です。数値データのサンプルの中央値を計算します。
+
+関数:
+
+* `median` — [quantile](/ja/reference/functions/aggregate-functions/quantile) の別名。
+* `medianDeterministic` — [quantileDeterministic](/ja/reference/functions/aggregate-functions/quantileDeterministic) の別名。
+* `medianExact` — [quantileExact](/ja/reference/functions/aggregate-functions/quantileExact) の別名。
+* `medianExactWeighted` — [quantileExactWeighted](/ja/reference/functions/aggregate-functions/quantileExactWeighted) の別名。
+* `medianTiming` — [quantileTiming](/ja/reference/functions/aggregate-functions/quantileTiming) の別名。
+* `medianTimingWeighted` — [quantileTimingWeighted](/ja/reference/functions/aggregate-functions/quantileTimingWeighted) の別名。
+* `medianTDigest` — [quantileTDigest](/ja/reference/functions/aggregate-functions/quantileTDigest) の別名。
+* `medianTDigestWeighted` — [quantileTDigestWeighted](/ja/reference/functions/aggregate-functions/quantileTDigestWeighted) の別名。
+* `medianBFloat16` — [quantileBFloat16](/ja/reference/functions/aggregate-functions/quantileBFloat16) の別名。
+* `medianDD` — [quantileDD](/ja/reference/functions/aggregate-functions/quantileddsketch) の別名。
+
+**例**
+
+入力テーブル:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

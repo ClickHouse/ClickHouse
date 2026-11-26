@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 #include <map>
+#include <vector>
 
 namespace Poco::JSON
 {
@@ -40,7 +42,15 @@ public:
         size_t num_rows = 0;
         size_t num_defaults = 0;
 
-        void add(const IColumn & column);
+        /// True when `num_defaults` was counted exactly rather than sampled. Consumers
+        /// that would produce wrong results from a sampled estimate (trivial count
+        /// rewrite, sparsity pruning) must require this flag.
+        bool exact_num_defaults = false;
+
+        /// `exact` controls whether `num_defaults` is computed precisely (O(rows)
+        /// per column, sets `exact_num_defaults`) or sampled (cheap, leaves the flag
+        /// at its current value).
+        void add(const IColumn & column, bool exact);
         void add(const Data & other);
         void remove(const Data & other);
         void addDefaults(size_t length);
@@ -51,8 +61,8 @@ public:
 
     virtual ~SerializationInfo() = default;
 
-    virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
-    virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
+    [[nodiscard]] virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
+    [[nodiscard]] virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);
@@ -60,15 +70,17 @@ public:
     virtual void addDefaults(size_t length);
     virtual void replaceData(const SerializationInfo & other);
 
-    virtual std::shared_ptr<SerializationInfo> clone() const;
+    [[nodiscard]] virtual std::shared_ptr<SerializationInfo> clone() const;
 
-    virtual std::shared_ptr<SerializationInfo> createWithType(
+    [[nodiscard]] virtual std::shared_ptr<SerializationInfo> createWithType(
         const IDataType & old_type,
         const IDataType & new_type,
         const SerializationInfoSettings & new_settings) const;
 
     virtual void serialializeKindStackBinary(WriteBuffer & out) const;
-    virtual void deserializeFromKindsBinary(ReadBuffer & in);
+
+    /// Rejects a kind outside of `allowed_kinds` as invalid data.
+    virtual void deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds);
 
     virtual void writeJSON(WriteBuffer & out, const String * name) const;
     virtual void toJSON(Poco::JSON::Object & object) const;
@@ -76,14 +88,17 @@ public:
 
     void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
-    const SerializationInfoSettings & getSettings() const { return settings; }
-    const Data & getData() const { return data; }
-    ISerialization::KindStack getKindStack() const { return kind_stack; }
+    [[nodiscard]] const SerializationInfoSettings & getSettings() const { return settings; }
+    [[nodiscard]] const Data & getData() const { return data; }
+    [[nodiscard]] ISerialization::KindStack getKindStack() const { return kind_stack; }
 
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
     virtual void writeJSONFields(WriteBuffer & out, const String * name) const;
+
+    /// Rejects a kind stack that no writer can produce, or that selects a kind the reader does not accept.
+    void checkKindStack(ISerialization::KindSet allowed_kinds) const;
 
     const SerializationInfoSettings settings;
 
@@ -113,9 +128,9 @@ public:
     void remove(const SerializationInfoByName & other);
     void remove(const String & name, const SerializationInfo & info);
 
-    SerializationInfoPtr tryGet(const String & name) const;
+    [[nodiscard]] SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
-    ISerialization::KindStack getKindStack(const String & column_name) const;
+    [[nodiscard]] ISerialization::KindStack getKindStack(const String & column_name) const;
 
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,
@@ -124,13 +139,31 @@ public:
 
     void writeJSON(WriteBuffer & out) const;
 
-    SerializationInfoByName clone() const;
+    [[nodiscard]] SerializationInfoByName clone() const;
 
-    const Settings & getSettings() const { return settings; }
+    [[nodiscard]] const Settings & getSettings() const { return settings; }
 
-    MergeTreeSerializationInfoVersion getVersion() const;
+    [[nodiscard]] MergeTreeSerializationInfoVersion getVersion() const;
 
-    bool needsPersistence() const;
+    [[nodiscard]] bool needsPersistence() const;
+
+    /// Describes a column that is absent from the part's data files and whose
+    /// values are the recorded type's default.
+    struct MissingColumnInfo
+    {
+        String name;
+        String type_name; /// type whose default was frozen when the part was written
+
+        bool operator<(const MissingColumnInfo & rhs) const { return name < rhs.name; }
+        bool operator==(const MissingColumnInfo & rhs) const { return name == rhs.name && type_name == rhs.type_name; }
+    };
+    using MissingColumns = std::vector<MissingColumnInfo>;
+
+    [[nodiscard]] const MissingColumns & getMissingColumns() const { return missing_columns; }
+    void setMissingColumns(MissingColumns columns);
+
+    [[nodiscard]] bool isMissingColumn(const String & name) const;
+    [[nodiscard]] const MissingColumnInfo * getMissingColumnInfo(const String & name) const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 
@@ -157,6 +190,7 @@ private:
     ///   or other engines, the correct settings must always be provided for
     ///   consistent serialization behavior.
     Settings settings;
+    MissingColumns missing_columns; /// sorted by name for deterministic serialization
 };
 
 }

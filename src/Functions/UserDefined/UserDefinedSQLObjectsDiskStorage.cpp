@@ -136,7 +136,7 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
         return;
     }
 
-    std::vector<std::pair<String, ASTPtr>> function_names_and_queries;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_queries;
 
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)

@@ -120,6 +120,7 @@ def test_profile_events(cluster):
     instance.query("DROP TABLE IF EXISTS test_s3.test_s3")
     instance.query("DROP DATABASE IF EXISTS test_s3")
     instance.query("CREATE DATABASE test_s3")
+    instance.query("SYSTEM WAIT BLOBS CLEANUP 's3'")
 
     metrics0 = get_s3_events(instance)
     minio0 = get_minio_stat(cluster)
@@ -188,7 +189,7 @@ def test_profile_events(cluster):
         metrics3["S3WriteRequestsCount"] - metrics2["S3WriteRequestsCount"]
         == minio3["set_requests"] - minio2["set_requests"]
     )
-    stat3 = get_query_stat(instance, query3)
+    get_query_stat(instance, query3)
 
     # With async reads profile events are not updated fully because reads are done in a separate thread.
     # for metric in stat3:

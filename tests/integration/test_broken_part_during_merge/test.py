@@ -1,4 +1,3 @@
-import time
 from multiprocessing.dummy import Pool
 
 import pytest

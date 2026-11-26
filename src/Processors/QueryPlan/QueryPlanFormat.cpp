@@ -1,6 +1,11 @@
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HiddenSecret.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -14,6 +19,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -31,6 +37,9 @@
 #include <fmt/ranges.h>
 #include <optional>
 #include <string_view>
+#include <unordered_set>
+#include <variant>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -40,7 +49,7 @@ namespace QueryPlanFormat
     constexpr std::string_view TABLE_PREFIX = "__table";
 
     /// Matches `__table<digits>.` at position pos, returns the position after the dot or 0 on mismatch.
-    size_t matchTablePrefix(std::string_view name, size_t pos)
+    static size_t matchTablePrefix(std::string_view name, size_t pos)
     {
         if (!name.substr(pos).starts_with(TABLE_PREFIX))
             return 0;
@@ -54,7 +63,7 @@ namespace QueryPlanFormat
 
     String trimColumnIdentifier(std::string_view name)
     {
-        if (name.find(TABLE_PREFIX) == std::string_view::npos)
+        if (!name.contains(TABLE_PREFIX))
             return String(name);
 
         String result;
@@ -77,54 +86,56 @@ namespace QueryPlanFormat
         return result;
     }
 
-    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    VectorWithMemoryTracking<MetricGroup> collectJoinInputColumns(const JoinStep & step)
     {
         const auto & input_headers = step.getInputHeaders();
         if (input_headers.size() != 2 || !input_headers[0] || !input_headers[1])
-            return;
+            return {};
 
-        out << prefix << "Output:\n";
-
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        auto side_group = [](MetricGroupKey key, const Block & input_header) -> MetricGroup
         {
-            out << prefix << "  Left:  Empty\n";
-            out << prefix << "  Right: Empty\n";
-            return;
-        }
+            VectorWithMemoryTracking<String> columns;
+            columns.reserve(input_header.columns());
+            for (const auto & column : input_header)
+                columns.push_back(trimColumnIdentifier(column.name));
 
-        const auto & output = *step.getOutputHeader();
-        const auto & left_input = *input_headers[0];
-        const auto & right_input = *input_headers[1];
+            String joined = columns.empty() ? String("Empty") : fmt::format("{}", fmt::join(columns, ", "));
 
-        std::vector<String> left_columns;
-        std::vector<String> right_columns;
+            MetricGroup group;
+            group.key = key;
+            group.metrics.emplace_back(MetricKey::Unnamed, std::move(joined));
+            return group;
+        };
 
-        for (const auto & col : output)
-        {
-            if (left_input.has(col.name))
-                left_columns.push_back(trimColumnIdentifier(col.name));
-            else if (right_input.has(col.name))
-                right_columns.push_back(trimColumnIdentifier(col.name));
-        }
-
-        out << prefix << "  Left:  ";
-        if (left_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(left_columns, ", "));
-        out << "\n";
-
-        out << prefix << "  Right: ";
-        if (right_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(right_columns, ", "));
-        out << "\n";
+        VectorWithMemoryTracking<MetricGroup> groups;
+        groups.emplace_back(side_group(MetricGroupKey::InputLeft, *input_headers[0]));
+        groups.emplace_back(side_group(MetricGroupKey::InputRight, *input_headers[1]));
+        return groups;
     }
 
-    void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix)
     {
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        for (const auto & group : collectJoinInputColumns(step))
+        {
+            out << prefix << toString(group.key) << ": ";
+            for (const auto & metric : group.metrics)
+                if (const auto * text = std::get_if<String>(&metric.value))
+                    out << *text;
+            out << '\n';
+        }
+    }
+
+    void formatOutputColumns(const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    {
+        /// A sink, such as the send step at the root of a query fragment, has no output header: its output is the
+        /// data it sends, which is its input.
+        SharedHeader header;
+        if (step.hasOutputHeader())
+            header = step.getOutputHeader();
+        else if (step.getInputHeaders().size() == 1)
+            header = step.getInputHeaders().front();
+
+        if (!header || header->empty())
         {
             out << prefix << "Output: Empty\n";
             return;
@@ -132,7 +143,7 @@ namespace QueryPlanFormat
 
         out << prefix << "Output: ";
         bool first = true;
-        for (const auto & elem : *step.getOutputHeader())
+        for (const auto & elem : *header)
         {
             if (!first)
                 out << ", ";
@@ -145,12 +156,12 @@ namespace QueryPlanFormat
         out << '\n';
     }
 
-    PrettyColumnName formatFilterPretty(
+    static PrettyColumnName formatFilterPretty(
         const ActionsDAG & dag,
         const String & column_name,
-        const std::unordered_map<String, PrettyColumnName> & pretty_names,
-        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+        const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names,
+        const UnorderedMapWithMemoryTracking<String, RuntimeFilterInfo> & runtime_filter_names,
+        UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
     {
         const auto * root = dag.tryFindInOutputs(column_name);
         if (!root)
@@ -158,8 +169,8 @@ namespace QueryPlanFormat
 
         auto atoms = ActionsDAG::extractConjunctionAtoms(root);
 
-        std::vector<String> user_parts;
-        std::vector<String> rf_parts;
+        VectorWithMemoryTracking<String> user_parts;
+        VectorWithMemoryTracking<String> rf_parts;
         for (const auto * atom : atoms)
         {
             if (atom->type == ActionsDAG::ActionType::FUNCTION
@@ -200,49 +211,59 @@ namespace QueryPlanFormat
 
         String formatConstant(const ActionsDAG::Node * node)
         {
-            if (!node->column || node->column->empty())
+            /// A masked secret constant must render as `[HIDDEN]`, never as the value held in its
+            /// column (kept only so the query can still execute). `is_masked_secret` is the reliable
+            /// signal; the name check is a fallback for a masked constant whose name is its `[HIDDEN...]`
+            /// placeholder but which was reached without the flag (e.g. an aliased column keeps its own
+            /// name, so the flag is what catches it there).
+            if (node->is_masked_secret)
+                return String(HIDDEN_SECRET);
+            if (node->result_name.contains("[HIDDEN"))
+                return node->result_name;
+
+            if (!node->column)
                 return node->result_name;
 
             if (node->result_type && WhichDataType(node->result_type).isSet())
                 return node->result_name;
 
+            /// node->column is a size-0 ColumnConst; read the value from its data column.
+            const auto & data_col = node->column->getDataColumnPtr();
             WhichDataType data_type(node->result_type);
 
             if (data_type.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
             {
                 WriteBufferFromOwnString buf;
                 writeChar('\'', buf);
-                const auto & col = node->column->convertToFullColumnIfConst();
-                node->result_type->getDefaultSerialization()->serializeText(*col, 0, buf, {});
+                node->result_type->getDefaultSerialization()->serializeText(*data_col, 0, buf, {});
                 writeChar('\'', buf);
                 return buf.str();
             }
 
             Field value;
-            node->column->get(0, value);
+            data_col->get(0, value);
             return applyVisitor(FieldVisitorToString(), value);
         }
 
         String getRuntimeFilterId(const ActionsDAG::Node * node)
         {
-            const ActionsDAG::Node * first_child = node->children[0];
-            if (const auto * col = checkAndGetColumnConst<ColumnString>(first_child->column.get()))
-                return col->getValue<String>();
-            return first_child->result_name;
+            /// The first `__applyFilter` argument is a const whose DAG result NAME is the stable
+            /// structural id (`_runtime_filter_<hash>`), under which `runtime_filter_names` is keyed
+            /// (`BuildRuntimeFilterStep::getFilterName`). Its VALUE is the volatile per-plan-build
+            /// rendezvous key, which must never surface in EXPLAIN — so key on the result name.
+            return node->children[0]->result_name;
         }
 
         String formatSetPretty(
             const ActionsDAG::Node * set_node,
-            std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+            UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
         {
             static constexpr size_t MAX_SET_ELEMENTS_TO_SHOW = 10;
 
             if (!set_node->column)
                 return trimColumnIdentifier(set_node->result_name);
 
-            const auto * column_ptr = set_node->column.get();
-            const auto * col_const = typeid_cast<const ColumnConst *>(column_ptr);
-            const ColumnSet * column_set = col_const ? typeid_cast<const ColumnSet *>(&col_const->getDataColumn()) : typeid_cast<const ColumnSet *>(column_ptr);
+            const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
 
             if (!column_set || !column_set->getData())
                 return trimColumnIdentifier(set_node->result_name);
@@ -304,12 +325,18 @@ namespace QueryPlanFormat
 
     String formatNodePretty(
         const ActionsDAG::Node * node,
-        const std::unordered_map<String, PrettyColumnName> & pretty_names,
-        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names,
+        const UnorderedMapWithMemoryTracking<String, RuntimeFilterInfo> & runtime_filter_names,
+        UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
         int parent_precedence)
     {
         using ActionType = ActionsDAG::ActionType;
+
+        /// A masked secret carrier (a folded constant, which may be a FUNCTION node with a constant
+        /// column, not only a COLUMN node) must render as `[HIDDEN]` regardless of its node type,
+        /// before we dispatch into formatting its value or its child expression.
+        if (node->is_masked_secret)
+            return String(HIDDEN_SECRET);
 
         switch (node->type)
         {
@@ -389,7 +416,7 @@ namespace QueryPlanFormat
                 if ((func_name == "and" || func_name == "or") && node->children.size() >= 2)
                 {
                     String separator = fmt::format(" {} ", op_info->symbol);
-                    std::vector<String> parts;
+                    VectorWithMemoryTracking<String> parts;
                     parts.reserve(node->children.size());
                     for (const auto * child : node->children)
                         parts.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence));
@@ -436,7 +463,7 @@ namespace QueryPlanFormat
                     return result;
                 }
 
-                std::vector<String> args;
+                VectorWithMemoryTracking<String> args;
                 args.reserve(node->children.size());
                 for (const auto * child : node->children)
                     args.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names));
@@ -449,7 +476,7 @@ namespace QueryPlanFormat
         }
     }
 
-    String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names)
+    String formatColumnPretty(const String & column_name, const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names)
     {
         if (auto it = pretty_names.find(column_name); it != pretty_names.end())
             return it->second.expression;
@@ -463,7 +490,7 @@ namespace QueryPlanFormat
         return {};
     }
 
-    static void addAggregatesPrettyNames(const Aggregator::Params & params, std::unordered_map<String, PrettyColumnName> & pretty_names)
+    static void addAggregatesPrettyNames(const Aggregator::Params & params, UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names)
     {
         for (const auto & agg : params.aggregates)
         {
@@ -499,7 +526,7 @@ namespace QueryPlanFormat
         }
     }
 
-    static void addWindowFunctionPrettyNames(const WindowDescription & window_description, std::unordered_map<String, PrettyColumnName> & pretty_names)
+    static void addWindowFunctionPrettyNames(const WindowDescription & window_description, UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names)
     {
         String spec = "(";
 
@@ -543,10 +570,7 @@ namespace QueryPlanFormat
 
         for (const auto & func : window_description.window_functions)
         {
-            String pretty;
-
-            if (func.aggregate_function)
-                pretty += func.aggregate_function->getName();
+            String pretty = func.getFunctionName();
 
             pretty += '(';
             for (size_t i = 0; i < func.argument_names.size(); ++i)
@@ -562,7 +586,23 @@ namespace QueryPlanFormat
         }
     }
 
-    static String findSourceTableName(const QueryPlan::Node * node)
+    /// The fragments of a cut plan that are reached from a receive step while the names are built.
+    struct FragmentWalk
+    {
+        const FragmentInputs & inputs;
+        UnorderedSetWithMemoryTracking<const QueryPlan *> visited;
+    };
+
+    /// The root of the fragment that sends to `node`, if `node` is a receive step of a cut plan.
+    static const QueryPlan::Node * findSendingFragmentRoot(const QueryPlan::Node * node, const FragmentInputs * fragment_inputs)
+    {
+        if (!fragment_inputs || !node->children.empty())
+            return nullptr;
+        auto it = fragment_inputs->find(node->step.get());
+        return it == fragment_inputs->end() ? nullptr : it->second->getRootNode();
+    }
+
+    static String findSourceTableName(const QueryPlan::Node * node, const FragmentInputs * fragment_inputs)
     {
         while (node)
         {
@@ -579,20 +619,59 @@ namespace QueryPlanFormat
                 return static_cast<const ReadFromTableStep *>(node->step.get())->getTable();
             if (node->children.size() == 1)
                 node = node->children[0];
+            else if (const auto * sending_root = findSendingFragmentRoot(node, fragment_inputs))
+                node = sending_root;
             else
                 break;
         }
         return {};
     }
 
+    using PerPlanColumnMaps = UnorderedMapWithMemoryTracking<const QueryPlan *, PrettyColumnNameMap>;
+
     static void buildPrettyNamesForNode(
         const QueryPlan::Node * node,
-        std::unordered_map<String, PrettyColumnName> & pretty_names,
-        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+        PrettyColumnNameMap & pretty_names,
+        PrettyRuntimeFilterNameMap & runtime_filter_names,
+        PrettySetNameMap & subquery_set_names,
+        PerPlanColumnMaps & per_plan_columns,
+        bool only_built_child_plans,
+        FragmentWalk * fragment_walk = nullptr)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names);
+            buildPrettyNamesForNode(
+                *it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans, fragment_walk);
+
+        /// Continue into the fragment that sends to a receive step, so that the fragments are walked in the order of the
+        /// plan before the cut, as plain `EXPLAIN` walks it, and in the same naming scope.
+        if (fragment_walk)
+        {
+            if (auto it = fragment_walk->inputs.find(node->step.get()); it != fragment_walk->inputs.end())
+            {
+                const auto * sending_plan = it->second;
+                if (fragment_walk->visited.insert(sending_plan).second && sending_plan->getRootNode())
+                    buildPrettyNamesForNode(
+                        sending_plan->getRootNode(), pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns,
+                        only_built_child_plans, fragment_walk);
+            }
+        }
+
+        for (auto * child_plan :
+            only_built_child_plans ? node->step->getBuiltChildPlans() : node->step->getChildPlans(/*for_explain=*/ true))
+        {
+            if (child_plan && child_plan->getRootNode())
+            {
+                /// A child plan is a separate naming scope. Build its column names into their own map so
+                /// the parent sees the child's output columns as leaves (trimmed identifiers) rather than
+                /// the child's internal expressions; otherwise nested plans compound the rendering, e.g.
+                /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
+                /// so they stay shared across the whole tree.
+                auto & child_columns = per_plan_columns[child_plan];
+                buildPrettyNamesForNode(
+                    child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns,
+                    only_built_child_plans, fragment_walk);
+            }
+        }
 
         const auto & step = node->step;
         const auto & step_name = step->getName();
@@ -611,9 +690,13 @@ namespace QueryPlanFormat
                 if (output->type != ActionsDAG::ActionType::INPUT)
                     pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names));
         }
-        else if (step_name == "Aggregating" || step_name == "AggregatingProjection")
+        else if (step_name == "Aggregating")
         {
             addAggregatesPrettyNames(static_cast<const AggregatingStep *>(step.get())->getParams(), pretty_names);
+        }
+        else if (step_name == "AggregatingProjection")
+        {
+            addAggregatesPrettyNames(static_cast<const AggregatingProjectionStep *>(step.get())->getParams(), pretty_names);
         }
         else if (step_name == "MergingAggregated")
         {
@@ -646,7 +729,7 @@ namespace QueryPlanFormat
             else
                 build_column = trimColumnIdentifier(filter_col);
 
-            String build_table = findSourceTableName(node);
+            String build_table = findSourceTableName(node, fragment_walk ? &fragment_walk->inputs : nullptr);
             runtime_filter_names.try_emplace(rf_step->getFilterName(),
                 RuntimeFilterInfo{std::move(pretty_name), std::move(build_column), std::move(build_table)});
         }
@@ -697,14 +780,58 @@ namespace QueryPlanFormat
         }
     }
 
-    void buildPrettyNamesMap(
-        const QueryPlan & plan,
-        std::unordered_map<String, PrettyColumnName> & pretty_names,
-        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+    static PrettyNamesPerPlan makePrettyNamesPerPlan(
+        PerPlanColumnMaps per_plan_columns,
+        const PrettyRuntimeFilterNameMap & runtime_filter_names,
+        const PrettySetNameMap & subquery_set_names)
     {
-        if (plan.getRootNode())
-            buildPrettyNamesForNode(plan.getRootNode(), pretty_names, runtime_filter_names, subquery_set_names);
+        PrettyNamesPerPlan result;
+        for (auto & [plan_ptr, columns] : per_plan_columns)
+        {
+            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
+            for (const auto & [hash, name] : subquery_set_names)
+                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
+        }
+        return result;
+    }
+
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool only_built_child_plans)
+    {
+        /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
+        /// so their numbering stays consistent regardless of plan boundaries. Only column names are scoped.
+        PrettyRuntimeFilterNameMap runtime_filter_names;
+        PrettySetNameMap subquery_set_names;
+        PerPlanColumnMaps per_plan_columns;
+
+        /// Reserve the top plan's slot first so it is keyed even if it has no expression columns.
+        auto & top_columns = per_plan_columns[&plan];
+        auto * root = plan.getRootNode();
+        if (root)
+            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans);
+
+        return makePrettyNamesPerPlan(std::move(per_plan_columns), runtime_filter_names, subquery_set_names);
+    }
+
+    PrettyNamesPerPlan buildPrettyNamesForFragments(const VectorWithMemoryTracking<const QueryPlan *> & fragment_plans, const FragmentInputs & fragment_inputs)
+    {
+        PrettyRuntimeFilterNameMap runtime_filter_names;
+        PrettySetNameMap subquery_set_names;
+        PerPlanColumnMaps per_plan_columns;
+        /// The fragments were one plan before the cut, so they share one column naming scope.
+        PrettyColumnNameMap fragment_columns;
+
+        FragmentWalk fragment_walk{.inputs = fragment_inputs, .visited = {}};
+        for (const auto * plan : fragment_plans)
+            if (fragment_walk.visited.insert(plan).second && plan->getRootNode())
+                buildPrettyNamesForNode(
+                    plan->getRootNode(), fragment_columns, runtime_filter_names, subquery_set_names, per_plan_columns,
+                    /*only_built_child_plans=*/ false, &fragment_walk);
+
+        for (const auto * plan : fragment_plans)
+            per_plan_columns[plan] = fragment_columns;
+
+        return makePrettyNamesPerPlan(std::move(per_plan_columns), runtime_filter_names, subquery_set_names);
     }
 
 }

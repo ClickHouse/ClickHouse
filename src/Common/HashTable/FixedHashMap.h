@@ -22,9 +22,9 @@ struct FixedHashMapCell
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
-    const Mapped & getMapped() const { return mapped; }
+    [[nodiscard]] const Mapped & getMapped() const { return mapped; }
 
-    bool isZero(const State &) const { return !full; }
+    [[nodiscard]] bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
 
     /// Similar to FixedHashSetCell except that we need to contain a pointer to the Mapped field.
@@ -41,9 +41,9 @@ struct FixedHashMapCell
         Key key;
         FixedHashMapCell * ptr;
 
-        const Key & getKey() const { return key; }
+        [[nodiscard]] const Key & getKey() const { return key; }
         Mapped & getMapped() { return ptr->mapped; }
-        const Mapped & getMapped() const { return ptr->mapped; }
+        [[nodiscard]] const Mapped & getMapped() const { return ptr->mapped; }
         const value_type getValue() const { return {key, ptr->mapped}; } /// NOLINT
     };
 };
@@ -67,9 +67,9 @@ struct FixedHashMapImplicitZeroCell
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
-    const Mapped & getMapped() const { return mapped; }
+    [[nodiscard]] const Mapped & getMapped() const { return mapped; }
 
-    bool isZero(const State &) const { return !mapped; }
+    [[nodiscard]] bool isZero(const State &) const { return !mapped; }
     void setZero() { mapped = {}; }
 
     /// Similar to FixedHashSetCell except that we need to contain a pointer to the Mapped field.
@@ -86,9 +86,9 @@ struct FixedHashMapImplicitZeroCell
         Key key;
         FixedHashMapImplicitZeroCell * ptr;
 
-        const Key & getKey() const { return key; }
+        [[nodiscard]] const Key & getKey() const { return key; }
         Mapped & getMapped() { return ptr->mapped; }
-        const Mapped & getMapped() const { return ptr->mapped; }
+        [[nodiscard]] const Mapped & getMapped() const { return ptr->mapped; }
         const value_type getValue() const { return {key, ptr->mapped}; } /// NOLINT
     };
 };
@@ -135,7 +135,7 @@ public:
             if (!this->buf[i].isZero(*this))
             {
                 typename Self::LookupResult res_it;
-                bool inserted;
+                bool inserted = false;
                 that.emplace(static_cast<Key>(i), res_it, inserted, i);
                 func(res_it->getMapped(), this->buf[i].getMapped(), inserted);
             }
@@ -148,7 +148,7 @@ public:
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
             typename Self::LookupResult res_it;
-            bool inserted;
+            bool inserted = false;
             that.emplace(it->getKey(), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
@@ -194,7 +194,7 @@ public:
     Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
         if (inserted)
             new (&it->getMapped()) Mapped();
@@ -226,5 +226,15 @@ using FixedHashMapWithSizeBits = FixedHashMap<
     Mapped,
     FixedHashMapCell<Key, Mapped>,
     FixedHashTableStoredSize<FixedHashMapCell<Key, Mapped>>,
+    HashTableAllocator,
+    size_bits>;
+
+/// Keeps no element counter, so `size` walks all cells. Cheaper for a table that several threads fill at once.
+template <typename Key, typename Mapped, size_t size_bits, typename Cell = FixedHashMapCell<Key, Mapped>>
+using FixedHashMapWithSizeBitsAndCalculatedSize = FixedHashMap<
+    Key,
+    Mapped,
+    Cell,
+    FixedHashTableCalculatedSize<Cell>,
     HashTableAllocator,
     size_bits>;

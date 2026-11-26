@@ -1,3 +1,4 @@
+-- Tags: long, no-asan, no-ubsan, no-msan
 -- Regression test for non-monotonic Time64 conversion in MergeTreeSetIndex.
 -- Converting from DateTime to Time64 extracts time-of-day component, which is not monotonic.
 

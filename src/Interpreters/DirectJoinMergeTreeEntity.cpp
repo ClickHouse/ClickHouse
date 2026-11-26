@@ -27,6 +27,7 @@
 #include <Planner/Utils.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/ProfileEvents.h>
 #include <Functions/CastOverloadResolver.h>
 
 
@@ -57,6 +58,10 @@ DirectJoinMergeTreeEntity::DirectJoinMergeTreeEntity(
 {
     if (filter_dag.getOutputs().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct join with merge tree supports only single-column key");
+
+    /// The per-key-batch lookup read is stamped `disableQueryConditionCache` at plan time because its
+    /// hand-built filter has one identity for every batch, and that stamp is not part of a serialized read.
+    plan_optimization_settings.enable_parallel_replicas = false;
 }
 
 Names DirectJoinMergeTreeEntity::getPrimaryKey() const
@@ -88,8 +93,8 @@ static std::unique_ptr<FilterStep> buildFilterStepWithIn(const ColumnWithTypeAnd
     DataTypePtr set_type = std::make_shared<DataTypeSet>();
     auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{key_column}, false, SizeLimits{});
 
-    auto set_column = ColumnSet::create(1, future_set);
-    const auto * set_node = &filter_dag.addColumn(ColumnWithTypeAndName(std::move(set_column), set_type, "__set"));
+    auto set_column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
+    const auto * set_node = &filter_dag.addColumn(std::move(set_column), std::move(set_type), "__set");
 
     auto in_function = FunctionFactory::instance().get("in", nullptr);
     const auto * filter_node = &filter_dag.addFunction(in_function, {key_node, set_node}, {});
@@ -107,8 +112,8 @@ static std::unique_ptr<FilterStep> buildFilterStepWithIn(const ColumnWithTypeAnd
 
 Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
 {
-    plan.optimize(plan_optimization_settings);
-
+    /// `buildQueryPipeline` optimizes internally, which also lets it decide the
+    /// distributed-to-local fallback before the optimization passes.
     auto pipeline_builder = plan.buildQueryPipeline(plan_optimization_settings, pipeline_build_settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
 
@@ -149,6 +154,15 @@ Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
     }
 
     return result_chunk;
+}
+
+/// The type default differs from the column zero for an `Enum` (its smallest value) and for composites containing one.
+static void insertTypeDefaults(IColumn & column, const IDataType & type, size_t count)
+{
+    if (type.isDefaultInsertTrivial())
+        column.insertManyDefaults(count);
+    else
+        type.insertManyDefaultsInto(column, count);
 }
 
 Chunk DirectJoinMergeTreeEntity::getByKeys(
@@ -194,8 +208,8 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     if (!found_chunk)
     {
         auto result_columns = sample_block.cloneEmptyColumns();
-        for (auto & col : result_columns)
-            col->insertManyDefaults(num_keys);
+        for (size_t i = 0; i < result_columns.size(); ++i)
+            insertTypeDefaults(*result_columns[i], *sample_block.getByPosition(i).type, num_keys);
         out_null_map.resize_fill(num_keys, 0);
         return Chunk(std::move(result_columns), num_keys);
     }
@@ -266,12 +280,21 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
 
     /// Append default values to each result column to handle not found keys.
     /// These serve as the target for the sentinel index (num_found_rows) used when keys are not found.
-    for (const auto & col : found_columns)
-        col->insertDefault();
+    for (size_t i = 0; i < found_columns.size(); ++i)
+        insertTypeDefaults(*found_columns[i], *plan_header->getByPosition(i).type, 1);
 
+    /// Remap `found_columns` (in `plan_header` order) into `sample_block` order so the result
+    /// matches the schema the caller expects. `sample_block` already encodes the empty-means-all
+    /// contract: when `required_columns` is empty it is the full plan header, otherwise it is the
+    /// requested subset in the requested order.
+    const auto & result_names = sample_block.getNames();
     MutableColumns result_columns;
-    for (auto && col : found_columns)
-        result_columns.push_back(IColumn::mutate(col->index(*selector, 0)));
+    result_columns.reserve(result_names.size());
+    for (const auto & column_name : result_names)
+    {
+        size_t plan_idx = plan_header->getPositionByName(column_name);
+        result_columns.push_back(IColumn::mutate(found_columns[plan_idx]->index(*selector, 0)));
+    }
 
     return Chunk(std::move(result_columns), out_offsets[out_offsets.size() - 1]);
 }

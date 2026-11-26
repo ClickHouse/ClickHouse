@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionAppendTrailingCharIfAbsent : public IFunction
+class FunctionAppendTrailingCharIfAbsent final : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
@@ -28,41 +28,34 @@ public:
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 
 private:
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"s", &isString, nullptr, "String"},
-            {"c", &isString, nullptr, "String"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeString>();
+        return "(String, const String) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & column = arguments[0].column;
         const auto & column_char = arguments[1].column;
@@ -135,9 +128,9 @@ Appends character `c` to string `s` if `s` is non-empty and does not end with ch
         "Usage example",
         "SELECT appendTrailingCharIfAbsent('https://example.com', '/');",
         R"(
-┌─appendTraili⋯.com', '/')─┐
-│ https://example.com/     │
-└──────────────────────────┘
+┌─appendTrailingCharIfAbsent('https://example.com', '/')─┐
+│ https://example.com/                                   │
+└────────────────────────────────────────────────────────┘
         )"
     }
     };

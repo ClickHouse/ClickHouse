@@ -12,7 +12,7 @@ namespace
 
 uint64_t getTimestampMillisecond()
 {
-    timespec tp;
+    timespec tp{};
     clock_gettime(CLOCK_REALTIME, &tp);/// NOLINT(cert-err33-c)
     const uint64_t sec = tp.tv_sec;
     return sec * 1000 + tp.tv_nsec / 1000000;
@@ -29,26 +29,23 @@ public:
         return std::make_shared<FunctionGenerateUUIDv7>();
     }
 
-    String getName() const final {  return name; }
-    size_t getNumberOfArguments() const final { return 0; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const final { return false; }
-    bool useDefaultImplementationForNulls() const final { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
-    bool isVariadic() const final { return true; }
+    [[nodiscard]] String getName() const final {  return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const final { return 0; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const final { return false; }
+    /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
+    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const final { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const final { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const final { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
+    [[nodiscard]] bool isVariadic() const final { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args;
-        FunctionArgumentDescriptors optional_args{
-            {"expr", nullptr, nullptr, "Arbitrary expression"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeUUID>();
+        return "([Any]) -> UUID";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UUID>::create();
         typename ColumnVector<UUID>::Container & vec_to = col_res->getData();
@@ -73,21 +70,19 @@ public:
     }
 };
 
+}
+
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
     /// generateUUIDv7 documentation
     FunctionDocumentation::Description description = R"(
-Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
+Generates a [version 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](/reference/data-types/uuid) as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-:::note
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
     )";
     FunctionDocumentation::Syntax syntax = "generateUUIDv7([expr])";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv7.", {"UUID"}};
     FunctionDocumentation::Examples examples = {
@@ -121,6 +116,5 @@ SELECT generateUUIDv7(1), generateUUIDv7(1);
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGenerateUUIDv7>(documentation);
-}
 }
 }

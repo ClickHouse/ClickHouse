@@ -1,3 +1,11 @@
+<!--
+Linked issues and pull requests. Use full GitHub URLs, one relationship per line; delete the lines you don't need.
+
+Closes: https://github.com/ClickHouse/ClickHouse/issues/NNNNN   (auto-closes the issue when this PR is merged into the default branch)
+Related: https://github.com/ClickHouse/ClickHouse/pull/NNNNN
+-->
+
+
 ### Changelog category (leave one):
 - New Feature
 - Experimental Feature

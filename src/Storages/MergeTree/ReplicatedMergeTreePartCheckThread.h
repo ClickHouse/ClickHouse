@@ -33,7 +33,7 @@ struct ReplicatedCheckResult
     CheckResult status;
     Action action = None;
 
-    bool exists_in_zookeeper;
+    bool exists_in_zookeeper{};
     MergeTreeDataPartPtr part;
     time_t recheck_after_seconds = 0;
 };
@@ -57,15 +57,24 @@ public:
 
     /// Add a part (for which there are suspicions that it is missing, damaged or not needed) in the queue for check.
     /// delay_to_check_seconds - check no sooner than the specified number of seconds.
-    void enqueuePart(const String & name, time_t delay_to_check_seconds = 0);
+    /// after_read_error - reading the part failed.
+    void enqueuePart(const String & name, time_t delay_to_check_seconds = 0, bool after_read_error = false);
 
     /// Get the number of parts in the queue for check.
     size_t size() const;
 
-    /// Check part by name
-    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr, bool throw_on_broken_projection = true);
+    /// Check part by name.
+    /// A part check that `stop` interrupted did not learn anything about the part. The background thread just
+    /// drops such a result, but a foreground `CHECK TABLE` must fail instead of reporting the part as broken,
+    /// so it passes `throw_if_cancelled` and gets `ABORTED`.
+    CheckResult checkPartAndFix(
+        const String & part_name,
+        std::optional<time_t> * recheck_after = nullptr,
+        bool throw_on_broken_projection = true,
+        bool throw_if_cancelled = false,
+        bool after_read_error = false);
 
-    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
+    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection, bool after_read_error = false);
 
     /// Pause parts check in a thread-safe way.
     /// The returned guard can be safely destroyed from any thread.
@@ -97,6 +106,7 @@ private:
         using TimePoint = std::chrono::steady_clock::time_point;
         String name;
         TimePoint time;
+        bool after_read_error = false;
     };
     using PartsToCheckQueue = std::list<PartToCheck>;
 
@@ -108,6 +118,12 @@ private:
     mutable std::mutex parts_mutex;
     StringSet parts_set;
     PartsToCheckQueue parts_queue;
+
+    /// Serializes cancelRemovedPartsCheck against another such call and against enqueuePart.
+    /// cancelRemovedPartsCheck drops parts_mutex while removing parts from ZooKeeper; without this
+    /// mutex a concurrent cancel or enqueue could mutate parts_queue in that gap and break the
+    /// recheck invariant. Lock order: cancel_removed_parts_mutex before parts_mutex.
+    std::mutex cancel_removed_parts_mutex;
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };

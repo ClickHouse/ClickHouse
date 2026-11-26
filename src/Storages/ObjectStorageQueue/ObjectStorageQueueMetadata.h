@@ -1,8 +1,10 @@
 #pragma once
-#include "config.h"
 
 #include <filesystem>
 #include <optional>
+#include <mutex>
+#include <unordered_set>
+#include <unordered_map>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -12,6 +14,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/CacheBase.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
@@ -80,6 +83,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
+        size_t processing_state_cache_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -99,6 +103,8 @@ public:
     /// - adjust, if needed and allowed, passed queue settings according to
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
+    /// - if not `strict` or from a named collection, a table is loaded even if its source differs from keeper;
+    /// - if keeper has no `source` (metadata written by an older version), save the table's `source` there;
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
         const fs::path & zookeeper_path,
@@ -106,7 +112,8 @@ public:
         const ColumnsDescription & columns,
         const std::string & format,
         const ContextPtr & context,
-        bool is_attach,
+        const ObjectStorageQueueTableMetadata::Source & source,
+        bool strict,
         LoggerPtr log);
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
@@ -131,6 +138,9 @@ public:
     FileMetadataPtr getFileMetadata(
         const std::string & path,
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+
+    bool tryAcquireExclusiveProcessing(const std::string & path);
+    void releaseExclusiveProcessing(const std::string & path);
 
     /// Register table in keeper metadata.
     /// active = false:
@@ -195,6 +205,21 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+    size_t getProcessingStateCacheTTLSeconds() const { return processing_state_cache_ttl_seconds; }
+
+    size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
+
+    /// Update the "newest object seen" watermark (used together with
+    /// updateNewestCommittedTimestamp() to estimate per-table pipeline lag).
+    /// `timestamp` is the object's own last-modified time, as reported by object storage.
+    /// Tracked per `storage_id`, because this metadata object can be shared by several
+    /// tables pointing at the same Keeper path.
+    void updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id);
+    /// Update the "newest object committed" watermark, see updateNewestSeenTimestamp().
+    void updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id);
+    /// Forget both watermarks of the table and remove their metrics, so that a table which was shut down
+    /// does not leave stale series. A later update starts again from an empty watermark.
+    void removePipelineLagMetrics(const StorageID & storage_id);
 
 private:
     void cleanupThreadFunc();
@@ -229,6 +254,18 @@ private:
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
+    std::atomic<size_t> processing_state_cache_ttl_seconds;
+
+    /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().
+    /// Keyed by `StorageID::getFullTableName()`, because this metadata object can be
+    /// shared by several tables pointing at the same Keeper path.
+    struct PipelineLagWatermarks
+    {
+        time_t newest_seen = 0;
+        time_t newest_committed = 0;
+    };
+    std::mutex pipeline_lag_watermarks_mutex;
+    std::unordered_map<String, PipelineLagWatermarks> pipeline_lag_watermarks;
 
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
@@ -240,6 +277,8 @@ private:
     BackgroundSchedulePoolTaskHolder cleanup_task;
 
     FileStatusesCache local_file_statuses;
+    std::mutex exclusive_processing_paths_mutex;
+    std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths TSA_GUARDED_BY(exclusive_processing_paths_mutex);
 
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().

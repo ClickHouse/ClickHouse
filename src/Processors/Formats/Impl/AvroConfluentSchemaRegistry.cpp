@@ -2,15 +2,28 @@
 
 #if USE_AVRO
 
+#include <algorithm>
+
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
+
+#include <base/sleep.h>
 
 #include <Formats/FormatSettings.h>
 
 #include <IO/HTTPCommon.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
 #include <Compiler.hh>
 #include <ValidSchema.hh>
@@ -21,7 +34,9 @@
 #include <Poco/Net/HTTPCredentials.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/StreamCopier.h>
+#include <Poco/Net/NetException.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/URI.h>
 
 
@@ -41,6 +56,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int INCOMPATIBLE_SCHEMA;
+    extern const int NETWORK_ERROR;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
+    extern const int SOCKET_TIMEOUT;
 }
 
 ConfluentSchemaRegistry::ConfluentSchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size)
@@ -63,13 +81,90 @@ ConnectionTimeouts buildTimeouts(const FormatSettings::AvroSchemaRegistryTimeout
         .withReceiveTimeout(timeouts.receive_timeout);
 }
 
+/// Decide whether a `DB::Exception` thrown while talking to the registry should
+/// be retried. We only retry on transport-level errors; schema/protocol errors
+/// stay fatal so a misconfigured user does not wait through every retry.
+bool isRetryableException(const Exception & e)
+{
+    const int code = e.code();
+    if (code == ErrorCodes::NETWORK_ERROR
+        || code == ErrorCodes::SOCKET_TIMEOUT
+        || code == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
+        return true;
+    if (const auto * http = dynamic_cast<const HTTPException *>(&e))
+    {
+        const auto status = http->getHTTPStatus();
+        return status == Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT
+            || status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS
+            || (static_cast<int>(status) >= 500 && static_cast<int>(status) < 600);
+    }
+    return false;
 }
 
-avro::ValidSchema ConfluentSchemaRegistry::getSchema(uint32_t id, const FormatSettings::AvroSchemaRegistryTimeouts & timeouts)
+/// Sleeps in short steps, so that `KILL QUERY` and an expired `max_execution_time` interrupt the backoff.
+void sleepBeforeRetry(UInt64 milliseconds)
+{
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
+    static constexpr UInt64 check_interval_ms = 100;
+    while (true)
+    {
+        /// Throws on `KILL QUERY` and in the `throw` overflow mode; the `break` mode keeps waiting.
+        if (query_status)
+            std::ignore = query_status->checkTimeLimit();
+        if (milliseconds == 0)
+            return;
+        const UInt64 step = std::min(milliseconds, check_interval_ms);
+        sleepForMilliseconds(step);
+        milliseconds -= step;
+    }
+}
+
+/// Run `op` once, then retry on transient transport failures. Backoff doubles
+/// each attempt up to a 10-second cap.
+template <typename Op>
+auto runWithRetry(
+    const FormatSettings::AvroSchemaRegistryRetryConfig & retry,
+    const std::string & operation_for_log,
+    Op && op) -> decltype(op())
+{
+    static constexpr UInt64 max_backoff_ms = 10000;
+    /// Cap each individual sleep (including the first) at `max_backoff_ms`.
+    UInt64 backoff_ms = std::min<UInt64>(std::max<UInt64>(retry.initial_backoff_ms, 1), max_backoff_ms);
+    UInt64 attempt = 0;
+    while (true)
+    {
+        try
+        {
+            return op();
+        }
+        catch (const Exception & e)
+        {
+            if (attempt >= retry.max_retries || !isRetryableException(e))
+                throw;
+            LOG_DEBUG(
+                getLogger("ConfluentSchemaRegistry"),
+                "Retry {}/{} for {} after transient error: {}",
+                attempt + 1, retry.max_retries, operation_for_log, e.displayText());
+        }
+        sleepBeforeRetry(backoff_ms);
+        backoff_ms = std::min(backoff_ms * 2, max_backoff_ms);
+        ++attempt;
+    }
+}
+
+}
+
+avro::ValidSchema ConfluentSchemaRegistry::getSchema(
+    uint32_t id,
+    const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
+    const FormatSettings::AvroSchemaRegistryRetryConfig & retry)
 {
     auto [schema, loaded] = schema_cache.getOrSet(
         id,
-        [this, id, &timeouts]() { return std::make_shared<avro::ValidSchema>(fetchSchema(id, timeouts)); });
+        [this, id, &timeouts, &retry]() { return std::make_shared<avro::ValidSchema>(fetchSchema(id, timeouts, retry)); });
     return *schema;
 }
 
@@ -77,6 +172,8 @@ void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRe
 {
     if (!url.getUserInfo().empty())
     {
+        Context::getGlobalContextInstance()->getHTTPHeaderFilter().checkURIUserInfo(url);
+
         Poco::Net::HTTPCredentials http_credentials;
         Poco::Net::HTTPBasicCredentials http_basic_credentials;
 
@@ -97,59 +194,86 @@ void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRe
     }
 }
 
-avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(uint32_t id, const FormatSettings::AvroSchemaRegistryTimeouts & timeouts)
+avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
+    uint32_t id,
+    const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
+    const FormatSettings::AvroSchemaRegistryRetryConfig & retry)
 {
-    try
+    auto do_fetch = [&]() -> avro::ValidSchema
     {
         try
         {
-            Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-            LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Fetching schema id = {} from url {}", id, url.toString());
+            try
+            {
+                Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
+                std::string masked_url = url.toString();
+                maskURIUserinfo(masked_url);
+                maskPresignedURLParameters(masked_url);
+                LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Fetching schema id = {} from url {}", id, masked_url);
 
-            auto connection_timeouts = buildTimeouts(timeouts);
+                auto connection_timeouts = buildTimeouts(timeouts);
 
-            Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-            if (url.getPort())
-                request.setHost(url.getHost(), url.getPort());
-            else
-                request.setHost(url.getHost());
+                Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                if (url.getPort())
+                    request.setHost(url.getHost(), url.getPort());
+                else
+                    request.setHost(url.getHost());
 
-            applyAuth(url, request);
+                applyAuth(url, request);
 
-            auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, connection_timeouts);
-            session->sendRequest(request);
+                auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, connection_timeouts);
+                sendHTTPRequest(*session, request)->finalize();
 
-            Poco::Net::HTTPResponse response;
-            std::istream * response_body = receiveResponse(*session, request, response, false);
+                Poco::Net::HTTPResponse response;
+                auto response_body = receiveResponse(*session, request, response, false);
 
-            Poco::JSON::Parser parser;
-            auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
+                String response_text;
+                readStringUntilEOF(response_text, *response_body);
 
-            auto schema = json_body->getValue<std::string>("schema");
-            LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Successfully fetched schema id = {}\n{}", id, schema);
-            return avro::compileJsonSchemaFromString(schema);
+                Poco::JSON::Parser parser;
+                auto json_body = parser.parse(response_text).extract<Poco::JSON::Object::Ptr>();
+
+                auto schema = json_body->getValue<std::string>("schema");
+                LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Successfully fetched schema id = {}\n{}", id, schema);
+                return avro::compileJsonSchemaFromString(schema, MAX_AVRO_SCHEMA_DEPTH);
+            }
+            catch (const Exception &)
+            {
+                throw;
+            }
+            catch (const Poco::Net::NetException & e)
+            {
+                /// Connection refused, DNS failure, host unreachable, broken pipe.
+                throw Exception(ErrorCodes::NETWORK_ERROR, "{}: {}", e.displayText(), e.message());
+            }
+            catch (const Poco::TimeoutException & e)
+            {
+                throw Exception(ErrorCodes::SOCKET_TIMEOUT, "{}: {}", e.displayText(), e.message());
+            }
+            catch (const Poco::Exception & e)
+            {
+                throw Exception(Exception::CreateFromPocoTag{}, e);
+            }
+            catch (const avro::Exception & e)
+            {
+                throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
+            }
         }
-        catch (const Exception &)
+        catch (Exception & e)
         {
+            e.addMessage("while fetching schema id = " + std::to_string(id));
             throw;
         }
-        catch (const Poco::Exception & e)
-        {
-            throw Exception(Exception::CreateFromPocoTag{}, e);
-        }
-        catch (const avro::Exception & e)
-        {
-            throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
-        }
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while fetching schema id = " + std::to_string(id));
-        throw;
-    }
+    };
+
+    return runWithRetry(retry, "fetch schema id = " + std::to_string(id), do_fetch);
 }
 
-uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, const avro::ValidSchema & schema, const FormatSettings::AvroSchemaRegistryTimeouts & timeouts)
+uint32_t ConfluentSchemaRegistry::registerSchema(
+    const std::string & subject,
+    const avro::ValidSchema & schema,
+    const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
+    const FormatSettings::AvroSchemaRegistryRetryConfig & retry)
 {
     std::string schema_json = schema.toJson(false);
 
@@ -164,7 +288,7 @@ uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, co
     const UInt64 schema_hash = sipHash64(schema_json);
     cache_key.append(reinterpret_cast<const char *>(&schema_hash), sizeof(schema_hash));
 
-    auto do_register = [&]() -> uint32_t
+    auto do_register_one_attempt = [&]() -> uint32_t
     {
         try
         {
@@ -177,7 +301,10 @@ uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, co
                 /// Build the request path directly to preserve percent-encoding.
                 /// Poco::URI normalizes paths by decoding %2F -> /, which breaks
                 /// subjects containing slashes.
-                std::string request_path = base_url.getPath() + "/subjects/" + encoded_subject + "/versions";
+                /// `getPath` returns the decoded path, so encode it again like `getPathAndQuery` does for the schema fetch.
+                std::string request_path;
+                Poco::URI::encode(base_url.getPath(), "?#", request_path);
+                request_path += "/subjects/" + encoded_subject + "/versions";
                 LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Registering schema under subject '{}' at path {}", subject, request_path);
 
                 auto connection_timeouts = buildTimeouts(timeouts);
@@ -200,16 +327,17 @@ uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, co
                 request.setContentLength(body_str.size());
 
                 auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, base_url, connection_timeouts);
-                std::ostream & os = session->sendRequest(request);
-                os << body_str;
+                auto request_body = sendHTTPRequest(*session, request);
+                writeString(body_str, *request_body);
+                request_body->finalize();
 
                 Poco::Net::HTTPResponse response;
-                std::istream & response_stream = session->receiveResponse(response);
+                auto response_stream = receiveHTTPResponse(*session, response);
 
                 if (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONFLICT)
                 {
                     std::string response_body;
-                    Poco::StreamCopier::copyToString(response_stream, response_body);
+                    readStringUntilEOF(response_body, *response_stream);
 
                     /// Confluent Schema Registry returns a JSON object with an "error_code" and a human-readable "message".
                     std::string registry_message = response_body;
@@ -234,10 +362,13 @@ uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, co
                         subject, registry_message);
                 }
 
-                assertResponseIsOk(request.getURI(), response, response_stream, false);
+                assertResponseIsOk(request.getURI(), response, *response_stream, false);
+
+                std::string response_text;
+                readStringUntilEOF(response_text, *response_stream);
 
                 Poco::JSON::Parser parser;
-                auto json_body = parser.parse(response_stream).extract<Poco::JSON::Object::Ptr>();
+                auto json_body = parser.parse(response_text).extract<Poco::JSON::Object::Ptr>();
                 uint32_t schema_id = json_body->getValue<uint32_t>("id");
                 LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Successfully registered schema under subject '{}', id = {}", subject, schema_id);
                 return schema_id;
@@ -245,6 +376,14 @@ uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, co
             catch (const Exception &)
             {
                 throw;
+            }
+            catch (const Poco::Net::NetException & e)
+            {
+                throw Exception(ErrorCodes::NETWORK_ERROR, "{}: {}", e.displayText(), e.message());
+            }
+            catch (const Poco::TimeoutException & e)
+            {
+                throw Exception(ErrorCodes::SOCKET_TIMEOUT, "{}: {}", e.displayText(), e.message());
             }
             catch (const Poco::Exception & e)
             {
@@ -261,6 +400,8 @@ uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, co
             throw;
         }
     };
+
+    auto do_register = [&]() { return runWithRetry(retry, "register schema under subject '" + subject + "'", do_register_one_attempt); };
 
     /// `getOrSet` serializes concurrent misses on the same key, so only one
     /// thread issues the POST and the rest wait for the cached result.
@@ -280,15 +421,15 @@ uint32_t ConfluentSchemaRegistry::registerSchema(const std::string & subject, co
 
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 
-/// Cache of Schema Registry URL -> ConfluentSchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry>
+/// Cache of Schema Registry URL hash -> ConfluentSchemaRegistry
+static CacheBase<UInt128, ConfluentSchemaRegistry, UInt128TrivialHash>
     schema_registry_cache(CurrentMetrics::AvroSchemaRegistryCacheBytes, CurrentMetrics::AvroSchemaRegistryCacheCells, SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
     const auto & base_url = format_settings.avro.schema_registry_url;
     auto [schema_registry, loaded] = schema_registry_cache.getOrSet(
-        base_url,
+        sipHash128(base_url.data(), base_url.size()),
         [base_url]()
         {
             return std::make_shared<ConfluentSchemaRegistry>(base_url);

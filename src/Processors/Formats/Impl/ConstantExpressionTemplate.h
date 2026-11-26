@@ -1,16 +1,19 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/TokenIterator.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
 
 struct LiteralInfo;
-using LiteralsInfo = std::vector<LiteralInfo>;
+using LiteralsInfo = VectorWithMemoryTracking<LiteralInfo>;
 struct SpecialParserType;
 
 class ExpressionActions;
@@ -18,6 +21,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct FormatSettings;
 struct Settings;
+
+class BlockMissingValues;
 
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.
@@ -35,18 +40,18 @@ class ConstantExpressionTemplate : boost::noncopyable
         static UInt64 getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
                                       const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
 
-        String dumpTemplate() const;
+        [[nodiscard]] String dumpTemplate() const;
 
         String result_column_name;
 
-        std::vector<String> tokens;
-        std::vector<size_t> token_after_literal_idx;
+        VectorWithMemoryTracking<String> tokens;
+        VectorWithMemoryTracking<size_t> token_after_literal_idx;
 
         Block literals;
         ExpressionActionsPtr actions_on_literals;
         Serializations serializations;
 
-        std::vector<SpecialParserType> special_parser;
+        VectorWithMemoryTracking<SpecialParserType> special_parser;
         bool null_as_default;
     };
 
@@ -55,7 +60,7 @@ public:
 
     class Cache : boost::noncopyable
     {
-        std::unordered_map<size_t, TemplateStructurePtr> cache;
+        UnorderedMapWithMemoryTracking<size_t, TemplateStructurePtr> cache;
         const size_t max_size;
 
     public:
@@ -85,7 +90,7 @@ public:
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
     ColumnPtr evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset = 0);
 
-    size_t rowsCount() const { return rows_count; }
+    [[nodiscard]] size_t rowsCount() const { return rows_count; }
 
 private:
     bool tryParseExpression(
@@ -94,6 +99,7 @@ private:
         const FormatSettings & format_settings,
         size_t & cur_column,
         const Settings & settings);
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     bool parseLiteralAndAssertType(
         ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * type, size_t column_idx, const Settings & settings);
 

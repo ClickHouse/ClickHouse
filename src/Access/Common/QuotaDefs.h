@@ -21,6 +21,7 @@ enum class QuotaType : uint8_t
     READ_BYTES,                             /// Number of bytes read from tables.
     EXECUTION_TIME,                         /// Total amount of query execution time in nanoseconds.
     WRITTEN_BYTES,                          /// Number of bytes written to tables.
+    WRITTEN_ROWS,                           /// Number of rows written to tables.
     FAILED_SEQUENTIAL_AUTHENTICATIONS,      /// Number of recent failed authentications.
     QUERIES_PER_NORMALIZED_HASH,            /// Max executions of any single normalized query.
 
@@ -38,11 +39,17 @@ struct QuotaTypeInfo
     const String max_allowed_usage_description;
     const bool output_as_float = false;
     const UInt64 output_denominator = 1;
-    String valueToString(QuotaValue value) const;
-    QuotaValue stringToValue(const String & str) const;
-    String valueToStringWithName(QuotaValue value) const;
+    [[nodiscard]] String valueToString(QuotaValue value) const;
+    [[nodiscard]] QuotaValue stringToValue(const String & str) const;
+    /// Converts a value expressed in the units the user writes (e.g. seconds for `execution_time`)
+    /// to the internal representation, throwing if the scaled value does not fit into `QuotaValue`.
+    [[nodiscard]] QuotaValue scaleToValue(Float64 unscaled) const;
+    [[nodiscard]] String valueToStringWithName(QuotaValue value) const;
     static const QuotaTypeInfo & get(QuotaType type);
 };
+
+/// Number of prefix bits used for IP address masking.
+using MaskBits = UInt8;
 
 /// Key to share quota consumption.
 /// Users with the same key share the same amount of resource.

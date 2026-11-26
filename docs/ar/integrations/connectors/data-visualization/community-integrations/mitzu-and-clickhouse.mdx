@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'Mitzu'
+slug: /integrations/mitzu
+keywords: ['ClickHouse', 'Mitzu', 'ربط', 'تكامل', 'واجهة المستخدم']
+description: 'Mitzu هو تطبيق لتحليلات المنتجات دون برمجة وwarehouse-native.'
+title: 'ربط Mitzu بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Mitzu هو تطبيق تحليلات المنتجات دون برمجة وwarehouse-native. وعلى غرار أدوات مثل Amplitude وMixpanel وPostHog، يتيح Mitzu للمستخدمين تحليل بيانات استخدام المنتج من دون الحاجة إلى خبرة في SQL أو Python.
+
+لكن، بخلاف هذه المنصات، لا ينسخ Mitzu بيانات استخدام المنتج الخاصة بالشركة. وبدلًا من ذلك، يُنشئ استعلامات SQL أصلية مباشرةً على مستودع البيانات أو بحيرة البيانات الحالية لدى الشركة.
+
+<div id="goal">
+  ## الهدف {#goal}
+</div>
+
+في هذا الدليل، سنتناول ما يلي:
+
+* تحليلات المنتجات المعتمدة مباشرة على مستودع البيانات
+* كيفية دمج Mitzu مع ClickHouse
+
+<Tip>
+  **مجموعات بيانات تجريبية**
+
+  إذا لم تكن لديك مجموعة بيانات لاستخدامها مع Mitzu، فيمكنك العمل باستخدام بيانات سيارات الأجرة في نيويورك.
+  مجموعة البيانات هذه متاحة في ClickHouse Cloud أو [يمكن تحميلها باتباع هذه التعليمات](/ar/get-started/sample-datasets/nyc-taxi).
+</Tip>
+
+هذا الدليل ليس سوى نظرة عامة مختصرة حول كيفية استخدام Mitzu. ويمكنك العثور على معلومات أكثر تفصيلًا في [وثائق Mitzu](https://docs.mitzu.io/).
+
+<Steps>
+  <Step title="جهّز بيانات الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="سجّل الدخول إلى Mitzu أو أنشئ حسابًا جديدًا" id="2-sign-in-or-sign-up-to-mitzu">
+    في البداية، انتقل إلى [https://app.mitzu.io](https://app.mitzu.io) لإنشاء حساب.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة تسجيل الدخول إلى Mitzu وتظهر فيها حقول البريد الإلكتروني وكلمة المرور](/images/integrations/data-visualization/mitzu_01.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="هيّئ مساحة عملك" id="3-configure-your-workspace">
+    بعد إنشاء مؤسسة، اتبع دليل الإعداد الأولي `Set up your workspace` في الشريط الجانبي الأيسر، ثم انقر على رابط `Connect Mitzu with your data warehouse`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة إعداد مساحة العمل في Mitzu وتظهر فيها خطوات الإعداد الأولي](/images/integrations/data-visualization/mitzu_02.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="ربط Mitzu بـ ClickHouse" id="4-connect-mitzu-to-clickhouse">
+    أولاً، اختر ClickHouse بوصفه نوع الاتصال، ثم أدخل بيانات الاتصال. بعد ذلك، انقر على زر `Test connection & Save` لحفظ الإعدادات.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة إعداد اتصال Mitzu بـ ClickHouse مع نموذج التهيئة](/images/integrations/data-visualization/mitzu_03.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="تهيئة جداول الأحداث" id="5-configure-event-tables">
+    بعد حفظ الاتصال، انتقل إلى علامة التبويب `Event tables` وانقر على الزر `Add table`. في مربع الحوار، اختر قاعدة البيانات والجداول التي تريد إضافتها إلى Mitzu.
+
+    حدّد جدولاً واحداً على الأقل باستخدام مربعات الاختيار، ثم انقر على الزر `Configure table`. سيفتح ذلك نافذة حوار يمكنك فيها تعيين أعمدة المفتاح لكل جدول.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![واجهة اختيار الجداول في Mitzu تعرض جداول قاعدة البيانات](/images/integrations/data-visualization/mitzu_04.webp)
+      </Frame>
+    </div>
+
+    <br />
+
+    > لإجراء تحليلات المنتج على إعداد ClickHouse لديك، يلزمك &gt; تحديد بعض أعمدة المفتاح في جدولك.
+    >
+    > وهذه الأعمدة هي:
+    >
+    > * **User id** - العمود الذي يحتوي على المعرّف الفريد للمستخدمين.
+    > * **Event time** - عمود الطابع الزمني لأحداثك.
+    > * اختياري&#91;**Event name**&#93; - يقسّم هذا العمود الأحداث إلى مقاطع إذا كان الجدول يحتوي على أنواع متعددة من الأحداث.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![تهيئة كتالوج الأحداث في Mitzu تعرض خيارات مطابقة الأعمدة](/images/integrations/data-visualization/mitzu_05.webp)
+      </Frame>
+    </div>
+
+    <br />
+
+    بعد تهيئة جميع الجداول، انقر على الزر `Save & update event catalog`، وسيكتشف Mitzu جميع الأحداث وخصائصها من الجدول المحدد أعلاه. قد تستغرق هذه الخطوة بضع دقائق بحسب حجم مجموعة البيانات لديك.
+  </Step>
+
+  <Step title="تنفيذ استعلامات التقسيم إلى شرائح" id="4-run-segmentation-queries">
+    يُعدّ تقسيم المستخدمين إلى شرائح في Mitzu سهلاً تماماً كما هو الحال في Amplitude أو Mixpanel أو PostHog.
+
+    تضم صفحة «استكشاف» منطقة تحديد على الجانب الأيسر لاختيار الأحداث، بينما يتيح لك القسم العلوي تهيئة النطاق الزمني.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![واجهة استعلام التقسيم إلى شرائح في Mitzu مع اختيار الأحداث وتهيئة النطاق الزمني](/images/integrations/data-visualization/mitzu_06.webp)
+      </Frame>
+    </div>
+
+    <br />
+
+    <Tip>
+      **عوامل التصفية والتجزئة**
+
+      تتم التصفية بالطريقة المعتادة: اختر خاصية (عمود في ClickHouse)، ثم حدّد من القائمة المنسدلة القيم التي تريد التصفية بناءً عليها.
+      يمكنك اختيار أي خاصية من خصائص الأحداث أو المستخدمين للتجزئة (راجع ما يلي لمعرفة كيفية دمج خصائص المستخدمين).
+    </Tip>
+  </Step>
+
+  <Step title="تنفيذ استعلامات مسار التحويل" id="5-run-funnel-queries">
+    اختر ما يصل إلى 9 خطوات لمسار التحويل، ثم حدّد النافذة الزمنية التي يجب أن يُكمل المستخدمون مسار التحويل خلالها.
+    واحصل على رؤى فورية حول معدلات التحويل دون كتابة سطر واحد من شيفرة SQL.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض تحليل مسار التحويل في Mitzu يوضح معدلات التحويل بين الخطوات](/images/integrations/data-visualization/mitzu_07.webp)
+      </Frame>
+    </div>
+
+    <br />
+
+    <Tip>
+      **تصوّر الاتجاهات**
+
+      اختر `Funnel trends` لعرض اتجاهات مسار التحويل بمرور الوقت.
+    </Tip>
+  </Step>
+
+  <Step title="تنفيذ استعلامات الاحتفاظ" id="6-run-retention-queries">
+    اختر خطوتين كحدٍّ أقصى لحساب معدل الاحتفاظ. اختر فترة الاحتفاظ للنافذة المتكررة لـ
+    احصل على رؤى فورية حول معدل التحويل دون كتابة سطر واحد من شيفرة SQL.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![تحليل الاحتفاظ في Mitzu يعرض معدلات الاحتفاظ لكل مجموعة](/images/integrations/data-visualization/mitzu_08.webp)
+      </Frame>
+    </div>
+
+    <br />
+
+    <Tip>
+      **الاحتفاظ حسب المجموعة**
+
+      اختر `Weekly cohort retention` لعرض تغيّر معدلات الاحتفاظ لديك بمرور الوقت.
+    </Tip>
+  </Step>
+
+  <Step title="تشغيل استعلامات الرحلة" id="7-run-journey-queries">
+    اختر ما يصل إلى 9 خطوات لمسار التحويل، وحدّد النافذة الزمنية التي ينبغي للمستخدمين إكمال الرحلة خلالها. يقدّم لك مخطط الرحلة في Mitzu خريطة مرئية لكل مسار يسلكه المستخدمون عبر الأحداث المحددة.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![تصور الرحلة في Mitzu يعرض تدفق مسارات المستخدمين بين الأحداث](/images/integrations/data-visualization/mitzu_09.webp)
+      </Frame>
+    </div>
+
+    <br />
+
+    <Tip>
+      **تقسيم الخطوات**
+
+      يمكنك اختيار خاصية في مقطع `Break down` للتمييز بين المستخدمين ضمن الخطوة نفسها.
+    </Tip>
+
+    <br />
+  </Step>
+
+  <Step title="تنفيذ استعلامات الإيرادات" id="8-run-revenue-queries">
+    عند تهيئة إعدادات الإيرادات، يستطيع Mitzu حساب إجمالي الإيرادات الشهرية المتكررة (MRR) وعدد الاشتراكات استنادًا إلى أحداث الدفع لديك.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات تحليل الإيرادات في Mitzu تعرض مقاييس MRR](/images/integrations/data-visualization/mitzu_10.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="SQL أصلي" id="9-sql-native">
+    تعتمد Mitzu على SQL بشكل أصلي، أي أنها تولّد شيفرة SQL أصلية انطلاقًا من التهيئة التي تختارها في صفحة «استكشاف».
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض توليد شيفرة SQL في Mitzu يُظهر استعلام ClickHouse أصليًا](/images/integrations/data-visualization/mitzu_11.webp)
+      </Frame>
+    </div>
+
+    <br />
+
+    <Tip>
+      **تابع عملك في إحدى أدوات ذكاء الأعمال**
+
+      إذا واجهتك قيود في واجهة UI الخاصة بـ Mitzu، فانسخ شيفرة SQL وتابع عملك في إحدى أدوات ذكاء الأعمال.
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="mitzu-support">
+  ## دعم Mitzu {#mitzu-support}
+</div>
+
+إذا كنت بحاجة إلى المساعدة، فلا تتردد في التواصل معنا على [support@mitzu.io](email://support@mitzu.io)
+
+أو الانضمام إلى مجتمعنا على Slack من [هنا](https://join.slack.com/t/mitzu-io/shared_invite/zt-1h1ykr93a-_VtVu0XshfspFjOg6sczKg)
+
+<div id="learn-more">
+  ## تعرّف على المزيد {#learn-more}
+</div>
+
+اطّلع على مزيد من المعلومات حول Mitzu على [mitzu.io](https://mitzu.io)
+
+تفضّل بزيارة صفحة الوثائق الخاصة بنا على [docs.mitzu.io](https://docs.mitzu.io)

@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemZeros.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ISource.h>
@@ -29,7 +30,7 @@ using ZerosStatePtr = std::shared_ptr<ZerosState>;
 /// Source which generates zeros.
 /// Uses state to share the number of generated rows between threads.
 /// If state is nullptr, then limit is ignored.
-class ZerosSource : public ISource
+class ZerosSource final : public ISource
 {
 public:
     ZerosSource(UInt64 block_size, UInt64 limit_, ZerosStatePtr state_)
@@ -127,9 +128,9 @@ Pipe StorageSystemZeros::read(
 
     if (!multithreaded)
         num_streams = 1;
-    else if (query_limit && num_streams * max_block_size > query_limit)
+    else if (query_limit)
         /// We want to avoid spawning more streams than necessary
-        num_streams = std::min(num_streams, static_cast<size_t>(((query_limit + max_block_size - 1) / max_block_size)));
+        num_streams = std::min(num_streams, static_cast<size_t>(query_limit / max_block_size + (query_limit % max_block_size != 0)));
 
     ZerosStatePtr state = std::make_shared<ZerosState>(query_limit);
 
@@ -144,3 +145,6 @@ Pipe StorageSystemZeros::read(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZeros) }

@@ -126,7 +126,7 @@ public:
         return add(delta, [](UInt64){}, create_if_need);
     }
 
-    const std::string & getPath() const
+    [[nodiscard]] const std::string & getPath() const
     {
         return path;
     }
@@ -155,9 +155,9 @@ public:
                 DB::ReadBufferFromFileDescriptor rb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
                 try
                 {
-                    UInt64 current_value;
+                    UInt64 current_value = 0;
                     DB::readIntText(current_value, rb);
-                    char c;
+                    char c = 0;
                     DB::readChar(c, rb);
                     if (rb.count() > 0 && c == '\n' && rb.eof())
                         broken = false;

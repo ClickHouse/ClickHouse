@@ -1,0 +1,68 @@
+---
+sidebarTitle: 'データベース監査ログ'
+slug: /cloud/security/audit-logging/database-audit-log
+title: 'データベース監査ログ'
+description: 'このページでは、データベース監査ログを確認する方法について説明します'
+doc_type: 'guide'
+keywords: ['監査ログ', 'データベースログ', 'コンプライアンス', 'セキュリティ', '監視']
+---
+
+ClickHouse では、デフォルトでデータベース監査ログを利用できます。このページでは、セキュリティ関連のログに焦点を当てます。システムによって記録されるデータについて詳しくは、[システムテーブル](/ja/reference/system-tables/overview) のドキュメントを参照してください。
+
+<Tip>
+  **ログ保持**
+
+  情報はシステムテーブルに直接記録され、デフォルトで最大 30 日間保持されます。この保持期間は、システム内でのマージの頻度によって長くも短くもなります。必要に応じて、ログをより長期間保存するための追加対策を講じたり、長期保管のためにログを security information and event management (SIEM) システムにエクスポートしたりできます。詳細は以下を参照してください。
+</Tip>
+
+<div id="security-relevant-logs">
+  ## セキュリティ関連のログ
+</div>
+
+ClickHouse では、セキュリティ関連のデータベースイベントは主にセッションログとクエリログに記録されます。
+
+[system.session&#95;log](/ja/reference/system-tables/session_log) には、ログインの成功・失敗の試行に加え、認証試行元の場所も記録されます。この情報は、ClickHouse インスタンスに対するクレデンシャルスタッフィング攻撃やブルートフォース攻撃の特定に役立ちます。
+
+ログイン失敗を示すサンプルクエリ
+
+```sql
+select event_time
+    ,type
+    ,user
+    ,auth_type
+    ,client_address 
+FROM clusterAllReplicas('default',system.session_log) 
+WHERE type='LoginFailure' 
+LIMIT 100
+```
+
+[system.query&#95;log](/ja/reference/system-tables/query_log) には、ClickHouse インスタンスで実行されたクエリのアクティビティが記録されます。この情報は、脅威アクターがどのようなクエリを実行したかを特定する際に役立ちます。
+
+&quot;compromised&#95;account&quot; ユーザーのアクティビティを検索するためのサンプルクエリ
+
+```sql
+SELECT event_time
+    ,address
+    ,initial_user
+    ,initial_address
+    ,forwarded_for
+    ,query 
+FROM clusterAllReplicas('default', system.query_log) 
+WHERE user=’compromised_account’
+```
+
+<div id="reatining-log-data-within-services">
+  ## サービス内でログデータを保持する
+</div>
+
+より長期間の保持やログの耐久性が必要な場合は、materialized view を使用してこれらの要件を満たすことができます。materialized view の詳細、概要、利点、実装方法については、[materialized view](/ja/concepts/features/materialized-views/index) のビデオとドキュメントをご覧ください。
+
+<div id="exporting-logs">
+  ## ログのエクスポート
+</div>
+
+システムログは、SIEM システムと互換性のあるさまざまなフォーマットでストレージに書き込んだり、エクスポートしたりできます。詳細については、[テーブル関数](/ja/reference/functions/table-functions/index) のドキュメントを参照してください。最も一般的な方法は次のとおりです。
+
+* [S3 に書き込む](/ja/reference/functions/table-functions/s3)
+* [GCS に書き込む](/ja/reference/functions/table-functions/gcs)
+* [Azure Blob Storage に書き込む](/ja/reference/functions/table-functions/azureBlobStorage)

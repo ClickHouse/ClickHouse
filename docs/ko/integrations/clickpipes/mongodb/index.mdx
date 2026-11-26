@@ -1,0 +1,215 @@
+---
+sidebarTitle: 'MongoDB에서 ClickHouse로 데이터 수집'
+description: 'MongoDB를 ClickHouse Cloud에 원활하게 연결하는 방법을 설명합니다.'
+slug: /integrations/clickpipes/mongodb
+title: 'CDC를 사용하여 MongoDB에서 ClickHouse로 데이터 수집'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
+
+<Note>
+  ClickHouse Cloud 콘솔과 문서에서는 MongoDB의 &quot;table&quot;과 &quot;collection&quot;을 같은 의미로 혼용합니다.
+</Note>
+
+ClickPipes를 사용하면 MongoDB 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있습니다. 원본 MongoDB 데이터베이스는 온프레미스 환경에서 호스팅할 수도 있고, MongoDB Atlas와 같은 서비스를 사용해 클라우드에서 호스팅할 수도 있습니다.
+
+MongoDB ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관리할 수 있으며, [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi)와 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용해 프로그래밍 방식으로도 배포하고 관리할 수 있습니다.
+
+## 사전 요구사항 {#prerequisites}
+
+시작하기 전에 먼저 MongoDB 데이터베이스가 복제용으로 올바르게 구성되어 있는지 확인해야 합니다. 구성 단계는 MongoDB 배포 방식에 따라 달라지므로, 아래의 해당 가이드를 따르십시오.
+
+1. [MongoDB Atlas](/ko/integrations/clickpipes/mongodb/source/atlas)
+
+2. [Generic MongoDB](/ko/integrations/clickpipes/mongodb/source/generic)
+
+3. [Amazon DocumentDB](/ko/integrations/clickpipes/mongodb/source/documentdb)
+
+원본 MongoDB 데이터베이스 설정이 완료되면 ClickPipe 생성을 계속할 수 있습니다.
+
+## ClickPipe 만들기 {#create-your-clickpipe}
+
+ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 계정이 없다면 [여기](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb)에서 가입할 수 있습니다.
+
+1. ClickHouse Cloud 콘솔에서 ClickHouse Cloud 서비스로 이동합니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickPipes 서비스](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+  </Frame>
+</div>
+
+2. 왼쪽 메뉴에서 `Data Sources` 버튼을 선택한 다음 &quot;Set up a ClickPipe&quot;를 클릭합니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![가져오기 선택](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+  </Frame>
+</div>
+
+3. `MongoDB CDC` 타일을 선택합니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![MongoDB 선택](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
+  </Frame>
+</div>
+
+### 원본 MongoDB 데이터베이스 연결 추가 {#add-your-source-mongodb-database-connection}
+
+4. 사전 요구 사항 단계에서 구성한 원본 MongoDB 데이터베이스의 연결 정보를 입력합니다.
+
+<Info>
+  연결 정보를 추가하기 전에 방화벽 규칙에서 ClickPipes IP 주소를 허용했는지 확인하십시오. 다음 페이지에서 [ClickPipes IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)을 확인할 수 있습니다.
+  자세한 내용은 [이 페이지 상단](#prerequisites)에 링크된 소스 MongoDB 설정 가이드를 참조하십시오.
+</Info>
+
+<div className="ch-image-lg">
+  <Frame>
+    ![연결 정보 입력](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
+  </Frame>
+</div>
+
+#### (선택 사항) TLS 설정 변경 {#optional-changing-tls-settings}
+
+<ChangingTLSSettings />
+
+#### (선택 사항) SSH 터널링 설정 {#optional-set-up-ssh-tunneling}
+
+원본 MongoDB 데이터베이스에 공개적으로 액세스할 수 없는 경우 SSH 터널링 정보를 지정할 수 있습니다.
+
+1. &quot;Use SSH Tunnelling&quot; 토글을 활성화합니다.
+
+2. SSH 연결 정보를 입력합니다.
+
+   <div className="ch-image-lg">
+     <Frame>
+       ![SSH 터널링](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+     </Frame>
+   </div>
+
+3. 키 기반 인증을 사용하려면 &quot;Revoke and generate key pair&quot;를 클릭하여 새 키 쌍을 생성한 다음, 생성된 공개 키를 SSH 서버의 `~/.ssh/authorized_keys`에 복사합니다.
+
+4. &quot;Verify Connection&quot;을 클릭하여 연결을 확인합니다.
+
+<Note>
+  ClickPipes가 SSH 터널을 설정할 수 있도록 SSH 배스천 호스트의 방화벽 규칙에서 [ClickPipes IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 허용해야 합니다.
+</Note>
+
+연결 정보를 모두 입력한 후 `다음`을 클릭합니다.
+
+#### 고급 설정 구성 {#advanced-settings}
+
+필요한 경우 고급 설정을 구성할 수 있습니다. 각 설정에 대한 간단한 설명은 다음과 같습니다.
+
+* **Sync interval**: ClickPipes가 원본 데이터베이스의 변경 사항을 폴링하는 간격입니다. 이 값은 대상 ClickHouse 서비스의 비용에 영향을 줄 수 있으므로, 비용에 민감한 경우에는 값을 더 크게(`3600` 초과) 유지하는 것이 좋습니다.
+* **Pull batch size**: 단일 배치에서 가져올 행 수입니다. 이는 가능한 한 반영되는 설정이며, 모든 경우에 항상 적용되지는 않을 수 있습니다.
+* **Snapshot number of tables in parallel**: 초기 스냅샷 중 병렬로 가져올 테이블 수입니다. 테이블 수가 많은 경우, 병렬로 가져오는 테이블 수를 제어하는 데 유용합니다.
+
+### 테이블 구성 {#configure-the-tables}
+
+5. 여기에서 ClickPipe의 대상 데이터베이스(destination database)를 선택할 수 있습니다. 기존 데이터베이스를 선택하거나 새 데이터베이스를 생성할 수 있습니다.
+
+   <div className="ch-image-lg">
+     <Frame>
+       ![대상 데이터베이스 선택](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
+     </Frame>
+   </div>
+
+6. 원본 MongoDB 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택하면서 대상 ClickHouse 데이터베이스에서 사용할 테이블 이름을 변경할 수도 있습니다.
+
+컬렉션은 다음 두 가지 모드로 복제할 수 있습니다.
+
+* **기본 수집**: 문서(document)가 JSON 타입으로 ClickHouse에 그대로 수집됩니다. 이 경우 대상 테이블(destination table)에는 `id` 전용 컬럼과 전체 문서를 담는 `doc` 컬럼이 생성됩니다.
+* **구조화된 수집**: 문서가 컬렉션의 공통 스키마(schema)에 따라 테이블의 행으로 수집됩니다. 이 스키마는 파이프 생성 시점의 샘플을 바탕으로 추론됩니다. 이 모드는 해당 컬렉션의 **Map document to columns**를 켜서 활성화합니다.
+
+구조화된 수집을 활성화하면 **Column settings** 섹션에 샘플에서 발견된 필드와 추론된 ClickHouse 유형이 표시됩니다. 컬럼으로 복제할 필드를 선택할 수 있으며, `_id` 문서 키는 항상 `String` 유형으로 포함됩니다.
+
+<div className="ch-image-md">
+  <Frame>
+    ![컬렉션의 구조화된 수집 설정](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-structured-ingestion.webp)
+  </Frame>
+</div>
+
+MongoDB 컬렉션은 다형성을 가지므로(즉, 같은 컬렉션 내 문서들이 서로 다른 스키마를 가질 수 있으므로) 구조화된 수집에서는 이상치 레코드를 처리해야 합니다.
+
+* **누락된 필드:** 모든 구조화된 컬럼은 `Nullable`로 수집되므로, 문서에 특정 필드가 없으면 해당 컬럼에는 `NULL` 값이 저장됩니다.
+
+* **추가 필드:** 추론된 스키마에 없는 필드는 `_peerdb_malformed_data` 컬럼에 필드별로 하나의 키를 갖는 JSON 형태로 저장됩니다. 각 키에는 `"unexpected_field": true`와 함께 원래 값이 `value` 아래에 저장됩니다.
+
+  ```json
+  {
+    "rating": {
+      "unexpected_field": true,
+      "value": 4.5
+    }
+  }
+  ```
+
+  이 데이터는 손쉽게 쿼리하고 분석할 수 있습니다. 예를 들어, 테이블에서 발견된 예기치 않은 필드 목록을 조회하려면 다음 쿼리를 실행합니다.
+
+  ```sql
+  SELECT DISTINCT arrayJoin(JSONAllPaths(_peerdb_malformed_data)) AS malformed
+  FROM movies
+  WHERE malformed LIKE '%.unexpected_field';
+  ```
+
+  📝 참고: 추가 필드 값을 `_peerdb_malformed_data` 컬럼에 저장하지 않으려면 해당 컬렉션의 **Hide unexpected values** 옵션을 활성화하십시오.
+
+* **필드 유형 불일치:** 컬럼 유형과 일치하지 않는 값도 `_peerdb_malformed_data` 컬럼에 필드별로 하나의 키로 저장됩니다. 각 키에는 `"type_mismatch": true`와 함께 원래 값이 `value` 아래에 저장되며, 해당 컬럼은 `NULL`로 설정됩니다.
+
+  ```json
+  {
+    "year": {
+      "type_mismatch": true,
+      "value": "two thousand nineteen"
+    }
+  }
+  ```
+
+  값이 예상 유형과 일치하는지와 관계없이 필드를 읽으려면 컬럼과 대체 값을 함께 사용하십시오.
+
+  ```sql
+  SELECT name, coalesce(year, _peerdb_malformed_data.year.value)
+  FROM movies;
+  ```
+
+📝 참고: `_peerdb_malformed_data`에 포함된 필드는 JSON 컬럼 수집 방식으로 대체 처리된 이상치로 볼 수 있습니다.
+
+구조화된 수집은 테이블을 생성하기 전에 스키마를 추론하므로, 이 모드를 활성화하면 구조화된 컬럼을 기반으로 사용자 정의 partition-by 표현식과 정렬 키를 정의할 수 있습니다.
+모든 구조화된 컬럼은 `Nullable`로 수집됩니다. 파티셔닝 키 표현식을 작성하거나 정렬 키에 이러한 컬럼을 사용할 때 이 점을 고려하십시오. 이 경우 대상 테이블은 `allow_nullable_key` 설정이 적용된 상태로 생성됩니다.
+
+📝 두 수집 모드 모두에서 삭제 이벤트를 통해 삭제된 값을 대상 ClickHouse에 기록하려면 **Persist deleted documents** 옵션을 켤 수 있습니다. 단, 이를 위해서는 소스 컬렉션에 `changeStreamPreAndPostImage`가 활성화되어 있어야 합니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![삭제된 문서 영구 저장 옵션](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-persist-deleted-documents.webp)
+  </Frame>
+</div>
+
+### 권한을 검토하고 ClickPipe를 시작합니다 {#review-permissions-and-start-the-clickpipe}
+
+7. 권한 드롭다운에서 &quot;Full access&quot; Role을 선택한 다음 &quot;Complete Setup&quot;을 클릭합니다.
+
+   <div className="ch-image-lg">
+     <Frame>
+       ![권한 검토](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+     </Frame>
+   </div>
+
+## 다음 단계 {#whats-next}
+
+MongoDB의 데이터를 ClickHouse Cloud로 복제하도록 ClickPipe를 설정했다면, 이제 최적의 성능을 위해 데이터를 쿼리하고 모델링하는 방법에 집중할 수 있습니다.
+
+## 주의사항 {#caveats}
+
+이 커넥터를 사용할 때 유의해야 할 몇 가지 사항은 다음과 같습니다:
+
+* MongoDB 버전 5.1.0+가 필요합니다.
+* CDC를 위해 MongoDB의 네이티브 Change Streams API를 사용하며, 이는 MongoDB oplog를 기반으로 실시간 변경 사항을 캡처합니다.
+* MongoDB의 문서는 기본적으로 ClickHouse에 JSON 타입으로 복제됩니다. 이를 통해 스키마를 유연하게 관리할 수 있으며, ClickHouse의 다양한 JSON 연산자를 사용해 쿼리와 분석을 수행할 수 있습니다. JSON 데이터 쿼리에 대한 자세한 내용은 [여기](/ko/reference/data-types/newjson)에서 확인할 수 있습니다.

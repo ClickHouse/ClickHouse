@@ -8,6 +8,7 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/Arena.h>
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 /** This test program evaluates different solutions for a simple degenerate task:
   * Aggregate data by UInt8 key, calculate "avg" function on Float values.
@@ -79,7 +80,7 @@ struct State
         count += other.count;
     }
 
-    Float result() const
+    [[nodiscard]] Float result() const
     {
         return sum / static_cast<Float>(count);
     }
@@ -514,7 +515,7 @@ struct State4
         ++count[idx];
     }
 
-    Float result() const
+    [[nodiscard]] Float result() const
     {
         return (sum[0] + sum[1] + sum[2] + sum[3]) / static_cast<Float>(count[0] + count[1] + count[2] + count[3]);
     }

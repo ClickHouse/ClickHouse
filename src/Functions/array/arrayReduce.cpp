@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/Arena.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -35,7 +36,7 @@ namespace ErrorCodes
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
   */
-class FunctionArrayReduce : public IFunction
+class FunctionArrayReduce final : public IFunction
 {
 public:
     static constexpr auto name = "arrayReduce";
@@ -43,27 +44,44 @@ public:
     explicit FunctionArrayReduce(AggregateFunctionPtr aggregate_function_)
         : aggregate_function(std::move(aggregate_function_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// With a non-deterministic aggregate this must stay off: the default implementation executes the
+    /// function on a single row and replicates the result to the whole block, which turns per-row draws
+    /// into one draw for the query. `executeImpl` materializes a constant array argument itself.
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return aggregate_function->isDeterministic(); }
     /// As we parse the function name and deal with arrays we don't want to default NULL handler, which will hide
     /// nullability from us (which also means hidden from the aggregate functions)
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     /// Same for low cardinality. We want to return exactly what the aggregate function returns, no meddling
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    /// Documentation-only — the result type is the named aggregate function's
+    /// result type, resolved at query time from the const-string first argument.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(const String, Array, ...) -> Any";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return aggregate_function->getResultType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    /// The aggregate that the string argument names decides this: a `groupArraySample` without a seed
+    /// makes the expression non-deterministic, and both the filter push-down and constant folding have
+    /// to see that. A deterministic aggregate - the overwhelmingly common case - is unaffected.
+    [[nodiscard]] bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     AggregateFunctionPtr aggregate_function;
@@ -77,11 +95,11 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 
     /// Aggregate functions do not support constant or lowcardinality columns. Therefore, we materialize them and
     /// keep a reference so they are alive until we finish using their nested columns (array data/offset)
-    std::vector<ColumnPtr> materialized_columns;
+    VectorWithMemoryTracking<ColumnPtr> materialized_columns;
 
     const size_t num_arguments_columns = arguments.size() - 1;
 
-    std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+    VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
@@ -171,7 +189,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 namespace
 {
 
-class FunctionArrayReduceOverloadResolver : public IFunctionOverloadResolver, private WithContext
+class FunctionArrayReduceOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduce";
@@ -184,6 +202,16 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Declarative signature — the result is the named aggregator's
+    /// finalised return type computed over the array element types:
+    /// `AggregateFunction(name, T1, T2, ...)` builds the aggregator state,
+    /// `aggregateFunctionReturnType` extracts what `finalizeAggregation`
+    /// of that state would produce.
+    String getSignatureString() const override
+    {
+        return "(const a String, Array(T1 : Any), ...) -> aggregateFunctionReturnType(AggregateFunction(a, T1, ...))";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

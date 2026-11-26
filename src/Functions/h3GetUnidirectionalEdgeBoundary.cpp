@@ -18,14 +18,13 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdgeBoundary : public IFunction
+class FunctionH3GetUnidirectionalEdgeBoundary final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgeBoundary";
@@ -36,27 +35,22 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdgeBoundary>(context); }
 
-    std::string getName() const override { return name; }
+    [[nodiscard]] std::string getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}));
+        return "(UInt64) -> Array(Tuple(Float64, Float64))";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -118,8 +112,8 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
         {"index", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of (longitude, latitude) pairs defining a unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
-        {"Array(Float64, Float64)"}
+        "Returns an array of (latitude, longitude) pairs defining a unidirectional edge. Throws `INCORRECT_DATA` if the input is not a valid directed edge unless `functions_h3_default_if_invalid = 1`, in which case it returns `[]`.",
+        {"Array(Tuple(Float64, Float64))"}
     };
     FunctionDocumentation::Examples examples = {
         {
@@ -127,7 +121,7 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
             "SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary",
             R"(
 ┌─boundary────────────────────────────────────────────────────────────────────────┐
-│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
+│ [(37.4201286776778,-122.03773496427027),(37.337556084353004,-122.090428929044)] │
 └─────────────────────────────────────────────────────────────────────────────────┘
             )"
         }

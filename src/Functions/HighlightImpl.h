@@ -5,6 +5,7 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
 
@@ -28,7 +29,7 @@ struct HighlightImpl
 
     /// Sort and merge overlapping/adjacent intervals in-place.
     /// Uses <= for merge condition so that adjacent intervals like [0,5)+[5,10) merge into [0,10).
-    static void mergeIntervals(std::vector<Interval> & intervals)
+    static void mergeIntervals(VectorWithMemoryTracking<Interval> & intervals)
     {
         if (intervals.size() <= 1)
             return;
@@ -58,7 +59,7 @@ struct HighlightImpl
     static void execute(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<std::string_view> & needles,
+        const VectorWithMemoryTracking<std::string_view> & needles,
         const String & open_tag,
         const String & close_tag,
         ColumnString::Chars & res_data,
@@ -76,14 +77,14 @@ struct HighlightImpl
         /// We use VolnitskyCaseInsensitive with haystack_size_hint=0, which means
         /// each search() call decides internally whether to use the hash table
         /// or fall back to ASCIICaseInsensitiveStringSearcher for short haystacks.
-        std::vector<NeedleSearcher> searchers;
+        VectorWithMemoryTracking<NeedleSearcher> searchers;
         searchers.reserve(needles.size());
         for (const auto & needle : needles)
             if (!needle.empty())
                 searchers.push_back({VolnitskyCaseInsensitive(needle.data(), needle.size(), 0), needle.size()});
 
         /// Reusable intervals buffer across rows
-        std::vector<Interval> intervals;
+        VectorWithMemoryTracking<Interval> intervals;
         intervals.reserve(64);
 
         ColumnString::Offset res_offset = 0;
@@ -126,8 +127,8 @@ private:
     static void findAllMatches(
         const UInt8 * haystack,
         size_t haystack_size,
-        const std::vector<NeedleSearcher> & searchers,
-        std::vector<Interval> & intervals,
+        const VectorWithMemoryTracking<NeedleSearcher> & searchers,
+        VectorWithMemoryTracking<Interval> & intervals,
         UInt64 max_matches_per_row)
     {
         const UInt8 * haystack_end = haystack + haystack_size;
@@ -159,7 +160,7 @@ private:
     static void buildOutput(
         const UInt8 * haystack,
         size_t haystack_size,
-        const std::vector<Interval> & intervals,
+        const VectorWithMemoryTracking<Interval> & intervals,
         const String & open_tag,
         const String & close_tag,
         ColumnString::Chars & res_data,

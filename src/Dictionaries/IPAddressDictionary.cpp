@@ -1,3 +1,4 @@
+#include <Common/StackWithMemoryTracking.h>
 #include <Dictionaries/IPAddressDictionary.h>
 #include <Columns/ColumnFixedString.h>
 
@@ -76,7 +77,7 @@ namespace
             return buf;
         }
 
-        UInt8 prefixIPv6() const
+        [[nodiscard]] UInt8 prefixIPv6() const
         {
             return isv6 ? prefix : prefix + 96;
         }
@@ -237,7 +238,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     validateKeyTypes(key_types);
 
@@ -261,26 +262,12 @@ ColumnPtr IPAddressDictionary::getColumn(
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
-            if constexpr (std::is_same_v<ValueType, Array>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Map & value) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Object & value) { out->insert(value); }, default_mask);
+                    attribute, key_columns, [&](const size_t, const ColumnAttributeValue<ValueType> & value) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -307,34 +294,14 @@ ColumnPtr IPAddressDictionary::getColumn(
             const auto & null_value = std::get<AttributeType>(attribute.null_values);
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
                 getItemsImpl<ValueType>(
                     attribute,
                     key_columns,
-                    [&](const size_t, const Array & value) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t, const Map & value) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t, const Object & value) { out->insert(value); },
+                    [&](const size_t, const ColumnAttributeValue<ValueType> & value) { value.insertInto(*out); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -423,12 +390,12 @@ void IPAddressDictionary::createAttributes()
         {
             if (attribute.is_nullable)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "{}: array or nullable attributes not supported for dictionary of type {}",
+                    "{}: nullable attributes not supported for dictionary of type {}",
                     getFullName(),
                     getTypeName());
 
             attribute_index_by_name.emplace(attribute.name, attributes.size());
-            attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+            attributes.push_back(createAttributeWithType(attribute));
 
             if (attribute.hierarchical)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
@@ -573,7 +540,7 @@ void IPAddressDictionary::loadData()
     }
 
     parent_subnet.resize(ip_records.size());
-    std::stack<size_t> subnets_stack;
+    StackWithMemoryTracking<size_t> subnets_stack;
     for (const auto i : collections::range(0, ip_records.size()))
     {
         parent_subnet[i] = i;
@@ -621,7 +588,10 @@ template <typename T>
 void IPAddressDictionary::addAttributeSize(const Attribute & attribute)
 {
     const auto & vec = std::get<ContainerType<T>>(attribute.maps);
-    bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
+    if constexpr (is_column_attribute_value<T>)
+        bytes_allocated += sizeof(ContainerType<T>) + vec.allocatedBytes();
+    else
+        bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
     bucket_count = vec.size();
 }
 
@@ -662,33 +632,38 @@ void IPAddressDictionary::calculateBytesAllocated()
 }
 
 template <typename T>
-void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
+void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const DictionaryAttribute & dictionary_attribute)
 {
+    const auto & null_value = dictionary_attribute.null_value;
     attribute.null_values = null_value.isNull() ? T{} : T(null_value.safeGet<T>());
-    attribute.maps.emplace<ContainerType<T>>();
+    if constexpr (is_column_attribute_value<T>)
+        attribute.maps.emplace<ContainerType<T>>(dictionary_attribute);
+    else
+        attribute.maps.emplace<ContainerType<T>>();
 }
 
 template <>
-void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
+void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const DictionaryAttribute & dictionary_attribute)
 {
+    const auto & null_value = dictionary_attribute.null_value;
     attribute.null_values = null_value.isNull() ? String() : null_value.safeGet<String>();
     attribute.maps.emplace<ContainerType<std::string_view>>();
     attribute.string_arena = std::make_unique<Arena>();
 }
 
-IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(const DictionaryAttribute & dictionary_attribute)
 {
-    Attribute attr{.null_values = {}, .maps = {}, .string_arena = {}, .type = type};
+    Attribute attr{.null_values = {}, .maps = {}, .string_arena = {}, .type = dictionary_attribute.underlying_type};
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
 
-        createAttributeImpl<AttributeType>(attr, null_value);
+        createAttributeImpl<AttributeType>(attr, dictionary_attribute);
     };
 
-    callOnDictionaryAttributeType(type, type_call);
+    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
 
     return attr;
 }
@@ -1025,7 +1000,11 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
 
-        if constexpr (std::is_same_v<AttributeType, String>)
+        if constexpr (is_column_attribute_value<AttributeType>)
+        {
+            std::get<ContainerType<AttributeType>>(attribute.maps).insert(value);
+        }
+        else if constexpr (std::is_same_v<AttributeType, String>)
         {
             const auto & string = value.safeGet<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
@@ -1092,7 +1071,7 @@ static auto keyViewGetter()
         for (size_t row : collections::range(0, key_ip_column.size()))
         {
             UInt8 mask = key_mask_column.getElement(row);
-            size_t str_len;
+            size_t str_len = 0;
             if constexpr (IsIPv4)
                 str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else
@@ -1222,6 +1201,7 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
     return ipNotFound();
 }
 
+void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string &,
@@ -1258,7 +1238,129 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
         return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
-    factory.registerLayout("ip_trie", create_layout, true);
+    factory.registerLayout("ip_trie", create_layout, true, true, Documentation{
+        .description = R"DOCS_MD(
+# ip_trie dictionary layout
+
+The `ip_trie` dictionary is designed for IP address lookups by network prefix.
+It stores IP ranges in CIDR notation and allows fast determination of which prefix (e.g. subnet or ASN range) a given IP falls into, making it ideal for IP-based searches like geolocation or network classification.
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="IP based search with the ip_trie dictionary" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+**Example**
+
+Suppose we have a table in ClickHouse that contains our IP prefixes and mappings:
+
+```sql
+CREATE TABLE my_ip_addresses (
+    prefix String,
+    asn UInt32,
+    cca2 String
+)
+ENGINE = MergeTree
+PRIMARY KEY prefix;
+```
+
+```sql
+INSERT INTO my_ip_addresses VALUES
+    ('202.79.32.0/20', 17501, 'NP'),
+    ('2620:0:870::/48', 3856, 'US'),
+    ('2a02:6b8:1::/48', 13238, 'RU'),
+    ('2001:db8::/32', 65536, 'ZZ')
+;
+```
+
+Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requires a composite key:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+CREATE DICTIONARY my_ip_trie_dictionary (
+    prefix String,
+    asn UInt32,
+    cca2 String DEFAULT '??'
+)
+PRIMARY KEY prefix
+SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
+LAYOUT(IP_TRIE)
+LIFETIME(3600);
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>prefix</name>
+            <type>String</type>
+        </attribute>
+    </key>
+    <attribute>
+            <name>asn</name>
+            <type>UInt32</type>
+            <null_value />
+    </attribute>
+    <attribute>
+            <name>cca2</name>
+            <type>String</type>
+            <null_value>??</null_value>
+    </attribute>
+    ...
+</structure>
+<layout>
+    <ip_trie>
+        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
+        <!-- This option increases memory usage. -->
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+The key must have only one `String` type attribute that contains an allowed IP prefix. Other types are not supported yet.
+
+The syntax is:
+
+```sql
+dictGetT('dict_name', 'attr_name', ip)
+```
+
+The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
+
+```sql
+SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
+
+┌─result─┐
+│ NP     │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result─┐
+│  65536 │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result───────┐
+│ (65536,'ZZ') │
+└──────────────┘
+```
+
+Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
+
+Data must completely fit into RAM.
+)DOCS_MD",
+        .syntax = "LAYOUT(IP_TRIE())",
+        .related = {}});
 }
 
 }

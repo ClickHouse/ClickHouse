@@ -11,48 +11,37 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 using namespace GatherUtils;
 
 template <typename Name, typename Impl>
-class HasSubsequenceImpl : public IFunction
+class HasSubsequenceImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<HasSubsequenceImpl>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {};}
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {};}
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<UInt8>>();
+        return "(String, String) -> UInt8";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnPtr & column_haystack = arguments[0].column;
         const ColumnPtr & column_needle = arguments[1].column;

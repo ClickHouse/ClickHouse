@@ -11,30 +11,34 @@ class NegativeLimitStep : public ITransformingStep
 public:
     NegativeLimitStep(
         const SharedHeader & input_header_,
-        UInt64 limit_, UInt64 offset_);
+        UInt64 limit_, UInt64 offset_,
+        bool with_ties_ = false,
+        SortDescription description_ = {});
 
-    String getName() const override { return "NegativeLimit"; }
+    [[nodiscard]] String getName() const override { return "NegativeLimit"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    UInt64 getLimit() const { return limit; }
+    [[nodiscard]] UInt64 getLimit() const { return limit; }
 
-    UInt64 getLimitForSorting() const
-    {
-        return 0;
-    }
+    void markAsShardLimit() { is_shard_limit = true; }
 
-    bool withTies() const { return false; }
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    bool hasCorrelatedExpressions() const override { return false; }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
+
+    /// `LIMIT -n` returns the *last* `n` rows, and `addPreliminaryLimitStep` can push it to the shard, so
+    /// this step can be the replica-output boundary. It is a top-N taken from the tail, so like
+    /// `LimitStep` its output is replicated: every replica ships its own last `n` rows.
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override
@@ -44,6 +48,9 @@ private:
 
     UInt64 limit;
     UInt64 offset;
+    bool with_ties;
+    const SortDescription description;
+    bool is_shard_limit = false;
 };
 
 }

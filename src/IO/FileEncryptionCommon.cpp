@@ -76,7 +76,7 @@ namespace
 
     size_t partBlockSize(size_t size, size_t off)
     {
-        assert(off < kBlockSize);
+        chassert(off < kBlockSize);
         /// write the part as usual block
         if (off == 0)
             return 0;
@@ -116,7 +116,7 @@ namespace
 
     size_t encryptBlockWithPadding(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, size_t pad_left, WriteBuffer & out)
     {
-        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        chassert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
         uint8_t padded_data[kBlockSize] = {};
         memcpy(&padded_data[pad_left], data, size);
         size_t padded_data_size = pad_left + size;
@@ -169,7 +169,7 @@ namespace
     {
         chassert(data != nullptr);
         chassert(out != nullptr);
-        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        chassert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
         uint8_t padded_data[kBlockSize] = {};
         memcpy(&padded_data[pad_left], data, size);
         size_t padded_data_size = pad_left + size;
@@ -282,7 +282,7 @@ InitVector InitVector::random()
 }
 
 
-Encryptor::Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_)
+Encryptor::Encryptor(Algorithm algorithm_, const SecretString & key_, const InitVector & iv_)
     : key(key_)
     , init_vector(iv_)
     , evp_cipher(getCipher(algorithm_))
@@ -299,13 +299,15 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+    if (!evp_ctx_ptr)
+        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
     if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
+                            reinterpret_cast<const uint8_t*>(key.data()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
 
     size_t in_size = 0;
@@ -347,13 +349,15 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+    if (!evp_ctx_ptr)
+        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
     if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
+                            reinterpret_cast<const uint8_t*>(key.data()), reinterpret_cast<const uint8_t*>(current_iv.c_str())) != 1)
         throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
 
     size_t in_size = 0;
@@ -408,7 +412,7 @@ void Header::read(ReadBuffer & in)
     if (version < 1 || version > kCurrentVersion)
         throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Version {} of the header is not supported", version);
 
-    UInt16 algorithm_u16;
+    UInt16 algorithm_u16 = 0;
     readPODBinary(algorithm_u16, in);
     if (std::endian::native != endian)
         algorithm_u16 = std::byteswap(algorithm_u16);
@@ -420,8 +424,8 @@ void Header::read(ReadBuffer & in)
 
     if (version < 2)
     {
-        UInt64 key_id;
-        UInt8 small_key_hash;
+        UInt64 key_id = 0;
+        UInt8 small_key_hash = 0;
         readPODBinary(key_id, in);
         readPODBinary(small_key_hash, in);
         bytes_to_skip -= sizeof(key_id) + sizeof(small_key_hash);
@@ -460,14 +464,14 @@ void Header::write(WriteBuffer & out) const
     out.write(zero_bytes, reserved_size);
 }
 
-UInt128 calculateKeyFingerprint(const String & key)
+UInt128 calculateKeyFingerprint(const SecretString & key)
 {
     const UInt64 seed0 = 0x4368456E63727970ULL; // ChEncryp
     const UInt64 seed1 = 0x7465644469736B46ULL; // tedDiskF
     return sipHash128Keyed(seed0, seed1, key.data(), key.size());
 }
 
-UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id)
+UInt128 calculateV1KeyFingerprint(const SecretString & key, UInt64 key_id)
 {
     /// In the version 1 we stored {key_id, very_small_hash(key)} instead of a fingerprint.
     UInt8 small_key_hash = sipHash64(key.data(), key.size()) & 0x0F;

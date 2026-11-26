@@ -9,6 +9,7 @@
 #include <Common/Arena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
 
@@ -18,10 +19,15 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/SecretArguments.h>
 
 #include <base/scope_guard.h>
 
 #include <iostream>
+
+/// No engine is registered, so the secrets of their arguments are shown.
+[[maybe_unused]] static const bool secret_arguments_finder_installed
+    = (DB::setSecretArgumentsFinder(&DB::NoSecretArgumentsFinder::instance()), true);
 
 /// This fuzzer supports its own arguments:
 /// - `-max_parser_depth=N` sets the maximum parser depth (default: 150 for debug/sanitizer, 300 otherwise)
@@ -31,6 +37,8 @@
 
 using namespace DB;
 
+extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 ContextMutablePtr context;
 
@@ -43,7 +51,7 @@ size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 size_t max_query_size = DBMS_DEFAULT_MAX_QUERY_SIZE;
 
 // Helper function to check if this is a merge run
-bool isMerge(int argc, char ** argv)
+static bool isMerge(int argc, char ** argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -57,9 +65,9 @@ bool isMerge(int argc, char ** argv)
 }
 
 // Helper function to parse settings from command line arguments
-std::unordered_map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+static NameToNameMap parseSettingsFromArgs(int argc, char ** argv)
 {
-    std::unordered_map<std::string, std::string> settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    NameToNameMap settings;
     bool ignore_remaining = false;
 
     for (int i = 1; i < argc; ++i)

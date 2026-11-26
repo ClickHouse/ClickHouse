@@ -2,6 +2,9 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/GCDLCMImpl.h>
 
+#include <base/arithmeticOverflow.h>
+#include <base/extended_types.h>
+
 #include <boost/integer/common_factor.hpp>
 
 
@@ -11,7 +14,10 @@ namespace abs_impl
 template <typename T>
 constexpr T abs(T value) noexcept
 {
-    if constexpr (std::is_signed_v<T>)
+    /// `is_signed_v` from `base/extended_types.h`, not the `std` trait: the latter is `false` for the
+    /// wide integers (`Int128`, `Int256`), so a negative one was returned unchanged and the negative
+    /// quotient below wrapped when converted to the unsigned type, negating the result of `lcm`.
+    if constexpr (is_signed_v<T>)
     {
         if (value >= 0 || value == std::numeric_limits<T>::min())
             return value;
@@ -53,7 +59,7 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
         Unsigned val2 = abs_impl::abs<Int>(b);
 
         /// Overflow in implementation specific way.
-        return ResultType(val1 * val2);
+        return ResultType(common::mulIgnoreOverflow(val1, val2));
     }
 };
 

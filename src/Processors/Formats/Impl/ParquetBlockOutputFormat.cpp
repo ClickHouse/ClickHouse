@@ -1,24 +1,26 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
 
 #if USE_PARQUET
 
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
 
+#include <optional>
 
-namespace CurrentMetrics
-{
-    extern const Metric ParquetEncoderThreads;
-    extern const Metric ParquetEncoderThreadsActive;
-    extern const Metric ParquetEncoderThreadsScheduled;
-}
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 using namespace Parquet;
 
@@ -26,11 +28,10 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
     if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
-        pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::ParquetEncoderThreads,
-            CurrentMetrics::ParquetEncoderThreadsActive,
-            CurrentMetrics::ParquetEncoderThreadsScheduled,
-            format_settings.max_threads);
+    {
+        getParquetEncoderThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        pool = &getParquetEncoderThreadPool().get();
+    }
 
     using C = FormatSettings::ParquetCompression;
     switch (format_settings.parquet.output_compression_method)
@@ -45,33 +46,57 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
     options.output_string_as_string = format_settings.parquet.output_string_as_string;
     options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
+    options.output_wide_integer_as_decimal = format_settings.parquet.output_wide_integer_as_decimal;
     options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
     options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
     options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
+    options.variant_settings = Parquet::VariantSettings(format_settings);
     options.data_page_size = format_settings.parquet.data_page_size;
+    options.data_page_row_limit = format_settings.parquet.data_page_row_limit;
     options.write_batch_size = format_settings.parquet.write_batch_size;
     options.write_page_index = format_settings.parquet.write_page_index;
     options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
     options.write_checksums = format_settings.parquet.write_checksums;
+    options.use_alp_encoding = format_settings.parquet.use_alp_encoding;
+    options.use_data_page_v2 = format_settings.parquet.use_data_page_v2;
     options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
     options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
     options.write_geometadata = format_settings.parquet.write_geometadata;
+    options.write_geometry_logical_type = format_settings.parquet.write_geometry_logical_type;
+    options.write_file_logical_type = format_settings.parquet.write_file_logical_type;
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
+    {
+        /// The mapper outlives this format (and the encoder threads) via format_filter_info.
+        /// It has to be consulted identically here and on the data paths below: the reader takes its
+        /// max definition level from the schema, while the writer takes the level bit width from the
+        /// state the data path builds, so the two would desynchronize.
+        iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
+        /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
+        const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
+        schema = convertSchema(
+            *header_,
+            options,
+            column_encoding.empty() ? std::nullopt : std::optional(column_encoding),
+            iceberg_optionality);
+    }
     else
-        schema = convertSchema(*header_, options, std::nullopt);
+        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
 {
     if (pool)
-    {
-        is_stopped = true;
-        pool->wait();
-    }
+        stopThreads();
+}
+
+void ParquetBlockOutputFormat::stopThreads()
+{
+    is_stopped = true;
+    std::unique_lock lock(mutex);
+    condvar.wait(lock, [this] { return threads_running == 0; });
 }
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
@@ -94,10 +119,12 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             /// If there's too much work in flight, wait for some of it to complete.
             if (row_groups.size() < 2)
                 break;
-            if (bytes_in_flight <= format_settings.parquet.row_group_bytes * 4 &&
-                task_queue.size() <= format_settings.max_threads * 4)
+            /// Compare by division: the settings can be huge, and multiplying them would overflow.
+            if (bytes_in_flight / 4 <= format_settings.parquet.row_group_bytes &&
+                task_queue.size() / 4 <= format_settings.max_threads)
                 break;
 
+            CurrentThread::checkIfNotCancelled();
             condvar.wait(lock);
         }
     }
@@ -121,7 +148,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
     /// In the rare case that more than `row_group_rows` rows arrived in one chunk, split the
     /// staging chunk into multiple row groups.
-    if (staging_rows >= target_rows * 2)
+    if (staging_rows / 2 >= target_rows)
     {
         /// Increase row group size slightly (by < 2x) to avoid a small row group at the end.
         size_t num_row_groups = std::max(static_cast<size_t>(1), staging_rows / target_rows);
@@ -134,6 +161,9 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
         for (size_t offset = 0; offset < staging_rows; offset += row_group_size)
         {
+            /// A sink does not call onCancel() while it writes, so `is_stopped` alone misses a killed query.
+            CurrentThread::checkIfNotCancelled();
+
             size_t count = std::min(row_group_size, staging_rows - offset);
             MutableColumns columns = concatenated.cloneEmptyColumns();
             for (size_t i = 0; i < columns.size(); ++i)
@@ -179,6 +209,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
             if (row_groups.empty())
                 break;
 
+            CurrentThread::checkIfNotCancelled();
             condvar.wait(lock);
         }
     }
@@ -189,16 +220,70 @@ void ParquetBlockOutputFormat::finalizeImpl()
         writeFileHeader(file_state, out);
     }
     Block header = materializeBlock(getPort(PortKind::Main).getHeader());
+    collectColumnSizesOnDisk(header);
     writeFileFooter(file_state, schema, options, out, header);
     chassert(out.count() - base_offset == file_state.offset);
+}
+
+static size_t countSchemaLeaves(const SchemaElements & schema, size_t & index)
+{
+    if (index >= schema.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet schema of {} elements is truncated", schema.size());
+
+    const auto & element = schema[index];
+    ++index;
+
+    if (!element.__isset.num_children || element.num_children == 0)
+        return 1;
+
+    size_t leaves = 0;
+    for (Int32 i = 0; i < element.num_children; ++i)
+        leaves += countSchemaLeaves(schema, index);
+    return leaves;
+}
+
+void ParquetBlockOutputFormat::collectColumnSizesOnDisk(const Block & header)
+{
+    VectorWithMemoryTracking<size_t> leaves_per_column;
+    leaves_per_column.reserve(header.columns());
+    size_t schema_index = 1;
+    size_t num_leaves = 0;
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        leaves_per_column.push_back(countSchemaLeaves(schema, schema_index));
+        num_leaves += leaves_per_column.back();
+    }
+
+    column_sizes_on_disk.clear();
+    row_group_offsets.clear();
+    for (const auto & row_group : file_state.completed_row_groups)
+    {
+        if (row_group.row_group.__isset.file_offset && row_group.row_group.file_offset > 0)
+            row_group_offsets.push_back(static_cast<UInt64>(row_group.row_group.file_offset));
+        const auto & column_chunks = row_group.row_group.columns;
+        if (column_chunks.size() != num_leaves)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Parquet row group has {} column chunks while the schema has {} leaf columns",
+                column_chunks.size(),
+                num_leaves);
+
+        size_t leaf_index = 0;
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            size_t column_size = 0;
+            for (size_t j = 0; j < leaves_per_column[i]; ++j, ++leaf_index)
+                column_size += static_cast<size_t>(column_chunks[leaf_index].meta_data.total_compressed_size);
+            column_sizes_on_disk[header.getByPosition(i).name] += column_size;
+        }
+    }
 }
 
 void ParquetBlockOutputFormat::resetFormatterImpl()
 {
     if (pool)
     {
-        is_stopped = true;
-        pool->wait();
+        stopThreads();
         is_stopped = false;
     }
 
@@ -207,6 +292,8 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     task_queue.clear();
     row_groups.clear();
     file_state = {};
+    column_sizes_on_disk.clear();
+    row_group_offsets.clear();
     staging_chunks.clear();
     staging_rows = 0;
     staging_bytes = 0;
@@ -217,7 +304,7 @@ void ParquetBlockOutputFormat::onCancel() noexcept
     is_stopped = true;
 }
 
-void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroup(Chunks chunks)
 {
     if (pool)
     {
@@ -253,7 +340,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     for (size_t i = 0; i < header.columns(); ++i)
         prepareColumnForWrite(
             chunk.getColumns()[i], header.getByPosition(i).type, header.getByPosition(i).name,
-            options, &columns_to_write);
+            options, &columns_to_write, /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);
 
     if (file_state.offset == 0)
     {
@@ -269,7 +356,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     finalizeRowGroup(file_state, chunk.getNumRows(), options, out);
 }
 
-void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroupInParallel(Chunks chunks)
 {
     std::unique_lock lock(mutex);
 
@@ -279,7 +366,7 @@ void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks
     r.column_chunks.resize(header.columns());
     r.tasks_in_flight = r.column_chunks.size();
 
-    std::vector<Columns> columnses;
+    VectorWithMemoryTracking<Columns> columnses;
     for (auto & chunk : chunks)
     {
         chassert(header.columns() == chunk.getNumColumns());
@@ -311,6 +398,8 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
 {
     while (!row_groups.empty() && row_groups.front().tasks_in_flight == 0 && !is_stopped)
     {
+        CurrentThread::checkIfNotCancelled();
+
         RowGroupState & r = row_groups.front();
 
         /// Write to the file.
@@ -346,17 +435,16 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     size_t to_add = std::min(task_queue.size(), format_settings.max_threads - threads_running);
     for (size_t i = 0; i < to_add; ++i)
     {
-        auto job = [this, thread_group = CurrentThread::getGroup()]()
+        auto job = [this, thread_group = CurrentThread::getGroup()]() mutable
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_ENCODER);
-
-                threadFunction();
+                threadFunction(thread_group);
             }
             catch (...)
             {
                 std::lock_guard lock(mutex);
+                thread_group.reset();
                 background_exception = std::current_exception();
                 condvar.notify_all();
                 --threads_running;
@@ -375,12 +463,16 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
             /// otherwise it may deadlock.
             if (!pool->trySchedule(job))
                 break;
+            ++threads_running;
         }
     }
 }
 
-void ParquetBlockOutputFormat::threadFunction()
+void ParquetBlockOutputFormat::threadFunction(ThreadGroupPtr & thread_group)
 {
+    std::optional<ThreadGroupSwitcher> switcher;
+    switcher.emplace(thread_group, ThreadName::PARQUET_ENCODER);
+
     std::unique_lock lock(mutex);
 
     while (true)
@@ -389,7 +481,12 @@ void ParquetBlockOutputFormat::threadFunction()
         {
             /// The check and the decrement need to be in the same critical section, to make sure
             /// we never get stuck with tasks but no threads.
+            /// Leave the query's thread group before stopThreads() can see the decrement.
+            switcher.reset();
+            thread_group.reset();
             --threads_running;
+            if (threads_running == 0)
+                condvar.notify_all();
             return;
         }
 
@@ -409,9 +506,10 @@ void ParquetBlockOutputFormat::threadFunction()
             }
             task.column_pieces.clear();
 
-            std::vector<ColumnChunkWriteState> subcolumns;
+            VectorWithMemoryTracking<ColumnChunkWriteState> subcolumns;
             prepareColumnForWrite(
-                std::move(concatenated), task.column_type, task.column_name, options, &subcolumns);
+                std::move(concatenated), task.column_type, task.column_name, options, &subcolumns,
+                /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);
 
             lock.lock();
 
@@ -452,6 +550,7 @@ void ParquetBlockOutputFormat::threadFunction()
     }
 }
 
+void registerOutputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -466,6 +565,8 @@ void registerOutputFormatParquet(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");
     factory.setContentType("Parquet", "application/octet-stream");
+    /// `.pq` is a common extension for Parquet files besides `.parquet`.
+    factory.registerFileExtension("pq", "Parquet");
 }
 
 }
@@ -475,6 +576,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatParquet(FormatFactory &);
 void registerOutputFormatParquet(FormatFactory &)
 {
 }

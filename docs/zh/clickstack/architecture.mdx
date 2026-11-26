@@ -1,0 +1,63 @@
+---
+slug: /use-cases/observability/clickstack/architecture
+description: 'ClickStack 的架构 - ClickHouse 可观测性技术栈'
+title: '架构'
+toc_max_heading_level: 2
+doc_type: 'reference'
+keywords: ['ClickStack 架构', '可观测性架构', 'ClickStack 用户界面', 'OpenTelemetry 采集器', 'MongoDB', '系统设计']
+---
+
+ClickStack 开源版的架构由三个核心组件构成：**ClickHouse**、**ClickStack 用户界面**和 **OpenTelemetry (OTel) 采集器**。另有一个 **MongoDB** 实例负责存储应用程序状态。这些组件共同构成了一套高性能的开源可观测性技术栈，专为日志、指标和链路追踪而优化。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![架构](/images/use-cases/observability/clickstack-oss-architecture.svg)
+  </Frame>
+</div>
+
+### ClickHouse：数据库引擎 {#clickhouse}
+
+ClickStack 的核心是 ClickHouse，这是一款专为大规模实时分析而设计的列式数据库。它支撑可观测性数据的摄取与查询，实现了：
+
+* 在 TB 级事件数据上进行亚秒级搜索
+* 每日摄取数十亿条高基数记录
+* 对可观测性数据实现至少 10 倍的压缩率
+* 原生支持半结构化 JSON 数据，允许 schema 动态演进
+* 强大的 SQL 引擎，内置数百种分析函数
+
+ClickHouse 将可观测性数据作为宽事件处理，因此能够在统一结构中对日志、指标和链路追踪进行深度关联分析。
+
+### OpenTelemetry 采集器：数据摄取 {#open-telemetry-collector}
+
+ClickStack 包含一个预配置的 OpenTelemetry (OTel) 采集器，以开放、标准化的方式摄取 telemetry。你可以通过以下方式使用 OTLP 协议发送数据：
+
+* gRPC (端口 `4317`)
+* HTTP (端口 `4318`)
+
+采集器会以高效批次将 telemetry 导出到 ClickHouse。它支持针对各数据源优化的表 schema，确保所有信号类型都具备可扩展的性能。
+
+### ClickStack 用户界面：界面 {#hyperdx-ui}
+
+ClickStack 用户界面是 ClickStack 的用户界面。它提供：
+
+* 自然语言和 Lucene 风格搜索
+* 用于实时调试的实时日志流查看
+* 日志、指标和链路追踪的统一视图
+* 用于前端可观测性的 session replay
+* 仪表盘创建和告警配置
+* 用于高级分析的 SQL 查询界面
+
+ClickStack 用户界面专为 ClickHouse 设计，将强大的搜索能力与直观的工作流结合起来，帮助你快速发现异常、排查问题并获得洞察。
+
+### MongoDB：应用状态 {#mongo}
+
+ClickStack 使用 MongoDB 存储应用级状态，包括：
+
+* 仪表盘
+* 告警
+* 用户配置文件
+* 已保存的可视化
+
+将状态与事件数据分离，既保证了性能和可扩展性，又简化了备份和配置。
+
+借助这种模块化架构，ClickStack 能够提供一个开箱即用、快速、灵活且开源的可观测性平台。

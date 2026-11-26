@@ -2,8 +2,13 @@
 #include <Processors/Formats/Impl/FormRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Poco/URI.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -21,6 +26,17 @@ namespace
         readStringUntilEquals(field, buf);
         assertChar('=', buf);
         return field;
+    }
+
+    /// In application/x-www-form-urlencoded data '+' encodes a space. Replace it before
+    /// percent-decoding so that "%2B" still decodes to a literal '+'. Poco::URI::decode with
+    /// plusAsSpace = true is not enough: it only handles '+' after a '?' in the input.
+    /// Poco::URI::decode appends to its destination, so clear it first.
+    void decodeFormValue(String & encoded, String & decoded)
+    {
+        std::ranges::replace(encoded, '+', ' ');
+        decoded.clear();
+        Poco::URI::decode(encoded, decoded);
     }
 }
 
@@ -44,10 +60,12 @@ const String & FormRowInputFormat::columnName(size_t i) const
 
 void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
-    if (seen_columns[index])
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
+    if (seen_columns[index] && !format_settings.skip_duplicated_fields)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Duplicate field found while parsing Form format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+            columnName(index));
 
-    seen_columns[index] = true;
     const auto & serialization = serializations[index];
 
     String encoded_str;
@@ -57,7 +75,11 @@ void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
     if (!in->eof())
         assertChar('&', *in);
 
-    Poco::URI::decode(encoded_str, decoded_str);
+    if (seen_columns[index])
+        return;
+
+    seen_columns[index] = true;
+    decodeFormValue(encoded_str, decoded_str);
     ReadBufferFromString buf(decoded_str);
     serialization->deserializeWholeText(*columns[index], buf, format_settings);
 }
@@ -132,17 +154,36 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
-NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
+static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
-    String value;
-    String decoded_value;
+    NameSet row_field_names;
     do
     {
+        /// Declared inside the loop: `readStringUntilAmpersand` appends to its argument, so a buffer
+        /// kept across iterations carries the previous fields into this one and makes the inferred
+        /// type of a field depend on the fields before it.
+        String value;
+        String decoded_value;
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
-        Poco::URI::decode(value, decoded_value);
-        auto type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
+        if (settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+            continue;
+        decodeFormValue(value, decoded_value);
+        DataTypePtr type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
+        /// The value is read verbatim with `deserializeWholeText`, while the type inference follows a
+        /// different grammar: it skips surrounding whitespace, looks inside single quotes, and unescapes
+        /// nested strings before recognizing dates (e.g. " 42", "'2026-11-17'" or "['2026\\x2D11\\x2D17']").
+        /// Keep a value as a string unless the reader of the inferred type accepts it.
+        /// Incomplete types (e.g. `Nullable(Nothing)` for `\N`) cannot be read; they are left for
+        /// schema finalization, which replaces them with `String`.
+        if (type && !isString(removeNullable(type)) && checkIfTypeIsComplete(type))
+        {
+            auto column = type->createColumn();
+            ReadBufferFromString value_buf(decoded_value);
+            if (!type->getDefaultSerialization()->tryDeserializeWholeText(*column, value_buf, settings) || !value_buf.eof())
+                type = std::make_shared<DataTypeString>();
+        }
         names_and_types.emplace_back(name, type);
     }
     while (checkChar('&',in));
@@ -159,6 +200,7 @@ NamesAndTypesList FormSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     return readRowAndGetNamesAndDataTypesForFormRow(in, format_settings);
 }
 
+void registerInputFormatForm(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory)
 {
     factory.registerInputFormat("Form", [](
@@ -168,14 +210,59 @@ void registerInputFormatForm(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<FormRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params),settings);
-    });
+    }, /*supports_reset_parser=*/ true);
+
+    factory.setDocumentation("Form", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✗      |       |
+
+## Description {#description}
+
+The `Form` format can be used to read a single record in the application/x-www-form-urlencoded format 
+in which data is formatted as `key1=value1&key2=value2`.
+
+## Example usage {#example-usage}
+
+Given a file `data.tmp` placed in the `user_files` path with some URL encoded data:
+
+```text title="data.tmp"
+t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
+```
+
+```sql title="Query"
+SELECT * FROM file(data.tmp, Form) FORMAT vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+t_page:   116
+c.e:      ls7xfkpm
+c.tti.m:  raf
+rt.start: navigation
+rt.bmr:   390,11,10
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
+void registerFormSchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Form", [](ReadBuffer & buffer, const FormatSettings & settings)
     {
         return std::make_shared<FormSchemaReader>(buffer, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Form", [](const FormatSettings & settings)
+    {
+        /// Raw matches the rule readRowAndGetNamesAndDataTypesForFormRow infers with.
+        /// The inferred type is also validated with the reader of the type, whose acceptance of
+        /// a value depends on `input_format_null_as_default`.
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Raw)
+            + fmt::format(", null_as_default={}", settings.null_as_default);
     });
 }
 

@@ -3,8 +3,6 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
-#include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -13,12 +11,16 @@
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Poco/String.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/DNSResolver.h>
+#include <Common/NetException.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -93,13 +95,100 @@ void buildLifetimeConfiguration(
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
     AutoPtr<Element> max_element(doc->createElement("max"));
-    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+    AutoPtr<Text> min_sec(doc->createTextNode(toXMLString(toString(lifetime->min_sec))));
     min_element->appendChild(min_sec);
-    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+    AutoPtr<Text> max_sec(doc->createTextNode(toXMLString(toString(lifetime->max_sec))));
     max_element->appendChild(max_sec);
     lifetime_element->appendChild(min_element);
     lifetime_element->appendChild(max_element);
     root->appendChild(lifetime_element);
+}
+
+/// Element names for the entries of a layout parameter given as a key-value collection literal.
+/// Every layout parameter that accepts a collection literal declares its names here, so the generated
+/// configuration has the same shape a user writes in an XML dictionary definition; the layout's create
+/// function reads the same names back from the configuration.
+struct KeyValueCollectionElementNames
+{
+    String entry;
+    String key;
+    String value;
+};
+
+/// Returns nullptr when the layout parameter does not support a collection value.
+const KeyValueCollectionElementNames * tryGetKeyValueCollectionElementNames(const String & layout_type, const String & parameter_name)
+{
+    static const KeyValueCollectionElementNames naive_bayes_priors{"prior", "class", "probability"};
+
+    if (layout_type == "naive_bayes" && parameter_name == "priors")
+        return &naive_bayes_priors;
+
+    return nullptr;
+}
+
+/* Transforms a layout parameter whose value is a key-value collection literal
+ *  PRIORS [(0, 0.6), (1, 0.4)]
+ * to the next configuration
+ *  <priors>
+ *    <prior>
+ *      <class>0</class>
+ *      <probability>0.6</probability>
+ *    </prior>
+ *    <prior>
+ *      <class>1</class>
+ *      <probability>0.4</probability>
+ *    </prior>
+ *  </priors>
+ * so the layout reads it as structured configuration instead of parsing a string.
+ */
+void buildLayoutParameterKeyValueCollection(
+    AutoPtr<Document> doc,
+    AutoPtr<Element> parameter_element,
+    const String & parameter_name,
+    const KeyValueCollectionElementNames & element_names,
+    const Field & collection)
+{
+    const auto & entries = collection.safeGet<Array>();
+
+    for (const auto & entry : entries)
+    {
+        if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter '{}' must be a collection of (key, value) pairs, got element '{}' instead",
+                parameter_name,
+                fieldToString(entry));
+        }
+
+        const auto & key_and_value = entry.safeGet<Tuple>();
+
+        AutoPtr<Element> entry_element(doc->createElement(toXMLString(element_names.entry)));
+        parameter_element->appendChild(entry_element);
+
+        auto append_scalar_child = [&](const String & element_name, const Field & field)
+        {
+            const auto field_type = field.getType();
+            if (field_type != Field::Types::UInt64 && field_type != Field::Types::Int64 && field_type != Field::Types::Float64
+                && field_type != Field::Types::String)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' entry element '{}' must be a number or a string, got '{}' instead",
+                    parameter_name,
+                    element_name,
+                    field.getTypeName());
+            }
+
+            AutoPtr<Element> field_element(doc->createElement(toXMLString(element_name)));
+            AutoPtr<Text> field_text(doc->createTextNode(convertFieldToString<XMLString>(field)));
+            field_element->appendChild(field_text);
+            entry_element->appendChild(field_element);
+        };
+
+        append_scalar_child(element_names.key, key_and_value[0]);
+        append_scalar_child(element_names.value, key_and_value[1]);
+    }
 }
 
 /* Transforms next definition
@@ -126,7 +215,7 @@ void buildLayoutConfiguration(
 {
     AutoPtr<Element> layout_element(doc->createElement("layout"));
     root->appendChild(layout_element);
-    AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
+    AutoPtr<Element> layout_type_element(doc->createElement(toXMLString(layout->layout_type)));
     layout_element->appendChild(layout_type_element);
 
     if (!layout->parameters)
@@ -136,11 +225,11 @@ void buildLayoutConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         root->appendChild(settings_element);
-        for (const auto & [name, value] : settings->changes)
+        for (const auto & [name, value, _] : settings->changes)
         {
-            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            AutoPtr<Element> setting_change_element(doc->createElement(toXMLString(name)));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString<XMLString>(value)));
             setting_change_element->appendChild(setting_value);
         }
     }
@@ -169,11 +258,32 @@ void buildLayoutConfiguration(
 
         const Field & value_field = value_literal->value;
 
+        /// A collection-valued parameter (an array of (key, value) tuples) becomes structured child
+        /// elements instead of a text node.
+        if (value_field.getType() == Field::Types::Array)
+        {
+            const auto * element_names = tryGetKeyValueCollectionElementNames(layout->layout_type, pair->first);
+            if (!element_names)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' of layout '{}' does not accept a collection value",
+                    pair->first,
+                    layout->layout_type);
+            }
+
+            AutoPtr<Element> collection_parameter_element(doc->createElement(toXMLString(pair->first)));
+            layout_type_element->appendChild(collection_parameter_element);
+            buildLayoutParameterKeyValueCollection(doc, collection_parameter_element, pair->first, *element_names, value_field);
+            continue;
+        }
+
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
+                "Dictionary layout parameter value must be an UInt64, Float64, String, or a collection of (key, value) pairs, "
+                "got '{}' instead",
                 value_field.getTypeName());
         }
 
@@ -188,8 +298,8 @@ void buildLayoutConfiguration(
             }
         }
 
-        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-        AutoPtr<Text> value_to_append(doc->createTextNode(fieldToString(value_field)));
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(toXMLString(pair->first)));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toXMLString(fieldToString(value_field))));
         layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
@@ -207,21 +317,21 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
     // appends <key><name>value</name></key> to root
     auto append_element = [&doc, &root](const std::string & key, const std::string & name, const AttributeConfiguration & configuration)
     {
-        AutoPtr<Element> element(doc->createElement(key));
+        AutoPtr<Element> element(doc->createElement(toXMLString(key)));
         AutoPtr<Element> name_node(doc->createElement("name"));
-        AutoPtr<Text> name_text(doc->createTextNode(name));
+        AutoPtr<Text> name_text(doc->createTextNode(toXMLString(name)));
         name_node->appendChild(name_text);
         element->appendChild(name_node);
 
         AutoPtr<Element> type_node(doc->createElement("type"));
-        AutoPtr<Text> type_text(doc->createTextNode(configuration.type));
+        AutoPtr<Text> type_text(doc->createTextNode(toXMLString(configuration.type)));
         type_node->appendChild(type_text);
         element->appendChild(type_node);
 
         if (!configuration.expression.empty())
         {
             AutoPtr<Element> expression_node(doc->createElement("expression"));
-            AutoPtr<Text> expression_text(doc->createTextNode(configuration.expression));
+            AutoPtr<Text> expression_text(doc->createTextNode(toXMLString(configuration.expression)));
             expression_node->appendChild(expression_text);
             element->appendChild(expression_node);
         }
@@ -268,7 +378,7 @@ void buildAttributeExpressionIfNeeded(
 
     AutoPtr<Element> expression_element(doc->createElement("expression"));
     String expression_str = getAttributeExpression(dict_attr);
-    AutoPtr<Text> expression(doc->createTextNode(expression_str));
+    AutoPtr<Text> expression(doc->createTextNode(toXMLString(expression_str)));
     expression_element->appendChild(expression);
     root->appendChild(expression_element);
 }
@@ -292,19 +402,19 @@ void buildSingleAttribute(
     root->appendChild(attribute_element);
 
     AutoPtr<Element> name_element(doc->createElement("name"));
-    AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
+    AutoPtr<Text> name(doc->createTextNode(toXMLString(dict_attr->name)));
     name_element->appendChild(name);
     attribute_element->appendChild(name_element);
 
     AutoPtr<Element> type_element(doc->createElement("type"));
-    AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
+    AutoPtr<Text> type(doc->createTextNode(toXMLString(dict_attr->type->formatWithSecretsOneLine())));
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
-    String null_value_str;
+    XMLString null_value_str;
     if (dict_attr->default_value)
-        null_value_str = convertFieldToString(dict_attr->default_value->as<ASTLiteral>()->value);
+        null_value_str = convertFieldToString<XMLString>(dict_attr->default_value->as<ASTLiteral>()->value);
     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
     null_value_element->appendChild(null_value);
     attribute_element->appendChild(null_value_element);
@@ -400,7 +510,7 @@ void buildPrimaryKeyConfiguration(
 
         const ASTDictionaryAttributeDeclaration * dict_attr = (*it)->as<const ASTDictionaryAttributeDeclaration>();
 
-        AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
+        AutoPtr<Text> name(doc->createTextNode(toXMLString(dict_attr->name)));
         name_element->appendChild(name);
 
         buildAttributeExpressionIfNeeded(doc, id_element, dict_attr);
@@ -411,7 +521,7 @@ void buildPrimaryKeyConfiguration(
         AutoPtr<Element> type_element(doc->createElement("type"));
         id_element->appendChild(type_element);
 
-        AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
+        AutoPtr<Text> type(doc->createTextNode(toXMLString(dict_attr->type->formatWithSecretsOneLine())));
         type_element->appendChild(type);
     }
     else
@@ -483,17 +593,28 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     for (const auto & child : children)
     {
         const ASTPair * pair = child->as<const ASTPair>();
-        AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
+        AutoPtr<Element> current_xml_element(doc->createElement(toXMLString(pair->first)));
         root->appendChild(current_xml_element);
 
         if (const auto * identifier = pair->second->as<const ASTIdentifier>())
         {
-            AutoPtr<Text> value(doc->createTextNode(identifier->name()));
+            AutoPtr<Text> value(doc->createTextNode(toXMLString(identifier->name())));
             current_xml_element->appendChild(value);
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
-            AutoPtr<Text> value(doc->createTextNode(convertFieldToString(literal->value)));
+            /// The grammar admits an array literal for any key-value parameter, but a dictionary
+            /// source parameter has no structured representation for it, so reject a collection
+            /// instead of silently stringifying it.
+            if (literal->value.getType() == Field::Types::Array)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary source parameter '{}' does not accept a collection value",
+                    pair->first);
+            }
+
+            AutoPtr<Text> value(doc->createTextNode(convertFieldToString<XMLString>(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (const auto * list = pair->second->as<const ASTExpressionList>())
@@ -530,7 +651,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             Field value;
             result->get(0, value);
 
-            AutoPtr<Text> text_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> text_value(doc->createTextNode(convertFieldToString<XMLString>(value)));
             current_xml_element->appendChild(text_value);
         }
         else
@@ -567,7 +688,7 @@ void buildSourceConfiguration(
 
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
-    AutoPtr<Element> source_element(doc->createElement(source->name));
+    AutoPtr<Element> source_element(doc->createElement(toXMLString(source->name)));
     outer_element->appendChild(source_element);
     buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>(), context);
 
@@ -575,11 +696,11 @@ void buildSourceConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         outer_element->appendChild(settings_element);
-        for (const auto & [name, value] : settings->changes)
+        for (const auto & [name, value, _] : settings->changes)
         {
-            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            AutoPtr<Element> setting_change_element(doc->createElement(toXMLString(name)));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString<XMLString>(value)));
             setting_change_element->appendChild(setting_value);
         }
     }
@@ -617,7 +738,7 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
-void checkLifetime(const ASTCreateQuery & query)
+static void checkLifetime(const ASTCreateQuery & query)
 {
     if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
     {
@@ -649,19 +770,19 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(dictionary_name));
+    AutoPtr<Text> name(xml_document->createTextNode(toXMLString(dictionary_name)));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(db_name));
+    AutoPtr<Text> database(xml_document->createTextNode(toXMLString(db_name)));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)
     {
         AutoPtr<Poco::XML::Element> uuid_element(xml_document->createElement("uuid"));
         current_dictionary->appendChild(uuid_element);
-        AutoPtr<Text> uuid(xml_document->createTextNode(toString(query.uuid)));
+        AutoPtr<Text> uuid(xml_document->createTextNode(toXMLString(toString(query.uuid))));
         uuid_element->appendChild(uuid);
     }
 
@@ -700,7 +821,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     {
         AutoPtr<Element> comment_element(xml_document->createElement("comment"));
         current_dictionary->appendChild(comment_element);
-        AutoPtr<Text> comment_value(xml_document->createTextNode(query.comment->as<ASTLiteral>()->value.safeGet<String>()));
+        AutoPtr<Text> comment_value(xml_document->createTextNode(toXMLString(query.comment->as<ASTLiteral>()->value.safeGet<String>())));
 
         comment_element->appendChild(comment_value);
     }
@@ -731,16 +852,39 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     try
     {
-        if (isLocalAddress({host, port}, default_port))
-            info.is_local = true;
+        info.is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port);
     }
-    catch (const Poco::Net::DNSException &)
+    catch (const NetException &)
     {
-        /// Server may fail to start if we cannot resolve some hostname. It's ok to ignore exception and leave is_local false.
+        /// Server may fail to start if we cannot resolve some hostname.
+        info.host_unresolved = true;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     return info;
+}
+
+bool mayBeLocalClickHouseDictionarySource(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
+{
+    if (!query.is_dictionary || !query.dictionary || !query.dictionary->source)
+        return false;
+    if (Poco::toLower(query.dictionary->source->name) != "clickhouse")
+        return false;
+
+    auto config = getDictionaryConfigurationFromAST(query, context, database_);
+
+    /// A named collection keeps the host out of the definition and is not expanded here, so locality
+    /// is undecidable: count it as local.
+    const String prefix = "dictionary.source.clickhouse";
+    if (!config->getString(prefix + ".name", "").empty())
+        return true;
+
+    auto info = getInfoIfClickHouseDictionarySource(config, context->getGlobalContext());
+    if (!info)
+        return false;
+
+    /// An unresolvable host is not a remote one: the loader resolves it again and may go local.
+    return info->is_local || info->host_unresolved;
 }
 
 }

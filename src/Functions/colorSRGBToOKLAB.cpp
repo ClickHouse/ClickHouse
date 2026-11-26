@@ -8,7 +8,7 @@ namespace DB
   */
 namespace
 {
-class FunctionColorSRGBToOKLAB : public ColorConversionFromSRGBBase<FunctionColorSRGBToOKLAB>
+class FunctionColorSRGBToOKLAB final : public ColorConversionFromSRGBBase<FunctionColorSRGBToOKLAB>
 {
 public:
     static constexpr auto name = "colorSRGBToOKLAB";
@@ -18,10 +18,10 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorSRGBToOKLAB>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// sRGB -> OKLAB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
+    [[nodiscard]] ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
     {
         /// sRGB is already in Cartesian form, so we can directly convert to OKLab
         /// Steps 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
@@ -33,19 +33,19 @@ public:
 REGISTER_FUNCTION(ColorSRGBToOKLAB)
 {
     FunctionDocumentation::Description description = R"(
-        Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLAB** colour space.
+Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLAB** colour space.
 
-        If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
+If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
-        :::note
-        **OKLAB** is a perceptually uniform color space.
-        Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green-Red axis)` and `b (Blue-Yellow axis)`.
-        OKLab is designed to be perceptually uniform while remaining cheap to compute.
-        :::
+<Note>
+**OKLAB** is a perceptually uniform color space.
+Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green-Red axis)` and `b (Blue-Yellow axis)`.
+OKLab is designed to be perceptually uniform while remaining cheap to compute.
+</Note>
 
-        The conversion consists of two stages:
-        1) sRGB to Linear sRGB
-        2) Linear sRGB to OKLab
+The conversion consists of two stages:
+1) sRGB to Linear sRGB
+2) Linear sRGB to OKLab
     )";
     FunctionDocumentation::Syntax syntax = "colorSRGBToOKLAB(tuple[, gamma])";
     FunctionDocumentation::Arguments arguments = {

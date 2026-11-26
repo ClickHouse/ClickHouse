@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -10,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 template <typename Type>
 void SerializationEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
@@ -59,9 +65,13 @@ bool SerializationEnum<Type>::tryDeserializeTextEscaped(IColumn & column, ReadBu
 }
 
 template <typename Type>
-void SerializationEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeQuotedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    auto name = ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(name, ostr);
+    else
+        writeQuotedString(name, ostr);
 }
 
 template <typename Type>
@@ -86,39 +96,61 @@ bool SerializationEnum<Type>::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     return true;
 }
 
+/// The whole text is read by name, or by value when no name matches. `input_format_tsv_enum_as_number` is not applied
+/// here: this also reads values outside of the TSV formats, like the string in `enum_column = 'name'`.
 template <typename Type>
-void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (settings.tsv.enum_as_number)
-    {
-        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
-        if (!istr.eof())
-            ISerialization::throwUnexpectedDataAfterParsedValue(column, istr, settings, "Enum");
-    }
-    else
-    {
-        std::string field_name;
-        readStringUntilEOF(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(std::string_view(field_name)));
-    }
+    std::string field_name;
+    readStringUntilEOF(field_name, istr);
+    assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(std::string_view(field_name)));
 }
 
 template <typename Type>
-bool SerializationEnum<Type>::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationEnum<Type>::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
+    std::string field_name;
+    readStringUntilEOF(field_name, istr);
     FieldType x;
-    if (settings.tsv.enum_as_number)
+    if (!ref_enum_values.tryGetValue(x, std::string_view(field_name)))
+        return false;
+
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+    return true;
+}
+
+/// `TSVRaw` and the `Raw` escaping rule, where `input_format_tsv_enum_as_number` reads the value instead of the name.
+template <typename Type>
+void SerializationEnum<Type>::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    /// Read until \t or \n.
+    readString(field, istr);
+    ReadBufferFromString buf(field);
+    if (!settings.tsv.enum_as_number)
     {
-        if (!tryReadValue(istr, x) || !istr.eof())
-            return false;
+        deserializeWholeText(column, buf, settings);
+        return;
     }
-    else
-    {
-        std::string field_name;
-        readStringUntilEOF(field_name, istr);
-        if (!ref_enum_values.tryGetValue(x, std::string_view(field_name)))
-            return false;
-    }
+
+    assert_cast<ColumnType &>(column).getData().push_back(readValue(buf));
+    if (!buf.eof())
+        ISerialization::throwUnexpectedDataAfterParsedValue(column, buf, settings, "Enum");
+}
+
+template <typename Type>
+bool SerializationEnum<Type>::tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    /// Read until \t or \n.
+    readString(field, istr);
+    ReadBufferFromString buf(field);
+    if (!settings.tsv.enum_as_number)
+        return tryDeserializeWholeText(column, buf, settings);
+
+    FieldType x;
+    if (!tryReadValue(buf, x) || !buf.eof())
+        return false;
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
     return true;
@@ -239,7 +271,7 @@ UInt128 SerializationEnum<Type>::getHash(const Values & values)
 template <typename Type>
 SerializationPtr SerializationEnum<Type>::create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
 {
-    return ISerialization::pooled(getHash(enum_type->getValues()), [&] { return new SerializationEnum(enum_type); });
+    return ISerialization::pooled(enum_type->getSerializationHash(), [&] { return new SerializationEnum(enum_type); });
 }
 
 template <typename Type>
@@ -253,13 +285,14 @@ size_t SerializationEnum<Type>::allocatedBytes() const
 {
     size_t bytes = sizeof(*this);
     if (own_enum_values)
-    {
-        const auto & vals = own_enum_values->getValues();
-        bytes += vals.capacity() * sizeof(typename EnumValues<Type>::Value);
-        for (const auto & [name, _] : vals)
-            bytes += name.capacity();
-    }
+        bytes += own_enum_values->allocatedBytes();
     return bytes;
+}
+
+template <typename Type>
+void SerializationEnum<Type>::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Enum is not supported by the HiveText output format");
 }
 
 template class SerializationEnum<Int8>;

@@ -478,3 +478,303 @@ CREATE TABLE tab
 ENGINE = MergeTree ORDER BY id;   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS tab;
+
+SELECT '-- Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.';
+
+-- Log lines contain a leading ISO timestamp followed by a space and the log message.
+-- The preprocessor uses replaceRegexpAll to remove the timestamp prefix before tokenization,
+-- so timestamp components are never stored in the index.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(val, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, '2024-01-15T10:23:45 ERROR connection failed'),
+    (2, '2024-01-15T10:23:46 INFO server started'),
+    (3, '2024-01-15T10:23:47 ERROR disk full');
+
+-- Searching by message content finds rows; the preprocessor is applied to the needle too,
+-- but 'ERROR', 'connection', etc. are unaffected by the timestamp regex.
+SELECT count() FROM tab WHERE hasToken(val, 'ERROR');        -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'connection');   -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'server');       -- 1
+-- Timestamp components are not indexed; searching for them returns 0.
+SELECT count() FROM tab WHERE hasToken(val, '2024');         -- 0
+SELECT count() FROM tab WHERE hasToken(val, '10');           -- 0
+
+DROP TABLE tab;
+
+SELECT '-- Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.';
+-- Index build always applies the preprocessor unconditionally. has/hasAll/hasAny must apply
+-- it on the lookup side too so the needle matches the stored (preprocessed) form.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo', 'qux']), (2, ['BAR', 'baz']);
+
+-- Index stores preprocessed values: 'foo'/'qux' for row 1, 'bar'/'baz' for row 2.
+-- Lookup applies preprocessor to needle so 'Foo' -> 'foo', matching the stored form.
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1 (preprocessor aligns needle with index; row-level finds literal 'Foo')
+SELECT count() FROM tab WHERE has(val, 'BAR');         -- 1
+SELECT count() FROM tab WHERE has(val, 'xyz');         -- 0
+-- Wrong capitalization: granule is kept (preprocessed 'foo' matches stored 'foo'), but
+-- row-level has() is a literal comparison so 'foo' does not match the stored element 'Foo'.
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE has(val, 'bar');         -- 0
+
+DROP TABLE tab;
+
+SELECT '-- Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.';
+-- Index build applies the preprocessor unconditionally (stores 'foo', 'bar', 'baz').
+-- has/hasAll/hasAny apply the preprocessor to the needle for the granule lookup, so
+-- 'Foo' -> 'foo' finds the right granule; row-level still does literal comparison.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
+
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1 (preprocessed needle 'foo' finds granule; literal 'Foo' matches row)
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0 (granule kept, but literal 'foo' ≠ 'Foo')
+SELECT count() FROM tab WHERE hasAll(val, ['BAR']);    -- 1
+SELECT count() FROM tab WHERE hasAll(val, ['bar']);    -- 0
+SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
+SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
+
+DROP TABLE tab;
+
+SELECT '-- hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).';
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = replaceAll(val, 'the', ''))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'the quick'), (2, 'foo');
+
+-- The preprocessor strips 'the' from the indexed tokens, but hasTokenOrNull is not rewritten on the
+-- row-scan path, so it still searches the literal token and must find it in row 1 (not pruned to 0).
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'the');   -- 1
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'quick'); -- 1
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'xyz');   -- 0
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor referencing an ALIAS column';
+-- https://github.com/ClickHouse/ClickHouse/issues/95944
+
+CREATE TABLE tab
+(
+    provider Nullable(String),
+    name String ALIAS ifNull(provider, 'default_name'),
+    INDEX name_text_idx(name) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(name))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+
+SELECT count() FROM tab WHERE hasToken(name, 'hello');
+SELECT count() FROM tab WHERE hasToken(name, 'HELLO'); -- search term is preprocessed too
+SELECT count() FROM tab WHERE hasToken(name, 'world');
+SELECT count() FROM tab WHERE hasToken(name, 'foo');
+SELECT count() FROM tab WHERE hasToken(name, 'bar');
+SELECT count() FROM tab WHERE hasToken(name, 'default'); -- from the ifNull default of the NULL row
+SELECT count() FROM tab WHERE hasToken(name, 'name');
+SELECT count() FROM tab WHERE hasToken(name, 'missing');
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor on an ALIAS column with direct read from text index disabled (row-level path)';
+-- Row-level path must apply the preprocessor to the ALIAS haystack, same as direct read.
+
+CREATE TABLE tab
+(
+    provider Nullable(String),
+    name String ALIAS ifNull(provider, 'default_name'),
+    INDEX name_text_idx(name) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(name))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+
+SELECT count() FROM tab WHERE hasToken(name, 'hello') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'world') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'bar') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'default') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'name') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'missing') SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor with a lambda parameter shadowing an ALIAS column';
+-- The lambda parameter `x` shadows the ALIAS column `x` and must not be expanded.
+
+CREATE TABLE tab
+(
+    val String,
+    x String ALIAS 'shadow',
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> upper(x), splitByChar(' ', val)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(val) VALUES ('hello world'), ('foo bar');
+
+SELECT count() FROM tab WHERE hasToken(val, 'HELLO');
+SELECT count() FROM tab WHERE hasToken(val, 'hello'); -- search term is preprocessed too
+SELECT count() FROM tab WHERE hasToken(val, 'world');
+SELECT count() FROM tab WHERE hasToken(val, 'foo');
+SELECT count() FROM tab WHERE hasToken(val, 'bar');
+SELECT count() FROM tab WHERE hasToken(val, 'shadow'); -- 0: the lambda arg is not the ALIAS `x`
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected';
+-- `a` expands to `x`, shadowed by the lambda parameter, so it is inaccessible.
+CREATE TABLE tab
+(
+    s String,
+    x String,
+    a String ALIAS x,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> lower(a), splitByChar(' ', s)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Preprocessor referencing a chained ALIAS captured by a lambda parameter is rejected';
+-- `a` expands to `b` and only then to `x`, so the capture appears at the last expansion step.
+CREATE TABLE tab
+(
+    s String,
+    x String,
+    b String ALIAS x,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> lower(a), splitByChar(' ', s)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Preprocessor referencing an ALIAS whose compound identifier root is captured is rejected';
+-- `a` expands to `t.v`, whose root `t` the lambda parameter shadows. Without checking the root, the
+-- index would silently be built from the lambda-local tuple instead of the table column.
+CREATE TABLE tab
+(
+    s String,
+    t Tuple(v String),
+    a String ALIAS t.v,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(t -> lower(a), [CAST(tuple('shadow'), 'Tuple(v String)')]), ''))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Preprocessor referencing a chained ALIAS through an intermediate name matching the lambda parameter';
+-- `a` expands to `b` and then to `s`, so the full expansion is `lower(s)` and nothing is captured:
+-- the intermediate name `b` must not be mistaken for a reference to the lambda parameter.
+CREATE TABLE tab
+(
+    s String,
+    b String ALIAS s,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(b -> lower(a), splitByChar(' ', s)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('Hello World'), ('FOO bar');
+
+SELECT count() FROM tab WHERE hasToken(s, 'hello');
+SELECT count() FROM tab WHERE hasToken(s, 'world');
+SELECT count() FROM tab WHERE hasToken(s, 'foo');
+SELECT count() FROM tab WHERE hasToken(s, 'missing');
+
+DROP TABLE tab;
+
+SELECT '-- The same capture in a non-text index expression is still accepted';
+-- The rejection above is scoped to the text index `preprocessor` / `postprocessor` arguments.
+-- Index expressions accepted such definitions before, so `ATTACH` must keep working for them.
+
+CREATE TABLE tab
+(
+    arr Array(String),
+    x String,
+    a String ALIAS x,
+    INDEX bf arrayMap(x -> lower(a), arr) TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_indices = 1;
+
+DETACH TABLE tab;
+ATTACH TABLE tab;
+SELECT count() FROM tab;
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor referencing chained ALIAS columns (a -> b -> s)';
+
+CREATE TABLE tab
+(
+    s String,
+    b String ALIAS s,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(a))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('Hello World'), ('FOO bar');
+
+SELECT count() FROM tab WHERE hasToken(s, 'hello');
+SELECT count() FROM tab WHERE hasToken(s, 'world');
+SELECT count() FROM tab WHERE hasToken(s, 'foo');
+SELECT count() FROM tab WHERE hasToken(s, 'bar');
+SELECT count() FROM tab WHERE hasToken(s, 'missing');
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor referencing an ALIAS whose body has its own shadowing lambda (not a capture)';
+-- `a`'s body binds its own `x`, shadowing the outer lambda's `x`, so it is not a capture.
+CREATE TABLE tab
+(
+    s String,
+    a String ALIAS arrayStringConcat(arrayMap(x -> lower(x), splitByChar(' ', s)), ' '),
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> upper(a), splitByChar(' ', s)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('ab cd'), ('ef gh');
+
+SELECT count() FROM tab;
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor on an ALIAS column with the sparseGrams tokenizer';
+
+CREATE TABLE tab
+(
+    provider Nullable(String),
+    name String ALIAS ifNull(provider, 'default_name'),
+    INDEX name_text_idx(name) TYPE text(tokenizer = sparseGrams(3), preprocessor = lower(name))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+
+SELECT count() FROM tab;
+
+DROP TABLE tab;

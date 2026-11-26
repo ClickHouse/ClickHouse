@@ -1,4 +1,5 @@
 import datetime
+import os
 import pymongo
 import pytest
 import urllib
@@ -6,7 +7,9 @@ import urllib
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, wait_condition
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 @pytest.fixture(scope="module")
@@ -614,3 +617,139 @@ def test_named_collection_overrides(started_cluster):
     assert result == "3\n"
 
     override_table.drop()
+
+
+def test_oid_columns_named_argument(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test_oid_columns_named_argument"]
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
+    oid_table = db["oid_table"]
+    data = [{"key": i, "data": hex(i * i)} for i in range(0, 100)]
+    oid_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    # `oid_columns` passed as a named argument must be accepted. It used to be rejected with
+    # BAD_ARGUMENTS ("Expected key-value defined argument") because the named-argument
+    # allowlist in getKeyValueMongoDBArgument did not include `oid_columns`. Use the URI form,
+    # where `oid_columns` follows `structure` directly (as documented).
+    assert (
+        node.query(
+            f"SELECT count() FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test_oid_columns_named_argument', 'oid_table', structure='key UInt64, data String', oid_columns='_id')"
+        )
+        == "100\n"
+    )
+
+    # A named `oid_columns` must also take effect (not merely be accepted) in the `host:port`
+    # form when `options` is omitted. The named argument is stripped to a positional value, so it
+    # used to land in the `options` slot and be silently ignored. With `oid_columns='data'` the
+    # `data` column is treated as an oid, so filtering by a non-oid string must raise.
+    long_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String', oid_columns='data')"
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM {long_form} WHERE data = 'not-oid'")
+
+    # Sanity check: without `oid_columns`, `data` is a plain string column and the same filter
+    # just matches no rows instead of raising. This confirms the failure above is caused by
+    # `oid_columns` taking effect.
+    plain_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String')"
+    )
+    assert node.query(f"SELECT count() FROM {plain_form} WHERE data = 'not-oid'") == "0\n"
+
+    # A named `options` combined with a positional `oid_columns` must keep both values in their
+    # canonical slots. The positional `oid_columns` used to overwrite the `options` slot, so the
+    # connection `options` were lost and `oid_columns` was never set. With a valid `options` and
+    # the positional `'data'` bound to `oid_columns`, a plain count must still succeed (proving the
+    # connection `options` survived) and filtering `data` by a non-oid string must raise (proving
+    # the positional `oid_columns` took effect).
+    mixed_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String', options='connectTimeoutMS=20000', 'data')"
+    )
+    assert node.query(f"SELECT count() FROM {mixed_form}") == "100\n"
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM {mixed_form} WHERE data = 'not-oid'")
+
+    oid_table.drop()
+
+
+def test_block_boundary(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
+    db = mongo_connection["test_block_boundary"]
+    block_boundary_table = db["block_boundary_table"]
+    block_boundary_table.insert_many([{"key": i} for i in range(0, 25)])
+
+    node = started_cluster.instances["node"]
+    table_func = "mongodb('mongo_no_cred:27017', 'test_block_boundary', 'block_boundary_table', '', '', structure='key UInt64')"
+
+    # The document at each block boundary used to be returned twice.
+    for max_block_size in [10, 25, 100]:
+        assert TSV(node.query(f"SELECT count(), uniqExact(key) FROM {table_func} SETTINGS max_block_size = {max_block_size}")) == TSV("25\t25\n")
+
+    block_boundary_table.drop()
+
+
+@pytest.fixture(scope="module")
+def malformed_cursor_batch_server(started_cluster):
+    node = started_cluster.instances["node"]
+    port_file = "/tmp/malformed_cursor_batch_server.port"
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "malformed_cursor_batch_server.py"),
+        "/tmp/malformed_cursor_batch_server.py",
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"rm -f {port_file}; python3 /tmp/malformed_cursor_batch_server.py {port_file}"
+            " > /var/log/clickhouse-server/malformed_cursor_batch_server.log 2>&1",
+        ],
+        detach=True,
+    )
+    # The server binds to port 0 in the container of `node`, and writes the port to the port file when it listens.
+    port = wait_condition(
+        lambda: node.exec_in_container(
+            ["bash", "-c", f"cat {port_file} 2>/dev/null"], nothrow=True
+        ).strip(),
+        lambda reply: reply.isdigit(),
+        max_attempts=40,
+        delay=0.5,
+    )
+    return f"127.0.0.1:{port}"
+
+
+def test_malformed_cursor_batch(started_cluster, malformed_cursor_batch_server):
+    # A MongoDB server that returned a malformed document in a cursor batch used to abort the ClickHouse server
+    # (`BSON_ASSERT` in `_mongoc_cursor_response_read` of the C driver). Now the query fails with an exception.
+    # The fake MongoDB server answers `find` and `getMore` with hand-encoded replies.
+    # The collection name selects the reply.
+    node = started_cluster.instances["node"]
+
+    def select(collection):
+        return (
+            f"SELECT * FROM mongodb('{malformed_cursor_batch_server}', 'db', '{collection}', '', '', 'v String', "
+            "'serverSelectionTimeoutMS=30000&socketTimeoutMS=30000')"
+        )
+
+    # The fake server is good enough for the driver when all documents are valid.
+    assert node.query(select("valid")) == "hello\nhello\n"
+    assert node.query(select("empty")) == ""
+
+    for collection in [
+        # Neither a short length nor a missing NUL terminator must abort the process.
+        "short",
+        "nonnul",
+        # Reject a bad document after reading a valid one, even when the cursor is still open.
+        "after_valid",
+        # The same validation must apply to a `getMore` reply.
+        "next_batch",
+    ]:
+        error = node.query_and_get_error(select(collection))
+        assert "Invalid BSON document in cursor reply." in error, (collection, error)
+        assert node.query("SELECT 1") == "1\n", collection

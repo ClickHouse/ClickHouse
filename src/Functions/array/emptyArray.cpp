@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionEmptyArray : public IFunction
+class FunctionEmptyArray final : public IFunction
 {
 private:
     String element_type;
@@ -22,21 +22,18 @@ public:
     explicit FunctionEmptyArray(const String & element_type_) : element_type(element_type_) {}
 
 private:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return getNameImpl(element_type);
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(element_type));
-    }
+    [[nodiscard]] String getSignatureString() const override { return "() -> Array(" + element_type + ")"; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnArray::create(
             DataTypeFactory::instance().get(element_type)->createColumn(),
@@ -50,7 +47,7 @@ void registerFunction(FunctionFactory & factory, const String & element_type)
     FunctionDocumentation::Syntax syntax = fmt::format("emptyArray{}()", element_type);
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {fmt::format("An empty {} array.", element_type), {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", fmt::format("SELECT emptyArray{}", element_type), "[]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", fmt::format("SELECT emptyArray{}()", element_type), "[]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

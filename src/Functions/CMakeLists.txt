@@ -1,20 +1,22 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions AI)
+add_headers_and_sources(clickhouse_functions Kusto)
 
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
 set(DBMS_FUNCTIONS
+    ComparisonOrderDomain.cpp # ComparisonOrderDomain::operator== (Used by LogicalExpressionOptimizerPass.cpp)
     IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)
     FunctionDynamicAdaptor.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     FunctionVariantAdaptor.cpp # IFunctionOverloadResolver::build, IExecutableFunction::execute... (For Variant type support)
+    TypeMismatchStrictness.cpp # shouldThrowOnVariantTypeMismatch, shouldThrowOnDynamicTypeMismatch (Used by the Variant/Dynamic adaptors above)
     FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
     FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
-    multiMatchAny.cpp # createInternalMultiMatchAnyOverloadResolver (Used by ConvertOrLikeChainPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
@@ -51,17 +53,24 @@ set(DBMS_FUNCTIONS
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
     FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
+    productQuantization.cpp # createInternalFunctionPQDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
+    vectorQuantization.cpp # createInternalFunctionQuantizeDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
+    FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
+    extractKeyValuePairs.cpp # KeyValuePairExtractor (Used by HivePartitioningUtils.cpp)
+    indexHint.cpp # FunctionIndexHint::createImplied, FunctionIndexHint::tryGet (Used by LogicalExpressionOptimizerPass.cpp, ActionsDAG.cpp, filterPushDown.cpp...)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
+    ComparisonOrderDomain.h
     IFunction.h
     FunctionFactory.h
     FunctionHelpers.h
     extractTimeZoneFromFunctionArguments.h
     FunctionsLogical.h
     CastOverloadResolver.h
+    extractKeyValuePairs.h
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
@@ -91,7 +100,6 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         ch_contrib::libdivide
         ch_contrib::xxHash
-        ch_contrib::stringzilla
 )
 
 if (TARGET OpenSSL::Crypto)
@@ -114,8 +122,8 @@ if (TARGET ch_contrib::bech32)
     list (APPEND PRIVATE_LIBS ch_contrib::bech32)
 endif()
 
-if (TARGET ch_contrib::base64)
-    list (APPEND PRIVATE_LIBS ch_contrib::base64)
+if (TARGET ch_contrib::simdutf)
+    list (APPEND PRIVATE_LIBS ch_contrib::simdutf)
 endif()
 
 if (ENABLE_NLP)
@@ -134,6 +142,10 @@ if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
 
+if (TARGET ch_contrib::wagyu)
+    list (APPEND PRIVATE_LIBS ch_contrib::wagyu)
+endif()
+
 if (TARGET ch_contrib::vectorscan)
     list (APPEND PRIVATE_LIBS ch_contrib::vectorscan)
 endif()
@@ -150,6 +162,10 @@ if (TARGET ch_contrib::pocketfft)
     list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
 endif()
 
+if (TARGET ch_contrib::ipcrypt2)
+    list (APPEND PRIVATE_LIBS ch_contrib::ipcrypt2)
+endif()
+
 if (TARGET ch_contrib::crc32-vpmsum)
     list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
 endif()
@@ -163,9 +179,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
 
-add_subdirectory(Kusto)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
-
 add_subdirectory(TimeSeries)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)
 
@@ -176,8 +189,6 @@ endif()
 
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
-
-add_subdirectory(keyvaluepair)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
@@ -204,6 +215,8 @@ if (USE_GPERF)
             && clang-format -i HTMLCharacterReference.generated.cpp
             # for clang-tidy, since string.h is deprecated
             && sed -i 's/\#include <string.h>/\#include <cstring>/g' HTMLCharacterReference.generated.cpp
+            # the table must be constexpr for the compile-time entity-expansion static_assert in the .gperf
+            && sed -i 's/static const struct NameAndGlyph wordlist/static constexpr struct NameAndGlyph wordlist/g' HTMLCharacterReference.generated.cpp
             SOURCES HTMLCharacterReference.gperf
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             )

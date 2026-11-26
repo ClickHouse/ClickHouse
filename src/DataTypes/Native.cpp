@@ -31,7 +31,7 @@ bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
     return data_type.isInt() || data_type.isFloat() || data_type.isEnum() || data_type.isDate32() || data_type.isDecimal()
-        || data_type.isDateTime64();
+        || data_type.isDateTime64() || data_type.isTimeOrTime64();
 }
 
 llvm::Type * toNullableType(llvm::IRBuilderBase & builder, llvm::Type * type)
@@ -286,6 +286,7 @@ llvm::Value * nativeCastWithDecimalScale(
             {
                 /// `Decimal` → `Decimal` (possibly different scale and/or precision).
                 /// Widen/narrow the integer storage first, then adjust scale.
+                /// The scale lift is unchecked; `FunctionIfBase` declines a lift that can overflow the result storage.
                 auto * widened = (from_native_type == to_native_type)
                     ? value
                     : b.CreateIntCast(value, to_native_type, /*isSigned=*/true);
@@ -301,6 +302,9 @@ llvm::Value * nativeCastWithDecimalScale(
             {
                 /// Integer → `Decimal`: widen to `Decimal`'s underlying integer type,
                 /// then multiply by `10^to_scale` to lift the value into `Decimal` scale.
+                /// The lift is unchecked, so only a destination whose storage holds `value * 10^to_scale`
+                /// may be passed here. `FunctionIfBase`, the only caller, passes the branches' least
+                /// supertype, which reserves precision for the integer's digits plus `to_scale`.
                 auto * widened = (from_native_type == to_native_type)
                     ? value
                     : b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
@@ -311,6 +315,8 @@ llvm::Value * nativeCastWithDecimalScale(
             }
             if (from_w.isFloat32() || from_w.isFloat64())
             {
+                /// A float source must not reach here: `fptosi` has no defined result outside the destination range.
+                chassert(false, "Float to Decimal must not be JIT-compiled");
                 /// Float → `Decimal`: multiply by `10^to_scale` in floating point first,
                 /// then truncate to the target integer storage type.
                 if (to_scale == 0)
@@ -366,6 +372,21 @@ llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const ValueWit
     return nativeCastWithDecimalScale(b, value.type, value.value, to_type);
 }
 
+llvm::Value * compileIntegerComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, bool is_signed)
+{
+    // a > b ? 1 : (a < b ? -1 : 0);
+
+    auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
+    auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
+    auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
+
+    auto * lhs_greater_than_rhs = is_signed ? b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs);
+    auto * lhs_less_than_rhs = is_signed ? b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs);
+    auto * if_lhs_less_than_rhs_result = b.CreateSelect(lhs_less_than_rhs, lhs_less_than_rhs_result, lhs_equals_rhs_result);
+
+    return b.CreateSelect(lhs_greater_than_rhs, lhs_greater_than_rhs_result, if_lhs_less_than_rhs_result);
+}
+
 llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)
 {
     if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
@@ -391,7 +412,7 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            return llvm::ConstantFP::get(type, element);
+            return llvm::ConstantFP::get(type, static_cast<double>(element));
         }
         else if constexpr (is_integer<T>)
         {

@@ -1,6 +1,7 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
 #include <base/defines.h>
+#include <base/sanitizer_options.h>
 
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
@@ -12,8 +13,12 @@
 #include "config.h"
 #include "config_tools.h"
 
+#include <fcntl.h>
+#include <sys/resource.h>
 #include <unistd.h>
+#include <sched.h>
 
+#include <charconv>
 #include <filesystem>
 #include <iostream>
 #include <new>
@@ -21,60 +26,6 @@
 #include <string_view>
 #include <utility> /// pair
 #include <vector>
-
-#ifdef SANITIZER
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-extern "C" {
-#ifdef ADDRESS_SANITIZER
-const char * __asan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1";
-}
-const char * __lsan_default_options()
-{
-    return "max_allocation_size_mb=32768";
-}
-const char * __lsan_default_suppressions()
-{
-    /// OpenSSL intentionally does not free all global state at exit.
-    /// These are known false positives from OpenSSL provider and EVP initialization.
-    return "leak:ossl_provider_new\n"
-           "leak:OSSL_PROVIDER_try_load_ex\n"
-           "leak:ossl_rand_ctx_new\n"
-           "leak:OSSL_LIB_CTX_new\n"
-           "leak:ossl_legacy_provider_init\n"
-           /// OpenSSL EVP method objects are cached globally and never freed at exit.
-           /// Triggered when S3 client initializes HMAC (AWS SDK -> OpenSSL HMAC_Init_ex).
-           "leak:evp_md_new\n"
-           "leak:construct_evp_method\n"
-           "leak:CRYPTO_THREAD_lock_new\n";
-}
-#endif
-
-#ifdef MEMORY_SANITIZER
-const char * __msan_default_options()
-{
-    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef THREAD_SANITIZER
-const char * __tsan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-const char * __ubsan_default_options()
-{
-    return "print_stacktrace=1 max_allocation_size_mb=32768";
-}
-#endif
-}
-#pragma clang diagnostic pop
-#endif
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
@@ -89,6 +40,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
+int mainEntryClickHouseOomCanary(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
@@ -96,6 +48,7 @@ int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
+int mainEntryClickHouseHashBinary(int argc, char ** argv);
 int mainEntryClickHouseHashBinary(int argc, char ** argv)
 {
     if (argc > 1 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0))
@@ -130,6 +83,7 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
 
 #if USE_CHDIG
 extern "C" int chdig_main(int argc, char ** argv);
+int mainEntryClickHouseChdig(int argc, char ** argv);
 int mainEntryClickHouseChdig(int argc, char ** argv)
 {
     return chdig_main(argc, argv);
@@ -142,6 +96,20 @@ int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
+
+// packed-io: list/extract/create ClickHouse packed-format archives
+int mainEntryClickHousePackedIO(int argc, char ** argv);
+
+/// Private-only programs
+#if CLICKHOUSE_CLOUD
+int mainEntryClickHouseSharedCatalogUtil(int argc, char ** argv);
+#if ENABLE_DISTRIBUTED_CACHE
+int mainEntryClickHouseDistributedCache(int argc, char ** argv);
+#endif
+int mainEntryClickHouseSharedMergeTreeGarbageCleaner(int argc, char ** argv);
+int mainEntryClickHouseClearZooKeeperLocks(int argc, char ** argv);
+int mainEntryClickHouseMangler(int argc, char ** argv);
+#endif
 
 namespace
 {
@@ -181,6 +149,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
     {"obfuscator", mainEntryClickHouseObfuscator},
+    {"oom-canary", mainEntryClickHouseOomCanary},
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
@@ -217,6 +186,18 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"restart", mainEntryClickHouseRestart},
     // help
     {"help", mainEntryHelp},
+    {"packed-io", mainEntryClickHousePackedIO},
+
+/// Private-only programs
+#if CLICKHOUSE_CLOUD
+    {"shared-merge-tree-garbage-cleaner", mainEntryClickHouseSharedMergeTreeGarbageCleaner},
+    {"clear-zookeeper-locks", mainEntryClickHouseClearZooKeeperLocks},
+    {"shared-catalog-util", mainEntryClickHouseSharedCatalogUtil},
+    {"mangler", mainEntryClickHouseMangler},
+#if ENABLE_DISTRIBUTED_CACHE
+    {"distributed-cache", mainEntryClickHouseDistributedCache}
+#endif
+#endif
 };
 
 void printHelp(std::ostream & out)
@@ -238,7 +219,7 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 
 }
 
-bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
         if (app_suffix == name
@@ -264,15 +245,103 @@ bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 
+#if ENABLE_CLICKHOUSE_KEEPER
+/// `clickhouse-keeper` used to be a separate binary with its own dispatcher (see `programs/keeper/keeper_main.cpp`).
+/// Now it is a symlink to `clickhouse`, so keep the subcommands that dispatcher supported working:
+/// `clickhouse-keeper client`, `clickhouse-keeper keeper-client`, `clickhouse-keeper converter`,
+/// `clickhouse-keeper keeper-converter` and `clickhouse-keeper keeper` (also with the `--` prefix).
+/// `clickhouse-keeper help` lists these subcommands, as the former dispatcher did.
+/// Any other invocation runs the Keeper server, as before.
+static const std::pair<std::string_view, MainFunc> keeper_applications[] =
+{
+    {"keeper", mainEntryClickHouseKeeper},
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+    {"converter", mainEntryClickHouseKeeperConverter},
+    {"keeper-converter", mainEntryClickHouseKeeperConverter},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"client", mainEntryClickHouseKeeperClient},
+    {"keeper-client", mainEntryClickHouseKeeperClient},
+#endif
+};
+
+static int mainEntryKeeperHelp(int, char **)
+{
+    std::cout << "Use one of the following commands:" << std::endl;
+    for (const auto & application : keeper_applications)
+        std::cout << "clickhouse-keeper " << application.first << " [args]" << std::endl;
+    std::cout << "Without a command, clickhouse-keeper runs the Keeper server." << std::endl;
+    return 0;
+}
+
+/// Returns `nullptr` if the binary is not invoked as `clickhouse-keeper`.
+static MainFunc getStandaloneKeeperApp(std::vector<char *> & argv)
+{
+    if (argv.empty())
+        return nullptr;
+
+    std::string_view program(argv[0]);
+    if (program != "clickhouse-keeper" && !program.ends_with("/clickhouse-keeper"))
+        return nullptr;
+
+    if (argv.size() >= 2)
+    {
+        std::string_view first_arg(argv[1]);
+        /// A bare `help` must not fall through to the Keeper server, which ignores positional arguments.
+        /// `--help` is passed to the Keeper server, which prints its own options.
+        if (first_arg == "help")
+        {
+            argv.erase(argv.begin() + 1);
+            return mainEntryKeeperHelp;
+        }
+
+        if (first_arg.starts_with("--"))
+            first_arg.remove_prefix(2);
+
+        for (const auto & [name, func] : keeper_applications)
+        {
+            if (first_arg == name)
+            {
+                argv.erase(argv.begin() + 1);
+                return func;
+            }
+        }
+    }
+
+    return mainEntryClickHouseKeeper;
+}
+#endif
+
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
 /// We don't use it. But it can be used by some libraries for implementation of "plugins".
 /// We absolutely discourage the ancient technique of loading
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
-
-#if !defined(USE_MUSL)
+///
+/// We do allow `dlopen()` in case of OpenSSL FIPS build,
+/// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
+///
+/// And in a build with the GPU engine, because CUDA has no other way to reach a device: there is
+/// no static driver library to link: even `libcudart_static.a` finds the driver by
+/// `dlopen("libcuda.so.1")`, and with the stub below in place it is told there is none and reports
+/// that the driver is too old. So `-DENABLE_GPU=1` gives up this protection for the whole binary,
+/// which is one more reason for that build to stay experimental.
+///
+/// Not on WebAssembly: Emscripten's libc unconditionally defines `dlerror` (its own code
+/// pulls it in), so the override would be a duplicate symbol at the link - and a sandbox
+/// cannot load libraries in the first place.
+///
+/// Keep this guard identical to the one in `programs/keeper/keeper_main.cpp`.
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
+/// Exported even under `-fvisibility=hidden`: otherwise libc would use its real `dlopen`.
+#pragma GCC visibility push(default)
 extern "C"
 {
+    void * dlopen(const char *, int);
+    void * dlmopen(long, const char *, int); // NOLINT
+    int dlclose(void *);
+    const char * dlerror();
+
     void * dlopen(const char *, int)
     {
         return nullptr;
@@ -293,32 +362,78 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#pragma GCC visibility pop
 #endif
 
-/// Prevent messages from JeMalloc in the release build.
-/// Some of these messages are non-actionable for the users, such as:
-/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
-#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*je_malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
-#elif USE_JEMALLOC
-#include <unordered_set>
-/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
+#if USE_JEMALLOC && defined(OS_LINUX) && !defined(USE_MUSL)
+/// A short-lived clickhouse-local process faults in fewer pages with a few shared arenas than with per-CPU ones.
+/// jemalloc reads `je_malloc_conf` at its first allocation, which comes after `.preinit_array`.
+extern "C"
+{
+const char * je_malloc_conf = nullptr;
+}
+
+static void configureJemallocForLocal(int argc, char ** argv, char ** envp)
+{
+    /// NOTE: You cannot have any allocations here
+    if (argc < 1 || !argv || !argv[0])
+        return;
+
+    std::string_view program(argv[0]);
+    if (auto slash = program.rfind('/'); slash != std::string_view::npos)
+        program.remove_prefix(slash + 1);
+    std::string_view first_arg = (argc >= 2 && argv[1]) ? std::string_view(argv[1]) : std::string_view();
+
+    bool is_local = program == "clickhouse-local" || first_arg == "local" || first_arg == "--local";
+    for (const auto & [alias, name] : clickhouse_short_names)
+        is_local = is_local || (name == "local" && program == alias);
+    if (!is_local)
+        return;
+
+    for (char ** env = envp; env && *env; ++env)
+        if (std::string_view(*env).starts_with("MALLOC_CONF="))
+            return;
+
+    /// `cpu_set_t` holds only 1024 CPUs, and `sched_getaffinity` fails with EINVAL when the kernel mask is wider.
+    /// 8192 is the largest `NR_CPUS` of the supported architectures.
+    UInt64 mask[8192 / 64] = {};
+    auto * cpus = reinterpret_cast<cpu_set_t *>(mask);
+    if (0 != sched_getaffinity(0, sizeof(mask), cpus))
+        return;
+    unsigned num_cpus = static_cast<unsigned>(CPU_COUNT_S(sizeof(mask), cpus));
+    if (num_cpus == 0)
+        return;
+    unsigned num_arenas = std::min(std::max((num_cpus + 7) / 8, 2u), num_cpus);
+
+    static char config[64] = "percpu_arena:disabled,narenas:";
+    char * end = config + std::string_view(config).size();
+    auto [ptr, ec] = std::to_chars(end, config + sizeof(config) - 1, num_arenas);
+    if (ec != std::errc())
+        return;
+    *ptr = '\0';
+    je_malloc_conf = config;
+}
+
+__attribute__((section(".preinit_array"), used))
+static void (* const configure_jemalloc_for_local)(int, char **, char **) = configureJemallocForLocal;
+#endif
+
+/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
+/// or messages that do not mean anything to the user.
+#if USE_JEMALLOC
 extern "C" void (*je_malloc_message)(void *, const char * s);
-__attribute__((constructor(0))) void init_je_malloc_message()
+static __attribute__((constructor(0))) void init_je_malloc_message()
 {
     je_malloc_message = [](void *, const char * str)
     {
-        using namespace std::literals;
-        static const std::unordered_set<std::string_view> ignore_messages{
-            "<jemalloc>: background thread creation failed (11)\n"sv};
+        /// NOTE: You cannot have any allocations here
 
         std::string_view message_view{str};
-        if (ignore_messages.contains(message_view))
+        if (message_view == "<jemalloc>: background thread creation failed (11)\n")
             return;
 
 #    if defined(SYS_write)
-        syscall(SYS_write, 2 /*stderr*/, message_view.data(), message_view.size());
+        syscall(SYS_write, STDERR_FILENO, message_view.data(), message_view.size());
 #    else
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif
@@ -326,10 +441,41 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 }
 #endif
 
+#if defined(OS_LINUX) && !defined(USE_MUSL) && !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+/// Linux grows the descriptor table of a multithreaded process only after an RCU grace period, and threads that open
+/// files meanwhile wait. Grow it from `.preinit_array`, which glibc runs before any constructor, so before jemalloc
+/// starts its background thread. Sanitizer runtimes initialize from `.preinit_array` too and intercept these calls.
+static void reserveFileDescriptorTable(int, char **, char **)
+{
+    rlimit rlim{};
+    if (0 != getrlimit(RLIMIT_NOFILE, &rlim))
+        return;
+    rlim_t count = 4096;
+    if (rlim.rlim_cur != RLIM_INFINITY && rlim.rlim_cur < count)
+        count = rlim.rlim_cur;
+    /// The initial table has 64 entries.
+    if (count <= 64)
+        return;
+
+    int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return;
+    int high_fd = fcntl(fd, F_DUPFD_CLOEXEC, static_cast<int>(count - 1));
+    if (high_fd >= 0)
+    {
+        [[maybe_unused]] int high_err = close(high_fd);
+    }
+    [[maybe_unused]] int err = close(fd);
+}
+
+__attribute__((section(".preinit_array"), used))
+static void (* const reserve_file_descriptor_table)(int, char **, char **) = reserveFileDescriptorTable;
+#endif
+
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-__attribute__((constructor(202))) void init_ssl()
+static __attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -353,7 +499,7 @@ int main(int argc_, char ** argv_)
     updatePHDRCache();
 
 #if !defined(USE_MUSL)
-    checkHarmfulEnvironmentVariables(argv_);
+    checkHarmfulEnvironment(argv_);
 #endif
 
     /// This is used for testing. For example,
@@ -370,9 +516,14 @@ int main(int argc_, char ** argv_)
     /// Print a basic help if nothing was matched
     MainFunc main_func = printHelpOnError;
 
+#if ENABLE_CLICKHOUSE_KEEPER
+    if (MainFunc keeper_func = getStandaloneKeeperApp(argv))
+        return keeper_func(static_cast<int>(argv.size()), argv.data());
+#endif
+
     for (auto & application : clickhouse_applications)
     {
-        if (isClickhouseApp(application.first, argv))
+        if (isClickHouseApp(application.first, argv))
         {
             main_func = application.second;
             break;

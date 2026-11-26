@@ -1,11 +1,11 @@
 #pragma once
 
-#include <string_view>
-#include <unordered_map>
-#include <base/types.h>
 #include <Compression/ICompressionCodec.h>
+#include <base/types.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/MultiVersion.h>
+#include <Common/SecretString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ enum EncryptionMethod
 };
 
 /// Get encryption method for string name. Throw exception for wrong name.
-EncryptionMethod toEncryptionMethod(const std::string & name);
+EncryptionMethod toEncryptionMethod(std::string_view name);
 
 /** This codec encrypts and decrypts blocks with AES-128 in
     * GCM-SIV mode (RFC-8452), which is the only cipher currently
@@ -80,10 +80,11 @@ public:
         /// All data sets at the same time to prevent situations,
         /// when config changes and key and nonce are read from different versions
         /// If nonce is empty, it will return 12 null bytes.
-        void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String & current_key, String & nonce) const;
+        void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, SecretString & current_key, String & nonce) const;
 
         /// Same as getCurrentKeyAndNonce. It is used to get key. (need for correct decryption, that is why nonce is not necessary)
-        String getKey(EncryptionMethod method, const UInt64 & key_id) const;
+        SecretString getKey(EncryptionMethod method, const UInt64 & key_id) const;
+
     private:
         /// struct Params consists of:
         /// 1) hash-table of keys and their ids
@@ -93,24 +94,29 @@ public:
         /// because all algorithms can be described in config and used for different tables.
         struct Params
         {
-            std::unordered_map<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
+            UnorderedMapWithMemoryTracking<UInt64, SecretString> keys_storage[MAX_ENCRYPTION_METHOD];
             UInt64 current_key_id[MAX_ENCRYPTION_METHOD] = {0, 0};
             String nonce[MAX_ENCRYPTION_METHOD];
         };
 
         // used to read data from config and create Params
-        static void loadImpl(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, EncryptionMethod method, std::unique_ptr<Params>& new_params);
+        static void loadImpl(
+            const Poco::Util::AbstractConfiguration & config,
+            const String & config_prefix,
+            EncryptionMethod method,
+            std::unique_ptr<Params> & new_params);
 
         MultiVersion<Params> params;
     };
 
-    uint8_t getMethodByte() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    bool isEncryption() const override { return true; }
-    String getDescription() const override
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isEncryption() const override { return true; }
+    [[nodiscard]] String getDescription() const override
     {
         switch (encryption_method)
         {
@@ -121,7 +127,7 @@ public:
     }
 
 protected:
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     /// Encrypt data with chosen method.
     /// Throws exception if encryption is impossible or size of encrypted text is incorrect
@@ -130,6 +136,7 @@ protected:
     /// Decrypt data with chosen method
     /// Throws exception if decryption is impossible or size of decrypted text is incorrect
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+
 private:
     EncryptionMethod encryption_method;
 };

@@ -16,13 +16,14 @@
 #    include <string>
 #    include <unicode/ucnv.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CREATE_CHARSET_CONVERTER;
     extern const int CANNOT_CONVERT_CHARSET;
     extern const int ILLEGAL_COLUMN;
@@ -40,7 +41,7 @@ namespace
   * When bytes are illegal in 'from' charset or are not representable in 'to' charset,
   *  behavior is implementation specific.
   */
-class FunctionConvertCharset : public IFunction
+class FunctionConvertCharset final : public IFunction
 {
 private:
     struct Converter : private boost::noncopyable
@@ -160,34 +161,29 @@ public:
     static constexpr auto name = "convertCharset";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertCharset>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        for (size_t i : collections::range(0, 3))
-            if (!isString(arguments[i]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, must be String",
-                    arguments[i]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(String, const String, const String) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & arg_from = arguments[0];
         const ColumnWithTypeAndName & arg_charset_from = arguments[1];
@@ -234,9 +230,9 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
         "Usage example",
         "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');",
         R"(
-┌─convertChars⋯SO-8859-1')─┐
-│ Caf�                     │
-└──────────────────────────┘
+┌─convertCharset('Café', 'UTF-8', 'ISO-8859-1')─┐
+│ Caf�                                           │
+└───────────────────────────────────────────────┘
         )"
     }
     };
@@ -246,6 +242,8 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
 
     factory.registerFunction<FunctionConvertCharset>(documentation);
 }
+
+#pragma clang diagnostic pop
 
 }
 

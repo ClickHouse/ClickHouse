@@ -85,13 +85,13 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
     return result;
 }
 
-llvm::StructType * buildColumnDataStruct(llvm::IRBuilderBase & b)
+static llvm::StructType * buildColumnDataStruct(llvm::IRBuilderBase & b)
 {
     auto * char_ptr_type = b.getInt8Ty()->getPointerTo();
     return llvm::StructType::get(char_ptr_type, char_ptr_type, char_ptr_type);
 }
 
-llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
+static llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
     auto * offset_ptr_type = b.getInt8Ty()->getPointerTo();
@@ -99,7 +99,7 @@ llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
     return llvm::StructType::get(data_ptr_type, offset_ptr_type, index_type);
 }
 
-llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
+static llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
     return llvm::StructType::get(data_ptr_type, b.getInt64Ty());
@@ -117,6 +117,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     /// Create function in module
 
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, function.getName(), module);
+    setJITFunctionType<JITCompiledFunction>(*func);
     auto * args = func->args().begin();
     llvm::Value * rows_count_arg = args++;
     llvm::Value * columns_arg = args++;
@@ -221,7 +222,7 @@ CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function)
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     auto compiled_function_ptr = reinterpret_cast<JITCompiledFunction>(compiled_module.function_name_to_symbol[function.getName()]);
-    assert(compiled_function_ptr);
+    chassert(compiled_function_ptr);
 
     CompiledFunction result_compiled_function
     {
@@ -240,6 +241,7 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo();
     auto * create_aggregate_states_function_type = llvm::FunctionType::get(b.getVoidTy(), { aggregate_data_places_type }, false);
     auto * create_aggregate_states_function = llvm::Function::Create(create_aggregate_states_function_type, llvm::Function::ExternalLinkage, name, module);
+    setJITFunctionType<JITCreateAggregateStatesFunction>(*create_aggregate_states_function);
 
     auto * arguments = create_aggregate_states_function->args().begin();
     llvm::Value * aggregate_data_place_arg = arguments;
@@ -286,6 +288,10 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
 
     auto * add_into_aggregate_states_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), places_type }, false);
     auto * add_into_aggregate_states_func = llvm::Function::Create(add_into_aggregate_states_func_declaration, llvm::Function::ExternalLinkage, name, module);
+    if (places_argument_type == AddIntoAggregateStatesPlacesArgumentType::MultiplePlaces)
+        setJITFunctionType<JITAddIntoAggregateStatesFunction>(*add_into_aggregate_states_func);
+    else
+        setJITFunctionType<JITAddIntoAggregateStatesFunctionSinglePlace>(*add_into_aggregate_states_func);
 
     auto * arguments = add_into_aggregate_states_func->args().begin();
     llvm::Value * row_start_arg = arguments++;
@@ -410,6 +416,7 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
         = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_places_type, aggregate_data_places_type, size_type}, false);
     auto * merge_aggregates_states_func
         = llvm::Function::Create(merge_aggregates_states_func_declaration, llvm::Function::ExternalLinkage, name, module);
+        setJITFunctionType<JITMergeAggregateStatesFunction>(*merge_aggregates_states_func);
 
     auto * arguments = merge_aggregates_states_func->args().begin();
     llvm::Value * aggregate_data_places_dst_arg = arguments++;
@@ -471,6 +478,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo()->getPointerTo();
     auto * insert_aggregates_into_result_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), aggregate_data_places_type }, false);
     auto * insert_aggregates_into_result_func = llvm::Function::Create(insert_aggregates_into_result_func_declaration, llvm::Function::ExternalLinkage, name, module);
+    setJITFunctionType<JITInsertAggregateStatesIntoColumnsFunction>(*insert_aggregates_into_result_func);
 
     auto * arguments = insert_aggregates_into_result_func->args().begin();
     llvm::Value * row_start_arg = arguments++;
@@ -566,11 +574,11 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
     auto merge_aggregate_states_function = reinterpret_cast<JITMergeAggregateStatesFunction>(compiled_module.function_name_to_symbol[merge_aggregate_states_functions_name]);
     auto insert_aggregate_states_function = reinterpret_cast<JITInsertAggregateStatesIntoColumnsFunction>(compiled_module.function_name_to_symbol[insert_aggregate_states_functions_name]);
 
-    assert(create_aggregate_states_function);
-    assert(add_into_aggregate_states_function);
-    assert(add_into_aggregate_states_function_single_place);
-    assert(merge_aggregate_states_function);
-    assert(insert_aggregate_states_function);
+    chassert(create_aggregate_states_function);
+    chassert(add_into_aggregate_states_function);
+    chassert(add_into_aggregate_states_function_single_place);
+    chassert(merge_aggregate_states_function);
+    chassert(insert_aggregate_states_function);
 
     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
@@ -605,6 +613,15 @@ static void compileSortDescription(llvm::Module & module,
     std::vector<llvm::Type *> function_argument_types = {size_type, size_type, column_data_type->getPointerTo(), column_data_type->getPointerTo()};
     auto * comparator_func_declaration = llvm::FunctionType::get(b.getInt8Ty(), function_argument_types, false);
     auto * comparator_func = llvm::Function::Create(comparator_func_declaration, llvm::Function::ExternalLinkage, sort_description_dump, module);
+    setJITFunctionType<JITSortDescriptionFunc>(*comparator_func);
+    /// The result is read back through an `int8_t (*)(...)` function pointer, so the i8 return
+    /// must obey the C `int8_t` calling convention. This matters only on Darwin/Apple arm64:
+    /// Apple's arm64 ABI makes the *callee* sign-extend sub-word return values and the caller
+    /// relies on it (it emits no `sxtb` after the call). Without `signext` the JIT callee leaves
+    /// the upper bits unset, so e.g. a -1 result is read as 255 and NULL ordering breaks.
+    /// Linux arm64 (AAPCS64) is unaffected because there the *caller* sign-extends the return
+    /// itself (`sxtb w0, w0`); x86-64 is likewise a no-op.
+    comparator_func->addRetAttr(llvm::Attribute::SExt);
 
     auto * arguments = comparator_func->args().begin();
     llvm::Value * lhs_index_arg = arguments++;
@@ -772,7 +789,7 @@ CompiledSortDescriptionFunction compileSortDescription(
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     auto comparator_function = reinterpret_cast<JITSortDescriptionFunc>(compiled_module.function_name_to_symbol[sort_description_dump]);
-    assert(comparator_function);
+    chassert(comparator_function);
 
     CompiledSortDescriptionFunction compiled_sort_descriptor_function
     {

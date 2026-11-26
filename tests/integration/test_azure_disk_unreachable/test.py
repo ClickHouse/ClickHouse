@@ -4,7 +4,6 @@ Reproduces the issue where a transport-level failure during Azure container
 existence check in `getContainerClient` would crash the server at startup.
 """
 
-import os
 
 import pytest
 
@@ -30,6 +29,7 @@ DISK_CONFIG = f"""<clickhouse>
                 <max_tries>0</max_tries>
                 <retry_initial_backoff_ms>1</retry_initial_backoff_ms>
                 <retry_max_backoff_ms>1</retry_max_backoff_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </unreachable_azure_disk>
         </disks>
         <policies>

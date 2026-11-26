@@ -4,7 +4,6 @@
 #include <Common/ProfileEvents.h>
 
 #include <mutex>
-#include <base/sleep.h>
 #include <base/types.h>
 #include <atomic>
 
@@ -53,6 +52,23 @@ public:
     /// Returns true if blocking was applied, false if no blocking was needed.
     bool throttle(size_t amount, size_t max_block_ns) override;
 
+    bool throttleOSPageCacheRead(size_t amount, size_t max_block_ns) override;
+
+    /// A throttler without a speed limit (e.g. `max_local_read_bandwidth_for_server` reloaded to 0) never blocks,
+    /// so it does not need the reads from the OS page cache to be detected.
+    bool ignoresOSPageCacheReads() const override
+    {
+        return (limits_block_device_bandwidth && getMaxSpeed() > 0) || (parent && parent->ignoresOSPageCacheReads());
+    }
+
+    /// Mark this throttler as the one limiting the bandwidth of a block device,
+    /// so that the reads served from the OS page cache are not accounted in it.
+    /// Note that the parent throttlers make this decision on their own.
+    void setLimitsBlockDeviceBandwidth()
+    {
+        limits_block_device_bandwidth = true;
+    }
+
     /// Not thread safe
     void setParent(const ThrottlerPtr & parent_)
     {
@@ -71,6 +87,9 @@ public:
 
     void setMaxSpeed(size_t max_speed_);
 
+protected:
+    void sleep(UInt64 nanoseconds);
+
 private:
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value);
@@ -87,6 +106,9 @@ private:
 
     /// Used to implement a hierarchy of throttlers
     ThrottlerPtr parent;
+
+    /// See `setLimitsBlockDeviceBandwidth`.
+    bool limits_block_device_bandwidth = false;
 
     /// Event to increment when throttler uses tokens
     ProfileEvents::Event event_amount{ProfileEvents::end()};

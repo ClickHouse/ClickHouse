@@ -176,7 +176,7 @@ bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
     size_t cache_size = sizeInBytes();
     size_t memory_usage = size_t(std::max(memory_usage_signed, Int64(0)));
 
-    size_t peak;
+    size_t peak = 0;
     {
         std::lock_guard lock(mutex);
         size_t usage_excluding_cache = memory_usage - std::min(cache_size, memory_usage);
@@ -187,7 +187,7 @@ bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         }
         else
         {
-            int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
             int64_t bucket = now / history_window.count();
             if (bucket > cur_bucket + 1)
                 peak_memory_buckets = {0, 0};
@@ -230,6 +230,13 @@ size_t PageCache::sizeInBytes() const
     for (const auto & shard : shards)
         sum += shard->sizeInBytes();
     return sum;
+}
+
+size_t PageCache::releasableSizeInBytes() const
+{
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    size_t size = sizeInBytes();
+    return size - std::min(size, min_size_in_bytes);
 }
 
 size_t PageCache::count() const

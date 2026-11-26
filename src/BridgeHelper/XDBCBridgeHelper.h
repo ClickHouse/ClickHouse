@@ -10,17 +10,17 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
+#include <Common/SecretString.h>
 #include <Common/ShellCommand.h>
 #include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
 
-#include "config.h"
-
-
 namespace DB
 {
+
+using URLParams = std::vector<std::pair<std::string, std::string>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Class for Helpers for XDBC-bridges, provide utility methods, not main request.
 class IXDBCBridgeHelper : public IBridgeHelper
@@ -29,15 +29,15 @@ class IXDBCBridgeHelper : public IBridgeHelper
 public:
     explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
 
-    virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
+    [[nodiscard]] virtual URLParams getURLParams(UInt64 max_block_size) const = 0;
 
-    virtual Poco::URI getColumnsInfoURI() const = 0;
+    [[nodiscard]] virtual Poco::URI getColumnsInfoURI() const = 0;
 
     virtual IdentifierQuotingStyle getIdentifierQuotingStyle() = 0;
 
     virtual bool isSchemaAllowed() = 0;
 
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
 };
 
 using BridgeHelperPtr = std::shared_ptr<IXDBCBridgeHelper>;
@@ -72,7 +72,7 @@ public:
     }
 
 protected:
-    Poco::URI getPingURI() const override
+    [[nodiscard]] Poco::URI getPingURI() const override
     {
         auto uri = createBaseURI();
         uri.setPath(PING_HANDLER);
@@ -80,7 +80,7 @@ protected:
     }
 
 
-    Poco::URI getMainURI() const override
+    [[nodiscard]] Poco::URI getMainURI() const override
     {
         auto uri = createBaseURI();
         uri.setPath(MAIN_HANDLER);
@@ -107,28 +107,28 @@ protected:
         }
     }
 
-    auto getConnectionString() const { return connection_string; }
+    [[nodiscard]] String getConnectionString() const { return String(connection_string); }
 
-    String getName() const override { return BridgeHelperMixin::getName(); }
+    [[nodiscard]] String getName() const override { return BridgeHelperMixin::getName(); }
 
-    unsigned getDefaultPort() const override { return DEFAULT_PORT; }
+    [[nodiscard]] unsigned getDefaultPort() const override { return DEFAULT_PORT; }
 
-    String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
+    [[nodiscard]] String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
 
     /// Same for odbc and jdbc
-    String serviceFileName() const override { return "clickhouse-odbc-bridge"; }
+    [[nodiscard]] String serviceFileName() const override { return "clickhouse-odbc-bridge"; }
 
-    String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
+    [[nodiscard]] String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
 
-    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
+    [[nodiscard]] Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
-    const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
+    [[nodiscard]] const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
-    LoggerPtr getLog() const override { return log; }
+    [[nodiscard]] LoggerPtr getLog() const override { return log; }
 
-    bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
+    [[nodiscard]] bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
 
-    Poco::URI createBaseURI() const override;
+    [[nodiscard]] Poco::URI createBaseURI() const override;
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
@@ -140,7 +140,7 @@ private:
     using Configuration = Poco::Util::AbstractConfiguration;
 
     LoggerPtr log;
-    std::string connection_string;
+    SecretString connection_string;
     bool use_connection_pooling;
     Poco::Timespan http_timeout;
     std::string bridge_host;
@@ -154,9 +154,7 @@ private:
     Poco::Net::HTTPBasicCredentials credentials{};
 
 protected:
-    using URLParams = std::vector<std::pair<std::string, std::string>>;
-
-    Poco::URI getColumnsInfoURI() const override
+    [[nodiscard]] Poco::URI getColumnsInfoURI() const override
     {
         auto uri = createBaseURI();
         uri.setPath(COL_INFO_HANDLER);
@@ -164,11 +162,11 @@ protected:
         return uri;
     }
 
-    URLParams getURLParams(UInt64 max_block_size) const override
+    [[nodiscard]] URLParams getURLParams(UInt64 max_block_size) const override
     {
-        std::vector<std::pair<std::string, std::string>> result;
+        URLParams result;
 
-        result.emplace_back("connection_string", connection_string); /// already validated
+        result.emplace_back("connection_string", getConnectionString()); /// already validated
         result.emplace_back("max_block_size", std::to_string(max_block_size));
 
         return result;

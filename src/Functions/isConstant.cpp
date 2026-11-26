@@ -11,7 +11,7 @@ namespace
 
 /// Returns 1 if and only if the argument is constant expression.
 /// This function exists for development, debugging and demonstration purposes.
-class FunctionIsConstant : public IFunction
+class FunctionIsConstant final : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";
@@ -20,32 +20,32 @@ public:
         return std::make_shared<FunctionIsConstant>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & elem = arguments[0];
         return ColumnUInt8::create(input_rows_count, isColumnConst(*elem.column));
@@ -59,7 +59,7 @@ REGISTER_FUNCTION(IsConstant)
     FunctionDocumentation::Description description = R"(
 Returns whether the argument is a constant expression.
 A constant expression is an expression whose result is known during query analysis, i.e. before execution.
-For example, expressions over [literals](/sql-reference/syntax#literals) are constant expressions.
+For example, expressions over [literals](/reference/syntax#literals) are constant expressions.
 This function is mostly intended for development, debugging and demonstration.
     )";
     FunctionDocumentation::Syntax syntax = "isConstant(x)";

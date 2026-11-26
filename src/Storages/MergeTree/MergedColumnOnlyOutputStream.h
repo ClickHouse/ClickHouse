@@ -24,16 +24,28 @@ public:
         CompressionCodecPtr default_codec,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         size_t part_uncompressed_bytes,
-        WrittenOffsetSubstreams * written_offset_substreams);
+        WrittenOffsetSubstreams * written_offset_substreams,
+        bool try_adaptive_codec,
+        class PackedFilesWriter * external_packed_skip_indices_writer,
+        StreamBaseManifestPtr stream_base_manifest);
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();
     MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeDataPartChecksums & all_checksums);
 
-    const Block & getColumnsSample() const { return writer->getColumnsSample(); }
-    const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
+    /// Forwarded to the underlying writer; see IMergeTreeDataPartWriter::preloadPackedSkipIndicesArchive.
+    void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files)
+    {
+        writer->preloadPackedSkipIndicesArchive(source, files);
+    }
+
+    [[nodiscard]] const Block & getColumnsSample() const { return writer->getColumnsSample(); }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
+
+private:
+    NameSet files_to_remove_after_finish;
 };
 
 using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;

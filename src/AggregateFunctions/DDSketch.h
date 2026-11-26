@@ -69,7 +69,7 @@ public:
         count += weight;
     }
 
-    Float64 get(Float64 quantile) const
+    [[nodiscard]] Float64 get(Float64 quantile) const
     {
         if (quantile < 0 || quantile > 1 || count == 0)
         {
@@ -77,7 +77,7 @@ public:
         }
 
         Float64 rank = quantile * (count - 1);
-        Float64 quantile_value;
+        Float64 quantile_value = 0;
         if (rank < negative_store->count)
         {
             Float64 reversed_rank = negative_store->count - rank - 1;
@@ -96,9 +96,9 @@ public:
         return quantile_value;
     }
 
-    Float64 getGamma() const { return mapping->getGamma(); }
+    [[nodiscard]] Float64 getGamma() const { return mapping->getGamma(); }
 
-    Float64 getCount() const { return count; }
+    [[nodiscard]] Float64 getCount() const { return count; }
 
     void copy(const DDSketchDenseLogarithmic & other)
     {
@@ -179,20 +179,23 @@ public:
         }
         mapping->deserialize(buf);
 
+        /// reject bins with impossible keys now, otherwise they only blow up later during a merge
+        const auto [min_valid_key, max_valid_key] = mapping->validKeyRange();
+
         // Read the positive and negative stores
         readBinary(flag, buf);
         if (flag != enc.FlagTypePositiveStore)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for positive store");
         }
-        store->deserialize(buf);
+        store->deserialize(buf, min_valid_key, max_valid_key);
 
         readBinary(flag, buf);
         if (flag != enc.FlagTypeNegativeStore)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for negative store");
         }
-        negative_store->deserialize(buf);
+        negative_store->deserialize(buf, min_valid_key, max_valid_key);
 
         // Read the zero count
         readBinary(flag, buf);
@@ -220,7 +223,7 @@ private:
     DDSketchEncoding enc;
 
 
-    DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
+    [[nodiscard]] DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
     {
         auto new_mapping = std::make_unique<DDSketchLogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
 

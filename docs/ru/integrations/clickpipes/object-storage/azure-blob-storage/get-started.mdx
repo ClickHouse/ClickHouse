@@ -1,0 +1,113 @@
+---
+sidebarTitle: 'Начало работы'
+description: 'Пошаговое руководство по созданию первого ClickPipe для Azure Blob Storage (ABS).'
+slug: /integrations/clickpipes/object-storage/azure-blob-storage/get-started
+title: 'Создайте свой первый ClickPipe для Azure Blob Storage'
+doc_type: 'guide'
+---
+
+**Предварительные требования**
+
+Чтобы воспользоваться этим руководством, вам понадобятся:
+
+* Аккаунт Azure Blob Storage
+* [Строка подключения Azure](/ru/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage#acquiring-azure-blob-storage-access-keys)
+* Имя контейнера
+* Запущенный сервис ClickHouse Cloud
+
+<Steps>
+  <Step title="Перейдите к источникам данных" id="navigate-to-data-sources">
+    На главной странице сервиса нажмите **Источники данных** в меню слева.
+    Раскройте список **ClickPipes** и нажмите **Создать ClickPipe**
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Переход к источникам данных](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Создание ClickPipe](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Выберите источник данных" id="select-data-source">
+    Выберите **Azure Blob Storage** в качестве типа данных
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Выбор Azure Blob Storage](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Настройте подключение ClickPipe" id="setup-connection">
+    1. Задайте для ClickPipe понятное имя
+    2. Выберите **Строка подключения** в раскрывающемся списке методов аутентификации
+    3. Вставьте строку подключения Azure в поле **Строка подключения**
+    4. Введите имя контейнера
+    5. Введите путь к файлу в Azure Blob Storage; чтобы загрузить несколько файлов, используйте подстановочные символы
+
+    При необходимости включите непрерывную загрузку данных. Подробнее см. в разделе [«Непрерывная загрузка данных»](/ru/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion).
+
+    Затем нажмите **Incoming data**
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Параметры конфигурации](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Выберите формат данных" id="select-data-format">
+    1. Выберите тип файла
+    2. Укажите тип сжатия файла (`detect automatically`, `none`, `gzip`, `brotli`, `xz` или `zstd`)
+    3. Задайте дополнительные параметры формата, например разделитель для форматов с разделением запятыми
+    4. Нажмите **Parse information**
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Выбор формата данных](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Настройте таблицу, схему и параметры" id="configure-table-schema">
+    Теперь необходимо создать новую таблицу или выбрать существующую, в которой будут храниться входящие данные.
+
+    1. Выберите, загружать ли данные в новую или существующую таблицу
+    2. Выберите базу данных и, если таблица новая, укажите её имя
+    3. Выберите один или несколько ключей сортировки
+    4. Задайте сопоставление исходного файла с целевой таблицей: имя столбца, тип столбца, значение по умолчанию и допустимость NULL
+    5. Наконец, укажите дополнительные настройки: тип движка, выражение партиционирования и первичный ключ
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Разбор информации](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
+      </Frame>
+    </div>
+
+    Завершив настройку таблицы, схемы и параметров, нажмите **Details and settings**
+  </Step>
+
+  <Step title="Настройте разрешения" id="configure-permissions">
+    ClickPipes создаст отдельного пользователя базы данных для записи данных.
+    Для этого пользователя можно выбрать роль.
+    Если требуется доступ к материализованным представлениям или словарям из целевой таблицы, выберите «Full access».
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Настройка разрешений](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Завершите настройку" id="complete-setup">
+    Нажмите **Создать ClickPipe**, чтобы завершить настройку
+
+    Теперь ваш ClickPipe должен отображаться в статусе подготовки.
+    Через несколько секунд статус изменится с **подготовки** на **completed**.
+  </Step>
+</Steps>

@@ -1,7 +1,10 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -9,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
+#include <base/find_symbols.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -101,13 +105,13 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         /// This is just a wrapper. The function for Nullable arguments is named the same as the nested function itself.
         return nested_function->getName();
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -146,6 +150,15 @@ public:
         nested_function->create(nestedPlace(place));
     }
 
+    /// `count` is the number of non-NULL rows: none means no value was seen, and the state stays as created.
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const override
+    {
+        if (count == 0)
+            return;
+        setFlag(place);
+        nested_function->setSumAndCount(nestedPlace(place), sum, count);
+    }
+
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_function->destroy(nestedPlace(place));
@@ -156,22 +169,22 @@ public:
         nested_function->destroyUpToState(nestedPlace(place));
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return prefix_size + nested_function->sizeOfData();
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return nested_function->alignOfData();
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (result_is_nullable)
             if (getFlag(rhs))
@@ -180,8 +193,20 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
 
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-    bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    [[nodiscard]] size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
+    {
+        return nested_function->getEstimatedMergeWork(nestedPlace(place));
+    }
+    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
+
+    [[nodiscard]] bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        return nested_function->isLargeMergePair(nestedPlace(place), nestedPlace(rhs));
+    }
+    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return nested_function->ignoresRepeatedValues(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
@@ -192,7 +217,7 @@ public:
         nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         if constexpr (result_is_nullable)
             if (getFlag(rhs))
@@ -227,6 +252,23 @@ public:
             nested_function->serialize(nestedPlace(place), buf, version);
     }
 
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
+            return (serialize_flag ? sizeof(bool) : 0) + *nested_bound;
+        return std::nullopt;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        bool flag = getFlag(place);
+        if constexpr (serialize_flag)
+            writeBinary(flag, dst);
+        if (flag)
+            dst = nested_function->serializeToMemory(nestedPlace(place), dst, version);
+        return dst;
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         bool flag = true;
@@ -248,10 +290,25 @@ public:
             if (getFlag(place))
             {
                 if constexpr (merge)
+                {
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    to_concrete.getNullMapData().push_back(false);
+                }
                 else
+                {
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(false);
+
+                    /// A nested call that threw has already restored the nested column itself.
+                    try
+                    {
+                        to_concrete.getNullMapData().push_back(false);
+                    }
+                    catch (...)
+                    {
+                        nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                        throw;
+                    }
+                }
             }
             else
             {
@@ -277,36 +334,74 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
-    bool allocatesMemoryInArena() const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        if constexpr (result_is_nullable)
+        {
+            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
+            if (getFlag(place))
+            {
+                to_concrete.getNullMapData().pop_back();
+                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+            }
+            else
+            {
+                /// insertResultInto appended a state the column itself owns, so this pop must destroy it.
+                to_concrete.popBack(1);
+            }
+        }
+        else
+        {
+            nested_function->rollbackInsertResult(nestedPlace(place), to);
+        }
+    }
+
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
     }
 
-    bool isState() const override
+    [[nodiscard]] bool isState() const override
     {
         return nested_function->isState();
     }
 
-    bool isVersioned() const override
+    [[nodiscard]] bool isVersioned() const override
     {
         return nested_function->isVersioned();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override
+    [[nodiscard]] size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    [[nodiscard]] DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_function);
+    }
+
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+
+    /// Only the `Subadditive` bound survives the wrapping: a group whose rows are all NULL has an
+    /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
+    /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A
+    /// nullable result is excluded because its NULLs do not take part in the nested comparison.
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
+    {
+        if (!result_is_nullable && nested_function->getMergedValueBound() == MergedValueBound::Subadditive)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return this->nested_function->isCompilable();
     }
@@ -410,7 +505,7 @@ public:
 
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
         /// Create new aggregate function for merging final states if the nested function has a different implementation
@@ -511,6 +606,71 @@ public:
         }
     }
 
+    void addBatch( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        addBatchImpl<false>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        addBatchImpl<true>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    void addBatchLookupTable8(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const UInt8 * null_map = column->getNullMapData().data();
+        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
+        if (has_nulls && hasManyNulls(null_map, row_begin, row_end))
+        {
+            addBatchLookupTable8RowByRow(row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
+            return;
+        }
+
+        /// The nested addBatchLookupTable8 reorders the rows of a key, which changes order-dependent functions such as deltaSum.
+        PaddedPODArray<AggregateDataPtr> places(row_end);
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            AggregateDataPtr & place = map[key[i]];
+            if (unlikely(!place))
+                init(place);
+            places[i] = place;
+        }
+
+        if (!has_nulls)
+        {
+            addBatchWithoutNulls<true>(row_begin, row_end, places.data(), place_offset, &column->getNestedColumn(), arena);
+            return;
+        }
+
+        forEachRangeWithoutNulls(null_map, row_begin, row_end, [&](size_t begin, size_t end)
+        {
+            addBatchWithoutNulls<true>(begin, end, places.data(), place_offset, &column->getNestedColumn(), arena);
+        });
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
@@ -548,6 +708,392 @@ public:
 
 #endif
 
+private:
+    template <bool places_are_non_null>
+    void addBatchImpl(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const UInt8 * null_map = column->getNullMapData().data();
+        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
+        if (if_argument_pos >= 0 || (has_nulls && hasManyNulls(null_map, row_begin, row_end)))
+        {
+            addBatchRowByRow<places_are_non_null>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        if (!has_nulls)
+        {
+            addBatchWithoutNulls<places_are_non_null>(row_begin, row_end, places, place_offset, &column->getNestedColumn(), arena);
+            return;
+        }
+
+        forEachRangeWithoutNulls(null_map, row_begin, row_end, [&](size_t begin, size_t end)
+        {
+            addBatchWithoutNulls<places_are_non_null>(begin, end, places, place_offset, &column->getNestedColumn(), arena);
+        });
+    }
+
+    /// With more NULLs the ranges between them are short, and the nested function may pay a setup cost per range.
+    static bool hasManyNulls(const UInt8 * null_map, size_t row_begin, size_t row_end)
+    {
+        static constexpr size_t min_rows_per_null = 16;
+        return countBytesInFilter(null_map, row_begin, row_end) * min_rows_per_null > row_end - row_begin;
+    }
+
+    /// Not inlined, so that the row loops are compiled as in IAggregateFunctionHelper.
+    template <bool places_are_non_null>
+    NO_INLINE void addBatchRowByRow(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const
+    {
+        if constexpr (places_are_non_null)
+            IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        else
+            IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatch(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    NO_INLINE void addBatchLookupTable8RowByRow(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const
+    {
+        IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchLookupTable8(
+            row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
+    }
+
+    template <typename Func>
+    static void forEachRangeWithoutNulls(const UInt8 * null_map, size_t row_begin, size_t row_end, Func && func)
+    {
+        const char * map = reinterpret_cast<const char *>(null_map);
+        size_t begin = row_begin;
+        while (begin < row_end)
+        {
+            const size_t end = find_first_not_symbols<'\0'>(map + begin, map + row_end) - map;
+            if (begin < end)
+                func(begin, end);
+            begin = find_first_symbols<'\0'>(map + end, map + row_end) - map;
+        }
+    }
+
+    template <bool places_are_non_null>
+    void addBatchWithoutNulls(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn * nested_column,
+        Arena * arena) const
+    {
+        auto add_to_nested = [&](size_t begin, size_t end)
+        {
+            if constexpr (places_are_non_null)
+                this->nested_function->addBatchWithNonNullPlaces(
+                    begin, end, places, place_offset + this->prefix_size, &nested_column, arena, -1);
+            else
+                this->nested_function->addBatch(begin, end, places, place_offset + this->prefix_size, &nested_column, arena, -1);
+        };
+
+        if constexpr (!result_is_nullable)
+        {
+            add_to_nested(row_begin, row_end);
+        }
+        else
+        {
+            /// Setting the flags of a chunk right before adding it keeps the states of the chunk in the cache.
+            static constexpr size_t chunk_size = 256;
+            for (size_t chunk_begin = row_begin; chunk_begin < row_end; chunk_begin += chunk_size)
+            {
+                const size_t chunk_end = std::min(chunk_begin + chunk_size, row_end);
+                for (size_t i = chunk_begin; i < chunk_end; ++i)
+                    if (places_are_non_null || places[i])
+                        this->setFlag(places[i] + place_offset);
+                add_to_nested(chunk_begin, chunk_end);
+            }
+        }
+    }
+};
+
+
+/** `Variant` and `Dynamic` store `NULL` as one of their values instead of using
+  * `ColumnNullable`. Keep the original columns and types for the nested aggregate,
+  * but skip rows where any such argument contains `NULL`.
+  */
+class AggregateFunctionInternalNulls final
+    : public AggregateFunctionNullBase<false, false, AggregateFunctionInternalNulls>
+{
+public:
+    AggregateFunctionInternalNulls(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
+        : AggregateFunctionNullBase<false, false, AggregateFunctionInternalNulls>(std::move(nested_function_), arguments, params)
+        , number_of_arguments(arguments.size())
+        , has_internal_nulls(number_of_arguments)
+    {
+        for (size_t i = 0; i < number_of_arguments; ++i)
+            has_internal_nulls[i] = canContainNull(*arguments[i]) && !arguments[i]->isNullable();
+    }
+
+    using IAggregateFunction::argument_types;
+    using IAggregateFunction::parameters;
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return this->nested_function->getNormalizedStateType();
+    }
+
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return this->nested_function->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr &,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & properties) const override
+    {
+        return this->nested_function->getOwnNullAdapter(this->nested_function, arguments, params, properties);
+    }
+
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return this->nested_function->getArgumentsThatCanBeOnlyNull();
+    }
+
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
+        if (nested_function_for_merging_final.get() != this->nested_function.get())
+            return std::make_shared<AggregateFunctionInternalNulls>(
+                nested_function_for_merging_final, argument_types, parameters);
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        if (hasInternalNull(columns, row_num))
+            return;
+
+        this->nested_function->add(this->nestedPlace(place), columns, row_num, arena);
+    }
+
+    void addBatch(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        auto filtered_places = filterPlaces(row_begin, row_end, places, place_offset, columns);
+        this->nested_function->addBatch(row_begin, row_end, filtered_places.get(), 0, columns, arena, if_argument_pos);
+    }
+
+    void addBatchWithNonNullPlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        auto filtered_places = filterPlaces(row_begin, row_end, places, place_offset, columns);
+        this->nested_function->addBatch(row_begin, row_end, filtered_places.get(), 0, columns, arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatchSinglePlace(
+                row_begin, row_end, this->nestedPlace(place), columns, arena, if_argument_pos);
+            return;
+        }
+
+        auto null_map = makeNullMap(row_begin, row_end, columns, nullptr);
+        this->nested_function->addBatchSinglePlaceNotNull(
+            row_begin, row_end, this->nestedPlace(place), columns, null_map.get(), arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), columns, null_map, arena, if_argument_pos);
+            return;
+        }
+
+        auto combined_null_map = makeNullMap(row_begin, row_end, columns, null_map);
+        this->nested_function->addBatchSinglePlaceNotNull(
+            row_begin, row_end, this->nestedPlace(place), columns, combined_null_map.get(), arena, if_argument_pos);
+    }
+
+    void addBatchLookupTable8(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatchLookupTable8(
+                row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
+            return;
+        }
+
+        auto filtered_places = std::make_unique_for_overwrite<AggregateDataPtr[]>(row_end);
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            AggregateDataPtr & place = map[key[row]];
+            if (unlikely(!place))
+                init(place);
+
+            if (hasInternalNull(columns, row))
+            {
+                filtered_places[row] = nullptr;
+                continue;
+            }
+
+            filtered_places[row] = this->nestedPlace(place + place_offset);
+        }
+
+        this->nested_function->addBatch(row_begin, row_end, filtered_places.get(), 0, columns, arena);
+    }
+
+    void addManyDefaults(
+        AggregateDataPtr __restrict,
+        const IColumn **,
+        size_t,
+        Arena *) const override
+    {
+    }
+
+private:
+    bool hasInternalNull(const IColumn ** columns, size_t row) const
+    {
+        for (size_t argument = 0; argument < number_of_arguments; ++argument)
+            if (has_internal_nulls[argument] && columns[argument]->isNullAt(row))
+                return true;
+        return false;
+    }
+
+    bool hasInternalNull(const IColumn ** columns, size_t row_begin, size_t row_end) const
+    {
+        if (row_begin == row_end)
+            return false;
+
+        for (size_t argument = 0; argument < number_of_arguments; ++argument)
+        {
+            if (!has_internal_nulls[argument])
+                continue;
+
+            const IColumn * column = columns[argument];
+            if (const auto * constant = checkAndGetColumn<ColumnConst>(column))
+            {
+                if (constant->isNullAt(0))
+                    return true;
+                continue;
+            }
+
+            if (const auto * variant = checkAndGetColumn<ColumnVariant>(column))
+            {
+                if (variant->getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+                    continue;
+            }
+            else if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(column))
+            {
+                if (dynamic->getVariantColumn().getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+                    continue;
+            }
+
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (column->isNullAt(row))
+                    return true;
+        }
+        return false;
+    }
+
+    std::unique_ptr<AggregateDataPtr[]> filterPlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns) const
+    {
+        auto filtered_places = std::make_unique_for_overwrite<AggregateDataPtr[]>(row_end);
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            filtered_places[row] = !places[row] || hasInternalNull(columns, row)
+                ? nullptr
+                : this->nestedPlace(places[row] + place_offset);
+        }
+        return filtered_places;
+    }
+
+    std::unique_ptr<UInt8[]> makeNullMap(
+        size_t row_begin,
+        size_t row_end,
+        const IColumn ** columns,
+        const UInt8 * null_map) const
+    {
+        auto combined_null_map = std::make_unique_for_overwrite<UInt8[]>(row_end);
+        for (size_t row = row_begin; row < row_end; ++row)
+            combined_null_map[row] = (null_map && null_map[row]) || hasInternalNull(columns, row);
+        return combined_null_map;
+    }
+
+    const size_t number_of_arguments;
+    VectorWithMemoryTracking<UInt8> has_internal_nulls;
 };
 
 
@@ -577,7 +1123,7 @@ public:
 
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
         /// Create new aggregate function for merging final states if the nested function has a different implementation
@@ -630,7 +1176,8 @@ public:
 
         if (if_argument_pos >= 0)
         {
-            final_flags = std::make_unique<UInt8[]>(row_end);
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
             size_t included_elements = 0;
@@ -683,12 +1230,18 @@ public:
         {
             if (!final_flags)
             {
-                final_flags = std::make_unique<UInt8[]>(row_end);
+                final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
                 final_flags_ptr = final_flags.get();
             }
 
-            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
-            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
+            /// The span holds a merged filter only when the buffer already is one of `nullable_filters`.
+            if (nullable_filters[0] != final_flags_ptr)
+            {
+                for (size_t i = row_begin; i < row_end; i++)
+                    final_flags[i] = nullable_filters[0][i];
+            }
+
+            for (size_t filter = 1; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
                     final_flags[i] |= nullable_filters[filter][i];

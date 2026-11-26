@@ -20,7 +20,7 @@ struct MetaInKeeperCommitOptions
 {
     bool need_rollback_blobs = true;
     bool may_retry = false;
-    ZooKeeperConnection * zookeeper;
+    ZooKeeperConnection * zookeeper = nullptr;
     Coordination::Requests additional_requests;
 };
 
@@ -40,7 +40,7 @@ inline String getFirstFailedPath(Coordination::Error code, const Coordination::R
 
 struct MetaInKeeperCommitOutcome
 {
-    Coordination::Error code;
+    Coordination::Error code{};
 
     /// Responses for the keeper multi-op performed by this transaction.
     /// The order is: disk's internal ops, then `additional_requests`.
@@ -48,7 +48,7 @@ struct MetaInKeeperCommitOutcome
     Coordination::Responses responses;
     size_t first_additional_request_idx = 0;
 
-    size_t additionalOpIdx(size_t idx) const { return first_additional_request_idx + idx; }
+    [[nodiscard]] size_t additionalOpIdx(size_t idx) const { return first_additional_request_idx + idx; }
 };
 
 using TransactionCommitOutcomeVariant = std::variant<

@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/sdks/deno
+description: 'SDK для Deno и ClickStack — стек обсервабилити ClickHouse'
+title: 'Deno'
+doc_type: 'guide'
+keywords: ['SDK для Deno и ClickStack', 'Deno OpenTelemetry', 'интеграция ClickStack с Deno', 'обсервабилити Deno', 'SDK для логирования в Deno']
+---
+
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Используйте встроенную поддержку OpenTelemetry в Deno для отправки журналов, метрик и трассировок в ClickStack. ClickStack Node.js SDK и устаревший пакет логирования для Deno не нужны.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Настройка OpenTelemetry {#set-up-opentelemetry}
+
+Чтобы инструментировать приложение, следуйте официальным [инструкциям по настройке OpenTelemetry для Deno](https://docs.deno.com/runtime/fundamentals/open_telemetry/). Настройте пункт назначения, как показано ниже, а затем при запуске приложения включите встроенную интеграцию Deno:
+
+```shell
+OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
+```
+
+Добавьте разрешения, необходимые вашему приложению. Замените все примеры пунктов назначения и настройки консольного экспортера, взятые из инструкций вышестоящего проекта, включая переопределения конечных точек для отдельных типов сигналов.
+
+## Настройка пункта назначения {#configure-destination}
+
+Укажите конечную точку OTLP HTTP и ключ ингестии для коллектора ClickStack. Если для коллектора не настроен TLS, используйте `http://`. Сведения о настройке коллектора см. в разделе [Загрузка данных с помощью OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## Проверка ингестии {#verify-ingestion}
+
+Запустите приложение и создайте на нём нагрузку. В ClickStack выберите временной диапазон за последнее время и найдите имя сервиса вашего приложения в разделе журналов или трассировок. Раздел метрик проверьте чуть позже, когда данные успеют экспортироваться.

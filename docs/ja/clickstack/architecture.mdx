@@ -1,0 +1,63 @@
+---
+slug: /use-cases/observability/clickstack/architecture
+description: 'ClickStack のアーキテクチャ - ClickHouse オブザーバビリティ スタック'
+title: 'アーキテクチャ'
+toc_max_heading_level: 2
+doc_type: 'reference'
+keywords: ['ClickStack アーキテクチャ', 'オブザーバビリティのアーキテクチャ', 'ClickStack UI', 'OpenTelemetry collector', 'MongoDB', 'システム設計']
+---
+
+ClickStack Open Source のアーキテクチャは、**ClickHouse**、**ClickStack UI**、**OpenTelemetry (OTel) collector** という 3 つの中核コンポーネントで構成されています。また、アプリケーションの状態の保存には **MongoDB** インスタンスを使用します。これらを組み合わせることで、ログ、メトリクス、トレースに最適化された、高パフォーマンスなオープンソースのオブザーバビリティスタックを実現しています。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![アーキテクチャ](/images/use-cases/observability/clickstack-oss-architecture.svg)
+  </Frame>
+</div>
+
+### ClickHouse: データベースエンジン {#clickhouse}
+
+ClickStack の中核にあるのは、大規模なリアルタイム分析向けに設計されたカラム指向データベース、ClickHouse です。ClickHouse はオブザーバビリティデータのインジェストとクエリを支え、次のことを可能にします。
+
+* テラバイト規模のイベントをサブ秒で検索
+* 高いカーディナリティを持つ数十億件のレコードを 1 日あたり取り込む
+* オブザーバビリティデータに対して少なくとも 10 倍の高い圧縮率
+* 半構造化 JSON データのネイティブサポートにより、スキーマの動的な進化が可能
+* 数百もの組み込み分析関数を備えた強力な SQL エンジン
+
+ClickHouse はオブザーバビリティデータを wide イベントとして扱うため、単一の統合構造内でログ、メトリクス、トレースをまたいだ詳細な相関分析が可能です。
+
+### OpenTelemetry collector: データのインジェスト {#open-telemetry-collector}
+
+ClickStack には、オープンで標準化された方法でテレメトリーを取り込むために、事前設定済みの OpenTelemetry (OTel) collector が含まれています。次の方法で OTLP プロトコルを使用してデータを送信できます。
+
+* gRPC (ポート `4317`)
+* HTTP (ポート `4318`)
+
+collector はテレメトリーを効率的なバッチ単位で ClickHouse にエクスポートします。データソースごとに最適化されたテーブルスキーマをサポートしており、あらゆるシグナルタイプでスケーラブルなパフォーマンスを確保します。
+
+### ClickStack UI: インターフェイス {#hyperdx-ui}
+
+ClickStack UI は ClickStack のユーザーインターフェイスです。次の機能を提供します。
+
+* 自然言語検索と Lucene スタイルの検索
+* リアルタイムデバッグのためのライブテーリング
+* ログ、メトリクス、トレースの統合ビュー
+* フロントエンド オブザーバビリティのための session replay
+* ダッシュボードの作成とアラートの設定
+* 高度な分析のための SQL クエリ インターフェイス
+
+ClickHouse 向けに特化して設計された ClickStack UI は、強力な検索機能と直感的なワークフローを組み合わせることで、異常の発見、問題の調査、インサイトの迅速な取得を可能にします。
+
+### MongoDB: アプリケーションの状態 {#mongo}
+
+ClickStack は MongoDB を使用して、次のようなアプリケーションレベルの状態を保存します。
+
+* ダッシュボード
+* アラート
+* ユーザープロファイル
+* 保存済みの可視化
+
+状態をイベントデータから分離することで、パフォーマンスとスケーラビリティを確保しつつ、バックアップと設定を簡素化できます。
+
+このモジュール型アーキテクチャにより、ClickStack は高速かつ柔軟なオープンソースのオブザーバビリティプラットフォームを、すぐに使える形で提供します。

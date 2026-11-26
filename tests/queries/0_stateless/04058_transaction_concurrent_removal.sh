@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage, no-replicated-database
+# Tags: no-ordinary-database, no-replicated-database
 # Test: two concurrent transactions that both attempt to remove the same part
 # must produce a SERIALIZATION_ERROR for the second one.
 # Also tests that after a rollback the removal_tid is reset, so a subsequent
@@ -47,7 +47,7 @@ tx 3 "ROLLBACK"
 # After rollback the active part is restored
 $CLICKHOUSE_CLIENT -q "
     SELECT 'restored_after_rollback',
-        removal_tid = (0, 0, '00000000-0000-0000-0000-000000000000'),
+        removal_tid = (0, 0, '00000000-0000-0000-0000-000000000000', 0),
         removal_csn = 0
     FROM system.parts
     WHERE database = currentDatabase()

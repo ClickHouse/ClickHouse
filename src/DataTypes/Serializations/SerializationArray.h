@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
@@ -9,13 +10,26 @@ class SerializationArray final : public SimpleTextSerialization
 {
 private:
     SerializationPtr nested;
+    /// Used only for the defaults of null elements. Not part of the pool key: the key of the nested serialization already
+    /// determines the default of its type.
+    DataTypePtr nested_type;
+    /// Cached `nested->supportsPooling`, so that the check is O(1) instead of a walk over the whole nested
+    /// chain: `create` asks it of every level, which is quadratic in the depth for a deeply nested `Array`.
+    bool nested_supports_pooling;
 
-    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+    SerializationArray(const SerializationPtr & nested_, const DataTypePtr & nested_type_)
+        : nested(nested_), nested_type(nested_type_), nested_supports_pooling(nested->supportsPooling())
+    {
+    }
 
 public:
     static UInt128 getHash(const SerializationPtr & nested_);
-    static SerializationPtr create(const SerializationPtr & nested_);
-    bool supportsPooling() const override { return nested->supportsPooling(); }
+    static SerializationPtr create(const SerializationPtr & nested_, const DataTypePtr & nested_type_);
+    bool supportsPooling() const override { return nested_supports_pooling; }
+
+    /// Whether a resolved subcolumn is really the array sizes, which its name alone cannot tell.
+    /// `Map` sizes are the same substream, so this covers them too.
+    static bool isArraySizesSubcolumn(const SubstreamPath & path);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -38,6 +52,7 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     /** Streaming serialization of arrays is arranged in a special way:
       * - elements placed in a row are written/read without array sizes;
@@ -72,16 +87,16 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
     static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings);
-    static bool deserializeOffsetsBinaryBulk(ColumnPtr & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
-    static std::pair<size_t, size_t> deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(ColumnPtr & offsets_column, size_t offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
+    static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, WriteBuffer & stream, bool position_independent_encoding);
+    static bool deserializeOffsetsBinaryBulk(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
+    static size_t deserializeOffsetsBinaryBulkAndGetNestedLimit(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
 
     static void readArraySafe(IColumn & column, std::function<void()> && read_func);
 
@@ -91,9 +106,9 @@ public:
 
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev, const DataTypePtr &) const override;
     };
 
     const SerializationPtr & getNestedSerialization() const { return nested; }
@@ -102,5 +117,8 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
+
+/// Converts the offsets of an array (a `ColumnArray::ColumnOffsets`) to the sizes of its elements.
+ColumnPtr arrayOffsetsToSizes(const IColumn & column);
 
 }

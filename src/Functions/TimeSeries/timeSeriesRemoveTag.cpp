@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesRemoveTag(group, 'tag_name') removes a specified tag from a tags group,
 /// and returns the new tags group.
-class FunctionTimeSeriesRemoveTag : public IFunction
+class FunctionTimeSeriesRemoveTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveTag";
@@ -24,18 +24,29 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesRemoveTag>(context); }
     explicit FunctionTimeSeriesRemoveTag(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Function timeSeriesRemoveTag uses information stored in the query context, it's deterministic in the scope of the current query.
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    [[nodiscard]] bool isStateful() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(UInt64, const String) -> UInt64";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
@@ -53,7 +64,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 1);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto tag_to_remove = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
@@ -74,8 +85,8 @@ REGISTER_FUNCTION(TimeSeriesRemoveTag)
     FunctionDocumentation::Description description = R"(
 Removes a specified tag from a group of tags.
 If there is no such tag in the group then the group is returned unchanged.
-See also function [timeSeriesRemoveTags()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTags),
-[timeSeriesRemoveAllTagsExcept()](/sql-reference/functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+See also function [timeSeriesRemoveTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
+[timeSeriesRemoveAllTagsExcept()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTag(group, tag_to_remove)";
     FunctionDocumentation::Arguments arguments = {

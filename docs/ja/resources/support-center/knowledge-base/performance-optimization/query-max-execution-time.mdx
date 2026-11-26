@@ -1,0 +1,32 @@
+---
+title: クエリ実行時間の上限を設定する
+description: "クエリの最大実行時間の上限を設定する方法"
+date: 2022-07-10
+tags: ['Cloud の管理', 'Settings']
+---
+
+<div id="question">
+  ## 質問
+</div>
+
+クエリの実行時間に制限を設けるにはどうすればよいですか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+`max_execution_time` 設定を使用できます。
+
+```sql
+clickhouse-cloud :) SELECT 1 SETTINGS max_execution_time=0.0001
+
+SELECT 1
+SETTINGS max_execution_time = 0.0001
+
+Query id: 3db752a7-b94f-4456-b3b9-ccbf290d1394
+
+0 rows in set. Elapsed: 0.113 sec.
+
+Received exception from server (version 23.5.1):
+Code: 159. DB::Exception: Received from service.aws.clickhouse.cloud:9440. DB::Exception: Timeout exceeded: elapsed 0.000557862 seconds, maximum: 0.0001. (TIMEOUT_EXCEEDED)
+```

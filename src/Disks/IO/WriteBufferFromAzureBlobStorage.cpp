@@ -10,6 +10,8 @@
 #include <Common/Throttler.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceGuard.h>
+#include <Common/HTTPConnectionInfo.h>
+#include <base/sleep.h>
 
 
 namespace ProfileEvents
@@ -29,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
@@ -39,8 +42,15 @@ struct WriteBufferFromAzureBlobStorage::PartData
     size_t data_size = 0;
 };
 
-BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
+static BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
 {
+    /// Validate the multipart upload settings here rather than in `getRequestSettings`: this is the
+    /// single point where the settings are actually consumed, and it is only reached for the blob
+    /// multipart writer. Endpoints that route to `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 /
+    /// OneLake) never construct this buffer, so an otherwise-invalid setting such as
+    /// `azure_min_upload_part_size = 0` is not rejected for a backend that does not use it.
+    settings.validateUploadSettings();
+
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
     allocation_settings.min_size = settings.min_upload_part_size;
@@ -64,6 +74,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
+    , settings(settings_)
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
     , max_unexpected_write_error_retries(write_settings_.is_initial_access_check ? settings_->max_unexpected_write_error_retries * 3 : settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
@@ -92,7 +103,7 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromAzureBlobStorage was canceled."
+                "WriteBufferFromAzureBlobStorage was canceled. "
                 "The file might not be written to AzureBlobStorage. "
                 "{}.",
                 blob_path);
@@ -126,7 +137,7 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            if (i == num_tries - 1 || !isRetryableAzureException(e, /* may_be_provisioning_access */ write_settings.is_initial_access_check))
+            if (i == num_tries - 1 || !isRetryableAzureException(e))
                 throw;
 
             LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);
@@ -179,6 +190,10 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             Azure::Core::IO::MemoryBodyStream memory_stream(
                 reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
 
+            /// One row is written for the whole `execWithRetry` sequence, so when a write is
+            /// retried the connection columns of that row report zeroes: its elapsed time covers
+            /// every attempt, and no single socket describes it.
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -205,7 +220,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -242,6 +257,10 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         {
             Azure::Core::IO::MemoryBodyStream memory_stream(nullptr, 0);
 
+            /// One row is written for the whole `execWithRetry` sequence, so when a write is
+            /// retried the connection columns of that row report zeroes: its elapsed time covers
+            /// every attempt, and no single socket describes it.
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -268,7 +287,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -307,6 +326,8 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     LOG_TRACE(limited_log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
 
+    WriteBufferFromFileBase::finalizeImpl();
+
     if (!is_prefinalized)
         preFinalize();
 
@@ -322,6 +343,10 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
+        /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
+        /// the connection columns of that row report zeroes: its elapsed time covers every
+        /// attempt, and no single socket describes it.
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;
@@ -348,7 +373,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = static_cast<Int32>(e.StatusCode);
+            error_code = getAzureErrorCodeForLog(e);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(
@@ -498,6 +523,18 @@ void WriteBufferFromAzureBlobStorage::detachBuffer()
 
 void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage::PartData && part_data)
 {
+    if (block_ids.size() >= settings->max_blocks_in_multipart_upload)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "The number of blocks exceeded max_blocks_in_multipart_upload = {} while writing {} bytes to Azure Blob Storage. "
+            "Check min_upload_part_size = {}, max_upload_part_size = {}, upload_part_size_multiply_factor = {}, "
+            "upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
+            settings->max_blocks_in_multipart_upload, count(), settings->min_upload_part_size, settings->max_upload_part_size,
+            settings->upload_part_size_multiply_factor, settings->upload_part_size_multiply_parts_count_threshold,
+            settings->max_single_part_upload_size);
+    }
+
     const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
     auto worker_data = std::make_shared<std::tuple<std::string, WriteBufferFromAzureBlobStorage::PartData>>(block_id, std::move(part_data));
 
@@ -513,6 +550,10 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);
 
+        /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
+        /// the connection columns of that row report zeroes: its elapsed time covers every
+        /// attempt, and no single socket describes it.
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;
@@ -532,7 +573,7 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = static_cast<Int32>(e.StatusCode);
+            error_code = getAzureErrorCodeForLog(e);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(

@@ -1,0 +1,84 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/otelgen
+title: 'otelgen으로 합성 OpenTelemetry 데이터 생성'
+sidebarTitle: 'otelgen으로 합성 데이터 생성'
+description: 'otelgen을 사용하여 ClickStack OpenTelemetry 수집기로 합성 로그, trace 및 메트릭을 전송합니다'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'otelgen', '합성 데이터', 'OpenTelemetry', '테스트', '로그', 'trace', '메트릭', '관측성']
+---
+
+[`otelgen`](https://github.com/krzko/otelgen)은 합성 OTLP 로그, trace 및 메트릭을 생성하는 경량 Go CLI입니다. 기존 ClickStack OpenTelemetry 수집기가 데이터를 정상적으로 수신하는지, 그리고 이벤트가 ClickStack UI에 표시되는지 확인하는 데 활용할 수 있습니다.
+
+이 가이드는 collector가 이미 실행 중이며 `4317`(gRPC) 및 `4318`(HTTP)에서 OTLP 엔드포인트를 제공한다고 가정합니다.
+
+<Steps>
+  <Step title="사전 요구 사항" id="prerequisites-oss">
+    이 가이드는 [all-in-one image용 안내](/ko/clickstack/getting-started/oss)에 따라 Open Source ClickStack을 시작했으며, OTLP 엔드포인트(`4317` gRPC 및 `4318` HTTP)에 연결할 수 있다고 가정합니다. 또한 ClickStack UI의 `Team Settings > API Keys`에서 수집 API key를 확인해야 합니다.
+  </Step>
+
+  <Step title="otelgen 설치" id="install-otelgen-oss">
+    Homebrew로 설치합니다:
+
+    ```shell
+    brew install krzko/tap/otelgen
+    ```
+
+    또는 Go로 설치합니다:
+
+    ```shell
+    go install github.com/krzko/otelgen@latest
+    ```
+  </Step>
+
+  <Step title="환경 변수 설정" id="set-env-vars-oss">
+    collector 엔드포인트와 수집 API key를 export합니다:
+
+    ```shell
+    export OTEL_ENDPOINT=localhost:4317
+    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+    ```
+  </Step>
+
+  <Step title="traces 생성" id="generate-traces-oss">
+    여러 스팬으로 구성된 trace를 짧게 전송합니다:
+
+    ```shell
+    otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+      --header "authorization=${CLICKSTACK_API_KEY}" \
+      --protocol grpc --insecure \
+      --rate 2 --duration 10 \
+      traces multi
+    ```
+
+    `--rate`는 초당 trace 수이고, `--duration`은 실행 시간(초)입니다. `--insecure`는 로컬 collector에 대해 plaintext gRPC를 사용하도록 설정합니다.
+  </Step>
+
+  <Step title="logs 생성" id="generate-logs-oss">
+    ```shell
+    otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+      --header "authorization=${CLICKSTACK_API_KEY}" \
+      --protocol grpc --insecure \
+      --rate 2 --duration 10 \
+      logs multi
+    ```
+  </Step>
+
+  <Step title="메트릭 생성" id="generate-metrics-oss">
+    `metrics` 하위 명령은 `--duration`을 지원하지 않습니다. 명령을 실행한 후 몇 초 뒤 `Ctrl+C`를 눌러 중지하십시오.
+
+    ```shell
+    otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+      --header "authorization=${CLICKSTACK_API_KEY}" \
+      --protocol grpc --insecure \
+      --rate 2 \
+      metrics sum
+    ```
+
+    `otelgen`은 `metrics` 아래에서 `gauge`, `histogram`, `up-down-counter`, `exponential-histogram` 하위 명령도 지원합니다.
+  </Step>
+
+  <Step title="ClickStack에서 확인" id="verify-oss">
+    ClickStack UI를 열려면 [http://localhost:8080](http://localhost:8080)에 접속하십시오. `검색` 보기에서 source를 `Logs`와 `Traces`로 전환하며 새 이벤트가 들어왔는지 확인합니다. time range를 `Last 15 minutes`로 설정합니다. `Chart Explorer`를 열고 `Metrics`를 선택한 다음, `otelgen`이 생성한 메트릭 이름 중 하나(예: `otelgen.metrics.sum`)를 chart로 표시하여 메트릭 수집을 확인합니다.
+  </Step>
+</Steps>

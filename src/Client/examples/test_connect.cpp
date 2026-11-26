@@ -6,11 +6,13 @@
 #include <thread>
 #include <atomic>
 #include <Poco/Net/StreamSocket.h>
+#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** In a loop it connects to the server and immediately breaks the connection.
@@ -51,7 +53,7 @@ try
 
                 try
                 {
-                    Poco::Net::SocketAddress address(host, port);
+                    Poco::Net::SocketAddress address = DNSResolver::instance().resolveAddress(host, port);
                     Poco::Net::StreamSocket socket;
                     //socket.setLinger(1, 0);
 

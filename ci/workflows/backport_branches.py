@@ -8,23 +8,36 @@ workflow = Workflow.Config(
     name="BackportPR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
+        # Runs the settings-history check (check_settings_changes_history) so that a backport
+        # that changes a setting must record the change under the release branch's version,
+        # not only under the master version the record was cherry-picked with.
+        JobConfigs.style_check,
         *[
             job
             for job in JobConfigs.build_jobs
-            if any(t in job.name for t in ("amd_asan_ubsan", "amd_tsan", "amd_debug"))
+            if any(
+                t in job.name
+                for t in ("amd_asan_ubsan", "amd_tsan", "amd_debug", "arm_asan_ubsan", "arm_tsan")
+            )
         ],
         *JobConfigs.release_build_jobs,
         *[
             job
             for job in JobConfigs.special_build_jobs
-            if any(t in job.name for t in ("darwin",))
+            if any(t in job.name for t in ("darwin", "illumos", "compat"))
         ],
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "amd_asan_ubsan" in job.name],
+        *[
+            job
+            for job in JobConfigs.unittest_jobs
+            if any(t in job.name for t in ("asan_ubsan", "tsan"))
+        ],
         *[job for job in JobConfigs.stress_test_jobs if "amd_tsan" in job.name],
         *[
             job
@@ -40,6 +53,7 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
@@ -49,7 +63,7 @@ workflow = Workflow.Config(
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
-    enable_automerge=False,
+    enable_automerge=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
     enable_gh_summary_comment=True,

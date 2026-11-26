@@ -44,6 +44,9 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::prepare()
 
     if (stage == Stage::Pull)
     {
+        if (!was_output_needed && !isAnyOutputNeeded())
+            return Status::PortFull;
+        was_output_needed = true;
 
         bool has_data_need = false;
         bool has_full_port = false;
@@ -180,7 +183,7 @@ IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
     /// Need to keep at least 'offset' rows queued.
     while (queued_row_count > offset)
     {
-        assert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
+        chassert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
 
         auto & front = queue.front();
 

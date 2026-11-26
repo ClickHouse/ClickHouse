@@ -43,7 +43,7 @@ public:
 
 }
 
-const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
+[[clang::no_destroy]] const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
 const std::string HTMLForm::ENCODING_MULTIPART = "multipart/form-data";
 const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
@@ -93,14 +93,17 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
     clear();
 
     Poco::URI uri(request.getURI());
-    const std::string & query = uri.getRawQuery();
+    std::string_view query = uri.getRawQuery();
     if (!query.empty())
     {
         ReadBufferFromString istr(query);
         readQuery(istr);
     }
 
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT)
+    /// The body-carrying methods. SQL-defined HTTP handlers (CREATE HANDLER) accept form bodies over DELETE as
+    /// well, matching the set of methods the HTTP layer treats as carrying a body (see `HTTPHandler`).
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
     {
         std::string media_type;
         NameValueCollection params;
@@ -135,7 +138,7 @@ void HTMLForm::read(ReadBuffer & in)
 void HTMLForm::readQuery(ReadBuffer & in)
 {
     size_t fields = 0;
-    char ch = 0;  // silence "uninitialized" warning from gcc-*
+    char ch = 0;
     bool is_first = true;
 
     while (true)
@@ -191,7 +194,7 @@ void HTMLForm::readQuery(ReadBuffer & in)
 void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 {
     /// Assume there is always a boundary provided.
-    assert(!boundary.empty());
+    chassert(!boundary.empty());
 
     size_t fields = 0;
     MultipartReadBuffer in(in_, boundary);
@@ -222,7 +225,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         {
             std::string name = params["name"];
             std::string value;
-            char ch;
+            char ch = 0;
 
             while (in.read(ch))
             {
@@ -285,7 +288,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
 std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 {
     std::string line;
-    char ch = 0;  // silence "uninitialized" warning from gcc-*
+    char ch = 0;
 
     /// If we don't append CRLF, it means that we may have to prepend CRLF from previous content line, which wasn't the boundary.
     if (in.read(ch))
@@ -302,7 +305,7 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 
         if (in.eof()) break;
 
-        assert(ch == '\r');
+        chassert(ch == '\r');
 
         if (in.peek(ch) && ch == '\n')
         {
@@ -322,7 +325,7 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     if (boundary_hit)
         return false;
 
-    assert(position() >= in.position());
+    chassert(position() >= in.position());
 
     in.position() = position();
 

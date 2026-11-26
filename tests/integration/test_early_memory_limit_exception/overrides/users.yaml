@@ -1,0 +1,6 @@
+---
+profiles:
+  default:
+    # make sure that we fail in explicit check() not in some random flush to memory tracker
+    # (though note that this is not 100% guarantee since the setting is parsed too late sometimes)
+    max_untracked_memory: 1Gi

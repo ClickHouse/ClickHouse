@@ -86,7 +86,7 @@ IProcessor::Status DelayedSource::prepare()
 }
 
 /// Fix port from returned pipe. Create source_port if created or drop if source_port is null.
-void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, SharedHeader header, Processors & processors)
+static void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, SharedHeader header, Processors & processors)
 {
     if (source_port)
     {

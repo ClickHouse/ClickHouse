@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <Common/ThreadFuzzer.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** Proves that ThreadFuzzer helps to find concurrency bugs.

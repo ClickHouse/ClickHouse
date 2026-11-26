@@ -1,0 +1,15 @@
+---
+slug: /faq/general/mapreduce
+title: 'Por que não usar algo como MapReduce?'
+toc_hidden: true
+toc_priority: 110
+description: 'Esta página explica por que usar o ClickHouse em vez de MapReduce'
+keywords: ['MapReduce']
+doc_type: 'reference'
+---
+
+Podemos nos referir a sistemas como o MapReduce como sistemas de computação distribuída em que a operação de reduce se baseia em ordenação distribuída. A solução open-source mais comum dessa classe é o [Apache Hadoop](http://hadoop.apache.org).
+
+Esses sistemas não são adequados para consultas online devido à alta latência. Em outras palavras, eles não podem ser usados como backend de uma interface web. Esse tipo de sistema não é útil para atualizações de dados em tempo real. A ordenação distribuída não é a melhor forma de executar operações de reduce se o resultado da operação e todos os resultados intermediários (se houver) estiverem na RAM de um único servidor, o que geralmente é o caso em consultas online. Nesse caso, uma tabela hash é a forma ideal de executar operações de reduce. Uma abordagem comum para otimizar tarefas de map-reduce é a pré-agregação (reduce parcial) com uma tabela hash na RAM. O usuário faz essa otimização manualmente. A ordenação distribuída é uma das principais causas da perda de desempenho ao executar tarefas simples de map-reduce.
+
+A maioria das implementações de MapReduce permite executar código arbitrário em um cluster. Mas uma linguagem de consulta declarativa é mais adequada para OLAP quando se deseja executar experimentos rapidamente. Por exemplo, o Hadoop tem Hive e Pig. Considere também Cloudera Impala ou Shark (outdated) para Spark, bem como Spark SQL, Presto e Apache Drill. O desempenho ao executar essas tarefas fica bem aquém do ideal em comparação com sistemas especializados, e a latência relativamente alta torna irrealista usar esses sistemas como backend de uma interface web.

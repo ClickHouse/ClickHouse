@@ -27,8 +27,8 @@ class BackgroundWorker:
     def _handle_result(self, future):
         """Handle task completion or errors"""
         try:
-            result = future.result()  # This will raise if the task failed
-            self.logger.debug(f"Async task completed successfully")
+            future.result()  # This will raise if the task failed
+            self.logger.debug("Async task completed successfully")
         except Exception as e:
             self.logger.exception(f"Async task failed: {e}")
 
@@ -165,7 +165,9 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
 class DolorHTTPServer:
     def __init__(
         self,
-        host="localhost",
+        # An IPv4 literal: the server listens on IPv4 only, while BuzzHouse resolves `localhost`
+        # through `DNSResolver`, which picks `::1` or `127.0.0.1` at random per request
+        host="127.0.0.1",
         port=8080,
         attachment=None,
         handler_kwargs={},

@@ -7,6 +7,7 @@
 namespace DB
 {
 
+void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -37,9 +38,9 @@ FROM (
 );
         )",
         R"(
-┌────────theilsU(a, b)─┐
-│  0.30195720557678846 │
-└──────────────────────┘
+┌───────theilsU(a, b)─┐
+│ 0.30195720557678846 │
+└─────────────────────┘
         )"
     }
     };

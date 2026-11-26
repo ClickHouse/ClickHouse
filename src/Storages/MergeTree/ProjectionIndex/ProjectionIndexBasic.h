@@ -15,14 +15,15 @@ public:
         return std::make_shared<ProjectionIndexBasic>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     void fillProjectionDescription(
         ProjectionDescription & result,
         const IAST * index_expr,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context) const override;
+        const ContextPtr & query_context,
+        const MergeTreeSettings & projection_settings) const override;
 
     Block calculate(
         const ProjectionDescription & projection_desc,

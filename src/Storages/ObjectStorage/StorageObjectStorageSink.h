@@ -1,12 +1,16 @@
 #pragma once
 #include <Storages/PartitionedSink.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-class StorageObjectStorageSink : public SinkToStorage
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
+class StorageObjectStorageSink final : public SinkToStorage
 {
 public:
     StorageObjectStorageSink(
@@ -16,7 +20,9 @@ public:
         SharedHeader sample_block_,
         ContextPtr context,
         const String & format,
-        const String & compression_method);
+        const String & compression_method,
+        FormatFilterInfoPtr format_filter_info = nullptr,
+        bool fail_if_exists = false);
 
     ~StorageObjectStorageSink() override;
 
@@ -42,7 +48,7 @@ private:
     void cancelBuffers();
 };
 
-class PartitionedStorageObjectStorageSink : public PartitionedSink
+class PartitionedStorageObjectStorageSink final : public PartitionedSink
 {
 public:
     PartitionedStorageObjectStorageSink(
@@ -50,7 +56,8 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        PartitionedWriteAccessCheck write_access_check_);
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
@@ -67,6 +74,7 @@ private:
     const std::optional<FormatSettings> format_settings;
     SharedHeader sample_block;
     const ContextPtr context;
+    const PartitionedWriteAccessCheck write_access_check;
     String last_written_object_path;
 };
 

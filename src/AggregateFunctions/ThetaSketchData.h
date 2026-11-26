@@ -11,9 +11,19 @@
 #include <theta_intersection.hpp>
 #include <theta_a_not_b.hpp>
 
+#include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CORRUPTED_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
 
 
 template <typename Key>
@@ -71,7 +81,7 @@ public:
         }
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         if (sk_union)
             return static_cast<UInt64>(sk_union->get_result().get_estimate());
@@ -166,12 +176,53 @@ public:
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
+        size_t size = 0;
+        readVarUInt(size, in);
+        if (size > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+        if (size == 0)
+            return;
+
+        /// The size comes from the state, so the bytes are appended as they arrive rather than allocated up front.
         datasketches::compact_theta_sketch::vector_bytes bytes;
-        readVectorBinary(bytes, in);
-        if (!bytes.empty())
+        while (bytes.size() < size)
+        {
+            if (in.eof())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes.size(), size);
+            const size_t done = bytes.size();
+            const size_t chunk = std::min(size - done, in.available());
+            bytes.resize(done + chunk);
+            in.readStrict(reinterpret_cast<char *>(bytes.data() + done), chunk);
+        }
+
+        try
         {
             auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
             getSkUnion()->update(sk);
+        }
+        catch (const DB::Exception &)
+        {
+            throw;
+        }
+        catch (const std::bad_alloc &)
+        {
+            /// Memory pressure on `compact_theta_sketch::deserialize`, `getSkUnion`,
+            /// or `theta_union.update` is not data corruption; let it propagate.
+            throw;
+        }
+        catch (const std::exception & e)
+        {
+            /// `datasketches` throws `std::invalid_argument` / `std::out_of_range` on
+            /// malformed input. These are not `DB::Exception`, so without translation
+            /// they escape `SerializationAggregateFunction`'s `catch (...)` block, reach
+            /// the top level as `LOGICAL_ERROR` (code 1001), and abort the process via
+            /// `abortOnFailedAssertion`. Translate to `CORRUPTED_DATA` so the bad input
+            /// is rejected cleanly.
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Cannot deserialize Theta sketch state: {}",
+                e.what());
         }
     }
 

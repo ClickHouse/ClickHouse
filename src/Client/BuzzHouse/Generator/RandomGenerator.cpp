@@ -1,5 +1,7 @@
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
+#include <algorithm>
+
 #include <fmt/format.h>
 
 namespace BuzzHouse
@@ -85,6 +87,22 @@ bool RandomGenerator::nextBool()
     return dist4(generator) == 2;
 }
 
+uint32_t RandomGenerator::daysInMonth(const uint32_t year, const uint32_t month)
+{
+    static constexpr uint32_t month_days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    const bool leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+
+    return month == 2 && leap ? 29 : month_days[month - 1];
+}
+
+std::pair<uint32_t, uint32_t> RandomGenerator::nextMonthDay(const uint32_t year, const uint32_t max_month, const uint32_t max_day)
+{
+    const uint32_t month = randomInt<uint32_t>(1, max_month);
+    const uint32_t last_day = daysInMonth(year, month);
+
+    return {month, randomInt<uint32_t>(1, month == max_month ? std::min(max_day, last_day) : last_day)};
+}
+
 String RandomGenerator::nextDate(const String & separator, const bool allow_func)
 {
     if (allow_func && this->nextMediumNumber() < 16)
@@ -95,18 +113,15 @@ String RandomGenerator::nextDate(const String & separator, const bool allow_func
     {
         switch (this->randomInt<uint32_t>(0, 1))
         {
-            case 0:
-                return separator + "1970-01-01" + separator; /// Epoch / min Date
-            case 1:
-                return separator + "2149-06-06" + separator; /// Max Date
-            default:
-                UNREACHABLE();
+            case 0: return separator + "1970-01-01" + separator; /// Epoch / min Date
+            case 1: return separator + "2149-06-06" + separator; /// Max Date
+            default: UNREACHABLE();
         }
     }
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
-    return fmt::format(
-        "{}{}-{}{}-{}{}{}", separator, 1970 + date_years(generator), month < 10 ? "0" : "", month, day < 10 ? "0" : "", day, separator);
+    /// The last year stops at the max Date 2149-06-06.
+    const uint32_t year = date_years(generator);
+    const auto [month, day] = year == 2149 ? nextMonthDay(year, 6, 6) : nextMonthDay(year);
+    return fmt::format("{}{}-{:02}-{:02}{}", separator, year, month, day, separator);
 }
 
 String RandomGenerator::nextDate32(const String & separator, const bool allow_func)
@@ -117,29 +132,22 @@ String RandomGenerator::nextDate32(const String & separator, const bool allow_fu
     }
     if (this->nextMediumNumber() < 16)
     {
-        switch (this->randomInt<uint32_t>(0, 2))
+        switch (this->randomInt<uint32_t>(0, 4))
         {
-            case 0:
-                return separator + "1900-01-01" + separator; /// Min Date32
-            case 1:
-                return separator + "2299-12-31" + separator; /// Max Date32
-            case 2:
-                return separator + "1970-01-01" + separator; /// Epoch
-            default:
-                UNREACHABLE();
+            case 0: return separator + "0000-01-01" + separator; /// Min Date32
+            case 1: return separator + "9999-12-31" + separator; /// Max Date32
+            case 2: return separator + "1970-01-01" + separator; /// Epoch
+            /// The date LUT only covers [1900, 2299]; anything outside it takes the cctz
+            /// escape path instead, so both edges of that window are worth hitting.
+            case 3: return separator + "1900-01-01" + separator;
+            case 4: return separator + "2299-12-31" + separator;
+            default: UNREACHABLE();
         }
     }
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
-    return fmt::format(
-        "{}{}-{}{}-{}{}{}",
-        separator,
-        1900 + datetime64_years(generator),
-        month < 10 ? "0" : "",
-        month,
-        day < 10 ? "0" : "",
-        day,
-        separator);
+    const uint32_t year = this->nextBool() ? date32_lut_years(generator) : date32_years(generator);
+    const auto [month, day] = nextMonthDay(year);
+    /// A year below 1000 has to keep its leading zeros - `7-03-05` is not parsable.
+    return fmt::format("{}{:04}-{:02}-{:02}{}", separator, year, month, day, separator);
 }
 
 String RandomGenerator::nextTime(const String & separator, const bool allow_func)
@@ -154,22 +162,17 @@ String RandomGenerator::nextTime(const String & separator, const bool allow_func
     {
         switch (this->randomInt<uint32_t>(0, 3))
         {
-            case 0:
-                return separator + "00:00:00" + separator; /// Midnight
-            case 1:
-                return separator + "23:59:59" + separator; /// End of day
-            case 2:
-                return separator + "-999:59:59" + separator; /// Min Time
-            case 3:
-                return separator + "999:59:59" + separator; /// Max Time
-            default:
-                UNREACHABLE();
+            case 0: return separator + "00:00:00" + separator; /// Midnight
+            case 1: return separator + "23:59:59" + separator; /// End of day
+            case 2: return separator + "-999:59:59" + separator; /// Min Time
+            case 3: return separator + "999:59:59" + separator; /// Max Time
+            default: UNREACHABLE();
         }
     }
     const int32_t hour = time_hours(generator);
     const uint32_t minute = minutes(generator);
     const uint32_t second = minutes(generator);
-    return fmt::format("{}{}:{}{}:{}{}{}", separator, hour, minute < 10 ? "0" : "", minute, second < 10 ? "0" : "", second, separator);
+    return fmt::format("{}{}:{:02}:{:02}{}", separator, hour, minute, second, separator);
 }
 
 String RandomGenerator::nextTime64(const String & separator, const bool allow_func, const bool has_subseconds)
@@ -186,32 +189,17 @@ String RandomGenerator::nextTime64(const String & separator, const bool allow_fu
         const String sub0 = has_subseconds ? ".000000000" : "";
         switch (this->randomInt<uint32_t>(0, 3))
         {
-            case 0:
-                return separator + "00:00:00" + sub0 + separator; /// Midnight
-            case 1:
-                return separator + "23:59:59" + sub + separator; /// End of day (with max subseconds)
-            case 2:
-                return separator + "-999:59:59" + sub0 + separator; /// Min Time64
-            case 3:
-                return separator + "999:59:59" + sub + separator; /// Max Time64
-            default:
-                UNREACHABLE();
+            case 0: return separator + "00:00:00" + sub0 + separator; /// Midnight
+            case 1: return separator + "23:59:59" + sub + separator; /// End of day (with max subseconds)
+            case 2: return separator + "-999:59:59" + sub0 + separator; /// Min Time64
+            case 3: return separator + "999:59:59" + sub + separator; /// Max Time64
+            default: UNREACHABLE();
         }
     }
     const int32_t hour = time_hours(generator);
     const uint32_t minute = minutes(generator);
     const uint32_t second = minutes(generator);
-    return fmt::format(
-        "{}{}:{}{}:{}{}{}{}{}",
-        separator,
-        hour,
-        minute < 10 ? "0" : "",
-        minute,
-        second < 10 ? "0" : "",
-        second,
-        has_subseconds ? "." : "",
-        has_subseconds ? std::to_string(subseconds(generator)) : "",
-        separator);
+    return fmt::format("{}{}:{:02}:{:02}{}{}", separator, hour, minute, second, nextSubseconds(has_subseconds), separator);
 }
 
 String RandomGenerator::nextDateTime(const String & separator, const bool allow_func, const bool has_subseconds)
@@ -226,42 +214,49 @@ String RandomGenerator::nextDateTime(const String & separator, const bool allow_
     {
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0:
-                return separator + "1970-01-01 00:00:00" + separator; /// Epoch / min DateTime
-            case 1:
-                return separator + "2106-02-07 06:28:15" + separator; /// Max DateTime (2^32-1 seconds)
-            case 2:
-                return separator + "1970-01-01 00:00:01" + separator; /// One second after epoch
-            default:
-                UNREACHABLE();
+            case 0: return separator + "1970-01-01 00:00:00" + separator; /// Epoch / min DateTime
+            case 1: return separator + "2106-02-07 06:28:15" + separator; /// Max DateTime (2^32-1 seconds)
+            case 2: return separator + "1970-01-01 00:00:01" + separator; /// One second after epoch
+            default: UNREACHABLE();
         }
     }
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
-    const uint32_t hour = hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
+    /// The last year stops at the max DateTime 2106-02-07 06:28:15.
+    const uint32_t year = datetime_years(generator);
+    const auto [month, day] = year == 2106 ? nextMonthDay(year, 2, 7) : nextMonthDay(year);
+    const bool last_day = year == 2106 && month == 2 && day == 7;
+    const uint32_t hour = randomInt<uint32_t>(0, last_day ? 6 : 23);
+    const uint32_t minute = randomInt<uint32_t>(0, last_day && hour == 6 ? 28 : 59);
+    const uint32_t second = randomInt<uint32_t>(0, last_day && hour == 6 && minute == 28 ? 15 : 59);
     return fmt::format(
-        "{}{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}{}",
+        "{}{}-{:02}-{:02} {:02}:{:02}:{:02}{}{}",
         separator,
-        1970 + datetime_years(generator),
-        month < 10 ? "0" : "",
+        year,
         month,
-        day < 10 ? "0" : "",
         day,
-        hour < 10 ? "0" : "",
         hour,
-        minute < 10 ? "0" : "",
         minute,
-        second < 10 ? "0" : "",
         second,
-        has_subseconds ? "." : "",
-        has_subseconds ? std::to_string(subseconds(generator)) : "",
+        nextSubseconds(has_subseconds),
         separator);
 }
 
-String RandomGenerator::nextDateTime64(const String & separator, const bool allow_func, const bool has_subseconds)
+String RandomGenerator::nextDateTime64(const String & separator, const bool allow_func, const uint32_t scale)
 {
+    /// DateTime64 stores ticks as Int64 in units of 10^-scale seconds, so the representable
+    /// year range shrinks as the scale grows. Interior bounds so any random month/day/time fits.
+    uint32_t min_year = 1;
+    uint32_t max_year = 9999;
+    if (scale == 8)
+    {
+        max_year = 4880;
+    }
+    else if (scale >= 9)
+    {
+        min_year = 1678;
+        max_year = 2261;
+    }
+    const bool has_subseconds = scale > 0;
+
     if (allow_func && this->nextMediumNumber() < 21)
     {
         const int32_t offset_seconds = second_offsets(generator);
@@ -274,38 +269,34 @@ String RandomGenerator::nextDateTime64(const String & separator, const bool allo
         const String sub0 = has_subseconds ? ".000000000" : "";
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0:
-                return separator + "1900-01-01 00:00:00" + sub0 + separator; /// Min DateTime64
-            case 1:
-                return separator + "2299-12-31 23:59:59" + sub + separator; /// Max DateTime64
-            case 2:
-                return separator + "1970-01-01 00:00:00" + sub0 + separator; /// Epoch
-            default:
-                UNREACHABLE();
+            case 0: return fmt::format("{}{:04}-01-01 00:00:00{}{}", separator, min_year, sub0, separator); /// Min DateTime64
+            case 1: return fmt::format("{}{:04}-12-31 23:59:59{}{}", separator, max_year, sub, separator); /// Max DateTime64
+            case 2: return separator + "1970-01-01 00:00:00" + sub0 + separator; /// Epoch
+            default: UNREACHABLE();
         }
     }
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
+    const uint32_t year = randomInt<uint32_t>(min_year, max_year);
+    const auto [month, day] = nextMonthDay(year);
     const uint32_t hour = hours(generator);
     const uint32_t minute = minutes(generator);
     const uint32_t second = minutes(generator);
     return fmt::format(
-        "{}{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}{}",
+        "{}{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}{}",
         separator,
-        1900 + datetime64_years(generator),
-        month < 10 ? "0" : "",
+        year,
         month,
-        day < 10 ? "0" : "",
         day,
-        hour < 10 ? "0" : "",
         hour,
-        minute < 10 ? "0" : "",
         minute,
-        second < 10 ? "0" : "",
         second,
-        has_subseconds ? "." : "",
-        has_subseconds ? std::to_string(subseconds(generator)) : "",
+        nextSubseconds(has_subseconds),
         separator);
+}
+
+String RandomGenerator::nextSubseconds(const bool has_subseconds)
+{
+    /// Nine digits with leading zeros, otherwise 5 would print as `.5` and values below 0.1 never appear.
+    return has_subseconds ? fmt::format(".{:09}", subseconds(generator)) : "";
 }
 
 double RandomGenerator::randomGauss(const double mean, const double stddev)
@@ -361,6 +352,21 @@ String RandomGenerator::nextIdentifier(const String & prefix, const uint32_t cou
     return res;
 }
 
+static const constexpr char hexDigits[] = "0123456789abcdef";
+
+String RandomGenerator::nextHexBytes(const uint32_t nbytes)
+{
+    String ret;
+
+    ret.reserve(nbytes * 2);
+    for (uint32_t i = 0; i < nbytes; i++)
+    {
+        ret += hexDigits[hex_digits_dist(generator)];
+        ret += hexDigits[hex_digits_dist(generator)];
+    }
+    return ret;
+}
+
 String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)
 {
     String ret;
@@ -375,15 +381,25 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     /* A few times generate empty strings */
     if (this->nextMediumNumber() > 2)
     {
+        if (use_bad_utf8 && this->nextBool())
+        {
+            /// Random hex bytes: variable length from 1 to limit bytes
+            const uint32_t max_bytes = std::min(limit, this->nextBool() ? UINT32_C(64) : UINT32_C(4096));
+            if (max_bytes > 0)
+                ret += nextHexBytes(this->randomInt<uint32_t>(1, max_bytes));
+        }
         /// ~3% chance: repeated single character (stresses compression, string functions like repeat/position/like)
-        if (!use_bad_utf8 && this->nextMediumNumber() < 4)
+        else if (!use_bad_utf8 && this->nextMediumNumber() < 4)
         {
             static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '%', '_', '\\', '"', '/', '-'};
             char c = this->pickRandomly(repeat_chars);
 
             if (delimiter.size() == 1 && c == delimiter[0])
                 c = delimiter[0] == 'a' ? 'b' : 'a';
-            ret += String(this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536))), c);
+            const uint32_t count = this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536)));
+            /// A backslash escapes the char that follows it, so an odd-length raw run swallows
+            /// the closing delimiter. Emit `\\` pairs, keeping the decoded run length at `count`
+            ret += String(c == '\\' ? count * 2 : count, c);
         }
         else
         {
@@ -410,10 +426,11 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
                                 : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
                                                                               : (this->nextBool() ? common_english : common_chinese)));
 
-                        len += ((use_space ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
+                        len += (((use_space && !use_bad_utf8) ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
                         if (len < limit)
                         {
-                            ret += use_space ? " " : "";
+                            if (use_space && !use_bad_utf8)
+                                ret += " ";
                             ret += npick;
                         }
                         else
@@ -434,58 +451,23 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     return ret;
 }
 
-static const constexpr char hexDigits[] = "0123456789abcdef";
-
 String RandomGenerator::nextUUID()
 {
     if (this->nextMediumNumber() < 16)
     {
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0:
-                return "00000000-0000-0000-0000-000000000000"; /// Nil UUID
-            case 1:
-                return "ffffffff-ffff-ffff-ffff-ffffffffffff"; /// Max UUID
-            case 2:
-                return "00000000-0000-0000-0000-000000000001"; /// Near-nil
-            default:
-                UNREACHABLE();
+            case 0: return "00000000-0000-0000-0000-000000000000"; /// Nil UUID
+            case 1: return "ffffffff-ffff-ffff-ffff-ffffffffffff"; /// Max UUID
+            case 2: return "00000000-0000-0000-0000-000000000001"; /// Near-nil
+            default: UNREACHABLE();
         }
     }
-    return fmt::format(
-        "{}{}{}{}{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}{}{}{}{}{}{}{}{}",
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)]);
+    /// 8-4-4-4-12 hex digits.
+    String res = nextHexBytes(16);
+    for (size_t pos = 20; pos >= 8; pos -= 4)
+        res.insert(pos, 1, '-');
+    return res;
 }
 
 String RandomGenerator::nextIPv4()
@@ -494,21 +476,20 @@ String RandomGenerator::nextIPv4()
     {
         switch (this->randomInt<uint32_t>(0, 4))
         {
-            case 0:
-                return "0.0.0.0"; /// Unspecified
-            case 1:
-                return "127.0.0.1"; /// Loopback
-            case 2:
-                return "255.255.255.255"; /// Broadcast / max
-            case 3:
-                return "192.168.1.1"; /// Private (class C)
-            case 4:
-                return "10.0.0.1"; /// Private (class A)
-            default:
-                UNREACHABLE();
+            case 0: return "0.0.0.0"; /// Unspecified
+            case 1: return "127.0.0.1"; /// Loopback
+            case 2: return "255.255.255.255"; /// Broadcast / max
+            case 3: return "192.168.1.1"; /// Private (class C)
+            case 4: return "10.0.0.1"; /// Private (class A)
+            default: UNREACHABLE();
         }
     }
-    return fmt::format("{}.{}.{}.{}", this->nextRandomUInt8(), this->nextRandomUInt8(), this->nextRandomUInt8(), this->nextRandomUInt8());
+    return fmt::format(
+        "{}.{}.{}.{}",
+        this->randomInt<uint32_t>(0, 255),
+        this->randomInt<uint32_t>(0, 255),
+        this->randomInt<uint32_t>(0, 255),
+        this->randomInt<uint32_t>(0, 255));
 }
 
 String RandomGenerator::nextIPv6()
@@ -517,54 +498,19 @@ String RandomGenerator::nextIPv6()
     {
         switch (this->randomInt<uint32_t>(0, 4))
         {
-            case 0:
-                return "::"; /// Unspecified
-            case 1:
-                return "::1"; /// Loopback
-            case 2:
-                return "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"; /// Max
-            case 3:
-                return "fe80::1"; /// Link-local
-            case 4:
-                return "::ffff:127.0.0.1"; /// IPv4-mapped loopback
-            default:
-                UNREACHABLE();
+            case 0: return "::"; /// Unspecified
+            case 1: return "::1"; /// Loopback
+            case 2: return "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"; /// Max
+            case 3: return "fe80::1"; /// Link-local
+            case 4: return "::ffff:127.0.0.1"; /// IPv4-mapped loopback
+            default: UNREACHABLE();
         }
     }
-    return fmt::format(
-        "{}{}{}{}:{}{}{}{}:{}{}{}{}:{}{}{}{}:{}{}{}{}:{}{}{}{}:{}{}{}{}:{}{}{}{}",
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)],
-        hexDigits[hex_digits_dist(generator)]);
+    /// Eight groups of four hex digits.
+    String res = nextHexBytes(16);
+    for (size_t pos = 28; pos > 0; pos -= 4)
+        res.insert(pos, 1, ':');
+    return res;
 }
 
 void RandomGenerator::pickWeighted(std::initializer_list<std::pair<uint32_t, std::function<void()>>> options)

@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 
-import logging
-import random
-import string
-import time
 
-import minio
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -48,6 +43,7 @@ CREATE TABLE test_s3(c1 Int8, c2 Date) ENGINE = ReplicatedMergeTree('/test/table
 
     assert node1.query("SELECT count() FROM test_local") == "2\n"
 
+    node1.query("SYSTEM WAIT BLOBS CLEANUP 's3'")
     objects_before = list_blobs(cluster.minio_client)
     node1.query(
         "ALTER TABLE test_s3 FETCH PARTITION '2023-10-04' FROM '/test/tables/shard/test_local'"
@@ -75,6 +71,7 @@ order by (id) SETTINGS storage_policy = 's3';"""
     )
 
     # Now we are sure that s3 storage is up and running
+    node1.query("SYSTEM WAIT BLOBS CLEANUP 's3'")
     start_objects = list_blobs(cluster.minio_client)
     print("Objects before", start_objects)
 

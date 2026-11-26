@@ -18,7 +18,7 @@ struct CramersVData : CrossTabAggregateData
         return "cramersV";
     }
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -39,7 +39,7 @@ struct CramersVWindowData : CrossTabPhiSquaredWindowData
         return CramersVData::getName();
     }
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -55,6 +55,7 @@ struct CramersVWindowData : CrossTabPhiSquaredWindowData
 
 }
 
+void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -62,9 +63,9 @@ void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory)
 The result of the `cramersV` function ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other.
 It may be viewed as the association between two variables as a percentage of their maximum possible variation.
 
-:::note
-For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](/sql-reference/aggregate-functions/reference/cramersvbiascorrected)
-:::
+<Note>
+For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](/reference/functions/aggregate-functions/cramersVBiasCorrected)
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "cramersV(column1, column2)";
     FunctionDocumentation::Arguments arguments = {

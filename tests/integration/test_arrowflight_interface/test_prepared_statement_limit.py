@@ -8,7 +8,7 @@ import string
 import decimal
 import datetime
 
-from .flight_sql_client import FlightSQLClient
+from .flight_sql_client import CommandPreparedStatementQuery, FlightSQLClient, flight_descriptor
 
 from helpers.cluster import ClickHouseCluster
 
@@ -215,6 +215,20 @@ def test_prepared_statement_execute_without_bind_no_params():
     ("timestamp_us", pa.array([datetime.datetime(2023, 3, 14, 12, 30, 45)], type=pa.timestamp("us")), datetime.datetime(2023, 3, 14, 12, 30, 45)),
     # Decimal
     ("decimal128", pa.array([decimal.Decimal("123.45")], type=pa.decimal128(10, 2)), decimal.Decimal("123.45")),
+    # Decimals with a scale that a ClickHouse decimal cannot have: negative (12 * 10^2), and above the precision.
+    ("decimal128_negative_scale", pa.array([decimal.Decimal("1200")], type=pa.decimal128(2, -2)), decimal.Decimal("1200")),
+    (
+        "decimal128_scale_above_precision",
+        pa.Array.from_buffers(pa.decimal128(2, 4), 1, [None, pa.py_buffer((12).to_bytes(16, "little", signed=True))]),
+        decimal.Decimal("0.0012"),
+    ),
+    # Values that are bound as the text of Arrow, whatever the range and the text of the ClickHouse type
+    ("date32_before_1900", pa.array([datetime.date(1500, 1, 1)], type=pa.date32()), datetime.date(1500, 1, 1)),
+    ("timestamp_ns_before_1970", pa.array([-1], type=pa.timestamp("ns")), "1969-12-31 23:59:59.999999999"),
+    ("time32_s", pa.array([datetime.time(12, 30, 45)], type=pa.time32("s")), "12:30:45"),
+    ("time64_us", pa.array([datetime.time(12, 30, 45, 123456)], type=pa.time64("us")), "12:30:45.123456"),
+    ("duration_ms", pa.array([datetime.timedelta(milliseconds=1500)], type=pa.duration("ms")), "1500"),
+    ("month_day_nano_interval", pa.array([pa.MonthDayNano([1, 2, 3])], type=pa.month_day_nano_interval()), "1M2d3ns"),
     # NULL
     ("null_int", pa.array([None], type=pa.int32()), None),
     ("null_string", pa.array([None], type=pa.string()), None),
@@ -292,7 +306,7 @@ def test_close_all_prepared_statements():
 
     # Create 2 in session 1, 1 in session 2 (limit is 3 total per user).
     stmt_s1_a = client1.prepare("SELECT 1")
-    stmt_s1_b = client1.prepare("SELECT 2")
+    client1.prepare("SELECT 2")
     stmt_s2 = client2.prepare("SELECT 3")
 
     # Limit reached — 4th should fail from either session.
@@ -434,3 +448,172 @@ def test_session_close_does_not_affect_other_user_same_session_id():
     result = client2.execute(stmt2)
     assert result.column(0).to_pylist() == [2]
     stmt2.close()
+
+
+def test_prepared_statement_binary_uuid_parameter_keeps_byte_order():
+    """A binary parameter is bound with the bytes the client sent, also when the field is tagged as a UUID."""
+    client = get_client()
+
+    value = bytes.fromhex("00112233445566778899aabbccddeeff")
+    field = pa.field("0", pa.binary(16), metadata={b"PARQUET:logical_type": b"UUID"})
+    params = pa.record_batch([pa.array([value], type=pa.binary(16))], schema=pa.schema([field]))
+
+    stmt = client.prepare("SELECT hex(?) AS result")
+    stmt.bind_parameters(params)
+    result = stmt.execute()
+    assert result.column("result").to_pylist() == ["00112233445566778899AABBCCDDEEFF"]
+
+    stmt.close()
+
+
+def test_prepared_statement_null_parameter_with_non_nullable_schema_inference():
+    """A bound NULL stays NULL whatever the session prefers for the schema inference of imported data."""
+    client = get_client()
+    client.set_session_options({"schema_inference_make_columns_nullable": "0"})
+
+    stmt = client.prepare("SELECT isNull(?) AS x")
+    stmt.bind_parameters(pa.record_batch([pa.array([None], type=pa.int32())], names=["0"]))
+    result = stmt.execute()
+    assert result.column("x").to_pylist() == [1]
+
+    stmt.close()
+
+
+def test_prepared_statement_parameters_are_positional_whatever_the_column_matching():
+    """Parameters named equally up to case keep their own values, also with case-insensitive column matching."""
+    client = get_client()
+    client.set_session_options({"input_format_arrow_case_insensitive_column_matching": "1"})
+
+    stmt = client.prepare("SELECT ? + ? AS result")
+    stmt.bind_parameters(
+        pa.record_batch([pa.array([1], type=pa.int32()), pa.array([2], type=pa.int32())], names=["A", "a"])
+    )
+    result = stmt.execute()
+    assert result.column("result").to_pylist() == [3]
+
+    stmt.close()
+
+
+def test_prepared_statement_date64_parameter_keeps_its_date():
+    """A date64 parameter is bound as its date, also before 1970 and after the range of DateTime."""
+    client = get_client()
+
+    stmt = client.prepare("SELECT ? AS before_epoch, ? AS after_datetime")
+    stmt.bind_parameters(
+        pa.record_batch(
+            [
+                pa.array([datetime.date(1960, 1, 1)], type=pa.date64()),
+                pa.array([datetime.date(2200, 1, 1)], type=pa.date64()),
+            ],
+            names=["0", "1"],
+        )
+    )
+    result = stmt.execute()
+    assert result.column("before_epoch").to_pylist() == ["1960-01-01"]
+    assert result.column("after_datetime").to_pylist() == ["2200-01-01"]
+
+    stmt.close()
+
+
+def test_prepared_statement_float_parameter_is_a_float_literal_from_1e10():
+    """A floating-point number is bound as Arrow formats it: in the scientific notation from 1e10, so that its
+    literal is a `Float64`. Below that the text has no exponent, and a whole number is an integer literal."""
+    client = get_client()
+
+    stmt = client.prepare(
+        "SELECT toTypeName(?) AS type, ? + toUInt64(18446744073709551615) AS sum, toTypeName(?) AS type32, toTypeName(?) AS type_below"
+    )
+    stmt.bind_parameters(
+        pa.record_batch(
+            [
+                pa.array([1e10], type=pa.float64()),
+                pa.array([1e10], type=pa.float64()),
+                pa.array([1e10], type=pa.float32()),
+                pa.array([9999999999.0], type=pa.float64()),
+            ],
+            names=["0", "1", "2", "3"],
+        )
+    )
+    result = stmt.execute()
+    assert result.column("type").to_pylist() == ["Float64"]
+    assert result.column("sum").to_pylist() == [pytest.approx(1.8446744083709552e19)]
+    assert result.column("type32").to_pylist() == ["Float64"]
+    assert result.column("type_below").to_pylist() == ["UInt64"]
+
+    stmt.close()
+
+
+def test_prepared_statement_timestamp_parameters_do_not_depend_on_time_zones():
+    """A timestamp is bound as Arrow formats it: in UTC, and with `Z` if its type has a time zone. Neither the
+    time zone of the type nor the one of the session changes the value."""
+    client = get_client()
+    client.set_session_options({"session_timezone": "Asia/Tokyo"})
+
+    stmt = client.prepare("SELECT ? AS zoned, ? AS naive")
+    stmt.bind_parameters(
+        pa.record_batch(
+            [
+                pa.array([0], type=pa.timestamp("us", tz="Europe/Berlin")),
+                pa.array([datetime.datetime(2023, 3, 14, 12, 30, 45)], type=pa.timestamp("us")),
+            ],
+            names=["0", "1"],
+        )
+    )
+    result = stmt.execute()
+    assert result.column("zoned").to_pylist() == ["1970-01-01 00:00:00.000000Z"]
+    assert result.column("naive").to_pylist() == ["2023-03-14 12:30:45.000000"]
+
+    stmt.close()
+
+
+def test_prepared_statement_rows_of_a_compact_batch_are_rejected_before_decoding():
+    """The limit of one row is checked by the header of a batch, before the batch is decoded: a run-end encoded
+    column of 16 bytes that declares 2^40 rows is rejected as multiple parameter sets. Decoding it would need
+    terabytes, and fail with another error."""
+    client = get_client()
+
+    stmt = client.prepare("SELECT ? AS result")
+    rows = 1 << 40
+    values = pa.RunEndEncodedArray.from_arrays(pa.array([rows], pa.int64()), pa.array([1], pa.int8()))
+    params = pa.record_batch([values], names=["0"])
+
+    cmd = CommandPreparedStatementQuery(prepared_statement_handle=stmt.handle)
+    options = flight.FlightCallOptions(
+        headers=list(dict(client.headers).items()),
+        write_options=pa.ipc.IpcWriteOptions(allow_64bit=True),
+    )
+    with pytest.raises((pa.lib.ArrowException, flight.FlightError), match=f"got {rows} rows"):
+        writer, reader = client.client.do_put(flight_descriptor(cmd), params.schema, options)
+        writer.write_batch(params)
+        writer.done_writing()
+        reader.read()
+        writer.close()
+
+    # Nothing was bound.
+    with pytest.raises(pa.lib.ArrowInvalid, match="Parameters were not bound"):
+        stmt.execute()
+
+    stmt.close()
+
+
+def test_prepared_statement_multiple_parameter_sets_are_rejected():
+    """Only one row of parameters can be bound; the following rows are rejected."""
+    client = get_client()
+
+    stmt = client.prepare("SELECT ? AS result")
+    params = pa.record_batch([pa.array([1], type=pa.int32())], names=["0"])
+
+    cmd = CommandPreparedStatementQuery(prepared_statement_handle=stmt.handle)
+    with pytest.raises((pa.lib.ArrowException, flight.FlightError)):
+        writer, reader = client.client.do_put(flight_descriptor(cmd), params.schema, client._flight_call_options())
+        for _ in range(3):
+            writer.write_batch(params)
+        writer.done_writing()
+        reader.read()
+        writer.close()
+
+    # Nothing was bound.
+    with pytest.raises(pa.lib.ArrowInvalid, match="Parameters were not bound"):
+        stmt.execute()
+
+    stmt.close()

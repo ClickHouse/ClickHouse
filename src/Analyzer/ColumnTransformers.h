@@ -79,15 +79,15 @@ class IColumnTransformerNode : public IQueryTreeNode
 {
 public:
     /// Get transformer type
-    virtual ColumnTransfomerType getTransformerType() const = 0;
+    [[nodiscard]] virtual ColumnTransfomerType getTransformerType() const = 0;
 
     /// Get transformer type name
-    const char * getTransformerTypeName() const
+    [[nodiscard]] const char * getTransformerTypeName() const
     {
         return toString(getTransformerType());
     }
 
-    QueryTreeNodeType getNodeType() const final
+    [[nodiscard]] QueryTreeNodeType getNodeType() const final
     {
         return QueryTreeNodeType::TRANSFORMER;
     }
@@ -113,22 +113,29 @@ class ApplyColumnTransformerNode final : public IColumnTransformerNode
 public:
     /** Initialize apply column transformer with expression node.
       * Expression node must be lambda or function otherwise exception is thrown.
+      * column_name_prefix is the optional result name prefix from `APPLY (expr, 'prefix')`.
       */
-    explicit ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_);
+    explicit ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_, String column_name_prefix_ = {});
 
     /// Get apply transformer type
-    ApplyColumnTransformerType getApplyTransformerType() const
+    [[nodiscard]] ApplyColumnTransformerType getApplyTransformerType() const
     {
         return apply_transformer_type;
     }
 
+    /// Get the result name prefix from `APPLY (expr, 'prefix')`; empty when not set
+    [[nodiscard]] const String & getColumnNamePrefix() const
+    {
+        return column_name_prefix;
+    }
+
     /// Get apply transformer expression node
-    const QueryTreeNodePtr & getExpressionNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getExpressionNode() const
     {
         return children[expression_child_index];
     }
 
-    ColumnTransfomerType getTransformerType() const override
+    [[nodiscard]] ColumnTransfomerType getTransformerType() const override
     {
         return ColumnTransfomerType::APPLY;
     }
@@ -136,16 +143,17 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ApplyColumnTransformerType apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
+    String column_name_prefix;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
@@ -181,7 +189,7 @@ public:
     explicit ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_);
 
     /// Get except transformer type
-    ExceptColumnTransformerType getExceptTransformerType() const
+    [[nodiscard]] ExceptColumnTransformerType getExceptTransformerType() const
     {
         return except_transformer_type;
     }
@@ -189,23 +197,23 @@ public:
     /** Returns true if except column transformer is strict, false otherwise.
       * Valid only for EXCEPT COLUMN_LIST transformer.
       */
-    bool isStrict() const
+    [[nodiscard]] bool isStrict() const
     {
         return is_strict;
     }
 
     /// Returns true if except transformer match column name, false otherwise.
-    bool isColumnMatching(const std::string & column_name) const;
+    [[nodiscard]] bool isColumnMatching(const std::string & column_name) const;
 
     /** Get except column names.
       * Valid only for column list except transformer.
       */
-    const Names & getExceptColumnNames() const
+    [[nodiscard]] const Names & getExceptColumnNames() const
     {
         return except_column_names;
     }
 
-    ColumnTransfomerType getTransformerType() const override
+    [[nodiscard]] ColumnTransfomerType getTransformerType() const override
     {
         return ColumnTransfomerType::EXCEPT;
     }
@@ -213,13 +221,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ExceptColumnTransformerType except_transformer_type;
@@ -252,31 +260,31 @@ public:
     /// Initialize replace column transformer with replacements
     explicit ReplaceColumnTransformerNode(const std::vector<Replacement> & replacements_, bool is_strict);
 
-    ColumnTransfomerType getTransformerType() const override
+    [[nodiscard]] ColumnTransfomerType getTransformerType() const override
     {
         return ColumnTransfomerType::REPLACE;
     }
 
     /// Get replacements
-    const ListNode & getReplacements() const
+    [[nodiscard]] const ListNode & getReplacements() const
     {
         return children[replacements_child_index]->as<ListNode &>();
     }
 
     /// Get replacements node
-    const QueryTreeNodePtr & getReplacementsNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getReplacementsNode() const
     {
         return children[replacements_child_index];
     }
 
     /// Get replacements names
-    const Names & getReplacementsNames() const
+    [[nodiscard]] const Names & getReplacementsNames() const
     {
         return replacements_names;
     }
 
     /// Returns true if replace column transformer is strict, false otherwise
-    bool isStrict() const
+    [[nodiscard]] bool isStrict() const
     {
         return is_strict;
     }
@@ -289,13 +297,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ListNode & getReplacements()

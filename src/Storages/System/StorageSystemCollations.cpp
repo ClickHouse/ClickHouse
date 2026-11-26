@@ -1,4 +1,5 @@
 #include <Columns/Collator.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/IColumn.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/ColumnsDescription.h>
@@ -27,3 +28,6 @@ void StorageSystemCollations::fillData(MutableColumns & res_columns, ContextPtr,
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCollations) }

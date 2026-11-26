@@ -1,0 +1,11 @@
+<test>
+    <!-- Performance of the prime-generation sources behind `primes()` / `system.primes`
+         (see `SourceFromPrimes.h`). Each query drives a different source. -->
+
+    <!-- `PrimesSource`: prime-index domain. `primes(N)` generates the first N primes. -->
+    <query>SELECT sum(prime) FROM primes(20_000_000)</query>
+
+    <!-- `PrimesSimpleRangedSource`: value-range domain. A `WHERE` bound on the unbounded
+         `system.primes` is pushed into generation, sieving every prime below the bound. -->
+    <query>SELECT sum(prime) FROM system.primes WHERE prime &lt; 300_000_000</query>
+</test>

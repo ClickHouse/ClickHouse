@@ -19,7 +19,7 @@ class DatabaseSQLite final : public DatabaseWithAltersOnDiskBase, WithContext
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
 
-    DatabaseSQLite(ContextPtr context_, const ASTStorage * database_engine_define_,
+    DatabaseSQLite(ContextPtr context_, const String & database_name_, const ASTStorage * database_engine_define_,
                    bool is_attach_, const String & database_path_);
 
     String getEngineName() const override { return "SQLite"; }
@@ -45,15 +45,17 @@ private:
 
     String database_path;
 
-    mutable SQLitePtr sqlite_db;
-
     LoggerPtr log;
 
-    bool checkSQLiteTable(const String & table_name) const;
+    /// Every metadata operation runs on a connection opened for that operation; see the comment in the
+    /// definition. The connection never creates a missing database file.
+    SQLitePtr openConnection() const;
 
-    NameSet fetchTablesList() const TSA_REQUIRES(mutex);
+    static bool checkSQLiteTable(sqlite3 * sqlite_db, const String & table_name);
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
+    static NameSet fetchTablesList(sqlite3 * sqlite_db);
+
+    StoragePtr fetchTable(const SQLitePtr & sqlite_db, const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
 
 };
 

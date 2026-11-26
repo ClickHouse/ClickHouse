@@ -4,6 +4,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -30,7 +31,7 @@ public:
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_);
 
-    void write(const Block & block, const IColumnPermutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
     void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
@@ -55,7 +56,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
 
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
@@ -69,7 +70,7 @@ private:
     {
     public:
         void add(MutableColumns && columns);
-        size_t size() const;
+        [[nodiscard]] size_t size() const;
         Columns releaseColumns();
     private:
         MutableColumns accumulated_columns;

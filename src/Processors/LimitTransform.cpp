@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -39,7 +40,7 @@ LimitTransform::LimitTransform(
     for (auto & input : inputs)
     {
         ports_data[cur_stream].input_port = &input;
-        input_port_to_data[&input] = cur_stream;
+        input_port_to_data[&input] = &ports_data[cur_stream];
         ++cur_stream;
     }
 
@@ -47,7 +48,7 @@ LimitTransform::LimitTransform(
     for (auto & output : outputs)
     {
         ports_data[cur_stream].output_port = &output;
-        output_port_to_data[&output] = cur_stream;
+        output_port_to_data[&output] = &ports_data[cur_stream];
         ++cur_stream;
     }
 
@@ -57,7 +58,7 @@ LimitTransform::LimitTransform(
 
 Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
 {
-    assert(row < chunk.getNumRows());
+    chassert(row < chunk.getNumRows());
     ColumnRawPtrs current_columns = extractSortColumns(chunk.getColumns());
     MutableColumns last_row_sort_columns;
     for (size_t i = 0; i < current_columns.size(); ++i)
@@ -105,10 +106,10 @@ IProcessor::Status LimitTransform::prepare(
     };
 
     for (const auto * port : updated_input_ports)
-        process_pair(ports_data[input_port_to_data.at(port)]);
+        process_pair(*input_port_to_data.at(port));
 
     for (const auto * port : updated_output_ports)
-        process_pair(ports_data[output_port_to_data.at(port)]);
+        process_pair(*output_port_to_data.at(port));
 
     /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
     if (num_finished_port_pairs == ports_data.size())
@@ -144,6 +145,7 @@ LimitTransform::Status LimitTransform::prepare()
     return prepare({ports_data.front().input_port}, {ports_data.front().output_port});
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 {
     auto & output = *data.output_port;
@@ -242,7 +244,10 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         /// Return the whole chunk.
 
         /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-        if (with_ties && rows_read == offset + limit)
+        /// Skip when the chunk is empty (e.g. a virtual row produced by read-in-order pipeline that
+        /// reached us after rows_read already hit the limit): there is no row to remember, and the
+        /// previously stored `previous_row_chunk` is still the correct tie key for the boundary.
+        if (with_ties && rows_read == offset + limit && rows > 0)
             previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, data.current_chunk.getNumRows() - 1);
     }
     else
@@ -302,7 +307,7 @@ void LimitTransform::splitChunk(PortsData & data)
     /// <---------------> offset
     ///             <---> start
 
-    assert(offset < rows_read);
+    chassert(offset < rows_read);
 
     if (offset + num_rows > rows_read)
         start = offset + num_rows - rows_read;
@@ -337,7 +342,7 @@ void LimitTransform::splitChunk(PortsData & data)
 
     /// Check if other rows in current block equals to last one in limit
     /// when rows read >= offset + limit.
-    if (with_ties && offset + limit <= rows_read && length)
+    if (with_ties && !limit_is_unreachable && offset + limit <= rows_read && length)
     {
         UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
@@ -377,14 +382,27 @@ ColumnRawPtrs LimitTransform::extractSortColumns(const Columns & columns) const
 
 bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const
 {
-    assert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
+    chassert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
     size_t size = current_chunk_sort_columns.size();
     const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
     for (size_t i = 0; i < size; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
+    {
+        const auto & column = *current_chunk_sort_columns[i];
+        const auto & previous_column = *previous_row_sort_columns[i];
+
+        /// Compare ties using the same collation as ORDER BY, otherwise rows that are equal
+        /// according to the collation (for example '1' and '01' under numeric collation) would
+        /// be treated as distinct and wrongly dropped from the result.
+        int res = 0;
+        if (description[i].collator && column.isCollationSupported())
+            res = column.compareAtWithCollation(current_chunk_row_num, 0, previous_column, 1, *description[i].collator);
+        else
+            res = column.compareAt(current_chunk_row_num, 0, previous_column, 1);
+
+        if (res != 0)
             return false;
+    }
     return true;
 }
 
 }
-

@@ -1,11 +1,16 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Common/HiddenSecret.h>
 
-#include <Analyzer/ConstantValue.h>
+#include <optional>
+
+#include <Core/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
 #include <Parsers/ASTLiteral.h>
+
+#include <variant>
 
 namespace DB
 {
@@ -32,10 +37,10 @@ public:
       *
       * Throws exception if value cannot be converted to value data type.
       */
-    explicit ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_);
+    explicit ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_);
 
     /// Construct constant query tree node from column, data type will be derived from field value
-    explicit ConstantNode(ColumnPtr constant_column_);
+    explicit ConstantNode(ColumnConstPtr constant_column_);
 
     /** Construct constant query tree node from field and data type.
       *
@@ -47,18 +52,31 @@ public:
     explicit ConstantNode(Field value_);
 
     /// Get constant value
-    const ColumnPtr & getColumn() const
+    const ColumnConstPtr & getColumn() const
     {
-        return constant_value.getColumn();
+        return getConstantValue().getColumn();
     }
 
-    /// Get constant value
+    /// Get constant value as a `Field` (materializes it). Prefer the typed getters below where a caller
+    /// only needs a scalar - they avoid the `Field`.
     Field getValue() const
     {
-        Field out;
-        constant_value.getColumn()->get(0, out);
-        return out;
+        if (auto deferred_field = tryGetDeferredField())
+            return *deferred_field;
+        return getConstantValue().getField();
     }
+
+    /// A long tuple of plain literals, such as the right side of `x IN (1, 2, ...)`, keeps its `Field` until its column
+    /// is needed. Returns that `Field` (kept alive by the result) until then, else nullptr.
+    std::shared_ptr<const Field> tryGetDeferredField() const;
+
+    /// Typed value accessors - read the constant without materializing a `Field` (delegate to ConstantValue).
+    bool isNull() const { return getConstantValue().isNull(); }
+    UInt64 getUInt() const { return getConstantValue().getUInt(); }
+    Int64 getInt() const { return getConstantValue().getInt(); }
+    Float64 getFloat64() const { return getConstantValue().getFloat64(); }
+    bool getBool() const { return getConstantValue().getBool(); }
+    std::string_view getDataAt() const { return getConstantValue().getDataAt(); }
 
     /// Get constant value string representation
     String getValueStringRepresentation() const;
@@ -86,10 +104,7 @@ public:
         return QueryTreeNodeType::CONSTANT;
     }
 
-    DataTypePtr getResultType() const override
-    {
-        return constant_value.getType();
-    }
+    DataTypePtr getResultType() const override;
 
     /// Check if conversion to AST requires wrapping with _CAST function.
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
@@ -102,13 +117,30 @@ public:
         mask_id = id;
     }
 
+    /// Whether this constant is hidden as a secret (e.g. a key argument of `encrypt`).
+    bool isMasked() const
+    {
+        return mask_id != 0;
+    }
+
+    /// Placeholder shown instead of the value when this constant is hidden as a secret.
+    String getMaskString() const
+    {
+        chassert(isMasked());
+        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
+            return String(HIDDEN_SECRET);
+        return "[HIDDEN id: " + std::to_string(mask_id) + "]";
+    }
+
     void convertToNullable() override;
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
     String getValueName(const IColumn::Options & options) const
     {
-        return constant_value.getValueName(options);
+        if (isMasked())
+            return getMaskString();
+        return getConstantValue().getValueName(options);
     }
 
     bool isDeterministic() const { return is_deterministic; }
@@ -125,7 +157,25 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    ConstantValue constant_value;
+    /// The `Field` and the type of a deferred constant, and its `ConstantValue` once built. Clones share it.
+    struct DeferredValue;
+    using ValueOrDeferred = std::variant<ConstantValue, std::shared_ptr<DeferredValue>>;
+
+    ConstantNode(std::shared_ptr<DeferredValue> deferred_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_);
+
+    static ValueOrDeferred makeConstantValue(Field && value, DataTypePtr value_data_type);
+    static ValueOrDeferred makeConstantValue(Field && value);
+
+    const ConstantValue & getConstantValue() const
+    {
+        if (const auto * value = std::get_if<ConstantValue>(&constant_value)) [[likely]]
+            return *value;
+        return materializeDeferred();
+    }
+
+    const ConstantValue & materializeDeferred() const;
+
+    ValueOrDeferred constant_value;
     QueryTreeNodePtr source_expression;
     bool is_deterministic = true;
     size_t mask_id = 0;
@@ -136,6 +186,10 @@ private:
     /// to cache it using hash to check for update
     mutable boost::intrusive_ptr<ASTLiteral> cached_ast;
     mutable Hash hash_ast;
+
+    /// `getTreeHash` of this node without its alias; reset whenever the value changes.
+    friend class IQueryTreeNode;
+    mutable std::optional<Hash> cached_tree_hash;
 };
 
 }

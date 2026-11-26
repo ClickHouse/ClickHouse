@@ -1,0 +1,36 @@
+---
+title: 'Ressincronizando tabelas específicas'
+description: 'Ressincronizando tabelas específicas em um ClickPipe do Postgres'
+slug: /integrations/clickpipes/postgres/table_resync
+sidebarTitle: 'Ressincronizar tabela'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Há cenários em que pode ser útil ressincronizar tabelas específicas de um pipe. Alguns exemplos de uso incluem grandes alterações de esquema no Postgres ou alguma remodelagem de dados no ClickHouse.
+
+Embora a ressincronização de tabelas individuais com um clique ainda esteja em desenvolvimento, este guia mostra as etapas para fazer isso hoje em um ClickPipe do Postgres.
+
+<Steps>
+  <Step title="Remova a tabela do pipe" id="removing-table">
+    Para isso, siga o [guia de remoção de tabela](/pt-BR/integrations/clickpipes/postgres/remove-table).
+  </Step>
+
+  <Step title="Trunque ou remova a tabela no ClickHouse" id="truncate-drop-table">
+    Esta etapa serve para evitar duplicação de dados quando adicionarmos essa tabela novamente na próxima etapa. Você pode fazer isso acessando a aba **SQL Console** no ClickHouse Cloud e executando uma consulta.
+    Observe que temos uma validação para bloquear a adição da tabela se ela já existir no ClickHouse e não estiver vazia.
+
+    Como alternativa, se você precisar manter a tabela antiga, pode simplesmente renomeá-la. Isso também é útil quando a tabela é muito grande e a operação de drop pode levar algum tempo.
+
+    ```sql
+    RENAME TABLE table_A TO table_A_bak;
+    ```
+  </Step>
+
+  <Step title="Adicione a tabela ao ClickPipe novamente" id="add-table-again">
+    Para isso, siga o [guia de adição de tabela](/pt-BR/integrations/clickpipes/postgres/add-table).
+  </Step>
+</Steps>

@@ -29,22 +29,7 @@ private:
     const Poco::Timestamp new_timestamp;
     IDisk & disk;
 
-    Poco::Timestamp old_timestamp;
-};
-
-struct ChmodOperation final : public IMetadataOperation
-{
-    ChmodOperation(std::string path_, mode_t mode_, IDisk & disk_);
-
-    void execute() override;
-    void undo() override;
-
-private:
-    const std::string path;
-    const mode_t mode;
-    IDisk & disk;
-
-    mode_t old_mode;
+    std::optional<Poco::Timestamp> old_timestamp;
 };
 
 struct WriteFileOperation final : public IMetadataOperation
@@ -60,12 +45,7 @@ private:
     IDisk & disk;
 
     std::optional<std::string> prev_data;
-
-    // True once execute() has confirmed the file exists on disk.
-    // Used by undo() to distinguish "file was created by this operation"
-    // (safe to delete on undo) from "file already existed, execute() failed
-    // before overwriting it" (must NOT delete — the file is unchanged).
-    bool file_existed = false;
+    bool write_attempted = false;
 };
 
 struct UnlinkFileOperation final : public IMetadataOperation
@@ -101,6 +81,8 @@ struct CreateDirectoryOperation final : public IMetadataOperation
 private:
     const std::string path;
     IDisk & disk;
+
+    bool created = false;
 };
 
 struct CreateDirectoryRecursiveOperation final : public IMetadataOperation
@@ -170,6 +152,7 @@ private:
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
+    bool link_created = false;
 };
 
 struct MoveFileOperation final : public IMetadataOperation
@@ -183,6 +166,8 @@ private:
     const std::string path_from;
     const std::string path_to;
     IDisk & disk;
+
+    bool moved = false;
 };
 
 struct MoveDirectoryOperation final : public IMetadataOperation
@@ -196,6 +181,8 @@ private:
     const std::string path_from;
     const std::string path_to;
     IDisk & disk;
+
+    bool moved = false;
 };
 
 struct ReplaceFileOperation final : public IMetadataOperation
@@ -254,16 +241,18 @@ private:
 
 struct AddBlobOperation final : public IMetadataOperation
 {
-    AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix, IDisk & disk_);
+    AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix, IDisk & disk_, StoredObjects & objects_to_remove_);
 
     void execute() override;
     void undo() override;
+    void finalize() override;
 
 private:
     const std::string path;
     const StoredObject object;
     const std::string & compatible_key_prefix;
     IDisk & disk;
+    StoredObjects & objects_to_remove;
 
     std::unique_ptr<WriteFileOperation> write_operation;
 };

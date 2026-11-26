@@ -9,6 +9,7 @@
 #    include <Core/SortDescription.h>
 #    include <Functions/IFunction.h>
 #    include <Interpreters/JIT/CHJIT.h>
+#    include <Interpreters/JIT/callJITFunction.h>
 
 
 namespace DB
@@ -35,21 +36,10 @@ using ColumnDataRowsSize = size_t;
 
 using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
 
-/** Wrapper to call JIT-compiled functions.
-  * UBSan's `-fsanitize=function` reads a type signature at `function_pointer - 8` before every indirect call.
-  * JIT-compiled functions don't have this prologue, and when JIT code is at a page boundary,
-  * the read accesses unmapped memory, causing a SIGSEGV.
-  */
-template <typename F, typename... Args>
-NO_SANITIZE_UNDEFINED inline decltype(auto) callJITFunction(F && f, Args &&... args)
-{
-    return f(std::forward<Args>(args)...);
-}
-
 struct CompiledFunction
 {
 
-    JITCompiledFunction compiled_function;
+    JITCompiledFunction compiled_function{};
 
     CHJIT::CompiledModule compiled_module;
 };
@@ -74,15 +64,15 @@ using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsOffse
 
 struct CompiledAggregateFunctions
 {
-    JITCreateAggregateStatesFunction create_aggregate_states_function;
-    JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
-    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place;
+    JITCreateAggregateStatesFunction create_aggregate_states_function{};
+    JITAddIntoAggregateStatesFunction add_into_aggregate_states_function{};
+    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place{};
 
-    JITMergeAggregateStatesFunction merge_aggregate_states_function;
-    JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function;
+    JITMergeAggregateStatesFunction merge_aggregate_states_function{};
+    JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function{};
 
     /// Count of functions that were compiled
-    size_t functions_count;
+    size_t functions_count{};
 
     /// Compiled module. It is client responsibility to destroy it after functions are no longer required.
     CHJIT::CompiledModule compiled_module;
@@ -103,7 +93,7 @@ using JITSortDescriptionFunc = int8_t (*)(size_t, size_t, ColumnData *, ColumnDa
 
 struct CompiledSortDescriptionFunction
 {
-    JITSortDescriptionFunc comparator_function;
+    JITSortDescriptionFunc comparator_function{};
     CHJIT::CompiledModule compiled_module;
 };
 

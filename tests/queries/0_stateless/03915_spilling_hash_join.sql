@@ -1,19 +1,19 @@
 -- Test SpillingHashJoin: automatic spilling of hash joins to disk.
 
+SET explain_query_plan_default = 'legacy';
 SET max_bytes_before_external_join = 1000000000;
 SET grace_hash_join_initial_buckets = 1;
+SET query_plan_optimize_join_order_randomize = 0;
+-- The JoinNonJoinedTransform* counters checked below depend on which physical side of the join
+-- emits non-joined rows. With the default `auto`, the optimizer swaps sides based on row-count
+-- estimates, so randomized settings can flip the orientation. Pin it to keep the counters stable.
+SET query_plan_join_swap_table = 0;
 
 -- Ensure it shows up in query plan nicely
 SELECT trim(explain)
 FROM
 (
     EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'hash'
-)
-WHERE trim(explain) LIKE 'Algorithm%';
-SELECT trim(explain)
-FROM
-(
-    EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'parallel_hash'
 )
 WHERE trim(explain) LIKE 'Algorithm%';
 
@@ -106,11 +106,12 @@ ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_10';
 
 -- ====================================================================
--- Concurrent path: SpillingHashJoin wrapping ConcurrentHashJoin.
+-- Parallel layout: SpillingHashJoin wrapping a parallel HashJoin.
 -- ====================================================================
 SET max_bytes_before_external_join = 1000000000;
 SET join_algorithm = 'parallel_hash';
 SET max_threads = 4;
+SET hash_join_layout = 'parallel';
 
 -- Test 11: Small INNER JOIN that fits in memory (concurrent, no spill).
 SELECT 'concurrent inner join small';
@@ -134,7 +135,7 @@ SELECT count()
 FROM (SELECT number + 50 AS k FROM numbers(100)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(100)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_13';
+SETTINGS log_comment = 'query_03915_13', parallel_non_joined_rows_processing = 1;
 
 -- Test 14: Small FULL JOIN that fits in memory (concurrent, no spill).
 SELECT 'concurrent full join small';
@@ -142,7 +143,7 @@ SELECT count()
 FROM (SELECT number AS k FROM numbers(100)) AS t1
 FULL JOIN (SELECT number + 50 AS k FROM numbers(100)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_14';
+SETTINGS log_comment = 'query_03915_14', parallel_non_joined_rows_processing = 1;
 
 -- Test 15: Concurrent RIGHT JOIN (in-memory) — verify non-joined rows from right table.
 -- t1.k = [5000..14999], t2.k = [0..9999]
@@ -152,7 +153,7 @@ SELECT count(), countIf(t1.k != 0) AS matched, countIf(t1.k = 0) AS right_only
 FROM (SELECT number + 5000 AS k FROM numbers(10000)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_15';
+SETTINGS log_comment = 'query_03915_15', parallel_non_joined_rows_processing = 1;
 
 -- Test 16: Concurrent FULL JOIN (in-memory) — verify non-joined rows from both sides.
 -- t1.k = [1..10000], t2.k = [5001..15000]
@@ -163,7 +164,7 @@ SELECT count(), countIf(t1.k != 0 AND t2.k != 0 ) AS matched,
 FROM (SELECT number + 1 AS k FROM numbers(10000)) AS t1
 FULL JOIN (SELECT number + 5001 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_16';
+SETTINGS log_comment = 'query_03915_16', parallel_non_joined_rows_processing = 1;
 
 SET max_bytes_before_external_join = 100000;
 -- Increase initial bucket size to ensure delayed blocks are handled

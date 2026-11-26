@@ -1,4 +1,5 @@
 #include <IO/ReadBuffer.h>
+#include <IO/ByteRangeSet.h>
 #include <IO/ReadBufferWrapperBase.h>
 
 #include <Common/Logger.h>
@@ -19,6 +20,10 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
+void ReadBuffer::setRequestMap(ByteRangeSet /* ranges */)
+{
+}
+
 namespace
 {
     template <typename CustomData>
@@ -28,9 +33,19 @@ namespace
         ReadBufferWrapper(ReadBuffer & in_, CustomData && custom_data_)
             : ReadBuffer(in_.buffer().begin(), in_.buffer().size(), in_.offset()), in(in_), custom_data(std::move(custom_data_))
         {
+            setWorkingBuffer(in.buffer(), in.offset());
         }
 
-        const ReadBuffer & getWrappedReadBuffer() const override { return in; }
+        [[nodiscard]] const ReadBuffer & getWrappedReadBuffer() const override { return in; }
+
+        bool poll(size_t timeout_microseconds) override
+        {
+            if (hasPendingData())
+                return true;
+
+            in.position() = position();
+            return in.poll(timeout_microseconds);
+        }
 
     private:
         ReadBuffer & in;
@@ -44,7 +59,7 @@ namespace
                 set(in.position(), 0);
                 return false;
             }
-            BufferBase::set(in.buffer().begin(), in.buffer().size(), in.offset());
+            setWorkingBuffer(in.buffer(), in.offset());
             return true;
         }
     };
@@ -52,10 +67,18 @@ namespace
 
 void ReadBuffer::readStrict(char * to, size_t n)
 {
-    auto read_bytes = read(to, n);
+    size_t read_bytes = read(to, n);
     if (n != read_bytes)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
+}
+
+void ReadBuffer::readBigStrict(char * to, size_t n)
+{
+    size_t read_bytes = readBig(to, n);
+    if (n != read_bytes)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data with readBig. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
 }
 
 void ReadBuffer::throwReadAfterEOF()

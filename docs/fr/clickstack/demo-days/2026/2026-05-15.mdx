@@ -1,0 +1,76 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-15
+title: 'Demo days - 2026-05-15'
+sidebarTitle: '2026-05-15'
+description: 'Demo days ClickStack du 2026-05-15'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="alerts-from-notebooks">
+  ## Alertes depuis les notebooks
+</div>
+
+*Démo par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/HIxCMDmdZ8o" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les Notebooks peuvent désormais créer des alertes. Le même flux dans le notebook qui génère déjà des tableaux de bord à la volée configure maintenant aussi une alerte pour vous, ce qui vous permet de passer de « voici une requête intéressante » à « prévenez-moi quand elle se déclenche » sans quitter le notebook.
+
+Il y a toutefois un point à connaître. Nous avons un certain nombre de webhooks prédéfinis dans l&#39;équipe, mais pour l&#39;instant, le notebook ne pose pas de questions de suivi. Il choisit donc simplement le webhook qui semble le plus pertinent, au lieu de vous laisser le sélectionner. Une PR est déjà en cours pour permettre aux notebooks de poser des questions de suivi lorsqu&#39;il leur manque du contexte ; ce manque devrait donc bientôt être comblé.
+
+<div id="autocomplete-from-materialized-views">
+  ## Autocomplétion à partir des vues matérialisées
+</div>
+
+*Démo par [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iQf5EwktBW4" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Il y a quelque temps, nous avons ajouté des vues matérialisées pour prendre en charge l’autocomplétion des attributs dans la barre de recherche, ce qui a permis d’afficher les valeurs instantanément au lieu de les calculer à la volée. Nous utilisons maintenant ces mêmes MV pour alimenter les filtres latéraux, ce qui signifie qu’ils se chargent beaucoup plus vite sur les instances fortement sollicitées.
+
+Il y a toutefois un changement de comportement qui mérite d’être signalé. Les filtres adossés à des MV renvoient toutes les valeurs de filtre possibles dans l’intervalle de temps actuel, au lieu d’être limités à votre requête en cours. Un commutateur permet de revenir aux filtres limités à la recherche, qui exécutent l’agrégation plus lente sur vos résultats en temps réel. La valeur par défaut de `filterValueExpandedKeyLimit` a également été augmentée : 20 clés sans MV, 100 avec, avec la possibilité de configurer la limite à la valeur de votre choix (nous avons testé jusqu’à 1000).
+
+La MV est relativement peu coûteuse à maintenir : elle tourne sur notre instance de staging avec un gros volume de données et se comporte bien. La même MV alimente l’autocomplétion des attributs et l’expansion de la colonne map, vous bénéficiez donc du gain de performances à plusieurs endroits une fois qu’elle est en place. Une discussion a eu lieu pendant la démo pour savoir si le commutateur entre les filtres limités à la recherche et tous les filtres devrait devenir un sélecteur principal en forme de pastille en haut du panneau des filtres, plutôt que de rester dans les paramètres ; c’est un point que nous examinons pour la suite.
+
+**PR associées :** [#2272](https://github.com/hyperdxio/hyperdx/pull/2272) feat: les filtres ne tiennent pas compte de la recherche par défaut ; accélérés par une MV
+
+<div id="table-column-ordering-and-per-series-formatting">
+  ## Ordre des colonnes de la table et formatage par série
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iEn8kzvERE8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Quelques améliorations connexes des tables ont été apportées en même temps. Les colonnes de group-by peuvent désormais être épinglées sur le côté gauche de la table au lieu d’être systématiquement affichées à droite, ce qui est généralement préférable pour les tableaux de bord de type RED, où le nom du service est l’élément que vous parcourez du regard. Un paramètre d’affichage propre à chaque table permet de contrôler ce comportement.
+
+Les formats numériques par série sont désormais également pris en charge. Auparavant, un seul format numérique était appliqué à toute la table, ce qui signifiait qu’une colonne Requests pouvait s’afficher sous la forme `123ms` si la table contenait au moins une série formatée en millisecondes. Vous pouvez maintenant définir un format par colonne ou par série, afin que le nombre de requêtes reste affiché comme un nombre simple, tandis que les colonnes de latence sont formatées comme des durées.
+
+De plus, l’inférence du format se fait désormais par série. Si vous effectuez une agrégation sur le champ Trace Duration, le format en millisecondes est déduit pour cette série uniquement ; le reste de la table n’est plus entraîné dans ce formatage simplement parce qu’une colonne se trouve être une durée.
+
+**PR associées :** [#2149](https://github.com/hyperdxio/hyperdx/pull/2149) feat: Allow displaying group-by columns on LHS of table, [#2174](https://github.com/hyperdxio/hyperdx/pull/2174) feat: Add per-series number formats
+
+<div id="customizable-dashboard-linking">
+  ## Liens personnalisables entre tableaux de bord
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Stlz02xES40" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les tableaux des tableaux de bord peuvent désormais pointer vers d&#39;autres tableaux de bord (ou vers Search) lors d&#39;un clic sur une ligne, avec un système de templates configurable à la fois pour la destination et pour les filtres transmis. Dans la configuration de la tuile de tableau, une nouvelle option « row click action » est disponible. Choisissez « dashboard », sélectionnez le tableau de bord de destination, puis faites correspondre les filtres de la ligne actuelle à ceux du tableau de bord cible. Les valeurs de filtre utilisent une syntaxe de template de type Handlebars, ce qui vous permet d&#39;injecter n&#39;importe quelle valeur de colonne de la ligne cliquée dans le filtre de destination ou dans la clause WHERE (en SQL comme en Lucene). L&#39;exemple montré dans la démo relie une liste de services de sorte qu&#39;un clic sur une ligne ouvre le tableau de bord détaillé du service, avec `service.name` déjà filtré.
+
+Au lieu de choisir un tableau de bord de destination précis, vous pouvez aussi appliquer un template au nom du tableau de bord lui-même. Ainsi, si vous avez des tableaux de bord par service nommés, par exemple, `${service.name} dashboard`, le lien peut se résoudre vers celui qui correspond à la ligne cliquée. Une gestion des erreurs est prévue si le tableau de bord généré à partir du template n&#39;existe pas : une notification s&#39;affiche au lieu d&#39;ouvrir une page invalide.
+
+Plusieurs variables sont prises en charge : vous pouvez transmettre n&#39;importe quelle combinaison de colonnes de la ligne cliquée, soit dans l&#39;ensemble de filtres, soit dans le nom du tableau de bord généré par template. Handlebars propose des helpers dynamiques et des blocs conditionnels, mais la plupart sont désactivés pour le moment afin de limiter la surface fonctionnelle et de garder un comportement prévisible. Le flux d&#39;importation a lui aussi été mis à jour : les tableaux de bord qui pointent vers d&#39;autres tableaux de bord par ID peuvent désormais voir ces références remappées lors de l&#39;importation vers le tableau de bord présent dans le compte de destination.
+
+**PR associées :** [#2146](https://github.com/hyperdxio/hyperdx/pull/2146) feat: Add filter templating to custom dashboard on-click, [#2148](https://github.com/hyperdxio/hyperdx/pull/2148) feat: Support import/export for dashboard onClicks, [#2156](https://github.com/hyperdxio/hyperdx/pull/2156) feat: Add custom onClick field to external dashboards API, [#2273](https://github.com/hyperdxio/hyperdx/pull/2273) feat: Add dashboard table onClick to MCP schemas and prompts

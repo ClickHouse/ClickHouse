@@ -15,7 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
@@ -25,7 +24,7 @@ namespace
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
 /// Precision could be set as second argument or omitted. If omitted function uses Decimal precision of the first argument.
-class FunctionIsDecimalOverflow : public IFunction
+class FunctionIsDecimalOverflow final : public IFunction
 {
 public:
     static constexpr auto name = "isDecimalOverflow";
@@ -35,41 +34,19 @@ public:
         return std::make_shared<FunctionIsDecimalOverflow>();
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), arguments.size());
+    [[nodiscard]] String getSignatureString() const override { return "(Decimal, [const UInt8]) -> UInt8"; }
 
-        WhichDataType which_first(arguments[0]->getTypeId());
-
-        if (!which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        if (arguments.size() == 2)
-        {
-            WhichDataType which_second(arguments[1]->getTypeId());
-            if (!which_second.isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[1]->getName(), getName());
-        }
-
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)

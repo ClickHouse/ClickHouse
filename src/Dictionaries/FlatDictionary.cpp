@@ -58,7 +58,7 @@ ColumnPtr FlatDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -95,21 +95,7 @@ ColumnPtr FlatDictionary::getColumn(
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, ids, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, ids, [&](size_t, const Map & value, bool) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
@@ -117,15 +103,15 @@ ColumnPtr FlatDictionary::getColumn(
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, ids, [&](size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+                        attribute, ids, [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -171,27 +157,7 @@ ColumnPtr FlatDictionary::getColumn(
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
                 dictionary_attribute.null_value, default_values_column);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    ids,
-                    [&](size_t, const Array & value, bool) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    ids,
-                    [&](size_t, const Map & value, bool) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
@@ -199,17 +165,17 @@ ColumnPtr FlatDictionary::getColumn(
                     getItemsImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         ids,
-                        [&](size_t, const Object & value, bool) { out->insert(value); },
+                        [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
                         default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -433,7 +399,7 @@ ColumnPtr FlatDictionary::getDescendants(
     PaddedPODArray<UInt64> keys_backup;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup);
 
-    size_t keys_found;
+    size_t keys_found = 0;
     auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
@@ -503,6 +469,20 @@ void FlatDictionary::blockToAttributes(const Block & block)
         }
 
         keys_extractor.reset();
+    }
+
+    removeReplacedRows(false);
+}
+
+void FlatDictionary::removeReplacedRows(bool loading_finished)
+{
+    for (auto & attribute : attributes)
+    {
+        std::visit([&](auto & container)
+        {
+            if constexpr (requires { container.removeReplacedRows(loading_finished); })
+                container.removeReplacedRows(loading_finished);
+        }, attribute.container);
     }
 }
 
@@ -577,6 +557,8 @@ void FlatDictionary::loadData()
     for (size_t i = 0; i < loaded_keys_size; ++i)
         element_count += loaded_keys[i];
 
+    removeReplacedRows(true);
+
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
@@ -605,25 +587,10 @@ void FlatDictionary::calculateBytesAllocated()
             const auto & container = std::get<ContainerType<ValueType>>(attribute.container);
             bytes_allocated += sizeof(ContainerType<ValueType>);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Array) * container.size();
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Map) * container.size();
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Object) * container.size();
-            }
+            if constexpr (is_column_attribute_value<ValueType>)
+                bytes_allocated += container.values.allocatedBytes() + container.key_to_row.allocated_bytes();
             else
-            {
                 bytes_allocated += container.allocated_bytes();
-            }
 
             bucket_count = container.capacity();
         };
@@ -659,7 +626,10 @@ FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttrib
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
-        attribute.container.emplace<ContainerType<ValueType>>(configuration.initial_array_size, ValueType());
+        if constexpr (is_column_attribute_value<ValueType>)
+            attribute.container.emplace<ContainerType<ValueType>>(dictionary_attribute).key_to_row.resize_fill(configuration.initial_array_size, 0);
+        else
+            attribute.container.emplace<ContainerType<ValueType>>(configuration.initial_array_size, ValueType());
     };
 
     callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
@@ -755,8 +725,8 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
         const size_t elements_count = key + 1; //id=0 -> elements_count=1
         loaded_keys.resize(elements_count, false);
 
-        if constexpr (std::is_same_v<T, Array> || std::is_same_v<T, Map> || std::is_same_v<T, Object>)
-            container.resize(elements_count, T{});
+        if constexpr (is_column_attribute_value<T>)
+            container.key_to_row.resize_fill(elements_count, 0);
         else
             container.resize_fill(elements_count, T{});
     }
@@ -772,26 +742,27 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
 
         resize<ValueType>(attribute, key);
 
-        if (attribute.is_nullable_set && value.isNull())
-        {
-            attribute.is_nullable_set->insert(key);
-            loaded_keys[key] = true;
-            return;
-        }
-
-        auto & attribute_value = value.safeGet<AttributeType>();
-
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
+
         loaded_keys[key] = true;
 
-        if constexpr (std::is_same_v<ValueType, std::string_view>)
+        bool value_is_null = attribute.is_nullable_set && value.isNull();
+        if (value_is_null)
+            attribute.is_nullable_set->insert(key);
+        else if (attribute.is_nullable_set) /// A repeated key keeps its last row, so a value replaces an earlier NULL.
+            attribute.is_nullable_set->erase(key);
+
+        /// A null key still gets a row: lookups copy the row before the null map is applied.
+        if constexpr (is_column_attribute_value<ValueType>)
         {
-            auto arena_value = copyStringInArena(string_arena, attribute_value);
-            container[key] = arena_value;
+            container.insert(key, value);
         }
-        else
+        else if (!value_is_null)
         {
-            container[key] = static_cast<ValueType>(attribute_value);
+            if constexpr (std::is_same_v<ValueType, std::string_view>)
+                container[key] = copyStringInArena(string_arena, value.safeGet<String>());
+            else
+                container[key] = static_cast<ValueType>(value.safeGet<AttributeType>());
         }
     };
 
@@ -819,6 +790,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
     return result;
 }
 
+void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & full_name,
@@ -857,7 +829,51 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false, false);
+    factory.registerLayout("flat", create_layout, false, false, Documentation{
+        .description = R"DOCS_MD(
+# flat dictionary layout
+
+With the `flat` layout, the dictionary is completely stored in memory in the form of flat arrays.
+The amount of memory used is proportional to the size of the largest key (in space used).
+
+<Tip>
+This layout type provides the best performance among all available methods of storing a dictionary.
+</Tip>
+
+The dictionary key has the [UInt64](/reference/data-types/int-uint) type and the value is limited to `max_array_size` (by default — 500,000).
+If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
+The initial size of dictionary flat arrays are controlled by the `initial_array_size` setting (by default — 1024).
+
+All types of sources are supported.
+When updating the dictionary, data (from a file or from a table) is read in its entirety.
+
+Configuration example:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+  <flat>
+    <initial_array_size>50000</initial_array_size>
+    <max_array_size>5000000</max_array_size>
+  </flat>
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+)DOCS_MD",
+        .syntax = "LAYOUT(FLAT([INITIAL_ARRAY_SIZE n] [MAX_ARRAY_SIZE n]))",
+        .related = {"hashed"}});
 }
 
 

@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -10,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentUser : public IFunction
+class FunctionCurrentUser final : public IFunction
 {
     const String user_name;
 
@@ -25,27 +26,27 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "() -> String";
     }
 
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool allowsOmittingParentheses() const override { return true; }
+    [[nodiscard]] bool allowsOmittingParentheses() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeString().createColumnConst(input_rows_count, user_name);
     }
@@ -89,6 +90,7 @@ SELECT CURRENT_USER
     factory.registerFunction<FunctionCurrentUser>(documentation);
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("session_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
 }
 
 }

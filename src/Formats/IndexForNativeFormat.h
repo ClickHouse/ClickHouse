@@ -19,7 +19,7 @@ struct IndexOfOneColumnForNativeFormat
 {
     String name;
     String type;
-    MarkInCompressedFile location;
+    MarkInCompressedFile location{};
 };
 
 /** The index for the data block. */
@@ -27,8 +27,8 @@ struct IndexOfBlockForNativeFormat
 {
     using Columns = std::vector<IndexOfOneColumnForNativeFormat>;
 
-    size_t num_columns;
-    size_t num_rows;
+    size_t num_columns{};
+    size_t num_rows{};
     Columns columns;
 
     /// Reads the index for the data block.
@@ -38,7 +38,7 @@ struct IndexOfBlockForNativeFormat
     void write(WriteBuffer & ostr) const;
 
     /// Returns the index only for the required columns.
-    IndexOfBlockForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
+    [[nodiscard]] IndexOfBlockForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
 };
 
 /** The whole index. */
@@ -47,7 +47,7 @@ struct IndexForNativeFormat
     using Blocks = std::vector<IndexOfBlockForNativeFormat>;
     Blocks blocks;
 
-    bool empty() const { return blocks.empty(); }
+    [[nodiscard]] bool empty() const { return blocks.empty(); }
     void clear() { blocks.clear(); }
 
     /// Reads the index.
@@ -57,7 +57,7 @@ struct IndexForNativeFormat
     void write(WriteBuffer & ostr) const;
 
     /// Returns the index only for the required columns.
-    IndexForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
+    [[nodiscard]] IndexForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
 };
 
 }

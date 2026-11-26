@@ -17,7 +17,7 @@ class SystemAllocatedMemoryHolder
     class Memory
     {
         void * data = nullptr;
-        size_t size;
+        size_t size{};
 
     public:
         explicit Memory(size_t size_) : size(size_)

@@ -1,130 +1,84 @@
 #pragma once
 
 #include <Server/HTTP/HTTPServerRequest.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <base/find_symbols.h>
-#include <Common/re2.h>
 
-#include <Poco/StringTokenizer.h>
-#include <Poco/Util/LayeredConfiguration.h>
+#include <Core/Names.h>
+#include <base/types.h>
 
-#include <absl/container/inlined_vector.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
+#include <functional>
+#include <memory>
+#include <string>
 #include <unordered_map>
+#include <vector>
+
+
+namespace re2 { class RE2; }
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_COMPILE_REGEXP;
-}
+/// A request filter checks whether an HTTP request matches a configured rule.
+using HTTPRequestFilter = std::function<bool(const HTTPServerRequest &)>;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
-static inline bool checkRegexExpression(std::string_view match_str, const CompiledRegexPtr & compiled_regex)
+/// How a filter matches the configured value against the request.
+enum class HTTPRequestFilterMatchType
 {
-    int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
+    /// Match the whole value: as an exact string, or as a regular expression if it starts with the "regex:" marker.
+    Full,
 
-    absl::InlinedVector<std::string_view, 5> matches(num_captures);
-    return compiled_regex->Match(
-        {match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures);
-}
+    /// Match the whole value as a regular expression (the value is the regexp itself, without the "regex:" marker).
+    Regexp,
 
-static inline bool checkExpression(std::string_view match_str, const std::pair<String, CompiledRegexPtr> & expression)
+    /// Match the value as a base path: the path itself or anything below it on a path-segment ('/') boundary.
+    /// E.g. "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write", but not "/api/v1beta".
+    Prefix,
+};
+
+/// The factories below build one filter from a config entry. Unless noted otherwise, the configured value
+/// is matched as an exact string, or as a regular expression if it starts with the "regex:" marker.
+
+/// Matches the request method against a comma-separated list of methods (e.g. "GET,POST"). Case-insensitive.
+HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path);
+
+/// Matches the request URL path according to `match_type`. The query string is ignored when matching.
+HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType match_type);
+
+/// Matches the complete request URL `scheme://host:port/path` according to `match_type`. The query string is
+/// ignored when matching.
+HTTPRequestFilter fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType match_type);
+
+/// Matches requests whose URI has no query string.
+HTTPRequestFilter emptyQueryStringFilter();
+
+/// Matches request headers against the configured expressions (according to `match_type`); all listed
+/// headers must match.
+HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix, HTTPRequestFilterMatchType match_type);
+
+/// Builds the request filters from the rule sub-tags found under `config_prefix` (such as `url`, `url_prefix`,
+/// `url_regexp`, `full_url`, `methods`, `headers`, `headers_regexp`, `empty_query_string`, ...), one filter per
+/// sub-tag. The `handler` sub-tag is ignored. A request matches the rule only if every returned filter matches.
+/// Throws if an unknown sub-tag is encountered.
+std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+
+/// Contains regular expressions configured for a rule's URL and headers with named capturing groups.
+struct HTTPHandlerRegexpsWithNamedGroups
 {
-    if (expression.second)
-        return checkRegexExpression(match_str, expression.second);
+    /// Non-null if the rule's URL path is matched by a regular expression
+    /// with at least one referenced named capturing group.
+    /// Null if the rule's URL is a plain URL (an exact-match string).
+    CompiledRegexPtr url_regexp;
 
-    return match_str == expression.first;
-}
+    /// Maps a header name to the regular expression configured for that header.
+    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regexp;
 
-static inline auto methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
-{
-    std::vector<String> methods;
-    Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
-
-    for (const auto & iterator : tokenizer)
-        methods.emplace_back(Poco::toUpper(Poco::trim(iterator)));
-
-    return [methods](const HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
-}
-
-static inline auto getExpression(const std::string & expression)
-{
-    if (!startsWith(expression, "regex:"))
-        return std::make_pair(expression, CompiledRegexPtr{});
-
-    auto compiled_regex = std::make_shared<const re2::RE2>(expression.substr(6));
-
-    if (!compiled_regex->ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "cannot compile re2: {} for http handling rule, error: {}. "
-                        "Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                        expression, compiled_regex->error());
-    return std::make_pair(expression, compiled_regex);
-}
-
-static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
-{
-    return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
-    {
-        const auto & uri = request.getURI();
-        const auto & end = find_first_symbols<'?'>(uri.data(), uri.data() + uri.size());
-
-        return checkExpression(std::string_view(uri.data(), end - uri.data()), expression);
-    };
-}
-
-static inline auto fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
-{
-    return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
-    {
-        const auto & server_address = request.serverAddress();
-        std::string url(fmt::format("{}://{}{}",
-            request.isSecure() ? "https" : "http",
-            server_address.toString(),
-            request.getURI()
-        ));
-
-        const auto & end = find_first_symbols<'?'>(url.data(), url.data() + url.size());
-        return checkExpression(std::string_view(url.data(), end - url.data()), expression);
-    };
-}
-
-static inline auto emptyQueryStringFilter()
-{
-    return [](const HTTPServerRequest & request)
-    {
-        const auto & uri = request.getURI();
-        return !uri.contains('?');
-    };
-}
-
-static inline auto headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
-{
-    std::unordered_map<String, std::pair<String, CompiledRegexPtr>> headers_expression;
-    Poco::Util::AbstractConfiguration::Keys headers_name;
-    config.keys(prefix, headers_name);
-
-    for (const auto & header_name : headers_name)
-    {
-        const auto & expression = getExpression(config.getString(prefix + "." + header_name));
-        checkExpression("", expression);    /// Check expression syntax is correct
-        headers_expression.emplace(std::make_pair(header_name, expression));
-    }
-
-    return [headers_expression](const HTTPServerRequest & request)
-    {
-        for (const auto & [header_name, header_expression] : headers_expression)
-        {
-            const auto header_value = request.get(header_name, "");
-            if (!checkExpression(std::string_view(header_value.data(), header_value.size()), header_expression))
-                return false;
-        }
-
-        return true;
-    };
-}
+    /// Extracts the regular expressions configured under `config_prefix`,
+    /// keeping only those that have a named capturing group present in `group_names`.
+    static HTTPHandlerRegexpsWithNamedGroups fromConfig(
+        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const NameSet & group_names);
+};
 
 }

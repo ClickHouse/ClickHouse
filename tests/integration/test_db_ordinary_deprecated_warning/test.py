@@ -32,7 +32,7 @@ def test_warning():
 
     node.stop_clickhouse()
     node.exec_in_container(
-        ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+        ["bash", "-c", "touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
     node.start_clickhouse()
 

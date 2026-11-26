@@ -1,0 +1,6 @@
+-- hash DISTINCT keeps binary identity, except that the zeros are one key: three rows survive
+3	[0,9221120237041090561,9221120237041090562]
+-- a Float column keeps the sorted variant out of the plan: both distincts are hash ones
+['DistinctTransform','DistinctTransform']
+-- the in-order plan keeps binary identity too: one zero and both NaN payloads survive
+3	['nan','nan','zero']

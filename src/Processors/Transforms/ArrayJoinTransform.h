@@ -12,7 +12,7 @@ class ArrayJoinResultIterator;
 using ArrayJoinResultIteratorPtr = std::unique_ptr<ArrayJoinResultIterator>;
 
 /// Execute ARRAY JOIN
-class ArrayJoinTransform : public IInflatingTransform
+class ArrayJoinTransform final : public IInflatingTransform
 {
 public:
     ArrayJoinTransform(

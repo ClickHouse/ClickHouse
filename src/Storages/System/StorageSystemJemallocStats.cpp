@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemJemallocStats.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,8 +22,10 @@ ColumnsDescription StorageSystemJemallocStats::getColumnsDescription()
 }
 
 void StorageSystemJemallocStats::fillData(
-    MutableColumns & res_columns, ContextPtr /*context*/, const ActionsDAG::Node *, std::vector<UInt8>) const
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    context->checkAccess(AccessType::SYSTEM_JEMALLOC);
+
 #if USE_JEMALLOC
     auto print_to_string = [](void * output, const char * data)
     {
@@ -40,3 +43,6 @@ void StorageSystemJemallocStats::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemJemallocStats) }

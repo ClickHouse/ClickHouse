@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -27,7 +26,7 @@ namespace
     };
 }
 
-class FunctionStructureToFormatSchema : public IFunction
+class FunctionStructureToFormatSchema final : public IFunction
 {
 private:
     Impl impl;
@@ -38,7 +37,7 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         switch (impl)
         {
@@ -47,44 +46,20 @@ public:
         }
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, expected 1 or 2",
-                getName(), arguments.size());
-
-        if (!isString(arguments[0]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the first argument of function {}, expected constant string",
-                arguments[0]->getName(),
-                getName());
-        }
-
-        if (arguments.size() > 1 && !isString(arguments[1]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the second argument of function {}, expected constant string",
-                arguments[1]->getName(),
-                getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "(const String, [const String]) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(

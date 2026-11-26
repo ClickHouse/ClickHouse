@@ -10,19 +10,19 @@ import logging
 import os
 import sys
 import time
-from pathlib import Path
 
 import grpc
 import psycopg2
 import pymysql.connections
 import pymysql.err
 import pytest
+import requests
 from kazoo.exceptions import NodeExistsError
 from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
 
 from helpers.client import Client, QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
@@ -328,6 +328,78 @@ def test_change_listen_host(cluster, zk):
         assert localhost_client.query("SELECT 1") == "1\n"
     finally:
         configure_from_zk(zk, localhost_client.query)
+
+
+PROTOCOLS_CONFIG = "/etc/clickhouse-server/config.d/99-protocols.xml"
+INTERSERVER_LISTEN_CONFIG = "/etc/clickhouse-server/config.d/99-interserver-listen.xml"
+
+
+def get_localhost_client(port):
+    client = Client(host="127.0.0.1", port=port, command="/usr/bin/clickhouse")
+    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
+    # does not race with the server over the same profraw merge-pool slots.
+    client.command = [
+        "docker",
+        "exec",
+        "-i",
+        "-e",
+        "LLVM_PROFILE_FILE=",
+        instance.docker_id,
+    ] + client.command
+    return client
+
+
+def tcp_endpoint_config(host):
+    host_element = "" if host is None else f"<host>{host}</host>"
+    return (
+        "<clickhouse><protocols><tcp_endpoint><type>tcp</type>"
+        f"{host_element}<port>9010</port>"
+        "</tcp_endpoint></protocols></clickhouse>"
+    )
+
+
+@pytest.mark.parametrize(
+    "initial_host", ["own_address", None], ids=["own_address", "listen_host"]
+)
+def test_change_protocol_host(cluster, initial_host):
+    if initial_host == "own_address":
+        initial_host = cluster.get_instance_ip("instance")
+    try:
+        instance.replace_config(PROTOCOLS_CONFIG, tcp_endpoint_config(initial_host))
+        instance.query("SYSTEM RELOAD CONFIG")
+        client = get_client(cluster, port=9010)
+        assert client.query("SELECT 1") == "1\n"
+
+        instance.replace_config(PROTOCOLS_CONFIG, tcp_endpoint_config("127.0.0.1"))
+        instance.query("SYSTEM RELOAD CONFIG")
+        with pytest.raises(QueryRuntimeException, match="Connection refused"):
+            client.query("SELECT 1")
+        assert get_localhost_client(9010).query("SELECT 1") == "1\n"
+    finally:
+        instance.replace_config(PROTOCOLS_CONFIG, "<clickhouse/>")
+        instance.query("SYSTEM RELOAD CONFIG")
+
+
+def test_change_interserver_listen_host(cluster):
+    url = f"http://{cluster.get_instance_ip('instance')}:9009/ping"
+    try:
+        assert requests.get(url, timeout=10).text == "Ok.\n"
+        instance.replace_config(
+            INTERSERVER_LISTEN_CONFIG,
+            "<clickhouse><interserver_listen_host>127.0.0.1</interserver_listen_host></clickhouse>",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+        with pytest.raises(ConnectionError, match="Connection refused"):
+            requests.get(url, timeout=10)
+        assert (
+            instance.exec_in_container(
+                ["bash", "-c", "curl -s http://127.0.0.1:9009/ping"]
+            )
+            == "Ok.\n"
+        )
+    finally:
+        instance.replace_config(INTERSERVER_LISTEN_CONFIG, "<clickhouse/>")
+        instance.query("SYSTEM RELOAD CONFIG")
 
 
 # This is a regression test for the case when the clickhouse-server was waiting

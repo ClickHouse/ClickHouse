@@ -21,7 +21,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
 }
@@ -30,33 +29,26 @@ template <typename T>
 concept has_max_string_size = requires { T::max_string_size; };
 
 template <typename Impl, typename Name>
-class FunctionsStringSimilarity : public IFunction
+class FunctionsStringSimilarity final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSimilarity>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
+        const String t = DataTypeNumber<typename Impl::ResultType>{}.getName();
+        return "(String, String) -> " + t;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         using ResultType = typename Impl::ResultType;
 

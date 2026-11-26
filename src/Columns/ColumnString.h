@@ -2,7 +2,6 @@
 
 #include <cstring>
 
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
@@ -109,11 +108,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
-    {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
-    }
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override
     {
@@ -126,6 +121,10 @@ public:
         chassert(n < size());
         return sizeAt(n) == 0;
     }
+
+    bool hasOnlyTypeDefaults() const override;
+
+    ColumnPtr createWithOffsets(const Offsets & positions, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     void insert(const Field & x) override
     {
@@ -212,16 +211,21 @@ public:
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
+
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
+
+    size_t rowStoreOverflowBytes(size_t start, size_t count) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -230,6 +234,13 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
+
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
@@ -252,9 +263,9 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        auto last = offsets.back();
-        for (size_t i = 0; i < length; ++i)
-            offsets.push_back(last);
+        /// Only the offsets grow: a default string appends no characters.
+        const auto last = offsets.back(); /// By value: `resize_fill` may reallocate.
+        offsets.resize_fill(offsets.size() + length, last);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -274,6 +285,8 @@ public:
 
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
+
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -318,6 +331,7 @@ public:
     void validate() const;
 
     bool isCollationSupported() const override { return true; }
+    ColumnPlanes getPlanes() const override;
 
     /// Constructs a ColumnUInt64 representing the `.size` subcolumn, derived from the string offsets.
     ColumnPtr createSizeSubcolumn() const;

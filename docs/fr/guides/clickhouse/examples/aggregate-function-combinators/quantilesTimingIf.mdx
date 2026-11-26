@@ -1,0 +1,90 @@
+---
+slug: '/examples/aggregate-function-combinators/quantilesTimingIf'
+title: 'quantilesTimingIf'
+description: 'Exemple d’utilisation du combinateur quantilesTimingIf'
+keywords: ['quantilesTiming', 'if', 'combinateur', 'exemples', 'quantilesTimingIf']
+sidebarTitle: 'quantilesTimingIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`If`](/fr/reference/functions/aggregate-functions/combinators#-if) peut être appliqué à la fonction [`quantilesTiming`](/fr/reference/functions/aggregate-functions/quantileTiming)
+pour calculer les quantiles des valeurs de durée pour les lignes où la condition est vraie,
+à l’aide de la fonction de combinateur d’agrégation `quantilesTimingIf`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans cet exemple, nous allons créer une table qui stocke les temps de réponse de l’API pour différents endpoints,
+et nous utiliserons `quantilesTimingIf` pour calculer les quantiles des temps de réponse pour les requêtes réussies.
+
+```sql title="Query"
+CREATE TABLE api_responses(
+    endpoint String,
+    response_time_ms UInt32,
+    is_successful UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO api_responses VALUES
+    ('orders', 82, 1),
+    ('orders', 94, 1),
+    ('orders', 98, 1),
+    ('orders', 87, 1),
+    ('orders', 103, 1),
+    ('orders', 92, 1),
+    ('orders', 89, 1),
+    ('orders', 105, 1),
+    ('products', 45, 1),
+    ('products', 52, 1),
+    ('products', 48, 1),
+    ('products', 51, 1),
+    ('products', 49, 1),
+    ('products', 53, 1),
+    ('products', 47, 1),
+    ('products', 50, 1),
+    ('users', 120, 0),
+    ('users', 125, 0),
+    ('users', 118, 0),
+    ('users', 122, 0),
+    ('users', 121, 0),
+    ('users', 119, 0),
+    ('users', 123, 0),
+    ('users', 124, 0);
+
+SELECT
+    endpoint,
+    quantilesTimingIf(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1.0)(response_time_ms, is_successful = 1) as response_time_quantiles
+FROM api_responses
+GROUP BY endpoint;
+```
+
+La fonction `quantilesTimingIf` calcule les quantiles uniquement pour les requêtes réussies (`is&#95;successful = 1`).
+Le tableau renvoyé contient les quantiles suivants, dans l&#39;ordre :
+
+* 0 (minimum)
+* 0.25 (premier quartile)
+* 0.5 (médiane)
+* 0.75 (troisième quartile)
+* 0.95 (95e centile)
+* 0.99 (99e centile)
+* 1.0 (maximum)
+
+```response title="Response"
+   ┌─endpoint─┬─response_time_quantiles─────────────────────────────────────────────┐
+1. │ orders   │ [82, 87, 92, 98, 103, 104, 105]                                     │
+2. │ products │ [45, 47, 49, 51, 52, 52, 53]                                        │
+3. │ users    │ [nan, nan, nan, nan, nan, nan, nan]                                 │
+   └──────────┴─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`quantilesTiming`](/fr/reference/functions/aggregate-functions/quantileTiming)
+* [`Combinateur If`](/fr/reference/functions/aggregate-functions/combinators#-if)

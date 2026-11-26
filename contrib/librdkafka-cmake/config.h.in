@@ -106,8 +106,8 @@
 #cmakedefine WITH_OAUTHBEARER_OIDC 1
 // libsasl2
 #cmakedefine WITH_SASL_CYRUS 1
-// WITH_CURL
-#cmakedefine WITH_CURL 1
+// Poco-based HTTP client (replacement of the libcurl-based one)
+#cmakedefine WITH_HTTP 1
 // crc32chw
 #if !defined(__PPC__) && !defined(__riscv) && !defined(__aarch64__) && !defined(__s390x__) && !defined(__loongarch64)
 #define WITH_CRC32C_HW 1

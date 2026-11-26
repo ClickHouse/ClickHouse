@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -12,19 +13,23 @@ public:
             const SharedHeader & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_);
 
-    String getName() const override { return "NegativeLimitBy"; }
+    [[nodiscard]] String getName() const override { return "NegativeLimitBy"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
+
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    void applyOrder(SortDescription sort_desc);
+    [[nodiscard]] const Names & getColumns() const { return columns; }
+
+    void applyOrder(const SortDescription & sort_description);
 
 private:
     void updateOutputHeader() override
@@ -37,7 +42,7 @@ private:
 
     Names columns;
 
-    bool in_order = false;
+    SortDescription sorted_columns_descr;
 };
 
 }

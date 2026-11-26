@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesExtractTag(group, tag_to_extract) returns a Nullable(String) containing either the value of a specified tag
 /// or NULL if there is no such tag in the specified group.
-class FunctionTimeSeriesExtractTag : public IFunction
+class FunctionTimeSeriesExtractTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesExtractTag";
@@ -27,18 +27,29 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesExtractTag>(context); }
     explicit FunctionTimeSeriesExtractTag(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Function timeSeriesExtractTag returns information stored in the query context, it's deterministic in the scope of the current query.
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    [[nodiscard]] bool isStateful() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(UInt64, const String) -> Nullable(String)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
@@ -56,19 +67,16 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 1);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto tag_to_extract = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
 
         auto tag_values = ColumnString::create();
-        tags_collector->extractTag(groups, tag_to_extract, *tag_values);
-        chassert(tag_values->size() == input_rows_count);
-
         auto null_map = ColumnUInt8::create();
-        null_map->reserve(input_rows_count);
-        for (size_t i = 0; i != input_rows_count; ++i)
-            null_map->insertValue(tag_values->getDataAt(i).empty());
+        tags_collector->extractTag(groups, tag_to_extract, *tag_values, null_map->getData());
+        chassert(tag_values->size() == input_rows_count);
+        chassert(null_map->size() == input_rows_count);
 
         return ColumnNullable::create(std::move(tag_values), std::move(null_map));
     }
@@ -82,7 +90,7 @@ REGISTER_FUNCTION(TimeSeriesExtractTag)
 {
     FunctionDocumentation::Description description = R"(
 Extracts the value of a specified tag from the group. Returns NULL if not found.
-See also function [timeSeriesGroupToTags()](/sql-reference/functions/time-series-functions#timeSeriesGroupToTags).
+See also function [timeSeriesGroupToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesExtractTag(group)";
     FunctionDocumentation::Arguments arguments = {

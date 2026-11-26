@@ -65,7 +65,7 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (!is_supported_by_kernel) [[unlikely]]
         return;
 
-    auto [buf, len] = adjustToPageSize(buf_, len_, staticPageSize);
+    auto [buf, len] = adjustToPageSize(buf_, len_, ::getPageSize());
     ::madvise(buf, len, MADV_POPULATE_WRITE);
 #endif
 }
@@ -75,7 +75,7 @@ void * allocImpl(size_t size, size_t alignment)
 {
     auto trace = CurrentMemoryTracker::alloc(size);
 
-    void * buf;
+    void * buf = nullptr;
     if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
     {
         if constexpr (clear_memory)
@@ -122,7 +122,7 @@ void freeImpl(void * buf)
 void checkSize(size_t size)
 {
     /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
-    if (size >= 0x8000000000000000ULL) [[unlikely]]
+    if (size >= MAX_ALLOCATION_SIZE) [[unlikely]]
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
 }
 

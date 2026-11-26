@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Common/AlignedBuffer.h>
@@ -25,14 +27,15 @@ public:
         SortDescription description_,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_);
+        std::optional<size_t> max_dynamic_subcolumns_,
+        bool allow_tuple_element_aggregation_);
 
-    const char * getName() const override { return "AggregatingSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription
@@ -94,11 +97,16 @@ public:
 
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
-        std::vector<AggregateDescription> columns_to_aggregate;
-        std::vector<SimpleAggregateDescription> columns_to_simple_aggregate;
+        VectorWithMemoryTracking<AggregateDescription> columns_to_aggregate;
+        VectorWithMemoryTracking<SimpleAggregateDescription> columns_to_simple_aggregate;
 
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
+
+        /// Record the origin header before tuple flattening.
+        SharedHeader origin_header;
+
+        bool allow_tuple_element_aggregation = false;
     };
 
 private:
@@ -124,7 +132,7 @@ private:
         void startGroup(const ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();
 
-        bool isGroupStarted() const { return is_group_started; }
+        [[nodiscard]] bool isGroupStarted() const { return is_group_started; }
         void addRow(SortCursor & cursor); /// Possible only when group was started.
 
         Chunk pull(); /// Possible only if group was finished.

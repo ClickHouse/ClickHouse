@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/unaligned.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
+#include <IO/ReadBufferFromString.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -30,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
 }
 
 class Arena;
@@ -48,9 +51,9 @@ public:
     {
     }
 
-    bool isConstant() const { return default_values_column == nullptr; }
+    [[nodiscard]] bool isConstant() const { return default_values_column == nullptr; }
 
-    Field getDefaultValue(size_t row) const
+    [[nodiscard]] Field getDefaultValue(size_t row) const
     {
         if (default_values_column)
             return (*default_values_column)[row];
@@ -67,8 +70,8 @@ private:
 
     The main idea is that during fetch we create all columns, but fill only columns that client requested.
 
-    We need to create other columns during fetch, because in case of serialized storage we can skip
-    unnecessary columns serialized in cache with skipSerializedInArena method.
+    We need to create other columns during fetch, because in case of serialized storage the serialized
+    values of unnecessary columns are skipped using the header of serialized sizes that prefixes them.
 
     When result is fetched from the storage client of storage can filterOnlyNecessaryColumns
     and get only columns that match attributes_names_to_fetch.
@@ -84,10 +87,10 @@ public:
     {
         size_t attributes_to_fetch_size = attributes_to_fetch_names.size();
 
-        assert(attributes_to_fetch_size == attributes_to_fetch_types.size());
+        chassert(attributes_to_fetch_size == attributes_to_fetch_types.size());
 
         bool has_default = attributes_to_fetch_default_values_columns;
-        assert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
+        chassert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
 
         for (size_t i = 0; i < attributes_to_fetch_size; ++i)
             attributes_to_fetch_name_to_index.emplace(attributes_to_fetch_names[i], i);
@@ -136,35 +139,35 @@ public:
     DictionaryStorageFetchRequest() = default;
 
     /// Check requested attributes size
-    ALWAYS_INLINE size_t attributesSize() const
+    [[nodiscard]] ALWAYS_INLINE size_t attributesSize() const
     {
         return dictionary_attributes_names_and_types.size();
     }
 
     /// Check if attribute with attribute_name was requested to fetch
-    ALWAYS_INLINE bool containsAttribute(const String & attribute_name) const
+    [[nodiscard]] ALWAYS_INLINE bool containsAttribute(const String & attribute_name) const
     {
         return attributes_to_fetch_name_to_index.contains(attribute_name);
     }
 
     /// Check if attribute with attribute_index should be filled during fetch
-    ALWAYS_INLINE bool shouldFillResultColumnWithIndex(size_t attribute_index) const
+    [[nodiscard]] ALWAYS_INLINE bool shouldFillResultColumnWithIndex(size_t attribute_index) const
     {
         return attributes_to_fetch_filter[attribute_index];
     }
 
-    const DataTypePtr & dataTypeAtIndex(size_t attribute_index) const
+    [[nodiscard]] const DataTypePtr & dataTypeAtIndex(size_t attribute_index) const
     {
         return dictionary_attributes_names_and_types[attribute_index].type;
     }
 
-    const DefaultValueProvider & defaultValueProviderAtIndex(size_t attribute_index) const
+    [[nodiscard]] const DefaultValueProvider & defaultValueProviderAtIndex(size_t attribute_index) const
     {
         return attributes_default_value_providers[attribute_index];
     }
 
     /// Create columns for each of dictionary attributes
-    MutableColumns makeAttributesResultColumns() const
+    [[nodiscard]] MutableColumns makeAttributesResultColumns() const
     {
         MutableColumns result;
         result.reserve(dictionary_attributes_names_and_types.size());
@@ -175,7 +178,7 @@ public:
         return result;
     }
 
-    Columns makeAttributesResultColumnsNonMutable() const
+    [[nodiscard]] Columns makeAttributesResultColumnsNonMutable() const
     {
         Columns result;
         result.reserve(dictionary_attributes_names_and_types.size());
@@ -228,14 +231,26 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
     }
 }
 
-/// Deserialize column value and insert it in columns.
-/// Skip unnecessary columns that were not requested from deserialization.
+/// Deserialize column values and insert them into columns.
+/// The values are prefixed with a header of their serialized sizes,
+/// which is used to skip over columns that were not requested.
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
-    ReadBuffer & in)
+    ReadBufferFromString & in)
 {
     size_t columns_size = columns.size();
+
+    /// The buffer is contiguous and never refills, so the header is read in
+    /// place and stays addressable while the values are deserialized.
+    /// The data may be read from a file (`ssd_cache` dictionaries), so check that it has the header.
+    size_t sizes_header_size = columns_size * sizeof(UInt32);
+    if (in.available() < sizes_header_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Cache data corrupted. A record of {} bytes is shorter than the sizes of its {} columns ({} bytes)",
+            in.available(), columns_size, sizes_header_size);
+    const char * sizes_header = in.position();
+    in.ignore(sizes_header_size);
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
@@ -244,7 +259,7 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
             column->deserializeAndInsertFromArena(in, nullptr);
         else
-            column->skipSerializedInArena(in);
+            in.ignore(unalignedLoad<UInt32>(sizes_header + column_index * sizeof(UInt32)));
     }
 }
 
@@ -271,14 +286,30 @@ public:
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
+    /// A dynamic path of `JSON` or a dynamic type of `Dynamic` has a value for every row, so rows with different paths
+    /// or types would cost rows x paths. Without them, all values go to the shared data, which keeps only the values of each row.
+    static void removeDynamicSubcolumns(IColumn & column)
+    {
+        auto remove = [](IColumn & subcolumn)
+        {
+            if (auto * object = typeid_cast<ColumnObject *>(&subcolumn))
+                object->setMaxDynamicPaths(0);
+            else if (auto * dynamic = typeid_cast<ColumnDynamic *>(&subcolumn))
+                dynamic->setMaxDynamicPaths(0);
+        };
+        remove(column);
+        column.forEachMutableSubcolumnRecursively(remove);
+    }
+
     static ColumnPtr getColumn(const DictionaryAttribute & dictionary_attribute, size_t size)
     {
         if constexpr (std::is_same_v<DictionaryAttributeType, Array>)
         {
             if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.type.get()))
             {
-                auto nested_column = array_type->getNestedType()->createColumn();
-                return ColumnArray::create(std::move(nested_column));
+                auto column = ColumnArray::create(array_type->getNestedType()->createColumn());
+                removeDynamicSubcolumns(*column);
+                return column;
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
@@ -286,7 +317,11 @@ public:
         if constexpr (std::is_same_v<DictionaryAttributeType, Map>)
         {
             if (const auto * map_type = typeid_cast<const DataTypeMap *>(dictionary_attribute.type.get()))
-                return ColumnMap::create(map_type->getNestedType()->createColumn());
+            {
+                auto column = ColumnMap::create(map_type->getNestedType()->createColumn());
+                removeDynamicSubcolumns(*column);
+                return column;
+            }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Map attribute type.");
         }
@@ -300,7 +335,9 @@ public:
                 for (const auto & [path, type] : object_type->getTypedPaths())
                     typed_path_columns[path] = type->createColumn();
 
-                return ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
+                auto column = ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
+                removeDynamicSubcolumns(*column);
+                return column;
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");
@@ -334,6 +371,63 @@ public:
         else
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
     }
+};
+
+template <typename Value>
+constexpr bool is_column_attribute_value = std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>;
+
+/// Passed to lookup callbacks for `Array`, `Map` and `Object` attributes: a row of the stored column, or a default value.
+/// Copying the row with `insertFrom` avoids building a `Field` for every found key.
+template <typename Value>
+struct ColumnAttributeValue
+{
+    ColumnAttributeValue(const IColumn & column_, size_t row_) : column(&column_), row(row_) {}
+    ColumnAttributeValue(Value default_value_) : default_value(std::move(default_value_)) {} /// NOLINT(google-explicit-constructor)
+
+    void insertInto(IColumn & out) const
+    {
+        if (column)
+            out.insertFrom(*column, row);
+        else
+            out.insert(default_value);
+    }
+
+    const IColumn * column = nullptr;
+    size_t row = 0;
+    Value default_value;
+};
+
+template <typename Value>
+using AttributeLookupValue = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeValue<Value>, Value>;
+
+/// Stores `Array`, `Map` and `Object` attribute values in one column. Keeping one `Field` per row costs a heap
+/// allocation per row, and each jemalloc slab of such small allocations needs a metadata header that is never freed.
+template <typename Value>
+class ColumnAttributeContainer
+{
+public:
+    explicit ColumnAttributeContainer(const DictionaryAttribute & dictionary_attribute)
+        : column(DictionaryAttributeColumnProvider<Value>::getColumn(dictionary_attribute, 0))
+    {
+    }
+
+    [[nodiscard]] size_t size() const { return column->size(); }
+    [[nodiscard]] size_t capacity() const { return column->capacity(); }
+    ColumnAttributeValue<Value> operator[](size_t index) const { return {*column, index}; }
+    void filter(const IColumn::Filter & mask, size_t result_size) { column = IColumn::mutate(column->filter(mask, result_size)); }
+    /// A `Null` still takes a row to keep row numbers aligned; nullability is tracked by the layout.
+    void insert(const Field & value)
+    {
+        if (value.isNull())
+            column->insertDefault();
+        else
+            column->insert(value);
+    }
+
+    [[nodiscard]] size_t allocatedBytes() const { return column->allocatedBytes(); }
+
+private:
+    IColumn::MutablePtr column;
 };
 
 /**
@@ -398,7 +492,7 @@ public:
         if (use_attribute_default_value)
             return static_cast<DefaultValueType>(default_value);
 
-        assert(default_values_column != nullptr);
+        chassert(default_values_column != nullptr);
 
         if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
         {
@@ -472,7 +566,7 @@ public:
         : key_columns(key_columns_)
         , complex_key_arena(complex_key_arena_)
     {
-        assert(!key_columns.empty());
+        chassert(!key_columns.empty());
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
@@ -481,31 +575,30 @@ public:
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Column type mismatch for simple key expected UInt64");
+
+            simple_keys = vector_col->getData().data();
         }
 
         keys_size = key_columns.front()->size();
     }
 
-    size_t getKeysSize() const
+    [[nodiscard]] size_t getKeysSize() const
     {
         return keys_size;
     }
 
-    size_t getCurrentKeyIndex() const
+    [[nodiscard]] size_t getCurrentKeyIndex() const
     {
         return current_key_index;
     }
 
     KeyType extractCurrentKey()
     {
-        assert(current_key_index < keys_size);
+        chassert(current_key_index < keys_size);
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            const auto & column_vector = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]);
-            const auto & data = column_vector.getData();
-
-            auto key = data[current_key_index];
+            auto key = simple_keys[current_key_index];
             ++current_key_index;
             return key;
         }
@@ -532,6 +625,30 @@ public:
             complex_key_arena->rollback(current_complex_key.size());
     }
 
+    /// Calls `callback(key_index, key)` for every key, in order, and leaves the extractor past the last key.
+    /// Hot loops use it instead of `extractCurrentKey` per key: the store of `current_key_index` for every
+    /// key keeps the compiler from hoisting loads out of the loop.
+    template <typename Callback>
+    void forEachKey(Callback && callback)
+    {
+        if constexpr (key_type == DictionaryKeyType::Simple)
+        {
+            const UInt64 * __restrict keys = simple_keys;
+            for (size_t key_index = current_key_index; key_index < keys_size; ++key_index)
+                callback(key_index, keys[key_index]);
+            current_key_index = keys_size;
+        }
+        else
+        {
+            while (current_key_index < keys_size)
+            {
+                size_t key_index = current_key_index;
+                callback(key_index, extractCurrentKey());
+                rollbackCurrentKey();
+            }
+        }
+    }
+
     PaddedPODArray<KeyType> extractAllKeys()
     {
         PaddedPODArray<KeyType> result;
@@ -552,6 +669,8 @@ public:
     }
 private:
     Columns key_columns;
+    /// Data of the simple key column, which is kept alive by `key_columns`.
+    const UInt64 * simple_keys = nullptr;
 
     size_t keys_size = 0;
     size_t current_key_index = 0;
@@ -676,7 +795,9 @@ Block mergeBlockWithPipe(
     });
 
     size_t result_fetched_rows = result_fetched_columns.front()->size();
-    size_t filter_hint = filter.size() - indexes_to_remove_count;
+    /// `filter` takes an `ssize_t` hint where a negative value means "unknown". More indexes can be
+    /// removed than the filter has rows, so compute the shortfall signed rather than letting it wrap.
+    ssize_t filter_hint = static_cast<ssize_t>(filter.size()) - static_cast<ssize_t>(indexes_to_remove_count);
 
     Block result_block = block_to_update.cloneEmpty();
     for (size_t column_index = 0; column_index < block_to_update.columns(); ++column_index)
@@ -696,7 +817,8 @@ Block mergeBlockWithPipe(
 /**
  * Returns ColumnVector data as PaddedPodArray.
 
- * If column is constant parameter backup_storage is used to store values.
+ * If the column has to be converted to a full one, parameter backup_storage is used to store values,
+ * because the converted column may not be owned by anything that outlives this call.
  */
 /// TODO: Remove
 template <typename T>
@@ -705,7 +827,6 @@ static const PaddedPODArray<T> & getColumnVectorData(
     const ColumnPtr column,
     PaddedPODArray<T> & backup_storage)
 {
-    bool is_const_column = isColumnConst(*column);
     auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
@@ -717,12 +838,13 @@ static const PaddedPODArray<T> & getColumnVectorData(
             TypeName<T>);
     }
 
-    if (is_const_column)
+    /// A different pointer means a conversion happened (Const, Sparse or ColumnReplicated; a Tuple
+    /// never reaches here because the check above requires a ColumnVector), so the data may live
+    /// only in a column owned by `full_column` and die at return: copy it. An unconverted column is
+    /// kept alive by `column` itself.
+    if (full_column.get() != column.get())
     {
-        // With type conversion and const columns we need to use backup storage here
-        auto & data = vector_col->getData();
-        backup_storage.assign(data);
-
+        backup_storage.assign(vector_col->getData());
         return backup_storage;
     }
 

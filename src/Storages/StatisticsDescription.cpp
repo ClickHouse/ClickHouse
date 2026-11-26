@@ -3,9 +3,11 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 
 namespace DB
@@ -55,10 +57,12 @@ StatisticsType stringToStatisticsType(String type)
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
-    if (type == "nullcount")
-        return StatisticsType::NullCount;
+    if (type == "basic")
+        return StatisticsType::Basic;
+    if (type == "uniq_v2")
+        return StatisticsType::UniqV2;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
 }
 
 String statisticsTypeToString(StatisticsType type)
@@ -73,10 +77,12 @@ String statisticsTypeToString(StatisticsType type)
             return "countmin";
         case StatisticsType::MinMax:
             return "minmax";
-        case StatisticsType::NullCount:
-            return "nullcount";
+        case StatisticsType::Basic:
+            return "basic";
+        case StatisticsType::UniqV2:
+            return "uniq_v2";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
     }
 }
 
@@ -89,6 +95,50 @@ SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, A
     : type(type_), ast(ast_), is_implicit(is_implicit_)
 {}
 
+namespace
+{
+
+size_t stringAllocatedBytes(const String & str)
+{
+    return str.capacity();
+}
+
+/// The exact size of an AST node is not known through `IAST`, so it is bounded from above.
+/// The bound covers the node, the semantic object of an identifier, and the control blocks of the pointers.
+constexpr size_t AST_NODE_SIZE_BOUND = 512;
+static_assert(sizeof(ASTIdentifier) + sizeof(IdentifierSemanticImpl) + 2 * 4 * sizeof(void *) <= AST_NODE_SIZE_BOUND);
+static_assert(sizeof(ASTFunction) <= AST_NODE_SIZE_BOUND);
+static_assert(sizeof(ASTExpressionList) <= AST_NODE_SIZE_BOUND);
+static_assert(sizeof(ASTLiteral) <= AST_NODE_SIZE_BOUND);
+
+size_t astAllocatedBytes(const IAST & ast)
+{
+    size_t res = AST_NODE_SIZE_BOUND + ast.children.capacity() * sizeof(ASTPtr);
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        res += stringAllocatedBytes(identifier->full_name);
+        res += identifier->name_parts.capacity() * sizeof(String);
+        for (const auto & part : identifier->name_parts)
+            res += stringAllocatedBytes(part);
+    }
+    else if (const auto * literal = ast.as<ASTLiteral>())
+    {
+        if (literal->value.getType() == Field::Types::String)
+            res += stringAllocatedBytes(literal->value.safeGet<String>());
+    }
+
+    for (const auto & child : ast.children)
+        res += astAllocatedBytes(*child);
+    return res;
+}
+
+}
+
+size_t SingleStatisticsDescription::allocatedBytes() const
+{
+    return ast ? astAllocatedBytes(*ast) : 0;
+}
+
 bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription & other) const
 {
     return type == other.type && is_implicit == other.is_implicit;
@@ -96,8 +146,12 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    if (!data_type || !other.data_type)
-        return data_type == other.data_type;
+    if (!data_type)
+        return !other.data_type;
+
+    if (!other.data_type)
+        return false;
+
     return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
 }
 
@@ -228,16 +282,17 @@ ASTPtr ColumnStatisticsDescription::getAST() const
 
 String ColumnStatisticsDescription::getNameForLogs() const
 {
-    String result;
+    String ret;
     for (const auto & [tp, desc] : types_to_desc)
     {
-        if (!result.empty())
-            result += ',';
-        result += desc.getTypeName();
+        ret += desc.getTypeName();
         if (desc.is_implicit)
-            result += "(auto)";
+            ret += "(auto)";
+        ret += ",";
     }
-    return result;
+    if (!ret.empty())
+        ret.pop_back();
+    return ret;
 }
 
 

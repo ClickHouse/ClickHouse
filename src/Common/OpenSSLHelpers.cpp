@@ -41,7 +41,7 @@ std::string encodeSHA256(const void * text, size_t size)
     return out;
 }
 
-std::vector<uint8_t> encodeSHA256(const std::vector<uint8_t> & data)
+std::vector<uint8_t> encodeSHA256(std::span<const uint8_t> data)
 {
     std::vector<uint8_t> hash(SHA256_DIGEST_LENGTH);
     encodeSHA256(data.data(), data.size(), hash.data());
@@ -56,6 +56,8 @@ void encodeSHA256(std::string_view text, unsigned char * out)
 void encodeSHA256(const void * text, size_t size, unsigned char * out)
 {
     auto ctx = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    if (!ctx)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
     if (!EVP_DigestInit(ctx.get(), EVP_sha256()))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit failed: {}", getOpenSSLErrors());
@@ -94,7 +96,7 @@ std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data)
     return signature;
 }
 
-bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
+static bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
 {
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 
@@ -128,9 +130,9 @@ bool ecdsaP256Verify(EVP_PKEY * pkey, const std::string & data, const std::strin
     return genericSHA256Verify(pkey, data, signature);
 }
 
-std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data)
+std::vector<uint8_t, NoDumpAllocator<uint8_t>> hmacSHA256(std::span<const uint8_t> key, const std::string & data)
 {
-    std::vector<uint8_t> result(EVP_MAX_MD_SIZE);
+    std::vector<uint8_t, NoDumpAllocator<uint8_t>> result(EVP_MAX_MD_SIZE);
     size_t out_len = 0;
 
     EVP_MAC_ptr mac(EVP_MAC_fetch(nullptr, "HMAC", nullptr), &EVP_MAC_free);
@@ -159,7 +161,7 @@ std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::str
     return result;
 }
 
-std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
+std::vector<uint8_t, NoDumpAllocator<uint8_t>> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
 {
 
     EVP_KDF_ptr kdf(EVP_KDF_fetch(nullptr, "PBKDF2", nullptr), &EVP_KDF_free);
@@ -170,7 +172,7 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
     if (!ctx)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_KDF_CTX_new failed");
 
-    std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
+    std::vector<uint8_t, NoDumpAllocator<uint8_t>> derived_key(SHA256_DIGEST_LENGTH);
 
     OSSL_PARAM params[] = {
         OSSL_PARAM_construct_utf8_string("digest", const_cast<char*>("SHA256"), 0),
@@ -253,6 +255,8 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
 
     /// And our CSR is ready
     BIO_ptr req_bio(BIO_new(BIO_s_mem()), BIO_free);
+    if (!req_bio)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new failed: {}", getOpenSSLErrors());
     if (i2d_X509_REQ_bio(req_bio.get(), req.get()) < 0)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in i2d_X509_REQ_bio: {}", getOpenSSLErrors());
 

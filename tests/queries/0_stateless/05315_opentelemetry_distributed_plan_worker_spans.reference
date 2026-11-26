@@ -1,0 +1,13 @@
+traces found:	['failed request','local execution','stateless workers']
+dispatch spans:
+stateless workers	StatelessWorkerClient::sendTask	CLIENT	task_id: set	initial_query_id: initiator	target_host: set	exception: none
+request spans:
+failed request	InterserverIOHTTPHandler	SERVER	parent: a span of the initiator query	endpoint: no_such_endpoint	http.method: GET	http_status: 500	exception_code: 221	exception: No interserver IO endpoint named no_such_endpoint. (NO_SUCH_INTERSERVER_IO_ENDPOINT)
+stateless workers	InterserverIOHTTPHandler	SERVER	parent: StatelessWorkerClient::sendTask	endpoint: stateless_worker	http.method: POST	http_status: 200	exception_code: none	exception: none
+task spans:
+local execution	DistributedPlanTask::execute	SERVER	task_id: set	initial_query_id: initiator	plan_hash: set	execute_locally: 1	exchange.outputs: set	query_id: set	query_status: QueryFinish	exception: none
+stateless workers	DistributedPlanTask::execute	SERVER	task_id: set	initial_query_id: initiator	plan_hash: set	execute_locally: 0	exchange.outputs: set	query_id: set	query_status: QueryFinish	exception: none
+ancestors of the task spans:
+local execution	DistributedPlanTask::execute <- query
+stateless workers	DistributedPlanTask::execute <- InterserverIOHTTPHandler <- StatelessWorkerClient::sendTask <- query
+spans dispatched by the local execution:	0	0

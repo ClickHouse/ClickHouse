@@ -25,7 +25,7 @@ namespace ErrorCodes
 // Simhash: String -> UInt64
 // Minhash: String -> (UInt64, UInt64)
 template <typename Impl, typename Name, bool is_simhash, bool is_arg = false>
-class FunctionsStringHash : public IFunction
+class FunctionsStringHash final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -36,17 +36,17 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringHash>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (is_simhash)
             return {1};
@@ -54,7 +54,31 @@ public:
             return {1, 2};
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Signature opt-in:
+    /// - SimHash: `(String, [const UInt]) -> UInt64`.
+    /// - MinHash (non-arg): `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(UInt64, UInt64)`.
+    /// - MinHashArg variants: no signature is advertised. The natural shape
+    ///   `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(Tuple(String, ...), Tuple(String, ...))` has a `...` on the
+    ///   return side with no argument-side ellipsis to supply its size, so the
+    ///   type-only `getReturnTypeImpl(DataTypes)` fallback would raise
+    ///   `BAD_FUNCTION_SIGNATURE` when it parses and applies it. Keep it empty
+    ///   until variable-length tuple returns are expressible; the
+    ///   `ColumnsWithTypeAndName` path below stays authoritative.
+    /// Value bounds (`shingle_size > 0`, `num_hashes ≤ 25`, etc.) are still
+    /// enforced separately at execute time.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (is_arg)
+            return "";
+        else if constexpr (is_simhash)
+            return "(String, [const UInt]) -> UInt64";
+        else
+            return "(String, [const UInt], [const UInt]) -> Tuple(UInt64, UInt64)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expect at least one argument", getName());
@@ -136,9 +160,9 @@ public:
         return std::make_shared<DataTypeTuple>(DataTypes{type, type});
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 

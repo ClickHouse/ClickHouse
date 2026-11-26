@@ -13,6 +13,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -21,6 +22,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+template <typename DataType, typename... Args>
+const DataTypePtr & getOrCreateType(DataTypePtr & type, Args &&... args)
+{
+    if (!type)
+        type = std::make_shared<DataType>(std::forward<Args>(args)...);
+    return type;
+}
+
 }
 
 template <LeastSupertypeOnError on_error>
@@ -32,26 +46,27 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Null &) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const UInt64 & x) const
 {
-    if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
-    if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
-    if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
-    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64>(/*unsigned_can_be_signed=*/true);
-    return std::make_shared<DataTypeUInt64>();
+    if (x <= std::numeric_limits<UInt8>::max()) return getOrCreateType<DataTypeUInt8>(uint8_type);
+    if (x <= std::numeric_limits<UInt16>::max()) return getOrCreateType<DataTypeUInt16>(uint16_type);
+    if (x <= std::numeric_limits<UInt32>::max()) return getOrCreateType<DataTypeUInt32>(uint32_type);
+    if (x <= std::numeric_limits<Int64>::max())
+        return getOrCreateType<DataTypeUInt64>(uint64_can_be_signed_type, /*unsigned_can_be_signed=*/true);
+    return getOrCreateType<DataTypeUInt64>(uint64_type);
 }
 
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Int64 & x) const
 {
-    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
-    if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
-    if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
-    return std::make_shared<DataTypeInt64>();
+    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return getOrCreateType<DataTypeInt8>(int8_type);
+    if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return getOrCreateType<DataTypeInt16>(int16_type);
+    if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return getOrCreateType<DataTypeInt32>(int32_type);
+    return getOrCreateType<DataTypeInt64>(int64_type);
 }
 
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Float64 &) const
 {
-    return std::make_shared<DataTypeFloat64>();
+    return getOrCreateType<DataTypeFloat64>(float64_type);
 }
 
 template <LeastSupertypeOnError on_error>
@@ -99,7 +114,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const IPv6 &) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const String &) const
 {
-    return std::make_shared<DataTypeString>();
+    return getOrCreateType<DataTypeString>(string_type);
 }
 
 template <LeastSupertypeOnError on_error>
@@ -161,6 +176,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Decimal256 &, UInt32 sc
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 {
+    checkStackSize();
+
     DataTypes element_types;
     element_types.reserve(x.size());
 
@@ -173,6 +190,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 {
+    checkStackSize();
+
     DataTypes element_types;
     element_types.reserve(tuple.size());
 
@@ -185,6 +204,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 {
+    checkStackSize();
+
     DataTypes key_types;
     DataTypes value_types;
     key_types.reserve(map.size());
@@ -193,7 +214,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<Tuple>();
-        assert(tuple.size() == 2);
+        chassert(tuple.size() == 2);
         key_types.push_back(applyVisitor(*this, tuple[0]));
         value_types.push_back(applyVisitor(*this, tuple[1]));
     }
@@ -216,6 +237,14 @@ DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateD
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const NumberLiteral & x) const
+{
+    /// Resolve the NumberLiteral to a concrete Field value, then infer the type from that.
+    Field resolved = Field(x).resolveNumberLiteral();
+    return applyVisitor(FieldToDataType<on_error>(), resolved);
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const CustomType &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
@@ -231,5 +260,6 @@ template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
 template class FieldToDataType<LeastSupertypeOnError::Variant>;
+template class FieldToDataType<LeastSupertypeOnError::Dynamic>;
 
 }

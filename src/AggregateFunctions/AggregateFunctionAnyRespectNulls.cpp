@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -29,7 +30,7 @@ struct AggregateFunctionAnyRespectNullsData
     Status status = Status::NotSet;
     Field value;
 
-    bool isSet() const { return status != Status::NotSet; }
+    [[nodiscard]] bool isSet() const { return status != Status::NotSet; }
     void setNull() { status = Status::SetNull; }
     void setOther() { status = Status::SetOther; }
 };
@@ -51,7 +52,7 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (First)
             return "any_respect_nulls";
@@ -59,7 +60,7 @@ public:
             return "anyLast_respect_nulls";
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void addNull(AggregateDataPtr __restrict place) const
     {
@@ -125,7 +126,7 @@ public:
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyRespectNulls::addBatchSinglePlaceNotNull called");
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & d = this->data(place);
         if (First && d.isSet())
@@ -180,7 +181,7 @@ public:
             this->result_type->insertDefaultInto(to);
     }
 
-    AggregateFunctionPtr getOwnNullAdapter(
+    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & original_function,
         const DataTypes & /*arguments*/,
         const Array & /*params*/,
@@ -215,19 +216,20 @@ AggregateFunctionPtr createAggregateFunctionAnyLastRespectNulls(
 
 }
 
+void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties default_properties_for_respect_nulls
         = {.returns_default_when_only_null = false, .is_order_dependent = true, .is_window_function = true};
 
-    factory.registerFunction("any_respect_nulls", {createAggregateFunctionAnyRespectNulls, {}, default_properties_for_respect_nulls});
+    factory.registerFunction("any_respect_nulls", {createAggregateFunctionAnyRespectNulls, {.description = R"DOC(Returns the first value encountered in a group, including NULL values (unlike any, which ignores NULLs).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, default_properties_for_respect_nulls});
     factory.registerAlias("anyRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("firstValueRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("anyValueRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
 
-    factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionAnyLastRespectNulls, {}, default_properties_for_respect_nulls});
+    factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionAnyLastRespectNulls, {.description = R"DOC(Returns the last value encountered in a group, including NULL values (unlike anyLast, which ignores NULLs).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, default_properties_for_respect_nulls});
     factory.registerAlias("anyLastRespectNulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("lastValueRespectNulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Sensitive);

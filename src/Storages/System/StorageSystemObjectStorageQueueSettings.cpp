@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -6,10 +7,13 @@
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
+#include <Storages/StorageProxy.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -43,6 +47,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
     const ActionsDAG::Node *,
     std::vector<UInt8>) const
 {
+    const bool display_secrets = canDisplaySecrets(context);
     auto add_table = [&](
         const DatabaseTablesIteratorPtr & it, StorageObjectStorageQueue & storage)
     {
@@ -52,7 +57,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
         auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
         const auto & constraints = constraints_and_current_profiles->constraints;
         MutableColumnsAndConstraints params(res_columns, constraints);
-        storage.getSettings().dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage);
+        storage.getSettings().dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage, display_secrets);
     };
 
     const auto access = context->getAccess();
@@ -65,7 +70,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
-                if (auto * queue_table = dynamic_cast<StorageObjectStorageQueue *>(storage.get()))
+                if (auto queue_table = castStorage<StorageObjectStorageQueue>(storage, DeferredTable::Skip))
                 {
                     add_table(iterator, *queue_table);
                 }
@@ -78,3 +83,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
 template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>;
 template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>;
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>) }
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>) }

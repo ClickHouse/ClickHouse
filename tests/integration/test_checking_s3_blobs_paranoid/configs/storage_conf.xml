@@ -12,6 +12,7 @@
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3>
             <broken_s3>
                 <type>s3</type>
@@ -19,7 +20,8 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>1</skip_access_check>
-                <s3_connect_timeout_ms>10000</s3_connect_timeout_ms>
+                <connect_timeout_ms>10000</connect_timeout_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </broken_s3>
         </disks>
 

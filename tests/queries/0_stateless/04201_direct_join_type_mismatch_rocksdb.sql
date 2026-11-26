@@ -14,6 +14,8 @@
 -- wrapping, matching `getByKeys`'s own equivalence). On mismatch, decline direct
 -- join so the planner falls back to `HashJoin`, which handles type conversion.
 
+SET explain_query_plan_default='legacy';
+
 DROP TABLE IF EXISTS rdb_pk_type;
 DROP TABLE IF EXISTS t_uint64_nullable;
 DROP TABLE IF EXISTS t_int64;
@@ -31,14 +33,12 @@ INSERT INTO t_uint64_nullable VALUES (1), (2), (3), (4);
 SELECT 'case 1 new planner';
 SELECT * FROM (SELECT k AS key FROM t_uint64_nullable) AS t
 INNER JOIN rdb_pk_type USING (key)
-ORDER BY key ASC NULLS FIRST
-SETTINGS query_plan_use_new_logical_join_step = 1;
+ORDER BY key ASC NULLS FIRST;
 
 SELECT 'case 1 legacy planner';
 SELECT * FROM (SELECT k AS key FROM t_uint64_nullable) AS t
 INNER JOIN rdb_pk_type USING (key)
-ORDER BY key ASC NULLS FIRST
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key ASC NULLS FIRST;
 
 -- Case 2: right key Int64 (different signedness) vs storage UInt32.
 CREATE TABLE t_int64 (k Int64) ENGINE = TinyLog;
@@ -47,8 +47,7 @@ INSERT INTO t_int64 VALUES (1), (2), (3), (4);
 SELECT 'case 2 legacy planner';
 SELECT * FROM (SELECT k AS key FROM t_int64) AS t
 INNER JOIN rdb_pk_type USING (key)
-ORDER BY key
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key;
 
 -- Case 3: right key Decimal vs storage UInt32. Cast under USING produces a Decimal
 -- supertype; the type mismatch must not trip the LOGICAL_ERROR.
@@ -58,8 +57,7 @@ INSERT INTO t_decimal VALUES (1), (2), (3), (4);
 SELECT 'case 3 legacy planner';
 SELECT * FROM (SELECT k AS key FROM t_decimal) AS t
 INNER JOIN rdb_pk_type USING (key)
-ORDER BY key
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key;
 
 -- Case 4: matching types — `DirectKeyValueJoin` must still be picked.
 -- Verifies the type check is not overly aggressive.
@@ -69,8 +67,7 @@ INSERT INTO t_uint32 VALUES (1), (2), (3), (4);
 SELECT 'case 4 legacy planner (matching types, direct join still picked)';
 SELECT * FROM (SELECT k AS key FROM t_uint32) AS t
 INNER JOIN rdb_pk_type USING (key)
-ORDER BY key
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key;
 
 SELECT 'case 4 explain shows DirectKeyValueJoin';
 SELECT trim(explain)
@@ -78,7 +75,6 @@ FROM (
     EXPLAIN actions = 1
     SELECT * FROM (SELECT k AS key FROM t_uint32) AS t
     INNER JOIN rdb_pk_type USING (key)
-    SETTINGS query_plan_use_new_logical_join_step = 0
 )
 WHERE explain LIKE '%Algorithm:%';
 
@@ -92,38 +88,33 @@ WHERE explain LIKE '%Algorithm:%';
 SELECT 'case 5 LEFT JOIN legacy planner';
 SELECT key, value FROM (SELECT k AS key FROM t_uint64_nullable) AS t
 LEFT JOIN rdb_pk_type USING (key)
-ORDER BY key ASC NULLS FIRST
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key ASC NULLS FIRST;
 
 -- Case 6: LEFT ANY JOIN with mismatched type — exercises the `Any` strictness path
 -- (the canonical strictness for direct key-value lookups).
 SELECT 'case 6 LEFT ANY JOIN legacy planner';
 SELECT key, value FROM (SELECT k AS key FROM t_uint64_nullable) AS t
 LEFT ANY JOIN rdb_pk_type USING (key)
-ORDER BY key ASC NULLS FIRST
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key ASC NULLS FIRST;
 
 -- Case 7: LEFT SEMI JOIN with mismatched type — exercises the `Semi` strictness path.
 SELECT 'case 7 LEFT SEMI JOIN legacy planner';
 SELECT key FROM (SELECT k AS key FROM t_uint64_nullable) AS t
 LEFT SEMI JOIN rdb_pk_type USING (key)
-ORDER BY key ASC NULLS FIRST
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key ASC NULLS FIRST;
 
 -- Case 8: LEFT ANTI JOIN with mismatched type — exercises the `Anti` strictness path.
 SELECT 'case 8 LEFT ANTI JOIN legacy planner';
 SELECT key FROM (SELECT k AS key FROM t_uint64_nullable) AS t
 LEFT ANTI JOIN rdb_pk_type USING (key)
-ORDER BY key ASC NULLS FIRST
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key ASC NULLS FIRST;
 
 -- Case 9: matching types LEFT JOIN — `DirectKeyValueJoin` must still be picked
 -- so the type check is not overly aggressive on the LEFT path either.
 SELECT 'case 9 LEFT JOIN legacy planner (matching types, direct join still picked)';
 SELECT key, value FROM (SELECT k AS key FROM t_uint32) AS t
 LEFT JOIN rdb_pk_type USING (key)
-ORDER BY key
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY key;
 
 SELECT 'case 9 explain shows DirectKeyValueJoin';
 SELECT trim(explain)
@@ -131,7 +122,6 @@ FROM (
     EXPLAIN actions = 1
     SELECT * FROM (SELECT k AS key FROM t_uint32) AS t
     LEFT JOIN rdb_pk_type USING (key)
-    SETTINGS query_plan_use_new_logical_join_step = 0
 )
 WHERE explain LIKE '%Algorithm:%';
 

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
-#include <Common/WeakHash.h>
 
+#include <optional>
 
 namespace DB
 {
@@ -31,7 +32,11 @@ private:
         const ColumnsWithTypeAndName & columns_to_capture,
         bool is_short_circuit_argument_ = false,
         bool is_function_compiled_ = false,
-        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false);
+        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
+        bool allow_lazy_replicated_captures_ = false,
+        ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_ = nullptr,
+        std::optional<size_t> short_circuit_eager_argument_ = {},
+        const void * shared_node_ = nullptr);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -59,7 +64,7 @@ public:
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce() const;
+    ColumnWithTypeAndName reduce(bool dry_run = false) const;
 
     Field operator[](size_t n) const override;
 
@@ -72,10 +77,14 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
     }
 
+    bool supportsGetDataAt() const override { return false; }
+
     bool isDefaultAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
     }
+
+    bool hasOnlyTypeDefaults() const override { return false; }
 
     void insert(const Field &) override
     {
@@ -103,6 +112,9 @@ public:
     void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
 #endif
 
+    /// Squashing uses this to decide whether `insertRangeFrom` can concatenate two columns.
+    bool structureEquals(const IColumn & rhs) const override;
+
     void insertData(const char *, size_t) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
@@ -118,13 +130,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
     }
 
-    void skipSerializedInArena(ReadBuffer &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
-    }
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
 
     void popBack(size_t) override
@@ -196,6 +203,7 @@ public:
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
 
     const FunctionBasePtr & getFunction() const { return function; }
+    const ShortCircuitArgumentStatisticsPtr & getShortCircuitArgumentStatistics() const { return short_circuit_argument_statistics; }
     const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
 
 private:
@@ -218,6 +226,39 @@ private:
 
     /// Determine if passed function is compiled. Used for profiling.
     bool is_function_compiled;
+
+    /// If true, replicate function wraps captured columns into ColumnReplicated instead of physically copying them.
+    /// Controlled by the setting enable_lazy_columns_replication.
+    bool allow_lazy_replicated_captures = false;
+
+    /// Set for a lazy executed argument of a short-circuit function with commutative arguments (`and`, `or`),
+    /// if the argument can be executed before the arguments that precede it, see ExpressionActions.cpp for details.
+    /// The function uses these statistics to choose the order in which it executes such arguments.
+    ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics;
+
+    /// Set for a lazy executed short-circuit function with commutative arguments (`and`, `or`), if the argument that
+    /// is executed first was chosen instead of the one from `arguments_with_disabled_lazy_execution`,
+    /// see `processShortCircuitFunctions` in ExpressionActions.cpp.
+    std::optional<size_t> short_circuit_eager_argument;
+
+    /// The lazily executed node this column computes, if the node has several consumers.
+    /// The copies of a node inside one tree contain the same rows, so they have the same result.
+    const void * shared_node = nullptr;
+
+    /// The results of the shared nodes already reduced on the rows of the tree that is being reduced.
+    struct ReducedColumns;
+    /// The lazy executed columns already visited by one `getReplacements` call, mapped to their replacement (nullptr if unchanged).
+    struct ReplacedColumns;
+    /// The positions of the replaced columns, with the new columns.
+    using Replacements = VectorWithMemoryTracking<std::pair<size_t, ColumnWithTypeAndName>>;
+
+    ColumnWithTypeAndName reduceImpl(bool dry_run, ReducedColumns & reduced) const;
+    /// Returns the replacements of the arguments of `function` that are already reduced, and of those inside its lazy executed arguments.
+    /// A lazy executed argument of a short-circuit function stays lazy, because the function executes it only on some rows. One of
+    /// `and`/`or` is not replaced: they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.
+    static Replacements getReplacements(
+        const ColumnsWithTypeAndName & columns, const IFunctionBase & function, const ReducedColumns & reduced, ReplacedColumns & replaced);
+    static void applyReplacements(ColumnsWithTypeAndName & columns, Replacements && replacements);
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

@@ -17,6 +17,7 @@ public:
     class SLRUIterator;
 
     SLRUFileCachePriority(
+        QueueType queue_type_,
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
@@ -36,19 +37,21 @@ public:
     size_t getProtectedElementsCount(const CacheStateGuard::Lock & lock) const { return protected_queue.getElementsCount(lock); }
     size_t getProbationarySize(const CacheStateGuard::Lock & lock) const { return probationary_queue.getSize(lock); }
     size_t getProbationaryElementsCount(const CacheStateGuard::Lock & lock) const { return probationary_queue.getElementsCount(lock); }
+    size_t getProtectedSizeLimit(const CacheStateGuard::Lock & lock) const { return protected_queue.getSizeLimit(lock); }
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
     void check(const CacheStateGuard::Lock &) const override;
 
     double getSLRUSizeRatio() const override { return size_ratio; }
 
-    EvictionInfoPtr collectEvictionInfo(
+    EvictionInfoPtr collectEvictionInfo( /// NOLINT
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin_info,
-        const CacheStateGuard::Lock &) override;
+        const CacheStateGuard::Lock &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
     bool canFit( /// NOLINT
         size_t size,
@@ -62,7 +65,6 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool is_initial_load = false) override;
 
@@ -74,35 +76,38 @@ public:
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *) override;
 
-    bool collectCandidatesForEviction(
-        const EvictionInfo & eviction_info,
+    /// See `LRUFileCachePriority::sealStructure`. Both sub-queues are sealed, since
+    /// every structural operation here lands in one of them.
+    void sealStructure()
+    {
+        probationary_queue.sealStructure();
+        protected_queue.sealStructure();
+    }
+
+    bool collectCandidatesForEviction( /// NOLINT
+        EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
-        InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
+        EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CachePriorityGuard &,
-        CacheStateGuard &) override;
+        CacheStateGuard &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
-    void iterate(
-        IterateFunc func,
-        FileCacheReserveStat & stat,
-        const CachePriorityGuard::ReadLock &) override;
+    void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 
     bool tryIncreasePriority(
         Iterator & iterator_,
         bool is_space_reservation_complete,
-        CachePriorityGuard & queue_guard,
         CacheStateGuard & state_guard) override;
 
-    void shuffle(const CachePriorityGuard::WriteLock &) override;
+    void shuffle() override;
 
-    void resetEvictionPos() override;
+    void resetEvictionPos(EvictionCursor cursor) override;
 
-    PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
+    PriorityDumpPtr dump() override;
 
     bool modifySizeLimits(
         size_t max_size_,
@@ -118,15 +123,35 @@ public:
 
     FileCachePriorityPtr copy() const;
 
+    /// For tests which put entries into a chosen sub-queue with `addForRestore`.
+    CachePriorityGuard & getPriorityGuardForTests() { return getPriorityGuard(); }
+
 protected:
+    void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
+    {
+        /// Remember the hook on this priority as well: `OvercommitFileCachePriority`
+        /// reads it back when wiring newly created per-user priorities.
+        IFileCachePriority::setInvalidateNotifier(threshold, on_invalidate);
+        protected_queue.setInvalidateNotifier(threshold, on_invalidate);
+        probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
+    }
+
+    size_t removeInvalidatedEntries(size_t max_batch) override
+    {
+        size_t removed = protected_queue.removeInvalidatedEntries(max_batch);
+        if (removed < max_batch)
+            removed += probationary_queue.removeInvalidatedEntries(max_batch - removed);
+        return removed;
+    }
+
     size_t getHoldSize() override { return protected_queue.getHoldSize() + probationary_queue.getHoldSize(); }
 
     size_t getHoldElements() override { return protected_queue.getHoldElements() + probationary_queue.getHoldElements(); }
 
-    void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard> guard) override
+    void setCacheUsage(CacheUsagePtr usage) override
     {
-        probationary_queue.setCacheUsageStatGuard(guard);
-        protected_queue.setCacheUsageStatGuard(guard);
+        probationary_queue.setCacheUsage(usage);
+        protected_queue.setCacheUsage(usage);
     }
 
 private:
@@ -138,21 +163,23 @@ private:
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
     LoggerPtr log;
+    SharedEvictionCursor promotion_cursor{EvictionCursor::Promotion};
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
+    /// With `wait_for_priority_lock` false, returns false as soon as a walk finds a writer
+    /// holding or waiting for the priority guard, instead of queueing behind it.
     bool collectCandidatesForEvictionInProtected(
-        const EvictionInfo & eviction_info,
+        EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
-        InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
+        EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CachePriorityGuard & cache_guard,
-        CacheStateGuard & state_guard);
+        CacheStateGuard & state_guard,
+        bool wait_for_priority_lock);
 
     LRUFileCachePriority::LRUIterator addOrThrow(
         EntryPtr entry,
@@ -178,11 +205,17 @@ public:
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
-    void invalidate() override;
+    void remove() override;
+
+    void invalidate() noexcept override;
+
+    void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept override;
 
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
+
+    CachePriorityGuard & getPriorityGuard() const override { return cache_priority->getPriorityGuard(); }
 
 private:
     bool assertValid() const;

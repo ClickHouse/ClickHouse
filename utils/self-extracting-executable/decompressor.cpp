@@ -13,9 +13,9 @@
 #include <sstream>
 #include <vector>
 
-#if defined(OS_DARWIN) && defined(__GNUC__)
+#if defined(OS_DARWIN)
 #   include <machine/endian.h>
-#elif defined(OS_FREEBSD) && defined(__GNUC__)
+#elif defined(OS_FREEBSD)
 #   include <machine/endian.h>
 #   include <sys/endian.h>
 #else
@@ -36,7 +36,7 @@
 #include <types.h>
 
 /// decompress part
-int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
+static int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
                off_t input_size, off_t output_size, ZSTD_DCtx* dctx)
 {
     size_t decompressed_size = ZSTD_decompressDCtx(dctx, output + out_offset, output_size, input + in_offset, input_size);
@@ -50,7 +50,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
 }
 
 /// decompress data from in_fd into out_fd
-int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
+static int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
 {
     off_t in_pointer = start;
     off_t out_pointer = 0;
@@ -66,7 +66,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         std::cerr << "Error (ZSTD): failed to create decompression context" << std::endl;
         return 1;
     }
-    pid_t pid;
+    pid_t pid = 0;
     bool error_happened = false;
 
     /// Decompress data
@@ -114,7 +114,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
             while (number_of_forks >= max_number_of_forks)
             {
                 /// Wait any fork
-                int status;
+                int status = 0;
                 waitpid(0, &status, 0);
 
                 /// If error happened, stop processing
@@ -135,7 +135,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     while (number_of_forks > 0)
     {
         /// Wait any fork
-        int status;
+        int status = 0;
         waitpid(0, &status, 0);
 
         if (WIFEXITED(status))
@@ -170,17 +170,17 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     return 0;
 }
 
-bool isSudo()
+static bool isSudo()
 {
     return geteuid() == 0;
 }
 
 /// Read data about files and decompress them.
-int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
+static int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
-    struct stat info_in;
+    struct stat info_in{};
     if (0 != fstat(input_fd, &info_in))
     {
         perror("fstat");
@@ -195,8 +195,9 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         return 1;
     }
 
-    /// Read metadata from end of file
-    MetaData metadata = *reinterpret_cast<MetaData*>(input + info_in.st_size - sizeof(MetaData));
+    /// Read metadata from end of file (memcpy because the data may be unaligned)
+    MetaData metadata;
+    memcpy(&metadata, input + info_in.st_size - sizeof(MetaData), sizeof(MetaData));
 
     /// Prepare to read information about files and decompress them
     off_t files_pointer = le64toh(metadata.start_of_files_data);
@@ -206,13 +207,14 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     off_t check_pointer = le64toh(metadata.start_of_files_data);
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
-        FileData data = *reinterpret_cast<FileData*>(input + check_pointer);
+        FileData data;
+        memcpy(&data, input + check_pointer, sizeof(FileData));
         decompressed_full_size += le64toh(data.uncompressed_size);
         check_pointer += sizeof(FileData) + le64toh(data.name_length);
     }
 
     /// Check free space
-    struct statvfs fs_info;
+    struct statvfs fs_info{};
     if (0 != fstatvfs(input_fd, &fs_info))
     {
         perror("fstatvfs");
@@ -234,7 +236,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
         /// Read information about file
-        file_info = *reinterpret_cast<FileData*>(input + files_pointer);
+        memcpy(&file_info, input + files_pointer, sizeof(FileData));
         files_pointer += sizeof(FileData);
 
         /// for output filename matching compressed allow additional 13 + 7 symbols for ".decompressed.XXXXXX" suffix
@@ -344,7 +346,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #if defined(OS_DARWIN)
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         uint32_t size = static_cast<uint32_t>(buf_sz);
         std::vector<char> apple(size);
@@ -357,7 +359,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #elif defined(OS_FREEBSD)
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         int name[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
         size_t length = buf_sz;
@@ -367,9 +369,20 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         return 0;
     }
 
+#elif defined(OS_SUNOS)
+
+    static int read_exe_path(char *exe, size_t buf_sz)
+    {
+        ssize_t n = readlink("/proc/self/path/a.out", exe, buf_sz - 1);
+        if (n <= 0 || n >= static_cast<ssize_t>(buf_sz - 1))
+            return -1;
+        exe[n] = '\0';
+        return 0;
+    }
+
 #else
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
         if (n > 0)
@@ -379,9 +392,22 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #endif
 
-#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+#if defined(OS_SUNOS)
 
-uint64_t getInode(const char * self)
+static uint64_t getInode(const char *)
+{
+    struct stat info{};
+    if (stat("/proc/self/object/a.out", &info) != 0)
+    {
+        perror("stat executable");
+        return 0;
+    }
+    return info.st_ino;
+}
+
+#elif !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+
+static uint64_t getInode(const char * self)
 {
     std::ifstream maps("/proc/self/maps");
     if (maps.fail())
@@ -435,7 +461,7 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path.data();
 
-    struct stat input_info;
+    struct stat input_info{};
     if (0 != stat(self, &input_info))
     {
         perror("stat");
@@ -480,7 +506,7 @@ int main(int/* argc*/, char* argv[])
     /// then file referred by path "self" is already pointing to different inode
     if (input_info.st_ino != inode)
     {
-        struct stat lock_info;
+        struct stat lock_info{};
         if (0 != fstat(lock, &lock_info))
         {
             perror("fstat lock");

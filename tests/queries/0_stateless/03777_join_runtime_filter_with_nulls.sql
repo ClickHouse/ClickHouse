@@ -1,11 +1,9 @@
-SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET join_algorithm = 'hash,parallel_hash';
 SET query_plan_optimize_join_order_algorithm='greedy';
 SET query_plan_optimize_join_order_limit=1;
 SET query_plan_join_swap_table=0;
 SET allow_suspicious_low_cardinality_types=1;
-SET allow_experimental_dynamic_type=1;
 SET allow_dynamic_type_in_join_keys=1;
 
 
@@ -27,7 +25,7 @@ USING (id);
 SELECT 1 FROM t0 JOIN t1 USING c0;
 
 -- And with runtime filters
-SET enable_join_runtime_filters=1;
+SET enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
 
 SELECT id, value
 FROM

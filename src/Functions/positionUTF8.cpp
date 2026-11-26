@@ -34,9 +34,9 @@ Like [`position`](#position) but assumes `haystack` and `needle` are UTF-8 encod
         "UTF-8 character counting",
         "SELECT positionUTF8('Motörhead', 'r')",
         R"(
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
         )"
     }
     };

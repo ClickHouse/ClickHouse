@@ -1,8 +1,15 @@
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <typeinfo>
 #include <unordered_map>
 
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -21,6 +28,10 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+/// Thread-local accumulator of nodes visited by getTreeHash (see definition below). Declared
+/// here so the definition has a prototype; also forward-declared by LogicalExpressionOptimizerPass.
+size_t & getTreeHashWorkCounter();
+
 const char * toString(QueryTreeNodeType type)
 {
     switch (type)
@@ -33,6 +44,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::FUNCTION: return "FUNCTION";
         case QueryTreeNodeType::COLUMN: return "COLUMN";
         case QueryTreeNodeType::LAMBDA: return "LAMBDA";
+        case QueryTreeNodeType::LAMBDA_ARGS: return "LAMBDA_ARGS";
         case QueryTreeNodeType::SORT: return "SORT";
         case QueryTreeNodeType::INTERPOLATE: return "INTERPOLATE";
         case QueryTreeNodeType::WINDOW: return "WINDOW";
@@ -44,12 +56,6 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
     }
-}
-
-IQueryTreeNode::IQueryTreeNode(size_t children_size, size_t weak_pointers_size)
-{
-    children.resize(children_size);
-    weak_pointers.resize(weak_pointers_size);
 }
 
 IQueryTreeNode::IQueryTreeNode(size_t children_size)
@@ -76,6 +82,53 @@ struct NodePairHash
     }
 };
 
+/** The correspondence between the column sources of two compared trees.
+  *
+  * Column sources are compared by content, and they are not necessary part of the compared trees.
+  * The correspondence must be a bijection: if a column source of one tree was paired with a column source
+  * of the other tree, every other reference to one of them must be paired with the same counterpart.
+  * Otherwise `f(a.x, a.x)` is equal to `f(a.x, b.x)` when `a` and `b` have the same content.
+  * A column source can be paired with itself, when the two trees refer to the same table expression.
+  *
+  * This is also what `getTreeHash` does: it hashes the content of a column source on the first reference
+  * and the identifier of the column source on the subsequent references.
+  */
+class ColumnSourcesBijection
+{
+public:
+    enum class AddResult : uint8_t
+    {
+        /// The pair is new, and it does not contradict the bijection.
+        Added,
+        /// The pair is already known.
+        Exists,
+        /// One of the column sources is already paired with a different one.
+        Conflict,
+    };
+
+    AddResult add(const IQueryTreeNode * lhs_source, const IQueryTreeNode * rhs_source)
+    {
+        auto [lhs_it, lhs_inserted] = lhs_to_rhs.emplace(lhs_source, rhs_source);
+        auto [rhs_it, rhs_inserted] = rhs_to_lhs.emplace(rhs_source, lhs_source);
+
+        if (lhs_it->second != rhs_source || rhs_it->second != lhs_source)
+            return AddResult::Conflict;
+
+        if (lhs_source != rhs_source)
+            is_identity = false;
+
+        return lhs_inserted ? AddResult::Added : AddResult::Exists;
+    }
+
+    /// Every column source is paired with itself.
+    [[nodiscard]] bool isIdentity() const { return is_identity; }
+
+private:
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> lhs_to_rhs;
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> rhs_to_lhs;
+    bool is_identity = true;
+};
+
 }
 
 bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options) const
@@ -85,6 +138,17 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
+
+    ColumnSourcesBijection column_sources;
+
+    /** A node that is shared between the two trees is not traversed, because it is equal to itself.
+      * But every column source that is referenced from a shared node is paired with itself,
+      * and this must not contradict the bijection: `f(a.x, a.x)` is not equal to `f(a.x, b.x)`
+      * also when the first argument is the same node in both trees.
+      * This is checked after the traversal, and only if some column source was paired with a different one.
+      * It is not so in the usual case, when the compared expressions refer to the same table expressions.
+      */
+    VectorWithMemoryTracking<const IQueryTreeNode *> shared_nodes;
 
     nodes_to_process.emplace_back(this, &rhs);
 
@@ -96,8 +160,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         const auto * lhs_node_to_compare = nodes_to_compare.first;
         const auto * rhs_node_to_compare = nodes_to_compare.second;
 
-        assert(lhs_node_to_compare);
-        assert(rhs_node_to_compare);
+        chassert(lhs_node_to_compare);
+        chassert(rhs_node_to_compare);
 
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
@@ -105,10 +169,13 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         if (lhs_node_to_compare == rhs_node_to_compare)
         {
             equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
+            shared_nodes.push_back(lhs_node_to_compare);
             continue;
         }
 
-        if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
+        /// isEqualImpl implementations downcast rhs to their own exact class, so the gate must compare
+        /// dynamic types: getNodeType is coarser, all column transformer kinds report TRANSFORMER.
+        if (typeid(*lhs_node_to_compare) != typeid(*rhs_node_to_compare) ||
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
@@ -127,43 +194,82 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
             const auto & lhs_child = lhs_children[i];
             const auto & rhs_child = rhs_children[i];
 
-            if (!lhs_child && !rhs_child)
-                continue;
-            if (lhs_child && !rhs_child)
-                return false;
-            if (!lhs_child && rhs_child)
+            if (bool(lhs_child) != bool(rhs_child))
                 return false;
 
-            nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
+            if (lhs_child && rhs_child)
+                nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
         }
 
-        const auto & lhs_weak_pointers = lhs_node_to_compare->weak_pointers;
-        const auto & rhs_weak_pointers = rhs_node_to_compare->weak_pointers;
-
-        size_t lhs_weak_pointers_size = lhs_weak_pointers.size();
-
-        if (lhs_weak_pointers_size != rhs_weak_pointers.size())
-            return false;
-
-        for (size_t i = 0; i < lhs_weak_pointers_size; ++i)
+        if (const auto * lhs_column_node = lhs_node_to_compare->as<ColumnNode>())
         {
-            auto lhs_strong_pointer = lhs_weak_pointers[i].lock();
-            auto rhs_strong_pointer = rhs_weak_pointers[i].lock();
+            const auto * rhs_column_node = rhs_node_to_compare->as<ColumnNode>();
 
-            if (!lhs_strong_pointer && !rhs_strong_pointer)
-                continue;
-            if (lhs_strong_pointer && !rhs_strong_pointer)
-                return false;
-            if (!lhs_strong_pointer && rhs_strong_pointer)
+            auto lhs_source = lhs_column_node->getColumnSourceOrNull();
+            auto rhs_source = rhs_column_node->getColumnSourceOrNull();
+
+            if (bool(lhs_source) != bool(rhs_source))
                 return false;
 
-            nodes_to_process.emplace_back(lhs_strong_pointer.get(), rhs_strong_pointer.get());
+            if (lhs_source && rhs_source)
+            {
+                auto add_result = column_sources.add(lhs_source.get(), rhs_source.get());
+
+                if (add_result == ColumnSourcesBijection::AddResult::Conflict)
+                    return false;
+
+                /// Compare the content of the column sources only once.
+                if (add_result == ColumnSourcesBijection::AddResult::Added)
+                    nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+            }
         }
 
         equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
     }
 
+    if (column_sources.isIdentity() || shared_nodes.empty())
+        return true;
+
+    UnorderedSetWithMemoryTracking<const IQueryTreeNode *> visited_shared_nodes;
+
+    while (!shared_nodes.empty())
+    {
+        const auto * shared_node = shared_nodes.back();
+        shared_nodes.pop_back();
+
+        if (!visited_shared_nodes.emplace(shared_node).second)
+            continue;
+
+        for (const auto & child : shared_node->children)
+        {
+            if (child)
+                shared_nodes.push_back(child.get());
+        }
+
+        if (const auto * column_node = shared_node->as<ColumnNode>())
+        {
+            if (auto source = column_node->getColumnSourceOrNull())
+            {
+                /// A column source that is referenced from a shared node is paired with itself.
+                if (column_sources.add(source.get(), source.get()) == ColumnSourcesBijection::AddResult::Conflict)
+                    return false;
+
+                shared_nodes.push_back(source.get());
+            }
+        }
+    }
+
     return true;
+}
+
+size_t & getTreeHashWorkCounter()
+{
+    /// Thread-local accumulator of the number of nodes visited by getTreeHash. It lets a pass
+    /// that hashes many subtrees (e.g. optimize_and_compare_chain) bound its own work directly,
+    /// without separately measuring tree sizes -- it watches this counter and backs off once it
+    /// grows too much. getTreeHash also checks for query cancellation every 65536 visited nodes.
+    static thread_local size_t counter = 0;
+    return counter;
 }
 
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
@@ -178,6 +284,22 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
       * For weak nodes there is special handling. If we visit weak node first time we update hash state with weak node content and register
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
       */
+    size_t & hashed_nodes = getTreeHashWorkCounter();
+
+    /// Analysis passes hash trees in per-key loops, so a long analysis observes query cancellation here.
+    static constexpr size_t cancellation_check_period = 1 << 16;
+
+    /// A constant has no children and only `convertToNullable` changes its value, so its hash without the alias is computed once.
+    const auto * constant_node = as<ConstantNode>();
+    const bool use_constant_hash_cache = constant_node && !(compare_options.compare_aliases && !alias.empty());
+    if (use_constant_hash_cache && constant_node->cached_tree_hash)
+    {
+        /// Counts as one hashed node, as without the cache.
+        if (++hashed_nodes % cancellation_check_period == 0)
+            CurrentThread::checkIfNotCancelled();
+        return *constant_node->cached_tree_hash;
+    }
+
     HashState hash_state;
 
     std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
@@ -189,6 +311,9 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
     {
         const auto [node_to_process, is_weak_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
+
+        if (++hashed_nodes % cancellation_check_period == 0)
+            CurrentThread::checkIfNotCancelled();
 
         if (is_weak_node)
         {
@@ -221,19 +346,17 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
             nodes_to_process.emplace_back(node_to_process_child.get(), false);
         }
 
-        hash_state.update(node_to_process->weak_pointers.size());
-
-        for (const auto & weak_pointer : node_to_process->weak_pointers)
+        if (const auto * column_node = node_to_process->as<ColumnNode>())
         {
-            auto strong_pointer = weak_pointer.lock();
-            if (!strong_pointer)
-                continue;
-
-            nodes_to_process.emplace_back(strong_pointer.get(), true);
+            if (auto source = column_node->getColumnSourceOrNull())
+                nodes_to_process.emplace_back(source.get(), true);
         }
     }
 
-    return getSipHash128AsPair(hash_state);
+    auto tree_hash = getSipHash128AsPair(hash_state);
+    if (use_constant_hash_cache)
+        constant_node->cached_tree_hash = tree_hash;
+    return tree_hash;
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const
@@ -252,7 +375,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
       * After that we can update pointer in weak pointers array using old pointer to new pointer mapping.
       */
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> old_pointer_to_new_pointer;
-    std::vector<QueryTreeNodeWeakPtr *> weak_pointers_to_update_after_clone;
+    std::vector<ColumnNode *> column_nodes_to_update_after_clone;
 
     QueryTreeNodePtr result_cloned_node_place;
 
@@ -271,20 +394,24 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
             continue;
         }
 
-        auto it = replacement_map.find(node_to_clone);
-        auto node_clone = it != replacement_map.end() ? it->second : node_to_clone->cloneImpl();
+        if (const auto * table_expression = node_to_clone->asTableExpression())
+        {
+            auto it = replacement_map.find(table_expression);
+            if (it != replacement_map.end())
+            {
+                *place_for_cloned_node = it->second;
+                continue;
+            }
+        }
+
+        auto node_clone = node_to_clone->cloneImpl();
         *place_for_cloned_node = node_clone;
-
         old_pointer_to_new_pointer.emplace(node_to_clone, node_clone);
-
-        if (it != replacement_map.end())
-            continue;
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
-        node_clone->weak_pointers = node_to_clone->weak_pointers;
 
         for (auto & child : node_clone->children)
         {
@@ -294,10 +421,8 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
             nodes_to_clone.emplace_back(child.get(), &child);
         }
 
-        for (auto & weak_pointer : node_clone->weak_pointers)
-        {
-            weak_pointers_to_update_after_clone.push_back(&weak_pointer);
-        }
+        if (auto * column_node = node_clone->as<ColumnNode>())
+            column_nodes_to_update_after_clone.emplace_back(column_node);
     }
 
     /** Ensure all replacement_map entries are in old_pointer_to_new_pointer.
@@ -313,11 +438,13 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
       * To do this we check old pointer to new pointer map, if weak pointer
       * strong pointer exists as old pointer in map, reinitialize weak pointer with new pointer.
       */
-    for (auto & weak_pointer_ptr : weak_pointers_to_update_after_clone)
+    for (auto * column_node : column_nodes_to_update_after_clone)
     {
-        assert(weak_pointer_ptr);
-        auto strong_pointer = weak_pointer_ptr->lock();
-        auto it = old_pointer_to_new_pointer.find(strong_pointer.get());
+        auto source = column_node->getColumnSourceOrNull();
+        if (!source)
+            continue;
+
+        auto it = old_pointer_to_new_pointer.find(source.get());
 
         /** If node had weak pointer to some other node and this node is not part of cloned subtree do not update weak pointer.
           * It will continue to point to previous location and it is expected.
@@ -329,14 +456,14 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         if (it == old_pointer_to_new_pointer.end())
             continue;
 
-        *weak_pointer_ptr = it->second;
+        column_node->setColumnSource(static_pointer_cast<ITableExpressionNode>(it->second));
     }
     result_cloned_node_place->original_ast = original_ast;
 
     return result_cloned_node_place;
 }
 
-QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const
+QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const TableExpressionNodePtr & node_to_replace, TableExpressionNodePtr replacement_node) const
 {
     ReplacementMap replacement_map;
     replacement_map.emplace(node_to_replace.get(), std::move(replacement_node));

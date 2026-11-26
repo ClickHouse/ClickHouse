@@ -8,6 +8,7 @@
 #include <sparsehash/sparse_hash_map>
 
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
@@ -29,13 +30,13 @@ struct SmallStringView
 
     union
     {
-        const char * data_big;
+        const char * data_big{};
         char data_small[12];
     };
 
-    bool isSmall() const { return size <= 12; }
+    [[nodiscard]] bool isSmall() const { return size <= 12; }
 
-    const char * data() const
+    [[nodiscard]] const char * data() const
     {
         return isSmall() ? data_small : data_big;
     }
@@ -52,9 +53,9 @@ struct SmallStringView
 
     [[maybe_unused]] SmallStringView(const unsigned char * data_, size_t size_) : SmallStringView(reinterpret_cast<const char *>(data_), size_) {}
     [[maybe_unused]] explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
-    SmallStringView() = default;
+    SmallStringView() = default; // NOLINT(hicpp-member-init)
 
-    [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
+    [[nodiscard]] [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
 };
 
 
@@ -143,8 +144,8 @@ int mainEntryExampleHashMapStringSmall(int argc, char ** argv)
         using Map = HashMapWithSavedHash<std::string_view, Value>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -172,8 +173,8 @@ int mainEntryExampleHashMapStringSmall(int argc, char ** argv)
         using Map = HashMapWithSavedHash<SmallStringView, Value>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {

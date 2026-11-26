@@ -5,8 +5,10 @@ Tests are parametrized over available catalog backends via the
 missing are automatically skipped.
 """
 
+import concurrent.futures
 import datetime
 import decimal
+import time
 import uuid
 
 import pyarrow as pa
@@ -17,6 +19,7 @@ from helpers.catalog_manager_aws_glue import AwsGlueCatalogManager
 from helpers.catalog_manager_biglake import BigLakeCatalogManager
 from helpers.catalog_manager_onelake import OneLakeCatalogManager
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 pytestmark = pytest.mark.e2e
 
@@ -191,7 +194,7 @@ def started_cluster(catalog_manager):
     cluster = ClickHouseCluster(__file__, name=f"test_e2e_catalogs_{catalog_manager}")
     cluster.add_instance(
         "node1",
-        main_configs=["configs/merge_tree.xml"],
+        main_configs=["configs/merge_tree.xml", "configs/biglake_metadata_hosts.xml"],
         user_configs=["configs/allow_experimental.xml"],
         env_variables=catalog_manager.clickhouse_env_variables(),
         stay_alive=True,
@@ -725,6 +728,48 @@ def test_incremental_insert(node, shared_db, sales_table, catalog_manager):
         node.query(f"DROP TABLE IF EXISTS {local}")
 
 
+def test_create_without_engine_arguments(node, catalog_manager):
+    namespace = catalog_manager.create_namespace_with_location()
+    table_name = f"e2e_zero_arg_{uuid.uuid4().hex[:8]}"
+    qualified = f"`{namespace}.{table_name}`"
+
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog(node, db)
+    try:
+        node.query(
+            f"CREATE TABLE {db}.{qualified} (x String) "
+            f"ENGINE = {catalog_manager.table_engine}",
+            settings={"write_full_path_in_iceberg_metadata": 1},
+        )
+        catalog_manager.track_table(namespace, table_name)
+
+        metadata_location = catalog_manager.metadata_location(namespace, table_name)
+        assert f"/{namespace}/{table_name}/metadata/" in metadata_location, metadata_location
+
+        assert node.query(f"SELECT count() FROM {db}.{qualified}").strip() == "0"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+        catalog_manager.cleanup_table(table_name)
+
+
+def test_create_without_engine_arguments_storage_mismatch(node, catalog_manager):
+    namespace = catalog_manager.create_namespace_with_location()
+    table_name = f"e2e_zero_arg_mismatch_{uuid.uuid4().hex[:8]}"
+    qualified = f"`{namespace}.{table_name}`"
+
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog(node, db)
+    try:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {db}.{qualified} (x String) "
+            f"ENGINE = {catalog_manager.mismatched_table_engine}"
+        )
+        assert "while its table engine writes to" in error, error
+        assert table_name not in node.query(f"SHOW TABLES FROM {db}")
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
 # ---------------------------------------------------------------------------
 # System tables & settings
 # ---------------------------------------------------------------------------
@@ -914,7 +959,7 @@ def test_onelake_create_without_flag(node, catalog_manager):
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(db)
     error = node.query_and_get_error(
-        sql, settings={"allow_experimental_database_iceberg": "0"}
+        sql, settings={"allow_database_iceberg": "0"}
     )
     assert "allow_database_iceberg" in error or "SUPPORT_IS_DISABLED" in error
 
@@ -1065,13 +1110,102 @@ def test_onelake_show_create_table_no_secret(
     )
 
 
+@only_onelake
+def test_onelake_system_databases_no_bearer_token(node, catalog_manager):
+    """engine_full in system.databases must not expose onelake_bearer_token."""
+
+    token = catalog_manager.bearer_token()
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog_bearer(node, db, token)
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db}' "
+        f"FORMAT TSV",
+        settings={"show_data_lake_catalogs_in_system_tables": 1},
+    ).strip()
+    assert engine_full, f"Database {db} not found in system.databases"
+    assert token not in engine_full, (
+        "onelake_bearer_token leaked in engine_full of system.databases"
+    )
+    assert "[HIDDEN]" in engine_full, (
+        f"onelake_bearer_token was not masked in engine_full:\n{engine_full}"
+    )
+
+
+@only_onelake
+def test_onelake_show_create_no_bearer_token(node, catalog_manager):
+    """SHOW CREATE DATABASE must not expose onelake_bearer_token."""
+
+    token = catalog_manager.bearer_token()
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog_bearer(node, db, token)
+    result = node.query(f"SHOW CREATE DATABASE {db}").strip()
+    assert token not in result, (
+        f"onelake_bearer_token leaked in SHOW CREATE DATABASE:\n{result}"
+    )
+    assert "[HIDDEN]" in result, (
+        f"onelake_bearer_token was not masked in SHOW CREATE DATABASE:\n{result}"
+    )
+
+
+@only_onelake
+def test_onelake_show_create_table_no_bearer_token(
+    node, catalog_manager, sales_table,
+):
+    """SHOW CREATE TABLE / system.tables must not expose onelake_bearer_token."""
+
+    token = catalog_manager.bearer_token()
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog_bearer(node, db, token)
+    try:
+        full = catalog_manager.resolve_table_name(node, db, sales_table)
+        result = node.query(f"SHOW CREATE TABLE {db}.`{full}`").strip()
+        assert result, "SHOW CREATE TABLE returned empty result"
+        assert token not in result, (
+            f"onelake_bearer_token leaked in SHOW CREATE TABLE:\n{result}"
+        )
+        system_row = node.query(
+            f"SELECT engine_full FROM system.tables "
+            f"WHERE database = '{db}' AND name = '{full}' "
+            f"FORMAT TSV"
+        ).strip()
+        assert token not in system_row, (
+            f"onelake_bearer_token leaked in system.tables engine_full:\n{system_row}"
+        )
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+@only_onelake
+def test_onelake_read_with_bearer_token(node, catalog_manager, sales_table):
+    """Read table data authenticating only with onelake_bearer_token.
+
+    Exercises both the catalog Authorization header and the Azure Blob
+    StaticCredential read path (unlike the masking tests, which never
+    query data)."""
+    token = catalog_manager.bearer_token()
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog_bearer(node, db, token)
+    try:
+        full = catalog_manager.resolve_table_name(node, db, sales_table)
+        # count() alone can be served from Iceberg metadata; sum() over a
+        # data column forces an actual data-file read from OneLake blob storage.
+        count = node.query(
+            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
+        ).strip()
+        assert int(count) == 20
+        total_qty = node.query(
+            f"SELECT sum(quantity) FROM {db}.`{full}` FORMAT TSV"
+        ).strip()
+        assert int(total_qty) == 60
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
 def test_insert_into_table(node, catalog_manager, request):
     """INSERT INTO a catalog table and verify the row count increases."""
     backend = request.node.callspec.params.get("catalog_manager")
     if backend == "biglake":
         pytest.xfail("INSERT into BigLake DataLakeCatalog does not commit to the catalog")
-    if backend == "onelake":
-        pytest.xfail("INSERT into OneLake raises StorageException during blob upload")
     data = pa.table(
         {
             "id": pa.array([1, 2], type=pa.int64()),
@@ -1095,59 +1229,374 @@ def test_insert_into_table(node, catalog_manager, request):
             f"INSERT INTO {db}.`{full}` VALUES (3, 'three')",
             settings={"allow_insert_into_iceberg": 1},
         )
-        count = node.query(
-            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-        ).strip()
+        if backend == "onelake":
+            # OneLake's catalog is eventually consistent, so poll (cache off) for
+            # the new snapshot. Other backends must see it immediately (one-shot).
+            read_settings = {"use_iceberg_metadata_files_cache": 0}
+            deadline = time.monotonic() + 180
+            while True:
+                count = node.query(
+                    f"SELECT count() FROM {db}.`{full}` FORMAT TSV",
+                    settings=read_settings,
+                ).strip()
+                if count == "3" or time.monotonic() >= deadline:
+                    break
+                time.sleep(5)
+        else:
+            read_settings = {}
+            count = node.query(
+                f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
+            ).strip()
         assert int(count) == 3
+        # count() can come from metadata alone, so read a real value too.
+        value = node.query(
+            f"SELECT value FROM {db}.`{full}` WHERE id = 3 FORMAT TSV",
+            settings=read_settings,
+        ).strip()
+        assert value == "three", value
     finally:
         catalog_manager.cleanup_table(table_name)
 
 
+def _nonzero_metrics(result: str) -> dict:
+    rows = (line.split("\t") for line in result.strip().splitlines())
+    return {name: int(value) for name, value in rows if int(value) != 0}
+
+
+# OneLake exposes a single snapshot of a virtualized Delta table, and ClickHouse commits
+# to BigLake do not land (see `test_insert_into_table`).
+@only_glue
+def test_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
+    table_name = catalog_manager.create_table(
+        pa.table({"id": pa.array([1, 2, 3], type=pa.int64()), "value": ["a", "b", "c"]})
+    )
+    db = None
+    try:
+        catalog_manager.wait_for_table_ready(table_name)
+        db = catalog_manager.make_database_name()
+        catalog_manager.create_catalog(node, db)
+        full = catalog_manager.resolve_table_name(node, db, table_name)
+        catalog = catalog_manager.catalog
+        catalog.load_table(full).append(
+            pa.table({"id": pa.array([4, 5, 6], type=pa.int64()), "value": ["d", "e", "f"]})
+        )
+        table = catalog.load_table(full)
+        assert len(table.metadata.snapshots) == 2
+
+        tbl = f"{db}.`{full}`"
+        select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
+        rows_before = node.query(select_all)
+        assert rows_before == "1\ta\n2\tb\n3\tc\n4\td\n5\te\n6\tf\n"
+        settings = {
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        }
+
+        expired = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+                settings=settings,
+            )
+        )
+        # Both data files stay live: the second append keeps the first manifest.
+        assert expired == {"deleted_manifest_lists_count": 1}
+        # Glue is not transactional, so ClickHouse writes a new metadata file and points Glue at it.
+        assert catalog.load_table(full).metadata_location != table.metadata_location
+
+        orphan = f"{table.location()}/data/orphan-{uuid.uuid4().hex[:8]}.parquet"
+        with table.io.new_output(orphan).create() as f:
+            f.write(b"orphan")
+        # Object timestamps have one-second precision and come from the storage's clock;
+        # the margin covers normal clock drift between it and the server.
+        cutoff = node.query("SELECT now() + 2").strip()
+        assert_eq_with_retry(node, f"SELECT now() > toDateTime('{cutoff}')", "1")
+
+        query_id = uuid.uuid4().hex
+        removed = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE remove_orphan_files(older_than = '{cutoff}')",
+                settings=settings,
+                query_id=query_id,
+            )
+        )
+        # A metadata file of ClickHouse's own commit is missing from `metadata-log`:
+        # https://github.com/ClickHouse/ClickHouse/issues/118812
+        deleted_metadata = removed.pop("deleted_metadata_files_count", 0)
+        assert removed == {"deleted_data_files_count": 1}
+        assert not table.io.new_input(orphan).exists()
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        deletes, lists = node.query(
+            "SELECT ProfileEvents['S3DeleteObjects'], ProfileEvents['S3ListObjects'] "
+            f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' FORMAT TSV"
+        ).split()
+        assert int(deletes) == 1 + deleted_metadata
+        # Counts list requests (pages), not files: listing once per file would exceed it.
+        assert int(lists) <= 10
+
+        assert node.query(select_all) == rows_before
+        stored = catalog.load_table(full)
+        assert len(stored.metadata.snapshots) == 1
+        assert stored.scan().to_arrow().sort_by("id").to_pylist() == [
+            {"id": i, "value": v} for i, v in zip(range(1, 7), "abcdef")
+        ]
+    finally:
+        if db:
+            node.query(f"DROP DATABASE IF EXISTS {db}")
+        catalog_manager.cleanup_table(table_name)
+
+
+# The same maintenance on GCS, through a path-based table that ClickHouse creates and writes
+# itself, authenticated with the OAuth credentials of the BigLake manager.
+@only_biglake
+def test_gcs_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
+    cfg = catalog_manager.config
+    suffix = uuid.uuid4().hex[:8]
+    # Under the session namespace's storage, which `cleanup_all` also deletes.
+    table_path = catalog_manager.gcs_table_path(f"gcs_{suffix}")
+    url = f"https://storage.googleapis.com/{table_path}"
+    nc = f"nc_gcs_{suffix}"
+    tbl = f"gcs_{suffix}"
+    node.query(
+        f"CREATE NAMED COLLECTION {nc} AS url = '{url}/', http_client = 'gcp_oauth', "
+        f"google_adc_client_id = '{cfg.adc_client_id}', "
+        f"google_adc_client_secret = '{cfg.adc_client_secret}', "
+        f"google_adc_refresh_token = '{cfg.adc_refresh_token}'"
+    )
+    try:
+        node.query(f"CREATE TABLE {tbl} (id Int64, value String) ENGINE = IcebergS3({nc})")
+        for row in ("(1, 'a')", "(2, 'b')", "(3, 'c')"):
+            node.query(f"INSERT INTO {tbl} VALUES {row}")
+        select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
+        rows_before = node.query(select_all)
+        assert rows_before == "1\ta\n2\tb\n3\tc\n"
+        settings = {
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        }
+
+        expired = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+                settings=settings,
+            )
+        )
+        assert expired["deleted_manifest_lists_count"] == 2
+        assert node.query(select_all) == rows_before
+
+        orphan = f"data/orphan-{suffix}.parquet"
+        # Written by the manager: writing it through the collection would replace the stored `url`,
+        # which requires the grant `SHOW NAMED COLLECTIONS SECRETS`.
+        catalog_manager.write_gcs_object(f"{table_path}/{orphan}", b"orphan")
+        assert catalog_manager.gcs_path_exists(f"{table_path}/{orphan}")
+        # Object timestamps have one-second precision and come from the storage's clock;
+        # the margin covers normal clock drift between it and the server.
+        cutoff = node.query("SELECT now() + 2").strip()
+        assert_eq_with_retry(node, f"SELECT now() > toDateTime('{cutoff}')", "1")
+
+        removed = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE remove_orphan_files(older_than = '{cutoff}')",
+                settings=settings,
+            )
+        )
+        # A metadata file of ClickHouse's own commit is missing from `metadata-log`:
+        # https://github.com/ClickHouse/ClickHouse/issues/118812
+        removed.pop("deleted_metadata_files_count", None)
+        assert removed == {"deleted_data_files_count": 1}
+        # The counter is not enough: the object itself must be gone from GCS.
+        assert not catalog_manager.gcs_path_exists(f"{table_path}/{orphan}")
+        assert node.query(select_all) == rows_before
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {tbl}")
+        node.query(f"DROP NAMED COLLECTION IF EXISTS {nc}")
+        catalog_manager.delete_gcs_path(table_path)
+
+
 @only_onelake
 def test_onelake_invalid_oauth_uri(node, catalog_manager):
-    """Invalid oauth_server_uri -> CREATE succeeds but catalog access fails."""
+    """Invalid oauth_server_uri -> CREATE DATABASE fails eagerly.
+
+    Catalog initialization now happens in the DatabaseDataLake constructor, so
+    the OAuth token is retrieved during CREATE DATABASE. An unreachable
+    oauth_server_uri therefore makes the statement fail immediately instead of
+    deferring the error to first catalog access.
+    """
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, oauth_server_uri="https://invalid.example.com/oauth/token",
     )
 
-    _, create_err = node.query_and_get_answer_with_error(sql)
-    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
-
-    tables_out, tables_err = node.query_and_get_answer_with_error(
-        f"SHOW TABLES FROM {db}"
-    )
-    assert not tables_out.strip() and not tables_err.strip(), (
-        "SHOW TABLES should return empty (lazy auth swallows errors)"
-    )
-
-    error = node.query_and_get_error(
-        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
-    )
-    assert error, "Expected error when accessing table with invalid oauth URI"
+    error = node.query_and_get_error(sql)
+    assert error, "Expected CREATE DATABASE to fail with invalid oauth URI"
 
 
 @only_onelake
 def test_onelake_warehouse_wrong_format(node, catalog_manager):
-    """Malformed warehouse -> CREATE succeeds but catalog access fails."""
+    """Malformed warehouse -> CREATE DATABASE fails eagerly.
+
+    Catalog initialization now happens in the DatabaseDataLake constructor, so
+    a malformed warehouse makes catalog setup fail during CREATE DATABASE
+    instead of deferring the error to first catalog access.
+    """
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, warehouse="not-a-valid-format-no-slash"
     )
 
-    _, create_err = node.query_and_get_answer_with_error(sql)
-    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
+    error = node.query_and_get_error(sql)
+    assert error, "Expected CREATE DATABASE to fail with malformed warehouse"
 
-    tables_out, tables_err = node.query_and_get_answer_with_error(
-        f"SHOW TABLES FROM {db}"
-    )
-    assert not tables_out.strip() and not tables_err.strip(), (
-        "SHOW TABLES should return empty (lazy auth swallows errors)"
-    )
 
-    error = node.query_and_get_error(
-        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
-    )
-    assert error, "Expected error when accessing table with malformed warehouse"
+@only_onelake
+def test_onelake_both_auth_methods_rejected(node, catalog_manager):
+    """Providing both a bearer token and client credentials is rejected."""
+
+    db = catalog_manager.make_database_name()
+    # A dummy token is enough: validation fires before any network call.
+    sql = catalog_manager.create_db_sql(db, bearer_token="dummy_token")
+
+    error = node.query_and_get_error(sql)
+    assert "exactly one" in error, error
+
+
+@only_onelake
+def test_onelake_no_auth_method_rejected(node, catalog_manager):
+    """Providing neither a bearer token nor client credentials is rejected."""
+
+    db = catalog_manager.make_database_name()
+    sql = catalog_manager.create_db_sql(db, client_id="", client_secret="")
+
+    error = node.query_and_get_error(sql)
+    assert "exactly one" in error, error
+
+
+# ---------------------------------------------------------------------------
+# Catalog list pagination (regression: list-tables / list-namespaces
+# silently truncated when the server paginates the response)
+# ---------------------------------------------------------------------------
+
+
+def test_list_tables_pagination(node, catalog_manager):
+    """`SHOW TABLES` and `system.tables` list every table when the catalog
+    paginates the response.
+
+    Regression test for https://github.com/ClickHouse/ClickHouse/pull/104531.
+    Iceberg REST catalogs (`iceberg-rest`, `onelake`, `biglake`) paginate
+    list-tables / list-namespaces responses using a `next-page-token`
+    continuation (Fabric / OneLake pages at ~50 entries per namespace).
+    Before `RestCatalog::getTables` and `getNamespaces` followed the
+    token, only the first page was returned and identifiers sorted after
+    the page boundary disappeared from `SHOW TABLES` and `system.tables`,
+    even though they were still queryable via direct `SELECT`.
+
+    Each backend places the tables according to its own convention
+    (single shared namespace for `onelake`/`biglake`; one namespace per
+    table for `glue`), so the same test exercises both `getTables`
+    pagination (REST backends with many tables in one namespace) and the
+    listing of many namespaces (`glue`, whose AWS SDK paginates
+    independently of this PR).
+    """
+    n_tables = 60  # > Fabric's ~50-per-page boundary
+    # Truncation shows up as tables missing by count, not by name sort order.
+    data = pa.table({"id": pa.array([1], type=pa.int64())})
+
+    created = []
+    db = None
+    try:
+        # Catalog round-trips dominate per-table create time (~2-4s each on
+        # OneLake / BigLake / Glue), so creating tables serially adds 2-4 min
+        # per backend. Issue them in parallel; each catalog client + REST
+        # endpoint handles concurrent creates fine.  Record every
+        # successful result as it completes (rather than via `list(map())`
+        # at the end), so if one worker raises we still know about the
+        # tables that already succeeded and the `finally` block can drop
+        # them instead of leaking catalog/storage artifacts.
+        first_exc = None
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            # No `table_name=`: only the auto-named path retries a transient
+            # catalog error, so the names must come back from create_table.
+            futures = [
+                pool.submit(catalog_manager.create_table, data)
+                for _ in range(n_tables)
+            ]
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    created.append(fut.result())
+                except BaseException as exc:
+                    if first_exc is None:
+                        first_exc = exc
+        if first_exc is not None:
+            raise first_exc
+        expected = sorted(created)
+
+        db = catalog_manager.make_database_name()
+        catalog_manager.create_catalog(node, db)
+
+        # Catalog backends render tables as ``<namespace>.<short_name>``
+        # (``dbo.<X>`` for OneLake, ``<session_ns>.<X>`` for BigLake,
+        # per-table ``ch_e2e_glue_<hex>.<X>`` for Glue). Take the part
+        # after the last dot and use exact set membership so prefix
+        # collisions like ``..._001`` vs ``..._0010`` cannot be silently
+        # masked by substring matching.
+        def _short_names(lines):
+            return {line.strip().rsplit(".", 1)[-1] for line in lines if line.strip()}
+
+        # Cloud catalogs index new tables asynchronously; poll SHOW
+        # TABLES until every created table is visible or the deadline
+        # passes.
+        deadline = time.monotonic() + 600
+        listed = []
+        listed_set: set = set()
+        missing = list(expected)
+        while time.monotonic() < deadline:
+            listed = node.query(f"SHOW TABLES FROM {db}").strip().splitlines()
+            listed_set = _short_names(listed)
+            missing = [t for t in expected if t not in listed_set]
+            if not missing:
+                break
+            time.sleep(10)
+
+        assert not missing, (
+            f"SHOW TABLES from {db} is missing {len(missing)}/{n_tables} "
+            f"tables (first missing: {missing[:5]}); listing returned "
+            f"{len(listed_set)} unique short names from {len(listed)} entries "
+            f"— list response was truncated at the catalog page boundary."
+        )
+
+        sys_listed = node.query(
+            f"SELECT name FROM system.tables WHERE database = '{db}' FORMAT TSV",
+            settings={"show_data_lake_catalogs_in_system_tables": 1},
+        ).strip().splitlines()
+        sys_listed_set = _short_names(sys_listed)
+        sys_missing = [t for t in expected if t not in sys_listed_set]
+        assert not sys_missing, (
+            f"system.tables for {db} is missing {len(sys_missing)}/{n_tables} "
+            f"tables (first missing: {sys_missing[:5]}); listing returned "
+            f"{len(sys_listed_set)} unique short names from {len(sys_listed)} entries."
+        )
+
+        # Read a table whose name sorts last to confirm later-page entries
+        # are loadable end-to-end, not just listed.
+        late = expected[-1]
+        catalog_manager.wait_for_table_ready(late)
+        late_full = catalog_manager.resolve_table_name(node, db, late)
+        rows = node.query(
+            f"SELECT count() FROM {db}.`{late_full}` FORMAT TSV"
+        ).strip()
+        assert int(rows) == 1, (
+            f"Expected 1 row in last-page table {late}, got {rows}"
+        )
+    finally:
+        if created:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+                list(pool.map(catalog_manager.cleanup_table, created))
+        if db is not None:
+            try:
+                node.query(f"DROP DATABASE IF EXISTS {db}")
+            except Exception:
+                pass

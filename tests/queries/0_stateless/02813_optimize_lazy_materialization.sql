@@ -1,8 +1,6 @@
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
-SET allow_experimental_dynamic_type = 1;
 
 DROP TABLE IF EXISTS optimize_lazy_materialization;
 CREATE TABLE optimize_lazy_materialization (a UInt64, b UInt64, c UInt64, d UInt64, n Nested(x String))
@@ -385,7 +383,7 @@ SELECT
     map('key1', number + 1, 'key2', number + 2)
 FROM numbers(0, 1000);
 -- { echoOn }
-SELECT * FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
+SELECT a, b, mapSort(c) FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
 SELECT a, b, c['key1'] FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
 -- { echoOff }
 

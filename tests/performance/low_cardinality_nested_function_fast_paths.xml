@@ -1,0 +1,34 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS perf_nested_lc_functions</create_query>
+    <create_query>CREATE TABLE perf_nested_lc_functions
+        (
+            id UInt64,
+            arr_lc Array(LowCardinality(String)),
+            map_key_lc Map(LowCardinality(String), String),
+            map_value_lc Map(String, LowCardinality(String))
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>INSERT INTO perf_nested_lc_functions
+        SELECT
+            number AS id,
+            arrayMap(x -> concat('k', toString((id + x) % 128)), range(16)) AS arr_lc,
+            mapFromArrays(
+                arrayMap(x -> concat('k', toString((id + x) % 128)), range(16)),
+                arrayMap(x -> concat('v', toString((id + x) % 128)), range(16))) AS map_key_lc,
+            mapFromArrays(
+                arrayMap(x -> concat('k', toString((id + x) % 128)), range(16)),
+                arrayMap(x -> concat('v', toString((id + x) % 128)), range(16))) AS map_value_lc
+        FROM numbers(1000000)
+    </fill_query>
+
+    <query>SELECT sum(length(arr_lc[7])) FROM perf_nested_lc_functions</query>
+    <query>SELECT sum(toUInt64(mapContainsKeyLike(map_key_lc, 'k1%'))) FROM perf_nested_lc_functions</query>
+    <query>SELECT sum(length(mapExtractKeyLike(map_key_lc, 'k1%'))) FROM perf_nested_lc_functions</query>
+    <query>SELECT sum(toUInt64(mapContainsValueLike(map_value_lc, 'v1%'))) FROM perf_nested_lc_functions</query>
+    <query>SELECT sum(length(mapExtractValueLike(map_value_lc, 'v1%'))) FROM perf_nested_lc_functions</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_nested_lc_functions</drop_query>
+</test>

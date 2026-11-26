@@ -37,7 +37,7 @@ ALWAYS_INLINE bool tryConvertColumnToBool(const IColumn & column, IColumnFilter 
     chassert(res.size() == column.size());
 
     auto & data = column_typed->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         convertColumnToBoolImpl_x86_64_v4<T>(data, res);
@@ -60,6 +60,27 @@ bool tryConvertAnyColumnToBool(const IColumn & column, IColumnFilter & res)
         tryConvertColumnToBool<UInt64>(column, res) ||
         tryConvertColumnToBool<Float32>(column, res) ||
         tryConvertColumnToBool<Float64>(column, res);
+}
+
+bool canInplaceFilter(const ColumnPtr & column)
+{
+    if (!column)
+        return true;
+
+    if (column->use_count() > 1)
+        return false;
+
+    bool can_inplace = true;
+    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        if (!can_inplace)
+            return;
+
+        if (!canInplaceFilter(subcolumn))
+            can_inplace = false;
+    });
+
+    return can_inplace;
 }
 
 ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
@@ -105,7 +126,7 @@ static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 
 ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
-    column = column->convertToFullIfNeeded();
+    column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
@@ -129,7 +150,7 @@ ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
         IColumn::Filter & res = *column_filter;
 
         const auto size = res.size();
-        assert(size == null_map.size());
+        chassert(size == null_map.size());
         for (size_t i = 0; i < size; ++i)
         {
             auto has_val = static_cast<UInt8>(!!res[i]);

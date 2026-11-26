@@ -1,10 +1,14 @@
 import glob
 import json
 import os
-import shutil
-from enum import Enum
+import uuid
+from contextlib import contextmanager
 
-from minio import Minio
+from minio.credentials import StaticProvider
+from minio.minioadmin import MinioAdmin
+
+from .config_cluster import minio_access_key, minio_secret_key
+
 
 
 class CloudUploader:
@@ -176,6 +180,38 @@ class AzureUploader(CloudUploader):
             blob_client.upload_blob(data, overwrite=True)
 
 
+class AzureDownloader:
+    def __init__(self, blob_service_client, container_name):
+        self.blob_service_client = blob_service_client
+        self.container_client = self.blob_service_client.get_container_client(
+            container_name
+        )
+
+    def download_file(self, remote_blob_path, local_path, container_name=None):
+        if container_name is None:
+            container_client = self.container_client
+        else:
+            container_client = self.blob_service_client.get_container_client(
+                container_name
+            )
+        blob_client = container_client.get_blob_client(remote_blob_path)
+        with open(local_path, "wb") as f:
+            blob_client.download_blob().readinto(f)
+
+    def download_directory(self, local_path, remote_blobs_path, **kwargs):
+        result_files = []
+        for blob in self.container_client.list_blobs(
+            name_starts_with=remote_blobs_path
+        ):
+            result_files.append(blob.name)
+            diff_path = os.path.relpath(blob.name, start=remote_blobs_path)
+            local_file_path = os.path.join(local_path, diff_path)
+            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+            print(f"Downloading {blob.name} to {local_file_path}")
+            self.download_file(blob.name, local_file_path, **kwargs)
+        return result_files
+
+
 def upload_directory(minio_client, bucket, local_path, remote_path, use_relpath=False):
     return S3Uploader(
         minio_client=minio_client, bucket_name=bucket, use_relpath=use_relpath
@@ -254,3 +290,30 @@ def prepare_s3_bucket(started_cluster):
         minio_client.remove_bucket(started_cluster.minio_restricted_bucket)
 
     minio_client.make_bucket(started_cluster.minio_restricted_bucket)
+
+
+def minio_admin(cluster):
+    return MinioAdmin(
+        endpoint=f"{cluster.minio_ip}:{cluster.minio_port}",
+        credentials=StaticProvider(minio_access_key, minio_secret_key),
+        secure=False,
+    )
+
+
+@contextmanager
+def minio_user(cluster, actions):
+    """A MinIO user allowed only `actions` on every bucket; yields its access and secret keys."""
+    access_key, secret_key = uuid.uuid4().hex[:16], uuid.uuid4().hex
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": "Allow", "Action": actions, "Resource": ["arn:aws:s3:::*", "arn:aws:s3:::*/*"]}],
+    }
+    admin = minio_admin(cluster)
+    admin.policy_add(access_key, policy=policy)
+    admin.user_add(access_key, secret_key)
+    admin.attach_policy([access_key], user=access_key)
+    try:
+        yield access_key, secret_key
+    finally:
+        admin.user_remove(access_key)
+        admin.policy_remove(access_key)

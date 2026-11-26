@@ -4,10 +4,15 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
+#include <Common/findExtreme.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/castColumn.h>
+
+#include <limits>
 
 
 namespace DB
@@ -20,6 +25,7 @@ extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
@@ -98,19 +104,30 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
 namespace
 {
 
-String withOrdinalEnding(size_t i)
+String withOrdinalEnding(size_t argument_index)
 {
-    switch (i)
+    /// `argument_index` is a zero-based argument index; produce the ordinal for the human-facing position `n = argument_index + 1`
+    /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
+    const size_t n = argument_index + 1;
+    const char * suffix = "th";
+    if (n % 100 < 11 || n % 100 > 13)
     {
-        case 0:
-            return "1st";
-        case 1:
-            return "2nd";
-        case 2:
-            return "3rd";
-        default:
-            return std::to_string(i) + "th";
+        switch (n % 10)
+        {
+            case 1:
+                suffix = "st";
+                break;
+            case 2:
+                suffix = "nd";
+                break;
+            case 3:
+                suffix = "rd";
+                break;
+            default:
+                break;
+        }
     }
+    return std::to_string(n) + suffix;
 }
 
 void validateArgumentsImpl(
@@ -125,13 +142,13 @@ void validateArgumentsImpl(
         if (argument_index >= arguments.size())
             break;
 
-        const auto & arg = arguments[i + argument_offset];
+        const auto & arg = arguments[argument_index];
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_offset + i),
+                withOrdinalEnding(argument_index),
                 descriptor.name,
                 function_name,
                 descriptor.type_name,
@@ -145,14 +162,14 @@ void validateVariadicArgumentsImpl(
     size_t argument_offset,
     const FunctionArgumentDescriptor & variadic_descriptor)
 {
-    for (size_t i = argument_offset; i < arguments.size(); ++i)
+    for (size_t argument_index = argument_offset; argument_index < arguments.size(); ++argument_index)
     {
-        const auto & arg = arguments[i];
+        const auto & arg = arguments[argument_index];
         if (int error_code = variadic_descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_offset + i),
+                withOrdinalEnding(argument_index),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,
@@ -277,11 +294,11 @@ void validateNumberOfFunctionArguments(
         }
 }
 
-std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
+std::pair<VectorWithMemoryTracking<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
 {
-    assert(num_arguments > 0);
-    std::vector<const IColumn *> nested_columns(num_arguments);
+    chassert(num_arguments > 0);
+    VectorWithMemoryTracking<const IColumn *> nested_columns(num_arguments);
     const ColumnArray::Offsets * offsets = nullptr;
     for (size_t i = 0; i < num_arguments; ++i)
     {
@@ -325,7 +342,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
         {
-            assert(result_type->isNullable());
+            chassert(result_type->isNullable());
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
         }
 
@@ -365,10 +382,9 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
     if (src->onlyNull())
         return src;
 
-    ColumnPtr src_not_nullable = src;
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src.get()))
     {
-        src_not_nullable = nullable->getNestedColumnPtr();
+        ColumnPtr src_not_nullable = nullable->getNestedColumnPtr();
         const auto & src_null_map = nullable->getNullMapColumn().getData();
 
         if (null_map)
@@ -432,10 +448,13 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
             : src;
         return ColumnNullable::create(inner->convertToFullColumnIfConst(), null_map);
     }
-
+    /// Past the `Nullable` and `Const` branches, `src` is guaranteed to be neither, so
+    /// `convertToFullColumnIfConst` would be a no-op that only adds a ref to the underlying
+    /// column. Pass `src` directly so that `ColumnNullable::create(const ColumnPtr &, ...)`
+    /// sees `use_count() == 1` when the caller is the unique owner.
     if (null_map)
-        return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
-    return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
+        return ColumnNullable::create(src, null_map);
+    return ColumnNullable::create(src, ColumnUInt8::create(src->size(), UInt8(0)));
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
@@ -466,6 +485,66 @@ bool isLowCardinalityType(const IDataType & type)
     return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
 }
 
+bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        /// recursiveRemoveLowCardinality returns the very same type object when nothing was removed.
+        if (column.type && recursiveRemoveLowCardinality(column.type).get() != column.type.get())
+            return true;
+    }
+    return false;
+}
+
+bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        if (!column.column || !isColumnConst(*column.column))
+            return false;
+    }
+    return true;
+}
+
+bool plusMinusWithConstantsIsInjective(
+    const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type)
+{
+    /// Two varying operands are not injective (`x + y` maps many pairs to one sum), and with both
+    /// fixed there is no varying argument to be injective in.
+    const bool left_is_const = left.column && isColumnConst(*left.column);
+    const bool right_is_const = right.column && isColumnConst(*right.column);
+    if (left_is_const == right_is_const)
+        return false;
+
+    auto is_integer_type = [](const DataTypePtr & type)
+    { return type && isInteger(*removeNullable(recursiveRemoveLowCardinality(type))); };
+
+    if (!is_integer_type(left.type) || !is_integer_type(right.type) || !is_integer_type(return_type))
+        return false;
+
+    /// A NULL among the varying argument's values maps to NULL one-to-one, so only the fixed operand
+    /// matters. Its `ColumnConst` nests a column of size 1, so the value is readable even when the
+    /// constant itself was materialized with size 0, as query-plan constants are.
+    const ColumnWithTypeAndName & constant = left_is_const ? left : right;
+    return !constant.column->onlyNull();
+}
+
+bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    bool converted = false;
+    for (auto & column : args)
+    {
+        auto column_without_low_cardinality = recursiveRemoveLowCardinality(column.column);
+        auto type_without_low_cardinality = recursiveRemoveLowCardinality(column.type);
+
+        converted |= type_without_low_cardinality.get() != column.type.get();
+
+        column.column = std::move(column_without_low_cardinality);
+        column.type = std::move(type_without_low_cardinality);
+    }
+    return converted;
+}
+
 /// Note that, for historical reasons, most of the functions use the first argument size to determine which is the
 /// size of all the columns. When short circuit optimization was introduced, `input_rows_count` was also added for
 /// all functions, but many have not been adjusted
@@ -488,5 +567,54 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 input_rows_count,
                 current_size);
     }
+}
+
+ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type)
+{
+    const auto target_type = makeNullableSafe(removeLowCardinality(result_type));
+    if (!argument.type->isNullable() || !target_type->isNullable() || removeNullable(argument.type)->isDefaultInsertTrivial())
+        return argument;
+
+    return {castColumn(argument, target_type), target_type, argument.name};
+}
+
+void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name)
+{
+    const IColumn * values = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(values))
+        values = &column_const->getDataColumn();
+
+    /// Only UInt64 can exceed Int64, which `IColumn::getInt` returns: 2^63 or more would be read as a negative number
+    const auto * column_uint64 = typeid_cast<const ColumnVector<UInt64> *>(values);
+    if (!column_uint64)
+        return;
+
+    const auto & data = column_uint64->getData();
+    const auto max_value = findExtremeMax(data.data(), 0, data.size());
+    if (max_value && *max_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        throw Exception(
+            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "The {} argument of function {} is out of range for Int64: {}",
+            argument_name,
+            function_name,
+            *max_value);
+}
+
+bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments)
+{
+    bool has_uint64 = false;
+    bool has_nullable = false;
+    for (const auto & argument : arguments)
+    {
+        if (WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64())
+        {
+            /// The dictionary of a `LowCardinality` column may keep values that no row references, e.g. after a filter.
+            if (argument.type->lowCardinality())
+                return true;
+            has_uint64 = true;
+        }
+        has_nullable |= isNullableOrLowCardinalityNullable(argument.type);
+    }
+    return has_uint64 && has_nullable;
 }
 }

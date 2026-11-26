@@ -1,0 +1,78 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nextjs
+description: 'حزمة SDK لـ Next.js لـ ClickStack - حزمة observability من ClickHouse'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'logging', 'تكامل', 'مراقبة التطبيقات']
+---
+
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+اختر إضافة أدوات الرصد من جانب الخادم المناسبة لطريقة نشر تطبيق Next.js لديك:
+
+* **مستضاف ذاتيًا، بيئة تشغيل Node.js:** استخدم حزمة ClickStack Node.js SDK.
+* **Vercel أو بيئة تشغيل Edge:** استخدم `@vercel/otel`.
+
+لجمع بيانات القياس عن بُعد من المتصفح وإعادة تشغيل الجلسة، راجع [دليل SDK للمتصفح](/ar/clickstack/ingesting-data/sdks/browser).
+
+<ClickStackIntegrates signals={['traces']} />
+
+## Next.js المستضاف ذاتيًا {#self-hosted-nextjs}
+
+استخدم Node.js 22.15 أو إصدارًا أحدث، ثم ثبّت حزمة SDK:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+أنشئ الملف `instrumentation.ts` في المجلد الجذر لمشروعك، أو في `src` إذا كان تطبيقك يستخدم هذا الدليل. هيّئ SDK في بيئة تشغيل Node.js فقط:
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@clickhouse/clickstack-node');
+    init();
+  }
+}
+```
+
+أضف حزمة SDK إلى `serverExternalPackages` في تهيئة Next.js الحالية لديك كي تُحمَّل خارج حزمة الخادم:
+
+```javascript
+// next.config.mjs
+export default {
+  serverExternalPackages: ['@clickhouse/clickstack-node'],
+};
+```
+
+هيّئ الوجهة أدناه، واضبط `OTEL_SERVICE_NAME` لتعريف تطبيقك. ولا تُجرِ تحميلًا مسبقًا لـ SDK، ولا تُهيّئ أي OpenTelemetry SDK آخر إلى جانبه. للاطلاع على مزيد من الخيارات، راجع [دليل Node.js](/ar/clickstack/ingesting-data/sdks/nodejs).
+
+للاطلاع على اعتبارات الإنهاء والنشر، راجع [إرشادات Next.js في SDK](https://github.com/ClickHouse/clickstack-node#nextjs).
+
+## Vercel وبيئة تشغيل Edge {#vercel-or-edge}
+
+استخدم `@vercel/otel` باتباع [تعليمات إعداد OpenTelemetry في Next.js](https://nextjs.org/docs/app/guides/open-telemetry)، واعتمد هذا الإعداد بدلاً من تهيئة ClickStack Node.js SDK الموضّحة أعلاه.
+
+هيّئ [تصدير OTLP](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration) باستخدام إعدادات الاتصال أدناه. استبدل أي وجهات واردة في الأمثلة وأي تجاوزات لنقاط النهاية الخاصة بإشارات بعينها، ثم عيّن المتغيرات في تهيئة النشر لديك.
+
+إذا كان نشر Vercel لديك يستخدم بالفعل تكاملاً للتتبّع، فهيّئ [مُصدِّراً مخصصاً](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters) لهذه الوجهة؛ إذ لا تكفي متغيرات البيئة الخاصة بنقطة النهاية وحدها لتجاوز ذلك التكامل.
+
+## تهيئة الوجهة {#configure-destination}
+
+حدّد اسم الخدمة لأيٍّ من خيارَي إضافة أدوات الرصد:
+
+```shell
+export OTEL_SERVICE_NAME='my-nextjs-app'
+```
+
+عيّن نقطة نهاية OTLP HTTP ومفتاح الإدخال الخاصين بمُجمِّع ClickStack لديك. استخدم `http://` إذا لم يكن TLS مهيّأً على جامع البيانات. لمعرفة كيفية إعداد جامع البيانات، راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## التحقق من إدخال البيانات {#verify-ingestion}
+
+شغّل تطبيقك وأرسل طلبات إلى صفحة مُصيَّرة على الخادم أو إلى مسار في واجهة برمجة التطبيقات. بعد ذلك، اختر في ClickStack نطاقًا زمنيًا حديثًا، وابحث عن اسم الخدمة الخاص بتطبيقك ضمن Traces.

@@ -1,0 +1,121 @@
+---
+description: 'macOS システムで ClickHouse をソースからビルドするためのガイド'
+sidebarTitle: 'macOS で macOS 向けにビルド'
+slug: /development/build-osx
+title: 'macOS で macOS 向けにビルド'
+keywords: ['MacOS', 'Mac', 'build']
+doc_type: 'guide'
+---
+
+<Info>
+  **このビルドガイドは、ClickHouse 本体を変更するコントリビューター向けです。**
+
+  ClickHouse のソースコードを変更しない場合は、[クイックスタート](/ja/get-started/setup/install) にある手順に従って、ビルド済みの ClickHouse をインストールできます。
+</Info>
+
+ClickHouse は、macOS 10.15 (Catalina) 以降の macOS x86&#95;64 (Intel) および arm64 (Apple Silicon) でコンパイルできます。
+
+コンパイラとしてサポートされているのは、homebrew の Clang のみです。
+
+## 前提条件を準備する {#install-prerequisites}
+
+まず、一般的な[前提条件に関するドキュメント](/ja/resources/develop-contribute/introduction/developer-instruction)を参照してください。
+
+次に、[Homebrew](https://brew.sh/)をインストールし、次を実行します
+
+続いて、以下を実行します:
+
+```bash
+brew update
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash rust rustup
+```
+
+<Note>
+  `llvm` と同様に、Homebrew の `rustup` は keg-only であるため、その `bin` ディレクトリは `PATH` に自動では追加されません。[ClickHouse をビルドする](#build-clickhouse)で `llvm` の `PATH` をエクスポートしたのと同じ方法でエクスポートしてください:
+
+  ```bash
+  export PATH=$(brew --prefix rustup)/bin:$PATH
+  ```
+
+  また ClickHouse では、`corrosion` contrib モジュールで使用する Rust ツールチェーンのバージョンが固定されています。Linux ビルドガイドの[Rust コンパイラをインストールする](/development/build#install-the-rust-compiler-optional)セクションの手順に従って、このツールチェーンをインストールし、選択してください。この手順を行わないと、`cmake` が `corrosion` contrib モジュールの処理で `Cannot find nightly-<date> Rust toolchain` というエラーを出して失敗します。
+</Note>
+
+<Note>
+  Apple ではデフォルトで、大文字と小文字を区別しないファイルシステムが使われます。通常、これはコンパイルには影響しません (特に `scratch` ビルドは動作します) が、`git mv` のようなファイル操作では問題を引き起こすことがあります。
+  macOS で本格的に開発する場合は、ソースコードを大文字と小文字を区別するディスクボリュームに保存してください。たとえば、[こちらの手順](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830)を参照してください。
+</Note>
+
+## ClickHouse をビルドする {#build-clickhouse}
+
+ビルドするには、Homebrew の Clang コンパイラを使用する必要があります。
+
+```bash
+cd ClickHouse
+mkdir build
+export PATH=$(brew --prefix llvm)/bin:$PATH
+cmake -S . -B build
+cmake --build build
+# The resulting binary will be created at: build/programs/clickhouse
+```
+
+<Note>
+  単に `brew install llvm` を実行すると、常に Homebrew の最新の LLVM リリースがインストールされます。このバージョンは、CI および Linux のビルドで固定されている Clang のバージョンより新しい場合があります ([Clang コンパイラのインストール](/ja/development/build#install-the-clang-compiler)を参照) 。新しい Clang では、ビルドでまだ抑制されていない `-Weverything` の診断が有効になり、`-Werror` によってビルドが失敗することがあります。その場合は、警告を無効化するのではなく、固定されたメジャーバージョンをインストールしてください。たとえば Homebrew でまだ提供されていれば、バージョン付きの formula (`brew install llvm@<version>`) を使用できます。
+</Note>
+
+<Note>
+  リンク時に `ld: archive member '/' not a mach-o file in ...` エラーが発生する場合は、`-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar` フラグを指定して llvm-ar を使用する必要があることがあります。
+</Note>
+
+## 注意事項 {#caveats}
+
+`clickhouse-server` を実行する場合は、システムの `maxfiles` 変数を増やしてください。
+
+<Note>
+  `sudo` を使用する必要があります。
+</Note>
+
+そのためには、以下の内容で `/Library/LaunchDaemons/limit.maxfiles.plist` ファイルを作成します。
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>limit.maxfiles</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>launchctl</string>
+      <string>limit</string>
+      <string>maxfiles</string>
+      <string>524288</string>
+      <string>524288</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ServiceIPC</key>
+    <false/>
+  </dict>
+</plist>
+```
+
+ファイルに適切な権限を設定します：
+
+```bash
+sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+ファイルが正しいことを確認してください:
+
+```bash
+plutil /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+ファイルの読み込み (または再起動) ：
+
+```bash
+sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+動作しているかを確認するには、`ulimit -n` または `launchctl limit maxfiles` コマンドを使用します。

@@ -1,4 +1,4 @@
-SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 -- { echoOn }
 

@@ -1,0 +1,6 @@
+-- 1: compound alias shadowing --
+(11)	11
+(11)	11
+-- 2: function alias over nullable group-by key --
+\N	6
+\N	6

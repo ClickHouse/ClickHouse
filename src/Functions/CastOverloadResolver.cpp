@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -12,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -24,6 +26,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
 }
 
 /// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
@@ -32,34 +35,94 @@ namespace ErrorCodes
 /// us whether the conversion is accurate or not.
 /// This check walks Tuple elements recursively to also reject cases like
 /// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
-static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+/// Returns the first unsupported nested type, or nullptr when the target is supported.
+static DataTypePtr findUnsupportedTypeForAccurateCastOrNull(const DataTypePtr & type)
 {
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & element : tuple_type->getElements())
-            validateNestedTypesForAccurateCastOrNull(element);
+        {
+            if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(element))
+                return unsupported;
+        }
+        return nullptr;
     }
-    else if (type->isNullable())
+
+    if (type->isNullable())
+        return findUnsupportedTypeForAccurateCastOrNull(removeNullable(type));
+
+    if (!type->canBeInsideNullable() && !canContainNull(*type))
+        return type;
+
+    return nullptr;
+}
+
+bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
+{
+    /// The cast wraps its target in Nullable to report a failure, so a target that cannot itself be
+    /// inside Nullable is refused even when it can hold a NULL of its own.
+    if (!type->isNullable() && !type->canBeInsideNullable())
+        return false;
+
+    return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
+}
+
+std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching)
+{
+    if (from.hasExplicitNames() && to.hasExplicitNames())
     {
-        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
+        auto positions = from.matchElementsByName(to, matching == TupleElementsMatching::ByNameCaseInsensitive);
+        if (matching != TupleElementsMatching::Default
+            || std::ranges::any_of(positions, [](const auto & position) { return position.has_value(); }))
+            return positions;
     }
-    else if (!type->canBeInsideNullable() && !canContainNull(*type))
-    {
+
+    if (from.getElements().size() != to.getElements().size())
+        return std::nullopt;
+
+    VectorWithMemoryTracking<std::optional<size_t>> positions;
+    positions.reserve(to.getElements().size());
+    for (size_t i = 0; i < to.getElements().size(); ++i)
+        positions.emplace_back(i);
+    return positions;
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching)
+{
+    auto positions = tryGetTupleCastElementPositions(from, to, matching);
+    if (!positions)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
+                        "with the same number of elements or from String.\nLeft type: {}, right type: {}",
+                        from.getName(), to.getName());
+    return std::move(*positions);
+}
+
+static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+{
+    if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(type))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
-            type->getName());
-    }
+            unsupported->getName());
 }
 
+struct FunctionConvertSettings;
+using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings>;
+
+FunctionConvertSettingsPtr createFunctionConvertSettings(
+    const ContextPtr & context,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
+
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
+    const FunctionConvertSettingsPtr & settings,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+    CastType cast_type);
 
 /// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
 /// without an explicit time zone, return a copy of it with the given time zone substituted.
@@ -124,7 +187,7 @@ static String getExplicitTimeZoneOfDateTimeArgument(const DataTypePtr & source)
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-class CastOverloadResolverImpl : public IFunctionOverloadResolver, private WithContext
+class CastOverloadResolverImpl final : public IFunctionOverloadResolver
 {
 public:
     static const char * getNameImpl(CastType cast_type, bool internal)
@@ -147,13 +210,37 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// Documentation-only, and intentionally so: CAST is where a declarative signature stops being
+    /// a reasonable fit. Its result type is parsed from the const type-name argument
+    /// (`typeFromString`), but `getReturnTypeImpl` then applies rules that are not type-level:
+    ///   - `validateDataType` rejects "suspicious" target types based on query settings
+    ///     (`allow_suspicious_low_cardinality_types`, fixed-string sizes, ...) — a settings-driven
+    ///     validation, not a type computation;
+    ///   - three cast-type variants (plain / accurate / accurateOrNull) plus the internal `_CAST`
+    ///     differ in Nullable behavior, with `accurateOrNull` wrapping only when the target cannot
+    ///     already contain NULL (and an extra nested-type validation);
+    ///   - `cast_keep_nullable` wraps the result in Nullable depending on the source's nullability;
+    ///   - the source time zone is substituted into a tz-less DateTime/DateTime64 target.
+    /// Expressing this would require moving the settings-driven validations into the signature
+    /// machinery (they cannot be), so the legacy `getReturnTypeImpl` stays authoritative and the
+    /// signature is never applied by the framework. The signature string is therefore purely
+    /// descriptive; we still make it as informative as possible — `(Any, const t String) ->
+    /// typeFromString(t)` documents that the result type is the one named by the const second
+    /// argument. It is only rendered (e.g. in `system.functions`), never evaluated, so it does not
+    /// matter that CAST-as-overload-resolver would reach type deduction through the types-only path
+    /// where the const value is unavailable.
+    String getSignatureString() const override
+    {
+        return "(Any, const t String) -> typeFromString(t)";
+    }
+
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
-        : WithContext(context_)
-        , cast_type(cast_type_)
+        : cast_type(cast_type_)
         , internal(internal_)
         , diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
         , data_type_validation_settings(data_type_validation_settings_)
+        , convert_settings(createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Ignore))
     {
     }
 
@@ -172,7 +259,8 @@ public:
         DataTypePtr to,
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context_)
+        ContextPtr context_,
+        TupleElementsMatching tuple_elements_matching)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -185,20 +273,20 @@ public:
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            context_, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate, tuple_elements_matching),
+            getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         return createFunctionBaseCast(
-            getContext(),
+            convert_settings,
             getNameImpl(cast_type, internal),
             arguments,
             return_type,
             diagnostic,
-            cast_type,
-            FormatSettings::DateTimeOverflowBehavior::Ignore);
+            cast_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -208,7 +296,9 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is non-constant column of type {}", getName(), arguments.back().type->getName());
 
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
+        /// The type name can arrive wrapped, e.g. from `CAST(x, toLowCardinality('String'))`.
+        const auto full_column = column->convertToFullColumnIfLowCardinality();
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(full_column.get());
         if (!type_col)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());
@@ -242,10 +332,10 @@ protected:
         if (internal)
             return type;
 
-        if (keep_nullable
-            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
-            && type->canBeInsideNullable())
-            return makeNullable(type);
+        /// Nullable(LowCardinality(T)) is not a valid type, so a LowCardinality target
+        /// carries NULL as LowCardinality(Nullable(T)) instead.
+        if (keep_nullable && canContainNull(*arguments.front().type))
+            return makeNullableOrLowCardinalityNullableSafe(type);
 
         return type;
     }
@@ -260,12 +350,17 @@ private:
     std::optional<CastDiagnostic> diagnostic;
     bool keep_nullable;
     DataTypeValidationSettings data_type_validation_settings;
+    /// Snapshot taken while the constructing context is alive: the cast this resolver builds may
+    /// be executed after that context is gone (stored default or mutation expressions).
+    FunctionConvertSettingsPtr convert_settings;
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context, TupleElementsMatching tuple_elements_matching)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
+    return CastOverloadResolverImpl::createInternalCast(
+        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, tuple_elements_matching);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
@@ -278,6 +373,60 @@ REGISTER_FUNCTION(CastOverloadResolvers)
 Converts a value to a specified data type.
 Unlike the reinterpret function, CAST tries to generate the same value in the target type.
 If that is not possible, an exception is raised.
+
+`CAST` removes the `LowCardinality` wrapper. In contrast, `to<Type>` functions retain it.
+`to<Type>` functions also retain the `Nullable` wrapper. `CAST` removes `Nullable` by default, but
+retains it when the [`cast_keep_nullable`](/reference/settings/session-settings/cast#cast_keep_nullable)
+setting is enabled.
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+When `x` is written as a number and `T` is a `Decimal` or an integer wider than 64 bits, the digits
+of the number are read directly with `T`, so no precision is lost on the way. Without this,
+`CAST(0.1 AS Decimal256(76))` would read `0.1` as a `Float64` first and return
+`0.1000000000000000127244406382982157680441515146893321226564617167921968152`. This applies to a
+number written as the argument; a number that first takes part in an expression, as in
+`CAST(0.1 + 0 AS Decimal256(76))`, is still read as a `Float64`. A number not written plainly in
+decimal - in brackets, in hexadecimal, or with a leading plus - is read with `T` from the way it is
+written back into a query, which is the nearest `Float64` when it has a fractional part.
     )";
     FunctionDocumentation::Syntax CAST_syntax = R"(
 CAST(x, T)
@@ -322,6 +471,17 @@ SELECT '123'::UInt32
 │                   123 │
 └───────────────────────┘
         )"
+    },
+    {
+        "A number is read with the target Decimal, and keeps all of its digits",
+        R"(
+SELECT CAST(0.1 AS Decimal256(76))
+        )",
+        R"(
+┌─CAST('0.1', 'Decimal256(76)')─┐
+│                           0.1 │
+└───────────────────────────────┘
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn CAST_introduced_in = {1, 1};
@@ -348,8 +508,8 @@ SELECT accurateCast(42, 'UInt16')
         )",
         R"(
 ┌─accurateCast(42, 'UInt16')─┐
-│                        42 │
-└───────────────────────────┘
+│                         42 │
+└────────────────────────────┘
         )"
     },
     {
@@ -374,6 +534,8 @@ Converts a value to a specified data type.
 Like [`accurateCast`](#accurateCast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
 
 This function combines the safety of [`accurateCast`](#accurateCast) with graceful error handling.
+
+The syntax `TRY_CAST(x AS T)`, as in the SQL dialects of Trino, Spark, Snowflake, and SQL Server, is the same as `accurateCastOrNull(x, 'T')`.
     )";
     FunctionDocumentation::Syntax accurateCastOrNull_syntax = "accurateCastOrNull(x, T)";
     FunctionDocumentation::Arguments accurateCastOrNull_arguments = {
@@ -412,6 +574,11 @@ SELECT accurateCastOrNull('abc', 'UInt32')
     factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
     factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
+}
+
+FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+{
+    return CastOverloadResolverImpl::create(context, cast_type, false, std::move(diagnostic));
 }
 
 }

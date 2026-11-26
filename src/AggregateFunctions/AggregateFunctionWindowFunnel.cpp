@@ -1,4 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/arithmeticOverflow.h>
+#include <base/sort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
@@ -26,10 +28,20 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
 {
+
+/// Whether `timestamp` is at most `window` after `first_timestamp`, as `timestamp <= first_timestamp + window`, but
+/// without wrapping around for a window close to the maximum of `UInt64`. The timestamps keep their types, which can
+/// be wider than `UInt64`.
+template <typename First, typename Timestamp>
+bool isInWindow(First first_timestamp, Timestamp timestamp, UInt64 window)
+{
+    return timestamp <= first_timestamp || timestamp - first_timestamp <= window;
+}
 
 constexpr size_t MAX_EVENTS = 32;
 
@@ -39,7 +51,7 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
 {
     /// either sort whole container or do so partially merging ranges afterwards
     if (!prefix_sorted && !suffix_sorted)
-        std::stable_sort(std::begin(events_list), std::end(events_list));
+        ::stableSort(std::begin(events_list), std::end(events_list));
     else
     {
         const auto begin = std::begin(events_list);
@@ -47,10 +59,10 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
         const auto end = std::end(events_list);
 
         if (!prefix_sorted)
-            std::stable_sort(begin, middle);
+            ::stableSort(begin, middle);
 
         if (!suffix_sorted)
-            std::stable_sort(middle, end);
+            ::stableSort(middle, end);
 
         std::inplace_merge(begin, middle, end);
     }
@@ -67,7 +79,7 @@ struct AggregateFunctionWindowFunnelData
     bool sorted = true;
     TimestampEvents events_list;
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return events_list.size();
     }
@@ -102,7 +114,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -123,17 +135,18 @@ struct AggregateFunctionWindowFunnelData
     {
         readBinary(sorted, buf);
 
-        size_t size;
+        size_t size = 0;
         readBinary(size, buf);
 
         if (size > 100'000'000) /// The constant is arbitrary
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(T) + sizeof(UInt8))));
 
-        T timestamp;
-        UInt8 event;
+        T timestamp{};
+        UInt8 event = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -175,9 +188,13 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     /// Next unique identifier for events
     /// Used to distinguish events with the same timestamp that matches several conditions.
     UInt64 next_unique_id = 1;
+
+    /// The identifiers count the rows, so only a malformed state can come close to this bound. Keeping the identifiers
+    /// of the deserialized and merged states below it leaves `advanceId` room to never wrap around.
+    static constexpr UInt64 max_unique_id = UInt64(1) << 62;
     bool sorted = true;
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return events_list.size();
     }
@@ -208,8 +225,12 @@ struct AggregateFunctionWindowFunnelStrictOnceData
         for (auto other_event : other.events_list)
         {
             /// Assign unique IDs to the new events to prevent conflicts
-            other_event.unique_id += next_unique_id;
-            new_next_unique_id = std::max(new_next_unique_id, other_event.unique_id + 1);
+            UInt64 next_after_event = 0;
+            if (common::addOverflow(other_event.unique_id, next_unique_id, other_event.unique_id)
+                || common::addOverflow(other_event.unique_id, UInt64(1), next_after_event)
+                || next_after_event > max_unique_id)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too large event identifier in the state of windowFunnel");
+            new_next_unique_id = std::max(new_next_unique_id, next_after_event);
             events_list.push_back(other_event);
         }
         next_unique_id = new_next_unique_id;
@@ -223,7 +244,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -245,17 +266,18 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         readBinary(sorted, buf);
 
-        size_t events_size;
+        size_t events_size = 0;
         readBinary(events_size, buf);
 
         if (events_size > 100'000'000) /// Arbitrary limit to prevent excessive memory allocation
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(events_size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(events_size, buf.available() / (sizeof(T) + sizeof(UInt8) + sizeof(UInt64))));
 
-        T timestamp;
-        UInt8 event_type;
+        T timestamp{};
+        UInt8 event_type = 0;
         UInt64 unique_id = 0;
 
         for (size_t i = 0; i < events_size; ++i)
@@ -263,6 +285,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
             readBinary(timestamp, buf);
             readBinary(event_type, buf);
             readBinary(unique_id, buf);
+            if (unique_id >= max_unique_id)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too large event identifier in the state of windowFunnel");
             next_unique_id = std::max(next_unique_id, unique_id + 1);
             events_list.emplace_back(timestamp, event_type, unique_id);
         }
@@ -302,7 +326,8 @@ private:
     UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
-        VectorWithMemoryTracking<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
+        /// The timestamps keep their type: `UInt128` and `UInt256` ones must not be narrowed.
+        VectorWithMemoryTracking<std::optional<std::pair<T, T>>> events_timestamp(events_size);
         bool first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
         {
@@ -316,7 +341,7 @@ private:
             }
             if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
+                events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
@@ -347,12 +372,12 @@ private:
             else if (events_timestamp[event_idx - 1].has_value())
             {
                 auto first_timestamp = events_timestamp[event_idx - 1]->first;
-                bool time_matched = timestamp <= first_timestamp + window;
+                bool time_matched = isInWindow(first_timestamp, timestamp, window);
                 if (strict_increase)
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, static_cast<UInt64>(timestamp));
+                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }
@@ -369,15 +394,18 @@ private:
 
     UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
     {
-        /// Stores the timestamp of the first and last i-th level event happen within time window
+        /// Stores the timestamp of the first and last i-th level event happen within time window.
+        /// `event_path` must be zero-initialized: the full array is copied by `auto prev_path = it->event_path`
+        /// even though only the prefix [0..event_idx] is logically used, so leaving the tail uninitialized
+        /// would read indeterminate values under MSan/ASan.
         struct EventMatchTimeWindow
         {
-            UInt64 first_timestamp;
-            UInt64 last_timestamp;
-            std::array<UInt64, MAX_EVENTS> event_path;
+            T first_timestamp{};
+            T last_timestamp{};
+            std::array<UInt64, MAX_EVENTS> event_path{};
 
             EventMatchTimeWindow() = default;
-            EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
+            EventMatchTimeWindow(T first_ts, T last_ts)
                 : first_timestamp(first_ts), last_timestamp(last_ts) {}
         };
 
@@ -405,7 +433,7 @@ private:
             }
             else if (event_idx == 0)
             {
-                auto & event_seq = event_sequences[0].emplace_back(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
+                auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
             }
@@ -438,7 +466,7 @@ private:
                 for (auto it = prev_level.begin(); it != prev_level.end();)
                 {
                     auto first_ts = it->first_timestamp;
-                    bool time_matched = timestamp <= first_ts + window;
+                    bool time_matched = isInWindow(first_ts, timestamp, window);
                     if (!time_matched && prev_level.size() > 1)
                     {
                         // Remove old events that are out of the window, but keep at least one
@@ -464,7 +492,7 @@ private:
                     {
                         prev_path[event_idx] = unique_id;
 
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
+                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
                         new_seq.event_path = std::move(prev_path);
                         if (event_idx + 1 == events_size)
                             return events_size;
@@ -499,7 +527,7 @@ private:
     }
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "windowFunnel";
     }
@@ -541,7 +569,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
@@ -565,7 +593,7 @@ public:
             this->data(place).advanceId();
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -577,7 +605,28 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        auto & data = this->data(place);
+        data.deserialize(buf);
+
+        /// Event types come from untrusted serialized state. getEventLevel* uses (event - 1) to index
+        /// events_timestamp / event_sequences, both sized events_size, so an out-of-range event would
+        /// read and write out of bounds. Valid event types are [1, events_size]; 0 is the no-event
+        /// sentinel produced only with strict_order, so it is accepted only in that mode.
+        const UInt8 min_event = strict_order ? 0 : 1;
+        for (const auto & event : data.events_list)
+        {
+            UInt8 event_type = 0;
+            if constexpr (Data::strict_once_enabled)
+                event_type = event.event_type;
+            else
+                event_type = event.second;
+
+            if (event_type < min_event || event_type > events_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid event type {} in the state of function {}, must be in range [{}, {}]",
+                    static_cast<UInt16>(event_type), getName(), static_cast<UInt16>(min_event), static_cast<UInt16>(events_size));
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -636,14 +685,15 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     }
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
-                    "be Unsigned Number, Date, DateTime", arguments.front().get()->getName(), name);
+                    "be Unsigned Number, Date, DateTime", arguments.front()->getName(), name);
 }
 
 }
 
+void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
+    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {.description = R"DOC(Searches for a chain of events in a sliding time window and returns the maximum number of events from the chain that occurred in order (the length of the longest matching prefix).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

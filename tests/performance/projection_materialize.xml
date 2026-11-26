@@ -1,0 +1,33 @@
+<test>
+
+    <settings>
+        <mutations_sync>2</mutations_sync>
+    </settings>
+
+    <create_query>
+        CREATE TABLE projection_materialize (
+            key UInt64,
+            val UInt64
+        ) ENGINE = MergeTree()
+        ORDER BY key
+    </create_query>
+
+    <!-- Insert 50M rows and merge into a single part -->
+    <fill_query>
+        INSERT INTO projection_materialize SELECT number, rand() FROM numbers(50000000)
+    </fill_query>
+    <fill_query>
+        OPTIMIZE TABLE projection_materialize FINAL
+    </fill_query>
+
+    <!-- Add projection without materializing -->
+    <fill_query>
+        ALTER TABLE projection_materialize ADD PROJECTION agg_proj (SELECT key % 1000 AS k, sum(val) GROUP BY k)
+    </fill_query>
+
+    <!-- Each iteration: clear then re-materialize the projection -->
+    <query>ALTER TABLE projection_materialize CLEAR PROJECTION agg_proj, MATERIALIZE PROJECTION agg_proj</query>
+
+    <drop_query>DROP TABLE IF EXISTS projection_materialize</drop_query>
+
+</test>

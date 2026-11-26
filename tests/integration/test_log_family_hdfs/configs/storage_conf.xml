@@ -1,0 +1,13 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <!-- FIXME: chicken and egg problem with current cluster.py -->
+                <skip_access_check>true</skip_access_check>
+                <persistent_removal_log>true</persistent_removal_log>
+            </hdfs>
+        </disks>
+    </storage_configuration>
+</clickhouse>

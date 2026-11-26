@@ -70,6 +70,20 @@
     M(RWLockReadersWaitMilliseconds) \
     M(RWLockWritersWaitMilliseconds) \
     M(DNSError) \
+    M(DNSRequests) \
+    M(DNSRequestMicroseconds) \
+    M(DNSRequestError) \
+    M(DNSReverseRequests) \
+    M(DNSReverseRequestMicroseconds) \
+    M(DNSReverseError) \
+\
+    M(TLSHandshakes) \
+    M(TLSHandshakeMicroseconds) \
+    M(TLSHandshakeErrors) \
+    M(TLSServerHandshakes) \
+    M(TLSServerHandshakeMicroseconds) \
+    M(TLSServerHandshakeErrors) \
+\
     M(RealTimeMicroseconds) \
     M(UserTimeMicroseconds) \
     M(SystemTimeMicroseconds) \
@@ -230,7 +244,6 @@
     M(AsynchronousRemoteReadWaitMicroseconds) \
     M(SynchronousRemoteReadWaitMicroseconds) \
 \
-    M(ExternalDataSourceLocalCacheReadBytes) \
 \
     M(MainConfigLoads) \
 \
@@ -250,10 +263,18 @@
     M(KeeperReadRequestQueueLockWaitMicroseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
+    M(KeeperLogStoreAppend) \
+    M(KeeperLogStoreAppendMicroseconds) \
+    M(KeeperSnapshotWriteMicroseconds) \
+    M(KeeperSnapshotApplyMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
+    M(KeeperBatchMaxReadCount) \
+    M(KeeperBatchMaxReadTotalSize) \
     M(KeeperReadBatchCount) \
     M(KeeperReadBatchTotalRequests) \
+    M(KeeperWriteBatchCount) \
+    M(KeeperWriteBatchTotalRequests) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -263,6 +284,8 @@
     M(KeeperReadSnapshot) \
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
+    M(KeeperReadSnapshotDeferred) \
+    M(KeeperReadSnapshotStreamingSeeks) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -280,11 +303,62 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
+    M(KeeperWatchesTriggered) \
+    M(KeeperWatchTriggeredNodeCreated) \
+    M(KeeperWatchTriggeredNodeDeleted) \
+    M(KeeperWatchTriggeredNodeDataChanged) \
+    M(KeeperWatchTriggeredNodeChildrenChanged) \
+    M(KeeperRejectedCommittedLogRollback) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
+    M(KeeperChangelogStartupReadMicroseconds) \
+    M(KeeperChangelogStartupStitchMicroseconds) \
+    M(KeeperChangelogStartupReadEntries) \
+    M(KeeperChangelogStartupReadBytes) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
     M(KeeperSnapshotRemoteLoaderErrors) \
+\
+    M(KeeperLSMTFlushes) \
+    M(KeeperLSMTMerges) \
+    M(KeeperLSMTFlushExceptions) \
+    M(KeeperLSMTMergeExceptions) \
+    M(KeeperLSMTFileDeletionExceptions) \
+    M(KeeperLSMTFlushWrittenCompressedBytes) \
+    M(KeeperLSMTFlushWrittenUncompressedBytes) \
+    M(KeeperLSMTMergeWrittenFiles) \
+    M(KeeperLSMTMergeWrittenCompressedBytes) \
+    M(KeeperLSMTMergeWrittenUncompressedBytes) \
+    M(KeeperLSMTMergeConsumedFiles) \
+    M(KeeperLSMTMergeConsumedUncompressedBytes) \
+    M(KeeperLSMTUncommittedCreates) \
+    M(KeeperLSMTUncommittedCreateBytes) \
+    M(KeeperLSMTUncommittedUpdates) \
+    M(KeeperLSMTUncommittedUpdateBytes) \
+    M(KeeperLSMTUncommittedRemoves) \
+    M(KeeperLSMTUncommittedRemoveBytes) \
+    M(KeeperLSMTCommittedEntryBytes) \
+    M(KeeperLSMTThrottledWrites) \
+    M(KeeperLSMTCommittedMemtablesCreated) \
+    M(KeeperLSMTUncommittedMemtablesCreated) \
+    M(KeeperLSMTGetUncommittedNodeHits) \
+    M(KeeperLSMTGetUncommittedNodeMisses) \
+    M(KeeperLSMTGetCommittedNodeFromMemory) \
+    M(KeeperLSMTGetCommittedNodeNonexistent) \
+    M(KeeperLSMTGetCommittedNodeLoadedBlock) \
+    M(KeeperLSMTNodeCacheEntriesUpdated) \
+    M(KeeperLSMTListNamesFromMemtables) \
+    M(KeeperLSMTListNamesFromFiles) \
+    M(KeeperLSMTListScannedBlocks) \
+    M(KeeperLSMTListScannedEntries) \
+    M(KeeperLSMTListFilterSkipped) \
+    M(KeeperLSMTListFilterFalsePositives) \
+    M(KeeperLSMTListFilterTruePositives) \
+    M(KeeperLSMTGetBlockFromWeakPtr) \
+    M(KeeperLSMTGetBlockFromCache) \
+    M(KeeperLSMTGetBlockLoadedGroup) \
+    M(KeeperLSMTLoadedBlocks) \
+    M(KeeperLSMTLoadedUncompressedBytes) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -315,9 +389,15 @@
     M(InterfacePostgreSQLReceiveBytes) \
 \
     M(KeeperLogsEntryReadFromLatestCache) \
-    M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
-    M(KeeperLogsPrefetchedEntries) \
+    M(KeeperLogsReadAheadFillReopens) \
+    M(KeeperLogsReadAheadFillDecodedEntries) \
+    M(KeeperLogsReadAheadCursorsInstalled) \
+    M(KeeperLogsReadAheadPlanEpochMismatches) \
+    M(KeeperLogsReadAheadScheduleRejected) \
+    M(KeeperLogsReadAheadReadersCreated) \
+    M(KeeperLogsReadAheadTimeoutFallbacks) \
+    M(KeeperLogsEntryReadFromCommitReadAhead) \
 \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \
@@ -333,7 +413,7 @@ namespace ProfileEvents
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Event> keeper_profile_events
+[[clang::no_destroy]] extern const std::vector<Event> keeper_profile_events
 {
     APPLY_FOR_KEEPER_PROFILE_EVENTS(M)
 };
@@ -396,7 +476,18 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
+    M(KeeperRaftThreadsWaitingForLogsPreprocessing) \
     M(KeeperOutstandingRequests) \
+    M(KeeperTTLNodes) \
+    M(KeeperChangelogReadAheadThreads) \
+    M(KeeperChangelogReadAheadThreadsActive) \
+    M(KeeperChangelogReadAheadThreadsScheduled) \
+    M(KeeperChangelogStartupReadThreads) \
+    M(KeeperChangelogStartupReadThreadsActive) \
+    M(KeeperChangelogStartupReadThreadsScheduled) \
+    M(KeeperBlockCacheBytes) \
+    M(KeeperBlockCacheBlocks) \
+    M(KeeperContainerNodes) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
@@ -408,7 +499,7 @@ namespace CurrentMetrics
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Metric> keeper_metrics
+[[clang::no_destroy]] extern const std::vector<Metric> keeper_metrics
 {
     APPLY_FOR_KEEPER_METRICS(M)
 };
