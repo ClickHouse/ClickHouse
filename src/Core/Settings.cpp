@@ -10314,8 +10314,10 @@ When the setting is enabled, the analyzer additionally:
   bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
   `ClickHouse` dictionary source queries executed on the same server, SQL function bodies), where `a.b`
   is always table `b` of database `a`, except in the query argument of table functions `view`,
-  `viewIfPermitted`, `eval`, `obfuscate` and `explain`. A lambda passed as an argument to a SQL function
-  is expanded inside its body and is read as written too;
+  `viewIfPermitted`, `eval`, `obfuscate` and `explain`. Parts of the calling query that are resolved inside
+  a SQL function body are read as written too: a lambda passed as an argument, a `WITH` lambda that the body
+  calls, and a CTE that the body or such a lambda refers to. Such a CTE stays read as written for its later
+  uses in the same query;
 - lets a column qualifier span the parts of such a table name, so `ns.table.column` and
   `db.ns.table.column` refer to a column of table `ns.table`.
 )", EXPERIMENTAL, \

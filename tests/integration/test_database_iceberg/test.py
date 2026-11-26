@@ -2994,6 +2994,12 @@ def test_namespace_two_part_name_resolution(started_cluster):
             f"USE {CATALOG_NAME}; SELECT {F_MAP}(y -> y IN {X}.{T}, [1, 100])", settings=on
         ).strip()
         assert result == "[1,0]", f"lambda argument of a SQL function: expected the database table, got {result}"
+        # a CTE first reached through the function keeps that reading for its later use
+        result = node.query(
+            f"USE {CATALOG_NAME}; WITH t AS (SELECT id FROM {X}.{T}) SELECT {F_MAP}(y -> y IN t, [1, 100]), 1 IN t",
+            settings=on,
+        ).strip()
+        assert result == "[1,0]\t1", f"CTE reached through a SQL function: expected the database table, got {result}"
 
         # the ambiguity is reported only to a user who can see both candidates
         other = f"{CATALOG_NAME}.`system.one`"
