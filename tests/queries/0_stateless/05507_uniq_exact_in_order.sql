@@ -45,7 +45,7 @@ INSERT INTO t_lc SELECT toString(number % 777) FROM numbers(10000);
 INSERT INTO t_lc SELECT toString(number % 999) FROM numbers(10000);
 SELECT 'low cardinality', uniqExact(s), (SELECT uniqExact(s) FROM t_lc SETTINGS optimize_aggregation_in_order = 0) FROM t_lc;
 
--- Floats are compared by bits, like uniqExact.
+-- Floats are compared by bits, like uniqExact, except that 0.0 and -0.0 are the same value.
 DROP TABLE IF EXISTS t_float;
 CREATE TABLE t_float (x Float64) ENGINE = MergeTree ORDER BY x;
 SYSTEM STOP MERGES t_float;
@@ -86,7 +86,7 @@ DROP TABLE t_memory;
 
 -- Other types: the result matches the ordinary path, and the last column shows whether the changes are counted.
 -- A float inside a `Tuple`, an `Array` or a `LowCardinality` is compared by value when sorted, but by bits by `uniqExact`
--- (0.0 and -0.0 differ), so such arguments are aggregated as usual.
+-- (NaNs with different bits differ), so such arguments are aggregated as usual.
 DROP TABLE IF EXISTS t_types;
 CREATE TABLE t_types
 (
@@ -166,7 +166,7 @@ SELECT 'Array of floats', uniqExact(x), (SELECT uniqExact(arr_f) FROM t_types), 
 DROP TABLE t_sorted;
 DROP TABLE t_types;
 
--- 0.0 and -0.0 of a column repeated by ARRAY JOIN, and of a LowCardinality(Float64), count as two values, as in uniqExact.
+-- 0.0 and -0.0 of a column repeated by ARRAY JOIN, and of a LowCardinality(Float64), count as one value, as in uniqExact.
 DROP TABLE IF EXISTS t_float_array_join;
 CREATE TABLE t_float_array_join (x Nullable(Float64), arr Array(UInt8)) ENGINE = MergeTree ORDER BY x SETTINGS allow_nullable_key = 1;
 INSERT INTO t_float_array_join SELECT reinterpretAsFloat64(arrayJoin([toUInt64(0), toUInt64(9223372036854775808)])), [1, 2, 3];

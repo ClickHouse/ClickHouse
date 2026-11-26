@@ -606,6 +606,8 @@ public:
     /// - No two-level aggregation
     /// - No external aggregation
     /// - No without_key support (it is implemented using executeOnIntervalWithoutKey())
+    /// It is called for every run of the sorting key in a block, so negative zeros in `key_columns` have to be
+    /// canonicalized by the caller once per block - see `canonicalizeNegativeZeroThroughLowCardinality`.
     void executeOnBlockSmall(
         AggregatedDataVariants & result,
         size_t row_begin,
@@ -625,6 +627,7 @@ public:
         bool & no_more_keys,
         std::atomic<bool> & is_cancelled) const;
 
+    /// The same requirement for `key_columns` as in `executeOnBlockSmall`.
     void mergeOnBlockSmall(
         AggregatedDataVariants & result,
         size_t row_begin,
@@ -949,7 +952,8 @@ private:
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
     /// `for_sub_range`: the rows are one run of a block aggregated run by run (`executeOnBlockSmall`), so the
-    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only.
+    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only, and the key columns
+    /// have negative zeros canonicalized by the caller.
     template <bool for_sub_range = false>
     void executeImpl(
         AggregatedDataVariants & result,
@@ -962,6 +966,7 @@ private:
         AggregateDataPtr overflow_row = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
+    /// `negative_zeros_canonicalized` as in `ColumnsHashing::RowRange`.
     template <bool for_sub_range, typename Method>
     void executeImpl(
         Method & method,
@@ -973,7 +978,8 @@ private:
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         bool all_keys_are_const,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        bool negative_zeros_canonicalized) const;
 
     template <typename Method, typename State>
     void executeImpl(
@@ -1920,6 +1926,7 @@ private:
         DeferredMerges * deferred = nullptr) const;
 
     /// `for_sub_range` as in `executeImpl`, for `mergeOnBlockSmall`.
+    /// `negative_zeros_canonicalized` as in `ColumnsHashing::RowRange`.
     template <bool for_sub_range, typename Method, typename Table>
     void mergeStreamsImpl(
         Arena * aggregates_pool,
@@ -1935,6 +1942,7 @@ private:
         const ColumnRawPtrs & key_columns,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys,
+        bool negative_zeros_canonicalized,
         DeferredMerges * deferred = nullptr) const;
 
     void mergeBlockWithoutKeyStreamsImpl(

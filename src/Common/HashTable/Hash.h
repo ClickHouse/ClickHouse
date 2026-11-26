@@ -6,6 +6,7 @@
 #include <base/sanitizer_defs.h>
 #include <Core/UUID.h>
 #include <base/PackedStringRef.h>
+#include <base/normalizeNegativeZero.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -237,6 +238,9 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
+    /// Negative zero is equal to positive zero, but has a different binary representation.
+    key = normalizeNegativeZero(key);
+
     UInt64 out {0};
     if constexpr (std::endian::native == std::endian::little)
         std::memcpy(&out, &key, sizeof(T));
@@ -298,6 +302,9 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, UInt64 updated_value = -1)
 {
+    /// Negative zero is equal to positive zero, but has a different binary representation.
+    key = normalizeNegativeZero(key);
+
     UInt64 out {0};
     if constexpr (std::endian::native == std::endian::little)
         std::memcpy(&out, &key, sizeof(T));

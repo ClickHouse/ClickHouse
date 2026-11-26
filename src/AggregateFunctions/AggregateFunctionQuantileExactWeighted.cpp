@@ -117,7 +117,10 @@ struct QuantileExactWeighted
             if constexpr (interpolated)
                 if (!pair.second)
                     continue;
-            map[pair.first] = pair.second;
+            /// A state written before `-0.` and `0.` became equal keys can hold both of them,
+            /// so the second one is added to the first one instead of overwriting it.
+            auto & value_weight = map[pair.first];
+            value_weight = addWeights(value_weight, pair.second);
         }
     }
 

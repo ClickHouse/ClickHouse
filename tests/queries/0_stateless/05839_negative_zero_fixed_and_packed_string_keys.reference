@@ -1,0 +1,24 @@
+0	a	2
+1	a	1
+0	a	2
+1	a	1
+-- several fixed-width keys
+0	1	a string that is not kept inline	2
+1	1	a string that is not kept inline	1
+-- LowCardinality
+0	a	2
+1	a	1
+-- two-level
+0	0	10000
+0	1	10000
+1	0	5000
+1	1	5000
+-- aggregation in order
+0	0	0	1000
+0	1	0	500
+1	0	1	1000
+1	1	1	500
+0	0	0	1000
+0	1	0	500
+1	0	1	1000
+1	1	1	500

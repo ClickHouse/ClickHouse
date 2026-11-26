@@ -4,6 +4,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -124,13 +125,23 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     Columns materialized_columns;
     Columns key_columns(params->params.keys_size);
+    /// Owns the key columns for `executeOnBlockSmall` and `mergeOnBlockSmall` with negative zeros replaced by positive zeros.
+    /// They are canonicalized once for the whole chunk, rather than by the hashing state for every run of the sorting key.
+    Columns canonicalized_key_columns;
     for (size_t i = 0; i < params->params.keys_size; ++i)
     {
         const auto pos = inputs.front().getHeader().getPositionByName(params->params.keys[i]);
         materialized_columns.push_back(chunk.getColumns().at(pos)->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back();
         if (group_by_key)
+        {
             key_columns_raw[i] = materialized_columns.back().get();
+            if (ColumnPtr canonical = canonicalizeNegativeZeroThroughLowCardinality(*key_columns_raw[i]))
+            {
+                canonicalized_key_columns.push_back(std::move(canonical));
+                key_columns_raw[i] = canonicalized_key_columns.back().get();
+            }
+        }
     }
 
     Aggregator::NestedColumnsHolder nested_columns_holder;

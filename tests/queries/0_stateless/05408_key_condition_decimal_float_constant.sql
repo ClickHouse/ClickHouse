@@ -113,8 +113,8 @@ INSERT INTO t_decimal_exact_float_hash_key SELECT d, ts FROM t_decimal_exact_flo
 SELECT arraySort(groupArray(ts)) FROM t_decimal_exact_float_hash_key WHERE d = 20.00 SETTINGS force_primary_key = 1;
 SELECT arraySort(groupArray(ts)) FROM t_decimal_exact_float_hash_key WHERE d = 0.29;
 
--- A set compares the bits of a float: `0` converts to `0.0`, which is not the element `-0.0`, so every row is
--- `NOT IN (SELECT -0.0)`, while `= -0.0` holds for `0`.
+-- A set treats `-0.0` and `0.0` as the same element, as `=` does: `0` converts to `0.0`, which is the element `-0.0`, so
+-- `0` is `IN (SELECT -0.0)` and the other rows are `NOT IN (SELECT -0.0)`, as `= -0.0` holds for `0`.
 CREATE TABLE t_decimal_exact_float_minmax (d Decimal(10, 2), ts UInt32, INDEX i d TYPE minmax)
 ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 1;
 

@@ -1,7 +1,8 @@
 -- `optimize_inverse_dictionary_lookup` folds a predicate matching a single dictionary key into
 -- `key_expr = key`. Floating-point values inside container keys (`Array`, `Map`, nested `Tuple`) are
 -- compared numerically by equality (`[0.0] = [-0.0]` is true), while a dictionary lookup matches them
--- by representation. The results must be the same with the optimization on and off.
+-- by representation (with negative zero canonicalized to positive zero). The results must be the same
+-- with the optimization on and off.
 
 DROP DICTIONARY IF EXISTS dict_array;
 DROP DICTIONARY IF EXISTS dict_array_composite;

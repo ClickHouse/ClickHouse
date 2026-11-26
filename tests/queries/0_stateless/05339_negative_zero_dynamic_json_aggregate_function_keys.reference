@@ -1,0 +1,14 @@
+Dynamic
+1	1	1	1
+1	1	1
+shared variant of Dynamic
+1	1	1	1
+dynamic path of JSON
+1	1	1
+shared data of JSON
+1	1	1
+typed path of JSON
+1	1	1
+different values are still distinct
+3
+3

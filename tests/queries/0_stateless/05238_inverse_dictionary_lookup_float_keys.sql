@@ -1,7 +1,8 @@
 -- `optimize_inverse_dictionary_lookup` folds a predicate matching a single dictionary key into
 -- `key_expr = key`. A dictionary lookup, like membership in a set, matches floating-point keys by their
--- representation, while equality compares them numerically: `NaN` equals nothing, and `0` equals `-0`.
--- The results must be the same with the optimization on and off.
+-- representation (with negative zero canonicalized to positive zero, so `0` and `-0` are the same key),
+-- while equality compares them numerically: `NaN` equals nothing. The results must be the same with the
+-- optimization on and off.
 
 SET optimize_rewrite_like_perfect_affix = 0;
 

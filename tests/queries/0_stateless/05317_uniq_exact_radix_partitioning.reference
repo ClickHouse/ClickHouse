@@ -3,7 +3,7 @@ UInt64 consecutive duplicates	400000
 UInt32	1000000
 UInt16	65536
 Int8	256
-Float64	160003
+Float64	160002
 Float32	1000000
 String	266667
 String consecutive duplicates	133334
