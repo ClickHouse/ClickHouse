@@ -21,6 +21,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/StringUtils.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/quoteString.h>
 #include <base/scope_guard.h>
@@ -150,7 +151,7 @@ public:
     }
 
     /// The name of a column outside of lambdas.
-    String calculateColumnNodeName(const QueryTreeNodePtr & node) const
+    [[nodiscard]] String calculateColumnNodeName(const QueryTreeNodePtr & node) const
     {
         const ColumnIdentifier * column_identifier = nullptr;
         if (use_column_identifier_as_action_node_name)
@@ -164,7 +165,7 @@ public:
 
     /// The name of a column in the body of the lambdas entered.
     /// It differs from `column_node_name`, the name outside of lambdas, if a lambda argument shadows the column.
-    String calculateColumnNodeNameInLambdas(const QueryTreeNodePtr & node, const String & column_node_name) const
+    [[nodiscard]] String calculateColumnNodeNameInLambdas(const QueryTreeNodePtr & node, const String & column_node_name) const
     {
         if (lambda_scopes.empty())
             return column_node_name;
@@ -909,7 +910,15 @@ private:
     /// The node of the scope by the name it has in lambda scopes.
     const ActionsDAG::Node * getNodeByNameInLambdas(size_t level, const String & node_name);
 
-    NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name = {});
+    /// `override_column_name` is the name of the constant in the outermost scope, and `override_column_name_in_lambdas`
+    /// is its name in lambda scopes. They are set for a column with a constant expression, and they differ
+    /// if a lambda argument shadows the column.
+    NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node,
+        const std::string & override_column_name = {},
+        const std::string & override_column_name_in_lambdas = {});
+
+    /// Whether the expression refers to an argument of a lambda on the actions stack.
+    [[nodiscard]] bool dependsOnLambdaArguments(const QueryTreeNodePtr & node) const;
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
 
@@ -1008,8 +1017,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// In case of constant expression, prefer constant value from QueryTree vs. re-calculating the expression.
         /// It is possible that during the execution of distributed queries
         /// source columns from constant expression are removed, so that the attempt to recalculate it fails.
+        /// The constant is named after the column, so, as any other column, it is named differently
+        /// in lambda scopes if a lambda argument shadows it.
         if (expression->getNodeType() == QueryTreeNodeType::CONSTANT)
-            return visitConstant(expression, column_node_name);
+            return visitConstant(expression, column_node_name,
+                action_node_name_helper.calculateColumnNodeNameInLambdas(node, column_node_name));
         else if (!use_column_identifier_as_action_node_name)
             return visitImpl(expression);
     }
@@ -1108,12 +1120,14 @@ const ActionsDAG::Node * PlannerActionsVisitorImpl::getNodeByNameInLambdas(size_
     return actions_stack[level].getNodeOrThrow(node_name);
 }
 
-PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name)
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(
+    const QueryTreeNodePtr & node, const std::string & override_column_name, const std::string & override_column_name_in_lambdas)
 {
     const auto & constant_node = node->as<ConstantNode &>();
     const auto & constant_type = constant_node.getResultType();
 
     auto constant_node_name = !override_column_name.empty() ? override_column_name : action_node_name_helper.calculateActionNodeName(node);
+    const auto & constant_node_name_in_lambdas = !override_column_name_in_lambdas.empty() ? override_column_name_in_lambdas : constant_node_name;
 
     actions_stack[0].addConstantIfNecessary(
         constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
@@ -1122,12 +1136,54 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)
     {
-        ColumnWithTypeAndName column{constant_node.getColumn(), constant_type, constant_node_name};
+        /// Inside a lambda body, an INPUT named after one of the lambda's arguments is that argument (see `visitColumn`),
+        /// so the constant is passed through the lambda scopes under the name it has in lambdas.
+        ColumnWithTypeAndName column{constant_node.getColumn(), constant_type, constant_node_name_in_lambdas};
         for (size_t i = 1; i < actions_stack_size; ++i)
-            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column);
+            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name_in_lambdas, column);
     }
 
-    return {constant_node_name, Levels(0)};
+    addOuterNodeName(constant_node_name_in_lambdas, constant_node_name);
+    return {constant_node_name_in_lambdas, Levels(0)};
+}
+
+bool PlannerActionsVisitorImpl::dependsOnLambdaArguments(const QueryTreeNodePtr & node) const
+{
+    VectorWithMemoryTracking<const IQueryTreeNode *> nodes_to_visit{node.get()};
+    UnorderedSetWithMemoryTracking<const IQueryTreeNode *> visited_nodes;
+    while (!nodes_to_visit.empty())
+    {
+        const auto * current_node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        /// Subtrees are shared in the query tree, e.g. the expressions of aliases.
+        if (!visited_nodes.insert(current_node).second)
+            continue;
+
+        if (const auto * column_node = current_node->as<ColumnNode>())
+        {
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+            {
+                /// The arguments of a lambda inside of the expression are not on the stack.
+                for (size_t i = 1; i < actions_stack.size(); ++i)
+                {
+                    const auto & scope_node = actions_stack[i].getScopeNode();
+                    if (scope_node && scope_node->getNodeType() == QueryTreeNodeType::LAMBDA
+                        && &scope_node->as<LambdaNode &>().getArguments() == column_source.get())
+                        return true;
+                }
+            }
+        }
+
+        for (const auto & child : current_node->getChildren())
+        {
+            if (child)
+                nodes_to_visit.push_back(child.get());
+        }
+    }
+
+    return false;
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
@@ -1442,9 +1498,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
      * lead to an error: for example, after aggregation with group_by_use_nulls, GROUP BY key constants
      * are wrapped into Nullable but keep their names, and a lambda capture built over such a constant
      * fails with a type mismatch.
+     *
+     * In the body of a lambda, the name the function has outside of lambdas does not identify it:
+     * a lambda argument may be spelled as the identifier of a table column, and then a function of
+     * the argument has the name of a function of the column, e.g. of a GROUP BY key. A function that
+     * depends on an argument of an enclosing lambda is never calculated outside of the lambda.
      */
     bool is_input_node = function_node.isAggregationCall() || function_node.isWindowCall()
-        || actions_stack.front().containsInputOrConstantNode(outer_function_node_name);
+        || (actions_stack.front().containsInputOrConstantNode(outer_function_node_name)
+            && (actions_stack.size() == 1 || !dependsOnLambdaArguments(node)));
     if (is_input_node)
     {
         size_t actions_stack_size = actions_stack.size();
