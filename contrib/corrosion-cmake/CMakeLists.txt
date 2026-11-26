@@ -156,7 +156,7 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
-    # The C and C++ code built by the crates (e.g. a copy of LZ4 in `lz4-sys`) is third-party,
+    # The C and C++ code built by the crates (e.g. the C code of `ring`) is third-party,
     # like the code in `contrib`, which is not checked for unsigned integer overflows either.
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -fno-sanitize=unsigned-integer-overflow")
     set(RUST_CFLAGS "${RUST_CFLAGS} -fno-sanitize=unsigned-integer-overflow")
