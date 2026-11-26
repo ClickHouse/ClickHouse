@@ -63,6 +63,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/SettingSource.h>
+#include <Common/SSHKeyAuthMessage.h>
 #include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
@@ -2504,8 +2505,16 @@ void TCPHandler::receiveHello()
             return encodeSHA256(&rand, sizeof(rand));
         };
 
+        /// A client with `DBMS_MIN_REVISION_WITH_SSH_KEY_AUTH_HOST` must sign the message with the host name,
+        /// a legacy message from such a client is never accepted. This also prevents downgrades:
+        /// the protocol version is part of the signed message, so if a peer in the middle lowers the version
+        /// in the forwarded `Hello` to get the legacy message accepted, the message we verify no longer
+        /// matches the one the client has signed. If it sends `SSHChallenge` to the client instead,
+        /// the client signs the legacy message, which we do not accept.
+        const bool with_host = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SSH_KEY_AUTH_HOST;
+
         String challenge = create_challenge();
-        writeVarUInt(Protocol::Server::SSHChallenge, *out);
+        writeVarUInt(with_host ? Protocol::Server::SSHChallengeWithHost : Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
         out->sync();
 
@@ -2525,7 +2534,37 @@ void TCPHandler::receiveHello()
             return output;
         };
 
-        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
+        String to_verify;
+        if (with_host)
+        {
+            /// The name of the host the client has connected to, as it has signed it. A peer that relays the signature
+            /// cannot replace the name without invalidating the signature, so it is enough to check that we accept it.
+            String host;
+            readStringBinary(host, *in, MAX_HELLO_STRING_SIZE);
+            if (!SSHKeyAuthAcceptedHosts(server.config()).accepts(host))
+            {
+                Exception e(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Cannot authenticate user {} with SSH key: the client has connected to host '{}', "
+                    "which is not one of the names this server accepts (`ssh_key_auth.accepted_hosts`)",
+                    backQuote(user), host);
+                session->onAuthenticationFailure(user, getClientAddress(client_info), e);
+                throw e;
+            }
+
+            to_verify = SSHKeyAuthMessage{
+                .protocol_version = client_tcp_protocol_version,
+                .default_database = default_database,
+                .user = user,
+                .challenge = challenge,
+                .host = host,
+            }.serialize();
+        }
+        else
+        {
+            to_verify = prepare_string_for_ssh_validation(user, challenge);
+        }
+
+        auto cred = SshCredentials(user, signature, to_verify);
         session->authenticate(cred, getClientAddress(client_info), socket().peerAddress());
         return;
     }

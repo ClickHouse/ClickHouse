@@ -1,0 +1,36 @@
+--- plaintext port
+1
+--- secure port
+1
+--- TLS terminated in front of the plaintext port, at a name the server accepts (a load balancer)
+1
+--- TLS terminated and opened again in front of the secure port, at a name the server accepts
+1
+--- relay at a name the server does not accept
+AUTHENTICATION_FAILED
+--- a listed name
+received SSHChallengeWithHost
+authenticated
+--- a name matching the regular expression, in upper case and with a trailing dot
+received SSHChallengeWithHost
+authenticated
+--- a name that the regular expression matches only in part
+received SSHChallengeWithHost
+exception AUTHENTICATION_FAILED
+--- a name the server does not accept
+received SSHChallengeWithHost
+exception AUTHENTICATION_FAILED
+--- a listed name sent next to a signature over another name, as after a relay has replaced the name
+received SSHChallengeWithHost
+exception AUTHENTICATION_FAILED
+--- a client of an older revision signing the legacy message
+received SSHChallenge
+authenticated
+--- a client of the new revision signing the legacy message, as after a relay has replaced the challenge packet
+received SSHChallengeWithHost
+exception AUTHENTICATION_FAILED
+--- a lowered revision in Hello, while the client has signed its real revision, as after a relay has rewritten Hello
+received SSHChallenge
+exception AUTHENTICATION_FAILED
+--- the client against an old server: the signature is over the exact legacy message
+the signature is valid for the legacy message

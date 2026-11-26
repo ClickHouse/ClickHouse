@@ -2746,6 +2746,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// SSL and security
         "ssh",
         "ssh_server",
+        "ssh_key_auth",
 
         /// Silk fiber runtime
         "silk",

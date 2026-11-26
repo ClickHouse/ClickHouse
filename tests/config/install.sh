@@ -423,6 +423,13 @@ if [ "$FAST_TEST" != "1" ] && ! is_openssl_fips_build; then
     ln -sf $SRC_PATH/ssh_host_rsa_key $DEST_SERVER_PATH/config.d/
 fi
 
+# Host names accepted in `ssh_key` authentication over the native protocol. The `ssh_key_auth` section
+# first exists in 26.12, so an older server rejects it as an unknown config element and refuses to start.
+# Gate the drop-in on the installed server's version to keep the upgrade check's previous-release server bootable.
+if check_clickhouse_version 26.12; then
+    ln -sf $SRC_PATH/config.d/ssh_key_auth.xml $DEST_SERVER_PATH/config.d/
+fi
+
 # Not supported with fasttest.
 if [ "$FAST_TEST" != "1" ]; then
    ln -sf "$SRC_PATH/config.d/legacy_geobase.xml" "$DEST_SERVER_PATH/config.d/"
