@@ -23,6 +23,16 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает независимую агрегацию партиций в отдельных потоках, если ключ партиционирования соответствует ключу GROUP BY. Полезно, когда число партиций близко к числу ядер, а сами партиции имеют примерно одинаковый размер. Эвристики в `ReadFromMergeTree` автоматически отключают эту оптимизацию при неблагоприятной структуре (слишком мало партиций, слишком много партиций или размеры партиций сильно перекошены); чтобы обойти эти проверки, см. `force_aggregate_partitions_independently`.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**Псевдонимы**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Функции ИИ находятся в статусе бета и включены по умолчанию. В то время настройка называлась `allow_experimental_ai_functions`; теперь это её псевдоним. Значение по умолчанию сохраняется независимо от `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Новая настройка. В то время настройка называлась `allow_experimental_ai_functions`; теперь это её псевдоним."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "Добавлен псевдоним настройки `allow_experimental_ai_functions`."}]}]} />
+
+Разрешает использование функций ИИ (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). Если настройка отключена, запрос, в котором используются эти функции, генерирует исключение.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -149,18 +159,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если установлено значение true, пользователю разрешается выполнять DDL-запросы.
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**Псевдонимы**: `allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новое название `allow_experimental_delta_kernel_rs`, которая больше не является экспериментальной и сохранена в качестве псевдонима. Значение по умолчанию не изменилось."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая настройка. Введена под именем `allow_experimental_delta_kernel_rs`, которое теперь является её псевдонимом; запись перенесена под каноническое имя, чтобы сохранить всю историю."}]}]} />
-
-Разрешает использовать реализацию `delta-kernel-rs` для чтения таблиц Delta Lake.
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -191,7 +189,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает независимую обработку `DISTINCT` в каждой партиции в отдельных потоках, когда выражение партиционирования является детерминированной функцией от столбцов `DISTINCT`, без слияния между потоками. Это полезно, когда число партиций близко к числу ядер, а размеры партиций примерно одинаковы; в противном случае эвристика стоимости не применяет эту оптимизацию. См. [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ru/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) и [force&#95;distinct&#95;partitions&#95;independently](/ru/reference/settings/session-settings/force#force_distinct_partitions_independently). Не применяется с `FINAL` или параллельными репликами.
 
-Не применяется, если задано [max&#95;rows&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-rows#max_rows_in_distinct) или [max&#95;bytes&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_distinct): эти ограничения применяются единственным преобразованием `DISTINCT`, которое обрабатывает весь объединённый результат, поэтому слияние между потоками сохраняется, чтобы обеспечить их глобальное действие.
+Ограничения [max&#95;rows&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-rows#max_rows_in_distinct) и [max&#95;bytes&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) применяются к комбинированному размеру всех множеств партиций, пока потоки остаются раздельными.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -228,6 +226,18 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает выполнять функцию multiIf в столбцовом режиме
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая настройка."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Добавлен псевдоним настройки `allow_experimental_expire_snapshots`."}]}]} />
+
+Разрешает выполнение команды Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -449,6 +459,20 @@ ClickHouse использует значение этой настройки, з
 Изменения, внесённые с помощью `SET` или `SETTINGS` на уровне запроса, не меняют поведение извлечённых подстолбцов.
 Чтобы изменить поведение извлечённых подстолбцов, обновите `allow_nullable_tuple_in_extracted_subcolumns` в конфигурации профиля запуска (например, в users.xml) и перезапустите сервер.
 
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка для параллельного вычисления финального `DISTINCT` с использованием хеш-партиционирования."}]}]} />
+
+Вычисляет финальный `DISTINCT` в нескольких потоках, распределяя входные потоки по партициям на основе хеша столбцов `DISTINCT`. Одинаковые ключи попадают в один и тот же поток, поэтому дедупликацию каждой партиции можно выполнять независимо.
+
+В отличие от [allow&#95;distinct&#95;partitions&#95;independently](/ru/reference/settings/session-settings/allow#allow_distinct_partitions_independently), эта настройка не требует связи между ключом партиционирования таблицы и столбцами `DISTINCT`. Количество входных потоков и хеш-партиций ограничивается независимо от `max_threads`, чтобы сдерживать затраты на разделение блоков и соединение потоков.
+
+Хеш-партиционирование не применяется к глобально отсортированным входным данным, поскольку `DISTINCT` сохраняет их порядок. Ограничения [max&#95;rows&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-rows#max_rows_in_distinct) и [max&#95;bytes&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) применяются к суммарному размеру всех хеш-партиций.
+
+Без `ORDER BY` порядок строк в результате `DISTINCT` не определён, поэтому при этой оптимизации те же уникальные значения могут возвращаться в другом порядке. Как следствие, `LIMIT`, `OFFSET` или `LIMIT BY`, применённые к неупорядоченному результату `DISTINCT`, могут выбрать другое подмножество строк.
+
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -493,6 +517,14 @@ ClickHouse использует значение этой настройки, з
 По умолчанию это запрещено: `REPLACE PARTITION` из источника, в котором нет данных в запрошенной партиции, вызывает исключение, поскольку в таком случае операция фактически превращается в молчаливый `DROP PARTITION` для пункта назначения (данные в партиции пункта назначения удаляются, но взамен ничего не записывается), что нередко приводит к случайной потере данных (см. [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
 
 Включите эту настройку, чтобы вернуть прежнее поведение, например если вы намеренно используете пустую исходную партицию для очистки данных в пункте назначения. Если нужно просто удалить партицию без дополнительных условий, предпочтительнее использовать `ALTER TABLE ... DROP PARTITION ...`.
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Отклонять столбцы, имя которых совпадает с именем виртуального столбца таблицы семейства MergeTree"}]}]} />
+
+Разрешает задавать столбцу таблицы семейства `MergeTree` имя одного из виртуальных столбцов этой таблицы (например, `_part`, `_part_offset` или `_table`) в запросах `CREATE TABLE`, `ATTACH TABLE` с полным определением, а также `ALTER TABLE ... ADD COLUMN` и `RENAME COLUMN`. Такой столбец скрывает соответствующий виртуальный столбец. Таблицы, в которых уже есть такой столбец, загружаются независимо от значения этой настройки. Имена сохраняемых виртуальных столбцов отклоняются всегда.
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

@@ -167,6 +167,15 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
+  * [`AI FUNCTIONS`](#ai-functions)
+    * `aiClassify`
+    * `aiEmbed`
+    * `aiExtract`
+    * `aiFilter`
+    * `aiGenerate`
+    * `aiRedact`
+    * `aiSimilarity`
+    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -218,20 +227,25 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
-    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-    * `CREATE WORKLOAD`
+  * `CREATE RESOURCE`
+  * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
-    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-    * `DROP WORKLOAD`
+  * `DROP RESOURCE`
+  * `DROP WORKLOAD`
+  * `HANDLER ADMIN`
+    * `ALTER HANDLER`
+    * `CREATE HANDLER`
+    * `DROP HANDLER`
+    * `SHOW HANDLERS`
   * [`INSERT`](#insert)
   * [`INTROSPECTION`](#introspection)
     * `addressToLine`
@@ -634,7 +648,26 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. Уровень: `GLOBAL`
   * `demangle`. Уровень: `GLOBAL`
 
-### SOURCES {#sources}
+### AI FUNCTIONS {#ai-functions}
+
+Разрешает использование [функций ИИ](/ru/reference/functions/regular-functions/ai-functions). Для вызова функции ИИ также требуется привилегия `NAMED COLLECTION` на выбранные учётные данные.
+
+* `AI FUNCTIONS`. Уровень: `GROUP`
+  * `aiClassify`. Уровень: `GLOBAL`
+  * `aiEmbed`. Уровень: `GLOBAL`
+  * `aiExtract`. Уровень: `GLOBAL`
+  * `aiFilter`. Уровень: `GLOBAL`
+  * `aiGenerate`. Уровень: `GLOBAL`
+  * `aiRedact`. Уровень: `GLOBAL`
+  * `aiSimilarity`. Уровень: `GLOBAL`
+  * `aiTranslate`. Уровень: `GLOBAL`
+
+Примеры:
+
+* `GRANT AI FUNCTIONS ON *.* TO john`
+* `GRANT aiGenerate, aiClassify ON *.* TO john`
+
+### источники {#sources}
 
 Разрешает использовать внешние источники данных. Применяется к [движкам баз данных](/ru/reference/engines/database-engines/index), [движкам таблиц](/ru/reference/engines/table-engines/index) и [табличным функциям](/ru/reference/functions/table-functions/index), работающим на основе источников.
 Также требуется для расположений резервных копий: `BACKUP`/`RESTORE` и `ENGINE = Backup` проверяют права доступа к своему расположению по этим привилегиям.
@@ -647,6 +680,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 * `AZURE`
 * `BIGQUERY`
 * `DISK`
+* `ELASTICSEARCH`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -710,7 +744,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
 <Warning>
-  Фильтр источника использует **regexp** в качестве параметра, поэтому grant
+  Фильтр источников использует **regexp** в качестве параметра, поэтому grant
   `GRANT READ ON URL('http://www.google.com') TO john;`
 
   позволит выполнять запросы
@@ -728,7 +762,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
   ```
 </Warning>
 
-**Повторная выдача с `GRANT OPTION`:**
+**Повторная выдача с GRANT OPTION:**
 
 Если исходный grant содержит `WITH GRANT OPTION`, его можно выдать повторно с помощью `GRANT CURRENT GRANTS`:
 
@@ -740,8 +774,19 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**Отзыв:**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **Важные ограничения:**
 
+* **Фильтры сравниваются как строки:** `REVOKE` удаляет только тот фильтр, который в точности совпадает с выданным. Отзыв `S3('s3://foo/bar/.*')` генерирует исключение, а не сужает grant на `S3('s3://foo/.*')`.
 * **Частичный отзыв не допускается:** Нельзя отозвать только часть ранее выданного шаблона фильтра. При необходимости нужно отозвать весь grant и выдать его заново с новыми шаблонами.
 * **grant с подстановочными знаками не допускается:** Нельзя использовать `GRANT READ ON *('regexp')` или аналогичные шаблоны, состоящие только из подстановочных знаков. Необходимо указать конкретный источник.
 

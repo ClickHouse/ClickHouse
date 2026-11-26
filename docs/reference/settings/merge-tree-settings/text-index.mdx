@@ -21,8 +21,8 @@ Default front-coding compression for text index dictionary blocks.
 Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
 
 ## text_index_dictionary_block_size {#text_index_dictionary_block_size}
-<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "New setting"}]}]}/>
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8192"},{"label": "Increase the default dictionary block size of text indexes"}]}]}/>
 
 Default dictionary block size for text indexes.
 Can be overridden by explicit `dictionary_block_size` index argument.

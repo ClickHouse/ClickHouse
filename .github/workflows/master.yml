@@ -1204,58 +1204,6 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_compat)' --workflow "MasterCI" --ci --timestamp
 
-  build_amd_musl:
-    runs-on: [self-hosted, arm-medium-cpu]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_binary
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_asan_ubsan
-    - build_arm_binary
-    - build_arm_debug
-    - build_arm_msan
-    - build_arm_tidy_1_4
-    - build_arm_tidy_2_4
-    - build_arm_tidy_3_4
-    - build_arm_tidy_4_4
-    - build_arm_tsan
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9tdXNsKQ==') }}
-    name: "Build (amd_musl)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_musl)' --workflow "MasterCI" --ci --timestamp
-
   build_riscv64:
     runs-on: [self-hosted, arm-medium-cpu]
     needs:
@@ -1554,16 +1502,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (wasm_parser)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_amd_debug:
-    runs-on: [self-hosted, amd-large]
+  unit_tests_arm_debug:
+    runs-on: [self-hosted, arm-large]
     needs:
-    - build_amd_debug
+    - build_arm_debug
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2RlYnVnKQ==') }}
-    name: "Unit tests (amd_debug)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2RlYnVnKQ==') }}
+    name: "Unit tests (arm_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1591,12 +1539,12 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_debug)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_debug)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_asan_ubsan:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, arm-large]
     needs:
-    - build_amd_asan_ubsan
+    - build_arm_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1633,9 +1581,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_tsan:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, arm-large]
     needs:
-    - build_amd_tsan
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1711,9 +1659,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_asan_ubsan_function_prop_fuzzer:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, arm-large]
     needs:
-    - build_amd_asan_ubsan
+    - build_arm_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1750,9 +1698,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_tsan_function_prop_fuzzer:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, arm-large]
     needs:
-    - build_amd_tsan
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -3389,16 +3337,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, s3 storage, DBReplicated, sequential)' --workflow "MasterCI" --ci --timestamp
 
-  stateless_tests_arm_binary_parallelreplicas_s3_storage_parallel:
-    runs-on: [self-hosted, arm-medium]
+  stateless_tests_amd_debug_parallelreplicas_s3_storage_parallel:
+    runs-on: [self-hosted, amd-medium]
     needs:
-    - build_arm_binary
+    - build_amd_debug
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
-    name: "Stateless tests (arm_binary, ParallelReplicas, s3 storage, parallel)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIFBhcmFsbGVsUmVwbGljYXMsIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (amd_debug, ParallelReplicas, s3 storage, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3426,18 +3374,18 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, ParallelReplicas, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
 
-  stateless_tests_arm_binary_parallelreplicas_s3_storage_sequential:
-    runs-on: [self-hosted, arm-small]
+  stateless_tests_amd_debug_parallelreplicas_s3_storage_sequential:
+    runs-on: [self-hosted, amd-small]
     needs:
-    - build_arm_binary
+    - build_amd_debug
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
-    name: "Stateless tests (arm_binary, ParallelReplicas, s3 storage, sequential)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIFBhcmFsbGVsUmVwbGljYXMsIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (amd_debug, ParallelReplicas, s3 storage, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3465,7 +3413,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, ParallelReplicas, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_binary_asyncinsert_s3_storage_parallel:
     runs-on: [self-hosted, arm-medium]
@@ -3544,6 +3492,84 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, AsyncInsert, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
+
+  stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_parallel:
+    runs-on: [self-hosted, arm-medium]
+    needs:
+    - build_arm_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, parallel)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
+
+  stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_sequential:
+    runs-on: [self-hosted, arm-small]
+    needs:
+    - build_arm_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_asan_ubsan_azure_parallel:
     runs-on: [self-hosted, arm-large]
@@ -4754,7 +4780,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 8/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_1_4:
+  integration_tests_arm_binary_1_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4762,8 +4788,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDEvNCk=') }}
-    name: "Integration tests (arm_binary, 1/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDEvNSk=') }}
+    name: "Integration tests (arm_binary, 1/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4791,9 +4817,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 1/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 1/5)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_2_4:
+  integration_tests_arm_binary_2_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4801,8 +4827,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDIvNCk=') }}
-    name: "Integration tests (arm_binary, 2/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDIvNSk=') }}
+    name: "Integration tests (arm_binary, 2/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4830,9 +4856,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 2/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 2/5)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_3_4:
+  integration_tests_arm_binary_3_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4840,8 +4866,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDMvNCk=') }}
-    name: "Integration tests (arm_binary, 3/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDMvNSk=') }}
+    name: "Integration tests (arm_binary, 3/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4869,9 +4895,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 3/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 3/5)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_4_4:
+  integration_tests_arm_binary_4_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4879,8 +4905,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDQvNCk=') }}
-    name: "Integration tests (arm_binary, 4/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDQvNSk=') }}
+    name: "Integration tests (arm_binary, 4/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4908,7 +4934,46 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 4/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 4/5)' --workflow "MasterCI" --ci --timestamp
+
+  integration_tests_arm_binary_5_5:
+    runs-on: [self-hosted, arm-medium]
+    needs:
+    - build_arm_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDUvNSk=') }}
+    name: "Integration tests (arm_binary, 5/5)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 5/5)' --workflow "MasterCI" --ci --timestamp
 
   stress_test_amd_debug:
     runs-on: [self-hosted, amd-medium]
@@ -6447,7 +6512,6 @@ jobs:
     - build_amd_freebsd
     - build_amd_illumos
     - build_amd_msan
-    - build_amd_musl
     - build_amd_release
     - build_amd_release_performance_reference
     - build_amd_tsan
@@ -6512,10 +6576,11 @@ jobs:
     - integration_tests_amd_tsan_6_8
     - integration_tests_amd_tsan_7_8
     - integration_tests_amd_tsan_8_8
-    - integration_tests_arm_binary_1_4
-    - integration_tests_arm_binary_2_4
-    - integration_tests_arm_binary_3_4
-    - integration_tests_arm_binary_4_4
+    - integration_tests_arm_binary_1_5
+    - integration_tests_arm_binary_2_5
+    - integration_tests_arm_binary_3_5
+    - integration_tests_arm_binary_4_5
+    - integration_tests_arm_binary_5_5
     - integration_tests_arm_binary_distributed_plan_1_4
     - integration_tests_arm_binary_distributed_plan_2_4
     - integration_tests_arm_binary_distributed_plan_3_4
@@ -6546,6 +6611,8 @@ jobs:
     - stateless_tests_amd_debug_distributed_plan_s3_storage_parallel
     - stateless_tests_amd_debug_distributed_plan_s3_storage_sequential
     - stateless_tests_amd_debug_parallel
+    - stateless_tests_amd_debug_parallelreplicas_s3_storage_parallel
+    - stateless_tests_amd_debug_parallelreplicas_s3_storage_sequential
     - stateless_tests_amd_debug_sequential
     - stateless_tests_amd_msan_parallel_1_3
     - stateless_tests_amd_msan_parallel_2_3
@@ -6569,8 +6636,8 @@ jobs:
     - stateless_tests_arm_asan_ubsan_azure_sequential_2_2
     - stateless_tests_arm_binary_asyncinsert_s3_storage_parallel
     - stateless_tests_arm_binary_asyncinsert_s3_storage_sequential
-    - stateless_tests_arm_binary_parallelreplicas_s3_storage_parallel
-    - stateless_tests_arm_binary_parallelreplicas_s3_storage_sequential
+    - stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_parallel
+    - stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_sequential
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_1_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_2_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_sequential
@@ -6588,7 +6655,7 @@ jobs:
     - stress_test_arm_tsan
     - stress_test_azure_amd_msan
     - stress_test_azure_amd_tsan
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan

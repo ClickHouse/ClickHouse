@@ -33,6 +33,7 @@
 #include <chrono>
 #include <map>
 #include <filesystem>
+#include <future>
 #include <ranges>
 #include <thread>
 
@@ -47,6 +48,7 @@ namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int INCORRECT_DATA;
+    extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
 namespace ProfileEvents
@@ -328,6 +330,67 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
     /// A forced reload must still read all directory bodies.
     reader.dropCache();
     EXPECT_EQ(object_storage->reads, 12);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ExplicitRefreshWaitsForReloadInFlight)
+{
+    /// Parks the first listing of the directories after `block_next_listing` is set, once it is taken,
+    /// until `release_listing` is ready.
+    class BlockingStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+        mutable std::atomic<bool> block_next_listing = false;
+        mutable std::promise<void> listing_blocked;
+        std::shared_future<void> release_listing;
+
+        void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
+        {
+            LocalObjectStorage::listObjects(path, children, max_keys);
+            if (path.ends_with("/" + PlainRewritableLayout::METADATA_DIRECTORY_TOKEN) && block_next_listing.exchange(false))
+            {
+                listing_blocked.set_value();
+                release_listing.wait();
+            }
+        }
+    };
+
+    auto writer = getMetadataStorage("ExplicitRefreshWaitsForReloadInFlight");
+    auto create_directory = [&](const std::string & path)
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory(path);
+        tx->commit(DB::NoCommitOptions{});
+    };
+    create_directory("A");
+
+    auto object_storage = std::make_shared<BlockingStorage>(LocalObjectStorageSettings(
+        "reader", getObjectStorage("ExplicitRefreshWaitsForReloadInFlight")->getCommonKeyPrefix(), false));
+    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = false});
+    ASSERT_TRUE(reader.existsDirectory("A"));
+
+    std::promise<void> release;
+    object_storage->release_listing = release.get_future().share();
+    auto blocked = object_storage->listing_blocked.get_future();
+    object_storage->block_next_listing = true;
+
+    /// This reload holds the load mutex until its listing is released, and does not see what is created meanwhile.
+    auto in_flight = std::async(std::launch::async, [&] { reader.refresh(0); });
+    ASSERT_EQ(blocked.wait_for(std::chrono::seconds(60)), std::future_status::ready);
+    create_directory("B");
+
+    auto periodic = std::async(std::launch::async, [&] { reader.refresh(1); });
+    auto explicit_refresh = std::async(std::launch::async, [&] { reader.refresh(0); });
+
+    /// A periodic refresh skips a busy disk, an explicit one waits for it and then reloads.
+    EXPECT_EQ(periodic.wait_for(std::chrono::seconds(60)), std::future_status::ready);
+    EXPECT_EQ(explicit_refresh.wait_for(std::chrono::milliseconds(500)), std::future_status::timeout);
+
+    release.set_value();
+    in_flight.get();
+    explicit_refresh.get();
+    periodic.get();
+    EXPECT_TRUE(reader.existsDirectory("B"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
@@ -1073,12 +1136,6 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
         EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
     }
 
-    {
-        auto tx = metadata->createTransaction();
-        tx->removeRecursive("/", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
-    }
-
     EXPECT_EQ(listAllBlobs("RemoveRecursiveRoot"), std::vector<std::string>({
         "./RemoveRecursiveRoot/__root/A",
         "./RemoveRecursiveRoot/__root/B"
@@ -1312,11 +1369,11 @@ TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
     EXPECT_FALSE(metadata->existsDirectory("A/non-existing"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("A/non-existing"));
 
-    EXPECT_ANY_THROW(metadata->getFileSize("non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getFileSize("non-existing"));
     EXPECT_EQ(metadata->getFileSizeIfExists("non-existing"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getFileSize("non-existing/A"));
+    EXPECT_ANY_THROW((void)metadata->getFileSize("non-existing/A"));
     EXPECT_EQ(metadata->getFileSizeIfExists("non-existing/A"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getFileSize("A/non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getFileSize("A/non-existing"));
     EXPECT_EQ(metadata->getFileSizeIfExists("A/non-existing"), std::nullopt);
 
     EXPECT_EQ(metadata->listDirectory("non-existing"), std::vector<std::string>());
@@ -1326,18 +1383,18 @@ TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
     EXPECT_EQ(metadata->listDirectory("A/non-existing"), std::vector<std::string>());
     EXPECT_FALSE(metadata->iterateDirectory("A/non-existing")->isValid());
 
-    EXPECT_ANY_THROW(metadata->getStorageObjects("non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getStorageObjects("non-existing"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("non-existing"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getStorageObjects("non-existing/A"));
+    EXPECT_ANY_THROW((void)metadata->getStorageObjects("non-existing/A"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("non-existing/A"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getStorageObjects("A/non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getStorageObjects("A/non-existing"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("A/non-existing"), std::nullopt);
 
-    EXPECT_ANY_THROW(metadata->getLastModified("non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getLastModified("non-existing"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("non-existing"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getLastModified("non-existing/A"));
+    EXPECT_ANY_THROW((void)metadata->getLastModified("non-existing/A"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("non-existing/A"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getLastModified("A/non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getLastModified("A/non-existing"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("A/non-existing"), std::nullopt);
 }
 
@@ -2154,6 +2211,105 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
             "./CreateDirectoryFromVirtualNode/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
             "./CreateDirectoryFromVirtualNode/ykwvvchguqasvfnkikaqtiebknfzafwv/file",
         }));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveAndHardLinkIntoVirtualDirectory)
+{
+    for (const bool enabled : {true, false})
+    {
+        hard_links_enabled = enabled;
+        const std::string test = enabled ? "MoveAndHardLinkIntoVirtualDirectory" : "MoveAndHardLinkIntoVirtualDirectoryWithoutHardLinks";
+        auto metadata = getMetadataStorage(test);
+        auto object_storage = getObjectStorage(test);
+
+        /// `A` and `C` exist only as the parents of `A/B` and `C/D`.
+        {
+            auto tx = metadata->createTransaction();
+            tx->createDirectoryRecursive("A/B");
+            tx->createDirectoryRecursive("C/D");
+            for (const std::string path : {"A/B/f", "C/D/f"})
+            {
+                const auto key = tx->generateObjectKeyForPath(path).serialize();
+                size_t size = writeObject(object_storage, key, "data");
+                tx->createMetadataFile(path, {StoredObject(key, path, size)});
+            }
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto tx = metadata->createTransaction();
+            tx->replaceFile("A/B/f", "A/f");
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto tx = metadata->createTransaction();
+            tx->createHardLink("C/D/f", "C/g");
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        metadata = restartMetadataStorage(test);
+        EXPECT_FALSE(metadata->existsFile("A/B/f"));
+        EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f").front().remote_path), "data");
+        EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/g").front().remote_path), "data");
+        EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    }
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveAndCopyIntoReplacedVirtualDirectory)
+{
+    const std::string test = "MoveAndCopyIntoReplacedVirtualDirectory";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    /// `Y` gets the explicit form while hard links are enabled; `C` exists only as the parent of `C/D`.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("X");
+        tx->createDirectory("Y");
+        tx->createDirectoryRecursive("C/D");
+        for (const std::string path : {"X/f", "X/m"})
+        {
+            size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), "data");
+            tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        }
+        tx->createHardLink("X/f", "Y/f");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    hard_links_enabled = false;
+    metadata = restartMetadataStorage(test);
+
+    /// A move and a copy are planned into `C` as an implicit directory, then `C` is replaced by one in the explicit form.
+    auto tx_move = metadata->createTransaction();
+    tx_move->moveFile("X/m", "C/m");
+    auto tx_copy = metadata->createTransaction();
+    tx_copy->createHardLink("X/f", "C/g");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("C", /*should_remove_blob=*/nullptr);
+        tx->moveDirectory("Y", "C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    for (auto * tx : {tx_move.get(), tx_copy.get()})
+    {
+        try
+        {
+            tx->commit(DB::NoCommitOptions{});
+            FAIL() << "A transaction planned for the virtual directory was committed into its replacement";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::DIRECTORY_ALREADY_EXISTS) << e.message();
+        }
+    }
+
+    EXPECT_TRUE(metadata->existsFile("X/m"));
+    EXPECT_FALSE(metadata->existsFile("C/m"));
+    EXPECT_FALSE(metadata->existsFile("C/g"));
+    EXPECT_TRUE(metadata->existsFile("C/f"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkUndoInCaseOfNetworkError)

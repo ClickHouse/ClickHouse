@@ -13,7 +13,7 @@ Puede rastrear el tiempo de CPU y el tiempo de reloj consumidos, incluido el tie
 El perfilador de consultas se habilita automáticamente en ClickHouse Cloud.
 La siguiente consulta de ejemplo encuentra las trazas de pila más frecuentes de una consulta perfilada, con los nombres de función resueltos y las ubicaciones en el código fuente.
 
-De forma predeterminada, el perfilador simboliza las trazas de pila durante la recopilación y almacena los resultados en las columnas `symbols` y `lines` de [`system.trace_log`](/es/reference/system-tables/trace_log), por lo que los siguientes ejemplos leen directamente esas columnas y no requieren funciones de introspección. La simbolización se controla mediante la configuración `symbolize` en la sección de configuración del servidor `trace_log` (habilitada de forma predeterminada) y es compatible con plataformas ELF (como Linux) y macOS; en FreeBSD, las columnas `symbols` y `lines` siempre están vacías. Los nombres de función de `symbols` proceden de la tabla de símbolos del binario y están disponibles de forma predeterminada. Las ubicaciones del código fuente en `lines` se resuelven según las posibilidades: requieren información de depuración (en macOS, un paquete `.dSYM` junto al binario) y, en plataformas ELF, solo se resuelven los marcos dentro del binario principal de ClickHouse, por lo que las entradas de marcos que no pueden resolverse (por ejemplo, en bibliotecas compartidas) se dejan vacías. Si la simbolización está deshabilitada, use las funciones de introspección `addressToSymbol`, `demangle` y `addressToLine` para resolver en su lugar las direcciones sin procesar de la columna `trace`. Estas funciones están disponibles en las mismas plataformas que la simbolización (plataformas ELF como Linux y macOS); en FreeBSD tampoco se compilan, por lo que las direcciones de `trace` deben resolverse fuera del servidor. Consulte también la documentación de las [funciones de introspección](/es/reference/functions/regular-functions/introspection).
+De forma predeterminada, el perfilador simboliza las trazas de pila durante la recopilación y almacena los resultados en las columnas `symbols` y `lines` de [`system.trace_log`](/es/reference/system-tables/trace_log), por lo que los siguientes ejemplos leen directamente esas columnas y no requieren funciones de introspección. La simbolización se controla mediante la configuración `symbolize` en la sección de configuración del servidor `trace_log` (habilitada de forma predeterminada) y es compatible con plataformas ELF (como Linux) y macOS; en FreeBSD, las columnas `symbols` y `lines` siempre están vacías. Los nombres de función de `symbols` proceden de la tabla de símbolos del binario y están disponibles de forma predeterminada. Las ubicaciones del código fuente en `lines` se resuelven según las posibilidades: requieren información de depuración (en macOS, un paquete `.dSYM` junto al binario) y se resuelven para el objeto cargado (el binario principal de ClickHouse o una biblioteca compartida) que contenga la dirección del marco, por lo que las entradas de marcos que carecen de información de depuración se dejan vacías. Si la simbolización está deshabilitada, use las [funciones de introspección](/es/reference/functions/regular-functions/introspection) `addressToSymbol`, `demangle` y `addressToLine` para resolver en su lugar las direcciones sin procesar de la columna `trace`. Estas funciones están disponibles en las mismas plataformas que la simbolización (plataformas ELF como Linux y macOS); en FreeBSD tampoco se compilan, por lo que las direcciones de `trace` deben resolverse fuera del servidor.
 
 <Tip>
   Reemplace el valor de `query_id` por el ID de la consulta que quiere perfilar.
@@ -51,9 +51,7 @@ De forma predeterminada, el perfilador simboliza las trazas de pila durante la r
   </Tab>
 </Tabs>
 
-<div id="self-managed-query-profiler">
-  ## Uso del perfilador de consultas en implementaciones autogestionadas
-</div>
+## Uso del perfilador de consultas en implementaciones autogestionadas {#self-managed-query-profiler}
 
 En las implementaciones autogestionadas, para usar el perfilador de consultas, siga los pasos que se indican a continuación:
 
@@ -90,7 +88,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
 
     Esta sección configura la tabla del sistema [trace&#95;log](/es/reference/system-tables/trace_log), que contiene los resultados del funcionamiento del perfilador.
     La opción `symbolize` (habilitada de forma predeterminada) hace que ClickHouse resuelva cada marco de pila durante la recopilación y almacene los nombres de función desmanglados y las ubicaciones en el código fuente en las columnas `symbols` y `lines`.
-    Los nombres de función de `symbols` proceden de la tabla de símbolos y están disponibles de forma predeterminada, mientras que las ubicaciones en el código fuente de `lines` requieren información de depuración (un paquete `.dSYM` en macOS) y, en plataformas ELF, solo se resuelven para los marcos del binario principal de ClickHouse; los marcos sin resolver tienen entradas vacías en `lines`.
+    Los nombres de función de `symbols` proceden de la tabla de símbolos y están disponibles de forma predeterminada, mientras que las ubicaciones en el código fuente de `lines` requieren información de depuración (un paquete `.dSYM` en macOS) y se resuelven para el objeto cargado que contenga la dirección del marco (ya sea el binario principal de ClickHouse o una biblioteca compartida); los marcos sin resolver tienen entradas vacías en `lines`.
 
     Tenga en cuenta que las direcciones sin procesar de la columna `trace` son menos estables entre reinicios y actualizaciones que las columnas presimbolizadas.
     En plataformas ELF, excepto FreeBSD, los marcos del binario principal de ClickHouse se almacenan como desplazamientos físicos dentro del archivo, por lo que pueden seguir resolviéndose tras los reinicios siempre que el binario no cambie; en macOS y FreeBSD, se almacenan como direcciones virtuales en tiempo de ejecución que pueden dejar de ser válidas después de un reinicio.
@@ -115,7 +113,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
     Para obtener un perfil de alguna consulta, necesita agregar datos de la tabla `trace_log`.
     Puede agregar los datos por funciones individuales o por trazas de pila completas.
 
-    Cuando la simbolización está habilitada (de forma predeterminada), los nombres de función desmangleados y las ubicaciones de origen ya están disponibles en las columnas `symbols` y `lines`, por lo que no se requiere configuración adicional. La simbolización no es compatible con FreeBSD, donde estas columnas siempre están vacías. Las entradas de `lines` pueden estar vacías para los marcos que no tienen información de depuración o quedan fuera del binario principal de ClickHouse (consulte [anteriormente](#server-config)).
+    Cuando la simbolización está habilitada (de forma predeterminada), los nombres de función desmangleados y las ubicaciones de origen ya están disponibles en las columnas `symbols` y `lines`, por lo que no se requiere configuración adicional. La simbolización no es compatible con FreeBSD, donde estas columnas siempre están vacías. Las entradas de `lines` pueden estar vacías para los marcos que no tienen información de depuración (consulte [anteriormente](#server-config)).
 
     Si la simbolización está deshabilitada o desea resolver sobre la marcha las direcciones sin procesar de la columna `trace` (por ejemplo, para expandir marcos en línea), habilite las funciones de introspección con la opción [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions):
 
@@ -135,9 +133,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
   </Step>
 </Steps>
 
-<div id="flamegraph">
-  ## Crear flame graphs con la función `flameGraph`
-</div>
+## Crear flame graphs con la función `flameGraph` {#flamegraph}
 
 ClickHouse proporciona la función de agregación [`flameGraph`](/es/reference/functions/aggregate-functions/flame_graph), que genera un flame graph directamente a partir de las trazas de pila almacenadas en `trace_log`.
 La salida es un array de cadenas en un formato compatible con [flamegraph.pl](https://github.com/brendangregg/FlameGraph).
@@ -158,9 +154,7 @@ Cuando `ptr` no es cero, `flameGraph` empareja las asignaciones (`size > 0`) y l
 Solo se muestran las asignaciones que no se liberaron.
 Las liberaciones de memoria sin correspondencia se ignoran.
 
-<div id="cpu-flame-graph">
-  ### flame graph de CPU
-</div>
+### flame graph de CPU {#cpu-flame-graph}
 
 <Note>
   Las consultas siguientes requieren que tengas instalado [flamegraph.pl](https://github.com/brendangregg/FlameGraph).
@@ -190,9 +184,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl > flame_cpu.svg
 ```
 
-<div id="memory-flame-graph-all">
-  ### flame graph de memoria — todas las asignaciones
-</div>
+### flame graph de memoria — todas las asignaciones {#memory-flame-graph-all}
 
 ```sql
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
@@ -208,9 +200,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
 ```
 
-<div id="memory-flame-graph-unfreed">
-  ### flame graph de memoria — asignaciones no liberadas
-</div>
+### flame graph de memoria — asignaciones no liberadas {#memory-flame-graph-unfreed}
 
 Esta variante relaciona las asignaciones con las desasignaciones por puntero y muestra únicamente la memoria que no se liberó durante la consulta.
 
@@ -231,9 +221,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
 ```
 
-<div id="memory-flame-graph-time-point">
-  ### Flame graph de memoria — asignaciones activas en un momento dado
-</div>
+### Flame graph de memoria — asignaciones activas en un momento dado {#memory-flame-graph-time-point}
 
 Este enfoque permite identificar el pico de uso de memoria y visualizar qué se había asignado en ese momento.
 
@@ -241,9 +229,7 @@ Este enfoque permite identificar el pico de uso de memoria y visualizar qué se 
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
 ```
 
-<div id="find-memory-usage-over-time">
-  #### Ver el uso de memoria a lo largo del tiempo
-</div>
+#### Ver el uso de memoria a lo largo del tiempo {#find-memory-usage-over-time}
 
 ```sql
 SELECT
@@ -260,9 +246,7 @@ GROUP BY event_time
 ORDER BY event_time;
 ```
 
-<div id="find-time-point-maximum-memory-usage">
-  #### Encontrar el momento de mayor uso de memoria
-</div>
+#### Encontrar el momento de mayor uso de memoria {#find-time-point-maximum-memory-usage}
 
 ```sql
 SELECT
@@ -277,9 +261,7 @@ FROM (
 );
 ```
 
-<div id="build-flame-graph">
-  #### Crear un flame graph de las asignaciones activas en ese instante
-</div>
+#### Crear un flame graph de las asignaciones activas en ese instante {#build-flame-graph}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -294,9 +276,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
 ```
 
-<div id="build-flame-graph-deallocations">
-  #### Crea un flame graph de las liberaciones de memoria posteriores a ese momento (para entender qué se liberó después)
-</div>
+#### Crea un flame graph de las liberaciones de memoria posteriores a ese momento (para entender qué se liberó después) {#build-flame-graph-deallocations}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -311,9 +291,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
 ```
 
-<div id="example">
-  ## Ejemplo
-</div>
+## Ejemplo {#example}
 
 El siguiente fragmento de código:
 

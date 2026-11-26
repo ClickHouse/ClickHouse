@@ -70,6 +70,8 @@ private:
     ColumnNumbers other_columns_pos;
     Sizes other_columns_sizes;
     ColumnRawPtrs other_columns; // used during processing
+    Columns other_columns_holder; // owns the columns in `other_columns` with negative zeros replaced
+    ColumnNumbers materialized_columns_pos;
 
     MutableColumns prev_chunk_latest_key;
 };
