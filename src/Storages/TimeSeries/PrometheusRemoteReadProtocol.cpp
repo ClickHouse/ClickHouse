@@ -22,7 +22,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/PrometheusTimestamps.h>
+#include <Storages/TimeSeries/timeSeriesTimestampToMilliseconds.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/addPrometheusHistogramsToTimeSeries.h>
 #include <optional>
@@ -235,7 +235,7 @@ namespace
             {
                 Int64 timestamp = timestamps.getInt(j);
                 Float64 value = values.getFloat64(j);
-                const Int64 timestamp_ms = PrometheusTimestamps::fromStored(timestamp, timestamp_scale);
+                const Int64 timestamp_ms = timeSeriesTimestampToMilliseconds(timestamp, timestamp_scale);
                 auto & new_sample = *new_time_series.add_samples();
                 new_sample.set_timestamp(timestamp_ms);
                 new_sample.set_value(value);

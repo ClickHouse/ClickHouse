@@ -7,7 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
-#include <Storages/TimeSeries/PrometheusTimestamps.h>
+#include <Storages/TimeSeries/timeSeriesTimestampToMilliseconds.h>
 
 #include <type_traits>
 
@@ -174,7 +174,7 @@ void addPrometheusHistogramsToTimeSeries(
     const size_t end = begin + histograms.getSize(row);
     for (size_t i = begin; i != end; ++i)
     {
-        const Int64 timestamp_ms = PrometheusTimestamps::fromStored(columns.timestamps.getInt(i), timestamp_scale);
+        const Int64 timestamp_ms = timeSeriesTimestampToMilliseconds(columns.timestamps.getInt(i), timestamp_scale);
 
         /// A float sample beats a histogram sample.
         while ((float_index < float_samples.size()) && (float_samples[float_index].timestamp() < timestamp_ms))

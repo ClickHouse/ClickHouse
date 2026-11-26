@@ -12,7 +12,7 @@
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/PrometheusTimestamps.h>
+#include <Storages/TimeSeries/timeSeriesTimestampToMilliseconds.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
@@ -270,7 +270,7 @@ namespace
         const bool is_float = histogram.count_case() == prometheus::Histogram::kCountFloat;
 
         const MutableView & view = columns.view;
-        PrometheusTimestamps::insertInto(histogram.timestamp(), view.timestamps);
+        insertMillisecondsAsTimeSeriesTimestamp(histogram.timestamp(), view.timestamps);
         view.is_float.insertValue(is_float);
         view.counter_reset_hint.insertValue(narrow<Int8>(static_cast<Int32>(histogram.reset_hint()), histogram, "reset_hint"));
         view.schema.insertValue(narrow<Int8>(histogram.schema(), histogram, "schema"));

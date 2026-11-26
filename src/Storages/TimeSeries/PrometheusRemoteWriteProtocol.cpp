@@ -24,7 +24,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
-#include <Storages/TimeSeries/PrometheusTimestamps.h>
+#include <Storages/TimeSeries/timeSeriesTimestampToMilliseconds.h>
 #include <Storages/TimeSeries/makePrometheusHistogramsBlock.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -129,7 +129,7 @@ Block makeTimeSeriesBlock(
 
         for (const auto & sample : element->samples())
         {
-            PrometheusTimestamps::insertInto(sample.timestamp(), *timestamps);
+            insertMillisecondsAsTimeSeriesTimestamp(sample.timestamp(), *timestamps);
             values->insert(sample.value());
         }
         time_series_offsets->insert(timestamps->size());
