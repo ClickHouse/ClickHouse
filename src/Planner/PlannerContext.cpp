@@ -2,11 +2,9 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/Utils.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -230,30 +228,6 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
         return nullptr;
 
     return table_expression_data->getColumnIdentifierOrNull(column_name);
-}
-
-FutureSetPtr PlannerContext::createSetForJoinRewrite(const QueryTreeNodePtr & in_node)
-{
-    const auto & subquery = in_node->as<const FunctionNode &>().getArguments().getNodes().at(1);
-
-    /// A set ignores the totals of its subquery, so the join that replaces it must not receive them either.
-    auto join_subquery = subquery->clone();
-    for (const auto & table_expression : extractTableExpressions(
-             std::static_pointer_cast<ITableExpressionNode>(join_subquery), /*add_array_join=*/ false, /*recursive=*/ true))
-    {
-        if (auto * query_node = table_expression->as<QueryNode>())
-            query_node->setIsGroupByWithTotals(false);
-    }
-
-    DataTypes types;
-    for (const auto & column : getSubqueryProjectionColumns(join_subquery))
-        types.push_back(column.type);
-
-    return std::make_shared<FutureSetForJoinRewrite>(
-        subquery->getTreeHash({.ignore_cte = true}),
-        subquery->toAST({.set_subquery_cte_name = false}),
-        join_subquery,
-        std::move(types));
 }
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)

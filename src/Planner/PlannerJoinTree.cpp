@@ -138,6 +138,7 @@ namespace Setting
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_skip_unused_shards;
+    extern const SettingsBool rewrite_in_to_join;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool extremes;
     extern const SettingsBool exact_rows_before_limit;
@@ -1911,7 +1912,9 @@ void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePt
             return node_type == QueryTreeNodeType::JOIN || node_type == QueryTreeNodeType::CROSS_JOIN;
         });
 
-    if (!joins_multiple_tables && !planner_context->hasInSubqueriesForJoinRewrite())
+    /// An `IN` subquery may become a join, which is decided only once the steps are planned.
+    if (!joins_multiple_tables && !(planner_context->getQueryContext()->getSettingsRef()[Setting::rewrite_in_to_join]
+        && planner_context->getPreparedSets().hasSubqueries()))
         return;
 
     LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");

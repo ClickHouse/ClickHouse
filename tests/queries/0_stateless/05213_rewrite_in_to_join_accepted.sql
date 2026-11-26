@@ -361,6 +361,12 @@ SELECT '-- join_algorithm = grace_hash in legacy mode without a spill threshold,
 SELECT countIf(explain LIKE '%GraceHashJoin%')
 FROM (EXPLAIN actions = 1 SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'grace_hash', legacy_join_size_limits_trigger_spilling = 1, max_rows_in_join = 10000, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0);
 
+SELECT '-- A key cast to the type of the subquery column like the set casts it, without the conversion settings of the query';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT number, toUInt8(number) IN (SELECT 'a'::Enum8('a' = 1)) FROM numbers(3) ORDER BY number);
+SELECT number, toUInt8(number) IN (SELECT 'a'::Enum8('a' = 1)) FROM numbers(3) ORDER BY number SETTINGS rewrite_in_to_join = 0;
+SELECT number, toUInt8(number) IN (SELECT 'a'::Enum8('a' = 1)) FROM numbers(3) ORDER BY number SETTINGS rewrite_in_to_join = 1;
+
 DROP TABLE t;
 DROP TABLE s;
 DROP TABLE w;

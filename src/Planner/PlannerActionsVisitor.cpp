@@ -1104,10 +1104,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
-    else if (planner_context->isInSubqueryForJoinRewrite(node))
-    {
-        set = planner_context->createSetForJoinRewrite(node);
-    }
     else
     {
         set = planner_context->getPreparedSets().findSubquery(set_key);
@@ -1121,10 +1117,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             PreparedSets::toString(set_key, set_element_types));
 
     auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
-    /// A DAG shares constants by name, so the placeholder set of a rewritten `IN` gets a name of its own. Otherwise an `IN`
-    /// that keeps its set could get the placeholder, or the rewritten `IN` could get the real set and no join.
-    if (planner_context->isInSubqueryForJoinRewrite(node))
-        name += "_join";
     auto type = std::make_shared<DataTypeSet>();
     ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 

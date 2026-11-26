@@ -205,3 +205,11 @@ b	1
 2
 -- join_algorithm = grace_hash in legacy mode without a spill threshold, which cannot spill without the size limits, so it runs as hash
 0
+-- A key cast to the type of the subquery column like the set casts it, without the conversion settings of the query
+1	0
+0	0
+1	1
+2	0
+0	0
+1	1
+2	0

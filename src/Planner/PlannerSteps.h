@@ -16,6 +16,8 @@ using UsefulSets = std::unordered_set<FutureSetPtr>;
 
 FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options, const ActionsDAG * post_filter);
 
+/// A step that allows it may evaluate an `IN` with a join added below the step instead of a set. A join does not keep the
+/// order of the rows it reads, so no step after the sorting for `ORDER BY` allows it.
 void addExpressionStep(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
@@ -23,7 +25,8 @@ void addExpressionStep(
     const CorrelatedSubtrees & correlated_subtrees,
     const SelectQueryOptions & select_query_options,
     std::string_view step_description,
-    UsefulSets & useful_sets);
+    UsefulSets & useful_sets,
+    bool allow_in_to_join);
 
 void addFilterStep(
     const PlannerContextPtr & planner_context,
@@ -31,7 +34,8 @@ void addFilterStep(
     FilterAnalysisResult & filter_analysis_result,
     const SelectQueryOptions & select_query_options,
     std::string_view step_description,
-    UsefulSets & useful_sets);
+    UsefulSets & useful_sets,
+    bool allow_in_to_join);
 
 void addAggregationStep(QueryPlan & query_plan,
     const QueryNode & query_node,

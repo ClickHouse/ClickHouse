@@ -31,25 +31,22 @@ struct UncorrelatedInSubquery
 {
     const ActionsDAG::Node * in_node = nullptr;
     QueryTreeNodePtr subquery;
-    /// Computes `in_node` and what it reads.
+    /// Computes the `IN` and what it reads.
     ActionsDAG actions;
 };
 
-[[nodiscard]] bool canRewriteInToJoin(
-    const QueryTreeNodePtr & in_node,
-    const QueryTreeNodePtr & query_node,
-    const PlannerContext & planner_context);
+[[nodiscard]] bool canRewriteInToJoin(const ActionsDAG::Node & in_node, const QueryTreeNodePtr & subquery);
 
-/// Returns an `IN` of `actions` that becomes a join. When one such `IN` is inside the left argument of another, the inner one is returned.
-[[nodiscard]] std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions);
+/// Finds an `IN` with a subquery that is not skipped. If one such `IN` is in the left argument of another, it finds the
+/// inner one first, because the key of the outer one reads its result.
+[[nodiscard]] std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions, const NameSet & skipped);
 
-/// Adds the steps that compute `in_subquery.actions`, where `in_subquery.in_node` is evaluated with a join with the subquery.
+/// Adds the steps that compute the actions of the `IN`, evaluating the `IN` with a join with the plan of its subquery.
 void buildQueryPlanForUncorrelatedInSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     UncorrelatedInSubquery in_subquery,
-    const SelectQueryOptions & select_query_options,
-    GlobalPlannerContextPtr subquery_global_planner_context,
+    QueryPlan subquery_plan,
     UsefulSets & useful_sets);
 
 }

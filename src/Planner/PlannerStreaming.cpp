@@ -103,10 +103,11 @@ void buildStreamingPlan(
     const auto & query_node = query_tree->as<QueryNode &>();
     auto & projection = expression_analysis_result.getProjection();
 
+    /// A streaming query has no joins, so none of its steps evaluates an `IN` with one.
     if (expression_analysis_result.hasWhere())
-        addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
+        addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets, /*allow_in_to_join=*/ false);
 
-    addExpressionStep(planner_context, query_plan, projection.projection_actions, projection.correlated_subtrees, select_query_options, "Projection", useful_sets);
+    addExpressionStep(planner_context, query_plan, projection.projection_actions, projection.correlated_subtrees, select_query_options, "Projection", useful_sets, /*allow_in_to_join=*/ false);
 
     if (query_node.isDistinct())
     {
@@ -117,7 +118,7 @@ void buildStreamingPlan(
     if (expression_analysis_result.hasLimitBy())
     {
         auto & limit_by = expression_analysis_result.getLimitBy();
-        addExpressionStep(planner_context, query_plan, limit_by.before_limit_by_actions, {}, select_query_options, "Before LIMIT BY", useful_sets);
+        addExpressionStep(planner_context, query_plan, limit_by.before_limit_by_actions, {}, select_query_options, "Before LIMIT BY", useful_sets, /*allow_in_to_join=*/ false);
         addLimitByStep(query_plan, limit_by, query_analysis_result, planner_context, query_node, false);
     }
 
@@ -126,7 +127,7 @@ void buildStreamingPlan(
     else if (query_node.hasOffset())
         addOffsetStep(query_plan, query_analysis_result);
 
-    addExpressionStep(planner_context, query_plan, projection.project_names_actions, {}, select_query_options, "Project names", useful_sets);
+    addExpressionStep(planner_context, query_plan, projection.project_names_actions, {}, select_query_options, "Project names", useful_sets, /*allow_in_to_join=*/ false);
     addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context, useful_sets);
 
     if (!select_query_options.only_analyze)

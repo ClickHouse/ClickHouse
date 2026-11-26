@@ -58,16 +58,21 @@ extern const int LOGICAL_ERROR;
 
 }
 
-namespace Setting
-{
-
-extern const SettingsBool join_use_nulls;
-extern const SettingsBool rewrite_in_to_join;
-
-}
-
 namespace
 {
+
+/// The columns a subquery projects. Empty when the node is not a subquery, and when it is correlated,
+/// whose columns are only known once it is decorrelated.
+[[nodiscard]] NamesAndTypes getSubqueryProjectionColumns(const QueryTreeNodePtr & subquery)
+{
+    if (const auto * node = subquery->as<QueryNode>())
+        return node->isCorrelated() ? NamesAndTypes{} : node->getProjectionColumns();
+
+    if (const auto * node = subquery->as<UnionNode>())
+        return node->isCorrelated() ? NamesAndTypes{} : node->computeProjectionColumns();
+
+    return {};
+}
 
 /// The join is an implementation detail of `IN`, so the join size limits of the query do not apply to it.
 void makeJoinUnbounded(JoinStepLogical & join_step)
@@ -78,7 +83,7 @@ void makeJoinUnbounded(JoinStepLogical & join_step)
     join_settings.join_overflow_mode = OverflowMode::THROW;
 }
 
-/// A constant the join carries over to the matched outer rows; the unmatched ones get 0 from the outer join.
+/// A constant the join carries over to the matched outer rows, the unmatched ones get 0 from the outer join.
 void addStepForMarker(QueryPlan & subquery_plan, const String & marker_name)
 {
     const auto & header = subquery_plan.getCurrentHeader();
@@ -164,33 +169,13 @@ void addStepForMarkerResult(
 }
 
 /// Decorrelation rewrites the plan of the subquery the expression belongs to, and it does not support a
-/// `JoinLogical` step on the path of a correlated column.
-[[nodiscard]] bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns)
+/// `JoinLogical` step on the path of a correlated column, which a DAG reads as a `PLACEHOLDER`.
+[[nodiscard]] bool readsCorrelatedColumn(const ActionsDAG::Node & node)
 {
-    if (auto column_node = std::dynamic_pointer_cast<ColumnNode>(node))
-        return correlated_columns.contains(column_node);
+    if (node.type == ActionsDAG::ActionType::PLACEHOLDER)
+        return true;
 
-    for (const auto & child : node->getChildren())
-        if (child && readsCorrelatedColumn(child, correlated_columns))
-            return true;
-
-    return false;
-}
-
-/// The expressions the join keys on: the left argument of the `IN`, or its elements.
-[[nodiscard]] QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
-{
-    const auto & left_key = function_node.getArguments().getNodes()[0];
-
-    if (getSubqueryProjectionColumns(function_node.getArguments().getNodes()[1]).size() > 1)
-    {
-        /// A tuple written as `(a, b)` is compared element by element.
-        const auto * tuple_node = left_key->as<FunctionNode>();
-        if (tuple_node && tuple_node->getFunctionName() == "tuple")
-            return tuple_node->getArguments().getNodes();
-    }
-
-    return {left_key};
+    return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return readsCorrelatedColumn(*child); });
 }
 
 struct JoinKeyActions
@@ -200,7 +185,7 @@ struct JoinKeyActions
     Names key_column_names;
 };
 
-/// Removes the computation of the `IN` from `actions` and keeps only its key.
+/// Removes the computation of the `IN` from the actions and keeps only its key.
 [[nodiscard]] JoinKeyActions buildJoinKeyActions(ActionsDAG actions, const ActionsDAG::Node & in_node, const QueryTreeNodePtr & subquery, const Block & input_header, const ContextPtr & query_context)
 {
     const auto subquery_columns = getSubqueryProjectionColumns(subquery);
@@ -243,11 +228,13 @@ struct JoinKeyActions
     {
         const auto * key_output = key_outputs[i];
 
-        /// The cast a set applies to the key before it probes.
+        /// The cast a set applies to the key before it probes, which it builds without the settings of the query. The query
+        /// may cast the key itself with its own settings, so this cast gets a name of its own.
         auto key_type = removeNullable(removeLowCardinality(key_output->result_type));
         auto target_type = removeNullable(removeLowCardinality(subquery_columns[i].type));
         if (key_type->getName() != target_type->getName())
-            key_output = &actions.addAccurateCastOrNull(*key_output, target_type, {}, query_context);
+            key_output = &actions.addAccurateCastOrNull(
+                *key_output, target_type, fmt::format("__key_{}_of_{}", i, in_node.result_name), /*context=*/ nullptr);
 
         key_column_names.push_back(add_output(*key_output));
     }
@@ -262,43 +249,35 @@ struct JoinKeyActions
 
 }
 
-bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr & query_node, const PlannerContext & planner_context)
+bool canRewriteInToJoin(const ActionsDAG::Node & in_node, const QueryTreeNodePtr & subquery)
 {
-    const auto & function_node = in_node->as<const FunctionNode &>();
-
     /// Also excludes `nullIn` and `globalIn`.
-    if (function_node.getFunctionName() != "in" && function_node.getFunctionName() != "notIn")
+    const auto function_name = in_node.function_base->getName();
+    if (function_name != "in" && function_name != "notIn")
         return false;
 
-    const auto & settings = planner_context.getQueryContext()->getSettingsRef();
-    if (!settings[Setting::rewrite_in_to_join])
+    if (in_node.children.size() != 2)
         return false;
 
-    const auto & arguments = function_node.getArguments().getNodes();
-    if (arguments.size() != 2)
-        return false;
-
-    auto subquery_columns = getSubqueryProjectionColumns(arguments[1]);
+    auto subquery_columns = getSubqueryProjectionColumns(subquery);
     if (subquery_columns.empty())
         return false;
 
-    /// A set ignores the totals row of its subquery, but a join would add it to the query. `WITH TOTALS` is
-    /// dropped from the subquery the join reads, but a view or a remote table may produce such a row as well.
-    if (readsViewOrRemoteStorage(arguments[1]))
+    const auto & left_key = *in_node.children[0];
+    if (left_key.type == ActionsDAG::ActionType::COLUMN)
         return false;
 
-    const auto & left_key = arguments[0];
-    if (left_key->as<ConstantNode>())
+    if (isNothingOrNullableNothing(in_node.result_type))
         return false;
 
-    if (isNothingOrNullableNothing(function_node.getResultType()))
-        return false;
-
-    auto key_elements = getInToJoinKeyElements(function_node);
+    /// A tuple written as `(a, b)` is compared element by element.
     DataTypes key_types;
-    if (key_elements.size() == subquery_columns.size())
-        key_types = key_elements | std::views::transform(&IQueryTreeNode::getResultType) | std::ranges::to<DataTypes>();
-    else if (const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key_elements.front()->getResultType().get()))
+    if (subquery_columns.size() > 1 && left_key.type == ActionsDAG::ActionType::FUNCTION && left_key.function_base->getName() == "tuple"
+        && left_key.children.size() == subquery_columns.size())
+        key_types = left_key.children | std::views::transform([](const ActionsDAG::Node * child) { return child->result_type; }) | std::ranges::to<DataTypes>();
+    else if (subquery_columns.size() == 1)
+        key_types = {left_key.result_type};
+    else if (const auto * key_tuple = typeid_cast<const DataTypeTuple *>(left_key.result_type.get()))
         key_types = key_tuple->getElements();
 
     if (key_types.size() != subquery_columns.size())
@@ -313,31 +292,25 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
 
         /// The join compares the key with `equals`, which a set does not need. A `Variant` counts as comparable
         /// even when one of its alternatives is not, and a sort-merge join then treats all such values as equal.
-        const auto not_comparable = [](const IDataType & type) { return !type.isComparableForEquality(); };
-        if (anyInTypeTree(*key_base, not_comparable) || anyInTypeTree(*column_base, not_comparable))
-            return false;
-
         /// A set does not match a timestamp that the cast to the column type changes, e.g. by dropping a sub-second
         /// part, while the join would match the changed value.
-        if (isDateTime64(key_base) && key_base->getName() != column_base->getName())
-            return false;
-
         /// A set compares floating-point values by their bits, while a sort-merge join compares the numbers and matches `-0.0` with `0.0`.
-        if (hasTypeThatCanContainFloat(subquery_columns[i].type))
-            return false;
-
         /// A cast to a tuple, or to a type that cannot be inside `Nullable`, throws on a value the column type cannot hold.
-        if (key_base->getName() != column_base->getName() && (!column_base->canBeInsideNullable() || isTuple(column_base)))
+        const auto not_comparable = [](const IDataType & type) { return !type.isComparableForEquality(); };
+        if (anyInTypeTree(*key_base, not_comparable) || anyInTypeTree(*column_base, not_comparable)
+            || (isDateTime64(key_base) && key_base->getName() != column_base->getName())
+            || hasTypeThatCanContainFloat(subquery_columns[i].type)
+            || (key_base->getName() != column_base->getName() && (!column_base->canBeInsideNullable() || isTuple(column_base))))
             return false;
     }
 
-    if (readsCorrelatedColumn(left_key, query_node->as<const QueryNode &>().getCorrelatedColumnsSet()))
+    if (readsCorrelatedColumn(left_key))
         return false;
 
     return true;
 }
 
-std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions)
+std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions, const NameSet & skipped)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
     std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
@@ -351,12 +324,13 @@ std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const 
 
         if (children_visited)
         {
-            if (node->type != ActionsDAG::ActionType::FUNCTION || node->children.size() != 2 || !node->children[1]->column)
+            if (node->type != ActionsDAG::ActionType::FUNCTION || node->children.size() != 2 || !node->children[1]->column
+                || skipped.contains(node->result_name))
                 continue;
 
             const auto * column_set = typeid_cast<const ColumnSet *>(&node->children[1]->column->getDataColumn());
-            const auto * set = column_set ? typeid_cast<const FutureSetForJoinRewrite *>(column_set->getData().get()) : nullptr;
-            if (set)
+            const auto * set = column_set ? typeid_cast<const FutureSetFromSubquery *>(column_set->getData().get()) : nullptr;
+            if (set && set->getQueryTree())
                 return UncorrelatedInSubquery{.in_node = node, .subquery = set->getQueryTree(), .actions = {}};
             continue;
         }
@@ -376,15 +350,13 @@ void buildQueryPlanForUncorrelatedInSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     UncorrelatedInSubquery in_subquery,
-    const SelectQueryOptions & select_query_options,
-    GlobalPlannerContextPtr subquery_global_planner_context,
+    QueryPlan subquery_plan,
     UsefulSets & useful_sets)
 {
     const auto & query_context = planner_context->getQueryContext();
 
     const auto & in_node = *in_subquery.in_node;
-    /// The join delivers the result under the name of the `in` node, so a later step that reads this `IN` by name finds
-    /// it as it would find a result computed with a set.
+    /// The join delivers the result under the name of the `in` node, so a later step that reads this `IN` by name finds it.
     const auto in_result_name = in_node.result_name;
     const auto in_result_type = in_node.result_type;
     const bool is_negated = in_node.function_base->getName() == "notIn";
@@ -398,13 +370,6 @@ void buildQueryPlanForUncorrelatedInSubquery(
         key_step->setStepDescription("Compute the left arguments of IN");
         query_plan.addStep(std::move(key_step));
     }
-
-    auto subquery_options = select_query_options.subquery();
-    subquery_options.forceMaterializeCTE();
-    subquery_options.ignore_limits = false;
-    Planner subquery_planner(in_subquery.subquery, subquery_options, std::move(subquery_global_planner_context));
-    subquery_planner.buildQueryPlanIfNeeded();
-    auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
 
     ///`IN` matches the columns of its subquery with the elements of its key by position, while a join reads
     /// its input columns by name, so subquery columns must be renamed to have unique names. A column of the
