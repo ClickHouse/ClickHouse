@@ -663,9 +663,25 @@ void StorageBuffer::read(
 
         /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         /// Name it as the query does, so the buffers' analyzer swaps it in and applies that table's filters.
+        auto buffers_columns = storage_snapshot->metadata->getColumns();
+        /// The buffers' planner picks the column a `count()` reads among these, so declare only those the pipe provides.
+        if (query_storage_id.getFullNameNotQuoted() != getStorageID().getFullNameNotQuoted())
+        {
+            NameSet pipe_column_names;
+            for (const auto & name : column_names)
+                if (auto column = storage_snapshot->tryGetColumn(get_columns_options, name))
+                    pipe_column_names.insert(column->getNameInStorage());
+
+            ColumnsDescription pipe_columns;
+            for (const auto & column : buffers_columns)
+                if (pipe_column_names.contains(column.name))
+                    pipe_columns.add(column);
+            buffers_columns = std::move(pipe_columns);
+        }
+
         auto storage = std::make_shared<StorageValues>(
                 query_storage_id,
-                storage_snapshot->metadata->getColumns(),
+                buffers_columns,
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
