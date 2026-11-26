@@ -359,6 +359,27 @@ static void fillUnusedRowsWithValidValues(IColumn & column, const IDataType & ty
     }
 }
 
+/// Whether filtering the captured columns of a lazy argument copies non-numeric data (strings, arrays, `FixedString`, ...),
+/// for which a negative size hint reserves all of it, however few rows are selected.
+static bool capturesNonNumericData(const ColumnFunction & column_function)
+{
+    return std::ranges::any_of(column_function.getCapturedColumns(), [](const ColumnWithTypeAndName & captured)
+    {
+        const IColumn & column = *captured.column;
+        if (const auto * nested = typeid_cast<const ColumnFunction *>(&column))
+            return capturesNonNumericData(*nested);
+        /// These filter only their indexes, the data is shared.
+        if (isColumnConst(column) || column.lowCardinality() || column.isReplicated())
+            return false;
+        return !removeNullable(captured.type)->isValueRepresentedByNumber();
+    });
+}
+
+static ssize_t filterSizeHint(const ColumnFunction & column_function, const PaddedPODArray<UInt8> & mask)
+{
+    return capturesNonNumericData(column_function) ? static_cast<ssize_t>(countBytesInFilter(mask)) : -1;
+}
+
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
@@ -389,7 +410,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
         /// since the values won't be used by `if`. But they are still converted together with the used values,
         /// e.g. when `if` converts its branches to the common type, so they must be valid values of the type.
-        auto filtered = column_function->filter(mask, countBytesInFilter(mask));
+        auto filtered = column_function->filter(mask, filterSizeHint(*column_function, mask));
         auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
         auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
         mut_column->expand(mask, false);
@@ -427,7 +448,7 @@ static MaskInfo maskedExecuteAndUpdateMaskImpl(
     /// result directly instead of expanding it to the full block and reading it again.
     /// Only this path accepts compact columns; the public `extractMask` functions keep
     /// requiring full-sized columns.
-    auto filtered = column_function->filter(mask, countBytesInFilter(mask));
+    auto filtered = column_function->filter(mask, filterSizeHint(*column_function, mask));
     auto result = assert_cast<const ColumnFunction &>(*filtered).reduce();
     return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
 }

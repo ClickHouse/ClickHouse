@@ -10,3 +10,12 @@ SELECT countIf(k = 0 AND JSONExtractString(s, 'k') = '0') FROM t_lazy
 SELECT sum(length(coalesce(if(k = 0, NULL, 'a'), JSONExtractString(s, 'k')))) FROM t_lazy
   SETTINGS max_threads = 1, short_circuit_function_evaluation = 'enable', max_memory_usage = '40Mi';
 DROP TABLE t_lazy;
+
+DROP TABLE IF EXISTS t_lazy_fixed;
+SET allow_suspicious_fixed_string_types = 1;
+CREATE TABLE t_lazy_fixed (k UInt32, f FixedString(100000)) ENGINE = Memory;
+INSERT INTO t_lazy_fixed SELECT number, toFixedString(toString(number), 100000) FROM numbers(1000)
+  SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+SELECT countIf(k = 0 AND f = toFixedString('0', 100000)) FROM t_lazy_fixed
+  SETTINGS max_threads = 1, short_circuit_function_evaluation = 'force_enable', max_memory_usage = '40Mi';
+DROP TABLE t_lazy_fixed;
