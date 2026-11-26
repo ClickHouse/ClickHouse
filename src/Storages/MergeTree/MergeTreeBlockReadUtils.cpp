@@ -100,6 +100,11 @@ bool injectRequiredColumnsRecursively(
     };
 
     auto column_in_storage = storage_snapshot->tryGetColumn(options, column_name);
+
+    bool share_nested = true;
+    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
     if (column_in_storage)
     {
         auto column_name_in_part = column_in_storage->getNameInStorage();
@@ -107,10 +112,6 @@ bool injectRequiredColumnsRecursively(
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
 
         auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetPhysical(column_name_in_part);
-
-        bool share_nested = true;
-        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
-            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
         if (column_in_part
             /// If the column was dropped by a pending mutation that hasn't been applied yet,
@@ -156,7 +157,13 @@ bool injectRequiredColumnsRecursively(
 
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
+    {
+        /// A `Nested` member the part lacks is read as arrays of the sizes its stored siblings share.
+        if (column_in_storage && !column_in_storage->isSubcolumn() && share_nested && isArray(column_in_storage->type)
+            && Nested::extractTableName(column_in_storage->name) != column_in_storage->name)
+            add_column(column_name);
         return false;
+    }
 
     /// collect identifiers required for evaluation
     IdentifierNameSet identifiers;
