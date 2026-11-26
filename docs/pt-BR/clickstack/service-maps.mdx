@@ -18,18 +18,12 @@ Os mapas de serviço mostram como seus serviços interagem. O ClickStack constr�
 Clique em **Mapa de serviço** no painel de navegação à esquerda para abrir o grafo completo. Os serviços aparecem quando você está [ingerindo dados de trace](/pt-BR/clickstack/ingesting-data/overview) com OpenTelemetry.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Mapa de serviço mostrando nós de serviço e o fluxo de requisições entre eles](/images/clickstack/service-maps/service-map-overview.webp)
-
-</Frame>
-
+  <Frame>
+    ![Mapa de serviço mostrando os nós de serviço e o fluxo de requisições entre eles](/images/clickstack/service-maps/service-map-overview.webp)
+  </Frame>
 </div>
 
-<div id="exploring-the-service-map">
-  ## Explorando o mapa de serviço
-</div>
+## Explorando o mapa de serviço {#exploring-the-service-map}
 
 Cada nó representa um serviço, identificado pelo atributo de recurso `service.name`. As arestas (linhas tracejadas) conectam serviços quando um span de cliente em um serviço corresponde a um span de servidor em outro. O tamanho do nó reflete o volume relativo de tráfego, e os nós em vermelho indicam serviços com erros no intervalo de tempo selecionado.
 
@@ -38,43 +32,31 @@ A barra de ferramentas acima do mapa permite filtrar e ajustar a visualização.
 **Seletor de fonte** — filtre o mapa por uma fonte de trace específica (por exemplo, &quot;ClickPy Traces&quot;).
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Seletor de fonte destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/source-selector.webp)
-
-</Frame>
-
+  <Frame>
+    ![Seletor de fonte destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/source-selector.webp)
+  </Frame>
 </div>
 
 **Controle deslizante de sampling** — ajuste a taxa de sampling para equilibrar desempenho e precisão. Taxas menores carregam mais rápido em clusters de alto volume.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Controle deslizante de sampling destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/sampling.webp)
-
-</Frame>
-
+  <Frame>
+    ![Controle deslizante de sampling destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/sampling.webp)
+  </Frame>
 </div>
 
 **Seletor de intervalo de datas** — defina a janela de tempo dos dados de trace usados para criar o mapa.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Seletor de intervalo de datas destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/date-selector.webp)
-
-</Frame>
-
+  <Frame>
+    ![Seletor de intervalo de datas destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/date-selector.webp)
+  </Frame>
 </div>
 
 Use os botões **+/-** no canto inferior esquerdo do mapa ou a rolagem para aumentar e diminuir o zoom.
 
 <div id="trace-level-service-maps">
-  ## Mapas de serviço no nível do trace
+  ## Mapas de serviço no nível do trace {#trace-level-service-maps}
 </div>
 
 Ao inspecionar um trace individual, um mapa de serviço focado mostra como essa requisição específica passou pelos serviços. Isso permite ver a topologia de uma única requisição sem sair do waterfall do trace.

@@ -68,6 +68,10 @@ public:
         [[nodiscard]] virtual String dumpNode(const PrometheusQueryTree & tree, size_t indent) const = 0;
         [[nodiscard]] virtual String toString(const PrometheusQueryTree & tree) const = 0;
         [[nodiscard]] virtual int getPrecedence() const { return 0; }
+        /// Returns the type of the node and its name, for error messages.
+        /// Examples: "Function 'round'", "Binary operator '+'".
+        /// A node without a name returns its `NodeType` as is, for example "InstantSelector".
+        [[nodiscard]] virtual String getTypeAndName() const;
     };
 
     /// A scalar literal, i.e. a floating-point or an integer number.
@@ -175,6 +179,7 @@ public:
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
         [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String getTypeAndName() const override;
     };
 
     /// An unary operator: either +<argument> or -<argument>.
@@ -187,6 +192,7 @@ public:
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
         [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String getTypeAndName() const override;
         [[nodiscard]] int getPrecedence() const override;
     };
 
@@ -210,6 +216,7 @@ public:
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
         [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String getTypeAndName() const override;
         [[nodiscard]] int getPrecedence() const override;
         [[nodiscard]] bool isRightAssociative() const;
     };
@@ -230,6 +237,7 @@ public:
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
         [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String getTypeAndName() const override;
     };
 
     PrometheusQueryTree() = default;

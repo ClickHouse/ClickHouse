@@ -156,6 +156,34 @@ void forEachAtomWithPolarity(Elements & rpn, Apply && apply)
     chassert(positive_stack.empty());
 }
 
+/// Shared by the `match` and `fullMatch` atoms: builds a key range from the fixed prefix of a regular expression.
+bool regexpPrefixToRange(const RegexpFixedPrefix & prefix, KeyCondition::RPNElement & out)
+{
+    /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
+    /// This must come before the empty-prefix bailout below: "^$" is equivalent to `value = ''`.
+    if (prefix.is_exact)
+    {
+        out.function = KeyCondition::RPNElement::FUNCTION_IN_RANGE;
+        out.range = Range(prefix.prefix);
+        return true;
+    }
+
+    if (prefix.prefix.empty())
+        return false;
+
+    if (!prefix.is_perfect)
+        out.relaxed = true;
+
+    String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
+
+    out.function = KeyCondition::RPNElement::FUNCTION_IN_RANGE;
+    out.range = !right_bound.empty()
+        ? Range(prefix.prefix, true, right_bound, false)
+        : Range::createLeftBounded(prefix.prefix, true);
+
+    return true;
+}
+
 }
 
 
@@ -451,30 +479,23 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 const String & expression = value.safeGet<String>();
 
                 auto prefix = extractFixedPrefixFromRegularExpression(expression, /*requires_perfect_prefix*/ false);
-
-                /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
-                /// This must come before the empty-prefix bailout below: "^$" is equivalent to `value = ''`.
-                if (prefix.is_exact)
-                {
-                    out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range(prefix.prefix);
-                    return true;
-                }
-
-                if (prefix.prefix.empty())
+                return regexpPrefixToRange(prefix, out);
+            }
+        },
+        {
+            "fullMatch",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
                     return false;
 
-                if (!prefix.is_perfect)
-                    out.relaxed = true;
+                /// `fullMatch` is `match` with the pattern anchored at both ends, which is exactly
+                /// what the prefix extraction needs: `fullMatch(key, 'abc.*')` prunes by the prefix 'abc',
+                /// and `fullMatch(key, 'abc')` is an equality.
+                const String anchored_expression = anchorRegexpToMatchWholeString(value.safeGet<String>());
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
-
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.range = !right_bound.empty()
-                    ? Range(prefix.prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix.prefix, true);
-
-                return true;
+                auto prefix = extractFixedPrefixFromRegularExpression(anchored_expression, /*requires_perfect_prefix*/ false);
+                return regexpPrefixToRange(prefix, out);
             }
         },
         {
@@ -655,10 +676,10 @@ static NullAtomOverChain classifyNullAtomOverChain(const KeyCondition::Monotonic
 /// insert into test values ('2020-01-01', 1, '');
 /// insert into test values ('2020-01-02', 1, '');
 /// select * from test where d != '2020-01-01'; -- If relaxed, no record will return
-static const std::set<std::string_view> no_relaxed_atom_functions
+[[clang::no_destroy]] static const std::set<std::string_view> no_relaxed_atom_functions
     = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty", "notHas"};
 
-static const std::map<std::string, std::string> inverse_relations =
+[[clang::no_destroy]] static const std::map<std::string, std::string> inverse_relations =
 {
     {"equals", "notEquals"},
     {"notEquals", "equals"},
@@ -1091,7 +1112,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
 /// connectives (handled structurally by `cloneDAGWithInversionPushDown`) and boolean comparisons
 /// `KeyCondition` does not prune (`isDistinctFrom`, `ilike`, `notILike`). The prunable boolean atoms
 /// are taken directly from `atom_map` (see `predicateIsBooleanResult`), so this only holds the extras.
-static const std::unordered_set<std::string_view> extra_boolean_result_functions
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> extra_boolean_result_functions
 {
     "not", "and", "or", "isDistinctFrom", "ilike", "notILike",
 };
@@ -1110,7 +1131,7 @@ static const std::unordered_set<std::string_view> extra_boolean_result_functions
 ///
 /// The allowlist is derived from `KeyCondition::atom_map` (the single source of truth for the atoms
 /// `KeyCondition` can actually prune: comparisons, `in`/`notIn`, `has`, `empty`/`notEmpty`, `like`,
-/// `startsWith`/`startsWithUTF8`, `match`, `isNull`/`isNotNull`, `pointInPolygon`), plus the boolean
+/// `startsWith`/`startsWithUTF8`, `match`/`fullMatch`, `isNull`/`isNotNull`, `pointInPolygon`), plus the boolean
 /// connectives and boolean comparisons that are not atoms (`extra_boolean_result_functions`). This
 /// way `startsWith(s, 'ab') IS TRUE` and `has([1, 10], id) IS TRUE` peel to the prunable atom instead
 /// of being left behind.
@@ -1656,7 +1677,7 @@ static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predica
     return res;
 }
 
-const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
+[[clang::no_destroy]] const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
         {"mortonEncode", SpaceFillingCurveType::Morton},
         {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
@@ -1678,7 +1699,7 @@ static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & conditio
         const auto & column_bf = column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]);
         const auto & hashes = condition_bloom_filter_data.hashes_per_column[column_index];
 
-        if (!column_bf->findAnyHash(hashes))
+        if (!column_bf->findAnyHash(*hashes))
         {
             return false;
         }
@@ -2539,9 +2560,9 @@ static std::optional<std::pair<ColumnPtr, ColumnPtr>> neighbouringDecimalValues(
 }
 
 /// Whether the converted cast values have the bits of the floats they were cast from, and the converted neighbours of each
-/// cast value have other bits, all as `Float`. The bits, because a `Set` compares them (`bitEquals`): `-0.0` is not `0.0`
-/// there, so `d NOT IN (SELECT -0.0)` holds for `d = 0`, while the cast of `-0.0` is `0`. A comparison sees no other
-/// difference: a cast value never converts to `-0.0` or a NaN.
+/// cast value have other bits, all as `Float`. The bits are compared (`bitEquals`) to stay conservative: the cast of `-0.0`
+/// is `0`, which converts back to `0.0`, so a set holding `-0.0` is not used by the index, although a `Set` matches `-0.0`
+/// with `0.0`. A comparison sees no other difference: a cast value never converts to `-0.0` or a NaN.
 template <typename Float>
 static bool castValuesAreTheOnlyMatches(const IColumn & floats, const IColumn & cast_values, const IColumn & below, const IColumn & above)
 {
@@ -3445,6 +3466,25 @@ bool deterministicTransformMapsFloatZerosAlike(
     return (*transformed_zeros_column)[0] == (*transformed_zeros_column)[1];
 }
 
+/// Whether an element of a set, converted to the input type of `dag`, holds a float zero of any sign at any depth.
+/// An element that cannot be converted answers `true`, so that the caller stays conservative.
+bool setElementsHaveFloatZero(const ColumnPtr & set_column, const DataTypePtr & set_element_type, const DeterministicKeyTransformDag & dag)
+{
+    if (!anyInTypeTree(*dag.input_type, [](const IDataType & type) { return isFloat(type); }))
+        return false;
+
+    ColumnPtr input_column;
+    DataTypePtr input_type;
+    bool cast_is_exact = true;
+    if (!convertColumnForDeterministicDag(set_column, set_element_type, dag, input_column, input_type, cast_is_exact))
+        return true;
+
+    for (size_t i = 0; i < input_column->size(); ++i)
+        if (anyFieldSatisfies((*input_column)[i], isFloatZeroField))
+            return true;
+    return false;
+}
+
 }
 
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicKeyFunctions(
@@ -3809,6 +3849,14 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *mapping.set_transform;
+
+            /// A `Set` matches a float zero with the zero of the other sign. When the transform tells the two apart
+            /// (`toString(-0.0)` is `'-0'`), the transformed element describes only one of them, and the index would
+            /// prune the rows holding the other one, as for a constant in `transformConstantByDeterministicKeyFunctions`.
+            if (setElementsHaveFloatZero(set_column, set_element_type, set_transforming_dag)
+                && !deterministicTransformMapsFloatZerosAlike(set_transforming_dag, set_transforming_dag.input_type, set_transforming_dag.input_name))
+                return false;
+
             bool dag_cast_is_exact = true;
             if (!applyDeterministicDagToColumn(
                     set_column,
@@ -4176,7 +4224,8 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     const Columns & set_columns,
     const DataTypes & set_types,
     SetAtomCandidate candidate,
-    const DataTypePtr & has_element_type)
+    const DataTypePtr & has_element_type,
+    const Set * source_set)
 {
     chassert(set_types.size() == set_columns.size());
     if (candidate.column_mappings.empty())
@@ -4232,7 +4281,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     indexes_mapping.reserve(candidate.column_mappings.size());
     for (auto & mapping : candidate.column_mappings)
         indexes_mapping.push_back(std::move(mapping.index_mapping));
-    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping));
+    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping), source_set);
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
     const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
@@ -4262,19 +4311,20 @@ void KeyCondition::appendSetAtoms(
     SetIndexAnalysisResult analysis,
     bool allow_relaxed_pruning,
     AtomGroup & group,
-    const DataTypePtr & has_element_type) const
+    const DataTypePtr & has_element_type,
+    const Set * source_set) const
 {
     const size_t args_count = analysis.componentwise_candidate.args_count;
 
     /// Component and packed-tuple mappings can coexist even when they constrain the same key column.
     /// Key coverage only limits the additional wrapped-set candidates below.
     if (auto atom = tryPrepareSetAtom(
-            set_columns, set_types, std::move(analysis.componentwise_candidate), has_element_type))
+            set_columns, set_types, std::move(analysis.componentwise_candidate), has_element_type, source_set))
         group.atoms.emplace_back(std::move(*atom));
 
     if (analysis.packed_tuple_candidate)
         if (auto atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), has_element_type))
+                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), has_element_type, source_set))
             group.atoms.emplace_back(std::move(*atom));
 
     /// Atoms for the predicate's components and whole tuple take priority over additional
@@ -4322,7 +4372,7 @@ void KeyCondition::appendSetAtoms(
             set_candidate.is_relaxed = !is_injective;
 
             auto candidate_atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(set_candidate), has_element_type);
+                set_columns, set_types, std::move(set_candidate), has_element_type, source_set);
 
             /// Additional atoms for complement predicates must be exact. `tryPrepareSetAtom` can relax
             /// even an injective transform when its mapping covers only some tuple components.
@@ -4381,7 +4431,7 @@ void KeyCondition::prepareSetAtomsForIn(
     const auto set_columns = prepared_set->getSetElements();
     const auto set_types = future_set->getTypes();
 
-    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group);
+    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group, /*has_element_type=*/ nullptr, prepared_set.get());
 }
 
 /// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
@@ -4817,7 +4867,7 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
   * we want to apply the function to the constant for index analysis,
   * but should modify it to pass on un-parsable values.
   */
-static std::set<std::string_view> date_time_parsing_functions = {
+[[clang::no_destroy]] static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
     "toTime",
@@ -6241,7 +6291,8 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 || func_name == "notLike"
                 || func_name == "startsWith"
                 || func_name == "startsWithUTF8"
-                || func_name == "match");
+                || func_name == "match"
+                || func_name == "fullMatch");
 
             if (!should_keep_original_string_constant)
             {
@@ -6334,8 +6385,10 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
 
                     const_value = converted;
 
-                    /// Only an exact conversion preserves the candidate's precision.
-                    if (!key_expr_type_not_null->equals(*common_type))
+                    /// Only an exact conversion preserves the candidate's precision. An `Enum` is compared with
+                    /// a number by its value, which an integer supertype holds exactly.
+                    if (!key_expr_type_not_null->equals(*common_type)
+                        && !(isEnum(key_expr_type_not_null) && isNativeInteger(common_type)))
                         is_relaxed = true;
                 }
                 if (!key_expr_type_not_null->equals(*common_type))
@@ -7405,6 +7458,7 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * sparse_left_keys,
     const FieldRef * sparse_right_keys,
     const DataTypes & sparse_data_types,
+    const DataTypes & key_types,
     const std::vector<UInt8> & equal_boundaries_mask,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds) const
@@ -7413,6 +7467,7 @@ BoolMask KeyCondition::checkInRange(
 
 #ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
+    chassert(key_types.size() == num_key_columns);
 
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
@@ -7467,7 +7522,7 @@ BoolMask KeyCondition::checkInRange(
         key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
-            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
+            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types, key_types);
         });
 }
 
@@ -8187,9 +8242,10 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
 }
 
 /// The same over the sparse representation of the primary index, where a key column is addressed by
-/// its position among the columns the index resolves.
+/// its position among the columns the index resolves. A key column it does not resolve is checked as the
+/// whole universe, except by a range atom, which answers `(true, true)` for such a column.
 bool KeyCondition::mayReadNullKeyValue(
-    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & sparse_key_types) const
+    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & key_types) const
 {
     for (const auto & element : expandAtomGroups(rpn))
     {
@@ -8199,11 +8255,16 @@ bool KeyCondition::mayReadNullKeyValue(
         for (size_t key_column : element.key_columns)
         {
             if (key_column >= key_col_to_sparse_pos.size() || key_col_to_sparse_pos[key_column] == -1)
+            {
+                if (element.function != RPNElement::FUNCTION_IN_RANGE && element.function != RPNElement::FUNCTION_NOT_IN_RANGE
+                    && rangeOfKeyColumnMayHoldNull(element, Range::createWholeUniverse(), key_types, key_column))
+                    return true;
                 continue;
+            }
 
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_column]);
             if (sparse_pos < sparse_hyperrectangle.size()
-                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
+                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], key_types, key_column))
                 return true;
         }
     }
@@ -8452,21 +8513,26 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         mask = BoolMask::combine(mask, current_intersection);
                     };
 
-                    switch (curve_type(key_column))
+                    /// After `shrinkToIncludedIfPossible`, an empty range, such as `(5, 6)`, has `left > right`.
+                    /// It contains no values, so the condition cannot be true in it, which is the initial value of `mask`.
+                    if (left <= right)
                     {
-                        case SpaceFillingCurveType::Hilbert:
+                        switch (curve_type(key_column))
                         {
-                            hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
-                            break;
-                        }
-                        case SpaceFillingCurveType::Morton:
-                        {
-                            mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
-                            break;
-                        }
-                        case SpaceFillingCurveType::Unknown:
-                        {
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                            case SpaceFillingCurveType::Hilbert:
+                            {
+                                hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Morton:
+                            {
+                                mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Unknown:
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                            }
                         }
                     }
 
@@ -8740,7 +8806,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 BoolMask KeyCondition::checkInHyperrectangle(
     const std::vector<int> & key_col_to_sparse_pos,
     const Hyperrectangle & sparse_hyperrectangle,
-    const DataTypes & sparse_data_types) const
+    const DataTypes & sparse_data_types,
+    const DataTypes & key_types) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -8932,21 +8999,26 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             mask = BoolMask::combine(mask, current_intersection);
                         };
 
-                        switch (curve_type(key_column))
+                        /// After `shrinkToIncludedIfPossible`, an empty range, such as `(5, 6)`, has `left > right`.
+                        /// It contains no values, so the condition cannot be true in it, which is the initial value of `mask`.
+                        if (left <= right)
                         {
-                            case SpaceFillingCurveType::Hilbert:
+                            switch (curve_type(key_column))
                             {
-                                hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
-                                break;
-                            }
-                            case SpaceFillingCurveType::Morton:
-                            {
-                                mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
-                                break;
-                            }
-                            case SpaceFillingCurveType::Unknown:
-                            {
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                                case SpaceFillingCurveType::Hilbert:
+                                {
+                                    hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                                    break;
+                                }
+                                case SpaceFillingCurveType::Morton:
+                                {
+                                    mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                                    break;
+                                }
+                                case SpaceFillingCurveType::Unknown:
+                                {
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                                }
                             }
                         }
 
@@ -9217,14 +9289,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
-    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types)))
+    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, key_types)))
         rpn_stack[0].can_be_false = true;
 
     return rpn_stack[0];
 }
 
+KeyCondition::BloomFilterData::Hashes KeyCondition::BloomFilterData::makeHashes(VectorWithMemoryTracking<uint64_t> hashes)
+{
+    std::sort(hashes.begin(), hashes.end());
+    hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
+    if (hashes.size() < hashes.capacity() / 2)
+        hashes.shrink_to_fit();
+    return std::make_shared<const VectorWithMemoryTracking<uint64_t>>(std::move(hashes));
+}
+
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                          std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+                                          std::function<BloomFilterData::Hashes(size_t column_idx, const ColumnPtr &)> hash_many)
 {
     forEachAtomWithPolarity(rpn, [&](RPNElement & rpn_element, bool positive)
     {
@@ -9260,7 +9341,7 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                 return;
             }
 
-            hashes.emplace_back(VectorWithMemoryTracking<uint64_t>{*hashed_value});
+            hashes.emplace_back(BloomFilterData::makeHashes({*hashed_value}));
 
             std::vector<std::size_t> key_columns_for_element;
             key_columns_for_element.emplace_back(rpn_element.getKeyColumn());
@@ -9285,30 +9366,17 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
                 const auto & set_column = ordered_set[i];
 
-                auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);
+                auto hashes_for_column = hash_many(indexes_mapping[i].key_index, set_column);
 
-                if (!hashes_for_column_opt)
+                if (!hashes_for_column || hashes_for_column->empty())
                 {
                     continue;
                 }
 
-                auto & hashes_for_column = *hashes_for_column_opt;
+                chassert(std::adjacent_find(hashes_for_column->begin(), hashes_for_column->end(), std::greater_equal<>())
+                    == hashes_for_column->end());
 
-                if (hashes_for_column.empty())
-                {
-                    continue;
-                }
-
-                /// Sort and deduplicate the probe hashes once, here, instead of leaving that to every
-                /// lookup on every granule/row group: a filter can then intersect them with its own
-                /// sorted value set in one merge pass (see the Parquet `DictionaryLookup`), and the
-                /// duplicates that an `IN` set can produce - different values whose hashes collide, or
-                /// a tuple element repeated across set rows - are probed once instead of many times.
-                std::sort(hashes_for_column.begin(), hashes_for_column.end());
-                hashes_for_column.erase(
-                    std::unique(hashes_for_column.begin(), hashes_for_column.end()), hashes_for_column.end());
-
-                hashes.emplace_back(hashes_for_column);
+                hashes.emplace_back(std::move(hashes_for_column));
 
                 key_columns_for_element.push_back(indexes_mapping[i].key_index);
             }

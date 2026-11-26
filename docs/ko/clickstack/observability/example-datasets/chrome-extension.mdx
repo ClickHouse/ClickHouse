@@ -1,0 +1,311 @@
+---
+slug: /clickstack/observability/example-datasets/chrome-extension
+title: 'Chrome 확장 프로그램'
+description: 'HyperDX Chrome 확장 프로그램으로 완전 관리형 ClickHouse Observability용 세션 리플레이 및 RUM 데이터를 수집합니다'
+doc_type: 'guide'
+keywords: ['clickstack', 'chrome extension', 'session replay', 'browser sdk', 'rum', 'observability', 'hyperdx']
+sidebarTitle: 'Chrome 확장 프로그램'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 버전" />
+
+    <Info>
+      **TL;DR**
+
+      이 가이드에서는 [HyperDX Chrome 확장 프로그램](https://github.com/kyreddie/hyperdx-chrome-extension)을 사용하여 모든 웹사이트에 브라우저 SDK를 주입하는 방법을 설명합니다. 대상 애플리케이션의 소스 코드는 전혀 변경할 필요가 없습니다. 확장 프로그램을 한 번만 구성한 뒤 사이트를 탐색하면 ClickHouse Observability에서 세션 다시 보기를 확인할 수 있습니다.
+
+      소요 시간: 10-15분
+    </Info>
+
+## 개요 {#overview}
+
+    [HyperDX Chrome 확장 프로그램](https://github.com/kyreddie/hyperdx-chrome-extension)은 방문하는 페이지에 [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) SDK를 주입합니다. 사이트의 코드베이스를 수정하지 않고 세션 리플레이, RUM 또는 추적 전파를 디버깅하려는 경우에 유용합니다. 타사 애플리케이션, 운영 환경 빌드, 엄격한 콘텐츠 보안 정책(Content Security Policy, CSP)이 적용된 로컬 개발 서버 등이 그 예입니다.
+
+    SDK는 확장 프로그램 내부에 번들로 포함되어 있으므로(약 480 KB) 페이지에서 런타임에 CDN으로부터 스크립트를 로드할 필요가 없습니다. 확장 프로그램은 먼저 외부 `chrome-extension://` 스크립트 삽입을 시도하고, CSP가 확장 프로그램 출처의 스크립트를 차단하면 인라인 삽입으로 폴백합니다.
+
+    직접 제어하는 데모 애플리케이션을 계측하는 [세션 리플레이 데모](/ko/clickstack/observability/example-datasets/session-replay)와 달리, 이 방식은 Chrome에서 연 페이지 중 지원되는 페이지를 계측합니다. 단, 일부 페이지는 스크립트 삽입이 제한됩니다. 세션 데이터는 일반 사용자처럼 사이트를 이용하는 과정에서 생성됩니다.
+
+    세션 리플레이의 개요와 ClickHouse Observability에서 세션 리플레이가 하는 역할은 [세션 리플레이](/ko/clickstack/observability/features/session-replay) 기능 페이지를 참조하십시오.
+
+## 사전 요구 사항 {#prerequisites}
+
+    * Google Chrome 또는 Chromium 기반 브라우저(Edge, Brave 등)
+    * 이미 생성된 완전 관리형 ClickHouse Observability 서비스. [완전 관리형 시작 가이드](/ko/clickstack/observability/getting-started)를 참조하십시오.
+
+## 데모 실행하기 {#running-the-demo}
+
+    <Steps>
+      <Step title="확장 기능 저장소 복제" id="clone-extension">
+        ```shell
+        git clone https://github.com/kyreddie/hyperdx-chrome-extension
+        cd hyperdx-chrome-extension
+        ```
+      </Step>
+
+      <Step title="확장 기능 설치" id="install-extension">
+        1. Chrome을 열고 `chrome://extensions`로 이동합니다.
+        2. 오른쪽 상단에서 **Developer mode**를 활성화합니다.
+        3. **Load unpacked**를 클릭합니다.
+        4. 복제한 `hyperdx-chrome-extension` 디렉터리를 선택합니다.
+
+        툴바에 **HyperDX Browser Extension**이라는 이름으로 확장 기능이 표시됩니다.
+      </Step>
+
+      <Step title="연결 정보 확인" id="get-connection-details">
+        ClickHouse Observability 서비스를 열고 **팀 설정 → Managed Telemetry**로 이동합니다. 확장 기능 구성에 사용할 **OTLP HTTP 엔드포인트**와 **API Key**를 복사합니다.
+
+        제공된 HTTPS 엔드포인트를 포트까지 포함하여 그대로 사용하십시오. `/v1/logs` 또는 `/v1/traces`를 덧붙이지 마십시오.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![마스킹된 OTLP HTTP 엔드포인트와 API Key가 표시된 팀 설정의 Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+      </Step>
+
+      <Step title="확장 기능 구성" id="configure-extension">
+        Chrome 툴바에서 **HyperDX Browser Extension** 아이콘을 클릭하고 다음과 같이 설정을 입력합니다.
+
+        | 필드                            | 완전 관리형 설정                             | 참고                                                      |
+        | ----------------------------- | ------------------------------------- | ------------------------------------------------------- |
+        | **HyperDX 모니터링 활성화**          | On                                    | 삽입 여부를 제어하는 마스터 토글                                      |
+        | **서비스 이름**                    | `my-frontend-app`                     | 필수 — ClickHouse Observability에서 서비스를 식별하는 데 사용됩니다       |
+        | **API Key**                   | Managed Telemetry API Key             | 필수. **팀 설정 → Managed Telemetry**에서 복사합니다                |
+        | **수집기 URL**                   | Managed Telemetry OTLP HTTP 엔드포인트     | 확장 기능의 기본 URL을 **Managed Telemetry**의 엔드포인트로 바꿉니다       |
+        | **Environment**               | `development`                         | 선택 사항 — `deployment.environment` 리소스 속성을 설정합니다          |
+        | **Trace Propagation Targets** | `/api\.myapp\.domain/i, /localhost/i` | 선택 사항 — 트레이스 헤더를 전파할 대상을 지정하는 JavaScript 정규식 패턴(쉼표로 구분) |
+        | **일치하는 URL에만 삽입**             | Off                                   | 계측할 사이트를 제한하려면 활성화합니다                                   |
+        | **Capture console logs**      | Off                                   | 브라우저 콘솔 출력을 전달하려면 활성화합니다                                |
+        | **Advanced network capture**  | Off                                   | 네트워크 요청을 상세하게 캡처하려면 활성화합니다                              |
+
+        **Save Configuration**을 클릭한 다음, 계측할 탭을 새로 고칩니다.
+      </Step>
+
+      <Step title="사이트 탐색 및 세션 생성" id="browse-site">
+        Chrome에서 원하는 웹사이트나 로컬 애플리케이션을 엽니다. 예를 들어 프론트엔드 개발 서버라면 [http://localhost:3000](http://localhost:3000)을 엽니다.
+
+        링크 클릭, 양식 제출, 오류 발생, 뷰 간 이동 등 평소처럼 페이지를 사용합니다. 구성이 유효하면 확장 기능이 페이지를 로드할 때마다 Browser SDK를 자동으로 삽입합니다.
+      </Step>
+
+      <Step title="세션 리플레이 보기" id="view-session-replay">
+        ClickHouse Observability 서비스의 왼쪽 사이드바에서 **클라이언트 세션**을 엽니다. 탐색 활동이 포함된 시간 범위를 선택합니다.
+
+        목록에 세션이 지속 시간 및 이벤트 수와 함께 표시됩니다. ▶️ 버튼을 클릭하면 세션을 재생할 수 있습니다.
+
+        **Highlighted** 모드와 **All Events** 모드를 전환하여 타임라인에 표시되는 세부 정보 수준을 조정합니다.
+      </Step>
+    </Steps>
+
+## URL 필터링 {#url-filtering}
+
+    기본적으로 확장 프로그램은 모니터링이 활성화되어 있는 동안 방문하는 모든 페이지에 SDK를 삽입합니다. 특정 사이트에만 삽입하려면 **일치하는 URL에만 삽입**을 켜고 패턴을 한 줄에 하나씩(또는 쉼표로 구분하여) 추가하세요.
+
+    | 패턴                         | 일치 대상                         |
+    | -------------------------- | ----------------------------- |
+    | `http://homedepot.com/*`   | `homedepot.com`의 HTTP만 일치     |
+    | `*://homedepot.com/*`      | `homedepot.com`의 HTTP 및 HTTPS |
+    | `*://*.homedepot.com/*`    | `www.homedepot.com` 등의 하위 도메인 |
+    | `https://localhost:3000/*` | 포트 3000에서 실행되는 로컬 개발 서버       |
+
+    URL 패턴을 저장한 후 탭을 다시 로드하세요.
+
+## 삽입 확인 {#verify-injection}
+
+    모니터링 대상 페이지에서 DevTools를 열고(**Console** 탭) 페이지를 다시 로드한 다음, 아래 항목을 확인하십시오.
+
+    ```text
+    [HyperDX Extension] Configuration valid, injecting HyperDX
+    [HyperDX Extension] Injected via extension scripts
+    [HyperDX Extension] HyperDX initialized
+    ```
+
+    확장 프로그램에서 제공하는 스크립트가 CSP로 차단되면 확장 프로그램은 폴백 메시지를 로그에 기록하고 인라인 삽입 방식으로 재시도합니다.
+
+## 문제 해결 {#troubleshooting}
+
+    <Accordion title="ClickHouse Observability에 세션(Sessions)이 표시되지 않습니다">
+      1. 브라우저 콘솔에서 `[HyperDX Extension]` 로그 메시지나 오류가 있는지 확인하세요
+      2. **HyperDX 모니터링 활성화**가 켜져 있고 **서비스 이름**이 설정되어 있는지 확인하세요
+      3. **수집기 URL**과 **API Key**가 서비스의 **팀 설정 → Managed Telemetry**에 표시된 값과 일치하는지 확인하세요
+      4. 클라이언트 세션 뷰에서 시간 범위를 조정하세요(예: **Last 15 minutes**)
+      5. 브라우저에서 강력 새로고침을 실행하세요: `Cmd+Shift+R`(Mac) 또는 `Ctrl+Shift+R`(Windows/Linux)
+    </Accordion>
+
+    <Accordion title="chrome-extension://invalid/ 오류">
+      `chrome://extensions`에서 확장 기능을 다시 로드한 다음 탭을 강력 새로고침하십시오. 이 문제는 탭이 열려 있는 상태에서 확장 기능이 업데이트되거나 다시 로드되었을 때 발생합니다.
+    </Accordion>
+
+    <Accordion title="사이트에 삽입되지 않음">
+      1. 모니터링이 활성화되어 있고 서비스 이름이 구성되어 있는지 확인하세요
+      2. **일치하는 URL에만 삽입**이 켜져 있다면 현재 페이지 URL이 설정한 패턴 중 하나와 일치하는지 확인하세요
+      3. 일부 사이트는 CSP를 통해 확장 기능에서 삽입하는 스크립트와 인라인 스크립트를 모두 차단합니다. 이러한 페이지에서는 스크립트를 삽입하지 못할 수 있습니다
+    </Accordion>
+
+    <Accordion title="HyperDX: 콘솔에 apiKey가 없습니다">
+      **팀 설정 → Managed Telemetry**에서 확인한 API Key를 입력하고 구성을 저장한 다음, 모니터링 대상 페이지를 다시 로드하십시오. 완전 관리형 수집에는 이 키가 필요합니다.
+    </Accordion>
+
+## 개인정보 보호 {#privacy}
+
+    이 확장 기능은 방문하는 페이지에 관측성 코드를 삽입합니다. 디버깅 권한이 있는 사이트에서만 사용하십시오. API 키를 공유하거나 버전 관리 시스템에 커밋하지 마십시오.
+
+## 자세히 알아보기 {#learn-more}
+
+    * [세션 리플레이](/ko/clickstack/observability/features/session-replay) — 기능 개요, SDK 옵션 및 개인정보 보호 설정
+    * [브라우저 SDK 참조](/ko/clickstack/observability/ingesting-data/sdks/browser) — 전체 SDK 옵션 및 고급 구성
+    * [세션 리플레이 데모](/ko/clickstack/observability/example-datasets/session-replay) — 소스 코드로부터 데모 애플리케이션 계측
+    * [완전 관리형 시작하기](/ko/clickstack/observability/getting-started) — 서비스 연결 및 첫 데이터 수집
+    * [GitHub의 HyperDX Chrome 확장 프로그램](https://github.com/kyreddie/hyperdx-chrome-extension) — 소스 코드 및 이슈 트래커
+  </Tab>
+
+  <Tab title="자가 관리형">
+    자체 관리형 ClickHouse Observability 서비스로 데이터를 전송하는 기존 OpenTelemetry collector와 함께 확장 기능을 사용하세요.
+
+## 개요 {#overview-self-configured}
+
+    [HyperDX Chrome 확장 프로그램](https://github.com/kyreddie/hyperdx-chrome-extension)은 방문하는 페이지에 [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) SDK를 주입합니다. 사이트의 코드베이스를 수정하지 않고 세션 리플레이, RUM 또는 추적 전파를 디버깅할 때 유용하며, 타사 애플리케이션, 운영 환경 빌드, 엄격한 콘텐츠 보안 정책(Content Security Policy, CSP)이 적용된 로컬 개발 서버 등에서 활용할 수 있습니다.
+
+    SDK는 확장 프로그램 내부에 번들로 포함되어 있으므로(~480 KB) 페이지가 런타임에 CDN에서 스크립트를 로드할 필요가 없습니다. 확장 프로그램은 먼저 외부 `chrome-extension://` 스크립트 삽입을 시도하며, CSP가 확장 프로그램 출처의 스크립트를 차단하면 인라인 삽입으로 폴백합니다.
+
+    직접 제어하는 데모 애플리케이션을 계측하는 [세션 리플레이 데모](/ko/clickstack/observability/example-datasets/session-replay)와 달리, 이 방식은 Chrome에서 연 페이지 중 지원되는 페이지를 계측합니다. 단, 일부 페이지는 스크립트 삽입을 제한합니다. 세션 데이터는 일반 사용자와 마찬가지로 사이트를 이용하면서 생성됩니다.
+
+    세션 리플레이의 개요와 작동 방식은 [세션 리플레이](/ko/clickstack/observability/features/session-replay) 기능 페이지를 참조하십시오.
+
+## 사전 요구 사항 {#prerequisites-self-configured}
+
+    * Google Chrome 또는 Chromium 기반 브라우저(Edge, Brave 등)
+    * 기존 자체 관리형 ClickHouse Observability 서비스와 실행 중인 수집용 collector. 필요한 경우 먼저 [collector 설정 가이드](/ko/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)를 따르십시오.
+    * 브라우저에서 연결할 수 있는 collector의 OTLP HTTP 엔드포인트 및 인증 토큰(구성된 경우)
+
+## 데모 실행 {#running-the-demo-self-configured}
+
+    <Steps>
+      <Step title="확장 기능 저장소 복제" id="clone-extension-self-configured">
+        ```shell
+        git clone https://github.com/kyreddie/hyperdx-chrome-extension
+        cd hyperdx-chrome-extension
+        ```
+      </Step>
+
+      <Step title="확장 기능 설치" id="install-extension-self-configured">
+        1. Chrome을 열고 `chrome://extensions`로 이동합니다.
+        2. 오른쪽 상단의 **Developer mode**를 활성화합니다.
+        3. **Load unpacked**를 클릭합니다.
+        4. 복제한 `hyperdx-chrome-extension` 디렉터리를 선택합니다.
+
+        툴바에 **HyperDX Browser Extension**이라는 이름으로 확장 기능이 표시됩니다.
+      </Step>
+
+      <Step title="collector 연결 정보 확인" id="get-api-key-self-configured">
+        실행 중인 collector의 OTLP HTTP 엔드포인트를 사용합니다. 예를 들어 collector가 브라우저와 같은 머신에서 실행 중이라면 `http://localhost:4318`을 사용합니다. 원격 collector라면 브라우저에서 접근할 수 있는 HTTPS URL을 사용하십시오. `/v1/logs`나 `/v1/traces`는 덧붙이지 마십시오.
+
+        collector에서 `OTLP_AUTH_TOKEN`을 사용한다면 `Bearer` 접두사 없이 해당 토큰을 확장 기능의 **API Key**로 입력하십시오. 이 값은 collector의 수집용 자격 증명이며, ClickHouse 데이터베이스의 사용자 이름 및 비밀번호와는 다릅니다. 자세한 내용은 [collector 보안 설정](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)을 참조하십시오.
+      </Step>
+
+      <Step title="확장 기능 구성" id="configure-extension-self-configured">
+        Chrome 툴바에서 **HyperDX Browser Extension** 아이콘을 클릭한 후 다음과 같이 설정을 입력합니다.
+
+        | 필드                               | 자가 관리형 설정                             | 비고                                                                             |
+        | -------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+        | **Enable HyperDX Monitoring**    | On                                    | 주입 기능 전체를 켜고 끄는 마스터 토글                                                         |
+        | **Service Name**                 | `my-frontend-app`                     | 필수 — ClickHouse Observability에서 서비스를 식별하는 이름                                   |
+        | **API Key**                      | collector의 인증 토큰                      | 구성되어 있다면 `OTLP_AUTH_TOKEN` 값 사용                                                |
+        | **Collector URL**                | collector의 OTLP HTTP 엔드포인트            | 확장 기능의 기본 URL을 이 값으로 교체. `http://localhost:4318`은 로컬 머신에서 실행 중인 collector에만 사용 |
+        | **Environment**                  | `development`                         | 선택 사항 — `deployment.environment` 리소스 속성 설정                                     |
+        | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | 선택 사항 — 트레이스 헤더를 전파할 대상을 지정하는 JavaScript 정규식 패턴(쉼표로 구분)                        |
+        | **Only inject on matching URLs** | Off                                   | 계측 대상 사이트를 제한하려면 활성화                                                           |
+        | **Capture console logs**         | Off                                   | 브라우저 콘솔 출력을 전달하려면 활성화                                                          |
+        | **Advanced network capture**     | Off                                   | 네트워크 요청을 상세하게 수집하려면 활성화                                                        |
+
+        **Save Configuration**을 클릭한 다음, 계측할 탭을 새로 고칩니다.
+
+        <div className="ch-image-sm">
+          <Frame>
+            ![로컬 ClickStack 설정이 입력된 HyperDX Chrome 확장 기능 구성 팝업](/images/clickstack/chrome-extension/extension-config.png)
+          </Frame>
+        </div>
+
+        위 스크린샷은 일반적인 로컬 설정 예시입니다. 모니터링이 활성화되어 있고, 서비스 이름이 지정되어 있으며, collector는 `http://localhost:4318`을 가리키고, 트레이스 전파는 API 및 localhost URL로 제한되어 있습니다.
+      </Step>
+
+      <Step title="사이트 탐색 및 세션 생성" id="browse-site-self-configured">
+        Chrome에서 원하는 웹사이트나 로컬 애플리케이션을 엽니다. 예를 들어 프론트엔드 개발 서버라면 [http://localhost:3000](http://localhost:3000)을 엽니다.
+
+        링크 클릭, 폼 제출, 오류 발생, 뷰 간 이동 등 평소와 같이 페이지를 사용합니다. 구성이 유효하면 확장 기능이 페이지를 로드할 때마다 Browser SDK를 자동으로 주입합니다.
+      </Step>
+
+      <Step title="세션 재생 보기" id="view-session-replay-self-configured">
+        ClickHouse Cloud에서 자가 관리형 ClickHouse Observability 서비스를 열고 왼쪽 사이드바에서 **Client Sessions**를 선택합니다. 그런 다음 브라우징 활동이 포함된 시간 범위를 선택하십시오.
+
+        세션이 지속 시간 및 이벤트 수와 함께 목록에 표시됩니다. ▶️ 버튼을 클릭하면 세션을 재생할 수 있습니다.
+
+        **Highlighted** 모드와 **All Events** 모드를 전환하여 타임라인에 표시되는 정보의 상세 수준을 조정할 수 있습니다.
+      </Step>
+    </Steps>
+
+## URL 필터링 {#url-filtering-self-configured}
+
+    기본적으로 확장 프로그램은 모니터링이 활성화되어 있는 동안 방문하는 모든 페이지에 SDK를 삽입합니다. 특정 사이트에만 삽입하려면 **일치하는 URL에만 삽입**을 켜고 패턴을 한 줄에 하나씩(또는 쉼표로 구분하여) 추가하세요.
+
+    | 패턴                         | 일치 대상                         |
+    | -------------------------- | ----------------------------- |
+    | `http://homedepot.com/*`   | `homedepot.com`의 HTTP만 일치     |
+    | `*://homedepot.com/*`      | `homedepot.com`의 HTTP 및 HTTPS |
+    | `*://*.homedepot.com/*`    | `www.homedepot.com` 등의 하위 도메인 |
+    | `https://localhost:3000/*` | 포트 3000에서 실행되는 로컬 개발 서버       |
+
+    URL 패턴을 저장한 후 탭을 다시 로드하세요.
+
+## 삽입 확인 {#verify-injection-self-configured}
+
+    모니터링 대상 페이지에서 DevTools를 열고(**Console** 탭) 페이지를 다시 로드한 다음, 아래 내용을 확인하십시오:
+
+    ```text
+    [HyperDX Extension] Configuration valid, injecting HyperDX
+    [HyperDX Extension] Injected via extension scripts
+    [HyperDX Extension] HyperDX initialized
+    ```
+
+    확장 프로그램에서 제공하는 스크립트가 CSP에 의해 차단되면, 확장 프로그램은 폴백 메시지를 로그에 기록한 후 인라인 삽입 방식으로 재시도합니다.
+
+## 문제 해결 {#troubleshooting-self-configured}
+
+    <Accordion title="ClickStack UI에 세션이 표시되지 않음">
+      1. 브라우저 콘솔에서 `[HyperDX Extension]` 로그 메시지나 오류가 있는지 확인하세요
+      2. **HyperDX 모니터링 활성화**가 켜져 있고 **서비스 이름**이 설정되어 있는지 확인하세요
+      3. collector가 실행 중인지, 브라우저에서 collector의 OTLP HTTP 엔드포인트에 연결할 수 있는지, API Key가 collector의 인증 토큰과 일치하는지 확인하세요
+      4. 클라이언트 세션 뷰에서 시간 범위를 조정하세요(예: **Last 15 minutes**)
+      5. 브라우저에서 강력 새로고침을 실행하세요: `Cmd+Shift+R`(Mac) 또는 `Ctrl+Shift+R`(Windows/Linux)
+    </Accordion>
+
+    <Accordion title="chrome-extension://invalid/ 오류">
+      `chrome://extensions`에서 확장 프로그램을 다시 로드한 후 탭을 강력 새로고침하십시오. 이 문제는 탭이 열려 있는 상태에서 확장 프로그램이 업데이트되거나 다시 로드된 경우에 발생합니다.
+    </Accordion>
+
+    <Accordion title="사이트에 삽입되지 않음">
+      1. 모니터링이 활성화되어 있고 서비스 이름이 구성되어 있는지 확인하십시오
+      2. **일치하는 URL에만 삽입**이 켜져 있다면 현재 페이지 URL이 설정한 패턴 중 하나와 일치하는지 확인하십시오
+      3. 일부 사이트는 CSP를 통해 확장 기능 출처의 스크립트 삽입과 인라인 스크립트 삽입을 모두 차단하므로, 해당 페이지에서는 삽입이 불가능할 수 있습니다
+    </Accordion>
+
+    <Accordion title="HyperDX: 콘솔에 apiKey가 없습니다">
+      collector에 인증이 필요하면 **API Key**에 해당 토큰을 입력하고 구성을 저장한 다음, 모니터링 대상 페이지를 다시 로드하십시오. 삽입 메시지만으로 판단하지 말고 브라우저 네트워크 요청과 collector 로그에서 내보내기 오류가 있는지 확인하십시오.
+    </Accordion>
+
+## 개인정보 보호 {#privacy-self-configured}
+
+    이 확장 프로그램은 방문하는 페이지에 관측성 코드를 삽입합니다. 디버깅 권한이 있는 사이트에서만 사용하십시오. API 키를 공유하거나 버전 관리 시스템에 커밋하지 마십시오.
+
+## 자세히 알아보기 {#learn-more-self-configured}
+
+    * [세션 리플레이](/ko/clickstack/observability/features/session-replay) — 기능 개요, SDK 옵션 및 개인정보 보호 설정
+    * [브라우저 SDK 참조](/ko/clickstack/observability/ingesting-data/sdks/browser) — 전체 SDK 옵션 및 고급 구성
+    * [세션 리플레이 데모](/ko/clickstack/observability/example-datasets/session-replay) — 소스 코드로 데모 애플리케이션 계측하기
+    * [자가 관리형 시작하기](/ko/clickstack/self-configured/getting-started/managed) — 서비스 설정 및 첫 데이터 수집
+    * [GitHub의 HyperDX Chrome 확장 프로그램](https://github.com/kyreddie/hyperdx-chrome-extension) — 소스 코드 및 이슈 트래커
+  </Tab>
+</Tabs>

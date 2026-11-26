@@ -258,8 +258,8 @@ public:
             static constexpr size_t max_k = 100000;
 
             size_t k = 0;                           /// the query's LIMIT K (heap capacity)
-            std::vector<int> directions;            /// per-column ORDER BY directions
-            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            VectorWithMemoryTracking<int> directions;       /// per-column ORDER BY directions
+            VectorWithMemoryTracking<int> nulls_directions; /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
@@ -462,7 +462,8 @@ public:
     /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the
     /// session with its count bins when the aggregation prunes by the top-K; the bins take the rows of
     /// `local_variants`, the producer's own table, as well. A producer that never froze has no bins and hands
-    /// `local_variants` over for the merge to count instead. Counts the producer toward the verdict of the
+    /// `local_variants` over for the merge to count instead. Adds the rank of the NULL key of its table to
+    /// the session for a top-K (see `AdaptiveTopKNullKey`). Counts the producer toward the verdict of the
     /// run, and indexes the cells of a single-level table by the partitions of the layout for the merges.
     /// Every producer with the adaptive context calls it before the finish barrier, so the session holds
     /// every producer's contribution by the time the last finisher assembles the merge.
@@ -484,13 +485,14 @@ public:
     /// frees them, while their spills have not ended at the finish barrier. Returns the released bytes.
     size_t spillHandedOverStagedRecords(AdaptiveAggregationSession & shared) const;
 
-    /// Decides once, after the finish barrier and before the merge starts, how the merge uses the top-K it feeds.
-    /// The merge prunes by the count bins where `mergePrunesByTopK` says it can, and the buckets are then ordered for
-    /// it by their bin bounds; otherwise the pruning is dropped, and the tables take the bucket merge only if some
-    /// producer froze (see `AdaptiveAggregationSession::mergesByBuckets`). The threshold that the merge threads share
-    /// (see `AdaptiveTopKThreshold`) needs only exact ranks of the converted units, so it is created for every bucket
-    /// merge but an external one, which outputs partial states. It settles an ascending top-K unless the merge collects
-    /// the statistics, which need every group.
+    /// Decides once, after the finish barrier and before the merge starts, how the merge uses the top-K it
+    /// feeds. The merge prunes by the count bins where `mergePrunesByTopK` says it can: bucket 0 then takes
+    /// the bound of the NULL key into its own (see `AdaptiveTopKNullKey`), and the buckets are ordered for it
+    /// by their bounds. Otherwise the pruning is dropped, and the tables take the bucket merge only if some
+    /// producer froze (see `AdaptiveAggregationSession::mergesByBuckets`). The threshold that the merge
+    /// threads share (see `AdaptiveTopKThreshold`) is created for every bucket merge but an external one,
+    /// which outputs partial states, and takes a rank of the NULL key before the merge. It settles an
+    /// ascending top-K unless the merge collects the statistics, which need every group.
     void prepareAdaptiveTopK(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
@@ -596,6 +598,8 @@ public:
         bool can_optimize_equal_keys_ranges = true;
         /// The only argument is a `LowCardinality` column whose used values are added once (aggregation without keys).
         bool has_low_cardinality_argument = false;
+        /// The arguments are copies of constants with this many rows, added repeatedly to cover the rows (aggregation without keys); 0 otherwise.
+        size_t constant_argument_rows = 0;
     };
 
     /// Used for optimize_aggregation_in_order:
@@ -661,6 +665,15 @@ public:
     /// rows from `claimed_partitions` of the `partitions` ends.
     static bool singleLevelPartitionChunkEndsForFanOut(size_t rows, size_t claimed_partitions, size_t partitions, size_t output_streams);
 
+    /// The adaptive verdict of a finished run (see `adaptiveStagingVerdict`) with the kind of run that it
+    /// holds for: a run with a lone producer, which thaws by a bound of its own, or a run with several (see
+    /// `AggregationEntry`).
+    struct AdaptiveStagingVerdict
+    {
+        bool lone_producer;
+        bool repeat_dominated;
+    };
+
     /// Records the adaptive verdict of the run in the hash-table statistics when the run measured one (see
     /// `adaptiveStagingVerdict`). The in-memory merge records it inside `prepareVariantsToMerge`; the external merge
     /// never reaches that, so its finish path calls this instead.
@@ -718,11 +731,12 @@ public:
     /// itself takes, as with the 16 bytes of a `-ForEach` state over such a function.
     bool hasHeavyStates() const { return has_heavy_states; }
 
-    /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): a worker's share of the
-    /// merge work that the producers of `session` estimated, within fixed bounds, or the upper bound without a session.
-    /// The session's producers have finished. Once the workers run out of work, any group above the lower bound takes
-    /// the pool.
-    ParallelMergeThreshold parallelMergeThreshold(const AdaptiveAggregationSession * session) const;
+    /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): the share of
+    /// one of the merge's `workers` in the merge work that the producers of `session` estimated, within fixed
+    /// bounds, or the upper bound without a session. The caller guarantees that the merge has at least one
+    /// worker and that the session's producers have finished. Once the workers run out of work, any group
+    /// above the lower bound takes the pool.
+    ParallelMergeThreshold parallelMergeThreshold(const AdaptiveAggregationSession * session, size_t workers) const;
 
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.
@@ -1104,9 +1118,9 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     /// The adaptive verdict of a finished run: whether at least half of the producers whose tables froze
-    /// thawed, so that later runs of the query should not engage the adaptive aggregation, or nothing when
-    /// the run measured nothing.
-    std::optional<bool> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
+    /// thawed, so that later runs of the same kind should not engage the adaptive aggregation, or nothing
+    /// when the run measured nothing.
+    std::optional<AdaptiveStagingVerdict> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
 
     /// Whether a frozen producer thaws, checked between blocks: its own staged stream repeats its misses so
     /// much that its table would do better absorbing them in place (see the tuning constants in
@@ -1195,6 +1209,22 @@ private:
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
 
+    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
+    /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot
+    /// (`emplace_null_key`) without a lookup and needs a place, so without `record_places` the block has no such rows.
+    template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
+    AdaptiveLocalProbes collectArgumentMisses(
+        LocalMethod & local_method,
+        State & local_find_state,
+        size_t row_begin,
+        size_t row_end,
+        Arena & scratch_pool,
+        AdaptiveAggregationProducer & adaptive,
+        bool bypass_local_probe,
+        AggregateDataPtr * places_data,
+        const EmplaceNullKey & emplace_null_key,
+        const StageMisses & stage_misses) const;
+
     /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects
     /// for `Method`, the two-level twin of the producer's table. Each record carries a key and either a multiplicity
     /// (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate arguments laid out by
@@ -1280,14 +1310,32 @@ private:
     template <typename Method, typename Table, typename ForEachSourceTable>
     void adoptSourceNullKeys(Table & table, const ForEachSourceTable & for_each_source_table, AdaptiveMergeTask & task) const;
 
-    /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
-    /// cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every partition
-    /// `for_each_in_memory_partition` hands out and the records of every spilled block `for_each_spilled_block` reads
-    /// back, in the count bins `alive_bins` keeps (all bins when null), and puts the hashes of its best groups by the
-    /// count into `task.best_hashes`. The counting table and `top_k` copy the string-like keys of spilled records they
-    /// keep into `arena`. With a descending order `top_k` keeps the best groups up to date while they are counted, and
-    /// an ascending order selects them by a pass over the counted groups. Either drops the groups ranked worse than
-    /// `threshold`. Adds the records the bins skipped to `pruned_records`. Returns the unit's group count.
+    /// Discards the NULL keys of the sources of a merge unit with their states, as `adoptSourceCells`
+    /// discards a cell whose group cannot reach the top. `for_each_source_table` is as for
+    /// `adoptSourceNullKeys`.
+    template <typename Method, typename ForEachSourceTable>
+    void discardSourceNullKeys(const ForEachSourceTable & for_each_source_table) const;
+
+    /// What the first pass of a count-first unit found (see `selectCountFirstBestGroups`).
+    struct CountFirstSelection
+    {
+        /// The groups of the unit, the NULL key included.
+        size_t groups = 0;
+        /// Whether the NULL key is among the best groups.
+        bool keeps_null_key = false;
+    };
+
+    /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its
+    /// source cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every
+    /// partition `for_each_in_memory_partition` hands out and the records of every spilled block
+    /// `for_each_spilled_block` reads back, in the count bins `alive_bins` keeps (all bins when null), and
+    /// puts the hashes of its best groups by the count into `task.best_hashes`. The counting table and
+    /// `top_k` copy the string-like keys of spilled records they keep into `arena`. With a descending order
+    /// `top_k` keeps the best groups up to date while they are counted, and an ascending order selects them
+    /// by a pass over the counted groups. Either drops the groups ranked worse than `threshold`.
+    /// `null_key_count`, when set, is the count of the NULL key of the sources (see `adoptSourceNullKeys`), a
+    /// group that the counting table does not hold, and that competes with the counted groups by its count.
+    /// Adds the records the bins skipped to `pruned_records`.
     template <
         typename Method,
         typename Table,
@@ -1295,7 +1343,7 @@ private:
         typename TopK,
         typename ForEachInMemoryPartition,
         typename ForEachSpilledBlock>
-    size_t selectCountFirstBestGroups(
+    CountFirstSelection selectCountFirstBestGroups(
         Table & counting_table,
         const ForEachCell & for_each_cell,
         const bool * alive_bins,
@@ -1303,6 +1351,7 @@ private:
         const AdaptiveTopKThreshold & threshold,
         const ForEachInMemoryPartition & for_each_in_memory_partition,
         const ForEachSpilledBlock & for_each_spilled_block,
+        std::optional<UInt64> null_key_count,
         Arena * arena,
         AdaptiveMergeTask & task,
         size_t & pruned_records) const;
@@ -1339,9 +1388,10 @@ private:
         std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
         AdaptiveTopKThreshold * table_threshold) const;
 
-    /// The rank of the group with the aggregate states at `mapped`, which the top-K pruning bounds: its count, or the
-    /// distinct count of its `uniqExact` or `uniqExactIf` rank, finalized into `scratch`.
-    UInt64 adaptiveRankCount(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const;
+    /// The rank of the NULL key in `variants`, a producer's table, as `bucketTopKRank` reads it, for a
+    /// method that keeps the NULL key in a slot of its own (see `keeps_null_key_slot`). Nothing for another
+    /// method or for a table without the NULL key.
+    std::optional<UInt64> adaptiveNullKeyRank(AggregatedDataVariants & variants) const;
 
     /// Adds the groups that the tables of the producers that never froze hold in bucket `bucket` (see
     /// `AdaptiveTopKPruning::isMergeCounted`) to the bucket's `bounds`, finding the bucket's partitions in
@@ -1733,6 +1783,11 @@ private:
     /// `insertResultInto` leaves the state valid for the merge and the conversion that follow.
     UInt64 finalizeBucketTopKRank(AggregateDataPtr place, IColumn & scratch, Arena * arena) const;
 
+    /// The rank of the group with the aggregate states at `mapped` when `Params::bucket_top_k` is set: its
+    /// count, kept in the cell for a lone `count`, or the distinct count of its `uniqExact` or `uniqExactIf`
+    /// rank, finalized into `scratch`.
+    UInt64 bucketTopKRank(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const;
+
     /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
     /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
     /// plan optimization admits.
@@ -2003,6 +2058,19 @@ private:
         AggregateDataPtr place,
         Arena * arena);
 };
+
+inline ALWAYS_INLINE UInt64 Aggregator::bucketTopKRank(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const
+{
+    switch (bucket_top_k_rank)
+    {
+        case BucketTopKRank::InlineCount:
+            return getInlineCountState(mapped);
+        case BucketTopKRank::CountState:
+            return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
+        case BucketTopKRank::FinalizedResult:
+            return finalizeBucketTopKRank(mapped, *scratch, arena);
+    }
+}
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
