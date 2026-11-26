@@ -178,9 +178,20 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
         return false;
 
     /// The atom will also run on target rows the source never saw, so it must not throw on them:
-    /// a comparison across type domains parses one side per row and can fail there
-    if (is_comparison && comparisonCanThrow(node->children[0]->result_type, node->children[1]->result_type))
-        return false;
+    /// a comparison across type domains parses one side per row and can fail there.
+    /// A constant string is converted once, so it cannot fail on a row
+    const bool converts_argument = is_comparison && comparisonCanThrow(node->children[0]->result_type, node->children[1]->result_type);
+    if (converts_argument)
+    {
+        DataTypesWithConstInfo arguments;
+        for (const auto * child : node->children)
+        {
+            const auto * constant = checkAndGetColumn<ColumnConst>(child->column.get());
+            arguments.push_back({child->result_type, constant != nullptr, constant});
+        }
+        if (node->function_base->canThrow(arguments))
+            return false;
+    }
     if (!node->function_base->isDeterministic())
         return false;
 
@@ -195,6 +206,9 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
             /// Substituting a column of another type would change the atom, and `FunctionIn`
             /// rejects a left argument that does not match the type the set was built with
             if (!it->second.type->equals(*child->result_type))
+                return false;
+            /// Equal types can read the same string as different values: `DateTime` in two time zones
+            if (converts_argument && it->second.type->getName() != child->result_type->getName())
                 return false;
             ++substituted_keys;
         }
