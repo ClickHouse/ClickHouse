@@ -570,6 +570,10 @@ namespace
             }
         }
 
+        /// Whether some source holds the NULL key in its slot for `unit` (see
+        /// `forEachSourceTableWithNullKey`).
+        [[nodiscard]] bool hasNullKeys(size_t unit) const { return unit == 0 && !null_key_sources.empty(); }
+
         /// How many source cells `unit` has, counting the NULL key of every source that holds it as one.
         [[nodiscard]] size_t count(size_t unit) const
         {
@@ -895,6 +899,17 @@ void Aggregator::adoptSourceNullKeys(Table & table, const ForEachSourceTable & f
     });
 }
 
+template <typename Method, typename ForEachSourceTable>
+void Aggregator::discardSourceNullKeys(const ForEachSourceTable & for_each_source_table) const
+{
+    for_each_source_table([&](auto & source)
+    {
+        if constexpr (MapAggregationMethod<Method>)
+            discardAdaptiveSourceState(source.getNullKeyData());
+        source.hasNullKeyData() = false;
+    });
+}
+
 template <
     typename Method,
     typename Table,
@@ -902,7 +917,7 @@ template <
     typename TopK,
     typename ForEachInMemoryPartition,
     typename ForEachSpilledBlock>
-size_t Aggregator::selectCountFirstBestGroups(
+Aggregator::CountFirstSelection Aggregator::selectCountFirstBestGroups(
     Table & counting_table,
     const ForEachCell & for_each_cell,
     const bool * alive_bins,
@@ -910,12 +925,14 @@ size_t Aggregator::selectCountFirstBestGroups(
     const AdaptiveTopKThreshold & threshold,
     const ForEachInMemoryPartition & for_each_in_memory_partition,
     const ForEachSpilledBlock & for_each_spilled_block,
+    std::optional<UInt64> null_key_count,
     Arena * arena,
     AdaptiveMergeTask & task,
     size_t & pruned_records) const
 {
     using Key = AdaptiveRecordKey<Method>;
     const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
+    CountFirstSelection selection;
 
     /// The groups are counted in the table, each count kept in the mapped value as a lone `count()` keeps it: a source
     /// cell adds its count state, a record one row. With a descending order, the top takes every grown count and keeps
@@ -970,9 +987,28 @@ size_t Aggregator::selectCountFirstBestGroups(
     {
         /// A group counted below the threshold, a floor, cannot reach the top.
         const UInt64 min_count = threshold.current();
-        for (const auto & group : top_k->getGroups())
+        const auto & groups = top_k->getGroups();
+        for (const auto & group : groups)
             if (group.count >= min_count)
                 best_hashes.push_back(group.hash);
+        /// The NULL key, which the counting table does not hold, joins the best groups by its count. A full
+        /// top gives up its group of the smallest count when the NULL key's count beats it.
+        if (null_key_count && *null_key_count >= min_count)
+        {
+            if (best_hashes.size() < params.bucket_top_k)
+            {
+                selection.keeps_null_key = true;
+            }
+            else
+            {
+                const auto worst = std::ranges::min_element(groups, {}, [](const auto & group) { return group.count; });
+                if (*null_key_count > worst->count)
+                {
+                    selection.keeps_null_key = true;
+                    best_hashes.erase(std::ranges::find(best_hashes, worst->hash));
+                }
+            }
+        }
     }
     else
     {
@@ -1002,10 +1038,25 @@ size_t Aggregator::selectCountFirstBestGroups(
                     std::push_heap(best.begin(), best.end(), by_count);
                 }
             });
+        /// The NULL key joins the smallest counts as a group would.
+        if (null_key_count && *null_key_count <= max_count)
+        {
+            if (best.size() < params.bucket_top_k)
+            {
+                selection.keeps_null_key = true;
+            }
+            else if (*null_key_count < best.front().first)
+            {
+                selection.keeps_null_key = true;
+                std::pop_heap(best.begin(), best.end(), by_count);
+                best.pop_back();
+            }
+        }
         for (const auto & [count, hash] : best)
             best_hashes.push_back(hash);
     }
-    return counting_table.size();
+    selection.groups = counting_table.size() + null_key_count.has_value();
+    return selection;
 }
 
 template <typename Record>
@@ -1085,19 +1136,6 @@ void Aggregator::executeStagedArguments(
         use_compiled_functions);
 }
 
-ALWAYS_INLINE UInt64 Aggregator::adaptiveRankCount(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const
-{
-    switch (bucket_top_k_rank)
-    {
-        case BucketTopKRank::InlineCount:
-            return getInlineCountState(mapped);
-        case BucketTopKRank::CountState:
-            return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
-        case BucketTopKRank::FinalizedResult:
-            return finalizeBucketTopKRank(mapped, *scratch, arena);
-    }
-}
-
 size_t Aggregator::collectAdaptiveTableStatistics(
     AggregatedDataVariants & variants,
     AdaptiveTopKCountBins * bins,
@@ -1155,7 +1193,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(
                 {
                     if (bins || max_count_per_bucket || table_threshold)
                     {
-                        const UInt64 count = adaptiveRankCount(mapped, scratch.get(), arena);
+                        const UInt64 count = bucketTopKRank(mapped, scratch.get(), arena);
                         if (bins)
                             bins->add(hash_of(), count);
                         if (max_count_per_bucket)
@@ -1197,6 +1235,38 @@ size_t Aggregator::collectAdaptiveTableStatistics(
     return work;
 }
 
+std::optional<UInt64> Aggregator::adaptiveNullKeyRank(AggregatedDataVariants & variants) const
+{
+    std::optional<UInt64> rank;
+    const auto read = [&](auto & method)
+    {
+        using Method = std::decay_t<decltype(method)>;
+        if constexpr (keeps_null_key_slot<Method> && MapAggregationMethod<Method>)
+        {
+            if (!method.data.hasNullKeyData())
+                return;
+            ColumnUInt64::MutablePtr scratch;
+            if (bucket_top_k_rank == BucketTopKRank::FinalizedResult)
+                scratch = ColumnUInt64::create();
+            rank = bucketTopKRank(method.data.getNullKeyData(), scratch.get(), variants.aggregates_pool);
+        }
+    };
+#define M(NAME) \
+    else if (variants.type == AggregatedDataVariants::Type::NAME) \
+        read(*variants.NAME);
+
+    if (variants.empty()) {} // NOLINT
+    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+    else
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT,
+            "The adaptive aggregation cannot read the NULL key of variant {}",
+            variants.getMethodName());
+    return rank;
+}
+
 template <typename Method>
 void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
     ManyAggregatedDataVariants & data,
@@ -1220,7 +1290,7 @@ void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
                 layout,
                 bucket,
                 [&](const auto &, AggregateDataPtr & mapped, size_t hash)
-                { AdaptiveTopKPruning::addToBounds(bounds, hash, adaptiveRankCount(mapped, scratch.get(), arena)); });
+                { AdaptiveTopKPruning::addToBounds(bounds, hash, bucketTopKRank(mapped, scratch.get(), arena)); });
         }
     }
 }
@@ -1346,11 +1416,6 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     if (count_first)
         std::swap(table, counting_table);
 
-    /// The top-K takes no key that keeps its NULL in a slot of its own, so no unit that takes the NULL keys
-    /// of the sources (see `AdaptiveUnitSourceCells::forEachSourceTableWithNullKey`) is skipped, counted
-    /// first or filtered.
-    chassert(!keeps_null_key_slot<Method> || (!threshold && !count_first));
-
     AggregatedChunks chunks;
     for (size_t unit = 0; unit < units; ++unit)
     {
@@ -1372,12 +1437,28 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// its source cells dropped and its records freed unread; a unit with some drains only theirs.
         const bool * alive_bins = nullptr;
         bool skip = skips_bucket || (threshold && threshold->settled());
+
+        /// The NULL key of the sources (see `AdaptiveUnitSourceCells::forEachSourceTableWithNullKey`) is a
+        /// group that no bin holds: the unit keeps it while it can reach the top (see
+        /// `AdaptiveTopKNullKey::canReachTop`), whether the unit is skipped or not.
+        const auto for_each_source_null_key = [&](auto && f) { unit_source_cells.forEachSourceTableWithNullKey(unit, f); };
+        const bool holds_null_keys = unit_source_cells.hasNullKeys(unit);
+        bool keeps_null_keys = holds_null_keys && (!threshold || session.top_k_null_key.canReachTop(*threshold, pruning != nullptr));
+
         if (pruning && !skip)
         {
             const auto selection = pruning->selectUnit(bin_bounds, unit, units, threshold->current(), alive);
             skip = selection == AdaptiveTopKPruning::UnitSelection::Skip;
             if (selection == AdaptiveTopKPruning::UnitSelection::Filter)
                 alive_bins = alive.data();
+        }
+        /// A unit that its bins or a settled threshold skip still takes a NULL key that can reach the top:
+        /// the bins, all dead, filter out every record and source cell of the unit.
+        if (skip && keeps_null_keys)
+        {
+            skip = false;
+            alive.fill(false);
+            alive_bins = alive.data();
         }
         if (skip)
         {
@@ -1387,6 +1468,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 if (adaptiveSourceStatesHaveDestructors())
                     for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
             }
+            if (holds_null_keys)
+                discardSourceNullKeys<Method>(for_each_source_null_key);
             staged.release(unit_first_sub, unit_end_sub);
             pruned_records += unit_records;
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
@@ -1430,8 +1513,12 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         {
             adoptSourceCells<Method>(table, for_each_cell, filter, task);
             if constexpr (keeps_null_key_slot<Method>)
-                adoptSourceNullKeys<Method>(
-                    table, [&](auto && f) { unit_source_cells.forEachSourceTableWithNullKey(unit, f); }, task);
+            {
+                if (keeps_null_keys)
+                    adoptSourceNullKeys<Method>(table, for_each_source_null_key, task);
+                else if (holds_null_keys)
+                    discardSourceNullKeys<Method>(for_each_source_null_key);
+            }
             size_t skipped = 0;
             for_each_spilled_block([&](const AdaptiveRecordRanges & ranges)
             {
@@ -1454,10 +1541,20 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         {
             if constexpr (MapAggregationMethod<Method>)
             {
-                /// The first pass counts the unit's groups and selects its best groups. The second builds the states of
-                /// the best groups in the bucket's table for the conversion, as the ordinary merge does, and the other
-                /// source cells go with their states. Each pass reads the spill streams of the unit's partitions back.
-                unit_groups = selectCountFirstBestGroups<Method>(
+                /// The first pass counts the unit's groups and selects its best groups. The second builds the
+                /// states of the best groups in the bucket's table for the conversion, as the ordinary merge
+                /// does, and the other source cells go with their states. Each pass reads the spill streams
+                /// of the unit's partitions back. The count of the NULL key is exact: every row of the NULL
+                /// key is in the slots of the sources.
+                std::optional<UInt64> null_key_count;
+                if (keeps_null_keys)
+                {
+                    const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
+                    null_key_count.emplace(0);
+                    for_each_source_null_key(
+                        [&](auto & source) { *null_key_count += getCountState(source.getNullKeyData() + rank_offset); });
+                }
+                const auto selection = selectCountFirstBestGroups<Method>(
                     counting_table,
                     for_each_cell,
                     alive_bins,
@@ -1465,9 +1562,13 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     *threshold,
                     for_each_in_memory_partition,
                     for_each_spilled_block,
+                    null_key_count,
                     arena,
                     task,
                     pruned_records);
+                unit_groups = selection.groups;
+                /// The second pass merges the NULL key only as one of the best groups.
+                keeps_null_keys = selection.keeps_null_key;
                 counting_table.clear();
                 merge_unit(BestHashFilter(task.best_hashes));
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationCountFirstUnits);
@@ -1513,7 +1614,19 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// The unit holds every record and source cell of its keys, so the ranks it output are exact, and no
         /// other unit outputs its groups.
         if (threshold)
-            threshold->offer(bucketTopKRanks(chunk.chunk));
+        {
+            std::span<const UInt64> ranks = bucketTopKRanks(chunk.chunk);
+            /// The conversion outputs a kept NULL key first (see `convertOneBucketToChunkTopKImpl`). When the
+            /// threshold took a rank of it before the merge, its exact rank replaces that one instead of
+            /// being offered again, because an offer counts a group once.
+            if constexpr (keeps_null_key_slot<Method>)
+            {
+                const bool outputs_null_key = !ranks.empty() && chunk.chunk.getColumns()[0]->isNullAt(0);
+                if (outputs_null_key && session.top_k_null_key.replaceOffer(*threshold, ranks.front()))
+                    ranks = ranks.subspan(1);
+            }
+            threshold->offer(ranks);
+        }
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
@@ -1654,20 +1767,17 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
     return destination;
 }
 
-Aggregator::ParallelMergeThreshold Aggregator::parallelMergeThreshold(const AdaptiveAggregationSession * session) const
+Aggregator::ParallelMergeThreshold
+Aggregator::parallelMergeThreshold(const AdaptiveAggregationSession * session, size_t workers) const
 {
     /// While the workers are busy, a group larger than a worker's share can hold up the merge, and very large states
     /// amortize the pool even when other groups are busy. Without the producers' estimate of the merge work, only a group
     /// of very large states takes the pool then. Small states do not justify its setup even with idle workers.
+    chassert(workers > 0);
     ParallelMergeThreshold threshold{.busy = adaptive_parallel_merge_max_work, .idle = adaptive_parallel_merge_min_work};
     if (session)
-    {
-        chassert(params.max_threads > 0 && session->finished_producers > 0);
         threshold.busy = std::clamp(
-            session->estimated_merge_work / std::min(params.max_threads, session->finished_producers),
-            adaptive_parallel_merge_min_work,
-            adaptive_parallel_merge_max_work);
-    }
+            session->estimated_merge_work / workers, adaptive_parallel_merge_min_work, adaptive_parallel_merge_max_work);
     return threshold;
 }
 
