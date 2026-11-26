@@ -768,6 +768,12 @@ class FileHandler:
         for val in file_columns:
             column = _to_spark_column(mapper, val, is_avro)
             if column is None:
+                # The engine takes format settings from its CREATE, not from the reading
+                # query, so a declared field missing from the Avro file fails every read
+                if val["name"] in ch_column_names:
+                    raise ValueError(
+                        f"Column {val['name']} of {data['database_name']}.{data['table_name']} is not representable in Avro"
+                    )
                 continue
             # Sometimes skip columns: ClickHouse fills them with defaults on read. Not
             # for Avro, where `input_format_avro_allow_missing_fields` is 0 by default,
