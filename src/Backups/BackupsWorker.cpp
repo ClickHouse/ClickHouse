@@ -6,6 +6,7 @@
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupFileInfo.h>
 #include <Backups/BackupInMemory.h>
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
@@ -15,7 +16,6 @@
 #include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Backups/getBackupDataFileName.h>
 #include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
