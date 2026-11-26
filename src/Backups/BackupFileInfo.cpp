@@ -95,7 +95,7 @@ String BackupFileInfo::describe() const
     result += fmt::format("object_key: {};\n", object_key);
     result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("base_size: {};\n", base_size);
-    result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
+    result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(base_checksum));
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
     result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
