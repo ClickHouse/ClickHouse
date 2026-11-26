@@ -40,8 +40,10 @@ public:
         const std::string update_field;
         const UInt64 update_lag;
         const bool bg_reconnect;
-        /// The queries come from a `CREATE DICTIONARY`, see `checkExternalDictionaryQueryIsSelect`.
+        /// See `shouldCheckExternalDictionaryQueries`.
         const bool check_queries_are_select;
+        /// The query comes from a `CREATE DICTIONARY`, see `checkExternalDictionaryQueryConditionPlaceholder`.
+        const bool check_condition_placeholder;
     };
 
     MySQLDictionarySource(

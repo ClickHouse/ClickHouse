@@ -147,6 +147,8 @@ Check that the queries a MySQL, PostgreSQL or ODBC source of a dictionary create
 The database receives the queries with the credentials of the source, which can come from a named collection, and the dictionary is loaded with the global context. So without the check, the author of the dictionary can run any statement in the database with these credentials.
 
 The queries are checked with the ClickHouse parser, so a valid query that the ClickHouse parser does not accept, or that contains comments, heredocs, typographic quotes, backslashes in quoted tokens, `INTO OUTFILE`, `FORMAT` or `SETTINGS`, is rejected too. Disable the setting to load such dictionaries as before, without the check and without its protection. Dictionaries from the server configuration are not checked.
+
+The setting does not disable the check that `{condition}` is not inside a string literal or a quoted identifier of `query`: it protects against the caller of `dictGet`, whose lookup keys replace `{condition}`, not against the author of the dictionary.
 )", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \

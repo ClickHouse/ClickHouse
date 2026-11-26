@@ -440,7 +440,7 @@ def test_dictionary_with_where(started_cluster):
         DB 'dictionary_with_where'
         TABLE 'special_table'
         REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)
-        WHERE 'value1 = \\'qweqwe\\' OR value1 = \\'u3232\\''
+        WHERE 'value1 = \\'qweqwe\\' OR value1 = \\'it\\'\\'s ㈲\\''
     ))
     LAYOUT(FLAT())
     LIFETIME(MIN 1 MAX 3)

@@ -30,10 +30,13 @@ function cleanup()
         DROP DICTIONARY IF EXISTS dict_update;
         DROP DICTIONARY IF EXISTS dict_nc;
         DROP DICTIONARY IF EXISTS dict_keys;
+        DROP DICTIONARY IF EXISTS dict_hidden;
         DROP USER IF EXISTS $user;
         DROP USER IF EXISTS $backend_user;
         DROP NAMED COLLECTION IF EXISTS $nc;
         DROP NAMED COLLECTION IF EXISTS ${nc}_query;
+        DROP NAMED COLLECTION IF EXISTS ${nc}_backslash;
+        DROP NAMED COLLECTION IF EXISTS ${nc}_syntax;
         DROP DATABASE IF EXISTS ${atomic_db} SYNC;"
 }
 trap cleanup EXIT
@@ -169,3 +172,28 @@ echo 'With the grant: created'
 create_as_user "" "$nc"
 echo 'With the grant, ON CLUSTER: created'
 create_as_user "ON CLUSTER test_shard_localhost" "$nc"
+
+echo '--- The errors do not show a query held by a named collection'
+# The values of a named collection are hidden from a user without `SHOW NAMED COLLECTIONS SECRETS`, who can still use it,
+# and the error of the check of its query reaches the caller of `dictGet`.
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE NAMED COLLECTION ${nc}_backslash AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd',
+        query = 'SELECT id, value FROM t WHERE k = ''hidden_value\\\\\\\\x''';
+    CREATE NAMED COLLECTION ${nc}_syntax AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd',
+        query = 'SELECT id, value FROM t WHERE k = 1 FOR UPDATE hidden_value';
+    GRANT NAMED COLLECTION ON ${nc}_backslash TO $user;
+    GRANT NAMED COLLECTION ON ${nc}_syntax TO $user;
+    GRANT dictGet ON ${CLICKHOUSE_DATABASE}.* TO $user;"
+for case in "backslash INCORRECT_QUERY" "syntax SYNTAX_ERROR"; do
+    read -r name error <<< "$case"
+    $CLICKHOUSE_CLIENT --user "$user" --query "
+        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_hidden (id UInt64, value String) PRIMARY KEY id
+            SOURCE(MYSQL(NAME ${nc}_${name})) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
+    output=$($CLICKHOUSE_CLIENT --user "$user" --query "SELECT dictGet(${CLICKHOUSE_DATABASE}.dict_hidden, 'value', toUInt64(1))" 2>&1)
+    echo "$name: rejected $(grep -qF "($error)" <<< "$output" && echo 1 || echo 0), shown $(grep -qF 'hidden_value' <<< "$output" && echo 1 || echo 0)"
+    # The error is kept in `system.dictionaries`, which a user can read without the privileges of the collection.
+    $CLICKHOUSE_CLIENT --query "
+        SELECT 'last_exception: rejected ' || toString(last_exception != '') || ', shown ' || toString(position(last_exception, 'hidden_value') > 0)
+        FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_hidden'"
+    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.dict_hidden"
+done

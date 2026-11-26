@@ -102,8 +102,10 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
 {
+    if (configuration.check_condition_placeholder)
+        checkExternalDictionaryQueryConditionPlaceholder(configuration.query, "PostgreSQL");
     if (configuration.check_queries_are_select)
-        checkExternalDictionaryLoadQueryIsSelect(configuration.query, load_all_query, "PostgreSQL");
+        checkExternalDictionaryLoadQueryIsSelect(load_all_query, "PostgreSQL");
 }
 
 
@@ -316,6 +318,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .check_queries_are_select = shouldCheckExternalDictionaryQueries(context, created_from_ddl),
+                .check_condition_placeholder = created_from_ddl,
             });
 
             bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false);
@@ -353,6 +356,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_field = config.getString(fmt::format("{}.update_field", settings_config_prefix), ""),
                 .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1),
                 .check_queries_are_select = shouldCheckExternalDictionaryQueries(context, created_from_ddl),
+                .check_condition_placeholder = created_from_ddl,
             });
 
             bg_reconnect = config.getBool(fmt::format("{}.background_reconnect", settings_config_prefix), false);

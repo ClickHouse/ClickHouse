@@ -34,3 +34,8 @@ With the grant: created
 With the grant, ON CLUSTER: created
 0
 1
+--- The errors do not show a query held by a named collection
+backslash: rejected 1, shown 0
+last_exception: rejected 1, shown 0
+syntax: rejected 1, shown 0
+last_exception: rejected 1, shown 0

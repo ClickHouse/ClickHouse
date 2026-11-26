@@ -48,9 +48,13 @@ bool shouldCheckExternalDictionaryQueries(const ContextPtr & context, bool creat
 /// Checks the load query of a source of an external database, see `checkExternalDictionaryQueryIsSelect`. It is checked once,
 /// when the source is created. The lookups of `direct` and `cache` layouts add to it a condition on the requested keys, which
 /// comes from the caller of `dictGet`, not from the definition, so it is not checked here: the escaping of the keys is unchanged.
-/// The condition replaces `{condition}` in `query`, so `{condition}` cannot be in a string literal or a quoted identifier:
-/// there, the quotes of the condition would end the quoted token of the definition.
-void checkExternalDictionaryLoadQueryIsSelect(const String & query, const String & load_all_query, const String & source_name);
+void checkExternalDictionaryLoadQueryIsSelect(const String & load_all_query, const String & source_name);
+
+/// The condition on the requested keys replaces `{condition}` in `query`, so `{condition}` cannot be in a string literal or
+/// a quoted identifier: there, the quotes of the condition would end the quoted token of the definition, and the keys, which
+/// come from the caller of `dictGet`, would become a part of the query. This protects against the caller of `dictGet`, not
+/// against the author of the dictionary, so it does not depend on `dictionaries_external_source_queries_select_only`.
+void checkExternalDictionaryQueryConditionPlaceholder(const String & query, const String & source_name);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.
      *
