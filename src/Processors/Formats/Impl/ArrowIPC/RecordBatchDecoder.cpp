@@ -29,6 +29,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
+#include <Core/Block.h>
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
@@ -37,6 +39,7 @@
 #include <base/scope_guard.h>
 #include <base/unaligned.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -188,26 +191,24 @@ DataTypePtr arrayElementHint(const DataTypePtr & hint)
     return nullptr;
 }
 
-DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive)
+DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_names, bool by_position, bool case_insensitive)
 {
+    DataTypes hints(field_names.size());
     const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
     if (!tuple)
-        return nullptr;
-    if (tuple->hasExplicitNames())
+        return hints;
+    const auto & elements = tuple->getElements();
+    if (by_position || !tuple->hasExplicitNames())
     {
-        if (const auto position = tuple->tryGetPositionByName(child_name, case_insensitive))
-            return tuple->getElements()[*position];
-        return nullptr;
+        for (size_t i = 0; i < hints.size() && i < elements.size(); ++i)
+            hints[i] = elements[i];
+        return hints;
     }
-    return tupleElementHintByPosition(hint, pos);
-}
-
-DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
-{
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
-    if (tuple && pos < tuple->getElements().size())
-        return tuple->getElements()[pos];
-    return nullptr;
+    const auto fields = DataTypeTuple::matchElementsByName(field_names, tuple->getElementNames(), case_insensitive);
+    for (size_t i = 0; i < fields.size(); ++i)
+        if (fields[i])
+            hints[*fields[i]] = elements[i];
+    return hints;
 }
 
 DataTypePtr mapEntriesHint(const DataTypePtr & hint)
@@ -1357,6 +1358,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 return ColumnTuple::create(rows); /// empty Tuple() has no element columns
             Columns elements;
             elements.reserve(type.children.size());
+            const DataTypes hints = structFieldHints(effective_hint, type);
             for (size_t i = 0; i < type.children.size(); ++i)
             {
                 const ArrowField & child = type.children[i];
@@ -1365,7 +1367,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
                 /// Arrow spec even when the child's own validity marks the slot valid.
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false, structFieldHint(effective_hint, type, i),
+                    child, /*allow_low_cardinality=*/false, hints[i],
                     structFieldPath(path, type, i), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
@@ -1700,12 +1702,13 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
     {
         Columns elements;
         elements.reserve(type.children.size());
+        const DataTypes hints = structFieldHints(effective_hint, type);
         for (size_t i = 0; i < type.children.size(); ++i)
         {
             const ArrowField & child = type.children[i];
             expectNextNodeLength(declared_rows, fmt::format("struct field '{}'", child.name));
             elements.push_back(buildSizeDeterminedColumn(
-                child, rows, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth));
+                child, rows, hints[i], structFieldPath(path, type, i), list_depth));
         }
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
@@ -2419,17 +2422,16 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     for (const ArrowField & field : schema.fields)
     {
         expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", field.name));
-        const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (keep_top_level_fields && !keep_top_level_fields->contains(normalizedName(field.name)))
         {
             /// Skip unrequested values after validating the column's root row count.
             advanceField(field);
             continue;
         }
-        /// `normalized_name` seeds the requested-type lookup in `target_types`.
+        /// The field name seeds the requested-type lookup in `target_types`.
         /// Nested fields derive their hints through `decodeField` and `decodeInner`.
         result.push_back(
-            decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
+            decodeBatchColumn(field, /*target_hint=*/nullptr, field.name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();
@@ -2461,7 +2463,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeExternalBatch(
     {
         expectNextNodeLength(static_cast<size_t>(batch.length), fmt::format("column '{}'", field.name));
         result.push_back(
-            decodeBatchColumn(field, /*target_hint=*/nullptr, normalizedName(field.name), /*list_depth=*/0, /*read_undeclared_nulls=*/true));
+            decodeBatchColumn(field, /*target_hint=*/nullptr, field.name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();
@@ -2619,15 +2621,16 @@ String RecordBatchDecoder::normalizedName(const String & name) const
 
 String RecordBatchDecoder::childPath(const String & path, const String & child_name) const
 {
-    const String seg = normalizedName(child_name);
-    return path.empty() ? seg : path + "." + seg;
+    return path.empty() ? child_name : path + "." + child_name;
 }
 
-DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const
+DataTypes RecordBatchDecoder::structFieldHints(const DataTypePtr & hint, const ArrowType & type) const
 {
-    if (type.positional_fields)
-        return tupleElementHintByPosition(hint, i);
-    return tupleElementHint(hint, type.children[i].name, i, settings.arrow.case_insensitive_column_matching);
+    Strings names;
+    names.reserve(type.children.size());
+    for (const ArrowField & child : type.children)
+        names.push_back(child.name);
+    return tupleElementHints(hint, names, type.positional_fields, settings.arrow.case_insensitive_column_matching);
 }
 
 String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
@@ -2957,11 +2960,10 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
     for (const ArrowField & field : schema.fields)
     {
         /// The same kept-field test and starting position as `decodeBatch`.
-        const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (keep_top_level_fields && !keep_top_level_fields->contains(normalizedName(field.name)))
             continue;
         collectDictionaryUses(
-            field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*below_union=*/false, target_types_, uses);
+            field, /*target_hint=*/nullptr, field.name, /*list_depth=*/0, /*below_union=*/false, target_types_, uses);
     }
     return uses;
 }
@@ -2997,14 +2999,13 @@ void RecordBatchDecoder::collectDictionaryUses(
                 type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, below_union, lookup_types, uses);
             break;
         case TypeKind::Struct:
+        {
+            const DataTypes hints = structFieldHints(effective_hint, type);
             for (size_t i = 0; i < type.children.size(); ++i)
-            {
-                const ArrowField & child = type.children[i];
                 collectDictionaryUses(
-                    child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
-                    below_union, lookup_types, uses);
-            }
+                    type.children[i], hints[i], structFieldPath(path, type, i), list_depth, below_union, lookup_types, uses);
             break;
+        }
         case TypeKind::RunEndEncoded:
             /// The values are decoded with the field's own hint, path and list depth (see `decodeRunEndEncoded`);
             /// the run ends are a plain integer child.
@@ -3019,6 +3020,87 @@ void RecordBatchDecoder::collectDictionaryUses(
         default:
             break;
     }
+}
+
+UnorderedMapWithMemoryTracking<String, DataTypePtr> RecordBatchDecoder::bindRequestedTypes(const Block & header) const
+{
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> types;
+    for (const auto & column : header)
+        types.emplace(column.name, column.type);
+    if (!settings.arrow.case_insensitive_column_matching)
+        return types;
+
+    /// The paths `resolveTargetHint` looks up, as `collectDictionaryUses` builds them.
+    UnorderedSetWithMemoryTracking<String> top_level_fields;
+    UnorderedSetWithMemoryTracking<String> nested_fields;
+    auto collect = [&](this auto && self, const ArrowType & type, const String & path) -> void
+    {
+        switch (type.kind)
+        {
+            case TypeKind::List:
+            case TypeKind::LargeList:
+            case TypeKind::FixedSizeList:
+            case TypeKind::ListView:
+            case TypeKind::LargeListView:
+            case TypeKind::Map:
+                self(type.children.at(0).type, path);
+                break;
+            case TypeKind::Struct:
+                for (size_t i = 0; i < type.children.size(); ++i)
+                {
+                    String child_path = structFieldPath(path, type, i);
+                    self(type.children[i].type, child_path);
+                    nested_fields.insert(std::move(child_path));
+                }
+                break;
+            case TypeKind::RunEndEncoded:
+                self(type.children.at(1).type, path);
+                break;
+            default:
+                break;
+        }
+    };
+    for (const ArrowField & field : schema.fields)
+    {
+        top_level_fields.insert(field.name);
+        collect(field.type, field.name);
+    }
+
+    /// The field `prefix` + `name` if there is one, else the only one below `prefix` that differs from it only by case.
+    auto find = [](const UnorderedSetWithMemoryTracking<String> & fields, const String & prefix, std::string_view name) -> std::optional<String>
+    {
+        String exact = prefix + String(name);
+        if (fields.contains(exact))
+            return exact;
+        std::optional<String> match;
+        for (const String & field : fields)
+        {
+            if (field.size() != exact.size() || !field.starts_with(prefix) || !boost::iequals(std::string_view(field).substr(prefix.size()), name))
+                continue;
+            if (match)
+                return {};
+            match = field;
+        }
+        return match;
+    };
+
+    /// As `ArrowIPCBlockInputFormat::buildChunk` finds a column: the whole name as a top-level field, else its first component
+    /// as a top-level field and the rest as a field below it.
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> folded;
+    for (const auto & column : header)
+    {
+        auto path = find(top_level_fields, "", column.name);
+        if (const auto [table, rest] = Nested::splitName(std::string_view(column.name)); !path && !rest.empty())
+            if (const auto root = find(top_level_fields, "", table))
+                path = find(nested_fields, *root + ".", rest);
+        if (path && !types.contains(*path))
+            if (auto [it, inserted] = folded.try_emplace(*path, column.type); !inserted)
+                it->second = nullptr;
+    }
+    for (const auto & [path, type] : folded)
+        if (type)
+            types.emplace(path, type);
+    return types;
 }
 
 }

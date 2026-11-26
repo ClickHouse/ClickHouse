@@ -28,6 +28,7 @@ struct VariantSettings
     size_t max_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
     bool escape_dots_in_json_keys = false;
     bool use_partial_match_to_skip_paths_by_regexp = true;
+    bool check_conversion_from_numbers_to_enum = true;
 };
 
 /// Decodes variant values, given as their `metadata` and `value` blobs, into a column of `output_type`,

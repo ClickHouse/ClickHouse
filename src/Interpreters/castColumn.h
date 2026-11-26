@@ -33,7 +33,10 @@ public:
 };
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
+/// For the input format readers, which have no context.
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const InternalCastSettings & internal_settings);
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
+ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const InternalCastSettings & internal_settings);
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 
 /// Accurately cast the non-NULL rows of a materialized column to a non-nullable type. The NULL rows are those

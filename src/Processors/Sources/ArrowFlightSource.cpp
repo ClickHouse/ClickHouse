@@ -27,6 +27,7 @@ namespace Setting
 {
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
     extern const SettingsUInt64 arrow_flight_request_timeout_sec;
+    extern const SettingsBool check_conversion_from_numbers_to_enum;
 }
 
 namespace
@@ -63,13 +64,14 @@ Block buildOutputHeader(const Block & sample_block_, const Block & virtual_heade
 
 /// The columns of the sample block that are not in the data are filled with defaults, and NULLs of non-nullable
 /// columns become defaults. The `geo` metadata of a schema is not interpreted, so binary columns keep their bytes.
-FormatSettings readSettings()
+FormatSettings readSettings(const ContextPtr & context)
 {
     FormatSettings settings;
     settings.arrow.allow_missing_columns = true;
     settings.parquet.allow_geoparquet_parser = false;
     settings.null_as_default = true;
     settings.date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
+    settings.check_conversion_from_numbers_to_enum = !context || context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum];
     return settings;
 }
 
@@ -148,7 +150,7 @@ void ArrowFlightSource::startReading(NextMessage next_message_)
     auto new_stream = std::make_unique<Stream>();
     new_stream->buffer = std::make_unique<ArrowIPC::IPCMessagesReadBuffer>(std::move(next_message_));
     auto input = std::make_shared<ArrowIPCBlockInputFormat>(
-        *new_stream->buffer, std::make_shared<const Block>(sample_block), /* stream_ */ true, DEFAULT_BLOCK_SIZE, readSettings());
+        *new_stream->buffer, std::make_shared<const Block>(sample_block), /* stream_ */ true, DEFAULT_BLOCK_SIZE, readSettings(context));
     new_stream->pipeline = QueryPipeline(Pipe(std::move(input)));
     new_stream->executor = std::make_unique<PullingPipelineExecutor>(new_stream->pipeline);
     stream = std::move(new_stream);

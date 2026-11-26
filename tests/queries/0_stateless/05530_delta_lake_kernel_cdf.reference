@@ -310,3 +310,15 @@ _commit_timestamp	DateTime64(6)
 --- invalid ranges
 BAD_ARGUMENTS
 DELTA_KERNEL_ERROR
+--- a number that is not an element of the requested Enum
+UNKNOWN_ELEMENT_OF_ENUM
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9

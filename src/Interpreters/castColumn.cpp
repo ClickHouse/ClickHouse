@@ -17,7 +17,12 @@
 namespace DB
 {
 
-static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr)
+static ColumnPtr castColumn(
+    CastType cast_type,
+    const ColumnWithTypeAndName & arg,
+    const DataTypePtr & type,
+    InternalCastFunctionCache * cache = nullptr,
+    const InternalCastSettings & internal_settings = {})
 {
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
     {
@@ -41,9 +46,9 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
             ""
         }
     };
-    auto get_cast_func = [from = arg, to = type, cast_type]
+    auto get_cast_func = [from = arg, to = type, cast_type, internal_settings]
     {
-        return createInternalCast(from, to, cast_type, {}, nullptr);
+        return createInternalCast(from, to, cast_type, {}, nullptr, internal_settings);
     };
 
     FunctionBasePtr func_cast = cache ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func)) : get_cast_func();
@@ -58,9 +63,19 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
     return castColumn(CastType::nonAccurate, arg, type, cache);
 }
 
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const InternalCastSettings & internal_settings)
+{
+    return castColumn(CastType::nonAccurate, arg, type, nullptr, internal_settings);
+}
+
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
     return castColumn(CastType::accurate, arg, type, cache);
+}
+
+ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const InternalCastSettings & internal_settings)
+{
+    return castColumn(CastType::accurate, arg, type, nullptr, internal_settings);
 }
 
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)

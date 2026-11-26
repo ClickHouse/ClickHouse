@@ -1,0 +1,62 @@
+-- Tags: no-fasttest
+-- no-fasttest: Parquet, ORC and Arrow are not in the fast test build
+-- A number that an input format reads into an Enum must be one of its elements, as with CAST, unless check_conversion_from_numbers_to_enum = 0.
+
+SET engine_file_truncate_on_insert = 1;
+SET check_conversion_from_numbers_to_enum = 1;
+SET allow_suspicious_variant_types = 1;
+
+{% set E = "Enum8(\\'a\\' = 5, \\'b\\' = 6)" -%}
+{% set E_DDL = "Enum8('a' = 5, 'b' = 6)" -%}
+{% for format in ['Parquet', 'ORC', 'Arrow', 'ArrowStream', 'Native'] -%}
+SELECT '{{ format }}';
+INSERT INTO FUNCTION file(currentDatabase() || '_05876.{{ format }}', '{{ format }}') SELECT
+    number AS id,
+    [5, 7, 6][number + 1]::Int8 AS e,
+    [5, NULL, 6][number + 1]::Nullable(Int8) AS n,
+    [7, NULL, 6][number + 1]::Nullable(Int8) AS nv,
+    [[5], [6, 7], []][number + 1]::Array(Int8) AS a,
+    map([5, 7, 6][number + 1]::Int8, 'v') AS m,
+    CAST(tuple([5, 7, 6][number + 1]::Int8), 'Tuple(x Int8)') AS t,
+    [5, 200, 5][number + 1]::UInt8 AS u
+FROM numbers(3);
+
+SELECT id, CAST(e, 'Int8') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, e {{ E }}') ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id, CAST(a, 'Array(Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, a Array({{ E }})') ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id, CAST(m, 'Map(Int8, String)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, m Map({{ E }}, String)') ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id, CAST(t, 'Tuple(x Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, t Tuple(x {{ E }})') ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id, n FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, n Nullable({{ E }})') ORDER BY id;
+SELECT id, n FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, n {{ E }}') ORDER BY id SETTINGS input_format_null_as_default = 1;
+SELECT id, CAST(nv, 'Int8') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, nv {{ E }}') ORDER BY id SETTINGS input_format_null_as_default = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id, CAST(nv, 'Nullable(Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, nv Nullable({{ E }})') ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id, CAST(nv, 'Int8') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, nv {{ E }}') ORDER BY id SETTINGS input_format_null_as_default = 1, check_conversion_from_numbers_to_enum = 0;
+SELECT id, CAST(nv, 'Nullable(Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, nv Nullable({{ E }})') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
+SELECT id, CAST(e, 'Int8'), CAST(a, 'Array(Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, e {{ E }}, a Array({{ E }})') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
+SELECT id, CAST(m, 'Map(Int8, String)'), CAST(t, 'Tuple(x Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, m Map({{ E }}, String), t Tuple(x {{ E }})') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
+
+DROP TABLE IF EXISTS t_05876_{{ format }};
+CREATE TABLE t_05876_{{ format }} (e {{ E_DDL }}) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_05876_{{ format }} SELECT e FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'e {{ E }}'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_05876_{{ format }};
+DROP TABLE t_05876_{{ format }};
+
+-- ORC has no unsigned types: it writes UInt8 200 as -56, an element.
+{% if format != 'ORC' -%}
+SELECT id, CAST(u, 'Int8') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, u Enum8(\'a\' = 5, \'b\' = -56)') ORDER BY id; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT id, CAST(u, 'Int8') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, u Enum8(\'a\' = 5, \'b\' = -56)') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
+{% endif -%}
+{% if format == 'ORC' -%}
+INSERT INTO FUNCTION file(currentDatabase() || '_05876_union.ORC', 'ORC') SELECT number AS id, [5, 7][number + 1]::Int8::Variant(Int8, String) AS u FROM numbers(2);
+SELECT id, CAST(variantElement(u, '{{ E }}'), 'Int8') FROM file(currentDatabase() || '_05876_union.ORC', 'ORC', 'id UInt64, u Variant({{ E }}, String)') ORDER BY id; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT id, CAST(variantElement(u, '{{ E }}'), 'Int8') FROM file(currentDatabase() || '_05876_union.ORC', 'ORC', 'id UInt64, u Variant({{ E }}, String)') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
+{% endif -%}
+{% if format == 'Parquet' -%}
+INSERT INTO FUNCTION file(currentDatabase() || '_05876_variant.Parquet', 'Parquet') SELECT
+    '{"a": 7}'::JSON::Dynamic AS d,
+    CAST([5, 7], 'Array(Int8)')::Variant(Array(Int8), String) AS v;
+SELECT CAST(d.a, 'Int8') FROM file(currentDatabase() || '_05876_variant.Parquet', 'Parquet', 'd JSON(a {{ E }})'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT CAST(d.a, 'Int8') FROM file(currentDatabase() || '_05876_variant.Parquet', 'Parquet', 'd JSON(a {{ E }})') SETTINGS check_conversion_from_numbers_to_enum = 0;
+SELECT CAST(variantElement(v, 'Array({{ E }})'), 'Array(Int8)') FROM file(currentDatabase() || '_05876_variant.Parquet', 'Parquet', 'v Variant(Array({{ E }}), String)'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT CAST(variantElement(v, 'Array({{ E }})'), 'Array(Int8)') FROM file(currentDatabase() || '_05876_variant.Parquet', 'Parquet', 'v Variant(Array({{ E }}), String)') SETTINGS check_conversion_from_numbers_to_enum = 0;
+{% endif -%}
+{% endfor -%}

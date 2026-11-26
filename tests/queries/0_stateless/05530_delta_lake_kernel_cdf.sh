@@ -69,3 +69,9 @@ SETTINGS delta_lake_snapshot_start_version = 1, delta_lake_snapshot_end_version 
 # The start version is after the last version of the table.
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM deltaLakeLocal('${DATA}/cdf-table-simple')
 SETTINGS delta_lake_snapshot_start_version = 3, delta_lake_snapshot_end_version = 4" 2>&1 | grep -o -m1 'DELTA_KERNEL_ERROR'
+
+echo '--- a number that is not an element of the requested Enum'
+$CLICKHOUSE_LOCAL -q "SELECT CAST(id, 'Int8') FROM deltaLakeLocal('${DATA}/cdf-table-simple', 'Parquet', 'id Enum8(''a'' = 0, ''b'' = 1)')
+SETTINGS delta_lake_snapshot_start_version = 0, delta_lake_snapshot_end_version = 0" 2>&1 | grep -o -m1 'UNKNOWN_ELEMENT_OF_ENUM'
+$CLICKHOUSE_LOCAL -q "SELECT CAST(id, 'Int8') FROM deltaLakeLocal('${DATA}/cdf-table-simple', 'Parquet', 'id Enum8(''a'' = 0, ''b'' = 1)')
+ORDER BY 1 SETTINGS delta_lake_snapshot_start_version = 0, delta_lake_snapshot_end_version = 0, check_conversion_from_numbers_to_enum = 0"
