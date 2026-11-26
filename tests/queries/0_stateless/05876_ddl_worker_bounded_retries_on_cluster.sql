@@ -1,4 +1,5 @@
--- Tags: no-replicated-database
+-- Tags: no-fasttest, no-parallel, no-replicated-database
+-- no-fasttest, no-parallel: the retries of each failing entry hold the server's distributed DDL queue for about 15 s.
 -- An ON CLUSTER entry that keeps failing with a retriable error is finished with that error after a few attempts,
 -- and the next ON CLUSTER entry is executed.
 
