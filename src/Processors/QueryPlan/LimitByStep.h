@@ -86,6 +86,9 @@ public:
     }
     [[nodiscard]] bool preservesInputOrder() const { return preserve_input_order; }
 
+    /// Never spill to disk: count the rows of the groups in memory only.
+    void disableExternalLimitBy() { external_limit_by_disabled = true; }
+
     /// Only the first `hint` rows of the output are read, by a `LIMIT` above the step (set by the
     /// `limitPushDown` optimization). A spilling `LIMIT BY` stops once its result has that many rows, and
     /// restores the input order of only that many rows after a spill. Zero disables the hint; of two hints,
@@ -117,6 +120,7 @@ private:
     /// The step was read at step version 0, which predates `preserve_input_order`, so its unset flag does not
     /// show that the order has no meaning. See `transformPipeline`.
     bool input_order_unknown = false;
+    bool external_limit_by_disabled = false;
     UInt64 limit_hint = 0;
 };
 

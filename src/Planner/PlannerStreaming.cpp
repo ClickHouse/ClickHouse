@@ -13,6 +13,7 @@
 #include <Analyzer/traverseQueryTree.h>
 
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <Interpreters/Context.h>
@@ -119,6 +120,7 @@ void buildStreamingPlan(
         auto & limit_by = expression_analysis_result.getLimitBy();
         addExpressionStep(planner_context, query_plan, limit_by.before_limit_by_actions, {}, select_query_options, "Before LIMIT BY", useful_sets);
         addLimitByStep(query_plan, limit_by, query_analysis_result, planner_context, query_node, false);
+        typeid_cast<LimitByStep &>(*query_plan.getRootNode()->step).disableExternalLimitBy();
     }
 
     if (query_node.hasLimit())

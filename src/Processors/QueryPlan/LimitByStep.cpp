@@ -170,7 +170,8 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
         settings.max_bytes_before_external_limit_by, settings.max_bytes_ratio_before_external_limit_by,
         "max_bytes_ratio_before_external_limit_by");
-    const bool external = !input_order_unknown && (external_threshold || build_settings.isSchedulerSpillingEnabled());
+    const bool external = !external_limit_by_disabled && !input_order_unknown
+        && (external_threshold || build_settings.isSchedulerSpillingEnabled());
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk;
     auto create_hash_transform = [&](const SharedHeader & header) -> ProcessorPtr
