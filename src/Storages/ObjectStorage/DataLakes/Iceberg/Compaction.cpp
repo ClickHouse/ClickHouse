@@ -55,6 +55,7 @@ namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
+    extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -340,6 +341,17 @@ static Plan getPlan(
             if (!can_contain_data_file_deletes)
                 continue;
 
+            /// Compaction reads the data files under the current schema, which the ORC and Avro readers resolve by name, not by field id.
+            const auto & data_file_format = data_file->data_object_info->info.file_format;
+            const auto & delete_file_format = delete_file->parsed_entry->file_format;
+            if (Poco::toUpper(data_file_format) != "PARQUET" || Poco::toUpper(delete_file_format) != "PARQUET")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Compaction of Iceberg tables with position deletes is supported only for data and delete files of Parquet format, "
+                    "but got a data file of format {} with a delete file of format {}",
+                    data_file_format,
+                    delete_file_format);
+
             data_file->data_object_info->addPositionDeleteFile(
                 delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
         }
@@ -381,11 +393,8 @@ static void writeDataFiles(
 
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
-        /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
-        /// to delete, and only the Parquet input formats attach it. Data files with attached
-        /// position deletes are guaranteed to be Parquet by `addPositionDeleteFile`, but a data
-        /// file without them (e.g. an ORC file newer than all position deletes) may be in any
-        /// format, so the transform must be skipped for it.
+        /// Only data files with position deletes need the transform; `addPositionDeleteFile` admits
+        /// only formats whose readers attach `ChunkInfoRowNumbers`.
         std::shared_ptr<IcebergBitmapPositionDeleteTransform> delete_file_transform;
         if (data_file->data_object_info->info.hasPositionDeletes())
             delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
@@ -835,7 +844,7 @@ static bool writeConsolidatedManifestFile(
         write_format);
     generator.setBaseMetadataFile(metadata_version, metadata_file_path);
 
-    MetadataGenerator metadata_generator(metadata_object);
+    MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
 
     // Manifest-only rewrite: use a snapshot type that carries all total-* counters forward unchanged, since passing deltas would inflate the totals.
@@ -1144,8 +1153,10 @@ static bool writeMetadataFiles(
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
     /// The rewritten data files, manifests and manifest list use the source table's field ids and partition specs, so the new metadata must define them.
+    /// The table properties, such as `write.metadata.previous-versions-max`, are carried over as well.
     for (const auto * key : {Iceberg::f_schemas, Iceberg::f_current_schema_id, Iceberg::f_last_column_id,
-                             Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id})
+                             Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id,
+                             Iceberg::f_properties})
         if (plan.initial_metadata_object->has(key))
             metadata_object->set(key, plan.initial_metadata_object->get(key));
     metadata_object->set(Iceberg::f_last_column_id, getLastAssignedFieldId(metadata_object));
@@ -1162,7 +1173,7 @@ static bool writeMetadataFiles(
         }
     }
 
-    MetadataGenerator metadata_generator(metadata_object);
+    MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
