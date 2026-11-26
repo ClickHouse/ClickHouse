@@ -428,7 +428,31 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # cores; the compatibility check guards against it.
     # Sanitizer builds are excluded, because the sanitizer runtimes do not strip the signature
     # when they unwind, so their reports would show garbage frames.
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
+    #
+    # With `ENABLE_BTI`, indirect branches may also land only on BTI landing pads (also hint instructions).
+    # The linker enables BTI for the executable only if every linked object carries the BTI property and
+    # silently drops it otherwise, so it reports the objects that lack it (an error with `--fatal-warnings`).
+    # Supported with musl, whose startup objects and assembly in our fork carry the property, and with glibc
+    # with `GLIBC_COMPATIBILITY`, which replaces the startup objects of the sysroot that lack it (see
+    # base/glibc-compatibility/crt/aarch64/crt1.c).
+    if (USE_MUSL OR GLIBC_COMPATIBILITY)
+        set (ENABLE_BTI_DEFAULT ON)
+    else ()
+        set (ENABLE_BTI_DEFAULT OFF)
+    endif ()
+    option (ENABLE_BTI "Add branch target identification (BTI) to the return address signing on AArch64 Linux" ${ENABLE_BTI_DEFAULT})
+    if (ENABLE_BTI)
+        if (NOT (USE_MUSL OR GLIBC_COMPATIBILITY))
+            message (FATAL_ERROR "ENABLE_BTI requires musl or GLIBC_COMPATIBILITY")
+        endif ()
+        set (USE_BTI 1)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=standard")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,bti-report=warning")
+    else ()
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
+    endif ()
+elseif (ENABLE_BTI)
+    message (FATAL_ERROR "ENABLE_BTI requires AArch64 Linux without sanitizers")
 endif()
 
 # Puts a canary between the locals and the return address and checks it before returning, so that an

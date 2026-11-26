@@ -498,6 +498,27 @@ endif ()
 # If you start using such a part of ICU, it fails with `U_MISSING_RESOURCE_ERROR` until the data is regenerated
 # without the corresponding line of the filter.
 
+if (ARCH_AARCH64 AND USE_BTI)
+    # The data file has no code, but without the BTI property the linker disables BTI for the whole executable.
+    # The property is one ELF note, written below as raw 32-bit words:
+    #   .section .note.gnu.property  - the section the linker reads the properties from, 8-byte aligned
+    #   .word 4, 16, 5               - note header: name size (4, "GNU\0"), descriptor size (16), type 5 (NT_GNU_PROPERTY_TYPE_0)
+    #   .asciz "GNU"                 - note name
+    #   .word 0xc0000000, 4, 3, 0    - the descriptor, one property: GNU_PROPERTY_AARCH64_FEATURE_1_AND, its size (4),
+    #                                  its value (bit 0 BTI, bit 1 PAC), padding to 8 bytes
+    # `_AND`: the linker ANDs the value over all inputs, so BTI stays on only if every object has bit 0 set.
+    # `readelf -n` shows it as "aarch64 feature: BTI, PAC".
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icudata_bti.S" CONTENT
+"#include \"${ICUDATA_SOURCE_FILE}\"
+.section .note.gnu.property,\"a\"
+.p2align 3
+.word 4, 16, 5
+.asciz \"GNU\"
+.word 0xc0000000, 4, 3, 0
+")
+    set(ICUDATA_SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/icudata_bti.S")
+endif ()
+
 set(ICUDATA_SOURCES
     "${ICUDATA_SOURCE_FILE}"
     "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" # Without this cmake can incorrectly detects library type (OBJECT) instead of SHARED/STATIC

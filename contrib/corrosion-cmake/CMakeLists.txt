@@ -210,6 +210,12 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
+# The prebuilt standard library lacks the BTI property, which would disable BTI for the whole executable.
+if (USE_BTI)
+    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    list(APPEND RUSTFLAGS "-Zbranch-protection=bti,pac-ret")
+endif()
+
 # Clang CFI is whole-program: the Rust code, its standard library included, is emitted as LLVM bitcode with CFI type
 # metadata and checked in the final link with the C and C++ code (which uses the same normalized integer encoding).
 if (ENABLE_CFI)
