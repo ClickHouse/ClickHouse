@@ -76,7 +76,7 @@ namespace
             Context::getGlobalContextInstance(),
             DBMS_DEFAULT_BUFFER_SIZE,
             read_settings,
-            /* use_external_buffer */ true,
+            /* use_external_buffer */ false,
             /* read_until_position */ 0);
         readStringUntilEOF(result, *reader);
 

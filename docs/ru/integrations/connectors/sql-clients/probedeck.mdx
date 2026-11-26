@@ -21,7 +21,7 @@ ProbeDeck — клиент для iOS и iPadOS, предназначенный 
 или SSH-бастион; промежуточный сервер не требуется.
 
 <div id="before-you-begin">
-  ## Перед началом работы
+  ## Перед началом работы {#before-you-begin}
 </div>
 
 * Установите [ProbeDeck из App Store](https://apps.apple.com/app/id6791261174).
@@ -40,27 +40,25 @@ ProbeDeck — клиент для iOS и iPadOS, предназначенный 
 версии 23.3 или новее. ProbeDeck помечает затронутый раздел как ограниченный, если его источник недоступен.
 
 <div id="how-it-works">
-  ## Как это работает
+  ## Как это работает {#how-it-works}
 </div>
 
 1. ProbeDeck отправляет SQL-запросы к конечной точке ClickHouse по HTTP(S).
 2. Он считывает данные мониторинга из таблиц `system`, используя настроенного пользователя ClickHouse.
 3. Приложение отображает на устройстве результаты запросов и представления мониторинга. Если с устройства нет прямого маршрута к конечной точке, SSH-бастион может туннелировать то же HTTP(S)-соединение.
 
-<div id="connect-to-clickhouse-cloud">
-  ## Подключение к ClickHouse Cloud
-</div>
+## Соединение с ClickHouse Cloud {#connect-to-clickhouse-cloud}
 
 <Steps>
-  <Step title="Получите сведения о подключении к сервису" id="gather-cloud-details">
+  <Step title="Получите сведения о соединении с сервисом" id="gather-cloud-details">
     В консоли ClickHouse Cloud откройте сервис, выберите **Connect**, затем **HTTPS**.
 
     <ConnectionDetails />
   </Step>
 
-  <Step title="Добавьте подключение в ProbeDeck" id="add-cloud-connection">
+  <Step title="Добавьте соединение в ProbeDeck" id="add-cloud-connection">
     1. На экране **Connections** нажмите **+**.
-    2. Введите имя подключения и хост без `https://`.
+    2. Введите имя соединения и хост без `https://`.
     3. Укажите `8443` в поле **Port** и включите **TLS**.
     4. Введите имя пользователя и пароль базы данных из диалогового окна **Connect**. Имя базы данных
        указывать необязательно.
@@ -70,22 +68,18 @@ ProbeDeck — клиент для iOS и iPadOS, предназначенный 
 
     ProbeDeck использует эти учетные данные базы данных для аутентификации SQL-запросов к конечной точке сервиса.
     ClickHouse Cloud использует ключи уровня организации со страницы **API Keys** для Cloud API и
-    эндпоинтов Query API. При SQL-подключении ProbeDeck эти ключи не используются.
+    эндпоинтов Query API. При SQL-соединении ProbeDeck эти ключи не используются.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Форма подключения ProbeDeck, настроенная для HTTPS на порту 8443 с именем пользователя ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
-
-    </Frame>
-
+      <Frame>
+        ![Форма соединения ProbeDeck, настроенная для HTTPS на порту 8443 с именем пользователя ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="connect-to-self-hosted-clickhouse">
-  ## Подключение к самоуправляемому ClickHouse
+  ## Подключение к самоуправляемому ClickHouse {#connect-to-self-hosted-clickhouse}
 </div>
 
 <Steps>
@@ -111,7 +105,7 @@ ProbeDeck — клиент для iOS и iPadOS, предназначенный 
 </Steps>
 
 <div id="connect-through-an-ssh-bastion">
-  ## Подключение через SSH-бастион
+  ## Подключение через SSH-бастион {#connect-through-an-ssh-bastion}
 </div>
 
 Включите **SSH Tunnel** в форме подключения и укажите:
@@ -125,7 +119,7 @@ ProbeDeck открывает SSH-канал `direct-tcpip` от бастиона
 со значением, полученным от администратора сервера.
 
 <div id="configure-authentication-and-tls">
-  ## Настройка аутентификации и TLS
+  ## Настройка аутентификации и TLS {#configure-authentication-and-tls}
 </div>
 
 ProbeDeck передаёт имя пользователя и пароль базы данных в заголовках запроса `X-ClickHouse-User` и
@@ -141,11 +135,9 @@ CA, ProbeDeck отображает его SHA-256-отпечаток, издат
 
 ProbeDeck хранит секреты соединения и импортированный ключевой материал в связке ключей iOS на устройстве.
 
-<div id="monitor-clickhouse">
-  ## Мониторинг ClickHouse
-</div>
+## Мониторинг ClickHouse {#monitor-clickhouse}
 
-Откройте сохранённое подключение и выберите **Мониторинг**. На панели мониторинга представлены следующие источники:
+Откройте сохранённое соединение и выберите **Мониторинг**. На панели мониторинга представлены следующие источники:
 
 | Область                                                              | Источник ClickHouse                                                       |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -157,30 +149,20 @@ ProbeDeck хранит секреты соединения и импортиро
 | Исторические скорости запросов и диска                               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Панель мониторинга ProbeDeck с выполняющимися запросами, репликацией, дисками, частями, мутациями, слияниями, скоростью запросов и памятью](/images/integrations/sql-clients/probedeck-dashboard.png)
-
-</Frame>
-
+  <Frame>
+    ![Панель мониторинга ProbeDeck с выполняющимися запросами, репликацией, дисками, частями, мутациями, слияниями, скоростью запросов и памятью](/images/integrations/sql-clients/probedeck-dashboard.png)
+  </Frame>
 </div>
 
 Нажмите **Выполняющиеся запросы**, чтобы отсортировать активные запросы по времени выполнения и просмотреть использование памяти и количество прочитанных строк.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Список выполняющихся запросов ProbeDeck, отсортированный по времени выполнения](/images/integrations/sql-clients/probedeck-running-queries.png)
-
-</Frame>
-
+  <Frame>
+    ![Список выполняющихся запросов в ProbeDeck, отсортированный по времени выполнения](/images/integrations/sql-clients/probedeck-running-queries.png)
+  </Frame>
 </div>
 
-<div id="query-the-uk-property-price-dataset">
-  ## Выполнение запроса к набору данных о ценах на недвижимость в Великобритании
-</div>
+## Выполнение запроса к набору данных о ценах на недвижимость в Великобритании {#query-the-uk-property-price-dataset}
 
 В этом примере используется [набор данных о ценах на недвижимость в Великобритании](/ru/get-started/sample-datasets/uk-price-paid).
 Загрузите набор данных в `uk_price_paid`, затем:
@@ -203,7 +185,7 @@ LIMIT 10
 Результат должен содержать десять городов с количеством транзакций и средними ценами.
 
 <div id="known-limits">
-  ## Известные ограничения
+  ## Известные ограничения {#known-limits}
 </div>
 
 * ProbeDeck работает на iOS и iPadOS версии 17.0 и новее.
@@ -218,7 +200,7 @@ LIMIT 10
   операторы записи, DDL-операторы и другие операционные действия требуют ProbeDeck Pro.
 
 <div id="troubleshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubleshooting}
 </div>
 
 <Accordion title="Ошибка аутентификации">
@@ -242,9 +224,7 @@ LIMIT 10
   Неожиданное изменение может указывать на другую конечную точку или перехват TLS.
 </Accordion>
 
-<div id="next-steps">
-  ## Следующие шаги
-</div>
+## Дальнейшие шаги {#next-steps}
 
-* Подробные сведения о продукте см. на [сайте ProbeDeck](https://probedeck.app).
- * Сведения о конфигурации сервера см. в [документации по HTTP-интерфейсу ClickHouse](/ru/concepts/features/interfaces/http).
+* Подробнее о продукте см. на [сайте ProbeDeck](https://probedeck.app).
+* Сведения о конфигурации сервера см. в [документации по HTTP-интерфейсу ClickHouse](/ru/concepts/features/interfaces/http).

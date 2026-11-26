@@ -287,6 +287,20 @@ def process_results(
     return test_results, additional_files
 
 
+def has_sanitizer_report(*log_dirs: Path) -> bool:
+    """Whether a stderr log has a UBSan-style report (`runtime error:`). The CFI diagnostics build reports
+    this way and keeps the server running, so the report leaves no other trace, and an OOM does not explain it.
+    Other sanitizers stop the server on their first report. The logs stay in the server log directory when
+    the runner exits before moving them to the results."""
+    dirs = " ".join(str(d) for d in log_dirs)
+    return Shell.check(f"rg -qaF ': runtime error: ' --max-depth 1 -g 'stderr*.log' {dirs}")
+
+
+def find_log(name: str, *log_dirs: Path) -> Path:
+    """The log `name` in the first directory that has it, else the path in the first directory."""
+    return next((d / name for d in log_dirs if (d / name).exists()), log_dirs[0] / name)
+
+
 def select_replica_failures(
     replica_log_pairs: List[Tuple[str, Path, Path]],
 ) -> List[Tuple[str, str, List[str]]]:
@@ -446,14 +460,15 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         if not test_result.is_ok():
             failed_results.append(test_result)
 
-    crashed = server_died or crash_evidence
+    sanitizer_report = has_sanitizer_report(result_path, server_log_path)
+    crashed = server_died or crash_evidence or sanitizer_report
     if crashed or server_killed:
         # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
         # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
         # sc1/sc2: their dedicated server log + matching stderr log
         replica_log_pairs = []
 
-        main_stderr = result_path / "stderr.log"
+        main_stderr = find_log("stderr.log", result_path, server_log_path)
         if server_log_path.exists():
             main_server_logs = sorted(
                 p
@@ -468,7 +483,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
         for sc in ("sc1", "sc2"):
             sc_server_log = server_log_path / f"clickhouse-server-{sc}.err.log"
-            sc_stderr = result_path / f"stderr-{sc}.log"
+            sc_stderr = find_log(f"stderr-{sc}.log", result_path, server_log_path)
             if sc_server_log.exists():
                 replica_log_pairs.append((sc, sc_server_log, sc_stderr))
 
@@ -552,7 +567,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         status=Result.Status.OK if not failed_results else "",
         stopwatch=stopwatch,
     )
-    if not r.is_ok() and is_oom:
+    if not r.is_ok() and is_oom and not sanitizer_report:
         r.set_status(Result.Status.OK)
         r.set_info("OOM error (allowed in stress tests)")
 

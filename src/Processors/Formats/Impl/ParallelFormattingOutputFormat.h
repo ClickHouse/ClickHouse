@@ -96,8 +96,8 @@ public:
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
-        /// and n threads for formatting.
-        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
+        /// and n threads for formatting. Cap before adding, because the number of threads comes from a setting.
+        processing_units.resize(std::min(params.max_threads_for_parallel_formatting, size_t{1022}) + 2);
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.

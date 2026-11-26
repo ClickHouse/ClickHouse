@@ -260,7 +260,7 @@ function run_prep_statement()
 
     echo -e "Stateful data preparation statement exceeded ${PREP_STATEMENT_TIMEOUT}s (see gdb.log)$FAIL" >> /test_output/test_results.tsv
     echo "thread apply all backtrace (on stateful prep bound)" >> /test_output/gdb.log
-    timeout --verbose --signal=TERM --kill-after=60 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    timeout --verbose --signal=TERM --kill-after=60 30m gdb -batch -ex 'thread apply all backtrace' -p "$(serving_server_pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     kill_server
     exit 1
 }
@@ -360,6 +360,13 @@ cp -av --dereference /repo/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml /
 if [ $((RANDOM % 2)) -eq 0 ]; then
     echo "<clickhouse><profiles><default><s3queue_keeper_fault_injection_probability>0.01</s3queue_keeper_fault_injection_probability></default></profiles></clickhouse>" \
         | sudo tee /etc/clickhouse-server/users.d/s3queue_keeper_fault_injection.xml > /dev/null
+fi
+
+# Randomize allocation failures inside merges and mutations. Their thread groups take the settings of the
+# background profile (see `background_profile.xml`), built only at startup, so client options never reach them.
+if [ $((RANDOM % 3)) -eq 0 ]; then
+    echo "<clickhouse><profiles><background><memory_tracker_fault_probability>0.001</memory_tracker_fault_probability></background></profiles></clickhouse>" \
+        | sudo tee /etc/clickhouse-server/users.d/background_memory_fault_injection.xml > /dev/null
 fi
 
 # Randomize Keeper fault injection around a `ReplicatedMergeTree` part commit, to exercise the commit

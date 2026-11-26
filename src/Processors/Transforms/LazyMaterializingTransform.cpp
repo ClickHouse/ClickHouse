@@ -156,9 +156,73 @@ LazyMaterializingRows::LazyMaterializingRows(RangesInDataParts ranges_in_data_pa
 {
 }
 
+void LazyMaterializingRows::addPartsOfMainRead(const RangesInDataParts & parts, const StorageSnapshotPtr & storage_snapshot)
+{
+    /// Only what addresses the rows: the hints of how the main read reads them, such as the filter of a vector search, would
+    /// drop rows the main read returned.
+    for (const auto & part : parts)
+    {
+        if (part.data_part->isProjectionPart() && projection_parts_by_parent_part_offsets)
+        {
+            if (!part.parent_part)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The projection part {} is read without its parent part", part.data_part->name);
+
+            const MarkRanges whole_part{{0, part.parent_part->index_granularity->getMarksCountWithoutFinal()}};
+            ranges_in_data_parts.emplace_back(
+                part.parent_part, nullptr, part.part_index_in_query, part.part_starting_offset_in_query, whole_part,
+                RangesInDataPartReadHints{});
+        }
+        else
+        {
+            if (part.data_part->isProjectionPart())
+                snapshots_of_projection_parts[part.part_index_in_query] = storage_snapshot;
+
+            ranges_in_data_parts.emplace_back(
+                part.data_part, part.parent_part, part.part_index_in_query, part.part_starting_offset_in_query, part.ranges,
+                RangesInDataPartReadHints{});
+        }
+    }
+}
+
 void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes)
 {
     rows_in_parts.clear();
+
+    /// The reads of the main branch added their parts one after another, in the order of the rows. Several reads can read
+    /// ranges of the same part - the two branches of lazy FINAL - so its ranges are united.
+    std::ranges::stable_sort(ranges_in_data_parts, {}, &RangesInDataPart::part_starting_offset_in_query);
+    size_t united_parts = 0;
+    for (size_t index = 0; index < ranges_in_data_parts.size(); ++index)
+    {
+        auto & part = ranges_in_data_parts[index];
+        if (united_parts == 0 || ranges_in_data_parts[united_parts - 1].part_index_in_query != part.part_index_in_query)
+        {
+            if (united_parts != index)
+                ranges_in_data_parts[united_parts] = std::move(part);
+            ++united_parts;
+            continue;
+        }
+
+        auto & united = ranges_in_data_parts[united_parts - 1];
+        if (united.data_part != part.data_part)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "LazyMaterializingTransform: The rows of the part {} are read from {} and from {}",
+                part.part_index_in_query, united.data_part->name, part.data_part->name);
+
+        united.ranges.insert(united.ranges.end(), part.ranges.begin(), part.ranges.end());
+        std::ranges::sort(united.ranges, {}, &MarkRange::begin);
+
+        MarkRanges merged;
+        for (const auto & range : united.ranges)
+        {
+            if (!merged.empty() && range.begin <= merged.back().end)
+                merged.back().end = std::max(merged.back().end, range.end);
+            else
+                merged.push_back(range);
+        }
+        united.ranges = std::move(merged);
+    }
+    ranges_in_data_parts.erase(ranges_in_data_parts.begin() + united_parts, ranges_in_data_parts.end());
 
     /// Here we have a list of part/ranges and the list of sorted indexes.
     /// We need to remove unused granules from ranges, possibly splitting them to smaller ones.

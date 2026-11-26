@@ -127,6 +127,8 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
+    /// The first push_back into an empty PODArray allocates 4 KiB; a constant needs one row.
+    column->reserve(1);
     column->insert(field);
     return ColumnConst::create(std::move(column), size);
 }
