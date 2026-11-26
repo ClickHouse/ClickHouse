@@ -164,7 +164,7 @@ FROM
     FROM numbers(3)
 );
 
-DROP TABLE IF EXISTS ts_mixed_parts;
+DROP TABLE IF EXISTS ts_mixed_parts, ts_mixed_raw;
 CREATE TABLE ts_mixed_parts
 (
     id UInt64,
@@ -191,7 +191,7 @@ FROM (SELECT number % 200 AS id, intDiv(number, 200) AS p FROM numbers(200 * 8))
 ORDER BY p, id
 SETTINGS max_block_size = 200, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, optimize_on_insert = 0;
 
-CREATE TEMPORARY TABLE ts_mixed_raw AS
+CREATE TABLE ts_mixed_raw ENGINE = MergeTree ORDER BY id AS
 SELECT id, arrayJoin(samples) AS s FROM ts_mixed_parts;
 
 SELECT
@@ -217,4 +217,4 @@ FROM ts_mixed_parts AS m
 INNER JOIN (SELECT id, timeSeriesGroupArray(s.1, s.2) AS ref_samples FROM ts_mixed_raw GROUP BY id) AS r
 USING (id);
 
-DROP TABLE ts_mixed_parts;
+DROP TABLE ts_mixed_parts, ts_mixed_raw;
