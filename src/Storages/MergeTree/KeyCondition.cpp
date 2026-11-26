@@ -1858,7 +1858,6 @@ KeyCondition::KeyCondition(
     bool require_ready_sets_,
     const NameSet & unusable_key_expressions_)
     : num_key_columns(key_column_names_.size())
-    , unusable_key_expressions(unusable_key_expressions_)
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
@@ -1868,7 +1867,9 @@ KeyCondition::KeyCondition(
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
-        key_columns.try_emplace(name, key_index);
+        /// A key column the query computes differently than the stored values matches nothing, also by transforming a predicate.
+        if (!unusable_key_expressions_.contains(name))
+            key_columns.try_emplace(name, key_index);
         ++key_index;
     }
 
@@ -1885,7 +1886,7 @@ KeyCondition::KeyCondition(
     }
 
     NameSet key_subexpr_names = getAllSubexpressionNames(*key_expr_);
-    for (const auto & name : unusable_key_expressions)
+    for (const auto & name : unusable_key_expressions_)
         key_subexpr_names.erase(name);
 
     auto info = BuildInfo {
@@ -2090,7 +2091,7 @@ void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
-    if (!key_columns.contains(column) || unusable_key_expressions.contains(column))
+    if (!key_columns.contains(column))
         return false;
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
@@ -2806,9 +2807,6 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
     const BuildInfo & info,
     bool first_match_only) const
 {
-    if (unusable_key_expressions.contains(expr_name))
-        return {};
-
     const auto & dag = info.key_expr->getActionsDAG();
     const auto & sample_block = info.key_expr->getSampleBlock();
 
@@ -4777,7 +4775,7 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
     /// Key columns should use canonical names for the index analysis.
     String name = node.getColumnName();
 
-    auto it = unusable_key_expressions.contains(name) ? key_columns.end() : key_columns.find(name);
+    auto it = key_columns.find(name);
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
@@ -4910,9 +4908,6 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
     bool first_match_only,
     std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
 {
-    if (unusable_key_expressions.contains(expr_name))
-        return {};
-
     const auto & sample_block = info.key_expr->getSampleBlock();
 
     std::vector<KeyWrappingChain> result;
@@ -5746,7 +5741,7 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
         for (size_t i = 0; i < 2; ++i)
         {
             auto name = first_argument.getArgumentAt(i).getColumnName();
-            auto it = unusable_key_expressions.contains(name) ? key_columns.end() : key_columns.find(name);
+            auto it = key_columns.find(name);
             if (it == key_columns.end())
             {
                 element.key_columns.clear();
@@ -5763,7 +5758,7 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
         /// of such key column constrains the coordinates of the point - see the evaluation
         /// in `checkInHyperrectangle`.
         auto name = point_argument.getColumnName();
-        auto it = unusable_key_expressions.contains(name) ? key_columns.end() : key_columns.find(name);
+        auto it = key_columns.find(name);
         if (it == key_columns.end())
             return;
 

@@ -1003,9 +1003,6 @@ private:
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
     /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
     size_t num_key_columns = 0;
-    /// Key expressions that a filter expression must not match by name: the session computes them differently than the
-    /// stored values. The key's own functions can still be applied to a constant, e.g. a filter on a column it reads.
-    NameSet unusable_key_expressions;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType

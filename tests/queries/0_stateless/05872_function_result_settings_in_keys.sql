@@ -219,6 +219,9 @@ SELECT 'json inferred time', count() FROM t_json_inferred_time
 WHERE assumeNotNull(toUInt32(dynamicElement(getSubcolumn(CAST(s AS JSON), 'a'), 'DateTime'))) = 1704067200;
 SELECT 'time array text expected', count() FROM t_time_array_text WHERE toString([dt]) = '[''2024-01-01 19:00:00'']' SETTINGS use_primary_key = 0;
 SELECT 'time array text', count() FROM t_time_array_text WHERE toString([dt]) = '[''2024-01-01 19:00:00'']';
+SELECT 'time array column expected', count() FROM t_time_array_text WHERE dt = toDateTime(1704067200) SETTINGS use_primary_key = 0;
+SELECT 'time array column', count() FROM t_time_array_text WHERE dt = toDateTime(1704067200);
+SELECT 'time array column in', count() FROM t_time_array_text WHERE dt IN (toDateTime(1704067200), toDateTime(1704070800));
 SET optimize_if_transform_strings_to_enum = 1, optimize_if_transform_const_strings_to_lowcardinality = 1,
     input_format_try_infer_datetimes_only_datetime64 = 1;
 SELECT 'if of numbers uses the index', count() FROM t_if_numbers WHERE if(x >= 0, -x, x) = -5 SETTINGS force_primary_key = 1;
