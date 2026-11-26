@@ -12,8 +12,8 @@ rustup component add --toolchain "$TOOLCHAIN" rust-src
 CH_TOP_DIR=$(git rev-parse --show-toplevel)
 
 cd "$CH_TOP_DIR/contrib/rust-contrib-workspace" || exit 1
-# (Re)-generate the Cargo.lock file
-cargo generate-lockfile
+# Update the Cargo.lock file only for changes of the manifests; to upgrade a dependency, run `cargo update -p <crate>` first
+cargo update --workspace
 
 #
 # Generate the vendor dir:
@@ -31,10 +31,6 @@ cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$
 
 # delta-lake: cbindgen in its build script runs cargo metadata over its own workspace
 cd "$CH_TOP_DIR"/contrib/delta-kernel-rs || exit 1
-cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
-
-# wasmtime
-cd "$CH_TOP_DIR"/contrib/wasmtime/crates/c-api || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Just in case

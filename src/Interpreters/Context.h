@@ -73,6 +73,7 @@ namespace DB
 {
 
 struct FormatSettings;
+struct CollectedStatistics;
 class ASTSelectQuery;
 
 class SystemLogs;
@@ -980,7 +981,8 @@ public:
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
-    void enablePlanLogCapture();
+    /// Captures the plan of this query for `system.query_log`, collecting what `collected` asks for.
+    void enablePlanLogCapture(const CollectedStatistics & collected);
     QueryPlanLogCapturePtr getPlanLogCapture() const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);

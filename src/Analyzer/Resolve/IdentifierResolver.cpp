@@ -1296,45 +1296,58 @@ IdentifierResolver::QualifyingTableExpression IdentifierResolver::tryFindTableEx
 
     const auto & path_start = identifier[0];
 
-    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    /// The longest qualifier wins: database and table over the whole scope chain first, then an alias, table path or materialized CTE name.
+    for (const bool database_and_table : {true, false})
     {
-        TableExpressionNodePtr join_tree_node = current_scope->expression_join_tree_node;
-        if (!join_tree_node)
-            if (const auto * query_node = current_scope->scope_node->as<QueryNode>(); query_node && query_node->getJoinTreeNode())
-                join_tree_node = query_node->getJoinTreeNodeTyped();
-        if (!join_tree_node)
+        if (database_and_table && parts_size < 3)
             continue;
 
-        const bool allow_table_paths = current_scope->context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
-
-        for (const auto & table_expression_node : extractTableExpressions(join_tree_node))
+        for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
         {
-            auto it = current_scope->table_expression_node_to_data.find(table_expression_node);
-            if (it == current_scope->table_expression_node_to_data.end())
+            TableExpressionNodePtr join_tree_node = current_scope->expression_join_tree_node;
+            if (!join_tree_node)
+                if (const auto * query_node = current_scope->scope_node->as<QueryNode>(); query_node && query_node->getJoinTreeNode())
+                    join_tree_node = query_node->getJoinTreeNodeTyped();
+            if (!join_tree_node)
                 continue;
 
-            const auto & data = it->second;
+            const bool allow_table_paths = current_scope->context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
 
-            bool matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
-
-            if (!matches)
+            for (const auto & table_expression_node : extractTableExpressions(join_tree_node))
             {
-                const size_t consumed = numberOfPartsMatchingTableName(identifier, 0, data.table_name, allow_table_paths);
-                matches = consumed > 0 && consumed < parts_size;
+                auto it = current_scope->table_expression_node_to_data.find(table_expression_node);
+                if (it == current_scope->table_expression_node_to_data.end())
+                    continue;
+
+                const auto & data = it->second;
+
+                bool matches = false;
+                if (database_and_table)
+                {
+                    if (!data.database_name.empty() && path_start == data.database_name)
+                    {
+                        const size_t consumed = numberOfPartsMatchingTableName(identifier, 1, data.table_name, allow_table_paths);
+                        matches = consumed > 0 && consumed + 1 < parts_size;
+                    }
+                }
+                else
+                {
+                    matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+
+                    if (!matches)
+                    {
+                        const size_t consumed = numberOfPartsMatchingTableName(identifier, 0, data.table_name, allow_table_paths);
+                        matches = consumed > 0 && consumed < parts_size;
+                    }
+
+                    if (!matches)
+                        if (const auto * table_node = table_expression_node->as<TableNode>())
+                            matches = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
+                }
+
+                if (matches)
+                    return {table_expression_node, &data};
             }
-
-            if (!matches)
-                if (const auto * table_node = table_expression_node->as<TableNode>())
-                    matches = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
-
-            if (!matches && !data.database_name.empty() && path_start == data.database_name)
-            {
-                const size_t consumed = numberOfPartsMatchingTableName(identifier, 1, data.table_name, allow_table_paths);
-                matches = consumed > 0 && consumed + 1 < parts_size;
-            }
-
-            if (matches)
-                return {table_expression_node, &data};
         }
     }
 

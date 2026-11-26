@@ -180,6 +180,10 @@ sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+# The previous release's tests create projections with positional arguments under a session setting, and loading
+# such a projection again (ATTACH, a restart, the upgraded server) needs it in the profile. Both servers read this file.
+echo "<clickhouse><profiles><default><enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections></default></profiles></clickhouse>" > /etc/clickhouse-server/users.d/enable_positional_arguments_for_projections.xml
+
 start_server || (echo "Failed to start server" && exit 1)
 
 clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
@@ -207,7 +211,7 @@ rm -rf tmp_stress_output
 timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
 (
     echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
-    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(serving_server_pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 )
 
@@ -762,8 +766,6 @@ echo "<clickhouse>
     <profiles>
         <default>
             <compatibility>$old_major_version</compatibility>
-            <!-- Allow loading projections with positional arguments (e.g., GROUP BY 1, 2) created by the old server. -->
-            <enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections>
         </default>
     </profiles>
 </clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
@@ -871,6 +873,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
 #       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
 #       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
+# `getInfoIfClickHouseDictionarySource` + `Code: 198` + the host `[x` is the same class for the dictionary of
+#       `05493_dictionary_host_unclosed_bracket`, whose source host cannot be resolved by design: `--fake-drop` keeps it in
+#       a shared `--database=test_N`, and the upgrade restart logs the failed resolution while it collects the dependencies
+#       of the dictionary. `[x` is neither a host name nor a bracketed IPv6 address, so a failure to resolve any real host
+#       still fails this job.
 # `StorageKeeperMap` + a `05024_keeper_map_parenthesized_metadata*` table + `Failed to activate table because of
 #       invalid metadata in ZooKeeper` is the same class: that test rewrites its own `metadata` znode into shapes a
 #       server must refuse and reverts them at the end of the file, but stress worker 1 (`--database=test_1`) runs
@@ -1107,6 +1114,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
+    | grep -av -e "getInfoIfClickHouseDictionarySource.*Code: 198\. DB::NetException: Not found address of host: \[x\. (DNS_ERROR)" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
     | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \

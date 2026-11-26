@@ -169,8 +169,9 @@ public:
         const AnalysisTableExpressionData * data = nullptr;
     };
 
-    /// The first table expression, in join tree order of `scope` and then of its parent scopes, whose alias,
-    /// table path, materialized CTE name, or database and table path is a proper prefix of `identifier`.
+    /// The table expression of `scope` or its parent scopes whose alias, table path, materialized CTE name,
+    /// or database and table path is a proper prefix of `identifier`.
+    /// A database and table match is preferred over an alias, table path or materialized CTE name match.
     /// Returns an empty `node` when there is none.
     static QualifyingTableExpression tryFindTableExpressionByQualifier(
         const Identifier & identifier,

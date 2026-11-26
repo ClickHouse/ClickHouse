@@ -129,7 +129,7 @@ String ISerialization::kindStackToString(const KindStack & kind_stack)
     if (kind_stack.size() == 1)
         return kindToString(kind_stack.front());
 
-    for (ssize_t i = kind_stack.size() - 1; i >= 1; i--)
+    for (ssize_t i = static_cast<ssize_t>(kind_stack.size()) - 1; i >= 1; i--)
     {
         if (!result.empty())
             result += "Over";
@@ -872,7 +872,7 @@ ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, co
     if (prefix_len == 0)
         return {};
 
-    ssize_t last_elem = prefix_len - 1;
+    ssize_t last_elem = static_cast<ssize_t>(prefix_len) - 1;
     auto res = path[last_elem].data;
 
     /// Materialize the column on demand via a lazy creator if one is attached.
@@ -893,8 +893,8 @@ ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, co
                 creator = std::move(specialized);
 
             res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
+            res.column = res.column ? creator->create(res.column, res.type) : res.column;
             res.type = res.type ? creator->create(res.type) : res.type;
-            res.column = res.column ? creator->create(res.column) : res.column;
         }
     }
 
