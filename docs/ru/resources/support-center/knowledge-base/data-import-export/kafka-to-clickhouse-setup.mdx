@@ -6,9 +6,7 @@ tags: ['Приём данных']
 keywords: ['Kafka']
 ---
 
-<div id="overview">
-  ## Обзор
-</div>
+## Обзор {#overview}
 
 В этой статье рассматривается процесс отправки данных из топика Kafka в таблицу ClickHouse. Мы будем использовать ленту недавних изменений Wiki, которая предоставляет [поток событий](https://stream.wikimedia.org/v2/stream/recentchange), отражающих изменения, внесённые в различные ресурсы Wikimedia. Шаги включают:
 
@@ -16,9 +14,7 @@ keywords: ['Kafka']
 2. Настроить приём потока данных в топик Kafka
 3. Создать таблицу ClickHouse, которая подписывается на топик
 
-<div id="1-setup-kafka-on-ubuntu">
-  # 1. Настройка Kafka на Ubuntu
-</div>
+# 1. Настройка Kafka на Ubuntu {#1-setup-kafka-on-ubuntu}
 
 1. Создайте Ubuntu-инстанс **ec2** и подключитесь к нему по SSH:
 
@@ -70,9 +66,7 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-<div id="2-ingest-the-wikimedia-stream-into-kafka">
-  # 2. Приём потока Wikimedia в Kafka
-</div>
+# 2. Приём потока Wikimedia в Kafka {#2-ingest-the-wikimedia-stream-into-kafka}
 
 1. Сначала понадобятся несколько утилит:
 
@@ -101,9 +95,7 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. Нажмите **Ctrl+c**, чтобы прервать выполнение предыдущей команды.
 
-<div id="3-ingest-the-data-into-clickhouse">
-  # 3. Приём данных в ClickHouse
-</div>
+# 3. Приём данных в ClickHouse {#3-ingest-the-data-into-clickhouse}
 
 1. Вот как выглядят входящие данные:
 

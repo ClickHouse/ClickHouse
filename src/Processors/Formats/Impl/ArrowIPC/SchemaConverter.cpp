@@ -586,7 +586,15 @@ buildMapEntriesField(
 {
     /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
     VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> kv;
-    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings, childPlan(kv_plans, 0)));
+    const DataTypePtr key_type = removeNullable(map_type.getKeyType());
+    if (isVariant(key_type) && settings.arrow.output_variant_as_json_string)
+    {
+        /// The key must not be nullable: `RecordBatchEncoder` writes a NULL `Variant` key as the JSON text `null`.
+        kv.push_back(flatbuf::CreateField(
+            b, b.CreateString("key"), /*nullable=*/ false, flatbuf::Type_Utf8, flatbuf::CreateUtf8(b).Union(), 0, 0));
+    }
+    else
+        kv.push_back(buildField(b, "key", key_type, settings, childPlan(kv_plans, 0)));
     kv.push_back(buildField(b, "value", map_type.getValueType(), settings, childPlan(kv_plans, 1)));
     auto kv_vec = b.CreateVector(kv);
     auto entries_name = b.CreateString("entries");
@@ -609,7 +617,7 @@ buildField(
     }
 
     DataTypePtr t = removeLowCardinality(type);
-    const bool nullable = t->isNullable();
+    bool nullable = t->isNullable();
     t = removeNullable(t);
 
     flatbuf::Type type_type = flatbuf::Type_NONE;
@@ -629,6 +637,13 @@ buildField(
         type_type = flatbuf::Type_Bool;
         type_offset = flatbuf::CreateBool(b).Union();
     }
+    else if (isNothing(t) && settings.arrow.output_nothing_as_null)
+    {
+        /// Every value of `Nothing` is null, so the field is nullable even when the type is not, as in `Array(Nothing)`.
+        type_type = flatbuf::Type_Null;
+        type_offset = flatbuf::CreateNull(b).Union();
+        nullable = true;
+    }
     else
     {
         const WhichDataType which(t);
@@ -642,7 +657,18 @@ buildField(
             case TypeIndex::Int16: case TypeIndex::Enum16: make_int(16, true); break;
             case TypeIndex::Int32: make_int(32, true); break;
             case TypeIndex::Int64: make_int(64, true); break;
-            case TypeIndex::DateTime: make_int(32, false); break;
+            case TypeIndex::DateTime:
+                if (settings.arrow.output_datetime_as_timestamp)
+                {
+                    auto tz_off = b.CreateString(assert_cast<const DataTypeDateTime &>(*t).getTimeZone().getTimeZone());
+                    type_type = flatbuf::Type_Timestamp;
+                    type_offset = flatbuf::CreateTimestamp(b, flatbuf::TimeUnit_SECOND, tz_off).Union();
+                }
+                else
+                {
+                    make_int(32, false);
+                }
+                break;
             case TypeIndex::Float32:
                 type_type = flatbuf::Type_FloatingPoint;
                 type_offset = flatbuf::CreateFloatingPoint(b, flatbuf::Precision_SINGLE).Union();
@@ -724,7 +750,7 @@ buildField(
                     type_offset = flatbuf::CreateFixedSizeBinary(
                         b, static_cast<Int32>(assert_cast<const DataTypeFixedString &>(*t).getN())).Union();
                 }
-                else if (settings.arrow.output_string_as_string)
+                else if (settings.arrow.output_string_as_string && settings.arrow.output_fixed_string_as_string)
                 {
                     type_type = flatbuf::Type_Utf8;
                     type_offset = flatbuf::CreateUtf8(b).Union();
@@ -794,6 +820,15 @@ buildField(
             }
             case TypeIndex::Variant:
             {
+                /// `RecordBatchEncoder::encodeVariantAsJSONText` writes the JSON text of each value, and NULL as an Arrow null.
+                if (settings.arrow.output_variant_as_json_string)
+                {
+                    nullable = true;
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                    break;
+                }
+
                 /// Mirror the library writer: a dense union with one child per variant (in global order)
                 /// plus a trailing `null`-typed child that NULL rows refer to.
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*t);
@@ -1159,6 +1194,49 @@ bool isNullableField(const ArrowField & field)
     return field.nullable;
 }
 
+namespace
+{
+
+/// The parameterless type named `name` that the ClickHouse writer stores as the Arrow type inferred as
+/// `inferred`, or null. The writer names a union child after its type's family. A `date32` child is not
+/// re-declared as `Date`: narrowing it after decoding would bypass `date_time_overflow_behavior`.
+DataTypePtr writerTypeOfUnionChild(const DataTypePtr & inferred, const String & name)
+{
+    const WhichDataType which(inferred);
+    const size_t width = which.isFixedString() ? assert_cast<const DataTypeFixedString &>(*inferred).getN() : 0;
+    const bool stored_as = (width == 16 && (name == "UUID" || name == "IPv6" || name == "Int128" || name == "UInt128"))
+        || (width == 32 && (name == "Int256" || name == "UInt256"))
+        || (which.isUInt32() && (name == "IPv4" || name == "DateTime"))
+        || (which.isUInt16() && name == "Date");
+    return stored_as ? DataTypeFactory::instance().get(name) : nullptr;
+}
+
+}
+
+DataTypes unionElementTypes(const ArrowType & type, const FormatSettings & settings, bool allow_null_type)
+{
+    DataTypes inferred;
+    VectorWithMemoryTracking<const String *> names;
+    for (const ArrowField & child : type.children)
+    {
+        if (child.type.kind == TypeKind::Null)
+            continue;
+        inferred.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false, allow_null_type)));
+        names.push_back(&child.name);
+    }
+
+    DataTypes elements = inferred;
+    for (size_t i = 0; i < inferred.size(); ++i)
+    {
+        const String inferred_name = inferred[i]->getName();
+        if (std::ranges::count_if(inferred, [&](const DataTypePtr & t) { return t->getName() == inferred_name; }) < 2)
+            continue;
+        if (DataTypePtr named = writerTypeOfUnionChild(inferred[i], *names[i]))
+            elements[i] = std::move(named);
+    }
+    return elements;
+}
+
 DataTypePtr fieldToCHType(
     const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type)
 {
@@ -1261,20 +1339,10 @@ DataTypePtr fieldToCHType(
             break;
         }
         case TypeKind::Union:
-        {
             /// Map an Arrow union to a ClickHouse Variant. Children of the Arrow `null` type are the
             /// placeholder used by the ClickHouse writer for NULL rows; they are not Variant elements.
-            DataTypes variants;
-            variants.reserve(type.children.size());
-            for (const ArrowField & child : type.children)
-            {
-                if (child.type.kind == TypeKind::Null)
-                    continue;
-                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false, allow_null_type)));
-            }
-            result = std::make_shared<DataTypeVariant>(variants);
+            result = std::make_shared<DataTypeVariant>(unionElementTypes(type, settings, allow_null_type));
             break;
-        }
         case TypeKind::Null:
             /// An Arrow `null`-typed field is an all-null column. For the data reader map it to
             /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the

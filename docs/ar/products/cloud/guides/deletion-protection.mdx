@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'الحماية من الحذف'
+slug: /cloud/manage/deletion-protection
+title: 'حماية الخدمة من الحذف'
+description: 'منع حذف خدمة ClickHouse Cloud إلى حين إيقاف الحماية'
+keywords: ['الحماية من الحذف', 'حذف الخدمة', 'ClickHouse Cloud', 'إعدادات الخدمة', 'deletionProtection']
+doc_type: 'guide'
+---
+
+حماية الخدمة من الحذف إعدادٌ خاص بكل خدمة على حدة، يمنع حذفها إلى أن توقفه. استخدمه مع خدمات ClickHouse Cloud التي تريد حمايتها من الإزالة عن طريق الخطأ، سواء من وحدة تحكم ClickHouse Cloud، أو عبر [واجهة برمجة تطبيقات ClickHouse Cloud](/ar/cloud/manage/api/api-overview)، أو باستخدام Terraform.
+
+<Note>
+  ينطبق هذا على خدمات ClickHouse Cloud، ولا ينطبق على خدمات [ClickHouse Managed Postgres](/ar/cloud/managed-postgres).
+</Note>
+
+الحماية متوقفة افتراضيًا، وإيقافها لا يؤدي إلى حذف الخدمة. وتواصل الخدمة المحمية عملها كالمعتاد، دون أي تغيير في الاستعلامات أو التحجيم أو الإعدادات الأخرى.
+
+عند تفعيل الحماية، تُرفض طلبات الحذف؛ إذ يُعيد `DELETE /v1/organizations/{organizationId}/services/{serviceId}` رمز HTTP `409` إلى أن توقف الحماية. ويجب كذلك إيقاف الخدمة قبل حذفها، ثم يجري الحذف بشكل غير متزامن.
+
+## من يمكنه تغييرها {#who-can-change-it}
+
+يتطلب تفعيل الحماية أو تعطيلها الصلاحية [`control-plane:service:delete`](/ar/cloud/security/console-roles)، وهي صلاحية يمتلكها مسؤولو المؤسسة. راجع [أدوار وحدة التحكم وأذوناتها](/ar/cloud/security/console-roles).
+
+يتطلب تفعيل الحماية أيضًا أن تكون ميزة الحماية من الحذف متاحة للمؤسسة، وهي متوفرة لمؤسسات ClickHouse Cloud. وإذا لم تكن الميزة متاحة للمؤسسة، فإن طلب الإنشاء أو التحديث الذي يضبط `deletionProtection` على `true` يُعيد رمز HTTP `400`. أما تعطيل الحماية فلا يخضع لهذا الفحص: إذ يُقبل الطلب الذي يضبط `deletionProtection` على `false`، حتى لو كانت الخدمة محمية بالفعل.
+
+| الإجراء                                      | الصلاحية                                                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| تفعيل مفتاح التبديل في وحدة التحكم أو تعطيله | `control-plane:service:delete` على الخدمة                                                                    |
+| ضبط `deletionProtection` على خدمة موجودة     | `control-plane:service:manage` و`control-plane:service:delete` على الخدمة                                    |
+| إرسال القيمة المضبوطة حاليًا للخدمة          | `control-plane:service:manage` فقط. لا يتطلب تكرار القيمة الحالية `control-plane:service:delete`             |
+| إنشاء خدمة مع `deletionProtection: true`     | `control-plane:organization:create-service`، و`control-plane:service:delete` ممنوحة لجميع الخدمات في المؤسسة |
+| حذف الخدمة                                   | `control-plane:service:delete` على الخدمة. يجب أن تكون الخدمة متوقفة، وأن تكون الحماية معطّلة                |
+
+لا يمكن تحديث خدمات ClickStack عبر API السحابة، لذا فعّل الحماية من الحذف لهذه الخدمات أو عطّلها من وحدة التحكم.
+
+## تفعيل الحماية أو تعطيلها في وحدة التحكم {#console}
+
+افتح الخدمة وانتقل إلى **الإعدادات**. ثم استخدم مفتاح التبديل ضمن **الحماية من الحذف**. يُحفَظ التغيير فورًا.
+
+يتاح مفتاح التبديل لكل من يملك الصلاحية `control-plane:service:delete` على تلك الخدمة. وما دامت الحماية مفعّلة، ترفض وحدة التحكم إجراء الحذف إلى أن تُعطّل المفتاح.
+
+## الضبط باستخدام API السحابة {#cloud-api}
+
+يحتوي كائن الخدمة على حقل منطقي هو `deletionProtection`. اضبطه عند إنشاء خدمة (`POST /v1/organizations/{organizationId}/services`) أو عند تحديث خدمة قائمة (`PATCH /v1/organizations/{organizationId}/services/{serviceId}`). تتضمن الاستجابات الواردة من طلبات الجلب والاستعراض هذا الحقل. وفي حال غيابه، تكون الخدمة غير محمية.
+
+تفعيل الحماية:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": true}'
+```
+
+لحذف خدمة محمية، عطّل الحماية، ثم أوقف الخدمة، وانتظر حتى تتوقف تمامًا، ثم احذفها. يتطلب الطلب `PATCH .../state` مع `"command": "stop"` الصلاحية `control-plane:service:manage`، ويُعيد استجابته قبل أن تتوقف الخدمة فعليًا. يُرفض طلب الحذف إذا كانت الخدمة لا تزال في الحالة `stopping`. أما طلب الحذف الموجّه إلى خدمة محمية فيُعيد `409` ويُبقي الخدمة كما هي.
+
+عطّل الحماية:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": false}'
+```
+
+أرسل طلب إيقاف:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/state" \
+  -d '{"command": "stop"}'
+```
+
+انتظر حتى تصبح قيمة `result.state` هي `stopped`، ثم نفّذ الحذف:
+
+```bash
+while [ "$(curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  | jq -r '.result.state')" != "stopped" ]; do
+  sleep 5
+done
+
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X DELETE \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID"
+```
+
+## Terraform {#terraform}
+
+<Note>
+  لا تتوفر `deletion_protection` في أحدث إصدار منشور من المزوّد، وهو [v3.43.0](https://github.com/ClickHouse/terraform-provider-clickhouse/releases/tag/v3.43.0). وقد أُضيفت هذه الـ attribute في [terraform-provider-clickhouse#799](https://github.com/ClickHouse/terraform-provider-clickhouse/pull/799)، الذي دُمج لكنه لم يُضمَّن بعد في أي إصدار. لذا يفشل المثال أدناه على v3.43.0 مع خطأ يشير إلى وسيطة غير مدعومة. استخدم إصدارًا من المزوّد أحدث من v3.43.0 يتضمن هذه الـ attribute.
+</Note>
+
+يقبل المورد `clickhouse_service` الوسيطة `deletion_protection`. وما دامت قيمتها `true`، يفشل الأمر `terraform destroy` وكذلك أي تغيير يستلزم استبدال الخدمة. لحذف الخدمة، اضبط قيمتها على `false` وطبّق هذا التغيير وحده أولًا، ثم احذف الخدمة.
+
+لا تؤدي إزالة `deletion_protection` من التهيئة إلى تغيير الإعداد الحالي، بل يبقى كما هو.
+
+```hcl
+resource "clickhouse_service" "example" {
+  # ...
+
+  deletion_protection = true
+}
+```
+
+يتطلب ضبط `deletion_protection = true` عند إنشاء خدمة مفتاح API يملك صلاحية حذف جميع الخدمات في المؤسسة. أما تغييره لاحقًا فيتطلب صلاحية الحذف على تلك الخدمة.

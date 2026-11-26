@@ -1,0 +1,94 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-06-26
+title: 'デモデイズ - 2026-06-26'
+sidebarTitle: '2026-06-26'
+sidebar_label: '2026-06-26'
+sidebar_position: 626
+description: 'ClickStack デモデー（2026-06-26）'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## アラート向けの異常検知、棒グラフへの対応を継続 {#anomaly-detection-for-alerting-continues-with-bar-charts}
+
+*デモ担当者: [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AeibhN5dGQY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+これはまだ実験段階の機能です。異常を強調表示するための正規分布のバンドは、折れ線グラフではうまく機能しますが、棒グラフで表現するのははるかに難しくなります。Himanshu はバンドを見やすくするために、エラーバンドや中抜きの棒グラフまで試しましたが、まだ表示が雑然とした印象は拭えません。塗りつぶした棒の上にバンドを線として重ねる方法にも同じ問題があり、棒が視覚的に目立ちすぎてバンドを判別しにくくなります。
+
+当面は、異常バンドを確認したいユーザーには折れ線グラフの利用を案内し、棒グラフのデザインは後日改めて検討する予定です。Himanshu は、この機能のリリースに先立ち、最適なアプローチについてフィードバックを募集しています。
+
+## テーブル向けの外部 onclick アクション {#external-onclick-actions-for-tables}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8CV7ZEbFqhk" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Drew は、ダッシュボードのテーブルに追加された、小さいながらも便利な機能をデモしました。テーブルの行から外部ツールへ直接リンクできるようになります。
+
+テーブルの行からは、これまでも検索や別のダッシュボードへドリルダウンできました。今回、3 つ目のオプションとして「External」が追加されました。選択した行の値を使って URL を組み立て、そのページを開く機能です。デモではコンセプトを示す例として、製品カタログの行をクリックすると、製品名を埋め込んだ Google 検索の URL が開きました。同じ仕組みは、Grafana、社内のランブック、チケット管理システムなど、URL でパラメータを受け付けるあらゆるツールへのリンクにもそのまま活用できます。
+
+シンプルながら重要な機能です。ClickStack は単なるデータの宛先ではなく、より広いオブザーバビリティのワークフローを構成する一部となり、ダッシュボードから調査の続行に必要なツールへスムーズに移動できるようになります。
+
+**関連プルリクエスト:** [#2523](https://github.com/hyperdxio/hyperdx/pull/2523) feat: support external links via dashboard table on-click behavior
+
+## OTel プロファイリング {#otel-profiling}
+
+*デモ担当者: [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/-yAP8lXA2D8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack へのプロファイリングの取り込みが始まっていますが、まだ形になりつつある段階です。Spencer は、OpenTelemetry のプロファイリングサンプルを取り込む初期プロトタイプをデモしました。このサンプルは、フレームグラフの生成に使われ、pprof などのツールでも利用されるのと同じデータです。ClickHouse をバックエンドとする Grafana ダッシュボードで、データのソートを繰り返す小さなプログラムを可視化し、新しいプロファイリングサンプルがストリーミングされてくる中で、個々のコールスタックのブロックを掘り下げて見せました。
+
+実装はまだかなり粗削りで、それはクエリにも表れています。各行はログとトレースの要素を併せ持ち、フレームグラフのスパンまたはスライスを表す関数名とアドレスの長い配列を格納しています。Grafana が想定するフォーマットに再構築するには、これらの配列にまたがる結合と集約が必要です。また、エクスポーターは生のプロファイリングフレームを展開してから ClickHouse に書き込む必要があります。スキーマは依然としてブルームフィルタに依存しつつ、新たに全文検索も追加されたため、互換性に関する議論が起こりました。ClickHouse Cloud はすでに全文検索をサポートしていることから、全文検索を使わないオープンソース向けの経路をあとどれくらい維持すべきかについて、チーム内で議論が交わされました。
+
+この作業は現在、オープンな PR でレビュー中です。まずコア機能をオープンソースに取り込み、その後 ClickStack への統合を進める計画です。
+
+## OTel メトリクスログソースの自動補完 {#autocomplete-for-otel-metric-sources}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lvcv7IV2Bs8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Brandon が、メトリクスのオンボーディングにおける使い勝手を向上させるちょっとした改善をデモしました。OpenTelemetry Metrics ログソースを作成する際、メトリクステーブルの各フィールドを手動で選択する必要がなくなり、選択したデータベース内のテーブル名との一致に基づいて自動補完されるようになりました。これにより、メトリクスでもログやトレースと同等のオンボーディング体験が得られるようになりました。
+
+**関連する プルリクエスト:** [#2524](https://github.com/hyperdxio/hyperdx/pull/2524) feat(app): auto-fill metric table dropdowns in Create Source form
+
+## ダッシュボード向け評価フレームワーク {#eval-framework-for-dashboards}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cg2pYb5rsKU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+AI が生成するダッシュボードの品質は向上していますが、目視だけで進歩を判断するには限界があります。Brandon は、ダッシュボード生成が実際に改善しているかどうか、そしてそれと同じくらい重要な、まだ不十分な点がどこにあるのかを測定するための評価フレームワークを構築しています。
+
+この評価では、折りたたみ可能なセクション、タブ、ヒートマップ、円グラフ、生のSQL とログソースベースのタイルの併用、サービスレベルのフィルタ、ダッシュボード間のドリルダウンリンクなど、できるだけ多くの機能をあえて盛り込んだダッシュボードを生成するよう、モデルにプロンプトを与えます。
+
+続いて採点パスで、すべてが期待どおりにレンダリングされ、動作したかを検証します。この過程で、Markdownタイルの高さが常に足りずにレンダリングされるなど、実際の問題がすでに見つかっています。また、Drew の新しい onclick 機能で可能になったドリルダウンリンクをたどり、AI が生成した 2 つ目のダッシュボードへ正しく遷移できることも確認します。今後、新しいダッシュボード機能が追加されるたびに評価に組み込んでいくことで、手動テストに頼らずリグレッションを自動的に検出できるようになります。Brandon は近いうちにこのフレームワークの プルリクエスト を作成する予定です。
+
+**関連 プルリクエスト:** [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): add dashboard-build eval scenario (進行中)
+
+## Prometheus への接続 {#connecting-to-prometheus}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qvM8-6A4two" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron は、ClickStack と Prometheus を橋渡しする初期段階の機能をデモしました。ログソースの詳細設定に新たに追加された「Prometheus compatible」オプションを有効にすると、ClickStack は設定済みのホストを ClickHouse インスタンスではなく Prometheus の API エンドポイント (デモでは Thanos) として扱います。有効化後は、ダッシュボードタイルからそのエンドポイントに対して PromQL を直接実行できます。Aaron は、ポッドごとの CPU 使用率をグループ化したチャートを使ってこれを実演しました。このクエリは ClickHouse を介した変換を経ずに、Prometheus へ直接送信されます。デモ自体は小規模なものでしたが、ユーザー体験をめぐって幅広い議論が交わされるきっかけとなりました。
+
+長期的には、ClickStack で Prometheus をネイティブにサポートすることを目指しています。この機能はそのための現実的な第一歩という位置付けです。すでに Prometheus を利用しているチームは、導入当初からすべてを ClickHouse 経由に切り替える必要はなく、Prometheus を使い続けながら ClickStack を導入できます。並行して、ClickHouse で PromQL をネイティブにサポートする取り組みも引き続き進めています。
+
+**関連 プルリクエスト:** [#2518](https://github.com/hyperdxio/hyperdx/pull/2518) feat: add ability to connect to external prometheus datastore

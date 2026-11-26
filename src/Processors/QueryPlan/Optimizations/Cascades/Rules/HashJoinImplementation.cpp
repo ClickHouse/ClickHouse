@@ -1,4 +1,5 @@
 #include <DataTypes/getLeastSupertype.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
@@ -36,7 +37,7 @@ public:
     class StrategyEnumerator;
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the physical alternatives of one logical join into the memo, one method per strategy.
@@ -48,7 +49,7 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        std::vector<GroupExpressionPtr> & result_);
+        GroupExpressions & result_);
 
     void addLocalJoin();
     void addBroadcastJoins(size_t node_count);
@@ -57,7 +58,10 @@ public:
 
     [[nodiscard]] bool hasEquiKeys() const { return !equi_keys.empty(); }
     [[nodiscard]] bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
-    [[nodiscard]] bool isBroadcastSafe() const { return left_preserved; }
+    [[nodiscard]] bool isBroadcastSafe() const
+    {
+        return JoinCommon::canSplitLeftInput(join_step.getJoinOperator().kind, join_step.getJoinOperator().strictness);
+    }
 
 private:
     /// `hash_type_name` is the least supertype both sides are cast to before hashing when
@@ -87,8 +91,8 @@ private:
     const JoinStepLogical & join_step;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    std::vector<GroupExpressionPtr> & result;
-    std::vector<JoinKeyPair> equi_keys;
+    GroupExpressions & result;
+    VectorWithMemoryTracking<JoinKeyPair> equi_keys;
     bool needs_hash_cast = false;
     bool left_preserved = false;
     bool right_preserved = false;
@@ -102,7 +106,7 @@ bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const E
 
 /// Whether `join_algorithm` allows an algorithm from the hash family, so the local join can
 /// actually run as the hash join the strategies of this rule cost.
-static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms)
+static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `JoinSettings::join_algorithms` and `TableJoin::isEnabledAlgorithm` both use std::vector
 {
     return TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH)
@@ -127,7 +131,7 @@ HashJoinImplementation::StrategyEnumerator::StrategyEnumerator(
     GroupExpressionPtr expression_,
     const ExpressionProperties & required_properties_,
     Memo & memo_,
-    std::vector<GroupExpressionPtr> & result_)
+    GroupExpressions & result_)
     : rule(rule_)
     , expression(std::move(expression_))
     , join_step(*typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()))
@@ -440,7 +444,7 @@ void HashJoinImplementation::StrategyEnumerator::addSingleKeyShuffleJoins(size_t
     }
 }
 
-std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     chassert(typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()));
     chassert(expression->inputs.size() == 2);
@@ -448,7 +452,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
-    std::vector<GroupExpressionPtr> result;
+    GroupExpressions result;
     StrategyEnumerator strategies(*this, expression, required_properties, memo, result);
 
     strategies.addLocalJoin();
@@ -467,10 +471,8 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
-        /// Broadcast replicates the right side, so it is only safe when every output row is
-        /// driven by the partitioned left side: `RIGHT` and `FULL` emit unmatched right-side rows
-        /// on every node, and `PASTE` pairs rows by position. `JoinCommutativity` can turn `RIGHT`
-        /// Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
+        /// Broadcast replicates the right side (see `JoinCommon::canSplitLeftInput`).
+        /// `JoinCommutativity` can turn `RIGHT` Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
         if (strategies.isBroadcastSafe())
             strategies.addBroadcastJoins(candidate_node_count);
 
