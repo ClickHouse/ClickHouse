@@ -466,8 +466,11 @@ void ReadFromObjectStorageStep::createIterator()
 
                 RuntimeFilterIndexAnalysisDescriptors format_descriptors;
                 for (const auto & descriptor : join_runtime_filters_for_file_pruning)
-                    if (info.formatReturnsColumnUnchanged(descriptor.key_column_name, descriptor.key_column_type))
+                {
+                    const auto * key_column = descriptor.tryGetKeyColumn();
+                    if (key_column && info.formatReturnsColumnUnchanged(key_column->result_name, key_column->result_type))
                         format_descriptors.push_back(descriptor);
+                }
                 if (format_descriptors.size() == join_runtime_filters_for_file_pruning.size())
                     format_join_runtime_filter_predicate = join_runtime_filter_predicate;
                 else if (format_descriptors.empty())

@@ -1485,15 +1485,50 @@ static bool isIdentityCast(const DataTypePtr & from, const DataTypePtr & to)
     return same_custom_name && from->equals(*to);
 }
 
-/// The function of the recorded cast is reused, so that it converts with the settings it was resolved with, e.g.
-/// `date_time_overflow_behavior`.
-static const ActionsDAG::Node & addKeyCast(ActionsDAG & dag, const ActionsDAG::Node & key, const FunctionBasePtr & cast)
+static bool isCast(const ActionsDAG::Node & node)
 {
-    Field type_name = cast->getResultType()->getName();
-    auto string_type = std::make_shared<DataTypeString>();
-    const auto & type_name_node
-        = dag.addColumn(string_type->createColumnConst(0, type_name), string_type, calculateConstantActionNodeName(type_name));
-    return dag.addFunction(cast, {&key, &type_name_node}, {});
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+        && (node.function_base->getName() == "CAST" || node.function_base->getName() == "_CAST");
+}
+
+/// The key without the cast to the type of the filter.
+static const ActionsDAG::Node & withoutCast(const ActionsDAG::Node & node)
+{
+    return isCast(node) ? *node.children.front() : node;
+}
+
+const ActionsDAG::Node * RuntimeFilterIndexAnalysisDescriptor::tryGetKeyColumn() const
+{
+    const auto & node = withoutCast(getKeyNode());
+    return node.type == ActionsDAG::ActionType::INPUT ? &node : nullptr;
+}
+
+bool RuntimeFilterIndexAnalysisDescriptor::isGlobalRowIndex() const
+{
+    const auto & node = withoutCast(getKeyNode());
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.result_name == runtime_filter_global_row_index_node_name;
+}
+
+/// Adds the key of a descriptor to the DAG. The functions are reused, so that a cast converts with the settings it was
+/// resolved with, e.g. `date_time_overflow_behavior`.
+static const ActionsDAG::Node & addKeyExpression(ActionsDAG & dag, const ActionsDAG::Node & node)
+{
+    switch (node.type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+            return findOrAddInput(dag, node.result_name, node.result_type);
+        case ActionsDAG::ActionType::COLUMN:
+            return dag.addColumn(node.column, node.result_type, node.result_name);
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            for (const auto * child : node.children)
+                children.push_back(&addKeyExpression(dag, *child));
+            return dag.addFunction(node.function_base, std::move(children), {});
+        }
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node {} in the key of a runtime filter", node.result_name);
+    }
 }
 
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
@@ -1507,45 +1542,29 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     if (!exact_values && !range)
         return nullptr;
 
-    const String & column_name = descriptor.key_column_name;
-    const DataTypePtr & column_type = descriptor.key_column_type;
     const auto target_type = filter.getFilterColumnTargetType();
 
-    /// The key of a global row index descriptor is the same `_part_offset + _part_starting_offset` expression the probe side
-    /// filters by, under the name `MergeTreeSkipIndexReader::read` gives its key.
-    const ActionsDAG::Node * key_node_ptr = nullptr;
-    if (descriptor.is_global_row_index)
-    {
-        auto uint64_type = std::make_shared<DataTypeUInt64>();
-        const auto & part_offset = findOrAddInput(dag, "_part_offset", uint64_type);
-        const auto & part_starting_offset = findOrAddInput(dag, "_part_starting_offset", uint64_type);
-        key_node_ptr = &dag.addFunction(FunctionFactory::instance().get("plus", context), {&part_offset, &part_starting_offset}, {});
-        if (key_node_ptr->result_name != runtime_filter_global_row_index_node_name)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected name {} of the global row index key, expected {}",
-                key_node_ptr->result_name, runtime_filter_global_row_index_node_name);
-    }
-    else
-        key_node_ptr = &dag.addInput(column_name, column_type);
-    const auto & key_node = *key_node_ptr;
     /// A cast that keeps the values (e.g. a `DateTime` time zone change) is left out, so the indexes can use the key.
-    const auto & cast = descriptor.key_cast;
-    const bool apply_cast = cast && !isIdentityCast(key_node.result_type, cast->getResultType());
-    const auto & key_casted = apply_cast ? addKeyCast(dag, key_node, cast) : key_node;
+    const auto * key = &descriptor.getKeyNode();
+    if (isCast(*key) && isIdentityCast(key->children.front()->result_type, key->result_type))
+        key = key->children.front();
+    const auto & key_casted = addKeyExpression(dag, *key);
+    const String & key_name = key_casted.result_name;
     chassert(key_casted.result_type->equals(*target_type));
 
     if (exact_values)
     {
         ColumnWithTypeAndName set_values(
-            exact_values, setTypeComparingBytes(key_casted.result_type), "__runtime_filter_in_values_" + column_name);
+            exact_values, setTypeComparingBytes(key_casted.result_type), "__runtime_filter_in_values_" + key_name);
         auto future_set = std::make_shared<FutureSetFromTuple>(
             CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, false, SizeLimits{});
         auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);
         const auto & set_node
-            = dag.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "__runtime_filter_in_set_" + column_name);
+            = dag.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "__runtime_filter_in_set_" + key_name);
         LOG_DEBUG(
             getLogger("JoinRuntimeFilterIndexAnalysis"),
             "Index analysis engaged on join key '{}': pruning by exact IN-set of {} value(s)",
-            column_name,
+            key_name,
             exact_values->size());
         return &dag.addFunction(FunctionFactory::instance().get("in", context), {&key_casted, &set_node}, {});
     }
@@ -1553,15 +1572,15 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     if (range)
     {
         const auto & min_node
-            = dag.addColumn(target_type->createColumnConst(1, range->left), target_type, "__runtime_filter_min_" + column_name);
+            = dag.addColumn(target_type->createColumnConst(1, range->left), target_type, "__runtime_filter_min_" + key_name);
         const auto & max_node
-            = dag.addColumn(target_type->createColumnConst(1, range->right), target_type, "__runtime_filter_max_" + column_name);
+            = dag.addColumn(target_type->createColumnConst(1, range->right), target_type, "__runtime_filter_max_" + key_name);
         const auto & ge_node = dag.addFunction(FunctionFactory::instance().get("greaterOrEquals", context), {&key_casted, &min_node}, {});
         const auto & le_node = dag.addFunction(FunctionFactory::instance().get("lessOrEquals", context), {&key_casted, &max_node}, {});
         LOG_DEBUG(
             getLogger("JoinRuntimeFilterIndexAnalysis"),
             "Index analysis engaged on join key '{}': pruning by range {}",
-            column_name,
+            key_name,
             range->toString());
         FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         return &dag.addFunction(and_func, {&ge_node, &le_node}, {});

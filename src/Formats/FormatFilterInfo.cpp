@@ -525,9 +525,12 @@ std::optional<std::shared_ptr<const KeyCondition>> FormatFilterInfo::tryGetJoinR
     /// a column of another type wrongly. Renamed, the column is unknown to the predicate, which then ignores that key.
     for (const auto & descriptor : join_runtime_filter_predicate->getDescriptors())
     {
-        auto it = std::ranges::find(columns, descriptor.key_column_name, &ColumnWithTypeAndName::name);
-        if (it != columns.end() && !it->type->equals(*descriptor.key_column_type))
-            it->name = "__join_runtime_filter_key_of_another_type_" + it->name;
+        for (const auto * input : descriptor.key->getInputs())
+        {
+            auto it = std::ranges::find(columns, input->result_name, &ColumnWithTypeAndName::name);
+            if (it != columns.end() && !it->type->equals(*input->result_type))
+                it->name = "__join_runtime_filter_key_of_another_type_" + it->name;
+        }
     }
 
     Names names;

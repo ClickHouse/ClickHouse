@@ -559,17 +559,20 @@ using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
-/// A runtime filter (by rendezvous key) bound to a left-side column to prune.
+/// A runtime filter (by rendezvous key) bound to the left-side key to prune by.
 struct RuntimeFilterIndexAnalysisDescriptor
 {
     String filter_id;
-    String key_column_name;
-    DataTypePtr key_column_type;
-    /// The probe key is `_part_starting_offset + _part_offset` (the global row index of the read), not a column.
-    /// `key_column_name` is then only a display name.
-    bool is_global_row_index = false;
-    /// The cast between the key and the filter, nullptr if there is none.
-    FunctionBasePtr key_cast;
+    /// The probe key as an expression over the columns of the read. Its only output is the key as the filter gets it.
+    std::shared_ptr<const ActionsDAG> key;
+
+    [[nodiscard]] const ActionsDAG::Node & getKeyNode() const { return *key->getOutputs().front(); }
+    /// The columns of the read that the key is computed from.
+    [[nodiscard]] Names getKeyColumns() const { return key->getRequiredColumnsNames(); }
+    /// The column, if the key is one column of the read with at most a cast above it; otherwise nullptr.
+    [[nodiscard]] const ActionsDAG::Node * tryGetKeyColumn() const;
+    /// The key is `_part_offset + _part_starting_offset`, the global row index of the read.
+    [[nodiscard]] bool isGlobalRowIndex() const;
 };
 using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
 
@@ -595,10 +598,7 @@ private:
     mutable std::shared_ptr<const ActionsDAG> predicate_dag TSA_GUARDED_BY(mutex);
 };
 
-/// Display name of the `_part_starting_offset + _part_offset` key of a global row index descriptor.
-inline constexpr std::string_view runtime_filter_global_row_index_key_name = "_part_starting_offset + _part_offset";
-
-/// Name of the `_part_offset + _part_starting_offset` node of the pruning predicate of a global row index descriptor.
+/// Name of the `_part_offset + _part_starting_offset` key node of a global row index descriptor.
 /// The reader recognizes the key by this name, in a predicate on the global row index only.
 inline constexpr std::string_view runtime_filter_global_row_index_node_name = "plus(_part_offset, _part_starting_offset)";
 
