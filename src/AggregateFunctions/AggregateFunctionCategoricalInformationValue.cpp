@@ -108,7 +108,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        const auto add = [&](Counter & lhs, Counter value)
+        const auto add_counter = [&](Counter & lhs, Counter value)
         {
             Counter sum = 0;
             if (common::addOverflow(lhs, value, sum))
@@ -123,8 +123,8 @@ public:
 
         for (size_t i = 0; i <= category_count; ++i)
         {
-            add(counter(place, i, false), counter(rhs, i, false));
-            add(counter(place, i, true), counter(rhs, i, true));
+            add_counter(counter(place, i, false), counter(rhs, i, false));
+            add_counter(counter(place, i, true), counter(rhs, i, true));
         }
     }
 
