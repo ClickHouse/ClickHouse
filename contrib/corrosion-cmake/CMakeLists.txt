@@ -459,7 +459,12 @@ function(clickhouse_postprocess_rust_lib target_name)
     add_custom_target(${ARG_STEP}_${target_name} DEPENDS "${_output}")
     # Each step runs after the previous one: other generators attach the previous step's rule to this target too.
     add_dependencies(${ARG_STEP}_${target_name} ${_previous_step})
-    add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    # A dependency of `<target>` is an order-only dependency of every object of every target that links it, so the
+    # C++ compilation would wait for the step, although only the link needs its result. Ninja finds the rule by the
+    # path of the library in the link command; other generators need the dependency between the targets.
+    if (NOT CMAKE_GENERATOR MATCHES "Ninja")
+        add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    endif()
     set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB "${_output}")
     set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB_STEP ${ARG_STEP}_${target_name})
 

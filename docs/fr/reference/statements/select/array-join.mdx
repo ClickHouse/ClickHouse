@@ -378,6 +378,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
+## Ordre des lignes et pagination {#row-order-and-paging}
+
+`ARRAY JOIN` conserve l&#39;ordre des lignes qu&#39;il reçoit. Pour chaque ligne, il produit les éléments dans l&#39;ordre où ils figurent dans le tableau. Si une requête comporte plusieurs clauses `ARRAY JOIN`, la première clause constitue la boucle externe :
+
+```sql
+SELECT x, y
+FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
+ARRAY JOIN xs AS x
+ARRAY JOIN ys AS y;
+```
+
+```response
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Si une clause `ARRAY JOIN` contient plusieurs tableaux, par exemple `ARRAY JOIN xs AS x, ys AS y`, les éléments situés à la même position se retrouvent dans la même ligne. Dans cet exemple, l&#39;ensemble de résultats se compose des deux lignes `('a', 1)` et `('b', 2)`.
+
+Sans `ORDER BY`, l&#39;ordre des lignes reçues par `ARRAY JOIN` n&#39;est pas garanti. Par exemple, une requête peut lire une table à l&#39;aide de plusieurs flux en parallèle. Pour obtenir un ordre stable, ajoutez un `ORDER BY` portant sur les colonnes qui identifient la ligne source et la position de l&#39;élément. C&#39;est indispensable pour lire l&#39;ensemble de résultats par pages avec `LIMIT` et `OFFSET` :
+
+```sql
+SELECT id, num, x
+FROM t
+ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
+ORDER BY id, num
+LIMIT 10 OFFSET 20;
+```
+
+Si `ORDER BY` commence par les colonnes de la clé de tri d&#39;une table `MergeTree`, la requête lit la table dans l&#39;ordre de cette clé. Dans l&#39;exemple, c&#39;est le cas lorsque la table est définie avec `ORDER BY id`. La requête s&#39;arrête alors dès qu&#39;elle dispose des lignes nécessaires pour `LIMIT`, sans développer les tableaux des autres lignes. Pour plus d&#39;informations, consultez [Optimisation de la lecture des données](/fr/reference/statements/select/order-by#optimization-of-data-reading) ainsi que le paramètre [optimize&#95;read&#95;in&#95;order](/fr/reference/settings/session-settings/optimize#optimize_read_in_order). Si `ORDER BY` commence par un élément du tableau, par exemple `ORDER BY num, id`, la requête développe et trie toutes les lignes.
+
+La fonction [arrayJoin](/fr/reference/functions/regular-functions/array-join) produit elle aussi les éléments de chaque tableau dans l&#39;ordre où ils y figurent. Toutefois, si une requête comporte plusieurs appels à `arrayJoin`, le premier appel ne correspond pas toujours à la boucle externe. Pour plus d&#39;informations, consultez [Ordre des lignes](/fr/reference/functions/regular-functions/array-join#row-order).
+
 ## Détails d’implémentation {#implementation-details}
 
 L’ordre d’exécution des requêtes est optimisé lors de l’utilisation de `ARRAY JOIN`. Bien que `ARRAY JOIN` doive toujours être spécifié avant la clause [WHERE](/fr/reference/statements/select/where)/[PREWHERE](/fr/reference/statements/select/prewhere) dans une requête, leur exécution peut techniquement se faire dans n’importe quel ordre, sauf si le résultat de `ARRAY JOIN` est utilisé pour le filtrage. L’ordre de traitement est contrôlé par l’optimiseur de requêtes.
