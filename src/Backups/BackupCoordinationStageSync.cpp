@@ -73,6 +73,15 @@ bool BackupCoordinationStageSync::HostInfo::operator !=(const HostInfo & other) 
     return !(*this == other);
 }
 
+String BackupCoordinationStageSync::HostInfo::getStatusDesc(const String & operation) const
+{
+    if (!started)
+        return fmt::format(": the host hasn't started working on this {} yet", operation);
+    if (!connected)
+        return fmt::format(": the host is currently disconnected, last connection was at {}", last_connection_time);
+    return "";
+}
+
 bool BackupCoordinationStageSync::State::operator ==(const State & other) const = default;
 bool BackupCoordinationStageSync::State::operator !=(const State & other) const = default;
 
@@ -877,20 +886,7 @@ void BackupCoordinationStageSync::setStage(const String & stage, const String & 
 
 void BackupCoordinationStageSync::createStageNode(const String & stage, const String & stage_result, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
 {
-    if (isErrorSet())
-        rethrowSetError();
-
-    String serialized_error;
-    if (zookeeper->tryGet(error_node_path, serialized_error))
-    {
-        auto [exception, host] = parseErrorNode(serialized_error);
-        if (exception)
-        {
-            std::lock_guard lock{mutex};
-            state.addErrorInfo(exception, host);
-            std::rethrow_exception(exception);
-        }
-    }
+    rethrowErrorIfSet(zookeeper);
 
     auto code = zookeeper->tryCreate(getStageNodePath(stage), stage_result, zkutil::CreateMode::Persistent);
     if (code == Coordination::Error::ZOK)
@@ -977,13 +973,7 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
         if (should_stop_watching_thread)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "waitHostsReachStage() can't wait for stage {} after the watching thread stopped", stage_to_wait);
 
-        String host_status;
-        if (!host_info.started)
-            host_status = fmt::format(": the host hasn't started working on this {} yet", operation_name);
-        else if (!host_info.connected)
-            host_status = fmt::format(": the host is currently disconnected, last connection was at {}", host_info.last_connection_time);
-
-        LOG_TRACE(log, "Waiting for {} to reach stage {}{}", getHostDesc(host), stage_to_wait, host_status);
+        LOG_TRACE(log, "Waiting for {} to reach stage {}{}", getHostDesc(host), stage_to_wait, host_info.getStatusDesc(operation_name));
         return false; /// wait for next change of `state_changed`
     }
 
@@ -1081,23 +1071,7 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
     for (size_t attempt_no = 1; attempt_no <= max_attempts_after_bad_version; ++attempt_no)
     {
         if (throw_if_error)
-        {
-            /// Rethrow the current error if there is an error node.
-            if (isErrorSet())
-                rethrowSetError();
-
-            String serialized_error;
-            if (zookeeper->tryGet(error_node_path, serialized_error))
-            {
-                auto [exception, host] = parseErrorNode(serialized_error);
-                if (exception)
-                {
-                    std::lock_guard lock{mutex};
-                    state.addErrorInfo(exception, host);
-                    std::rethrow_exception(exception);
-                }
-            }
-        }
+            rethrowErrorIfSet(zookeeper);
 
         /// The 'num_hosts' node may not exist if createStartAndAliveNodes() failed when startup() was called.
         if (!num_hosts)
@@ -1306,11 +1280,7 @@ bool BackupCoordinationStageSync::checkIfOtherHostsFinish(
 
         String reason_text = reason.empty() ? "" : (" " + reason);
 
-        String host_status;
-        if (!host_info.started)
-            host_status = fmt::format(": the host hasn't started working on this {} yet", operation_name);
-        else if (!host_info.connected)
-            host_status = fmt::format(": the host is currently disconnected, last connection was at {}", host_info.last_connection_time);
+        String host_status = host_info.getStatusDesc(operation_name);
 
         if (time_is_out)
         {
@@ -1565,6 +1535,24 @@ void BackupCoordinationStageSync::rethrowSetError() const
     std::lock_guard lock{mutex};
     chassert(state.host_with_error);
     std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
+}
+
+void BackupCoordinationStageSync::rethrowErrorIfSet(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
+{
+    if (isErrorSet())
+        rethrowSetError();
+
+    String serialized_error;
+    if (zookeeper->tryGet(error_node_path, serialized_error))
+    {
+        auto [exception, host] = parseErrorNode(serialized_error);
+        if (exception)
+        {
+            std::lock_guard lock{mutex};
+            state.addErrorInfo(exception, host);
+            std::rethrow_exception(exception);
+        }
+    }
 }
 
 }

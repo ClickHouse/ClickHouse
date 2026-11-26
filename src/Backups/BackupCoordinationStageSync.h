@@ -111,6 +111,8 @@ private:
     /// Lets other hosts know that the current host has encountered an error.
     void setError(const Exception & exception, bool throw_if_error);
     [[noreturn]] void rethrowSetError() const;
+    /// Rethrows the error which any host has set for this backup or restore, either already known or read from the error node.
+    void rethrowErrorIfSet(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
     void createErrorNode(const Exception & exception, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Deserializes an error stored in the error node.
@@ -209,6 +211,10 @@ private:
 
         bool operator ==(const HostInfo & other) const;
         bool operator !=(const HostInfo & other) const;
+
+        /// Returns ": " followed by why this host may keep us waiting (it hasn't started yet or it's disconnected), or an empty string.
+        /// The result is appended to messages about waiting for this host.
+        String getStatusDesc(const String & operation) const;
     };
 
     /// Information about all the host participating in the current BACKUP or RESTORE operation.
