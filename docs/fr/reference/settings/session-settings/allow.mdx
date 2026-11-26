@@ -23,6 +23,16 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Active l’agrégation indépendante des partitions sur des threads séparés lorsque la clé de partitionnement est adaptée à la clé GROUP BY. Cela est utile lorsque le nombre de partitions est proche du nombre de cœurs et que les partitions ont à peu près la même taille. Les heuristiques de `ReadFromMergeTree` désactivent automatiquement l’optimisation pour les organisations défavorables (trop peu de partitions, trop de partitions ou des tailles de partition fortement déséquilibrées) ; consultez `force_aggregate_partitions_independently` pour contourner ces vérifications.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**alias** : `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Les fonctions d’IA sont en bêta et activées par défaut. À l’époque, le paramètre s’appelait `allow_experimental_ai_functions`, qui en est désormais un alias. La valeur par défaut est conservée quelle que soit la valeur de `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre. À l’époque, le paramètre s’appelait `allow_experimental_ai_functions`, qui en est désormais un alias."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "Ajout de l’alias de paramètre `allow_experimental_ai_functions`."}]}]} />
+
+Autorise l’utilisation des fonctions d’IA (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). Lorsque ce paramètre est désactivé, toute requête qui les utilise lève une exception.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -149,18 +159,6 @@ Cloud default value : `1`.
 
 S&#39;il est défini sur true, l&#39;utilisateur est autorisé à exécuter des requêtes DDL.
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**Alias**: `allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau nom de `allow_experimental_delta_kernel_rs`, qui n’est plus expérimental et est conservé comme alias. La valeur par défaut reste inchangée."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Nouveau paramètre. Introduit sous le nom `allow_experimental_delta_kernel_rs`, désormais un alias de ce paramètre ; l’entrée est conservée sous le nom canonique afin de préserver l’intégralité de l’historique."}]}]} />
-
-Autorise l’utilisation de l’implémentation `delta-kernel-rs` pour lire les tables Delta Lake.
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -228,6 +226,18 @@ Désactiver ce paramètre refuse uniquement les lectures : la création, l&#39;a
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Autorise l’exécution de la fonction multiIf en mode colonnaire
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**alias** : `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Ajout d'un alias de paramètre `allow_experimental_expire_snapshots`."}]}]} />
+
+Autorise l&#39;exécution de la commande Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -508,6 +518,14 @@ Autorise `ALTER TABLE ... REPLACE PARTITION ... FROM ...` à supprimer silencieu
 Par défaut, ce n’est pas autorisé : un `REPLACE PARTITION` à partir d’une source qui ne contient aucune donnée dans la partition demandée lève une exception, car dans ce cas l’opération revient en pratique à un `DROP PARTITION` silencieux sur la destination (les données de destination sont supprimées et rien ne les remplace), ce qui est une cause fréquente de perte accidentelle de données (voir [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
 
 Activez ce paramètre pour rétablir le comportement précédent, par exemple si vous utilisez volontairement une partition source vide pour effacer les données de destination. Pour une suppression inconditionnelle, préférez `ALTER TABLE ... DROP PARTITION ...`.
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Rejeter les colonnes portant le nom d'une colonne virtuelle d'une table MergeTree"}]}]} />
+
+Permet à une colonne d&#39;une table de la famille `MergeTree` de porter le nom de l&#39;une des colonnes virtuelles de la table (par exemple `_part`, `_part_offset` ou `_table`) dans `CREATE TABLE`, dans `ATTACH TABLE` avec une définition complète, ainsi que dans `ALTER TABLE ... ADD COLUMN` et `RENAME COLUMN`. Une telle colonne masque la colonne virtuelle. Les tables qui comportent déjà une telle colonne sont chargées quelle que soit la valeur de ce paramètre. Les noms des colonnes virtuelles persistantes sont toujours rejetés.
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

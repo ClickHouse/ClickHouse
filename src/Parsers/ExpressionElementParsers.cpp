@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 #include <Poco/String.h>
 
@@ -56,6 +57,7 @@
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
 #include <Core/UUID.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -216,31 +218,63 @@ static ASTPtr buildSelectFromTableFunction(const boost::intrusive_ptr<ASTFunctio
     return result_select_query;
 }
 
+struct FailedSubqueryReadings
+{
+    /// The value of `starts_with_valid_select_or_explain` of each failed reading.
+    std::unordered_map<const char *, bool> starts_with_valid_select_or_explain;
+};
+
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     starts_with_valid_select_or_explain = false;
 
-    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
-    ParserExplainQuery explain;
-
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
-    const auto opening_bracket_pos = pos;
-    ++pos;
+    const char * const opening_bracket = pos->begin;
 
-    /// Lookahead for inner subquery
-    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+    /// The reading of a subquery depends only on where it starts, but a failed one is retried at the same
+    /// position by every enclosing alternative (a parenthesized expression, a tuple, a function argument,
+    /// a quantified comparison, a union element), and these alternatives nest. Without remembering the
+    /// failures, the parse time is exponential in the nesting depth of such brackets.
+    if (expected.failed_subquery_readings)
+    {
+        const auto & failed = expected.failed_subquery_readings->starts_with_valid_select_or_explain;
+        if (auto it = failed.find(opening_bracket); it != failed.end())
+        {
+            starts_with_valid_select_or_explain = it->second;
+            return false;
+        }
+    }
+
+    bool parsed = parseSubquery(pos, node, expected);
+    if (!parsed)
+    {
+        if (!expected.failed_subquery_readings)
+            expected.failed_subquery_readings = std::make_shared<FailedSubqueryReadings>();
+        expected.failed_subquery_readings->starts_with_valid_select_or_explain[opening_bracket] = starts_with_valid_select_or_explain;
+    }
+    return parsed;
+}
+
+bool ParserSubquery::parseSubquery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
+    ParserExplainQuery explain;
 
     /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
     /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
     /// Unlike a leading `SELECT`, `EXPLAIN` or `VALUES`, that word is therefore not evidence that the
     /// parentheses hold a subquery at all. Where the contents read as an expression over a column
     /// named `from`, that older reading wins and these are not a subquery.
+    if (parenthesesHoldExpressionOverColumnNamedFrom(pos))
+        return false;
+    ++pos;
+
+    /// Lookahead for inner subquery
+    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+
     const bool starts_with_from_clause
         = pos->type == TokenType::BareWord && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from");
-
-    if (starts_with_from_clause && parenthesesHoldExpressionOverColumnNamedFrom(opening_bracket_pos))
-        return false;
 
     ASTPtr result_node = nullptr;
 
@@ -1505,6 +1539,7 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
     errno = 0;    /// Functions strto* don't clear errno.

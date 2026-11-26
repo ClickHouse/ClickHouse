@@ -43,6 +43,7 @@ std::string_view jsonKey(MetricGroupKey key)
         case MetricGroupKey::Output: return "Output";
         case MetricGroupKey::InputLeft: return "InputLeft";
         case MetricGroupKey::InputRight: return "InputRight";
+        case MetricGroupKey::RuntimeFilter: return "RuntimeFilter";
     }
 }
 
@@ -99,6 +100,16 @@ std::string_view jsonKey(MetricKey key)
         case MetricKey::Median: return "Median";
         case MetricKey::Max: return "Max";
         case MetricKey::Sum: return "Sum";
+
+        case MetricKey::FilterType: return "Type";
+        case MetricKey::ReplacedFilterType: return "Replaced";
+        case MetricKey::Reason: return "Reason";
+        case MetricKey::SetBits: return "SetBits";
+        case MetricKey::RowsChecked: return "RowsChecked";
+        case MetricKey::RowsPassed: return "RowsPassed";
+        case MetricKey::PassRate: return "PassRate";
+        case MetricKey::RowsSkipped: return "RowsSkipped";
+        case MetricKey::RowsBeforeReady: return "RowsBeforeReady";
     }
 }
 
@@ -231,7 +242,7 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
     if (step.statistics)
         map->add("Statistics", stepStatisticsToJSON(*step.statistics));
 
-    if (auto indexes = indexStatsToJSON(step.indexes))
+    if (auto indexes = indexStatsToJSON(step.indexes, /*with_addresses=*/ false))
         map->add("Indexes", std::move(indexes));
     if (auto projections = projectionStatsToJSON(step.projections))
         map->add("Projections", std::move(projections));
@@ -258,6 +269,19 @@ JSONBuilder::ItemPtr capturedPlanToJSON(const CapturedPlan & captured)
         result->add("ExecutionTimeNs", *captured.execution_time_ns);
     if (captured.max_threads)
         result->add("MaxThreads", *captured.max_threads);
+    if (const auto & breakdown = captured.execution_time_breakdown)
+    {
+        auto breakdown_map = std::make_unique<JSONBuilder::JSONMap>();
+        breakdown_map->add("InStepsNs", breakdown->in_steps_ns);
+        breakdown_map->add("OutsideStepsNs", breakdown->outside_steps_ns);
+        breakdown_map->add("IdleNs", breakdown->idle_ns);
+        result->add("ExecutionTimeBreakdown", std::move(breakdown_map));
+    }
+
+    auto collected = std::make_unique<JSONBuilder::JSONMap>();
+    collected->add("Time", captured.collected.work_intervals);
+    collected->add("JoinMatches", captured.collected.join_matches);
+    result->add("Collected", std::move(collected));
 
     auto output_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & column : captured.output)

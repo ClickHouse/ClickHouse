@@ -175,7 +175,7 @@ public:
                     node = foldConstantCast(createCastFunction(key_node, std::move(original_type), getContext()));
                 }
             }
-            else if (filter_root && function_node->isOrdinaryFunction())
+            else if (filter_root && function_node->isOrdinaryCall())
             {
                 reresolveIfArgumentsRetyped(node);
             }
@@ -255,7 +255,7 @@ private:
             return false;
 
         auto * function = node->as<FunctionNode>();
-        if (!function || !function->isAggregateFunction())
+        if (!function || !function->isAggregationCall())
             return false;
 
         /// Every aggregate here returns an actual element of its input column, so over a group where

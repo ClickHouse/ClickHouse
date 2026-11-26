@@ -340,7 +340,29 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 }
 ```
 
-[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async_native.go)
+
+### Inserção assíncrona com um lote {#async-insert-batch}
+
+`WithAsync` também se aplica a inserções em lote. Um lote usa apenas o contexto passado para `PrepareContext`. Por isso, passe o contexto assíncrono para `PrepareContext`. O contexto passado para `Stmt.ExecContext` não tem efeito sobre o lote. `Commit` envia o lote com as configurações do contexto de `PrepareContext`.
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
+tx, err := conn.Begin()
+if err != nil {
+    return err
+}
+stmt, err := tx.PrepareContext(ctx, "INSERT INTO example") // WithAsync must be on this context
+if err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if _, err := stmt.Exec(i, "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
+        return err
+    }
+}
+return tx.Commit()
+```
 
 ## Parâmetros de consulta do lado do servidor {#server-side-query-parameters}
 

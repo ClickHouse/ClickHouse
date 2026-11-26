@@ -30,7 +30,7 @@ struct QueryExecutionCounters
     static void addExecutedJoin(const IJoin & join, std::string_view algorithm);
 
     /// For a join that has no `IJoin` at all because the whole algorithm lives in a query plan step,
-    /// like `ie_join`. `kind` and `strictness` must be the ones the query asked for.
+    /// like `inequality`. `kind` and `strictness` must be the ones the query asked for.
     static void addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm);
 
     /// Names a pipeline that is not assembled here, but will be assembled - and assembled again - while

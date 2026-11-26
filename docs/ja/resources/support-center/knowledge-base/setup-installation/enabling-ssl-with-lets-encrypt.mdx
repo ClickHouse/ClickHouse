@@ -6,9 +6,7 @@ tags: ['セキュリティと認証']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-<div id="steps-to-follow">
-  ## 手順
-</div>
+## 手順 {#steps-to-follow}
 
 以下の手順では、無料で自動化されたオープンな認証局 (CA) である [Let&#39;s Encrypt](https://letsencrypt.org/) を使用して、単一の ClickHouse サーバー で SSL を有効にする方法を説明します。Let&#39;s Encrypt は、誰でも HTTPS で Web サイトを簡単に保護できるように設計されています。証明書の発行と更新を自動化することで、手動での介入なしに Web サイトの安全性を維持できます。
 
@@ -56,13 +54,9 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ポート80が開放されている AWS セキュリティグループ設定](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
-
-</Frame>
-
+  <Frame>
+    ![ポート80が開放されている AWS セキュリティグループ設定](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
+  </Frame>
 </div>
 
 3. [`certbot`](https://certbot.eff.org/instructions) をインストールします (例: `apt` を使用)
