@@ -764,7 +764,7 @@ bool Client::buzzHouse()
 
         fuzz_config->outf << "--Session seed: " << rg.getSeed() << std::endl;
         /// Load server configurations for the fuzzer
-        fuzz_config->loadServerConfigurations();
+        fuzz_config->loadServerConfigurations(rg);
         loadFuzzerServerSettings(*fuzz_config);
         loadFuzzerTableSettings(*fuzz_config, has_cloud_features);
         loadSystemTables(*fuzz_config);
@@ -965,6 +965,8 @@ bool Client::buzzHouse()
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }},
                               {40 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_TABLE; }},
                               {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE; }},
+                              {10 * static_cast<uint32_t>(test_content && is_mt),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::MUTATION_BURST; }},
                               {25 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends(true)),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT; }},
                               {10 * static_cast<uint32_t>(fuzz_config->enable_renames && test_content),
@@ -1016,6 +1018,16 @@ bool Client::buzzHouse()
                                  fuzz_config->outf << full_query << std::endl;
                                  server_up &= processBuzzHouseQuery(full_query);
                                  qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
+                             }
+                             if (test_content && is_mt && !tbl.get().is_temp
+                                 && (strategy == BuzzHouse::DumpOracleStrategy::ALTER_UPDATE
+                                     || strategy == BuzzHouse::DumpOracleStrategy::MUTATION_BURST
+                                     || strategy == BuzzHouse::DumpOracleStrategy::ALTER_COLUMN
+                                     || strategy == BuzzHouse::DumpOracleStrategy::ALTER_TABLE
+                                     || strategy == BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION))
+                             {
+                                 /// After a mutation the parts must pass `CHECK TABLE`
+                                 fuzz_config->checkTablesIntegrity("TABLE " + tbl.get().getFullName(true));
                              }
                          }
                      }},
@@ -1239,8 +1251,7 @@ bool Client::buzzHouse()
                          const auto & tbl
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                          const String engine = tbl.getDolorEngineName();
-                         const auto & ndname
-                             = (tbl.isAnyStreamingEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                         const auto & ndname = tbl.isAnyLakeEngine() ? tbl.getSparkCatalogName() : tbl.getDatabaseName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 

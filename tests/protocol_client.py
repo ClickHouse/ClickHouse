@@ -17,10 +17,13 @@ The non-standard Python modules (`grpc`, `pyarrow`) are imported only by the pro
 
 import argparse
 import base64
+import bz2
 import hashlib
 import http.client
 import json
+import lzma
 import os
+import random
 import re
 import shutil
 import signal
@@ -32,6 +35,7 @@ import sys
 import tempfile
 import urllib.parse
 import uuid
+import zlib
 
 PROTOCOLS = [
     "http",
@@ -47,6 +51,18 @@ PROTOCOLS = [
 # The server-side end of a query is governed by the test timeout of `clickhouse-test`, which kills
 # this process. These timeouts only bound waiting on a peer that went silent.
 SOCKET_TIMEOUT = 600
+
+# `send_progress_in_http_headers` sends a header every `http_headers_progress_interval_ms` until the
+# response starts, which is the whole query with `http_wait_end_of_query`; `http.client` refuses more than 100.
+http.client._MAXHEADERS = 1_000_000
+
+# The HTTP response compressions of the server that the standard library can decompress.
+HTTP_RESPONSE_DECOMPRESSORS = {
+    "gzip": lambda: zlib.decompressobj(32 + zlib.MAX_WBITS),
+    "deflate": lambda: zlib.decompressobj(32 + zlib.MAX_WBITS),
+    "xz": lzma.LZMADecompressor,
+    "bz2": bz2.BZ2Decompressor,
+}
 
 # `ssh` passes the whole test as the command of the channel, which travels in one `argv` element of
 # the `ssh` client; Linux limits one element to 128 KiB (`MAX_ARG_STRLEN`).
@@ -533,11 +549,18 @@ class HTTPClient(QueryClient):
         # tagged block checked below. `supports` excludes the tests that set it themselves.
         params += [("http_write_exception_in_output_format", "0")]
         params += [(f"param_{name}", value) for name, value in self.params]
+        headers = {"X-ClickHouse-User": self.user}
+        # Sometimes a compressed response, and progress in the headers, which only the HTTP handler has.
+        if random.random() < 0.25:
+            params += [("enable_http_compression", "1")]
+            headers["Accept-Encoding"] = random.choice(list(HTTP_RESPONSE_DECOMPRESSORS))
+        if random.random() < 0.25:
+            params += [("send_progress_in_http_headers", "1")]
         url = "/?" + urllib.parse.urlencode(params)
         body = query.encode("utf-8", errors="surrogateescape")
         incomplete = False
         try:
-            self.connection.request("POST", url, body=body, headers={"X-ClickHouse-User": self.user})
+            self.connection.request("POST", url, body=body, headers=headers)
             response = self.connection.getresponse()
             try:
                 data = response.read()
@@ -551,6 +574,8 @@ class HTTPClient(QueryClient):
             self.connection.close()
             raise
         code = response.getheader("X-ClickHouse-Exception-Code")
+        # A compressed response is compressed whole, including the message or the block of an exception
+        data = self.decompress(data, response.getheader("Content-Encoding"), complete=not incomplete)
         if response.status != 200 or code:
             raise QueryError(data.decode("utf-8", errors="replace"), int(code) if code else None)
         # An exception after the response has started (with `http_wait_end_of_query = 0` or a small
@@ -562,6 +587,19 @@ class HTTPClient(QueryClient):
         if incomplete:
             raise QueryError(f"Incomplete HTTP response without an exception: {data[-1024:]!r}")
         return data
+
+    @staticmethod
+    def decompress(data, encoding, complete):
+        """The data of a response with this `Content-Encoding`; a broken response decompresses as far as it goes."""
+        if not encoding:
+            return data
+        if encoding not in HTTP_RESPONSE_DECOMPRESSORS:
+            raise QueryError(f"Unexpected Content-Encoding of the HTTP response: {encoding}")
+        decompressor = HTTP_RESPONSE_DECOMPRESSORS[encoding]()
+        res = decompressor.decompress(data)
+        if complete and not decompressor.eof:
+            raise QueryError(f"Truncated {encoding} HTTP response")
+        return res
 
     @staticmethod
     def tagged_exception(data, tag):
@@ -587,6 +625,7 @@ class MySQLClient(QueryClient):
     CLIENT_LONG_PASSWORD = 0x1
     CLIENT_CONNECT_WITH_DB = 0x8
     CLIENT_PROTOCOL_41 = 0x200
+    CLIENT_SSL = 0x800
     CLIENT_TRANSACTIONS = 0x2000
     CLIENT_SECURE_CONNECTION = 0x8000
     CLIENT_PLUGIN_AUTH = 0x80000
@@ -603,25 +642,38 @@ class MySQLClient(QueryClient):
 
         capabilities = (
             self.CLIENT_LONG_PASSWORD
-            | self.CLIENT_CONNECT_WITH_DB
             | self.CLIENT_PROTOCOL_41
             | self.CLIENT_TRANSACTIONS
             | self.CLIENT_SECURE_CONNECTION
             | self.CLIENT_PLUGIN_AUTH
         )
+        # Sometimes TLS, when the server offers it, after an `SSLRequest`.
+        # The capability flags of the handshake follow the server version and 13 bytes.
+        server_capabilities = int.from_bytes(handshake[handshake.index(b"\0", 1) + 14 :][:2], "little")
+        if server_capabilities & self.CLIENT_SSL and random.random() < 0.5:
+            capabilities |= self.CLIENT_SSL
+            self.write_packet(struct.pack("<IIB23x", capabilities, self.MAX_PACKET, 33))
+            self.sock = ssl._create_unverified_context().wrap_socket(self.sock)
+        # Sometimes the database is chosen with `COM_INIT_DB` after the handshake.
+        init_db = random.random() < 0.25
+        if not init_db:
+            capabilities |= self.CLIENT_CONNECT_WITH_DB
         # The scramble of the handshake is not needed: `mysql_native_password` of the empty password
         # of the test user is empty.
         auth_response = b""
         response = struct.pack("<IIB23x", capabilities, self.MAX_PACKET, 33)
         response += self.user.encode() + b"\0"
         response += bytes([len(auth_response)]) + auth_response
-        response += self.database.encode() + b"\0"
+        if not init_db:
+            response += self.database.encode() + b"\0"
         response += b"mysql_native_password\0"
         self.write_packet(response)
 
         while True:
             packet = self.read_packet()
             if packet[0] == 0x00:
+                if init_db:
+                    self.command(b"\x02" + self.database.encode())
                 return
             if packet[0] == 0xFF:
                 raise self.error(packet)
@@ -681,36 +733,119 @@ class MySQLClient(QueryClient):
     def is_eof(packet):
         return packet[0] == 0xFE and len(packet) < 9
 
-    def execute(self, query):
+    def command(self, payload):
+        """Send a command that is answered with an OK packet."""
         self.sequence = 0
-        self.write_packet(b"\x03" + query.encode("utf-8", errors="surrogateescape"))
+        self.write_packet(payload)
+        packet = self.read_packet()
+        if packet[0] == 0xFF:
+            raise self.error(packet)
+        if packet[0] != 0x00:
+            raise QueryError(f"Expected an OK MySQL packet, got {packet[:16]!r}")
+
+    def execute(self, query):
+        if random.random() < 0.1:
+            self.command(b"\x0e")  # COM_PING
+        data = query.encode("utf-8", errors="surrogateescape")
+        # Sometimes as a prepared statement, whose result comes in the binary protocol.
+        if random.random() < 0.25:
+            return self.execute_prepared(data)
+        self.sequence = 0
+        self.write_packet(b"\x03" + data)  # COM_QUERY
+        return self.read_result(binary=False)
+
+    def execute_prepared(self, data):
+        self.sequence = 0
+        self.write_packet(b"\x16" + data)  # COM_STMT_PREPARE
+        packet = self.read_packet()
+        if packet[0] == 0xFF:
+            raise self.error(packet)
+        statement_id, column_count = struct.unpack("<IH", packet[1:7])
+        # The columns of a statement the server could describe without executing it.
+        for _ in range(column_count):
+            self.read_packet()
+        if column_count and not self.is_eof(packet := self.read_packet()):
+            raise QueryError(f"Expected EOF after the MySQL column definitions, got {packet[:16]!r}")
+        self.sequence = 0
+        self.write_packet(b"\x17" + struct.pack("<IBI", statement_id, 0, 1))  # COM_STMT_EXECUTE
+        result = self.read_result(binary=True)
+        self.sequence = 0
+        self.write_packet(b"\x19" + struct.pack("<I", statement_id))  # COM_STMT_CLOSE, not answered
+        return result
+
+    def read_result(self, binary):
         packet = self.read_packet()
         if packet[0] == 0x00:
             return b""
         if packet[0] == 0xFF:
             raise self.error(packet)
         column_count, _ = self.read_length(packet, 0)
-        for _ in range(column_count):
-            self.read_packet()
-        if not self.is_eof(packet := self.read_packet()):
-            raise QueryError(f"Expected EOF after the MySQL column definitions, got {packet[:16]!r}")
-        rows = []
-        while True:
+        column_types = [self.column_type(self.read_packet()) for _ in range(column_count)]
+        packet = self.read_packet()
+        # The binary result of ClickHouse has no EOF after the column definitions, so there an EOF ends the rows.
+        if not binary:
+            if not self.is_eof(packet):
+                raise QueryError(f"Expected EOF after the MySQL column definitions, got {packet[:16]!r}")
             packet = self.read_packet()
+        rows = []
+        while not self.is_eof(packet):
             if packet[0] == 0xFF:
                 raise self.error(packet)
-            if self.is_eof(packet):
-                return format_rows(rows).encode()
-            row = []
-            pos = 0
-            while pos < len(packet):
+            rows.append(self.binary_row(packet, column_types) if binary else self.text_row(packet))
+            packet = self.read_packet()
+        return format_rows(rows).encode()
+
+    def text_row(self, packet):
+        row = []
+        pos = 0
+        while pos < len(packet):
+            length, pos = self.read_length(packet, pos)
+            if length is None:
+                row.append(None)
+            else:
+                row.append(packet[pos : pos + length])
+                pos += length
+        return row
+
+    def column_type(self, packet):
+        """The type and whether it is unsigned, from a `ColumnDefinition41`: six strings, the length
+        of the fixed fields, the character set (2 bytes), the column length (4), the type and the flags."""
+        pos = 0
+        for _ in range(6):
+            length, pos = self.read_length(packet, pos)
+            pos += length
+        _, pos = self.read_length(packet, pos)
+        return packet[pos + 6], bool(int.from_bytes(packet[pos + 7 : pos + 9], "little") & 0x20)
+
+    # The binary sizes of the fixed-size types: TINY, SHORT, LONG, FLOAT, DOUBLE, LONGLONG, INT24, YEAR.
+    BINARY_FIXED = {1: "b", 2: "h", 3: "i", 4: "f", 5: "d", 8: "q", 9: "i", 13: "h"}
+    # TIMESTAMP, DATE, TIME and DATETIME: a length byte and that many bytes.
+    BINARY_TEMPORAL = {7, 10, 11, 12}
+
+    def binary_row(self, packet, column_types):
+        """A row of the binary protocol: 0x00, the NULL bitmap with an offset of 2 bits, the values."""
+        bitmap = packet[1 : 1 + (len(column_types) + 9) // 8]
+        pos = 1 + len(bitmap)
+        row = []
+        for i, (column_type, is_unsigned) in enumerate(column_types):
+            if bitmap[(i + 2) // 8] & (1 << ((i + 2) % 8)):
+                row.append(None)
+            elif column_type in self.BINARY_FIXED:
+                code = self.BINARY_FIXED[column_type]
+                code = code.upper() if is_unsigned and code not in "fd" else code
+                size = struct.calcsize("<" + code)
+                row.append(str(struct.unpack("<" + code, packet[pos : pos + size])[0]).encode())
+                pos += size
+            elif column_type in self.BINARY_TEMPORAL:
+                row.append(packet[pos + 1 : pos + 1 + packet[pos]].hex().encode())
+                pos += 1 + packet[pos]
+            else:
                 length, pos = self.read_length(packet, pos)
-                if length is None:
-                    row.append(None)
-                else:
-                    row.append(packet[pos : pos + length])
-                    pos += length
-            rows.append(row)
+                row.append(packet[pos : pos + length])
+                pos += length
+        if pos != len(packet):
+            raise QueryError(f"{len(packet) - pos} bytes left after a MySQL binary row of types {column_types}")
+        return row
 
     def close(self):
         try:
@@ -733,6 +868,12 @@ class PostgreSQLClient(QueryClient):
         self.sock = socket.create_connection(
             (self.host, env_port("CLICKHOUSE_PORT_POSTGRESQL", 9005)), timeout=SOCKET_TIMEOUT
         )
+        # Sometimes TLS, after an `SSLRequest`, which the server answers with `S` or with `N` when it has no TLS.
+        if random.random() < 0.5:
+            self.sock.sendall(struct.pack("!II", 8, 80877103))
+            if self.read_exact(1) == b"S":
+                self.sock = ssl._create_unverified_context().wrap_socket(self.sock)
+        self.statements = 0
         parameters = b"user\0" + self.user.encode() + b"\0database\0" + self.database.encode() + b"\0\0"
         self.sock.sendall(struct.pack("!II", 8 + len(parameters), 196608) + parameters)
         while True:
@@ -774,7 +915,11 @@ class PostgreSQLClient(QueryClient):
         return f"PostgreSQL error {fields.get(b'C', '')}: {fields.get(b'M', '')}"
 
     def execute(self, query):
-        self.send_message(b"Q", query.encode("utf-8", errors="surrogateescape") + b"\0")
+        data = query.encode("utf-8", errors="surrogateescape")
+        if random.random() < 0.5:
+            self.send_message(b"Q", data + b"\0")
+        else:
+            self.send_extended_query(data)
         rows = []
         error = None
         while True:
@@ -798,6 +943,22 @@ class PostgreSQLClient(QueryClient):
                 if error is not None:
                     raise QueryError(error)
                 return format_rows(rows).encode()
+
+    def send_extended_query(self, data):
+        """`Parse`, `Bind`, `Execute` and `Sync`, with an unnamed or a new named statement, and sometimes
+        `Describe` and `Close`. Only the unnamed portal and `Execute` of all rows are supported."""
+        name = b""
+        if random.random() < 0.5:
+            self.statements += 1
+            name = f"s{self.statements}".encode()
+        self.send_message(b"P", name + b"\0" + data + b"\0" + struct.pack("!h", 0))
+        self.send_message(b"B", b"\0" + name + b"\0" + struct.pack("!hhh", 0, 0, 0))
+        if random.random() < 0.25:
+            self.send_message(b"D", random.choice((b"S" + name, b"P")) + b"\0")
+        self.send_message(b"E", b"\0" + struct.pack("!i", 0))
+        if random.random() < 0.5:
+            self.send_message(b"C", random.choice((b"S" + name, b"P")) + b"\0")
+        self.send_message(b"S", b"")
 
     def close(self):
         try:
@@ -830,20 +991,35 @@ class GRPCClient(QueryClient):
         self.session_id = str(uuid.uuid4())
 
     def execute(self, query):
-        result = self.stub.ExecuteQuery(
-            self.pb2.QueryInfo(
-                query=query,
-                session_id=self.session_id,
-                user_name=self.user,
-                output_format="TabSeparated",
-            ),
-            timeout=SOCKET_TIMEOUT,
+        query_info = self.pb2.QueryInfo(
+            query=query, session_id=self.session_id, user_name=self.user, output_format="TabSeparated"
         )
-        if result.HasField("exception"):
-            raise QueryError(
-                f"Code: {result.exception.code}. {result.exception.display_text}", result.exception.code
-            )
-        return result.output
+        # Sometimes the output compressed by the server, or the whole messages by the transport, not both.
+        output_compression = None
+        if random.random() < 0.25:
+            output_compression = random.choice(list(HTTP_RESPONSE_DECOMPRESSORS))
+            query_info.output_compression_type = output_compression
+            query_info.output_compression_level = random.randint(1, 9)
+        elif random.random() < 0.25:
+            query_info.transport_compression_type = random.choice(("gzip", "deflate"))
+            query_info.transport_compression_level = random.randint(0, 3)
+        # One of the methods, the streaming ones with a single message in their stream.
+        method = random.choice(("ExecuteQuery", "ExecuteQueryWithStreamInput", "ExecuteQueryWithStreamOutput", "ExecuteQueryWithStreamIO"))
+        request = iter([query_info]) if "Input" in method or "IO" in method else query_info
+        results = getattr(self.stub, method)(request, timeout=SOCKET_TIMEOUT)
+        if not ("Output" in method or "IO" in method):
+            results = [results]
+        output = b""
+        for result in results:
+            if result.HasField("exception"):
+                raise QueryError(
+                    f"Code: {result.exception.code}. {result.exception.display_text}", result.exception.code
+                )
+            output += result.output
+        # A query without a result has an empty output, not an empty compressed stream.
+        if output_compression and output:
+            output = HTTPClient.decompress(output, output_compression, complete=True)
+        return output
 
     def close(self):
         self.channel.close()
@@ -870,9 +1046,19 @@ class ArrowFlightClient(QueryClient):
     def execute(self, query):
         try:
             if returns_result(query):
-                table = self.client.do_get(self.flight.Ticket(query.encode()), self.options).read_all()
-                columns = [column.to_pylist() for column in table.columns]
-                return format_rows(zip(*columns)).encode()
+                # A ticket with the query, or the tickets of the endpoints of `GetFlightInfo`, sometimes after `GetSchema`.
+                descriptor = self.flight.FlightDescriptor.for_command(query)
+                if random.random() < 0.25:
+                    self.client.get_schema(descriptor, self.options)
+                if random.random() < 0.5:
+                    tickets = [self.flight.Ticket(query.encode())]
+                else:
+                    tickets = [endpoint.ticket for endpoint in self.client.get_flight_info(descriptor, self.options).endpoints]
+                rows = []
+                for ticket in tickets:
+                    table = self.client.do_get(ticket, self.options).read_all()
+                    rows += zip(*[column.to_pylist() for column in table.columns])
+                return format_rows(rows).encode()
             writer, _ = self.client.do_put(
                 self.flight.FlightDescriptor.for_command(query), self.pyarrow.schema([]), self.options
             )
