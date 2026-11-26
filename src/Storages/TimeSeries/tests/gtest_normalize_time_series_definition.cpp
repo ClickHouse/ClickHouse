@@ -821,10 +821,10 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsSettingsRequireVersion)
 {
     EXPECT_EQ(getExceptionCode([]
     {
-        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_max_buckets = 4096, "
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS native_histogram_bucket_limit = 4096, "
             + versionSetting(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS - 1));
     }), ErrorCodes::INVALID_SETTING_VALUE);
-    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_max_buckets = 4096").contains("histograms_max_buckets = 4096"));
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS native_histogram_bucket_limit = 4096").contains("native_histogram_bucket_limit = 4096"));
 }
 
 
@@ -832,7 +832,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPinnedToEarlierVersionDropsHis
 {
     /// A copy pinned to a version without histograms drops the `histograms` column with the codecs declared for its elements,
     /// the outer `histograms` column and the settings of the histograms.
-    const String src = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_max_buckets = 1000");
+    const String src = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS native_histogram_bucket_limit = 1000");
     auto definition = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS - 1), src);
     EXPECT_FALSE(definition.contains("histograms")) << definition;

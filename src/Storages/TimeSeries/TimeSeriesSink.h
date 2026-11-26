@@ -121,9 +121,10 @@ private:
     std::optional<Decimal64> recent_samples_bucket_step;
 
     /// The type of the `histograms` column of the samples blocks (see `TimeSeriesHistogramsColumns::makeHistogramsArrayType`) and
-    /// the `histograms_max_buckets` setting. Set when `has_histograms_column` is set; only the type is used when `insert_histograms` is not.
+    /// the `native_histogram_bucket_limit` setting. Set when `has_histograms_column` is set; only the type is used when
+    /// `insert_histograms` is not.
     DataTypePtr histograms_array_type;
-    UInt64 histograms_max_buckets = 0;
+    UInt64 native_histogram_bucket_limit = 0;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> time_ranges_pipeline;

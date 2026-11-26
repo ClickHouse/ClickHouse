@@ -57,7 +57,7 @@ namespace DB
 
 namespace TimeSeriesSetting
 {
-    extern const TimeSeriesSettingsUInt64 histograms_max_buckets;
+    extern const TimeSeriesSettingsUInt64 native_histogram_bucket_limit;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsUInt64 recent_samples_bucket_step_seconds;
     extern const TimeSeriesSettingsUInt64 samples_bucket_step_seconds;
@@ -1268,7 +1268,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have type {}, got {}",
                     histograms_column.name, histograms_array_type->getName(), histograms_column.type->getName());
 
-            histograms_max_buckets = settings[TimeSeriesSetting::histograms_max_buckets];
+            native_histogram_bucket_limit = settings[TimeSeriesSetting::native_histogram_bucket_limit];
             samples_header.insert(ColumnWithTypeAndName{histograms_array_type, TimeSeriesColumnNames::Histograms});
         }
 
@@ -1435,7 +1435,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         = histograms_array ? std::make_optional<TimeSeriesHistogramsColumnsView>(*histograms_array) : std::nullopt;
     const size_t total_histograms = histograms_array ? getTotalSamples(histograms_array->getOffsets()) : 0;
     if (total_histograms)
-        validateTimeSeriesHistograms(*histograms_array, timestamp_type, histograms_max_buckets);
+        validateTimeSeriesHistograms(*histograms_array, timestamp_type, native_histogram_bucket_limit);
     const TimeSeriesHistogramsColumnsView * const histograms = histograms_view ? &*histograms_view : nullptr;
 
     PaddedPODArray<UInt8> filter;

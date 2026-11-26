@@ -815,7 +815,7 @@ namespace
 
         /// The same for the settings of the histograms, which exist from version MIN_WITH_NATIVE_HISTOGRAMS.
         if (new_version < TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS)
-            old_settings.removeSetting("histograms_max_buckets");
+            old_settings.removeSetting("native_histogram_bucket_limit");
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))

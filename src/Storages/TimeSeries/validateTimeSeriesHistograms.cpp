@@ -99,12 +99,12 @@ namespace
                 schema, exponential_schema_min, exponential_schema_max, custom_buckets_schema);
     }
 
-    /// `histograms_max_buckets` limits the number of buckets of both sides together, like Prometheus's `native_histogram_bucket_limit`.
+    /// `native_histogram_bucket_limit` limits the number of buckets of both sides together, like the Prometheus option of the same name.
     template <typename Fail>
     void checkMaxBuckets(size_t num_positive_buckets, size_t num_negative_buckets, UInt64 max_buckets, const Fail & fail)
     {
         if (max_buckets && (num_positive_buckets + num_negative_buckets > max_buckets))
-            fail("{} buckets exceed the limit of {} buckets per histogram set by the `histograms_max_buckets` setting",
+            fail("{} buckets exceed the limit of {} buckets per histogram set by the `native_histogram_bucket_limit` setting",
                 num_positive_buckets + num_negative_buckets, max_buckets);
     }
 

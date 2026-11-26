@@ -38,13 +38,13 @@ SELECT '-- a table of version 11 has neither the column nor the outer column and
 CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11;
 SELECT countSubstrings(create_table_query, 'histograms') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v11';
 SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 'ts_v11' AND name = 'histograms';
-CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11, histograms_max_buckets = 10; -- { serverError INVALID_SETTING_VALUE }
+CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11, native_histogram_bucket_limit = 10; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT '-- a copy pinned to version 11 drops the column, a table of the current version accepts the setting';
 CREATE TABLE ts_copy_v11 AS ts ENGINE = TimeSeries SETTINGS version = 11;
 SELECT countSubstrings(create_table_query, 'histograms') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy_v11';
-CREATE TABLE ts_limit ENGINE = TimeSeries SETTINGS histograms_max_buckets = 10;
-SELECT extract(create_table_query, 'histograms_max_buckets = (\d+)') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_limit';
+CREATE TABLE ts_limit ENGINE = TimeSeries SETTINGS native_histogram_bucket_limit = 10;
+SELECT extract(create_table_query, 'native_histogram_bucket_limit = (\d+)') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_limit';
 
 SELECT '-- float samples are written and read as before, histogram samples are written and read through the histograms column';
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(100, 3), 1.)]);

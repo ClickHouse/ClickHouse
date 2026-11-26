@@ -100,13 +100,13 @@ namespace
     }
 
     /// Only the settings which don't affect the stored data can be altered
-    /// (`id_generator` and `filter_by_min_time_and_max_time` apply to tables of earlier versions, `histograms_max_buckets` to tables
+    /// (`id_generator` and `filter_by_min_time_and_max_time` apply to tables of earlier versions, `native_histogram_bucket_limit` to tables
     /// storing histogram samples, see checkTimeSeriesSettings).
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
         if ((setting_name != "id_generator")
             && (setting_name != "filter_by_min_time_and_max_time")
-            && (setting_name != "histograms_max_buckets")
+            && (setting_name != "native_histogram_bucket_limit")
             && (setting_name != "metric_families_deduplication_cache_size_bytes")
             && (setting_name != "metric_families_deduplication_cache_expiration_seconds")
             && (setting_name != "tags_deduplication_cache_size_bytes")
@@ -1616,7 +1616,7 @@ The following settings can be changed after `CREATE`:
 
 - `metric_families_deduplication_cache_size_bytes`, `metric_families_deduplication_cache_expiration_seconds`
 - `tags_deduplication_cache_size_bytes`, `tags_deduplication_cache_expiration_seconds`
-- `histograms_max_buckets` (tables of [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( or later)
+- `native_histogram_bucket_limit` (tables of [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( or later)
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
@@ -1625,7 +1625,8 @@ ALTER TABLE my_table RESET SETTING metric_families_deduplication_cache_expiratio
 
 Changing a setting of a deduplication cache replaces the cache with an empty one, so the next insert writes all its rows again.
 Setting the size or the expiration to 0 disables the cache.
-Changing `histograms_max_buckets` applies to the inserts started after the change; the histograms already stored are not checked again.
+Changing `native_histogram_bucket_limit` applies to the inserts started after the change; the histograms already stored are not
+checked again.
 
 <Note>
 Tables of earlier [versions](#schema-versioning) can also change the settings of those versions which don't affect the stored data:
@@ -1660,7 +1661,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5))` | Partition key of the inner [recent samples](#recent-samples-table) table, for example `toStartOfHour(toDateTime(bucket, 'UTC'))`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner [recent samples](#recent-samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. The default is 8192 for tables of [version](#schema-versioning) 10 or earlier, which store one sample per row. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity_bytes` | UInt64 | 131072 | Sets `index_granularity_bytes` of the inner [recent samples](#recent-samples-table) table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
-| `histograms_max_buckets` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single native histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without `native_histogram_bucket_limit`. Requires `version` to be at least 12. Can be changed with `ALTER TABLE ... MODIFY SETTING` (see [Altering settings](#altering-settings)) |
+| `native_histogram_bucket_limit` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single native histogram sample may have. Unlike the Prometheus scrape option of the same name, it doesn't reduce the number of buckets of a bigger histogram by lowering its resolution: an insert with such a histogram is rejected. 0 means no limit. Requires `version` to be at least 12. Can be changed with `ALTER TABLE ... MODIFY SETTING` (see [Altering settings](#altering-settings)) |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine |
 
 ### Settings of the earlier versions {#settings-of-earlier-versions}
@@ -1714,7 +1715,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
 | 11 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store buckets of samples: a row keeps the samples of one time series within one time bucket (the columns `samples`, `bucket`, `min_time`, `max_time`) in an `AggregatingMergeTree` ordered by `(id, bucket)`. The settings [`samples_bucket_step_seconds`](#settings), [`samples_partition_by`](#settings), [`samples_index_granularity_bytes`](#settings), [`recent_samples_bucket_step_seconds`](#settings) and [`recent_samples_index_granularity_bytes`](#settings) were introduced, and the defaults of [`samples_index_granularity`](#settings) and [`recent_samples_index_granularity`](#settings) changed. Tables of earlier versions store one sample per row in the columns `timestamp` and `value`: they can still be read, written into and queried with PromQL, and the [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) table function reads them without a conversion when its argument `return_columns` is `'timestamp_and_value'` |
-| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArray`; the outer column `histograms` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
+| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArray`; the outer column `histograms` and the setting [`native_histogram_bucket_limit`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
 
 # Functions {#functions}
 
