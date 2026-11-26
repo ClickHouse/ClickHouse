@@ -17,6 +17,7 @@
 
 #include <arrow/c/abi.h>
 #include <arrow/c/bridge.h>
+#include <arrow/c/helpers.h>
 #include <ch_lance.h>
 
 #include <fmt/format.h>
@@ -638,14 +639,15 @@ std::optional<Scan::Batch> Scan::nextBatch() const
     /// From here, the exported batch is owned by this function until it is handed over to `Batch`. On any exit before
     /// that, including an exception thrown by `ImportRecordBatch` (e.g. a failed allocation before it adopts `array`),
     /// release the exported array if it has not been adopted yet and return the batch to the in-flight accounting of
-    /// the scan, so that neither its buffers nor its bytes are leaked.
+    /// the scan, so that neither its buffers nor its bytes are leaked. The release callback comes from the Arrow crate
+    /// of Lance, whose CFI type id differs from that of `ArrowArray *`: call it through `ArrowArrayRelease`, which is
+    /// exempt from `cfi-icall` (Arrow releases an adopted batch through it too), not directly.
     bool transferred = false;
     SCOPE_EXIT(
     {
         if (transferred)
             return;
-        if (array.release)
-            array.release(&array);
+        ArrowArrayRelease(&array);
         ch_lance_release_batch(scan, batch_bytes);
     });
 
