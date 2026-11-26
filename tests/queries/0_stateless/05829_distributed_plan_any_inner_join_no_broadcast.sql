@@ -1,6 +1,7 @@
 -- ANY INNER JOIN uses each right row at most once over the whole left input, so a distributed plan
 -- must not broadcast its right side: every left task would join each key again.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET explain_query_plan_default = 'legacy';
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;

@@ -17,9 +17,9 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para reconocer un nombre de base de datos en la ruta URL de las solicitudes HTTP."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitada de forma predeterminada: la interfaz HTTP interpreta un componente `\/database\/` de la ruta URL como base de datos actual."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para reconocer un nombre de base de datos en la ruta de la URL de las solicitudes HTTP."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitada de forma predeterminada: la interfaz HTTP interpreta un componente `\/database\/` de la ruta de la URL como base de datos actual."}]}]} />
 
-Si está habilitada, la interfaz HTTP reconoce un componente `/database/` en la ruta URL y lo utiliza como base de datos actual.
+Si está habilitada, la interfaz HTTP reconoce un componente `/database/` en la ruta de la URL y lo utiliza como base de datos actual. También habilita las cargas `PUT` basadas en rutas con prefijo de base de datos, como `/database/table.CSV`.
 
 Esta configuración por usuario determina si se interpreta una solicitud enrutada de estilo de ruta. El enrutamiento propiamente dicho se controla globalmente mediante la configuración del servidor `http_allow_path_requests` (activada de forma predeterminada), que debe habilitarse para que la interfaz HTTP enrute una solicitud de estilo de ruta (como `/my_db/my_table.csv`) al manejador de consultas; esta decisión de enrutamiento se toma antes de autenticar la solicitud, por lo que no puede depender de una configuración por usuario. Cuando `http_allow_path_requests` está desactivada, las rutas desconocidas devuelven un simple `404`. Tras el enrutamiento, esta configuración se vuelve a comprobar con la configuración efectiva del usuario autenticado, por lo que puede deshabilitarse selectivamente para cada usuario, rol o perfil.
 
@@ -50,9 +50,9 @@ Está deshabilitada de forma predeterminada, a diferencia de las demás configur
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para reconocer un nombre de tabla en la ruta URL de las solicitudes HTTP, con extensiones opcionales de formato\/compresión."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitada de forma predeterminada: la interfaz HTTP interpreta el último componente de la ruta URL como `table[.format[.compression]]` y responde con `SELECT * FROM table`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para reconocer un nombre de tabla en la ruta de la URL de las solicitudes HTTP, con extensiones opcionales de formato\/compresión."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitada de forma predeterminada: la interfaz HTTP interpreta el último componente de la ruta de la URL como `table[.format[.compression]]` y responde con `SELECT * FROM table`."}]}]} />
 
-Si está habilitada, la interfaz HTTP reconoce el último componente de la ruta URL como un nombre de tabla con el formato `table`, `table.format` o `table.format.compression`. La ruta se interpreta como `SELECT * FROM table`.
+Si está habilitada, la interfaz HTTP reconoce el último componente de la ruta de la URL como un nombre de tabla con el formato `table`, `table.format` o `table.format.compression`. En las solicitudes `GET` y `HEAD`, la ruta se interpreta como `SELECT * FROM table`; en una solicitud `PUT` basada en la ruta, identifica la tabla de destino existente y el formato de entrada de la carga.
 
 Al igual que [`http_allow_database_as_path`](/es/reference/settings/session-settings/http#http_allow_database_as_path), esta configuración es por usuario; el enrutamiento de las solicitudes de estilo de ruta se controla globalmente mediante la configuración de servidor `http_allow_path_requests` (el enrutamiento se realiza antes de la autenticación).
 

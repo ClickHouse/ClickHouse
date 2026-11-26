@@ -10,7 +10,7 @@ doc_type: 'guide'
 import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## Introduction
+  ## Introduction {#introduction}
 </div>
 
 ClickHouse offre divers mécanismes pour accélérer les requêtes analytiques sur de grandes
@@ -29,15 +29,13 @@ requêtes en créant une réorganisation des données selon les attributs pertin
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<div id="how-do-projections-work">
-  ## Comment fonctionnent les projections ?
-</div>
+## Comment fonctionnent les projections ? {#how-do-projections-work}
 
 En pratique, une projection peut être considérée comme une table supplémentaire (masquée)
 associée à la table d’origine. La projection peut avoir un ordre de tri différent, et donc un
 index primaire différent de celui de la table d’origine, et elle peut
 pré-calculer automatiquement et de manière incrémentielle des agrégats. Par conséquent, l’utilisation des projections
-offre deux « leviers d’optimisation » pour accélérer l’exécution des requêtes :
+offre deux « leviers d’optimisation » pour accélérer l’exécution des requêtes :
 
 * **Utiliser correctement les index primaires**
 * **Pré-calculer les agrégats**
@@ -50,20 +48,16 @@ restent synchronisées avec la table d’origine, contrairement aux vues matéri
 mises à jour explicitement. Lorsqu’une requête cible la table d’origine,
 ClickHouse échantillonne automatiquement les clés primaires et choisit la table qui peut
 produire le même résultat correct, tout en nécessitant de lire le moins de données possible,
-comme illustré dans la figure ci-dessous :
+comme illustré dans la figure ci-dessous :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Projections dans ClickHouse](/images/data-modeling/projections_1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Projections dans ClickHouse](/images/data-modeling/projections_1.webp)
+  </Frame>
 </div>
 
 <div id="smarter_storage_with_part_offset">
-  ### Un stockage plus intelligent avec `_part_offset`
+  ### Un stockage plus intelligent avec `_part_offset` {#smarter_storage_with_part_offset}
 </div>
 
 Depuis la version 25.5, ClickHouse prend en charge la colonne virtuelle `_part_offset` dans les projections, ce qui offre une nouvelle façon de définir une projection.
@@ -77,7 +71,7 @@ Il existe désormais deux façons de définir une projection :
 Les approches ci-dessus peuvent également être combinées, en stockant certaines colonnes dans la projection et d’autres indirectement via `_part_offset`.
 
 <div id="when-to-use-projections">
-  ## Quand utiliser les projections ?
+  ## Quand utiliser les projections ? {#when-to-use-projections}
 </div>
 
 Les projections constituent une fonctionnalité intéressante pour les nouveaux utilisateurs, car elles sont automatiquement
@@ -115,11 +109,11 @@ Nous recommandons d&#39;utiliser les projections lorsque :
   [évaluez le surcoût de stockage](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## Exemples
+  ## Exemples {#examples}
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### Filtrage sur des colonnes qui ne font pas partie de la clé primaire
+  ### Filtrage sur des colonnes qui ne font pas partie de la clé primaire {#filtering-without-using-primary-keys}
 </div>
 
 Dans cet exemple, nous allons voir comment ajouter une projection à une table.
@@ -221,7 +215,7 @@ Si vous souhaitez voir comment la table a été créée et comment les données 
 consulter la page [&quot;The UK property prices dataset&quot;](/fr/get-started/sample-datasets/uk-price-paid).
 
 Nous pouvons exécuter deux requêtes simples sur ce jeu de données. La première liste les comtés de Londres où
-les prix de vente sont les plus élevés, et la seconde calcule le prix moyen par comté :
+les prix de vente sont les plus élevés, et la seconde calcule le prix moyen par comté :
 
 <RunnableCode>
   ```sql
@@ -249,7 +243,7 @@ les prix de vente sont les plus élevés, et la seconde calcule le prix moyen pa
 
 Notez que, malgré leur grande rapidité, ces deux requêtes ont nécessité un parcours complet de la table des 30,03 millions de lignes,
 car ni `town` ni `price` ne figuraient dans notre instruction `ORDER BY` lorsque nous
-avons créé la table :
+avons créé la table :
 
 ```sql highlight={6}
 CREATE TABLE uk.uk_price_paid
@@ -262,7 +256,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2);
 
 Voyons si nous pouvons accélérer cette requête à l’aide de projections.
 
-Pour préserver la table d’origine et les résultats, nous allons créer une nouvelle table et copier les données à l’aide d’un `INSERT INTO SELECT` :
+Pour préserver la table d’origine et les résultats, nous allons créer une nouvelle table et copier les données à l’aide d’un `INSERT INTO SELECT` :
 
 ```sql
 CREATE TABLE uk.uk_price_paid_with_projections AS uk_price_paid;
@@ -272,7 +266,7 @@ INSERT INTO uk.uk_price_paid_with_projections SELECT * FROM uk.uk_price_paid;
 Nous créons et peuplons la projection `prj_oby_town_price`, qui produit une
 table supplémentaire (masquée) dotée d&#39;un index primaire, ordonnée par ville et par prix, afin
 d&#39;optimiser la requête qui répertorie les comtés d&#39;une ville donnée pour les prix
-payés les plus élevés :
+payés les plus élevés :
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections
@@ -296,7 +290,7 @@ utilisé pour forcer l’exécution synchrone.
 
 Nous créons et peuplons la projection `prj_gby_county` — une table supplémentaire (masquée)
 qui précalcule de façon incrémentielle les valeurs agrégées de avg(price) pour les
-130 comtés existants du Royaume-Uni :
+130 comtés existants du Royaume-Uni :
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections
@@ -323,20 +317,16 @@ SETTINGS mutations_sync = 1
 </Note>
 
 La figure ci-dessous est une visualisation de la table principale `uk_price_paid_with_projections`
-et de ses deux projections :
+et de ses deux projections :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Visualisation de la table principale uk_price_paid_with_projections et de ses deux projections](/images/data-modeling/projections_2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Visualisation de la table principale uk_price_paid_with_projections et de ses deux projections](/images/data-modeling/projections_2.webp)
+  </Frame>
 </div>
 
 Si nous exécutons maintenant de nouveau la requête qui affiche les comtés de Londres pour les trois prix
-les plus élevés, nous constatons une amélioration des performances de la requête :
+les plus élevés, nous constatons une amélioration des performances de la requête :
 
 <RunnableCode>
   ```sql
@@ -351,7 +341,7 @@ les plus élevés, nous constatons une amélioration des performances de la requ
 </RunnableCode>
 
 De même, pour la requête qui liste les comtés du Royaume-Uni avec les trois prix moyens
-les plus élevés :
+les plus élevés :
 
 <RunnableCode>
   ```sql
@@ -428,7 +418,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### Autres exemples
+  ### Autres exemples {#further-examples}
 </div>
 
 Les exemples suivants utilisent le même jeu de données sur les prix au Royaume-Uni et comparent des requêtes avec et sans projections.
@@ -480,7 +470,7 @@ SETTINGS mutations_sync = 1
 Les requêtes suivantes comparent les performances avec et sans projections. Pour désactiver l’utilisation des projections, nous utilisons le paramètre [`optimize_use_projections`](/fr/reference/settings/session-settings/optimize-use#optimize_use_projections), activé par défaut.
 
 <div id="average-price-projections">
-  #### Requête 1. Prix moyen par année
+  #### Requête 1. Prix moyen par année {#average-price-projections}
 </div>
 
 <RunnableCode>
@@ -512,7 +502,7 @@ Les requêtes suivantes comparent les performances avec et sans projections. Pou
 Les résultats devraient être identiques, mais les performances sont meilleures dans ce dernier exemple !
 
 <div id="average-price-london-projections">
-  #### Requête 2. Prix moyen par année à Londres
+  #### Requête 2. Prix moyen par année à Londres {#average-price-london-projections}
 </div>
 
 <RunnableCode>
@@ -543,7 +533,7 @@ Les résultats devraient être identiques, mais les performances sont meilleures
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### Requête 3. Les quartiers les plus chers
+  #### Requête 3. Les quartiers les plus chers {#most-expensive-neighborhoods-projections}
 </div>
 
 Le filter portant sur les lignes à partir de 2020 référence directement la dimension `year` stockée dans la projection :
@@ -597,7 +587,7 @@ Là encore, le résultat est identique, mais notez l’amélioration des perform
 </Note>
 
 <div id="combining-projections">
-  ### Combiner plusieurs projections dans une même requête
+  ### Combiner plusieurs projections dans une même requête {#combining-projections}
 </div>
 
 À partir de la version 25.6, en s’appuyant sur la prise en charge de `_part_offset` introduite dans

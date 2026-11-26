@@ -21,13 +21,15 @@ Databricks は、その lakehouse で複数のデータフォーマットをサ�
 </Note>
 
 <Note>
-  この機能は実験的であるため、以下を使用して有効にする必要があります。
-  `SET allow_experimental_database_unity_catalog = 1;`
+  この機能はベータ版です。次のコマンドで有効にしてください。
+  `SET allow_database_unity_catalog = 1;`
+
+  [Iceberg の読み取り](#read-iceberg)の例では `catalog_type = 'rest'` を使用するため、代わりに `SET allow_database_iceberg = 1;` が必要です。
+
+  25.8 より前のバージョンではこれらの機能は実験的機能であり、設定名は `allow_experimental_database_unity_catalog` および `allow_experimental_database_iceberg` です。
 </Note>
 
-<div id="configuring-unity-in-databricks">
-  ## Databricks で Unity を設定する
-</div>
+## Databricks で Unity を設定する {#configuring-unity-in-databricks}
 
 ClickHouse が Unity Catalog と連携できるようにするには、外部リーダーによるアクセスを許可するよう Unity Catalog が設定されていることを確認する必要があります。これを行うには、[「Unity Catalog への外部データアクセスを有効にする」](https://docs.databricks.com/aws/en/external-access/admin)ガイドに従ってください。
 
@@ -37,21 +39,15 @@ ClickHouse が Unity Catalog と連携できるようにするには、外部リ
 
 * Delta クライアントの場合は、Personal Access Token ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)) を使用します。
 
-<div id="required-pat-token-permissions">
-  ### 必要な PAT トークンの権限
-</div>
+### 必要な PAT トークンの権限 {#required-pat-token-permissions}
 
 読み取りアクセスに PAT を使用する場合、トークンには ClickHouse が Unity Catalog のメタデータを一覧取得および読み取りできる権限が必要です。PAT には少なくとも、`EXTERNAL USE SCHEMA` の[権限](https://docs.databricks.com/aws/en/external-access/admin#grant-a-principal-unity-catalog-privileges)に加え、テーブルに対する `SELECT` 権限、親カタログに対する `USE CATALOG`、および親スキーマに対する `USE SCHEMA` が付与されていることを確認してください。
 
-<div id="creating-a-connection-between-unity-catalog-and-clickhouse">
-  ## Unity Catalog と ClickHouse 間の接続を作成する
-</div>
+## Unity Catalog と ClickHouse 間の接続を作成する {#creating-a-connection-between-unity-catalog-and-clickhouse}
 
 Unity Catalog の設定と認証の準備が完了したら、ClickHouse と Unity Catalog 間の接続を確立します。
 
-<div id="read-delta">
-  ### Deltaを読み取る
-</div>
+### Deltaを読み取る {#read-delta}
 
 ```sql
 CREATE DATABASE unity
@@ -59,9 +55,7 @@ ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/un
 SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity'
 ```
 
-<div id="read-iceberg">
-  ### Iceberg を読み取る
-</div>
+### Iceberg を読み取る {#read-iceberg}
 
 外部 Iceberg テーブルにアクセスするには：
 
@@ -72,9 +66,7 @@ SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret
 oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql'
 ```
 
-<div id="querying-unity-catalog-tables-using-clickhouse">
-  ## ClickHouse を使用して Unity Catalog のテーブルをクエリする
-</div>
+## ClickHouse を使用して Unity Catalog のテーブルをクエリする {#querying-unity-catalog-tables-using-clickhouse}
 
 接続の準備ができたので、Unity Catalog 経由でクエリを実行できます。たとえば、次のようになります。
 
@@ -168,9 +160,7 @@ ENGINE = Iceberg('s3://<path>);
 
 ```
 
-<div id="loading-data-from-your-data-lake-into-clickhouse">
-  ## データレイクからClickHouseにデータを読み込む
-</div>
+## データレイクからClickHouseにデータを読み込む {#loading-data-from-your-data-lake-into-clickhouse}
 
 DatabricksからClickHouseにデータを読み込む必要がある場合は、まずローカルのClickHouseテーブルを作成します。
 
