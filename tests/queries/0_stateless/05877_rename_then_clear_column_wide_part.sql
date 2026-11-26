@@ -31,6 +31,8 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_
 INSERT INTO t_rename_clear_index VALUES (1, 42);
 ALTER TABLE t_rename_clear_index RENAME COLUMN q TO r, CLEAR COLUMN r;
 SELECT r, (SELECT count() FROM t_rename_clear_index WHERE r = 0) FROM t_rename_clear_index;
+SELECT count() FROM t_rename_clear_index WHERE r = 0 SETTINGS force_data_skipping_indices = 'i', use_skip_indexes = 1, use_query_condition_cache = 0;
+SELECT count() FROM t_rename_clear_index WHERE r = 42 SETTINGS force_data_skipping_indices = 'i', use_skip_indexes = 1, use_query_condition_cache = 0;
 SELECT secondary_indices_uncompressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_rename_clear_index' AND active;
 DROP TABLE t_rename_clear_index;
 
