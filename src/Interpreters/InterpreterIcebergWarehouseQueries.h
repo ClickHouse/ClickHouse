@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Interpreters of statements for warehouses of the Iceberg REST catalog.
-/// They call the same `IcebergRESTCatalogWarehouseRegistry` as the `/management/v1/warehouses` routes of the catalog server.
+/// They use `IcebergRESTCatalogWarehouseRegistry`, like the `/management/v1/warehouses` routes of the catalog server.
 
 class InterpreterCreateIcebergWarehouseQuery : public IInterpreter, WithContext
 {

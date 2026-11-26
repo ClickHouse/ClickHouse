@@ -102,7 +102,6 @@ class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class IUserDefinedSQLObjectsStorage;
 class IWorkloadEntityStorage;
-class IcebergRESTCatalogWarehouseRegistry;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -1452,9 +1451,6 @@ public:
     void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const;
 
     std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
-
-    /// Warehouses of Iceberg REST catalog. Shared by catalog server and `ICEBERG WAREHOUSE` statements.
-    std::shared_ptr<IcebergRESTCatalogWarehouseRegistry> getIcebergRESTCatalogWarehouseRegistry() const;
 
     bool hasWasmModuleManager() const;
     WasmModuleManager & getWasmModuleManager() const;

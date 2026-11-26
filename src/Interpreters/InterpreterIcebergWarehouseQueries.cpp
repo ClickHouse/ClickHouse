@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Common/quoteString.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTCreateIcebergWarehouseQuery.h>
@@ -17,10 +18,27 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_iceberg_rest_catalog;
 }
 
 namespace
 {
+
+/// Registry for one statement. Catalog server reads Keeper on each request, so it sees the change.
+IcebergRESTCatalogWarehouseRegistry createRegistry(const ContextPtr & context)
+{
+    if (!context->getServerSettings()[ServerSetting::enable_iceberg_rest_catalog])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The Iceberg REST catalog is experimental. Enable the server setting `enable_iceberg_rest_catalog` to use it");
+
+    return IcebergRESTCatalogWarehouseRegistry(context->getGlobalContext());
+}
 
 constexpr auto BASE_LOCATION = "base_location";
 constexpr auto ROLE_ARN = "role_arn";
@@ -73,8 +91,8 @@ BlockIO InterpreterCreateIcebergWarehouseQuery::execute()
     IcebergRESTCatalogWarehouseDefinition::validateName(query.warehouse_name);
     auto definition = definitionFromSettings(query.changes);
 
-    const auto registry = getContext()->getIcebergRESTCatalogWarehouseRegistry();
-    if (!registry->create(query.warehouse_name, std::move(definition)) && !query.if_not_exists)
+    auto registry = createRegistry(getContext());
+    if (!registry.create(query.warehouse_name, std::move(definition)) && !query.if_not_exists)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg warehouse {} already exists", backQuote(query.warehouse_name));
 
     return {};
@@ -87,7 +105,8 @@ BlockIO InterpreterDropIcebergWarehouseQuery::execute()
     getContext()->checkAccess(AccessType::DROP_ICEBERG_WAREHOUSE);
 
     using Result = IcebergRESTCatalogWarehouseRegistry::DropResult;
-    switch (getContext()->getIcebergRESTCatalogWarehouseRegistry()->drop(query.warehouse_name))
+    auto registry = createRegistry(getContext());
+    switch (registry.drop(query.warehouse_name))
     {
         case Result::Dropped:
             return {};

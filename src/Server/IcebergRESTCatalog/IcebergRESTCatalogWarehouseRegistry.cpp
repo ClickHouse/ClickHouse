@@ -24,9 +24,9 @@ namespace ErrorCodes
     extern const int S3_ERROR;
 }
 
-IcebergRESTCatalogWarehouseRegistry::IcebergRESTCatalogWarehouseRegistry(ContextPtr global_context_, IcebergRESTCatalogKeeperConfig keeper_config_)
-    : WithContext(std::move(global_context_))
-    , keeper_config(std::move(keeper_config_))
+IcebergRESTCatalogWarehouseRegistry::IcebergRESTCatalogWarehouseRegistry(ContextPtr context_)
+    : context(std::move(context_))
+    , keeper_config(getIcebergRESTCatalogKeeperConfig(*context))
     , log(getLogger("IcebergRESTCatalogWarehouseRegistry"))
     , warehouses(
           "LRU",
@@ -50,7 +50,7 @@ IcebergRESTCatalogWarehousePtr IcebergRESTCatalogWarehouseRegistry::tryGet(const
     Coordination::Stat stat;
     /// A plain read may lag behind a write from another catalog server.
     /// TODO: Set a watch on the node, so a cached warehouse needs no Keeper request.
-    auto zookeeper = keeper_config.getZooKeeper(*getContext());
+    auto zookeeper = keeper_config.getZooKeeper(*context);
     zookeeper->sync(path);
     const bool exists = zookeeper->tryGet(path, data, &stat);
 
@@ -64,7 +64,7 @@ IcebergRESTCatalogWarehousePtr IcebergRESTCatalogWarehouseRegistry::tryGet(const
         return cached->warehouse;
 
     const auto definition = IcebergRESTCatalogWarehouseDefinition::fromKeeperData(data, path);
-    auto entry = std::make_shared<Entry>(Entry{createIcebergRESTCatalogWarehouse(getContext(), name, definition, keeper_config), stat.mzxid});
+    auto entry = std::make_shared<Entry>(Entry{createIcebergRESTCatalogWarehouse(context, name, definition, keeper_config), stat.mzxid});
     warehouses.set(name, entry);
     LOG_INFO(log, "Added warehouse {}", name);
     return entry->warehouse;
@@ -75,7 +75,7 @@ std::optional<IcebergRESTCatalogWarehouseDefinition> IcebergRESTCatalogWarehouse
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::tryGetDefinition");
     const auto path = keeper_config.warehousePath(name);
     String data;
-    auto zookeeper = keeper_config.getZooKeeper(*getContext());
+    auto zookeeper = keeper_config.getZooKeeper(*context);
     zookeeper->sync(path);
     if (!zookeeper->tryGet(path, data))
         return std::nullopt;
@@ -85,7 +85,7 @@ std::optional<IcebergRESTCatalogWarehouseDefinition> IcebergRESTCatalogWarehouse
 std::map<String, IcebergRESTCatalogWarehouseDefinition> IcebergRESTCatalogWarehouseRegistry::list() const
 {
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::list");
-    auto zookeeper = keeper_config.getZooKeeper(*getContext());
+    auto zookeeper = keeper_config.getZooKeeper(*context);
 
     zookeeper->sync(keeper_config.zookeeper_path);
 
@@ -114,7 +114,7 @@ void IcebergRESTCatalogWarehouseRegistry::checkStorageAccess(const String & name
 {
     try
     {
-        createIcebergRESTCatalogWarehouse(getContext(), name, definition, keeper_config)->checkStorageAccess();
+        createIcebergRESTCatalogWarehouse(context, name, definition, keeper_config)->checkStorageAccess();
     }
     catch (const Exception & e)
     {
@@ -131,7 +131,7 @@ bool IcebergRESTCatalogWarehouseRegistry::create(const String & name, IcebergRES
     checkStorageAccess(name, definition);
 
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::create");
-    auto zookeeper = keeper_config.getZooKeeper(*getContext());
+    auto zookeeper = keeper_config.getZooKeeper(*context);
     const auto path = keeper_config.warehousePath(name);
     zookeeper->createAncestors(path);
 
@@ -158,7 +158,7 @@ IcebergRESTCatalogWarehouseRegistry::ReplaceCredentialResult
 IcebergRESTCatalogWarehouseRegistry::replaceCredential(const String & name, const IcebergRESTCatalogWarehouseCredential & credential)
 {
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::replaceCredential");
-    auto zookeeper = keeper_config.getZooKeeper(*getContext());
+    auto zookeeper = keeper_config.getZooKeeper(*context);
     const auto path = keeper_config.warehousePath(name);
 
     String data;
@@ -191,7 +191,7 @@ IcebergRESTCatalogWarehouseRegistry::replaceCredential(const String & name, cons
 IcebergRESTCatalogWarehouseRegistry::DropResult IcebergRESTCatalogWarehouseRegistry::drop(const String & name)
 {
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::drop");
-    auto zookeeper = keeper_config.getZooKeeper(*getContext());
+    auto zookeeper = keeper_config.getZooKeeper(*context);
     const auto path = keeper_config.warehousePath(name);
 
     const auto definition = tryGetDefinition(name);

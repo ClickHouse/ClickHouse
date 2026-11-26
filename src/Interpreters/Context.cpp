@@ -185,7 +185,6 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouseRegistry.h>
 #include <Server/StatelessWorker/StatelessWorkersProviderRegistry.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
 
@@ -460,7 +459,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
-    extern const ServerSettingsBool enable_iceberg_rest_catalog;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -735,9 +733,6 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
-
-    mutable std::mutex iceberg_rest_catalog_warehouse_registry_mutex;
-    mutable std::shared_ptr<IcebergRESTCatalogWarehouseRegistry> iceberg_rest_catalog_warehouse_registry TSA_GUARDED_BY(iceberg_rest_catalog_warehouse_registry_mutex);
 
     mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
 
@@ -1337,7 +1332,6 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
         std::shared_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
-        std::shared_ptr<IcebergRESTCatalogWarehouseRegistry> delete_iceberg_rest_catalog_warehouse_registry;
         std::unique_ptr<DDLWorker> delete_ddl_worker;
 
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
@@ -1430,10 +1424,6 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
-            {
-                std::lock_guard registry_lock(iceberg_rest_catalog_warehouse_registry_mutex);
-                delete_iceberg_rest_catalog_warehouse_registry = std::move(iceberg_rest_catalog_warehouse_registry);
-            }
             delete_ddl_worker = std::move(ddl_worker);
 
             delete_access_control = std::move(access_control);
@@ -1515,7 +1505,6 @@ struct ContextSharedPart : boost::noncopyable
         delete_external_user_defined_executable_functions_loader.reset();
         delete_user_defined_sql_objects_storage.reset();
         delete_workload_entity_storage.reset();
-        delete_iceberg_rest_catalog_warehouse_registry.reset();
         delete_ddl_worker.reset();
 
         auto join_background_pool = [&](BackgroundSchedulePoolPtr && pool_ptr)
@@ -5126,23 +5115,6 @@ std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() c
 
     SharedLockGuard lock(shared->mutex);
     return shared->workload_entity_storage;
-}
-
-std::shared_ptr<IcebergRESTCatalogWarehouseRegistry> Context::getIcebergRESTCatalogWarehouseRegistry() const
-{
-    if (!getServerSettings()[ServerSetting::enable_iceberg_rest_catalog])
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "The Iceberg REST catalog is experimental. Enable the server setting `enable_iceberg_rest_catalog` to use it");
-
-    auto keeper_config = getIcebergRESTCatalogKeeperConfig(*this);
-
-    std::lock_guard lock(shared->iceberg_rest_catalog_warehouse_registry_mutex);
-    /// Config reload can change `iceberg_rest_catalog.zookeeper_path`.
-    auto & registry = shared->iceberg_rest_catalog_warehouse_registry;
-    if (!registry || registry->getKeeperConfig() != keeper_config)
-        registry = std::make_shared<IcebergRESTCatalogWarehouseRegistry>(getGlobalContext(), std::move(keeper_config));
-    return registry;
 }
 
 WasmModuleManager * Context::initWasmModuleManager()

@@ -17,8 +17,6 @@ struct IcebergRESTCatalogKeeperConfig
 
     [[nodiscard]] String warehousePath(const String & warehouse_name) const;
 
-    bool operator==(const IcebergRESTCatalogKeeperConfig &) const = default;
-
     /// The Keeper session that holds the catalog state.
     [[nodiscard]] zkutil::ZooKeeperPtr getZooKeeper(const Context & context) const;
 };
