@@ -1,9 +1,10 @@
 ---
 slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
-title: 'إعداد OpenTelemetry Collector'
-description: 'إعداد OpenTelemetry Collector لـ Managed ClickStack'
+title: 'إعداد مُجمِّع OpenTelemetry'
+sidebarTitle: 'إعداد مُجمِّع OpenTelemetry'
+description: 'إعداد مُجمِّع OpenTelemetry لتجربة ClickHouse Observability المُدارة ذاتيًا'
 doc_type: 'guide'
-keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
+keywords: ['clickstack', 'opentelemetry', 'collector', 'self-managed', 'ClickHouse Observability', 'gateway', 'telemetrygen']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -14,7 +15,15 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
 import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/ar/components/AgentPrompt/AgentPrompt.jsx';
 
-يرشدك هذا الدليل إلى كيفية نشر OpenTelemetry Collector على خدمة Managed ClickStack حالية، أو تكييف الـ مجمّع الحالي لديك، ثم التحقق من تدفق البيانات عبره.
+<Note>
+  **أنت تتبع المسار المُدار ذاتيًا**
+
+  لقد اخترت إعداد ClickHouse Observability بنفسك باستخدام [التجربة المُدارة ذاتيًا](/ar/clickstack/self-configured/overview). في هذا المسار، تتولى تشغيل مُجمِّع OpenTelemetry، وإدارة الإدخال إلى خدمة ClickHouse Cloud الخاصة بك، وضبط المخطط، والفصل بين أحمال عمل الإدخال والاستعلام باستخدام المستودعات. راجع [مُجمِّع OpenTelemetry](/ar/clickstack/self-configured/ingesting-data/collector) و[ضبط الأداء](/ar/clickstack/self-configured/managing/performance-tuning) و[عزل أحمال عمل القراءة والكتابة](/ar/clickstack/self-configured/managing/isolating-read-write).
+
+  هل تفضّل تجربة بلا خوادم يتولى فيها ClickHouse الإدخال والمخططات والقدرة الحاسوبية نيابةً عنك؟ استخدم إذن تجربة ClickHouse Observability الافتراضية واتبع [دليل بدء الاستخدام](/ar/clickstack/observability/getting-started).
+</Note>
+
+يرشدك هذا الدليل إلى كيفية نشر مُجمِّع OpenTelemetry على خدمة ClickHouse Observability الحالية لديك، أو تكييف جامع البيانات الحالي لديك، ثم التحقق من تدفق البيانات عبره. في التجربة المُدارة ذاتيًا، تتولى تشغيل جامع البيانات هذا بنفسك: فهو يستقبل بيانات OTLP من تطبيقاتك ووكلائك ويكتبها إلى خدمة ClickHouse Cloud الخاصة بك.
 
 ثبّت ClickHouse agent skills الرسمية قبل استخدام مساعد الإعداد:
 
@@ -31,25 +40,25 @@ clickhousectl skills --detected-only
 لاستهداف وكيل واحد، مرّر `--agent` (على سبيل المثال، `--agent claude`). أضف `--global` للتثبيت في الدليل الرئيسي لديك بدلًا من المشروع الحالي.
 
 <AgentPrompt
-  prompt="استخدم مهارة clickstack-otel-collector لربط OpenTelemetry Collector بخدمة Managed ClickStack الخاصة بي."
+  prompt="استخدم مهارة clickstack-otel-collector لربط OpenTelemetry Collector بخدمة Self-managed ClickHouse Observability الخاصة بي."
   description="سيتولى وكيل لديك إعداد ClickStack OpenTelemetry Collector نيابةً عنك. يعمل مع Claude Code وCursor وCodex وغير ذلك من وكلاء البرمجة."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"ثبّت clickhousectl إذا لم يكن مثبتًا، وتحقّق من أنه مُصادَق عليه باستخدام مفتاح API (تسجيل الدخول عبر المتصفح يمنح صلاحية القراءة فقط ولا يمكنه إنشاء مستخدم الإدخال). وإن لم يكن كذلك، فسيطلب منك تشغيل clickhousectl cloud auth login --interactive بنفسك في طرفية منفصلة، من دليل المشروع نفسه (يُحفظ المفتاح هناك في .clickhouse/credentials.json). لا تلصق أبدًا سر مفتاح API في الدردشة.",
-"سيطلب منك معرّف خدمة ClickHouse Cloud المستهدفة أو اسمها، ثم يجلب endpoint ‏HTTPS الخاص بها.",
-"أنشئ مستخدم SQL باسم hyperdx_ingest على الخدمة (مع إنشاء password قوية، أو استخدام واحدة توفّرها أنت).",
-"شغّل ClickStack OpenTelemetry Collector محليًا في Docker، مع توجيهه إلى خدمتك.",
-"أرسل دفعة قصيرة من سجلات وtraces ومقاييس الاصطناعية عبر الـ مجمّع لإثبات أن مسار المعالجة يعمل.",
-"تحقّق من وصول البيانات إلى قاعدة بيانات otel، ثم يزوّدك بعنوان URL الخاص بـ ClickStack UI حيث يمكنك عرضها."
-]}
+  "ثبّت clickhousectl إذا لم يكن مثبتًا، وتحقّق من أنه مُصادَق عليه باستخدام مفتاح API (تسجيل الدخول عبر المتصفح يمنح صلاحية القراءة فقط ولا يمكنه إنشاء مستخدم الإدخال). وإن لم يكن كذلك، فسيطلب منك تشغيل clickhousectl cloud auth login --interactive بنفسك في طرفية منفصلة، من دليل المشروع نفسه (يُحفظ المفتاح هناك في .clickhouse/credentials.json). لا تلصق أبدًا سر مفتاح API في الدردشة.",
+  "سيطلب منك معرّف خدمة ClickHouse Cloud المستهدفة أو اسمها، ثم يجلب endpoint ‏HTTPS الخاص بها.",
+  "أنشئ مستخدم SQL باسم hyperdx_ingest على الخدمة (مع إنشاء password قوية، أو استخدام واحدة توفّرها أنت).",
+  "شغّل ClickStack OpenTelemetry Collector محليًا في Docker، مع توجيهه إلى خدمتك.",
+  "أرسل دفعة قصيرة من سجلات وtraces ومقاييس الاصطناعية عبر الـ مجمّع لإثبات أن مسار المعالجة يعمل.",
+  "تحقّق من وصول البيانات إلى قاعدة بيانات otel، ثم يزوّدك بعنوان URL الخاص بـ ClickStack UI حيث يمكنك عرضها."
+  ]}
 />
 
-يعمل الـ مجمّع هنا بدور **بوابة**: نقطة نهاية OTLP واحدة ترسل إليها تطبيقاتك وSDKs ووكلاء المجمّعات. تتولى الـ بوابة تجميع الأحداث في batches، وتطبيق أي processing أعددته، ثم كتابتها إلى ClickHouse عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). يتيح لك هذا النمط إبقاء منطق collection خارج شفرة التطبيق، كما يسمح لك بتوسيع نطاق الإدخال بشكل مستقل عن workloads التي تُنتج البيانات. وللاطلاع على خلفية حول أدوار البوابة والوكيل، راجع [Collector roles](/ar/clickstack/ingesting-data/collector#collector-roles).
+يعمل جامع البيانات هنا بدور **بوابة**: نقطة نهاية OTLP واحدة ترسل إليها تطبيقاتك وSDKs ووكلاء جامعي البيانات. تتولى الـ بوابة تجميع الأحداث في batches، وتطبيق أي processing أعددته، ثم كتابتها إلى ClickHouse عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). يتيح لك هذا النمط إبقاء منطق collection خارج شفرة التطبيق، كما يسمح لك بتوسيع نطاق الإدخال بشكل مستقل عن أحمال العمل التي تُنتج البيانات. وللاطلاع على خلفية حول أدوار البوابة والوكيل، راجع [أدوار جامع البيانات](/ar/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
 
 <Info>
-  **مجمّع حالي**
+  **جامع بيانات حالي**
 
-  إذا كنت تستخدم OpenTelemetry Collector حاليًا، فنفترض أنه مُهيأ بالفعل بدور **بوابة**. ولا نوصي باستخدام هذه العملية لإعادة تهيئة المجمّعات التي تعمل بدور **وكيل**.
+  إذا كنت تستخدم مُجمِّع OpenTelemetry حاليًا، فنفترض أنه مُهيأ بالفعل بدور **بوابة**. ولا نوصي باستخدام هذه العملية لإعادة تهيئة جامعي البيانات الذين يعملون بدور **وكيل**.
 </Info>
 
 اختر علامة التبويب التي تناسب حالتك:
@@ -66,7 +75,7 @@ clickhousectl skills --detected-only
       </Step>
 
       <Step title="انشر المجمّع" id="deploy-the-collector">
-        انشر **توزيعة ClickStack من OpenTelemetry Collector**، وهي مُعدّة مسبقًا لـ Managed ClickStack. في المثال أدناه، نشغّل المجمّع محليًا ونولّد بيانات قياس عن بُعد اصطناعية من الجهاز نفسه للتبسيط.
+        انشر **توزيعة ClickStack من OpenTelemetry Collector**، وهي مُعدّة مسبقًا لـ ClickHouse Observability. في المثال أدناه، نشغّل المجمّع محليًا ونولّد بيانات قياس عن بُعد اصطناعية من الجهاز نفسه للتبسيط.
 
         <Note>
           في بيئة production، ستنشر عادةً المجمّع في Kubernetes cluster، أو على جهاز افتراضي يمكن الوصول إليه من OpenTelemetry SDKs والوكلاء والمجمّعات الأخرى. يتيح ذلك جمع بيانات القياس عن بُعد من مختلف أنحاء بيئتك مركزيًا وإعادة توجيهها إلى ClickStack.
@@ -95,12 +104,12 @@ clickhousectl skills --detected-only
           clickhouse/clickstack-otel-collector:latest
         ```
 
-        يوفّر المجمِّع الآن OTLP gRPC على `4317` وOTLP HTTP على `4318`. يجب أن ترسل التطبيقات وSDKs ومجمّعات الوكيل إلى هذه المنافذ مع `authorization: $OTLP_AUTH_TOKEN` ضمن رؤوس الطلب.
+        يوفّر المجمِّع الآن OTLP gRPC على `4317` وOTLP HTTP على `4318`. يجب أن ترسل التطبيقات وSDKs ومجمّعات الوكيل إلى هذه المنافذ مع `authorization: $OTLP_AUTH_TOKEN` ضمن رؤوس الطلب.
 
         <Info>
           **عمليات النشر في بيئة الإنتاج**
 
-          في بيئات الإنتاج، نوصي بتمكين TLS على نقطة نهاية OTLP. راجع [تأمين المجمِّع](/ar/clickstack/ingesting-data/collector#securing-the-collector).
+          في بيئات الإنتاج، نوصي بتمكين TLS على نقطة نهاية OTLP. راجع [تأمين المجمِّع](/ar/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
         </Info>
       </Step>
 
@@ -180,7 +189,7 @@ clickhousectl skills --detected-only
           tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
           ```
 
-          لإضفاء مزيد من التنوع، أضِف خدمتين أخريين ومدرجًا تكراريًا أُسِّيًا:
+          لإضفاء مزيد من التنوع، أضِف خدمتين أخريين ومدرجًا تكراريًا أُسِّيًا:
 
           ```shell
           tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
@@ -191,7 +200,7 @@ clickhousectl skills --detected-only
           ```
         </Accordion>
 
-        للاطلاع على القائمة الكاملة من الخيارات (flags) والمزيد من الأمثلة، راجع [البيانات الاصطناعية مع telemetrygen](/ar/clickstack/example-datasets/telemetrygen).
+        للاطلاع على القائمة الكاملة من الخيارات (flags) والمزيد من الأمثلة، راجع [البيانات الاصطناعية مع telemetrygen](/ar/clickstack/observability/example-datasets/telemetrygen#self-managed).
       </Step>
 
       <Step title="تأكّد في واجهة ClickStack" id="confirm-in-ui">
@@ -211,7 +220,7 @@ clickhousectl skills --detected-only
       </Step>
 
       <Step title="عدّل إعدادات collector لديك" id="adapt-collector">
-        وسّع إعدادات collector الحالية لكتابة البيانات إلى Managed ClickStack عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+        وسّع إعدادات collector الحالية لكتابة البيانات إلى خدمة ClickHouse Observability الخاصة بك عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
         <Info>
           **ClickHouse exporter مطلوب**
@@ -305,13 +314,13 @@ clickhousectl skills --detected-only
 
         بعض الأمور التي تجدر الإشارة إليها:
 
-        * يستمع المستقبِل `otlp/hyperdx` عبر كلٍّ من gRPC (`4317`) وHTTP (`4318`)؛ لذا يجب أن تستهدف التطبيقات والوكلاء هذين المنفذين على مضيف الـ collector لديك.
-        * يكتب المُصدِّر `clickhouse` السجلات والتتبعات والمقاييس في قاعدة البيانات `otel`، بما يطابق البنية التي تتوقعها واجهة ClickStack UI. ويتولى المُصدِّر `clickhouse/rrweb` معالجة أحداث Session Replay التي يوجّهها الموصل `routing/logs` إلى `otel.hyperdx_sessions`.
+        * يستمع المستقبِل `otlp/hyperdx` عبر كلٍّ من gRPC (`4317`) وHTTP (`4318`)؛ لذا يجب أن تستهدف التطبيقات والوكلاء هذين المنفذين على مضيف الـ collector لديك.
+        * يكتب المُصدِّر `clickhouse` السجلات والتتبعات والمقاييس في قاعدة البيانات `otel`، بما يطابق البنية التي تتوقعها واجهة ClickStack UI. ويتولى المُصدِّر `clickhouse/rrweb` معالجة أحداث Session Replay التي يوجّهها الموصل `routing/logs` إلى `otel.hyperdx_sessions`.
         * تُترك المصادقة على مستقبِلات OTLP لإعدادك الحالي. اضبطها عبر [الامتدادات](https://opentelemetry.io/docs/collector/configuration/#extensions) الخاصة بالـ collector (على سبيل المثال `bearertokenauth`) أو عبر reverse proxy أمامي يستخدم TLS إذا كنت بحاجة إلى فرض رمز مميز للإدخال.
 
         أعِد تحميل الـ collector باستخدام الإعداد الجديد. بعد ذلك، يجب أن ترسل التطبيقات وSDKs وcollectorات الوكلاء إلى نقاط نهاية OTLP التي يوفّرها الـ collector لديك، مع أي ترويسة مصادقة يتطلبها إعدادك.
 
-        لمزيد من التفاصيل حول تهيئة OpenTelemetry Collectors للعمل مع Managed ClickStack، راجع [الإدخال باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
+        لمزيد من التفاصيل حول تهيئة OpenTelemetry Collectors للعمل مع ClickHouse Observability، راجع [الإدخال باستخدام OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry#self-managed).
       </Step>
 
       <Step title="التحقق من نقطة النهاية" id="verify-the-endpoint-existing">
@@ -366,7 +375,7 @@ clickhousectl skills --detected-only
         تؤكد السجلات وحدها أن نقطة النهاية تعمل بشكل صحيح. للحصول على مجموعة بيانات تجريبية أكثر ثراءً، وخريطة خدمات متعددة، ومخططات تغطي أنواع المقاييس المختلفة، وسّع الأوامر أدناه وشغّلها أيضاً. تُعيد هذه الأوامر استخدام المساعد `tg`، لذا شغّلها في نفس الجلسة الطرفية.
 
         <Accordion title="إنشاء بيانات قياس عن بُعد أكثر ثراءً (اختياري)">
-          أرسل تتبعات متعددة المقاطع من عدة خدمات سليمة، إلى جانب اعتمادية واحدة متعطلة. يمنح هذا خريطة الخدمة شكلاً واقعياً، بحيث تكون سليمة في معظمها مع خدمة واحدة تُصدر أخطاء، كما يملأ أيضًا عروض الأخطاء:
+          أرسل تتبعات متعددة الـ span من عدة خدمات سليمة، بالإضافة إلى اعتمادية واحدة متعثّرة. يمنح ذلك خريطة الخدمات شكلاً واقعيًا، فتبدو سليمة في معظمها مع خدمة واحدة تُظهر أخطاء، كما يملأ أيضًا واجهات عرض الأخطاء:
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -390,7 +399,7 @@ clickhousectl skills --detected-only
           tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
           ```
 
-          ولمزيد من التنوع، أضِف خدمتين إضافيتين ومدرجًا تكراريًا أُسّيًا:
+          لإضفاء مزيد من التنوع، أضِف خدمتين أخريين ومدرجًا تكراريًا أُسِّيًا:
 
           ```shell
           tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
@@ -401,10 +410,10 @@ clickhousectl skills --detected-only
           ```
         </Accordion>
 
-        للاطلاع على القائمة الكاملة من الخيارات (flags) والمزيد من الأمثلة، راجع [البيانات الاصطناعية مع telemetrygen](/ar/clickstack/example-datasets/telemetrygen).
+        للاطلاع على القائمة الكاملة من الخيارات (flags) والمزيد من الأمثلة، راجع [البيانات الاصطناعية مع telemetrygen](/ar/clickstack/observability/example-datasets/telemetrygen#self-managed).
       </Step>
 
-      <Step title="تحقّق في ClickStack UI" id="confirm-in-ui-existing">
+      <Step title="تأكّد في واجهة ClickStack" id="confirm-in-ui-existing">
         <ConfirmInUI />
       </Step>
     </Steps>
@@ -413,20 +422,20 @@ clickhousectl skills --detected-only
 
 ## الخطوات التالية: أرسل بياناتك الخاصة {#next-steps}
 
-لا تُثبت الدفعة الاصطناعية أعلاه سوى أن مسار المعالجة يعمل. لبدء إرسال بيانات القياس عن بُعد الحقيقية، زوّد خدماتك الخاصة بأدوات القياس باستخدام [ClickStack SDKs](/ar/clickstack/ingesting-data/sdks/index)، إذ توفّر أدوات قياس لـ Node.js وبايثون وGo وJava ولغات أخرى تُصدِّر OTLP إلى نقطة نهاية الـ مجمّع التي تحققت منها للتو. وللاطلاع على مثال عملي متكامل، اتبع [إضافة أدوات القياس إلى تطبيق](/ar/clickstack/managed-onboarding/instrument-application).
+لا تُثبت الدفعة الاصطناعية أعلاه سوى أن مسار المعالجة يعمل. لبدء إرسال بيانات القياس عن بُعد الحقيقية، زوّد خدماتك الخاصة بأدوات القياس باستخدام [ClickStack SDKs](/ar/clickstack/observability/ingesting-data/sdks)، إذ توفّر أدوات قياس لـ Node.js وبايثون وGo وJava ولغات أخرى تُصدِّر OTLP إلى نقطة نهاية جامع البيانات التي تحققت منها للتو. وللاطلاع على مثال عملي متكامل، اتبع [إضافة أدوات القياس إلى تطبيق](/ar/clickstack/self-configured/managed-onboarding/instrument-application).
 
 لجمع البيانات من البنية التحتية بدلاً من شفرة التطبيق:
 
-* [مراقبة Kubernetes](/ar/clickstack/managed-onboarding/monitoring-kubernetes): اجمع السجلات ومقاييس البنية التحتية وأحداث Kubernetes من عنقود.
-* [مراقبة سجلات AWS CloudWatch](/ar/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر مستقبِل CloudWatch من OpenTelemetry.
+* [مراقبة Kubernetes](/ar/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): اجمع السجلات ومقاييس البنية التحتية وأحداث Kubernetes من عنقود.
+* [مراقبة سجلات AWS CloudWatch](/ar/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر مستقبِل CloudWatch من OpenTelemetry.
 
-## قراءة إضافية {#further-reading}
+## قراءات إضافية {#further-reading}
 
-يغطي هذا الدليل مثيلاً واحدًا من المجمّع في أبسط صورة. ويوضّح [مرجع OpenTelemetry Collector](/ar/clickstack/ingesting-data/collector) ما ينبغي فعله بعد ذلك:
+يتناول هذا الدليل مثيلًا واحدًا من جامع البيانات في أبسط صوره. أما الخطوات التالية فيشرحها [مرجع مُجمِّع OpenTelemetry](/ar/clickstack/self-configured/ingesting-data/collector)، ومنها:
 
-* [نشر المجمّع في Kubernetes](/ar/clickstack/ingesting-data/collector#configuring-the-collector) باستخدام مخطط Helm الرسمي لـOpenTelemetry وصورة ClickStack collector.
-* [تأمين المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام TLS على نقطة نهاية OTLP ومستخدمي الاستيعاب بأقل قدر من الامتيازات.
-* [معالجة الأحداث وتصفيتها وإثراؤها](/ar/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) عند البوابة.
-* [توسيع إعدادات المجمّع](/ar/clickstack/ingesting-data/collector#extending-collector-config) باستخدام مستقبِلات ومعالجات ومسارات معالجة مخصّصة.
-* [تقدير الموارد](/ar/clickstack/ingesting-data/collector#estimating-resources) لعمليات نشر البوابة والوكيل وفق معدل النقل المتوقع لديك.
-* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production)
+* [نشر جامع البيانات في Kubernetes](/ar/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) باستخدام مخطط Helm الأصلي لـ OpenTelemetry وصورة مُجمِّع ClickStack.
+* [تأمين جامع البيانات](/ar/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) عبر تفعيل TLS على نقطة نهاية OTLP واستخدام مستخدمين للإدخال بأدنى حد من الامتيازات.
+* [معالجة الأحداث وتصفيتها وإثراؤها](/ar/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured) عند البوابة.
+* [تعديل تهيئة جامع البيانات](/ar/clickstack/self-configured/ingesting-data/collector#modifying-otel-collector-configuration-managed-self-configured) بإضافة مستقبِلات ومعالجات ومسارات معالجة بيانات مخصصة.
+* [تقدير الموارد](/ar/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) اللازمة لعمليات نشر البوابة والوكيل بما يتناسب مع معدل النقل المتوقع.
+* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/self-configured/managing/production)

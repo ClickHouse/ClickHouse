@@ -78,6 +78,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>true</skip_access_check>
+                <persistent_removal_log>true</persistent_removal_log>
             </disk_s3_common>
             <disk_azure_common>
                 <type>object_storage</type>
@@ -89,6 +90,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                 <!-- Placeholder changed by test_azure_disk_client_rebuilt_only_on_change -->
                 <max_tries>10</max_tries>
+                <persistent_removal_log>true</persistent_removal_log>
             </disk_azure_common>
             <disk_s3_with_cache>
                 <type>cache</type>

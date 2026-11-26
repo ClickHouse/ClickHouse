@@ -32,9 +32,9 @@ Todas las funciones comparten una infraestructura común que proporciona:
 
 ## Configuración {#configuration}
 
-Las funciones de IA hacen referencia a una **colección nombrada** que almacena las credenciales del proveedor y la configuración. Se pueden crear y usar distintas colecciones nombradas para diferentes funciones o llamadas a funciones. Por ejemplo, quizá quiera definir una colección nombrada distinta para usar con las funciones de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) en lugar de las funciones de embedding (`aiEmbed`, `aiSimilarity`), ya que requieren endpoints diferentes y normalmente usan modelos distintos.
+Las funciones de IA requieren el permiso `AI FUNCTIONS` (consulte [Control de acceso](#access-control)) y hacen referencia a una **colección con nombre** que almacena las credenciales del proveedor y la configuración. Se pueden crear y usar distintas colecciones con nombre para diferentes funciones o llamadas a funciones. Por ejemplo, quizá quiera definir una colección con nombre distinta para usar con las funciones de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) en lugar de las funciones de embedding (`aiEmbed`, `aiSimilarity`), ya que requieren endpoints diferentes y normalmente usan modelos distintos.
 
-Ejemplo de sentencia para crear una colección nombrada con credenciales del proveedor: una con un endpoint de chat y otra con un endpoint de embeddings:
+Ejemplo de sentencia para crear una colección con nombre con credenciales del proveedor: una con un endpoint de chat y otra con un endpoint de embeddings:
 
 ```sql
 CREATE NAMED COLLECTION ai_text_credentials AS
@@ -50,6 +50,41 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Control de acceso {#access-control}
+
+Para llamar a una función de IA se necesitan dos privilegios:
+
+* el privilegio de la función: ya sea el privilegio específico de la función (p. ej., `aiGenerate`) o el grupo `AI FUNCTIONS` (consulte [`GRANT`](/es/reference/statements/grant#ai-functions));
+* el privilegio `NAMED COLLECTION` sobre las credenciales seleccionadas.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+El parámetro de configuración [`allow_ai_functions`](/es/reference/settings/session-settings/allow#allow_ai_functions) (habilitado de forma predeterminada) deshabilita las funciones de IA cuando se establece en `0`, por ejemplo, en un perfil de configuración o mediante una restricción. Con `CONST`, los usuarios del perfil no pueden volver a habilitarlas:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
+Las funciones de IA solo se ejecutan en consultas lanzadas por un usuario. Se rechazan en las mutaciones (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) y en las claves, el TTL, los índices de omisión y las proyecciones de una tabla, que se ejecutan en segundo plano; además, los vaciados de `Buffer` lanzan una excepción cuando evalúan una función de IA. Las columnas `DEFAULT` y `MATERIALIZED` se evalúan durante la inserción; cuando se añade una columna de este tipo con `ALTER TABLE`, las partes existentes la calculan en segundo plano, donde las funciones de IA no se ejecutan.
+
+Para rellenar una columna en filas existentes, utilice un [`UPDATE`](/es/reference/statements/update) ligero, que se ejecuta como parte de la consulta y escribe solo la columna actualizada:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+Para una tabla que no cumpla los [requisitos de la actualización ligera](/es/reference/statements/update#lightweight-update-requirements), utilice `INSERT ... SELECT`, por ejemplo, partición por partición:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Parámetros de la colección nombrada {#named-collection-parameters}
@@ -196,32 +231,57 @@ El valor predeterminado es `8`. Un valor superior a `1` relaja dos garantías:
 
 ## Observabilidad {#observability}
 
-La actividad de la función de IA se supervisa mediante los [ProfileEvents](/es/reference/system-tables/query_log) de ClickHouse:
+La actividad de las funciones de IA se registra mediante los [ProfileEvents](/es/reference/system-tables/query_log) de ClickHouse:
 
-| ProfileEvent      | Description                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------- |
-| `AIAPICalls`      | Número de solicitudes HTTP realizadas al proveedor de IA.                                           |
-| `AIInputTokens`   | Total de tokens de entrada consumidos.                                                              |
-| `AIOutputTokens`  | Total de tokens de salida consumidos.                                                               |
-| `AIRowsProcessed` | Número de filas que recibieron un resultado.                                                        |
-| `AIRowsSkipped`   | Número de filas omitidas (se superó la cuota o hubo un error con `ai_function_throw_on_error = 0`). |
+| ProfileEvent                 | Descripción                                                                                                                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AIAPICalls`                 | Número de solicitudes HTTP realizadas al proveedor de IA.                                                                                                                                                      |
+| `AIInputTokens`              | Total de tokens de entrada consumidos, incluidas las lecturas y escrituras en caché.                                                                                                                           |
+| `AIOutputTokens`             | Total de tokens de salida consumidos.                                                                                                                                                                          |
+| `AICacheReadTokens`          | Tokens de entrada leídos de la caché de prompts del proveedor.                                                                                                                                                 |
+| `AICacheWriteTokens`         | Tokens de entrada escritos en la caché de prompts del proveedor.                                                                                                                                               |
+| `AIRequestMicroseconds`      | Tiempo total empleado en las llamadas al proveedor de IA (serialización de la solicitud, ida y vuelta HTTP, análisis de la respuesta), incluidos los intentos fallidos y excluido el backoff entre reintentos. |
+| `AIRetryBackoffMicroseconds` | Tiempo total de espera antes de reintentar las llamadas fallidas al proveedor de IA.                                                                                                                           |
+| `AIRowsProcessed`            | Número de filas que recibieron un resultado.                                                                                                                                                                   |
+| `AIRowsSkipped`              | Número de filas omitidas (por cuota excedida o por error con `ai_function_throw_on_error = 0`).                                                                                                                |
 
-Consulta estos eventos:
+Los tiempos se suman entre ejecuciones y threads, por lo que pueden superar el tiempo de reloj de la consulta.
+Divida `AIRequestMicroseconds` entre `AIAPICalls` para obtener la latencia media por solicitud, incluidos los intentos fallidos.
+Estos contadores son por consulta; no proporcionan información de latencia por solicitud.
+Si una consulta llama a varias funciones de IA, sus recuentos se suman.
+
+Los contadores de caché son subconjuntos de `AIInputTokens`, no tokens adicionales. Reflejan las lecturas y escrituras en caché que informa el proveedor, no el almacenamiento en caché interno de ClickHouse. Un proveedor que no informa del uso de caché aporta
+cero tokens de caché.
+
+Consulte estos eventos:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+`log_queries` y `log_profile_events` están habilitados de forma predeterminada para registrar estos eventos en `system.query_log`.
+Los totales a nivel de servidor también están disponibles en `system.events`.
+
 {/*
-  El contenido interno de las etiquetas siguientes se sustituye durante la compilación del framework de documentación por
-  documentación generada a partir de system.functions. Por favor, no modifique ni elimine las etiquetas.
+  El contenido de las siguientes etiquetas se reemplaza durante el proceso de build del sistema de documentación por
+  documentación generada a partir de system.functions. No modifique ni elimine las etiquetas.
   Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}
 

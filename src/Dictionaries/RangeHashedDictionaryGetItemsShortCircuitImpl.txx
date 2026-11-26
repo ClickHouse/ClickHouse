@@ -39,7 +39,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
         {
             default_mask[key_index] = 0;
 
-            ValueType value = attribute_container[value_index];
+            AttributeLookupValue<ValueType> value = attribute_container[value_index];
 
             if constexpr (is_nullable)
             {

@@ -3,8 +3,6 @@
 -- (the refresh runs on one replica but the table is replaced on others), so we restrict
 -- this case to Atomic databases.
 
-SET allow_experimental_refreshable_materialized_view = 1;
-
 DROP TABLE IF EXISTS src SYNC;
 DROP TABLE IF EXISTS tgt SYNC;
 DROP TABLE IF EXISTS rmv SYNC;
