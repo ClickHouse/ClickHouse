@@ -7,17 +7,15 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-<div id="improved-handling-of-secrets-in-webhooks">
-  ## Tratamento aprimorado de segredos em webhooks
-</div>
+## Tratamento aprimorado de segredos em webhooks {#improved-handling-of-secrets-in-webhooks}
 
-*Demonstração de [@dhable](https://github.com/dhable)*
+*Demonstração por [@dhable](https://github.com/dhable)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-URLs de webhook e cabeçalhos geralmente carregam credentials à vista de todos. Uma URL de webhook do Slack tem o token secreto no path, e um webhook HTTP normalmente precisa de um cabeçalho Authorization para autenticação. Até esta versão, a API interna do HyperDX para listar e editar webhooks retornava todo esse conteúdo em todas as solicitações, o que significava que qualquer membro autenticado da equipe podia ler os segredos simplesmente acessando a API.
+URLs de webhook e cabeçalhos geralmente carregam credentials à vista de todos. Uma URL de webhook do Slack tem o token secreto no path, e um webhook HTTP normalmente precisa de um cabeçalho Authorization para autenticação. Até esta versão, a API interna da Interface do ClickStack para listar e editar webhooks retornava todo esse conteúdo em todas as solicitações, o que significava que qualquer membro autenticado da equipe podia ler os segredos simplesmente acessando a API.
 
 Essa mudança aplica o mesmo padrão de mascaramento que a API pública já usava. As URLs de webhook passam a ser retornadas com o path substituído por `****`, para que o token do Slack (ou qualquer outra chave embutida no path) nunca saia do servidor. Os cabeçalhos também são mascarados por padrão, já que não há uma forma confiável de identificar quais deles carregam segredos; por isso, todos os valores são substituídos por `****` e apenas os nomes dos cabeçalhos ficam visíveis.
 
@@ -25,9 +23,7 @@ O formulário de edição trata o valor mascarado como &quot;sem alteração&quo
 
 **PRs relacionadas:** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] Mascarar campos sensíveis nas respostas da API interna de webhooks
 
-<div id="extra-metadata-in-alerts">
-  ## Metadados extras em alertas
-</div>
+## Metadados extras em alertas {#extra-metadata-in-alerts}
 
 *Demonstração por [@dhable](https://github.com/dhable)*
 
@@ -43,20 +39,18 @@ Aproveitando, este PR também melhora a UX de alertas disparados em saved search
 
 **PRs relacionados:** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] Adiciona campo de nota opcional aos alertas
 
-<div id="possible-themes">
-  ## Temas possíveis
-</div>
+## Temas possíveis {#possible-themes}
 
-*Demonstração de [@elizabetdev](https://github.com/elizabetdev)*
+*Demonstração por [@elizabetdev](https://github.com/elizabetdev)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Este foi um experimento de hackathon que apresentou três temas inspirados em IDE para a UI do ClickStack: Nord (azuis árticos), Catppuccin (pastel) e One Dark (estilo Atom), cada um com variantes clara e escura. Testamos tokens de cor gerados a partir desses temas de origem, o que chegou bem perto do resultado desejado, mas ainda deixou algumas arestas nas cores da barra lateral e no contraste das linhas, que ainda precisariam de ajustes.
+Este foi um experimento de hackathon que apresentou três temas inspirados em IDE para a Interface do ClickStack: Nord (azuis árticos), Catppuccin (pastel) e One Dark (estilo Atom), cada um com variantes clara e escura. Testamos tokens de cor gerados a partir desses temas de origem, o que chegou bem perto do resultado desejado, mas ainda deixou algumas arestas nas cores da barra lateral e no contraste das linhas, que ainda precisariam de ajustes.
 
 No fim, a PR foi fechada em vez de ser mesclada. A equipe está migrando para o ClickUI, que atualmente oferece suporte a um único tema, e manter vários conjuntos paralelos de tokens geraria trabalho contínuo, especialmente quando se começa a verificar corretamente o contraste em cada combinação. A decisão foi adiar isso até que o próprio ClickUI ofereça suporte a múltiplos temas.
 
-Achamos que valia a pena preservar um aspecto da lógica de design do experimento para quando isso voltar. A primeira iteração recoloriu o logo do HyperDX em cada tema, o que enfraqueceu a identidade da marca. A abordagem mais limpa: um tema claro mostra o logo escuro, um tema escuro mostra o logo claro, e o wordmark verde do HyperDX permanece intocado.
+Achamos que valia a pena preservar um aspecto da lógica de design do experimento para quando isso voltar. A primeira iteração recoloriu o logo da Interface do ClickStack em cada tema, o que enfraqueceu a identidade da marca. A abordagem mais limpa: um tema claro mostra o logo escuro, um tema escuro mostra o logo claro, e o wordmark verde da Interface do ClickStack permanece intocado.
 
 **PRs relacionadas:** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)

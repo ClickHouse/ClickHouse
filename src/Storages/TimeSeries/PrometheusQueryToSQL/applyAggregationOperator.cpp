@@ -34,7 +34,7 @@ SQLQueryPiece applyAggregationOperator(
         return applyLimitAggregationOperator(operator_node, std::move(arguments), context);
 
     throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                    "Aggregation operator '{}' is not implemented", operator_name);
+                    "{} is not implemented", operator_node->getTypeAndName());
 }
 
 }

@@ -57,9 +57,13 @@ Cuando está deshabilitado, las ROW POLICY se aplican antes de FINAL, lo que pue
 filtra filas que deberían usarse para la deduplicación en ReplacingMergeTree o motores similares.
 
 Si la expresión de la ROW POLICY es determinista y depende solo de columnas de ORDER BY que no son de coma flotante, se seguirá
-aplicando antes de FINAL como optimización, ya que ese filtrado no puede afectar al resultado de la deduplicación. Las columnas de coma flotante
+aplicando antes de FINAL como optimización, ya que ese filtrado no puede afectar al resultado de la deduplicación. Un valor calculado
+una sola vez para toda la consulta, como `currentUser()`, `now()` o el conjunto de `IN (subquery)`, no impide esta
+optimización; el conjunto de una tabla `Set`, que puede cambiar mientras se ejecuta la consulta, sí la impide. Las columnas de coma flotante
 o las columnas que contienen valores de coma flotante (como `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 se excluyen porque `-0.0` y `0.0` se deduplican como una sola clave, mientras que una condición de la política sí puede distinguirlos.
+`GraphiteMergeTree` consolida filas con tiempos distintos en una sola fila, por lo que en su caso solo cuenta la columna de ruta, y solo
+cuando es la primera columna de `ORDER BY`.
 
 Valores posibles:
 

@@ -482,7 +482,7 @@ Setting fields:
 | `sslrootcert_pem` | Contents of the CA certificate that the PostgreSQL server certificate is verified against. Optional. |
 | `sslcert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
 | `sslkey_pem` | Contents of the private key belonging to `sslcert_pem`. Optional. |
-| `sslrootcert`, `sslcert`, `sslkey` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, or through a named collection defined there, see below. Optional. |
+| `sslrootcert`, `sslcert`, `sslkey` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, or through a named collection defined there, see below. Optional. Unless both a client certificate and a client key are configured, ClickHouse sends `sslcertmode=disable`, so `libpq` does not use the service account's ambient default certificate or key (`~/.postgresql/postgresql.{crt,key}`). |
 
 <Note>
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
