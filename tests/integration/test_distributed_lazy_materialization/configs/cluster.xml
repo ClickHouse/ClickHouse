@@ -1,0 +1,41 @@
+<clickhouse>
+    <remote_servers>
+        <distributed_lazy_materialization>
+            <shard>
+                <replica>
+                    <host>shard1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>shard2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </distributed_lazy_materialization>
+        <!-- The first shard has two replicas with the same keys but different payloads, so the result
+             shows which replica's candidates were committed. -->
+        <competing_replicas>
+            <shard>
+                <replica>
+                    <host>shard2</host>
+                    <port>9000</port>
+                    <default_database>competing_a</default_database>
+                </replica>
+                <replica>
+                    <host>shard1</host>
+                    <port>9000</port>
+                    <default_database>competing_a</default_database>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>shard1</host>
+                    <port>9000</port>
+                    <default_database>competing_b</default_database>
+                </replica>
+            </shard>
+        </competing_replicas>
+    </remote_servers>
+</clickhouse>

@@ -190,6 +190,8 @@ public:
 
     void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
+    void sendQueryCoordinationResponse(const QueryCoordinationResponse & response) override;
+
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
     bool hasReadPendingData() const override;

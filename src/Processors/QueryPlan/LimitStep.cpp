@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -7,16 +9,23 @@
 #include <Processors/LimitTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Port.h>
+#include <Processors/Transforms/DistributedTopKCandidateGateTransform.h>
 #include <Core/Defines.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
-#include <unordered_set>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
 
 static ITransformingStep::Traits getTraits()
 {
@@ -49,6 +58,18 @@ LimitStep::LimitStep(
 IQueryPlanStep::UnneededInputPositions LimitStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     auto unneeded = unneeded_output_positions;
+
+    /// The distributed Top-K candidate gate sends the sort key columns to the initiator.
+    if (distributed_top_k_candidate_sort_description)
+    {
+        const auto & header = *input_headers.front();
+        UnorderedSetWithMemoryTracking<size_t> sort_key_positions;
+        for (const auto & column : *distributed_top_k_candidate_sort_description)
+            sort_key_positions.insert(header.getPositionByName(column.column_name));
+
+        std::erase_if(unneeded, [&](size_t position) { return sort_key_positions.contains(position); });
+    }
+
     if (with_ties)
     {
         /// `LimitTransform` compares the first column of each name in `description`, so only that copy stays.
@@ -78,7 +99,7 @@ LimitStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*unneed
     return result;
 }
 
-void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     /// WITH TIES compares adjacent rows under `description`, so it needs a single ordered
     /// stream. The input may arrive as several already-sorted streams (e.g. an in-order read
@@ -108,6 +129,18 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
     if (is_shard_limit)
         transform->markAsShardLimit();
     pipeline.addTransform(std::move(transform));
+
+    if (distributed_top_k_candidate_sort_description)
+    {
+        if (pipeline.getNumStreams() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed TopK candidate gate requires a single input stream");
+
+        pipeline.addTransform(std::make_shared<DistributedTopKCandidateGateTransform>(
+            pipeline.getSharedHeader(),
+            limit,
+            *distributed_top_k_candidate_sort_description,
+            settings.query_coordination_callback));
+    }
 }
 
 void LimitStep::describeActions(FormatSettings & settings) const
@@ -115,6 +148,8 @@ void LimitStep::describeActions(FormatSettings & settings) const
     const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Limit " << limit << '\n';
     settings.out << prefix << "Offset " << offset << '\n';
+    if (distributed_top_k_candidate_sort_description)
+        settings.out << prefix << "Distributed TopK candidate limit\n";
 
     if (with_ties || always_read_till_end)
     {
@@ -141,15 +176,39 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Offset", offset);
     map.add("With Ties", with_ties);
     map.add("Reads All Data", always_read_till_end);
+    map.add("Distributed TopK Candidate Limit", distributed_top_k_candidate_sort_description.has_value());
 }
 
 void LimitStep::serialize(Serialization & ctx) const
 {
+    if (distributed_top_k_candidate_sort_description
+        && (!is_shard_limit || limit == 0 || offset != 0 || always_read_till_end || with_ties
+            || distributed_top_k_candidate_sort_description->empty()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid distributed Top-K candidate limit");
+
+    /// Version 1 of the step carries the shard-limit and distributed Top-K candidate markers. The
+    /// candidate marker cannot be dropped for an older peer: it would return all its local rows as
+    /// final ones instead of taking part in the candidate exchange.
+    if (distributed_top_k_candidate_sort_description && ctx.step_version < 1)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot send a distributed Top-K candidate limit to a peer with query plan serialization version {}, "
+            "it requires version {}. Disable `query_plan_optimize_distributed_lazy_materialization` until all servers are upgraded",
+            ctx.version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SHARD_LIMIT);
+
     UInt8 flags = 0;
     if (always_read_till_end)
         flags |= 1;
     if (with_ties)
         flags |= 2;
+    /// The shard-limit marker only says where the step runs, not what it computes, so it stays out of
+    /// a cache key. Automatic parallel replicas matches the steps of the single-node plan with the
+    /// steps of the plan for replicas by this key, and only the latter marks its limit as a shard limit.
+    if (ctx.step_version >= 1 && is_shard_limit && !ctx.for_cache_key)
+        flags |= 4;
+    if (ctx.step_version >= 1 && distributed_top_k_candidate_sort_description)
+        flags |= 8;
 
     writeIntBinary(flags, ctx.out);
 
@@ -158,6 +217,9 @@ void LimitStep::serialize(Serialization & ctx) const
 
     if (with_ties)
         serializeSortDescription(description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    if (ctx.step_version >= 1 && distributed_top_k_candidate_sort_description)
+        serializeSortDescription(
+            *distributed_top_k_candidate_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
@@ -165,8 +227,15 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
+    const UInt8 known_flags = ctx.step_version >= 1 ? 0x0F : 0x03;
+    if (flags & ~known_flags)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown LimitStep flags: {}", static_cast<UInt64>(flags));
+
     bool always_read_till_end = bool(flags & 1);
     bool with_ties = bool(flags & 2);
+    bool is_shard_limit = ctx.step_version >= 1 && bool(flags & 4);
+    bool is_distributed_top_k_candidate_limit
+        = ctx.step_version >= 1 && bool(flags & 8);
 
     UInt64 limit = 0;
     UInt64 offset = 0;
@@ -178,7 +247,22 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
     if (with_ties)
         deserializeSortDescription(description, ctx.in, ctx.version, ctx.max_type_complexity);
 
-    return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
+    SortDescription distributed_top_k_sort_description;
+    if (is_distributed_top_k_candidate_limit)
+    {
+        deserializeSortDescription(distributed_top_k_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
+        if (!is_shard_limit || limit == 0 || offset != 0 || always_read_till_end || with_ties
+            || distributed_top_k_sort_description.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid distributed Top-K candidate limit");
+    }
+
+    auto step = std::make_unique<LimitStep>(
+        ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
+    if (is_shard_limit)
+        step->markAsShardLimit();
+    if (is_distributed_top_k_candidate_limit)
+        step->setDistributedTopKCandidateLimit(std::move(distributed_top_k_sort_description));
+    return step;
 }
 
 QueryPlanStepPtr LimitStep::clone() const
@@ -189,7 +273,8 @@ QueryPlanStepPtr LimitStep::clone() const
 void registerLimitStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Limit", LimitStep::deserialize);
+    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SHARD_LIMIT}};
+    registry.registerStep("Limit", LimitStep::deserialize, versions);
 }
 
 }

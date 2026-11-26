@@ -1,0 +1,47 @@
+-- Each shard sorts and keeps limit + offset rows
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      ReadFromRemote (Read from remote replica)
+        Limit
+          Sorting
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+              ReadFromTable
+        Limit
+          Sorting
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+              ReadFromTable
+-- Shard limits are limit + offset, sorted on each shard with that limit
+5
+-- Same result as the classic path
+998
+998
+997
+998
+998
+997
+-- Without distributed_push_down_limit the classic path is used: shards sort, the initiator merges
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+      Union
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            ReadFromMergeTree (default.sort_limit_local)
+        ReadFromRemote (Read from remote replica)
+          Sorting (Sorting for ORDER BY)
+            Expression (Before ORDER BY)
+              Expression (Projection)
+                Expression (Change column names to column identifiers)
+                  ReadFromTable
+-- DISTINCT keeps the classic path
+1
+1
+0
+1
+2
+-- LIMIT BY keeps the classic path
+3
+0
+1
+2
