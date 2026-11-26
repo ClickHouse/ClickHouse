@@ -5430,7 +5430,7 @@ With this setting, repeated staged keys do not thaw a table, and a remembered ve
     DECLARE(Bool, adaptive_aggregator_combine_arg_min_max, true, R"(
 Lets the adaptive aggregator (see `enable_adaptive_aggregator`) combine rows of the same key that arrive close together into one, when every aggregate function is `argMax`, `argMin`, `max` or `min` by the same integer, `Decimal32`, `Decimal64`, date, time, `Enum` or `IPv4` column, optionally with `any` and `count`. Deduplication queries such as `SELECT id, argMax(value, updated_at) FROM t GROUP BY id` then use less memory and often run faster, most when the table is sorted by the key or by time. The results are the same, except which of several rows with an equal ordering value `argMax` or `argMin` returns, which parallel aggregation does not define anyway.
 )", 0, \
-        {"26.11", false, true, "New setting to combine rows of the same key in the adaptive aggregator when every aggregate function is argMax, argMin, max or min by the same column."}) \
+        {"26.12", false, true, "New setting to combine rows of the same key in the adaptive aggregator when every aggregate function is argMax, argMin, max or min by the same column."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \
