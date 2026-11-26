@@ -125,11 +125,11 @@ struct TopKAggregationHeapBase
 
     /// Whether the row cannot reach the result. The boundary only tightens, so a row marked by `startBatch` stays
     /// skippable; the rows it kept are compared again only once the boundary has moved since then.
-    [[nodiscard]] ALWAYS_INLINE bool shouldSkip(const UInt8 * bitmap, size_t row) const
+    [[nodiscard]] ALWAYS_INLINE bool shouldSkip(const UInt8 * bitmap, size_t row)
     {
         if (bitmap[row])
             return true;
-        return skip_bitmap_stale && hasBoundary() && aboveBoundary(row);
+        return skip_bitmap_stale && hasBoundary() && recheckRow(row);
     }
 
 protected:
@@ -178,7 +178,9 @@ protected:
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions of the current batch
-    bool skip_bitmap_stale = false;         /// the boundary moved since `startBatch`, or there was none
+    bool skip_bitmap_stale = false;         /// the boundary moved since the bitmap was filled, or there was none
+    bool skip_bitmap_filled = false;        /// the bitmap of the current batch was compared with a boundary
+    size_t batch_end = 0;                   /// the end of the current batch
     ColumnRawPtrs batch_columns;            /// the ranked key columns of the current batch
     PaddedPODArray<UInt64> skip_compare_rows;   /// `compareColumn` scratch: the rows still tied with the boundary
     PaddedPODArray<Int8> skip_compare_results;  /// `compareColumn` scratch: each row compared with the boundary
@@ -368,8 +370,14 @@ private:
     /// than it.
     void publishBoundary();
 
-    /// Compares the row with the boundary key column by column. Only for the rows `startBatch` kept, after the
-    /// boundary moved, hence out of line.
+    /// `shouldSkip` for a row the bitmap kept, after the boundary moved; out of line. If the batch started without a
+    /// boundary, fills the bitmap of the rest of the batch once, in place, so the rows after it only read the bitmap.
+    [[nodiscard]] bool recheckRow(size_t row);
+
+    /// Marks the rows from `begin` to `end` that rank below the boundary.
+    void fillSkipBitmap(size_t begin, size_t end);
+
+    /// Compares the row with the boundary key.
     [[nodiscard]] bool aboveBoundary(size_t row) const;
 
     [[nodiscard]] int compareHeapRowsComposite(size_t a, size_t b) const;

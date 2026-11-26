@@ -151,20 +151,39 @@ const UInt8 * TopKAggregationHeapBase::startBatch(const ColumnRawPtrs & key_colu
 {
     chassert(!frozen);
     batch_columns.assign(key_columns.begin(), key_columns.begin() + directions.size());
-    const ColumnRawPtrs & source_columns = batch_columns;
+    batch_end = end;
+    /// Sized to the whole batch once, so that a later `fillSkipBitmap` keeps the pointer valid.
     skip_bitmap.resize(end);
-    UInt8 * bitmap = skip_bitmap.data();
 
-    skip_bitmap_stale = !hasBoundary();
-    if (skip_bitmap_stale)
+    skip_bitmap_filled = hasBoundary();
+    skip_bitmap_stale = !skip_bitmap_filled;
+    if (skip_bitmap_filled)
+        fillSkipBitmap(begin, end);
+    else
+        std::fill(skip_bitmap.data() + begin, skip_bitmap.data() + end, 0);
+    return skip_bitmap.data();
+}
+
+bool TopKAggregationHeapBase::recheckRow(size_t row)
+{
+    if (!skip_bitmap_filled)
     {
-        std::fill(bitmap + begin, bitmap + end, 0);
-        return bitmap;
+        fillSkipBitmap(row, batch_end);
+        skip_bitmap_filled = true;
+        skip_bitmap_stale = false;
+        return skip_bitmap[row];
     }
+    return aboveBoundary(row);
+}
+
+void TopKAggregationHeapBase::fillSkipBitmap(size_t begin, size_t end)
+{
+    chassert(hasBoundary());
+    UInt8 * bitmap = skip_bitmap.data();
 
     const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
     {
-        const T * src = assert_cast<const ColumnVector<T> &>(*source_columns[0]).getData().data();
+        const T * src = assert_cast<const ColumnVector<T> &>(*batch_columns[0]).getData().data();
         const T boundary = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData()[boundaryRow()];
         const int nulls_direction = nulls_directions[0];
         /// A row is skipped when `direction * compare(row, boundary) > 0`. The direction is 1 or -1, so this is
@@ -183,29 +202,40 @@ const UInt8 * TopKAggregationHeapBase::startBatch(const ColumnRawPtrs & key_colu
         }
     });
     if (typed)
-        return bitmap;
+        return;
 
-    /// One virtual `compareColumn` per key column for the whole batch. Each column compares only the rows tied with
+    /// One virtual `compareColumn` per key column for the whole range. Each column compares only the rows tied with
     /// the boundary on the previous ones; the rows tied on all of them are left at 0, so they are kept.
     skip_compare_rows.resize(end - begin);
     iota(skip_compare_rows.data(), skip_compare_rows.size(), UInt64(begin));
-    skip_compare_results.resize(source_columns[0]->size());
+    skip_compare_results.resize(batch_columns[0]->size());
     const IColumn & boundary = boundaryColumn();
-    for (size_t i = 0; i < source_columns.size() && !skip_compare_rows.empty(); ++i)
+    for (size_t i = 0; i < batch_columns.size() && !skip_compare_rows.empty(); ++i)
     {
         const IColumn & boundary_column = is_composite ? assert_cast<const ColumnTuple &>(boundary).getColumn(i) : boundary;
-        source_columns[i]->compareColumn(
+        batch_columns[i]->compareColumn(
             boundary_column, boundaryRow(), &skip_compare_rows, skip_compare_results, directions[i], nulls_directions[i]);
     }
     for (size_t i = begin; i < end; ++i)
         bitmap[i] = skip_compare_results[i] > 0;
-    return bitmap;
 }
 
 bool TopKAggregationHeapBase::aboveBoundary(size_t row) const
 {
     const IColumn & boundary = boundaryColumn();
     const size_t boundary_row_index = boundaryRow();
+
+    /// A numeric key is compared directly, without the virtual `compareAt`.
+    bool above = false;
+    const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+    {
+        const T value = assert_cast<const ColumnVector<T> &>(*batch_columns[0]).getData()[row];
+        const T boundary_value = assert_cast<const ColumnVector<T> &>(boundary).getData()[boundary_row_index];
+        above = directions[0] * CompareHelper<T>::compare(value, boundary_value, nulls_directions[0]) > 0;
+    });
+    if (typed)
+        return above;
+
     if (!is_composite)
         return directions[0] * compareColumns(*batch_columns[0], row, boundary, boundary_row_index, 0) > 0;
 
