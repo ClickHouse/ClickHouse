@@ -48,6 +48,9 @@ void throwIfUnknownTableFunction(const ASTPtr & ast, const ContextPtr & context)
     if (!function)
         return;
     const String & name = function->name;
+    /// `untuple` and `grouping` are implemented by the analyzer and registered in no factory.
+    if (name == "untuple" || name == "grouping")
+        return;
     if (TableFunctionFactory::instance().isTableFunctionName(name) || FunctionFactory::instance().has(name)
         || AggregateFunctionFactory::instance().isAggregateFunctionName(name)
         || UserDefinedSQLFunctionFactory::instance().has(name) || UserDefinedExecutableFunctionFactory::has(name, context))

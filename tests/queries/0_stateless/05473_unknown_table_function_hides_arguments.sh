@@ -81,6 +81,8 @@ $CLICKHOUSE_CLIENT --query "SELECT countIf(message LIKE '%TopSecretValue%') FROM
 $CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote('127.0.0.1', concat('sys', 'tem'), 'one')" | cut -f1,2
 $CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote('127.0.0.1', $udf(), 'one')" | cut -f1,2
 $CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote($nc, database = $udf())" | cut -f1,2
+$CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote('127.0.0.1', untuple(tuple('system')), 'one')" | cut -f1,2
+$CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote($nc, database = untuple(tuple('system')))" | cut -f1,2
 $CLICKHOUSE_CLIENT --query "DROP FUNCTION $udf"
 $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION $nc"
 
