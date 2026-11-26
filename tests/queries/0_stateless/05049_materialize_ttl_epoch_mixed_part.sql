@@ -3,9 +3,8 @@
 -- the stored bounds (a part that holds such a row records the `has_epoch_timestamps` marker instead).
 -- A part that mixes such a row with an already expired one therefore stores bounds that are entirely in
 -- the past while still holding a row that a scan of the same TTL expression keeps. The shortcuts that
--- classify a part as fully expired from those bounds alone - `all_data_dropped` in `TTLTransform` and in
--- `TTLDeleteFilterTransform`, and the `TTLDrop` merge selector - must not fire for it, or the epoch row is
--- deleted without ever being read.
+-- classify a part as fully expired from those bounds alone - `all_data_dropped` in `TTLTransform` and
+-- the `TTLDrop` merge selector - must not fire for it, or the epoch row is deleted without ever being read.
 
 SET alter_sync = 2;
 SET mutations_sync = 2;
