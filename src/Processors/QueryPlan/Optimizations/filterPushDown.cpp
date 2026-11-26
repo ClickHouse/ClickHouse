@@ -132,7 +132,8 @@ bool isFilterColumnConst(const FilterStep & filter)
 
 void materializeFilterColumnIfNeededAfterPushDown(FilterStep & filter, const bool was_filter_const_before, const bool is_filter_const_after)
 {
-    if (was_filter_const_before || !is_filter_const_after)
+    /// A removed filter column leaves only result columns of that name, which keep their own expression.
+    if (was_filter_const_before || !is_filter_const_after || filter.removesFilterColumn())
         return;
 
     auto & expression = filter.getExpression();
