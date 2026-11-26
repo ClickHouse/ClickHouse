@@ -59,8 +59,7 @@ public:
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
-    /// Written without `n + 7` so that huge values (e.g. user-supplied constants) do not overflow.
-    static ALWAYS_INLINE inline size_t bitsToBytes(size_t n) { return n / 8 + (n % 8 != 0); }
+    static ALWAYS_INLINE inline size_t bitsToBytes(size_t n) { return (n + 7) / 8; }
 
     /// Whether `type` is a supported QBit element type (Int8, BFloat16, Float32, Float64). Only these have a fixed
     /// in-memory size, so only for these is `getElementSize` well-defined. Shared by the constructor's validation and
