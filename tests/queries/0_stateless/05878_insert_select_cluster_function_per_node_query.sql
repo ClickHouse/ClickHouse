@@ -93,6 +93,14 @@ INSERT INTO dst WITH t(k) AS (SELECT x FROM allow) SELECT x FROM fileCluster('te
 SELECT 'CTE column alias', count(), sum(x), min(x), max(x) FROM dst;
 TRUNCATE TABLE dst;
 
+INSERT INTO dst WITH t(k) AS (SELECT x FROM allow) SELECT x FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', {CLICKHOUSE_DATABASE:String} || '_05878_*.tsv', 'TSV', 'x UInt64') WHERE x IN (SELECT k FROM t) SETTINGS log_comment = 'case_17_cte_column_alias_parallel_replicas', enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'parallel_replicas', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, parallel_replicas_for_cluster_engines = 0, automatic_parallel_replicas_mode = 2;
+SELECT 'CTE column alias, parallel replicas', count(), sum(x), min(x), max(x) FROM dst;
+TRUNCATE TABLE dst;
+
+INSERT INTO dst WITH t(k) AS (SELECT x FROM allow) SELECT x FROM file({CLICKHOUSE_DATABASE:String} || '_05878_*.tsv', 'TSV', 'x UInt64') WHERE x IN (SELECT k FROM t) SETTINGS log_comment = 'case_18_cte_column_alias_parallel_replicas_file', enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'parallel_replicas', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, parallel_replicas_for_cluster_engines = 0, automatic_parallel_replicas_mode = 2;
+SELECT 'CTE column alias, parallel replicas, file', count(), sum(x), min(x), max(x) FROM dst;
+TRUNCATE TABLE dst;
+
 -- Which INSERTs were sent to the nodes.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment,
