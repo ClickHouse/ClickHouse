@@ -43,6 +43,18 @@ SELECT count() FROM
      SELECT * FROM (SELECT bitShiftLeft(toUInt64(intDiv(number, 1500) % 7), 32) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1))
 );
 
+SELECT 'runs, then distinct keys, in one block';
+SELECT count() FROM
+(
+    (SELECT * FROM (SELECT if(number % 20000 < 12000, intDiv(number, 1500), number) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1)
+     EXCEPT ALL
+     SELECT * FROM (SELECT if(number % 20000 < 12000, intDiv(number, 1500), number) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 0))
+    UNION ALL
+    (SELECT * FROM (SELECT if(number % 20000 < 12000, intDiv(number, 1500), number) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 0)
+     EXCEPT ALL
+     SELECT * FROM (SELECT if(number % 20000 < 12000, intDiv(number, 1500), number) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1))
+);
+
 SELECT 'UInt8 key';
 SELECT count() FROM
 (

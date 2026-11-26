@@ -4,6 +4,8 @@ several runs per block, keys repeating out of order
 0
 more than eight runs per block
 0
+runs, then distinct keys, in one block
+0
 UInt8 key
 0
 UInt8 key, count only, more than eight runs per block

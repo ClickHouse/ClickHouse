@@ -10,6 +10,8 @@
 #include <base/getL2CacheSize.h>
 #include <base/unaligned.h>
 
+#include <absl/container/inlined_vector.h>
+
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
@@ -2425,22 +2427,21 @@ void Aggregator::buildAggregateFunctionInstruction(
 namespace
 {
 
-constexpr size_t max_key_runs = 8;
+constexpr size_t key_runs_before_average_check = 8;
 constexpr size_t min_average_key_run_rows = 512;
 
 /// `ends[i]` ends run `i` of one value; `keys[i]` is a one-row column holding its key.
 struct KeyRuns
 {
-    size_t count = 0;
-    std::array<size_t, max_key_runs> ends{};
-    std::array<const IColumn *, max_key_runs> keys{};
+    absl::InlinedVector<size_t, key_runs_before_average_check> ends;
+    absl::InlinedVector<const IColumn *, key_runs_before_average_check> keys;
 };
 
 template <typename T>
 void findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs)
 {
     const auto at = [data](size_t row) { return unalignedLoad<T>(data + row * sizeof(T)); };
-    for (size_t row = begin; row < end && runs.count < max_key_runs;)
+    for (size_t row = begin; row < end;)
     {
         const T value = at(row);
         size_t run_end = row + 1;
@@ -2455,14 +2456,19 @@ void findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs
         }
         while (run_end < end && at(run_end) == value)
             ++run_end;
-        runs.ends[runs.count++] = run_end;
+        runs.ends.push_back(run_end);
+        if (runs.ends.size() > key_runs_before_average_check && (run_end - begin) / runs.ends.size() < min_average_key_run_rows)
+        {
+            runs.ends.pop_back();
+            return;
+        }
         row = run_end;
     }
 }
 
-/// Up to `max_key_runs` runs of one value at the start of rows [begin, end) of a fixed-size key column, kept if there is
-/// one run or they average `min_average_key_run_rows` rows; rows after the last run are in none. Equal key bytes are one
-/// group for every method of a single fixed-size key, so a run can be aggregated like a constant key.
+/// Runs of one value at the start of rows [begin, end) of a fixed-size key column: one run, or runs averaging
+/// `min_average_key_run_rows` rows, ending before the first run past the 8th that would lower the average below that.
+/// Equal key bytes are one group for every method of a single fixed-size key, so a run can be aggregated like a constant key.
 KeyRuns findKeyRuns(const IColumn & column, size_t begin, size_t end)
 {
     KeyRuns runs;
@@ -2477,8 +2483,8 @@ KeyRuns findKeyRuns(const IColumn & column, size_t begin, size_t end)
         case 8: findKeyRunsImpl<UInt64>(data, begin, end, runs); break;
         default: break;
     }
-    if (runs.count > 1 && (runs.ends[runs.count - 1] - begin) / runs.count < min_average_key_run_rows)
-        runs.count = 0;
+    if (runs.ends.size() > 1 && (runs.ends.back() - begin) / runs.ends.size() < min_average_key_run_rows)
+        runs.ends.clear();
     return runs;
 }
 
@@ -2532,6 +2538,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     Columns materialized_columns;
     NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
+    KeyRuns key_runs;
 
     /// The block's materialized key and argument columns are temporaries of this call, created and released in
     /// `aggregator_scope`: the guard releases them there, because a release is charged to the tracker current at the
@@ -2542,6 +2549,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         Columns().swap(materialized_columns);
         NestedColumnsHolder().swap(nested_columns_holder);
         AggregateFunctionInstructions().swap(aggregate_functions_instructions);
+        key_runs = {};
     });
     std::optional<MemoryTrackerSwitcher> block_columns_scope;
     aggregator_scope(block_columns_scope, /*table_may_freeze=*/false);
@@ -2604,31 +2612,30 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// Not once new keys are refused, where the constant-key path behaves differently, not while the top-K heap ranks
     /// rows, which the constant-key path neither checks nor feeds, not for sparse arguments, whose one-place batches add
     /// the default rows last, and not for `key8`, whose lookup-table batches beat one-place batches for some aggregates.
-    KeyRuns key_runs;
     if (aggregate_key_runs_as_constant && !all_keys_are_const && !no_more_keys && !top_k_active
         && result.type != AggregatedDataVariants::Type::key8 && !hasSparseArguments(aggregate_functions_instructions.data()))
     {
         key_runs = findKeyRuns(*key_columns[0], row_begin, row_end);
         size_t run_begin = row_begin;
-        for (size_t i = 0; i < key_runs.count; ++i)
+        for (size_t run_end : key_runs.ends)
         {
             materialized_columns.push_back(key_columns[0]->cut(run_begin, 1));
-            key_runs.keys[i] = materialized_columns.back().get();
-            run_begin = key_runs.ends[i];
+            key_runs.keys.push_back(materialized_columns.back().get());
+            run_begin = run_end;
         }
     }
     block_columns_scope.reset();
 
     const auto for_each_key_run = [&](auto && execute)
     {
-        if (key_runs.count == 0)
+        if (key_runs.ends.empty())
         {
             execute(row_begin, row_end, all_keys_are_const);
             return;
         }
         const IColumn * key_column = key_columns[0];
         size_t run_begin = row_begin;
-        for (size_t i = 0; i < key_runs.count; ++i)
+        for (size_t i = 0; i < key_runs.ends.size(); ++i)
         {
             key_columns[0] = key_runs.keys[i];
             execute(run_begin, key_runs.ends[i], /*all_keys_are_const=*/true);
