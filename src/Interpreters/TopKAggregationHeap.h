@@ -235,13 +235,13 @@ protected:
     /// Ranks the set, moves the boundary to the k-th best key and drops everything below it.
     /// The dropped rows are left in `evictedRows`; they stay addressable in `heap_column` and
     /// in the derived per-row key array until `finishCompaction` runs.
-    void trimToK();
+    [[gnu::hot]] void trimToK();
 
     [[nodiscard]] const std::vector<size_t> & evictedRows() const { return evicted_rows; }
 
     /// Marks the surviving rows of `heap_column`. Returns false when nothing has to be
     /// compacted, in which case `finishCompaction` must not be called.
-    bool startCompaction();
+    [[gnu::hot]] bool startCompaction();
 
     /// Set for every row of `heap_column` between `startCompaction` and `finishCompaction`.
     /// The surviving rows keep their relative order, so a derived per-row array is compacted
@@ -250,7 +250,7 @@ protected:
 
     /// Drops the dead rows from `heap_column` and remaps the row indices. The derived class
     /// must have compacted its own per-row key array first.
-    void finishCompaction();
+    [[gnu::hot]] void finishCompaction();
 
     /// Both of these run once per admitted row on the pointer-bearing key paths, so they stay
     /// inline; being key-independent they cost one instantiation per translation unit.
@@ -372,13 +372,13 @@ private:
 
     /// `shouldSkip` for a row the bitmap kept, after the boundary moved; out of line. If the batch started without a
     /// boundary, fills the bitmap of the rest of the batch once, in place, so the rows after it only read the bitmap.
-    [[nodiscard]] bool recheckRow(size_t row);
+    [[nodiscard, gnu::hot]] bool recheckRow(size_t row);
 
     /// Marks the rows from `begin` to `end` that rank below the boundary.
     void fillSkipBitmap(size_t begin, size_t end);
 
     /// Compares the row with the boundary key.
-    [[nodiscard]] bool aboveBoundary(size_t row) const;
+    [[nodiscard, gnu::hot]] bool aboveBoundary(size_t row) const;
 
     [[nodiscard]] int compareHeapRowsComposite(size_t a, size_t b) const;
 
@@ -448,7 +448,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
     }
 
     template <typename EvictCallback>
-    size_t trimAndCompact(EvictCallback && on_evict)
+    [[gnu::hot]] size_t trimAndCompact(EvictCallback && on_evict)
     {
         trimToK();
 
@@ -505,7 +505,7 @@ private:
             return key;
     }
 
-    void compactHashTableKeys()
+    [[gnu::hot]] void compactHashTableKeys()
     {
         std::unique_ptr<Arena> compacted_arena;
         if constexpr (keys_hold_pointers)

@@ -1014,7 +1014,7 @@ private:
     };
 
     template <typename Method>
-    void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
+    [[gnu::hot]] void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
 
     /// A set method has no aggregate states: the batch only registers the keys.
     template <bool prefetch, bool top_k = false, typename Method, typename State>
