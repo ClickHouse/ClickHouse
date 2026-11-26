@@ -94,7 +94,13 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override
+    {
+        /// read() passes the requested subcolumns to the destination, so it must be able to read them (StripeLog can not).
+        if (auto destination = getDestinationTable())
+            return destination->supportsSubcolumns();
+        return true;
+    }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
