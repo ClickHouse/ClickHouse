@@ -1945,6 +1945,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
+            /// A cached row count is served without reading the object, and the cache key has no identity of the
+            /// credentials. For native GCS, a listing needs only `storage.objects.list`, so on a cache hit the metadata
+            /// of the object is requested with the reader's own credentials, as a cached read of its data is.
+            if (object_storage->getType() == ObjectStorageType::GCS)
+            {
+                auto metadata_object = object_info->relative_path_with_metadata;
+                metadata_object.relative_path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
+                auto meta = tryGetObjectMetadataForRead(*object_storage, metadata_object, /*with_tags=*/ false);
+                if (!meta)
+                    return std::nullopt;
+                if (const auto previous = object_info->getObjectMetadata())
+                    meta->tags = previous->tags;
+                object_info->setObjectMetadata(*meta);
+            }
             const auto metadata = object_info->getObjectMetadata();
             /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
             /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting

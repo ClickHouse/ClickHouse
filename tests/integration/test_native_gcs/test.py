@@ -993,6 +993,40 @@ def test_table_function_filesystem_cache(started_cluster):
     assert metadata_requests >= 1
 
 
+def test_schema_and_count_cache_hits_are_authorized(started_cluster):
+    """A cached schema or row count is served without reading the object, and the cache key has no
+    identity of the credentials. A glob is resolved by a listing, which needs only
+    `storage.objects.list`, so a cache hit must still ask for the object's metadata with the
+    reader's own credentials."""
+    node = started_cluster.instances["node"]
+    url = gcs_url(f"schema_cache_auth/{uuid.uuid4()}/data.tsv")
+    glob = url.rsplit("/", 1)[0] + "/*.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION gcs('{url}', NOSIGN, 'TSV', 'a UInt64') "
+        "SELECT number FROM numbers(100) SETTINGS use_native_gcs = 1"
+    )
+
+    def run_twice(query):
+        node.query(query)  # warms the cache
+        query_id = f"gcs_schema_cache_auth_{uuid.uuid4()}"
+        node.query(query, query_id=query_id)
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return node.query(
+            "SELECT ProfileEvents['SchemaInferenceCacheHits'], ProfileEvents['GCSGetObjectMetadata'] "
+            f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).split()
+
+    hits, metadata_requests = run_twice(
+        f"DESCRIBE gcs('{glob}', NOSIGN, 'TSV') SETTINGS use_native_gcs = 1"
+    )
+    assert int(hits) > 0 and int(metadata_requests) > 0, (hits, metadata_requests)
+
+    hits, metadata_requests = run_twice(
+        f"SELECT count() FROM gcs('{glob}', NOSIGN, 'TSV', 'a UInt64') SETTINGS use_native_gcs = 1"
+    )
+    assert int(hits) > 0 and int(metadata_requests) > 0, (hits, metadata_requests)
+
+
 def test_profile_events(started_cluster):
     """The native backend must account its requests, the way `S3GetObject` and friends do for the
     S3-compatibility path. Without these the backend is unobservable: there is no way to see request
