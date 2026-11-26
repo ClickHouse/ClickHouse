@@ -719,7 +719,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
 
         [[maybe_unused]] UInt64 matched_left = 0;
         size_t prev_replicated_row = 0;
-        auto * selected_right_row_it = selected_rows.begin();
         size_t find_result_index = 0;
         for (size_t i = 0, n = row_replicate_offset.size(); i < n; ++i)
         {
@@ -731,7 +730,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                 {
                     if (filter_flags[replicated_row])
                     {
-                        const UInt64 selected_ref = *selected_right_row_it;
+                        const UInt64 selected_ref = selected_rows[replicated_row];
                         if constexpr (join_features.is_semi_join || join_features.is_any_join)
                         {
                             /// For LEFT/INNER SEMI/ANY JOIN, we need to add only first appeared row from left,
@@ -776,8 +775,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                             used_flags.template setUsed<join_features.need_flags, true>(refWordBlockNo(selected_ref), refWordRowNo(selected_ref), 0);
                         }
                     }
-
-                    ++selected_right_row_it;
                 }
             }
             else
@@ -793,22 +790,19 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it);
+                            added_columns.appendFromBlock(selected_rows[replicated_row]);
                             total_added_rows += 1;
                         }
-                        ++selected_right_row_it;
                     }
-                    else
+                    else if (filter_flags[replicated_row])
                     {
-                        if (filter_flags[replicated_row])
+                        any_matched = used_flags.template setUsedOnce<join_features.need_flags, false>(find_results[find_result_index]);
+                        if (any_matched)
                         {
-                            any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it);
-                            total_added_rows += 1;
-                            selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
-                            break;
+                            added_columns.appendFromBlock(selected_rows[replicated_row]);
+                            ++total_added_rows;
                         }
-                        ++selected_right_row_it;
+                        break;
                     }
                 }
             }
@@ -832,8 +826,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                 }
                 else
                 {
-                    if (!flag_per_row)
-                        used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
                     if (need_filter)
                         setUsed<true>(added_columns.filter, i, added_columns.matched_rows);
                 }
