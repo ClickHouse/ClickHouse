@@ -5,16 +5,12 @@ date: 2024-11-06
 tags: ['데이터 포맷', '데이터 수집']
 ---
 
-<div id="kafka-and-the-json-data-type">
-  ## Kafka와 JSON 데이터 타입
-</div>
+## Kafka와 JSON 데이터 타입 {#kafka-and-the-json-data-type}
 
 새로운 [`JSON`](/ko/reference/data-types/newjson) 데이터 타입의 도입으로 ClickHouse는 이제 [JSON 분석용 데이터베이스](https://clickhouse.com/engineering-resources/json-database)로 매우 적합한 선택지가 되었습니다.
 이 가이드에서는 Apache Kafka의 JSON 메시지를 ClickHouse의 단일 `JSON` 컬럼에 직접 적재하는 방법을 알아보겠습니다.
 
-<div id="setup-kafka">
-  ## Kafka 설정
-</div>
+## Kafka 설정 {#setup-kafka}
 
 먼저 로컬 머신에서 Kafka 브로커를 실행하겠습니다. 또한 Kafka와 더 쉽게 상호 작용할 수 있도록 호스트 운영 체제의 9092 포트를 동일한 9092 포트에 매핑하겠습니다:
 
@@ -22,9 +18,7 @@ tags: ['데이터 포맷', '데이터 수집']
 docker run --name broker -p 9092:9092 apache/kafka:3.8.1
 ```
 
-<div id="ingest-data-into-kafka">
-  ## Kafka로 데이터 수집
-</div>
+## Kafka로 데이터 수집 {#ingest-data-into-kafka}
 
 준비가 완료되면 데이터를 몇 건 수집해야 합니다.
 Wikimedia의 최근 변경 피드는 스트리밍 데이터 소스로 적합하므로, 이를 `wiki_events` topic으로 수집하겠습니다:
@@ -49,16 +43,13 @@ kcat -C -b localhost:9092  -t wiki_events
 
 지금까지는 잘 진행되고 있습니다.
 
-<div id="ingest-data-into-clickhouse">
-  ## ClickHouse로 데이터 수집
-</div>
+## ClickHouse로 데이터 수집 {#ingest-data-into-clickhouse}
 
 다음으로, 데이터를 ClickHouse로 수집하겠습니다.
-먼저, 다음 설정을 지정하여 JSON 타입(현재는 Experimental 기능)을 활성화하겠습니다:
 
-```sql
-SET allow_experimental_json_type = 1;
-```
+<Note>
+  24.8~25.2 버전에서는 아래 테이블을 생성하기 전에 `SET allow_experimental_json_type = 1;`을 실행하여 `JSON` 타입을 활성화하십시오.
+</Note>
 
 이제 [`Kafka` 테이블 엔진](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine)을 사용하는 `wiki_queue` 테이블을 만듭니다.
 
@@ -76,7 +67,7 @@ ENGINE = Kafka(
 ```
 
 [`JSONAsObject`](/ko/reference/formats/JSON/JSONAsObject) 포맷을 사용한다는 점에 유의하십시오. 이 포맷을 사용하면 들어오는 메시지를 JSON 객체로 사용할 수 있습니다.
-이 포맷은 `JSON` 유형의 단일 컬럼이 있는 테이블에만 파싱할 수 있습니다.
+이 포맷은 `JSON` 타입의 단일 컬럼이 있는 테이블에만 파싱할 수 있습니다.
 
 다음으로, Wiki 데이터를 저장할 기본 테이블을 생성합니다:
 
@@ -98,9 +89,7 @@ SELECT json
 FROM wiki_queue;
 ```
 
-<div id="querying-json-data-in-clickhouse">
-  ## ClickHouse에서 JSON 데이터 쿼리하기
-</div>
+## ClickHouse에서 JSON 데이터 쿼리하기 {#querying-json-data-in-clickhouse}
 
 이제 `wiki` 테이블에 대해 쿼리를 작성할 수 있습니다.
 예를 들어, 변경 사항을 커밋한 봇 수를 셀 수 있습니다:
