@@ -334,7 +334,8 @@ void LimitByStep::serializeSettings(QueryPlanSerializationSettings & plan_settin
 void LimitByStep::serialize(Serialization & ctx) const
 {
     /// The input order is part of the plan's meaning but not of the hash-table cache key. The limit hint is
-    /// not serialized: the follower derives it from its plan, as for `DISTINCT`.
+    /// not serialized: `limitPushDown` sets it again when the follower optimizes a plan that contains the
+    /// `LIMIT`. Without the hint, a spilling `LIMIT BY` reads its whole input, which changes no result.
     const bool write_input_order = ctx.step_version >= 1 && !ctx.for_cache_key && preservesInputOrder();
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END)
     {

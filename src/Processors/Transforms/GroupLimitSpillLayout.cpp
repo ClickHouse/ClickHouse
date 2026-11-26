@@ -184,7 +184,7 @@ Chunk GroupLimitSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival
         key_columns.reserve(key_columns_pos.size());
         for (const auto pos : key_columns_pos)
             key_columns.push_back(columns[pos].get());
-        /// The in-memory set hashes the keys with negative zeros replaced (`-0.` is equal to `0.`), so the
+        /// The in-memory filter hashes the keys with negative zeros replaced (`-0.` is equal to `0.`), so the
         /// fingerprints have to be computed the same way. The output keeps the original values.
         Columns normalized_key_columns;
         replaceNegativeZeros(key_columns, normalized_key_columns);

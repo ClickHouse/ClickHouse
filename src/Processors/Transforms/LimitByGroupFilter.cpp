@@ -210,7 +210,8 @@ private:
     typename Data::const_iterator end;
 };
 
-/// `StringHashMap` has no iterator across its submaps, so its traversal resumes from a `ValuePosition`.
+/// A table split into sub-tables, such as `StringHashMap` and `KeysAndPackedStringHashTable`, has no iterator
+/// across them, so its traversal resumes from a `ValuePosition`.
 template <typename Data>
 requires requires { typename Data::ValuePosition; }
 class TableTraversal<Data>
