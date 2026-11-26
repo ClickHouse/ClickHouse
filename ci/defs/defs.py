@@ -189,6 +189,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest", "clickhouse/cctools"],
     ),
     Docker.Config(
+        name="clickhouse/binary-builder-darwin-wasm",
+        path="./ci/docker/binary-builder-darwin-wasm",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/binary-builder"],
+    ),
+    Docker.Config(
         name="clickhouse/wasm-builder",
         path="./ci/docker/wasm-builder",
         platforms=Docker.Platforms.arm_amd,
