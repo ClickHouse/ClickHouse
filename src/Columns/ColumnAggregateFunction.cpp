@@ -316,7 +316,10 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
                         "in ColumnAggregateFunction::insertRangeFrom method (data.size() = {}).",
                         toString(start), toString(length), toString(from_concrete.data.size()));
 
-    if (force_data_ownership || (!empty() && src.get() != &from_concrete))
+    /// `from` is a view of our source: its states are already kept alive by `src`.
+    const bool same_source = src && src == from_concrete.src;
+
+    if (force_data_ownership || (!empty() && src.get() != &from_concrete && !same_source))
     {
         /// Must create new states of aggregate function and take ownership of it,
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
@@ -328,8 +331,9 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
     }
     else
     {
-        /// Keep shared ownership of aggregation states.
-        src = from_concrete.getPtr();
+        /// Keep shared ownership of aggregation states. Keep `src` for a view of it, so later views still match.
+        if (!same_source)
+            src = from_concrete.getPtr();
 
         size_t old_size = data.size();
         data.resize(old_size + length);
