@@ -764,10 +764,26 @@ SELECT a,b FROM format(MySQLDump, 'a Int64,b Int64', $$INSERT INTO src (a,b) VAL
 SELECT a,b FROM format(MySQLDump, 'a Int64,b Int64', $$INSERT INTO src (a,b) VALUES (1,10);
 INSERT INTO src (b,a) VALUES;$$); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 
--- Inference binds types to column names even when data reading uses positions.
+-- Inference uses input positions when column name mapping is disabled.
 DESCRIBE TABLE format(MySQLDump, $$INSERT INTO src (a,b) VALUES (1,1.5);
 INSERT INTO src (b,a) VALUES (2.5,2);$$)
 SETTINGS input_format_mysql_dump_map_column_names=0, input_format_try_infer_integers=1,
+    schema_inference_make_columns_nullable=1, schema_inference_hints='',
+    input_format_max_rows_to_read_for_schema_inference=100,
+    input_format_max_bytes_to_read_for_schema_inference=1048576;
+
+-- The inferred positional schema must deserialize the same input successfully.
+SELECT a,b FROM format(MySQLDump, $$INSERT INTO src (a,b) VALUES (1,1.5);
+INSERT INTO src (b,a) VALUES (2.5,2);$$) ORDER BY a
+SETTINGS input_format_mysql_dump_map_column_names=0, input_format_try_infer_integers=1,
+    schema_inference_make_columns_nullable=1, schema_inference_hints='',
+    input_format_max_rows_to_read_for_schema_inference=100,
+    input_format_max_bytes_to_read_for_schema_inference=1048576;
+
+-- Mapping by name must retain the original column assignments.
+SELECT a,b FROM format(MySQLDump, $$INSERT INTO src (a,b) VALUES (1,1.5);
+INSERT INTO src (b,a) VALUES (2.5,2);$$) ORDER BY a
+SETTINGS input_format_mysql_dump_map_column_names=1, input_format_try_infer_integers=1,
     schema_inference_make_columns_nullable=1, schema_inference_hints='',
     input_format_max_rows_to_read_for_schema_inference=100,
     input_format_max_bytes_to_read_for_schema_inference=1048576;

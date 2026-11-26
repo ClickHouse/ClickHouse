@@ -734,6 +734,9 @@ std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
                 "Wrong number of values for MySQL dump table {}: expected {} columns {}, got {} values",
                 table_name, column_state.current_names.size(), column_state.current_names, data_types.size());
 
+        if (!format_settings.mysql_dump.map_column_names)
+            return data_types;
+
         DataTypes data_types_in_first_order(data_types.size());
         for (size_t i = 0; i < data_types.size(); ++i)
             data_types_in_first_order[input_to_first[i]] = std::move(data_types[i]);
@@ -837,7 +840,7 @@ SETTINGS input_format_mysql_dump_table_name = 'test2'
 You can specify the name of the table from which to read data from using the [`input_format_mysql_dump_table_name`](/reference/settings/formats/input-format#input_format_mysql_dump_table_name) setting.
 If setting `input_format_mysql_dump_map_column_names` is set to `1` and the dump contains a `CREATE` query for specified table or column names in the `INSERT` query, the columns from the input data will map to the columns from the table by name.
 Each `INSERT` may reorder the same nonempty explicit set of column names. When mapping by name, changing that set or mixing nonempty lists with statements without a column list is not supported. An empty column list is treated as no column list.
-Without a parsable `CREATE`, schema inference also binds values by name and rejects those structure changes, even when `input_format_mysql_dump_map_column_names` is disabled. Disabling this setting only switches data reading to positional mapping.
+Without a parsable `CREATE`, schema inference rejects those structure changes even when `input_format_mysql_dump_map_column_names` is disabled. It infers types by name when this setting is enabled and by input position when it is disabled, matching data reading.
 When a parsable `CREATE` is available, schema inference returns its declared structure without validating subsequent data statements.
 
 Columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
@@ -855,7 +858,7 @@ void registerMySQLSchemaReader(FormatFactory & factory)
     factory.registerAdditionalInfoForSchemaCacheGetter("MySQLDump", [](const FormatSettings & settings)
     {
         auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
-        return result + fmt::format(", table_name={}", settings.mysql_dump.table_name);
+        return result + fmt::format(", table_name={}, map_column_names={}", settings.mysql_dump.table_name, settings.mysql_dump.map_column_names);
     });
 }
 

@@ -103,7 +103,11 @@ c	Nullable(String)
 1	10
 a	Nullable(Int64)					
 b	Nullable(Int64)					
-a	Nullable(Int64)					
+a	Nullable(Float64)					
 b	Nullable(Float64)					
+1	1.5
+2.5	2
+1	1.5
+2	2.5
 a	Int32					
 b	Nullable(Float64)					

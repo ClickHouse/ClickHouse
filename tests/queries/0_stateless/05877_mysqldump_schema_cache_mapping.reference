@@ -1,0 +1,8 @@
+a	Nullable(Int64)					
+b	Nullable(Float64)					
+a	Nullable(Float64)					
+b	Nullable(Float64)					
+1	1.5
+2.5	2
+1	1.5
+2	2.5
