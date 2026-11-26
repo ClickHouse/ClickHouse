@@ -1,8 +1,10 @@
 #include <Processors/Formats/Impl/ORC/RLE.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <bit>
 
 
 namespace DB
@@ -21,7 +23,7 @@ namespace
 
 inline Int64 unZigZag(UInt64 value)
 {
-    return static_cast<Int64>((value >> 1) ^ (~(value & 1) + 1));
+    return static_cast<Int64>(value >> 1) ^ -static_cast<Int64>(value & 1);
 }
 
 inline UInt64 zigZag(Int64 value)
@@ -77,6 +79,22 @@ inline UInt32 findClosestNumBits(Int64 value)
     return getClosestFixedBits(count);
 }
 
+size_t countNotNull(const char * not_null, size_t num_values)
+{
+    return std::count_if(not_null, not_null + num_values, [](char c) { return c != 0; });
+}
+
+/// Moves the first `num_present` values to the positions where `not_null` is non-zero and sets the others to zero.
+/// The k-th value goes to a position i >= k, so moving from the back never overwrites a value before it is moved.
+void moveToNotNullPositions(char * data, size_t num_values, size_t num_present, const char * not_null)
+{
+    for (size_t i = num_values; i > 0;)
+    {
+        --i;
+        data[i] = not_null[i] ? data[--num_present] : 0;
+    }
+}
+
 }
 
 
@@ -118,62 +136,25 @@ void ByteRleDecoder::readHeader()
 void ByteRleDecoder::next(char * data, size_t num_values, const char * not_null)
 {
     if (not_null)
-        memset(data, 0, num_values);
+    {
+        size_t num_present = countNotNull(not_null, num_values);
+        next(data, num_present, nullptr);
+        moveToNotNullPositions(data, num_values, num_present, not_null);
+        return;
+    }
+
     size_t position = 0;
     while (position < num_values)
     {
-        if (not_null)
-        {
-            while (position < num_values && !not_null[position])
-                ++position;
-            if (position == num_values)
-                return;
-        }
-
         if (remaining_values == 0)
             readHeader();
 
         size_t count = std::min(num_values - position, remaining_values);
-        size_t consumed = 0;
         if (repeating)
-        {
-            if (not_null)
-            {
-                for (size_t i = 0; i < count; ++i)
-                {
-                    if (not_null[position + i])
-                    {
-                        data[position + i] = value;
-                        ++consumed;
-                    }
-                }
-            }
-            else
-            {
-                memset(data + position, value, count);
-                consumed = count;
-            }
-        }
+            memset(data + position, value, count);
         else
-        {
-            if (not_null)
-            {
-                for (size_t i = 0; i < count; ++i)
-                {
-                    if (not_null[position + i])
-                    {
-                        data[position + i] = static_cast<char>(stream->readByte());
-                        ++consumed;
-                    }
-                }
-            }
-            else
-            {
-                stream->readBytes(data + position, count);
-                consumed = count;
-            }
-        }
-        remaining_values -= consumed;
+            stream->readBytes(data + position, count);
+        remaining_values -= count;
         position += count;
     }
 }
@@ -202,24 +183,53 @@ void ByteRleDecoder::seek(PositionProvider & positions)
 
 void BooleanRleDecoder::next(char * data, size_t num_values, const char * not_null)
 {
-    for (size_t i = 0; i < num_values; ++i)
+    if (not_null)
     {
-        if (not_null && !not_null[i])
-        {
-            /// The PRESENT stream of a child column is read with the mask of its parent,
-            /// and the masked positions must be null.
-            data[i] = 0;
-            continue;
-        }
-        if (remaining_bits == 0)
-        {
-            char byte = 0;
-            byte_decoder.next(&byte, 1, nullptr);
-            last_byte = static_cast<UInt8>(byte);
-            remaining_bits = 8;
-        }
+        /// The PRESENT stream of a child column is read with the mask of its parent,
+        /// and the masked positions must be null.
+        size_t num_present = countNotNull(not_null, num_values);
+        next(data, num_present, nullptr);
+        moveToNotNullPositions(data, num_values, num_present, not_null);
+        return;
+    }
+
+    size_t i = 0;
+    for (; i < num_values && remaining_bits; ++i)
+    {
         --remaining_bits;
         data[i] = (last_byte >> remaining_bits) & 1;
+    }
+
+    static constexpr size_t BUFFER_SIZE = 1024;
+    char bytes[BUFFER_SIZE];
+    while (num_values - i >= 8)
+    {
+        size_t num_bytes = std::min((num_values - i) / 8, BUFFER_SIZE);
+        byte_decoder.next(bytes, num_bytes, nullptr);
+        for (size_t j = 0; j < num_bytes; ++j, i += 8)
+        {
+            /// Spread the bits to eight bytes 0 or 1, the most significant bit first.
+            UInt64 x = static_cast<UInt8>(bytes[j]);
+            x = (x | (x << 28)) & 0x0000000f0000000full;
+            x = (x | (x << 14)) & 0x0003000300030003ull;
+            x = (x | (x << 7)) & 0x0101010101010101ull;
+            if constexpr (std::endian::native == std::endian::little)
+                x = std::byteswap(x);
+            memcpy(data + i, &x, 8);
+        }
+    }
+
+    if (i < num_values)
+    {
+        char byte = 0;
+        byte_decoder.next(&byte, 1, nullptr);
+        last_byte = static_cast<UInt8>(byte);
+        remaining_bits = 8;
+        for (; i < num_values; ++i)
+        {
+            --remaining_bits;
+            data[i] = (last_byte >> remaining_bits) & 1;
+        }
     }
 }
 
@@ -301,7 +311,7 @@ public:
                 if (repeating)
                 {
                     data[position + i] = static_cast<T>(value);
-                    value = static_cast<Int64>(static_cast<UInt64>(value) + static_cast<UInt64>(delta));
+                    value = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(value), static_cast<UInt64>(delta)));
                 }
                 else
                     data[position + i] = static_cast<T>(readValue());
@@ -322,7 +332,7 @@ public:
             remaining_values -= count;
             num_values -= count;
             if (repeating)
-                value = static_cast<Int64>(static_cast<UInt64>(value) + static_cast<UInt64>(delta) * count);
+                value = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(value), common::mulIgnoreOverflow(static_cast<UInt64>(delta), count)));
             else
                 for (size_t i = 0; i < count; ++i)
                     readVarint(*stream);
@@ -635,12 +645,12 @@ private:
         {
             if (static_cast<Int64>(i) != gap)
             {
-                literals[i] = static_cast<Int64>(static_cast<UInt64>(literals[i]) + static_cast<UInt64>(base));
+                literals[i] = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(literals[i]), static_cast<UInt64>(base)));
             }
             else
             {
                 UInt64 patched = static_cast<UInt64>(literals[i]) | (bit_width < 64 ? static_cast<UInt64>(patch) << bit_width : 0);
-                literals[i] = static_cast<Int64>(static_cast<UInt64>(base) + patched);
+                literals[i] = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(base), patched));
                 ++patch_index;
                 if (patch_index < patch_list_length)
                 {
@@ -666,22 +676,22 @@ private:
         {
             /// Fixed delta.
             for (size_t i = 1; i < run_length; ++i)
-                literals[i] = static_cast<Int64>(static_cast<UInt64>(literals[i - 1]) + static_cast<UInt64>(delta_base));
+                literals[i] = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(literals[i - 1]), static_cast<UInt64>(delta_base)));
             return;
         }
 
         if (run_length < 2)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Illegal run length {} for delta encoding in ORC stream {}", run_length, stream->getName());
 
-        Int64 previous = static_cast<Int64>(static_cast<UInt64>(first_value) + static_cast<UInt64>(delta_base));
+        Int64 previous = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(first_value), static_cast<UInt64>(delta_base)));
         literals[1] = previous;
         readInts(literals.data() + 2, run_length - 2, bit_width);
         for (size_t i = 2; i < run_length; ++i)
         {
             if (delta_base < 0)
-                previous = static_cast<Int64>(static_cast<UInt64>(previous) - static_cast<UInt64>(literals[i]));
+                previous = static_cast<Int64>(common::subIgnoreOverflow(static_cast<UInt64>(previous), static_cast<UInt64>(literals[i])));
             else
-                previous = static_cast<Int64>(static_cast<UInt64>(previous) + static_cast<UInt64>(literals[i]));
+                previous = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(previous), static_cast<UInt64>(literals[i])));
             literals[i] = previous;
         }
     }
@@ -776,7 +786,7 @@ void ByteRleEncoder::write(char value)
     }
 }
 
-void ByteRleEncoder::recordPosition(std::vector<UInt64> & positions) const
+void ByteRleEncoder::recordPosition(VectorWithMemoryTracking<UInt64> & positions) const
 {
     stream.recordPosition(positions);
     positions.push_back(num_literals);
@@ -800,7 +810,7 @@ void BooleanRleEncoder::write(bool value)
     }
 }
 
-void BooleanRleEncoder::recordPosition(std::vector<UInt64> & positions) const
+void BooleanRleEncoder::recordPosition(VectorWithMemoryTracking<UInt64> & positions) const
 {
     byte_encoder.recordPosition(positions);
     positions.push_back(bits_in_current);
@@ -818,7 +828,7 @@ void BooleanRleEncoder::flush()
 }
 
 
-void IntRleEncoderV2::recordPosition(std::vector<UInt64> & positions) const
+void IntRleEncoderV2::recordPosition(VectorWithMemoryTracking<UInt64> & positions) const
 {
     stream.recordPosition(positions);
     positions.push_back(num_literals);
@@ -986,7 +996,7 @@ void IntRleEncoderV2::encodeLiterals(const Int64 * values, size_t count)
         is_fixed_delta &= (delta == initial_delta);
         if (i > 1)
         {
-            UInt64 abs_delta = delta < 0 ? (0 - static_cast<UInt64>(delta)) : static_cast<UInt64>(delta);
+            UInt64 abs_delta = delta < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(delta)) : static_cast<UInt64>(delta);
             abs_deltas[i - 2] = static_cast<Int64>(abs_delta);
             max_abs_delta = std::max(max_abs_delta, abs_delta);
         }

@@ -236,8 +236,8 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-
-    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    /// Used by `DROP`, `CLEAR` and `MATERIALIZE STATISTICS`, where column names may be query parameters.
+    ParserList columns_p(std::make_unique<ParserIdentifier>(/* allow_query_parameter_ = */ true), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
 
@@ -2012,6 +2012,8 @@ CREATE FUNCTION ...
 CREATE NAMED COLLECTION ...
 CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 CREATE TOKEN ...
+CREATE INDEX ...
+CREATE WORKLOAD | RESOURCE ...
 )",
         .related = {"ATTACH", "DROP", "CREATE TABLE", "CREATE DATABASE", "CREATE VIEW", "CREATE DICTIONARY"},
     };
@@ -2622,7 +2624,7 @@ Please note that temporary tables are not replicated. As a result, there is no g
 ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.
-- A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
+- A temporary table uses the `Memory` table engine when engine is not specified. Only lightweight engines may back a temporary table: `Memory`, the non-replicated `MergeTree` family, `Log`, `TinyLog`, `StripeLog`, `File`, `URL`, `Null`, `Join` and `Set`. With `cloud_mode` enabled, the engines that store data on the local disk are forbidden as well.
 - The DB can't be specified for a temporary table. It is created outside of databases.
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
@@ -2837,9 +2839,6 @@ SELECT * FROM base.t1;
     documentation["CODEC"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud.
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/reference/settings/server-settings/settings/other#compression) section of a server configuration.
@@ -2908,14 +2907,26 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 ### ZXC {#zxc}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 `ZXC[(level)]` — asymmetric [`zxc` compression algorithm](https://github.com/hellobertrand/zxc) with configurable `level`. Possible levels: \[1, 7\]. Default level: 3.
 
 `ZXC` trades slow compression for very fast decompression, at a compression ratio between `LZ4` and `ZSTD`. It is a good fit for the compress-once, decompress-many pattern, and decompresses fastest on modern ARM cores. Higher levels mean better compression and slower compression, while decompression stays fast.
 
 <Note>
-This codec is experimental and requires `SET enable_zxc_codec = 1` to use.
+This codec is in beta and requires `SET enable_zxc_codec = 1` to use.
+</Note>
+
+### GDeflate {#gdeflate}
+
+<ExperimentalBadge/>
+
+`GDeflate[(level)]` — [GDeflate](https://github.com/NVIDIA/libdeflate/tree/gdeflate), a variant of Deflate whose bit stream is split into 32 interleaved sub-streams, with configurable `level`. Possible levels: \[1, 12\]. Default level: 6.
+
+A block is compressed in independent chunks of 64 KiB, each a GDeflate page, the format that nvcomp and DirectStorage expand on a GPU, many chunks in parallel. On the CPU, it compresses and decompresses about as fast as Deflate, slower than `LZ4` and `ZSTD`.
+
+<Note>
+This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
 </Note>
 
 ### Obsolete: ZSTD_QAT {#zstd_qat}
@@ -2948,19 +2959,17 @@ These codecs are designed to make compression more effective by exploiting speci
 
 ### ALP {#alp}
 
-<BetaBadge/>
-
 `ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+<Tip>
+In most scenarios, `ALP` is the best codec ClickHouse offers for `Float32` and `Float64` columns.
+</Tip>
 
 The codec accepts an optional variant argument:
 
 - `ALP()` or `ALP(AUTO)` (default) — Uses STD and falls back to RD based on the estimated compressed size.
 - `ALP(STD)` — Standard ALP variant. Represents each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Non-representable values are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, prices).
 - `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
-
-<Note>
-This codec is in beta and requires `SET enable_alp_codec = 1` to use.
-</Note>
 
 ### PCO {#pco}
 
@@ -2975,7 +2984,7 @@ The optional `level` argument sets the compression level from 0 to 12; the defau
 The payload of each compression block is a standalone [`.pco`](https://github.com/pcodec/pcodec) stream, compatible with the reference pcodec implementation.
 
 <Note>
-This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
+This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`, except as an alternative of [`FirstApplicable`](#firstapplicable), e.g. `FirstApplicable(PCO, ZSTD(3))`.
 </Note>
 
 ### FPC {#fpc}
@@ -3012,11 +3021,12 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge/>
 
-`Quantized(method, dimensions[, ...])` — A specialized codec to support approximate vector search on columns of type `Array(Float32)`, `Array(Float64)` or `Array(BFloat16)`.
+`Quantized(method, dimensions[, ...])` — A specialized codec to support approximate vector search on columns of type `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)`, `Array(Int8)` or `Array(UInt8)`.
 It stores the original, full-precision vectors, as well as a compact *quantized code* per vector alongside.
 On `MergeTree`-family tables, vector search queries with setting [`vector_search_use_quantized_codes`](/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) will scan the quantized codes to build a shortlist and subsequently rescore the results against the full-precision vectors.
 This two-stage search reads fewer bytes than a normal full-precision scan at the cost of lower recall.
 `dimensions` is the vector length; supported `method` values are `rabitq`, `turboquant`, `int8`, `prefix` and `product`, each a different size / accuracy / distance-function trade-off.
+For `Array(Int8)` and `Array(UInt8)` columns, the `int8` method and the `prefix` method with format `int8` are not supported.
 
 The codec can only be set in `CREATE TABLE`, it cannot be added, removed, or changed through `ALTER TABLE`, including with `ADD COLUMN ... CODEC(Quantized(...))`.
 It cannot be chained with any other codec (not even an encryption codec such as `AES_128_GCM_SIV`).
@@ -3085,17 +3095,57 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
+## Selecting a Codec by Data Type {#firstapplicable}
+
+`FirstApplicable(codec1, codec2, ...)` — Uses the first codec in the list that is applicable to the data type. A specialized codec is applicable only to some data types, e.g. `PCO` to numbers and `ALP` to floating-point numbers, while a general purpose codec such as `ZSTD` is applicable to any data type, so it is a natural last alternative:
+
+```sql
+SET enable_pco_codec = 1;
+
+CREATE TABLE first_applicable
+(
+    id UInt64 CODEC(FirstApplicable(PCO, ZSTD(3))),
+    name String CODEC(FirstApplicable(PCO, ZSTD(3))),
+    point Tuple(x Float64, label String) CODEC(FirstApplicable(PCO, ZSTD(3)))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+Here `id` is compressed with `PCO` and `name` with `ZSTD(3)`. The codec is selected for every stream of a column separately, so the `x` element of `point` is compressed with `PCO` and the `label` element with `ZSTD(3)`.
+
+`FirstApplicable` only selects a codec: it has no header of its own in the compressed data, which is written by the selected codec alone. It is an element of a codec pipeline, so it can be combined with other codecs, as in `CODEC(Delta, FirstApplicable(PCO, ZSTD))`. An alternative can be a pipeline of several codecs, written as `Multiple(codec1, codec2, ...)`, which is applicable if every codec in it is:
+
+```sql
+CODEC(FirstApplicable(PCO, Multiple(T64, ZSTD(3)), ZSTD(3)))
+```
+
+The alternative `Default` is the default codec, and an alternative can also be another `FirstApplicable`.
+
+`FirstApplicable` is accepted wherever a codec is, including the settings where the data type is not known: `default_compression_codec`, `marks_compression_codec`, `primary_key_compression_codec` and `TTL ... RECOMPRESS CODEC(...)`. For the default codec of a `MergeTree` table, the codec is selected for the data type of every column that uses the default codec:
+
+```sql
+CREATE TABLE first_applicable_default
+(
+    id UInt64,
+    name String
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))';
+```
+
+When the data type is not known, as for marks, the first alternative that is applicable to any data type is used, so the list must contain one. If no alternative is applicable to the data type of a column, the query fails.
+
 ## Adaptive Codec Selection {#adaptive-codec-selection}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), the codec that compresses a block smallest is chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it. The choice is made on one block in every [`adaptive_codec_selection_period`](/reference/settings/merge-tree-settings/other#adaptive_codec_selection_period) blocks and reused for the blocks in between.
 
 <Note>
 Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
 </Note>
 
-A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.
+A block on which the choice is made is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster, as a smaller block is less to fetch and less to decompress. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.
 
 ```sql
 CREATE TABLE adaptive
@@ -3139,8 +3189,6 @@ column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
     documentation["CREATE VIEW"] =
     {
         .description = R"DOCS_MD(
-import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
-
 Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), and [refreshable materialized](#refreshable-materialized-view).
 
 ## Normal View {#normal-view}
@@ -3543,6 +3591,7 @@ Available refresh settings:
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 * `all_replicas` - In a [Replicated database](/reference/engines/database-engines/replicated) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
+* `refresh_coordination_jitter_ms` - If refreshes are coordinated across replicas, each replica waits a random delay of up to this long before starting a due refresh, so that refreshes are spread across replicas even without `RANDOMIZE FOR`. The delay is not reflected in `next_refresh_time`. 0 disables the delay. Default: 1000 ms.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
@@ -3721,9 +3770,6 @@ AS SELECT ...
     documentation["CREATE DICTIONARY"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { CloudSupportedBadge } from "/snippets/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
-
 A dictionary is a mapping (`key -> attributes`) that is convenient for various types of reference lists.
 ClickHouse supports special functions for working with dictionaries that can be used in queries. It is easier and more efficient to use dictionaries with functions than a `JOIN` with reference tables.
 

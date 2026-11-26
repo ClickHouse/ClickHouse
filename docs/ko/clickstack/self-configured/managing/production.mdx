@@ -1,0 +1,80 @@
+---
+slug: /clickstack/self-configured/managing/production
+title: '프로덕션 환경으로 전환'
+sidebarTitle: '운영 환경'
+description: '자체 관리형 ClickHouse Observability를 프로덕션 환경으로 전환하기'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickHouse Observability', '운영 환경', '배포', '권장 사항', '운영']
+---
+
+import ResourceEstimation from '/snippets/ko/_resource_estimation.mdx';
+
+<Note>
+  이 페이지에서는 **자체 관리형 ClickHouse Observability**를 다룹니다. 권장되는 완전 관리형 환경에 대해서는 [여기](/ko/clickstack/observability/overview)의 문서를 참조하십시오.
+</Note>
+
+운영 환경에서 자체 관리형 ClickHouse Observability를 사용할 때는 다음과 같은 보안, 안정성 및 구성 관련 권장 사항을 고려하십시오.
+
+[자체 관리형 ClickHouse Observability](/ko/clickstack/self-configured/getting-started/managed)는 강화된 암호화, 인증 및 연결, 관리형 접근 제어를 포함한 업계 표준 [보안 관행](/ko/products/cloud/features/security)을 기본으로 적용하며, 다음과 같은 이점도 제공합니다.
+
+* 스토리지와 독립적인 컴퓨트 자동 확장
+* 객체 스토리지 기반의 저비용, 사실상 무제한 데이터 보존
+* 웨어하우스(warehouses)를 활용한 [읽기 및 쓰기 워크로드(workloads)의 독립적 격리](/ko/clickstack/self-configured/managing/isolating-read-write)
+* 통합 인증
+* 자동화된 [백업](/ko/products/cloud/features/backups/overview)
+* 원활한 업그레이드
+
+**자체 관리형 ClickHouse Observability를 사용할 때는 ClickHouse Cloud의 [권장 사항](/ko/products/cloud/guides/production-readiness)을 따르십시오.**
+
+## 수집 보안 설정 {#secure-ingestion-managed}
+
+ClickStack OpenTelemetry 수집기를 오픈 소스 배포판 이외의 환경에 배포하면 기본적으로 보안이 적용되지 않으며, OTLP 포트에서 인증을 요구하지 않습니다.
+
+수집을 보호하려면 collector를 배포할 때 `OTLP_AUTH_TOKEN` 환경 변수로 인증 토큰을 지정하십시오. 자세한 내용은 [&quot;collector 보안 설정&quot;](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)을 참조하십시오.
+
+### 수집 사용자 생성 {#create-a-database-ingestion-user-managed}
+
+ClickHouse Cloud로 데이터를 수집할 때는 OTel collector 전용 사용자를 생성하고, 수집되는 데이터가 특정 데이터베이스(예: `otel`)로 전송되도록 하는 것이 좋습니다. 자세한 내용은 [&quot;수집 사용자 생성&quot;](/ko/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured)을 참조하십시오.
+
+## TTL(Time To Live) 구성 {#configure-ttl-managed}
+
+자체 관리형 ClickHouse Observability 배포에 맞게 [TTL(Time To Live)](/ko/clickstack/self-configured/managing/ttl)이 [적절히 구성되어](/ko/clickstack/self-configured/managing/ttl#modifying-ttl) 있는지 확인하십시오. TTL은 데이터 보존 기간을 결정하며, 기본값인 30일은 요구 사항에 따라 조정이 필요할 수 있습니다.
+
+## 리소스 추정 {#estimating-resources}
+
+<ResourceEstimation />
+
+사용 중인 환경에 맞게 용량 산정 가정을 조정하는 방법에 대한 자세한 내용은 [&quot;환경에 맞게 용량 산정 가정 조정하기&quot;](/ko/clickstack/self-configured/managing/estimating-resources#refining-sizing-assumptions)를 참조하십시오.
+
+### 관측성 워크로드(workloads) 격리 {#isolating-workloads}
+
+실시간 애플리케이션 분석 등 다른 워크로드(workloads)를 이미 처리하고 있는 **기존 ClickHouse Cloud 서비스**에 자체 관리형 ClickHouse Observability를 추가하는 경우, 관측성 트래픽을 격리할 것을 강력히 권장합니다.
+
+[**관리형 웨어하우스(warehouses)**](/ko/products/cloud/features/infrastructure/warehouses)를 사용하여 관측성 전용 **자식 서비스**를 생성하십시오. 이를 통해 다음과 같은 이점을 얻을 수 있습니다.
+
+* 수집 및 쿼리 부하를 기존 애플리케이션과 격리
+* 관측성 워크로드(workloads)를 독립적으로 확장
+* 관측성 쿼리가 운영 환경의 분석에 영향을 주지 않도록 방지
+* 필요 시 여러 서비스 간에 동일한 기본 데이터 세트(datasets)를 공유
+
+이 방식을 사용하면 기존 워크로드(workloads)에 영향을 주지 않으면서, 관측성 데이터가 증가함에 따라 관측성 워크로드(workloads)를 독립적으로 확장할 수 있습니다.
+
+### 읽기 및 쓰기 워크로드(workloads) 분리 {#isolating-read-write}
+
+웨어하우스(warehouses)를 사용하면 수집 워크로드(workloads)와 쿼리 워크로드(workloads)를 각각 전용 컴퓨트로 분리할 수도 있습니다. 이 구성에서는 데이터 수집이 읽기/쓰기 서비스로 전송되고, 관측성 UI는 읽기 전용 서비스에서 실행됩니다. 대규모 배포에는 이 토폴로지를 운영 환경에 적용할 것을 권장합니다. 자세한 내용은 [&quot;읽기 및 쓰기 워크로드(workloads) 분리&quot;](/ko/clickstack/self-configured/managing/isolating-read-write)를 참조하십시오.
+
+대규모 배포에 대한 안내나 사용자 정의 용량 산정 가이드가 필요하면 지원팀에 문의하여 더 정밀한 추정치를 받으십시오.
+
+## 쿼리 사용자 권한 {#user-permissions}
+
+외부 쿼리 클라이언트에서 사용하는 ClickHouse 사용자는 `readonly = 2`로 설정해야 합니다. UI는 모든 쿼리에 `date_time_output_format`과 같은 자체 설정을 지정하며, 원시 SQL(Raw SQL) 차트 역시 `readonly = 2`를 설정합니다. 따라서 `readonly = 1` 사용자로는 이러한 쿼리가 `Cannot modify '...' setting in readonly mode` 오류와 함께 실패합니다. `readonly = 2`로 설정하면 UI에서 `max_rows_to_read`, `read_overflow_mode`, `cancel_http_readonly_queries_on_client_close`도 설정할 수 있습니다. `max_rows_to_read`를 제한하는 경우 최소 100만 이상으로 허용하십시오. `wait_end_of_query`는 설정이 아니라 HTTP 인터페이스 매개변수이므로 별도의 권한 부여가 필요하지 않습니다.
+
+예시:
+
+```sql
+CREATE USER clickstack_ui IDENTIFIED BY '<password>' SETTINGS readonly = 2;
+GRANT SELECT ON default.* TO clickstack_ui;
+```
+
+ClickHouse Cloud의 `default` 사용자에게는 기본적으로 이러한 권한이 부여되어 있지만, 전용 사용자를 별도로 생성하는 것을 권장합니다.

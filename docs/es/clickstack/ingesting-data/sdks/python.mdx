@@ -52,7 +52,7 @@ A continuación, tendrás que configurar las siguientes variables de entorno en 
   </Tab>
 </Tabs>
 
-*La variable de entorno `OTEL_SERVICE_NAME` se utiliza para identificar tu servicio en la aplicación HyperDX; puede ser cualquier nombre que quieras.*
+*La variable de entorno `OTEL_SERVICE_NAME` se utiliza para identificar tu servicio en la UI de ClickStack; puede ser cualquier nombre que quieras.*
 
 ### Ejecuta la aplicación con el agente de Python de OpenTelemetry {#run-the-application-with-otel-python-agent}
 
@@ -124,7 +124,7 @@ logger.setLevel(logging.DEBUG)
 
 El SDK de Python de OpenTelemetry suele mostrar errores en la consola cuando
 se producen. Sin embargo, si no aparece ningún error, pero observas que tus datos
-no se muestran en HyperDX como deberían, puedes habilitar el modo de depuración.
+no se muestran en la UI de ClickStack como deberían, puedes habilitar el modo de depuración.
 Cuando el modo de depuración está activado, todos los datos de telemetría se imprimirán en la consola,
 lo que te permitirá comprobar si tu aplicación está correctamente instrumentada con los
 datos esperados.

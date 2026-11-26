@@ -180,6 +180,10 @@ sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+# The previous release's tests create projections with positional arguments under a session setting, and loading
+# such a projection again (ATTACH, a restart, the upgraded server) needs it in the profile. Both servers read this file.
+echo "<clickhouse><profiles><default><enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections></default></profiles></clickhouse>" > /etc/clickhouse-server/users.d/enable_positional_arguments_for_projections.xml
+
 start_server || (echo "Failed to start server" && exit 1)
 
 clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
@@ -207,13 +211,60 @@ rm -rf tmp_stress_output
 timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
 (
     echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
-    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(serving_server_pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 )
 
 # A query can outlive the stress phase and hold its table locks until it ends (one that reads an unreachable S3
 # endpoint retries for tens of minutes). The replica restarts below need their tables exclusively, so cancel them.
 timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
+
+# A detached database or table is not in `system.mutations`, so the kill below does not see its mutations,
+# while the upgraded server loads it from its metadata and resumes them. The stress runner leaves such objects
+# behind: `01254_dict_load_after_detach_attach` detaches and attaches its database, which several test files
+# share under `--upgrade-check`, and `ATTACH DATABASE` fails when another test left a table there that cannot
+# be attached by a query (an experimental engine without its setting). The database then stays detached with
+# a broken mutation of an interrupted test in it, and the `<Error>` scan at the end reports that mutation.
+#
+# Restarting the old server loads the same set of objects that the upgraded server is going to load, which
+# attaching them one by one does not: the server tolerates at startup a table that it refuses in a query.
+# Restart only when something is detached, so the other runs still upgrade a server exactly as the stress
+# phase left it.
+#
+# The metadata files of the databases are listed from the default metadata disk, because a detached database
+# is not known to the server. Their names are the database names escaped for the file system, which
+# `decodeURLComponent` reverses. Not finding the `default` database there means that the listing is wrong,
+# and it is reported instead of being read as "nothing is detached".
+echo "Restart the server if the stress phase left detached databases or tables"
+
+detached_objects=unknown
+if database_metadata_files=$(find /var/lib/clickhouse/metadata -maxdepth 1 -name '*.sql' -printf '%f ' 2> /test_output/detached_objects_error.txt)
+then
+    detached_objects=$(timeout 1m clickhouse-client --param_metadata_files="$database_metadata_files" --query "
+        SELECT
+            (
+                SELECT throwIf(NOT has(groupArray(name), 'default'), 'No metadata file of the default database')
+                    + countIf(name NOT IN (SELECT name FROM system.databases))
+                FROM
+                (
+                    SELECT decodeURLComponent(replaceRegexpOne(arrayJoin(splitByChar(' ', {metadata_files:String})), '\\\\.sql\$', '')) AS name
+                )
+                WHERE name != ''
+            )
+            + (SELECT count() FROM system.detached_tables WHERE NOT is_permanently)" \
+        2> /test_output/detached_objects_error.txt) || detached_objects=unknown
+fi
+[ -s /test_output/detached_objects_error.txt ] || rm -f /test_output/detached_objects_error.txt
+
+if [ "$detached_objects" = unknown ]
+then
+    echo -e "Cannot count the databases and tables left detached by the stress phase (see detached_objects_error.txt)$FAIL" >> /test_output/test_results.tsv
+elif [ "$detached_objects" != 0 ]
+then
+    echo "The stress phase left $detached_objects detached databases and tables, restarting the server"
+    stop_server 300 false || (echo "Failed to stop server" && exit 1)
+    start_server || (echo "Failed to start server" && exit 1)
+fi
 
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
@@ -633,7 +684,7 @@ fi
 # rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
 # so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
 # still caught and must have a settings changes history entry.
-IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
@@ -762,8 +813,6 @@ echo "<clickhouse>
     <profiles>
         <default>
             <compatibility>$old_major_version</compatibility>
-            <!-- Allow loading projections with positional arguments (e.g., GROUP BY 1, 2) created by the old server. -->
-            <enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections>
         </default>
     </profiles>
 </clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
@@ -871,6 +920,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
 #       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
 #       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
+# `getInfoIfClickHouseDictionarySource` + `Code: 198` + the host `[x` is the same class for the dictionary of
+#       `05493_dictionary_host_unclosed_bracket`, whose source host cannot be resolved by design: `--fake-drop` keeps it in
+#       a shared `--database=test_N`, and the upgrade restart logs the failed resolution while it collects the dependencies
+#       of the dictionary. `[x` is neither a host name nor a bracketed IPv6 address, so a failure to resolve any real host
+#       still fails this job.
 # `StorageKeeperMap` + a `05024_keeper_map_parenthesized_metadata*` table + `Failed to activate table because of
 #       invalid metadata in ZooKeeper` is the same class: that test rewrites its own `metadata` znode into shapes a
 #       server must refuse and reverts them at the end of the file, but stress worker 1 (`--database=test_1`) runs
@@ -887,6 +941,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       DDL entry (e.g. an `ON CLUSTER` `BACKUP`) and a pending batch of a `Distributed` table both keep the settings
 #       of the query that created them and run again after the restart. Nothing enables fault injection on the
 #       upgraded server itself, so this message is never a compatibility signal, whichever component logs it.
+# `Code: 153` + `Division by zero` in `intDiv(100, x)` + `While executing TTL` is `05073_column_ttl_recompute_materialized`
+#       failing a TTL merge on purpose: the column TTL resets `x` to 0, from which the `MATERIALIZED intDiv(100, x)` column
+#       of `t_column_ttl_materialized_undefined` cannot be computed. In a stress worker's shared `--database=test_N` the
+#       table outlives the test, as `--fake-drop` ignores its `DROP`, and both the previous release and the upgraded server
+#       retry the merge without end (issue #123953). The entry pins the code, the fixture's expression and the TTL context,
+#       so any other failing TTL merge still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -901,6 +961,13 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `while loading statistics` + `ILLEGAL_STATISTICS` appears when the statistics file format version changes between
 #       releases. The new binary cannot deserialize old statistics files and throws ILLEGAL_STATISTICS (Code: 708).
 #       Filtered via regex in the secondary pipe below to require both the loading context AND the error code together.
+# `hash of uncompressed files doesn't match` + `is not byte-identical to data on another replicas` is expected while
+#       replicas run different versions (docs/guides/oss/update.mdx): the upgraded server redoes a merge or mutation that
+#       the other replica committed under the previous release, uncompressed part files such as `statistics.packed` change
+#       format between releases, and the replica then fetches the part. Filtered only when it is the sole mismatch, so
+#       divergent data of the part's own columns (`uncompressed hash of compressed files`), a different number of files
+#       and the KILL MUTATION `different columns hash` case still fail this job. Each projection is one uncompressed
+#       `<name>.proj` entry of the parent part's checksums, so divergent projection data is not detected here.
 # `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
 #       broker is unavailable during upgrade (several tests point at a deliberately unreachable broker). Filtered
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
@@ -1091,16 +1158,19 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "No stream (ba1.bin) file checksum for column b" \
            -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
            -e "Query memory tracker: fault injected" \
+           -e "Code: 153. DB::Exception: Division by zero: while executing 'FUNCTION intDiv(100 :: 1, x :: 0) -> intDiv(100, x) Int8 : 3': While executing TTL. (ILLEGAL_DIVISION)" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
+    | grep -av -e "getInfoIfClickHouseDictionarySource.*Code: 198\. DB::NetException: Not found address of host: \[x\. (DNS_ERROR)" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
     | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
+    | grep -av -e "(\(Merge\|Mutate\)FromLogEntryTask): Code: 40\. DB::Exception: Checksums of parts don't match: hash of uncompressed files doesn't match ([0-9a-f]* vs [0-9a-f]*)\. (CHECKSUM_DOESNT_MATCH) (version .*)\. Data after \(merge\|mutation\) is not byte-identical to data on another replicas\." \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
