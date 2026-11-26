@@ -1,0 +1,20 @@
+full pread_threadpool	1
+range pread_threadpool	1
+point pread_threadpool	1
+full pread_threadpool prefetch	1
+range pread_threadpool prefetch	1
+full pread_fake_async	1
+range pread_fake_async	1
+point pread_fake_async	1
+full pread	1
+range pread	1
+point pread	1
+full read	1
+range read	1
+point read	1
+full mmap	1
+range mmap	1
+point mmap	1
+full O_DIRECT	1
+log 4097	1
+log 1048576	1

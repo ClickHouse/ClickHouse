@@ -144,25 +144,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         result = asyncReadInto(buf, internal_buffer.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
 
-    /// The skipped bytes belong to the request just consumed; until then getPosition counts them.
-    bytes_to_ignore = 0;
-
-    chassert(!result.page_cache_cell);
-    chassert(result.size >= result.offset);
-    size_t bytes_read = result.size - result.offset;
-    file_offset_of_buffer_end = result.file_offset_of_buffer_end;
-
-    /// The local read throttler exists to keep the load on the block device within the configured
-    /// budget, so the data that was copied from the OS page cache must not consume its tokens.
-    /// The other throttlers that can be combined here (for backups, merges and mutations) limit
-    /// the amount of work regardless of where the data came from, and still account it.
-    if (throttler)
-    {
-        if (result.from_os_page_cache)
-            throttler->throttleOSPageCacheRead(result.size);
-        else
-            throttler->throttle(result.size);
-    }
+    size_t bytes_read = finishRead(result);
 
     if (bytes_read)
     {
@@ -177,6 +159,90 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     }
 
     return bytes_read;
+}
+
+
+size_t AsynchronousReadBufferFromFileDescriptor::finishRead(const IAsynchronousReader::Result & result)
+{
+    /// The skipped bytes belong to the request just consumed; until then getPosition counts them.
+    bytes_to_ignore = 0;
+
+    chassert(!result.page_cache_cell);
+    chassert(result.size >= result.offset);
+    file_offset_of_buffer_end = result.file_offset_of_buffer_end;
+
+    /// The local read throttler exists to keep the load on the block device within the configured
+    /// budget, so the data that was copied from the OS page cache must not consume its tokens.
+    /// The other throttlers that can be combined here (for backups, merges and mutations) limit
+    /// the amount of work regardless of where the data came from, and still account it.
+    if (throttler)
+    {
+        if (result.from_os_page_cache)
+            throttler->throttleOSPageCacheRead(result.size);
+        else
+            throttler->throttle(result.size);
+    }
+
+    return result.size - result.offset;
+}
+
+
+size_t AsynchronousReadBufferFromFileDescriptor::readBig(char * to, size_t n)
+{
+    size_t bytes_copied = 0;
+    while (bytes_copied < n)
+    {
+        if (!hasPendingData())
+        {
+            size_t remaining = n - bytes_copied;
+            if (remaining < internal_buffer.size() || prefetch_future.valid() || bytes_to_ignore || direct_io
+                || required_alignment > 1)
+            {
+                if (!next())
+                    break;
+            }
+            else
+            {
+                chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
+                if (isNextReadAtOrPastKnownEOF())
+                    break;
+
+                /// As next() does.
+                bytes += offset();
+                /// The old data no longer ends at file_offset_of_buffer_end, so seek() must not use it.
+                resetWorkingBuffer();
+
+                size_t bytes_read = 0;
+                try
+                {
+                    IAsynchronousReader::Result result;
+                    {
+                        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousReadWaitMicroseconds);
+                        result = asyncReadInto(to + bytes_copied, internal_buffer.size(), DEFAULT_PREFETCH_PRIORITY).get();
+                    }
+                    bytes_read = finishRead(result);
+                }
+                catch (...)
+                {
+                    /// As next() does.
+                    cancel();
+                    throw;
+                }
+
+                bytes += bytes_read;
+                if (!bytes_read)
+                    break;
+                bytes_copied += bytes_read;
+                continue;
+            }
+        }
+
+        size_t bytes_to_copy = std::min(available(), n - bytes_copied);
+        ::memcpy(to + bytes_copied, pos, bytes_to_copy);
+        pos += bytes_to_copy;
+        bytes_copied += bytes_to_copy;
+    }
+    return bytes_copied;
 }
 
 

@@ -49,7 +49,16 @@ protected:
     /// This is required for CheckingCompressedReadBuffer, since this is just a proxy.
     ///
     /// Returns number of compressed bytes read.
-    size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy);
+    ///
+    /// If `data_to` is set, the data of a block stored as is that is not wholly in compressed_in.buffer() and fits in
+    /// `data_to_size` bytes is read straight to `data_to`; then `*read_to_data_to` is true and compressed_buffer is null.
+    size_t readCompressedData(
+        size_t & size_decompressed,
+        size_t & size_compressed_without_checksum,
+        bool always_copy,
+        char * data_to = nullptr,
+        size_t data_to_size = 0,
+        bool * read_to_data_to = nullptr);
 
     /// Decompress into memory pointed by `to`
     void decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum);

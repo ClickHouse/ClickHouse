@@ -341,12 +341,16 @@ uint128 CityHash128WithSeed(const char *s, size_t len, uint128 seed) {
                  HashLen16(x + w.second, y + v.second));
 }
 
+uint128 CityHash128WithPrefix(const char *first_16_bytes, const char *s, size_t len) {
+  return CityHash128WithSeed(s,
+                             len,
+                             uint128(Fetch64(first_16_bytes) ^ k3,
+                                     Fetch64(first_16_bytes + 8)));
+}
+
 uint128 CityHash128(const char *s, size_t len) {
   if (len >= 16) {
-    return CityHash128WithSeed(s + 16,
-                               len - 16,
-                               uint128(Fetch64(s) ^ k3,
-                                       Fetch64(s + 8)));
+    return CityHash128WithPrefix(s, s + 16, len - 16);
   } else if (len >= 8) {
     return CityHash128WithSeed(NULL,
                                0,

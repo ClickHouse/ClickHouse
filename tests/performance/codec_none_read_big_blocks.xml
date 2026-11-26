@@ -1,0 +1,20 @@
+<test iceberg="0">
+    <!-- Every block of `vec` (1536 bytes per row) is larger than the read buffer, so each one is read with `readBig`. -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE vec_none (id UInt64, vec Array(BFloat16) CODEC(NONE)) ENGINE = MergeTree ORDER BY id</create_query>
+    <fill_query>
+        INSERT INTO vec_none
+        SELECT number, arrayMap(i -> toBFloat16((toInt64(sipHash64(number, i) % 2001) - 1000) / 1000.), range(768))
+        FROM numbers_mt(300000)
+        SETTINGS max_threads = 8, max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE vec_none FINAL</fill_query>
+
+    <query>SELECT id FROM vec_none ORDER BY L2Distance(vec, arrayMap(i -> toBFloat16(sin(i)), range(768))) LIMIT 10 FORMAT Null</query>
+    <query>SELECT sum(length(vec)), max(vec[1]) FROM vec_none FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS vec_none</drop_query>
+</test>

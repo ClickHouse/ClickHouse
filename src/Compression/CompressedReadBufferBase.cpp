@@ -59,6 +59,28 @@ void resizeCompressedBuffer(PODArray<char> & buffer, size_t size)
         buffer.resize(size);
 }
 
+/// Like CompressedReadBufferBase::validateChecksum for a block whose header and data are in different places.
+void validateChecksumOfSplitBlock(
+    const char * header, const char * data, size_t data_size, CompressedReadBufferBase::Checksum expected_checksum, bool external_data)
+{
+    constexpr size_t header_size = ICompressionCodec::getHeaderSize();
+    static_assert(header_size < 16);
+    chassert(header_size + data_size >= 16);
+
+    char first_16_bytes[16];
+    memcpy(first_16_bytes, header, header_size);
+    memcpy(first_16_bytes + header_size, data, 16 - header_size);
+    if (CityHash_v1_0_2::CityHash128WithPrefix(first_16_bytes, data + (16 - header_size), header_size + data_size - 16)
+        == expected_checksum)
+        return;
+
+    PODArray<char> block(header_size + data_size);
+    memcpy(block.data(), header, header_size);
+    memcpy(block.data() + header_size, data, data_size);
+    CompressedReadBufferBase::validateChecksum(block.data(), block.size(), expected_checksum, external_data);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Checksum of a block in two parts does not match the checksum of the whole block");
+}
+
 }
 
 CompressedReadBufferBase::Checksum CompressedReadBufferBase::readChecksum(const char * source)
@@ -196,8 +218,17 @@ static void readHeaderAndGetCodecAndSize(
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
 /// Returns number of compressed bytes read.
-size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy)
+size_t CompressedReadBufferBase::readCompressedData(
+    size_t & size_decompressed,
+    size_t & size_compressed_without_checksum,
+    bool always_copy,
+    char * data_to,
+    size_t data_to_size,
+    bool * read_to_data_to)
 {
+    if (read_to_data_to)
+        *read_to_data_to = false;
+
     if (compressed_in->eof())
         return 0;
 
@@ -240,8 +271,36 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     // Is whole compressed block available in 'compressed_in->' buffer?
-    if (!own_compressed_buffer_header_init
-        && compressed_in->available() >= size_compressed_without_checksum - header_size + additional_size_at_the_end_of_buffer)
+    bool whole_block_in_compressed_in = !own_compressed_buffer_header_init
+        && compressed_in->available() >= size_compressed_without_checksum - header_size + additional_size_at_the_end_of_buffer;
+
+    if (data_to && read_to_data_to && !whole_block_in_compressed_in && !always_copy && codec->isNone()
+        && size_compressed_without_checksum >= 16 && size_compressed_without_checksum - header_size == size_decompressed
+        && size_decompressed <= data_to_size)
+    {
+        /// own_compressed_buffer keeps the checksum and the header, as for a copied block, for addDiagnostics.
+        if (!own_compressed_buffer_header_init)
+        {
+            own_compressed_buffer.resize(size_header_plus_checksum);
+            memcpy(own_compressed_buffer.data(), compressed_in->position() - size_header_plus_checksum, size_header_plus_checksum);
+            own_compressed_buffer_header_init = true;
+        }
+
+        compressed_in->readBigStrict(data_to, size_decompressed);
+
+        if (!disable_checksum)
+            validateChecksumOfSplitBlock(own_compressed_buffer.data() + sizeof(Checksum), data_to, size_decompressed, checksum, external_data);
+
+        ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
+        ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
+        ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
+
+        compressed_buffer = nullptr;
+        *read_to_data_to = true;
+        return size_compressed_without_checksum + sizeof(Checksum);
+    }
+
+    if (whole_block_in_compressed_in)
     {
         compressed_buffer = compressed_in->position() - header_size;
         compressed_in->position() += size_compressed_without_checksum - header_size;
@@ -252,14 +311,14 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         /// including the header and checksum again as it's simpler than regenerating it
         resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_in->position() -= size_header_plus_checksum;
-        compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
+        compressed_in->readBigStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
         own_compressed_buffer_header_init = true;
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
     else
     {
         resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
-        compressed_in->readStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
+        compressed_in->readBigStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
 
