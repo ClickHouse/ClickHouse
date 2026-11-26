@@ -1,6 +1,6 @@
 -- JOIN runtime-filter pruning combined with the index ranges refiner
 -- (use_indexes_refiner_in_read_pools). When runtime filters drive index pruning, the refiner
--- only reuses the result a reader has built (an eager per-part build could snapshot a
+-- only refines once they are built (an earlier per-part build could snapshot a
 -- not-yet-published filter), so the pruning events and the amount of read data must not
 -- depend on the setting.
 

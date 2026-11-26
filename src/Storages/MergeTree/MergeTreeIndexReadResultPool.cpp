@@ -17,8 +17,6 @@
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
 
-#include <shared_mutex>
-
 namespace CurrentMetrics
 {
     extern const Metric FilteringMarksWithSecondaryKeys;
@@ -109,6 +107,17 @@ bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
     /// The dynamic predicate can prune only through the primary key, the global row index
     /// (`_part_starting_offset + _part_offset`) or the skip indexes on its keys (`dynamic_skip_indexes`).
     return (dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty())) || global_row_index_predicate_builder;
+}
+
+bool MergeTreeSkipIndexReader::areRuntimeFiltersReady() const
+{
+    if (!hasRuntimeFilters() || runtime_filters_ready.load(std::memory_order_relaxed))
+        return true;
+    /// A built filter stays built, so the answer is kept once it is true.
+    if (!runtime_filters_ready_check || !runtime_filters_ready_check())
+        return false;
+    runtime_filters_ready.store(true, std::memory_order_relaxed);
+    return true;
 }
 
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
@@ -849,13 +858,6 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
                 }
             }
 
-            if (publish_built_results)
-            {
-                std::lock_guard registry_lock(index_read_result_registry_mutex);
-                if (auto built_it = index_read_result_registry.find(part_index); built_it != index_read_result_registry.end())
-                    built_it->second.built_result = res;
-            }
-
             promise->set_value(res);
             return res;
         }
@@ -871,15 +873,6 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
         lock.unlock();
         return future.get();
     }
-}
-
-MergeTreeIndexReadResultPtr MergeTreeIndexReadResultPool::tryGetBuiltIndexReadResult(size_t part_index)
-{
-    std::shared_lock lock(index_read_result_registry_mutex);
-    auto it = index_read_result_registry.find(part_index);
-    if (it == index_read_result_registry.end())
-        return nullptr;
-    return it->second.built_result;
 }
 
 void MergeTreeIndexReadResultPool::clear(size_t part_index)

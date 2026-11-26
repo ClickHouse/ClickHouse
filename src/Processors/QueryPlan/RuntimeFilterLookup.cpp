@@ -1596,6 +1596,17 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
     return &dag.addFunction(and_func, std::move(and_args), {});
 }
 
+bool areRuntimeFiltersReady(const IRuntimeFilterLookup & lookup, const RuntimeFilterIndexAnalysisDescriptors & descriptors)
+{
+    for (const auto & descriptor : descriptors)
+    {
+        auto filter = lookup.find(descriptor.filter_id);
+        if (!filter || !filter->isReady())
+            return false;
+    }
+    return true;
+}
+
 RuntimeFilterPruningPredicate::RuntimeFilterPruningPredicate(
     RuntimeFilterIndexAnalysisDescriptors descriptors_, RuntimeFilterLookupPtr lookup_, ContextPtr context_)
     : descriptors(std::move(descriptors_))
@@ -1610,12 +1621,8 @@ std::optional<std::shared_ptr<const ActionsDAG>> RuntimeFilterPruningPredicate::
     if (built)
         return predicate_dag;
 
-    for (const auto & descriptor : descriptors)
-    {
-        auto filter = lookup->find(descriptor.filter_id);
-        if (!filter || !filter->isReady())
-            return std::nullopt;
-    }
+    if (!areRuntimeFiltersReady(*lookup, descriptors))
+        return std::nullopt;
 
     built = true;
     auto dag = std::make_shared<ActionsDAG>();

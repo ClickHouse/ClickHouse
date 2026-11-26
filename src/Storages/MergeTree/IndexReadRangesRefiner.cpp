@@ -11,10 +11,9 @@ namespace DB
 {
 
 IndexReadRangesRefiner::IndexReadRangesRefiner(
-    MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_, bool only_built_results_)
+    MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_)
     : index_build_context(std::move(index_build_context_))
     , metadata_snapshot(std::move(metadata_snapshot_))
-    , only_built_results(only_built_results_)
 {
     chassert(index_build_context);
 }
@@ -28,28 +27,24 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
     if (!has_projection_ranges && !index_build_context->index_reader_pool->hasSkipIndexReader())
         return ranges;
 
-    MergeTreeIndexReadResultPtr index_read_result;
-    if (only_built_results)
-    {
-        index_read_result = index_build_context->index_reader_pool->tryGetBuiltIndexReadResult(info.part_index_in_query);
-    }
-    else
-    {
-        const auto & skip_index_input = index_build_context->read_ranges.at(info.part_index_in_query);
-        const auto all_updated_columns = info.alter_conversions->getColumnsInvalidatingIndexes();
-        const auto & value_updated_columns = info.alter_conversions->getValueUpdatedColumns();
+    /// Built before the JOIN runtime filters are, the part's result would not be pruned by them for the whole part.
+    if (!index_build_context->index_reader_pool->areRuntimeFiltersReady())
+        return ranges;
 
-        /// Built once per part; concurrent callers wait on a shared future inside the pool.
-        /// The same cached result is later reused by MergeTreeReaderIndex for granule- and row-level filtering.
-        index_read_result = index_build_context->index_reader_pool->getOrBuildIndexReadResult(
-            info.part_index_in_query,
-            info.data_part_info,
-            skip_index_input,
-            has_projection_ranges ? projection_it->second : RangesInDataParts{},
-            metadata_snapshot,
-            all_updated_columns,
-            value_updated_columns);
-    }
+    const auto & skip_index_input = index_build_context->read_ranges.at(info.part_index_in_query);
+    const auto all_updated_columns = info.alter_conversions->getColumnsInvalidatingIndexes();
+    const auto & value_updated_columns = info.alter_conversions->getValueUpdatedColumns();
+
+    /// Built once per part; concurrent callers wait on a shared future inside the pool.
+    /// The same cached result is later reused by MergeTreeReaderIndex for granule- and row-level filtering.
+    auto index_read_result = index_build_context->index_reader_pool->getOrBuildIndexReadResult(
+        info.part_index_in_query,
+        info.data_part_info,
+        skip_index_input,
+        has_projection_ranges ? projection_it->second : RangesInDataParts{},
+        metadata_snapshot,
+        all_updated_columns,
+        value_updated_columns);
 
     /// The read may have been cancelled; refinement is an optimization, so just do nothing.
     if (!index_read_result || (!index_read_result->skip_index_read_result && !index_read_result->projection_index_read_result))

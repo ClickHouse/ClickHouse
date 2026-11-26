@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <atomic>
 #include <functional>
 #include <roaring/roaring.hh>
 
@@ -88,6 +87,12 @@ public:
     /// Prunes by the global row index `_part_starting_offset + _part_offset` with the predicate the builder makes on it.
     void setGlobalRowIndexPruning(DynamicPredicateBuilder predicate_builder);
 
+    /// Tells whether all JOIN runtime filters `read` prunes by are built.
+    void setRuntimeFiltersReadyCheck(std::function<bool()> check) { runtime_filters_ready_check = std::move(check); }
+
+    /// Whether `read` would see every JOIN runtime filter it prunes by built (always true if it prunes by none).
+    bool areRuntimeFiltersReady() const;
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -113,6 +118,9 @@ private:
     TopKThresholdTrackerPtr top_k_threshold_tracker;
     ContextPtr context;
     LoggerPtr log;
+
+    std::function<bool()> runtime_filters_ready_check;
+    mutable std::atomic_bool runtime_filters_ready = false;
 
     std::atomic_bool is_cancelled = false;
 };
@@ -262,8 +270,6 @@ public:
     {
         std::shared_ptr<std::promise<MergeTreeIndexReadResultPtr>> promise;
         std::shared_future<MergeTreeIndexReadResultPtr> future;
-        /// The value of `future` once the build succeeded, kept only with `publishBuiltResults`.
-        MergeTreeIndexReadResultPtr built_result;
 
         IndexReadResultEntry()
             : promise(std::make_shared<std::promise<MergeTreeIndexReadResultPtr>>())
@@ -285,12 +291,6 @@ public:
         const NameSet & all_updated_columns,
         const NameSet & value_updated_columns);
 
-    /// Returns the part's MergeTreeIndexReadResult only if its build has already finished; never builds or waits.
-    MergeTreeIndexReadResultPtr tryGetBuiltIndexReadResult(size_t part_index);
-
-    /// Makes tryGetBuiltIndexReadResult see the results built from now on.
-    void publishBuiltResults() { publish_built_results = true; }
-
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
     void clear(size_t part_index);
@@ -301,6 +301,9 @@ public:
     /// Whether index read results depend on JOIN runtime filters (see MergeTreeSkipIndexReader::hasRuntimeFilters).
     bool hasRuntimeFilters() const { return skip_index_reader && skip_index_reader->hasRuntimeFilters(); }
 
+    /// See MergeTreeSkipIndexReader::areRuntimeFiltersReady.
+    bool areRuntimeFiltersReady() const { return !skip_index_reader || skip_index_reader->areRuntimeFiltersReady(); }
+
     void cancel() noexcept;
 
 private:
@@ -310,7 +313,6 @@ private:
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
     std::unordered_map<size_t, IndexReadResultEntry> index_read_result_registry;
     SharedMutex index_read_result_registry_mutex;
-    std::atomic_bool publish_built_results = false;
 };
 
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
