@@ -1873,9 +1873,9 @@ The hostname that [`Replicated`](/reference/engines/database-engines/replicated)
 
 If not set, ClickHouse falls back to the configured interserver host, which is `interserver_http_host` or `interserver_https_host`, depending on which of `interserver_http_port` and `interserver_https_port` is specified. If that host is not set either, the hostname returned by `getFQDNOrHostName` is used.
 
-:::note
+<Note>
 The advertised hostname is also used for the cluster that a `Replicated` database exposes automatically (see `system.clusters`), exactly as the interserver host is used when `replica_host` is not set. A replica is treated as local for that cluster only if its advertised host resolves to a local interface, so an address that does not resolve locally on the server itself (for example, a virtual IP of a load balancer) makes the server consider its own replica remote, and queries to that cluster go through the network instead of running locally. Prefer a hostname that resolves to the server both from other replicas and from the server itself.
-:::
+</Note>
 
 An IPv6 address may be given either as a bare literal or in the bracketed form; both are published to the automatically generated cluster in the bracketed form.
 
