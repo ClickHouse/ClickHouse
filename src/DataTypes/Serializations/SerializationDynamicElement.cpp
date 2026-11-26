@@ -38,13 +38,13 @@ UInt128 SerializationDynamicElement::getHash(const SerializationPtr & nested_, c
     return hash.get128();
 }
 
-SerializationPtr SerializationDynamicElement::create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, size_t nested_subcolumn_array_level_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)
+SerializationPtr SerializationDynamicElement::create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, size_t nested_subcolumn_array_level_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_, const DataTypePtr & element_type_)
 {
     if (!nested_->supportsPooling() || !shared_variant_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, nested_subcolumn_array_level_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_));
+        return std::shared_ptr<ISerialization>(new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, nested_subcolumn_array_level_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, element_type_));
     return ISerialization::pooled(
         getHash(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, nested_subcolumn_array_level_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_),
-        [&] { return new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, nested_subcolumn_array_level_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_); });
+        [&] { return new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, nested_subcolumn_array_level_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, element_type_); });
 }
 
 struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::DeserializeBinaryBulkState
@@ -131,7 +131,8 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
                 *global_discr,
                 variant_type.getVariants().size(),
                 nullable_added_by_extraction,
-                selected_subcolumn_is_null_map);
+                selected_subcolumn_is_null_map,
+                element_type);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = false;
         settings.path.pop_back();
@@ -269,7 +270,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                 }
                 else
                 {
-                    variant_column->insertDefault();
+                    result_type->insertDefaultInto(*variant_column);
                 }
             }
             else if (is_null_map_subcolumn)
@@ -278,7 +279,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             }
             else
             {
-                variant_column->insertDefault();
+                result_type->insertDefaultInto(*variant_column);
             }
         }
 

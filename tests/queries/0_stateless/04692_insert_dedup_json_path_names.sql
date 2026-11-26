@@ -2,7 +2,6 @@
 -- path name next to its values. Hashing the values alone left the hash blind to which path they
 -- belong to, so `{"a":1}` and `{"b":1}` collided and the second insert was silently dropped.
 
-SET enable_json_type = 1;
 SET max_insert_threads = 1;
 
 DROP TABLE IF EXISTS t_dedup_json_same;
