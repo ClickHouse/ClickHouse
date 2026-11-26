@@ -23,6 +23,8 @@ struct CurrentlyMergingPartsTagger
     // Optional tagger to maintain volatile parts for the JBOD balancer
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
     bool finalized{false};
+    /// Counted in `StorageMergeTree::num_running_clears_of_block_columns` until finalized.
+    bool clears_block_columns{false};
 
     CurrentlyMergingPartsTagger(
         FutureMergedMutatedPartPtr future_part_,

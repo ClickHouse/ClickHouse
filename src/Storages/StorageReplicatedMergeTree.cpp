@@ -9466,6 +9466,11 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
             "is not finished. Wait until it finishes, or kill it", fmt::join(mutations, ", "));
     }
 
+    if (queue.getNumRunningClearsOfBlockColumns())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot execute a lightweight update, because a mutation of a part that clears columns `_block_number` and "
+            "`_block_offset` is running. Wait until it finishes");
+
     /// With `enable_shared_storage_snapshot_in_query` the update reads with the snapshot of this table
     /// cached for the whole query. Anything analyzed before this point may have cached one: the pruning
     /// analysis in `allocateBlockNumbersInAffectedPartitions`, or the validation of `IN` operands in
