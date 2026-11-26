@@ -1,9 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <mutex>
-#include <unordered_set>
 #include <Access/EnabledRoles.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Poco/AccessExpireCache.h>
 
 
@@ -29,9 +30,12 @@ public:
 
 private:
     void ensureSubscribed() TSA_REQUIRES(mutex);
-    void collectEnabledRolesIfNeeded(scope_guard * notifications) TSA_REQUIRES(mutex);
-    void collectEnabledRoles(scope_guard * notifications) TSA_REQUIRES(mutex);
-    void collectEnabledRoles(EnabledRoles & enabled_roles, scope_guard * notifications) TSA_REQUIRES(mutex);
+    void collectEnabledRolesIfNeeded(scope_guard * notifications);
+    static void collectEnabledRoles(
+        EnabledRoles & enabled_roles,
+        const std::function<RolePtr(const UUID &)> & get_role_function,
+        UnorderedSetWithMemoryTracking<UUID> & referenced,
+        scope_guard * notifications);
     RolePtr getRole(const UUID & role_id) TSA_REQUIRES(mutex);
     void roleChanged(const UUID & role_id, const RolePtr & changed_role) TSA_REQUIRES(mutex);
     void roleRemoved(const UUID & role_id) TSA_REQUIRES(mutex);
@@ -48,7 +52,7 @@ private:
     std::map<EnabledRoles::Params, std::weak_ptr<EnabledRoles>> TSA_GUARDED_BY(mutex) enabled_roles_by_params;
 
     /// Roles that take part in some enabled set: a change to a role outside this set needs no recalculation.
-    std::unordered_set<UUID> TSA_GUARDED_BY(mutex) referenced_roles;
+    UnorderedSetWithMemoryTracking<UUID> TSA_GUARDED_BY(mutex) referenced_roles;
 
     mutable std::mutex mutex;
 };
