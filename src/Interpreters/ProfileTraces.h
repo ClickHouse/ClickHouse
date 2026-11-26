@@ -27,7 +27,7 @@ public:
     static InternalProfileTracesQueuePtr create(const ContextPtr & context);
     ~InternalProfileTracesQueue();
 
-    UInt64 getId() const { return id; }
+    [[nodiscard]] UInt64 getId() const { return id; }
     static Block getSampleBlock();
     /// Return the next batch. The caller must destroy the previous batch before requesting the next one:
     /// its memory is untracked and stays reserved in the shared byte budget until then.
@@ -57,7 +57,7 @@ private:
         Int64 size = 0;
         bool symbolized = false;
 
-        size_t byteSize() const;
+        [[nodiscard]] size_t byteSize() const;
     };
 
     InternalProfileTracesQueue(std::shared_ptr<ProfileTracesRegistry> registry_, UInt64 id_, const String & query_id_);

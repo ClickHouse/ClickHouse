@@ -12,7 +12,7 @@
 #include <thread>
 
 #if USE_SILK
-#    include <Common/tests/gtest_silk_scheduler.h>
+#    include <Common/Silk/tests/gtest_silk_scheduler.h>
 #    include <silk/fibers/fiber.h>
 #    include <silk/fibers/future.h>
 #endif
