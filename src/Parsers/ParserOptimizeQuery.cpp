@@ -219,7 +219,9 @@ ORDER BY name;
 
 ## BY expression {#by-expression}
 
-If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](/reference/statements/select/index#asterisk), [`COLUMNS`](/reference/statements/select/index#select-clause) or [`EXCEPT`](/reference/statements/select/except_modifier) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key). It requires the `SELECT` privilege that reading the listed columns requires, after `*` and `COLUMNS` are expanded. With `ON CLUSTER`, it requires `SELECT` on the whole table, unless the hosts run the query as the user. They do when the server setting `distributed_ddl_use_initial_user_and_roles` is enabled on every host and `distributed_ddl_entry_format_version` is at least 8.
+If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](/reference/statements/select/index#asterisk), [`COLUMNS`](/reference/statements/select/index#select-clause) or [`EXCEPT`](/reference/statements/select/except_modifier) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
+
+`DEDUPLICATE BY` requires the `SELECT` privilege that reading the listed columns requires, after `*` and `COLUMNS` are expanded. With `ON CLUSTER`, it requires `SELECT` on the whole table, unless the hosts run the query as the user. They do when the server setting `distributed_ddl_use_initial_user_and_roles` is enabled on every host and `distributed_ddl_entry_format_version` is at least 8.
 
 <Note>
 Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](/reference/statements/create/view#materialized-view) and [ALIAS](/reference/statements/create/table#alias) columns are not used for expansion.

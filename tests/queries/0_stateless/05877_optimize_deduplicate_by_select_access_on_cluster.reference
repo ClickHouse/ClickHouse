@@ -11,6 +11,11 @@ missing table        : (UNKNOWN_TABLE) names initiator
 view, source columns : (ACCESS_DENIED) hides secret
 view, source granted : OK
 mv rows: 4
+-- a view with SQL security is checked on the hosts, as its read is
+refreshable view     : OK
+rmv rows: 4
+definer has source   : OK
+mv_def rows: 4
 -- SELECT on the table
 table granted        : OK
 rows: 4

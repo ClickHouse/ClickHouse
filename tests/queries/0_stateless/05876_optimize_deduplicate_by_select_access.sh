@@ -12,7 +12,8 @@ u_ghost="u_ghost_${db}"
 u_id="u_id_${db}"
 u_alias="u_alias_${db}"
 u_mv="u_mv_${db}"
-users="$u_cols, $u_opt, $u_full, $u_ghost, $u_id, $u_alias, $u_mv"
+u_def="u_def_${db}"
+users="$u_cols, $u_opt, $u_full, $u_ghost, $u_id, $u_alias, $u_mv, $u_def"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $users"
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -30,6 +31,19 @@ GRANT SELECT, OPTIMIZE ON $db.t_alias TO $u_alias;
 GRANT SELECT(sort_key, id), OPTIMIZE ON $db.t TO $u_alias;
 GRANT SELECT, OPTIMIZE ON $db.mv TO $u_mv;
 GRANT SELECT(sort_key, id) ON $db.t TO $u_mv;
+"
+# The view's insert trigger runs as its definer, so t2 is filled before the definer loses `secret`.
+${CLICKHOUSE_CLIENT} -m --query "
+CREATE TABLE $db.t2 (sort_key UInt64, id UInt64, secret String) ENGINE = MergeTree ORDER BY sort_key;
+GRANT SELECT ON $db.t2 TO $u_def;
+GRANT INSERT ON $db.* TO $u_def;
+CREATE MATERIALIZED VIEW $db.mv_def ENGINE = MergeTree ORDER BY sort_key DEFINER = $u_def SQL SECURITY DEFINER AS SELECT * FROM $db.t2;
+"
+${CLICKHOUSE_CLIENT} --async_insert 0 --query "INSERT INTO $db.t2 VALUES (1, 1, 'A'), (1, 2, 'A'), (1, 3, 'B'), (2, 4, 'A'), (2, 5, 'C'), (2, 6, 'C')"
+${CLICKHOUSE_CLIENT} -m --query "
+REVOKE SELECT(secret) ON $db.t2 FROM $u_def;
+GRANT SELECT ON $db.t2 TO $u_full;
+GRANT SELECT, OPTIMIZE ON $db.mv_def TO $u_full;
 "
 
 # Refills the table with 6 rows, 4 of them distinct by (sort_key, secret), and lists its active parts.
@@ -85,6 +99,12 @@ check 'source not granted   ' "$u_mv" "OPTIMIZE TABLE $db.mv FINAL DEDUPLICATE B
 echo "mv rows: $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.mv")"
 check 'source granted       ' "$u_mv" "OPTIMIZE TABLE $db.mv FINAL DEDUPLICATE BY sort_key, id"
 
+echo '-- a materialized view with SQL SECURITY DEFINER checks its source table as the definer, as its read does'
+check 'read, definer lacks  ' "$u_full" "SELECT secret FROM $db.mv_def FORMAT Null"
+check 'definer lacks column ' "$u_full" "OPTIMIZE TABLE $db.mv_def FINAL DEDUPLICATE BY sort_key, secret"
+echo "mv_def rows: $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.mv_def")"
+check 'definer has columns  ' "$u_full" "OPTIMIZE TABLE $db.mv_def FINAL DEDUPLICATE BY sort_key, id"
+
 echo '-- the errors name the columns only for a user who may DESCRIBE the table'
 check 'unknown, default     ' default "OPTIMIZE TABLE $db.t DEDUPLICATE BY sort_key, nope"
 check 'unknown, no SELECT   ' "$u_opt" "OPTIMIZE TABLE $db.t DEDUPLICATE BY sort_key, nope"
@@ -98,4 +118,5 @@ check 'empty, no SELECT     ' "$u_opt" "OPTIMIZE TABLE $db.t DEDUPLICATE BY COLU
 check 'key missing, default ' default "OPTIMIZE TABLE $db.t DEDUPLICATE BY id" sort_key
 check 'key missing, SELECT  ' "$u_id" "OPTIMIZE TABLE $db.t DEDUPLICATE BY id" sort_key
 
+${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.mv_def"
 ${CLICKHOUSE_CLIENT} --query "DROP USER $users"

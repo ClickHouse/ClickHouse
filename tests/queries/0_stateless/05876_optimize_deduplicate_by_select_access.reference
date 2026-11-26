@@ -19,6 +19,11 @@ read, source denied  : (ACCESS_DENIED) hides secret
 source not granted   : (ACCESS_DENIED) hides secret
 mv rows: 6
 source granted       : OK
+-- a materialized view with SQL SECURITY DEFINER checks its source table as the definer, as its read does
+read, definer lacks  : (ACCESS_DENIED) names secret
+definer lacks column : (ACCESS_DENIED) names secret
+mv_def rows: 6
+definer has columns  : OK
 -- the errors name the columns only for a user who may DESCRIBE the table
 unknown, default     : (NO_SUCH_COLUMN_IN_TABLE) names secret
 unknown, no SELECT   : (ACCESS_DENIED) hides secret
