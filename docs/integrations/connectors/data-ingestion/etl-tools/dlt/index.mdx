@@ -16,16 +16,16 @@ import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 
 <PartnerBadge/>
 
-<a href="https://dlthub.com/" target="_blank">dltHub</a> provides the agentic tools and managed ingestion infrastructure over any warehouse, including ClickHouse Cloud. 
+<a href="https://dlthub.com/" target="_blank">dltHub</a> provides the agentic tools and managed ingestion infrastructure for any warehouse, including ClickHouse Cloud.
 Teams and agents can build and operate data pipelines at scale, producing auditable data the whole organization can trust.
 
-<a href="https://clickhouse.com/cloud" target="_blank">ClickHouse Cloud</a> is a <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/clickhouse" target="_blank">destination supported by `dlt`</a>, allowing you to replicate databases, load files, ingest from SaaS, or load from arbitrary REST API.
+<a href="https://clickhouse.com/cloud" target="_blank">ClickHouse Cloud</a> is a <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/clickhouse" target="_blank">destination supported by `dlt`</a>, allowing you to replicate databases, load files, ingest from SaaS, or load from arbitrary REST APIs.
 
-This tutorial shows how to deploy and schedule a pipeline on dltHub to load data into ClickHouse Cloud. 
+This tutorial shows how to deploy and schedule a pipeline on dltHub to load data into ClickHouse Cloud.
 
 ## Prerequisites {#prerequisites}
 
-- Python >=3.11 and <a href="https://docs.astral.sh/uv/" target="_blank">uv</a>.
+- Python >=3.11 and <a href="https://docs.astral.sh/uv/" target="_blank">uv</a>
 - [ClickHouse Cloud](https://clickhouse.com/cloud) account
 - [dltHub](https://app.dlthub.com) account
 
@@ -58,7 +58,7 @@ In an empty directory, run:
 uvx dlthub-start@latest
 ```
 
-The command creates a workspace, installs its dependencies with `uv`, signs you in to dltHub and configures a coding agent. Pick an agent when prompted. You can decline when it offers to launch it, because this tutorial doesn't need one.
+The command creates a workspace, installs its dependencies with `uv`, signs you in to dltHub, and configures a coding agent. Pick an agent when prompted. You can decline when it offers to launch it, because this tutorial doesn't need one.
 
 <Note>
 To add dltHub to an existing dlt project instead, run `uvx dlthub-init@latest`. See <a href="https://dlthub.com/docs/hub/getting-started/installation" target="_blank">Install dltHub</a>.
@@ -72,7 +72,7 @@ uv add "dlt[clickhouse]"
 </Step>
 <Step title="Add a pipeline" id="4-add-a-pipeline">
 
-The workspace comes with a sample pipeline. Replace the content of `pipeline.py` with a pipeline that loads two endpoints of the public <a href="https://pokeapi.co/" target="_blank">PokéAPI</a> every hour:
+The workspace comes with a sample pipeline. Replace the contents of `pipeline.py` with a pipeline that loads two endpoints of the public <a href="https://pokeapi.co/" target="_blank">PokéAPI</a> every hour:
 
 ```python
 import dlt
@@ -101,7 +101,7 @@ def load_pokemon():
 
 The `trigger` schedules the job with a cron expression. See <a href="https://dlthub.com/docs/hub/pipeline-operations/triggers" target="_blank">triggers and scheduling</a> for cron, intervals and follow-up jobs.
 
-Then replace the content of `__deployment__.py` to register the pipeline as a job that dltHub can deploy:
+Then replace the contents of `__deployment__.py` to register the pipeline as a job that dltHub can deploy:
 
 ```python
 """Loads PokéAPI data into ClickHouse."""
@@ -152,7 +152,7 @@ uv run dlthub show
 
 dltHub doesn't query your destination, so use <a href="https://clickhouse.com/docs/interfaces/cli" target="_blank">`clickhousectl`</a> to check the load. Authenticate once with `clickhousectl cloud auth login`, then list the tables:
 
-```bash 
+```bash
 clickhousectl cloud clickhouse query --name "<your-service-name>" -q "SHOW TABLES FROM dlt"
 ```
 
@@ -178,9 +178,9 @@ A `status` of `0` means the load completed successfully.
 </Step>
 </Steps>
 
-Congratulations, you successfully created a pipeline that loads to ClickHouse Cloud and deployed it to dltHub.
+Congratulations! You've successfully created a pipeline that loads to ClickHouse Cloud and deployed it to dltHub.
 
 ## Next steps {#next-steps}
 
 - Replace the PokéAPI source with your own. Ask your coding agent to build one with the <a href="https://dlthub.com/docs/hub/ai-harness/introduction" target="_blank">dltHub AI Harness</a>, or use the <a href="https://dlthub.com/docs/dlt-ecosystem/verified-sources/rest_api/" target="_blank">`rest_api`</a>, <a href="https://dlthub.com/docs/dlt-ecosystem/verified-sources/sql_database/" target="_blank">`sql_database`</a> or <a href="https://dlthub.com/docs/dlt-ecosystem/verified-sources/filesystem/" target="_blank">`filesystem`</a> sources from dlt.
-- Use <a href="https://dlthub.com/blog/dlthub-clickhouse-ontology-agents" target="_blank">dltHub Ontology</a> to generate business context on load for your ClickHouse Agent.
+- Use <a href="https://dlthub.com/blog/dlthub-clickhouse-ontology-agents" target="_blank">dltHub Ontology</a> to generate business context as data loads, for use by your ClickHouse agents.
