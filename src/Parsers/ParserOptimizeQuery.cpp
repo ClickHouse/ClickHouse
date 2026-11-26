@@ -219,7 +219,7 @@ ORDER BY name;
 
 ## BY expression {#by-expression}
 
-If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](/reference/statements/select/index#asterisk), [`COLUMNS`](/reference/statements/select/index#select-clause) or [`EXCEPT`](/reference/statements/select/except_modifier) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
+If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](/reference/statements/select/index#asterisk), [`COLUMNS`](/reference/statements/select/index#select-clause) or [`EXCEPT`](/reference/statements/select/except_modifier) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key). It requires the `SELECT` privilege on the listed columns, after `*` and `COLUMNS` are expanded, and with `ON CLUSTER` on the whole table.
 
 <Note>
 Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](/reference/statements/create/view#materialized-view) and [ALIAS](/reference/statements/create/table#alias) columns are not used for expansion.

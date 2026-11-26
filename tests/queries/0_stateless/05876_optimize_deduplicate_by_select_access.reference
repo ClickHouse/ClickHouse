@@ -1,0 +1,25 @@
+-- DEDUPLICATE BY requires SELECT on the columns it compares
+listed, granted      : OK
+listed, not granted  : (ACCESS_DENIED) hides secret
+no SELECT at all     : (ACCESS_DENIED) hides secret
+SELECT on the table  : OK
+asterisk             : (ACCESS_DENIED) hides secret
+asterisk except      : OK
+COLUMNS matcher      : (ACCESS_DENIED) hides secret
+DEDUPLICATE, no list : OK
+FINAL, not granted   : (ACCESS_DENIED) hides secret
+rows: 6
+-- through an Alias, SELECT is also required on the target
+target not granted   : (ACCESS_DENIED) hides secret
+rows: 6
+target granted       : OK
+rows: 6
+-- the errors name the columns only for a user who may DESCRIBE the table
+unknown, default     : (NO_SUCH_COLUMN_IN_TABLE) names secret
+unknown, no SELECT   : (ACCESS_DENIED) hides secret
+DESCRIBE, ghost grant: (ACCESS_DENIED) hides secret
+unknown, ghost grant : (NO_SUCH_COLUMN_IN_TABLE) hides secret
+empty list           : (EMPTY_LIST_OF_COLUMNS_QUERIED) hides secret
+empty, no SELECT     : (ACCESS_DENIED) hides secret
+key missing, default : (THERE_IS_NO_COLUMN) names sort_key
+key missing, SELECT  : (THERE_IS_NO_COLUMN) hides sort_key

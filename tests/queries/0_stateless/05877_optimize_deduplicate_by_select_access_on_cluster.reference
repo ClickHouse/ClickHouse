@@ -1,0 +1,12 @@
+-- the hosts do not run the query as the user, so DEDUPLICATE BY requires SELECT on the whole table
+column not granted   : (ACCESS_DENIED) hides secret
+rows: 6
+columns granted      : (ACCESS_DENIED) hides secret
+DEDUPLICATE, no list : OK
+-- an Alias or a table missing on the initiator cannot be checked there
+Alias                : (NOT_IMPLEMENTED) hides secret
+Alias, no list       : OK
+missing table        : (UNKNOWN_TABLE) names initiator
+-- SELECT on the table
+table granted        : OK
+rows: 4
