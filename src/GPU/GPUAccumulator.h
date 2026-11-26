@@ -15,6 +15,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/IDataType.h>
 
 #include <deque>
@@ -31,51 +32,60 @@
 namespace DB::GPU
 {
 
-/// The columns a GPU read brings: the keys, the values, the columns of the `WHERE` (not read again if also a key or a
-/// value, see `isAliased`), then the sizes of each `String` key or value.
-class GPUCompressedLayout
+/// A stream of a GPU read: a substream of one of its columns, as MergeTree stores it, see `ISerialization::enumerateStreams`.
+/// Each is staged, sent and expanded on its own.
+struct GPUReadStream
+{
+    /// The column of the read.
+    size_t column;
+    ISerialization::SubstreamPath path;
+    /// `UInt64` of the sizes of a `String`, `UInt8` of its bytes.
+    GPUElementType element_type;
+    /// Of the bytes of a `String`: the stream of its sizes.
+    std::optional<size_t> sizes;
+
+    bool isSizes() const;
+    bool isVariable() const { return sizes.has_value(); }
+    size_t elementBytes() const { return sizeOf(element_type); }
+};
+
+/// What a GPU read brings: its columns, the keys, then the values, then the columns of the `WHERE` that are neither, and
+/// their streams. A `String` is read with its sizes in a stream of their own.
+class GPUReadLayout
 {
 public:
     /// With `collect`, the values are collected rather than aggregated, see `collectElementTypeOf`. `filter_aliases` is
-    /// empty, or of each column of the `WHERE`, the key or value column it reads, if any.
-    GPUCompressedLayout(
+    /// empty, or of each column of the `WHERE`, the key or value it is, if any.
+    GPUReadLayout(
         const DataTypes & key_types,
         const DataTypes & value_types,
         bool collect,
         const DataTypes & filter_types,
-        std::vector<std::optional<uint32_t>> filter_aliases_,
+        const std::vector<std::optional<uint32_t>> & filter_aliases,
         size_t batch_bytes);
 
-    size_t numColumns() const { return keys.size() + values.size() + filter_types.size() + variable_columns.size(); }
-    size_t firstFilterColumn() const { return keys.size() + values.size(); }
-    size_t firstSizesColumn() const { return firstFilterColumn() + filter_types.size(); }
-
-    bool isAliased(size_t column) const;
-    size_t aliasOf(size_t column) const;
-    /// A `String` key or value: its bytes. Its sizes are `sizesColumnOf` it.
-    bool isVariable(size_t column) const;
-    bool isSizes(size_t column) const { return column >= firstSizesColumn() && column < numColumns(); }
-    size_t sizesColumnOf(size_t variable_column) const;
-    size_t variableOrdinalOf(size_t column) const;
-    const std::vector<size_t> & variableColumns() const { return variable_columns; }
-
-    /// The type of the values of a column: `UInt64` of a column of sizes, `UInt8` of the bytes of a `String`.
-    GPUElementType elementTypeOf(size_t column) const;
-    size_t elementBytesOf(size_t column) const { return isVariable(column) ? 1 : sizeOf(elementTypeOf(column)); }
+    size_t numStreams() const { return streams.size(); }
+    /// The stream of the values, or of the bytes, of a column.
+    size_t valuesStreamOf(size_t column) const;
+    /// The stream of `column` at `path`, as `enumerateStreams` gives it.
+    size_t streamOf(size_t column, const ISerialization::SubstreamPath & path) const;
 
     const std::vector<GPUElementType> keys;
-    const std::vector<GPUElementType> key_element_types;
     const std::vector<GPUElementType> values;
     const std::vector<GPUElementType> filter_types;
-    const std::vector<std::optional<uint32_t>> filter_aliases;
-    const std::vector<size_t> variable_columns;
-    const size_t batch_rows;
+    /// Of each column of the `WHERE`: the column of the read it is.
+    std::vector<size_t> filter_columns;
+    std::vector<GPUReadStream> streams;
+    size_t batch_rows = 0;
+
+private:
+    std::vector<size_t> values_streams;
 };
 
-/// A batch of a reader on the host: a run of each column.
+/// A batch of a reader on the host: a run of each stream of the layout.
 struct GPUStagedBatch
 {
-    std::vector<CompressedHostColumn> columns;
+    std::vector<CompressedHostColumn> streams;
     /// Set on the last batch of a part: the rows of the part. The uploader then sends every row it holds.
     std::optional<size_t> part_rows;
 
@@ -86,7 +96,7 @@ struct GPUStagedBatch
 class GPUStagedBatchPool
 {
 public:
-    std::unique_ptr<GPUStagedBatch> take(size_t num_columns);
+    std::unique_ptr<GPUStagedBatch> take(size_t num_streams);
     void give(std::unique_ptr<GPUStagedBatch> batch);
 
 private:
@@ -94,18 +104,18 @@ private:
     std::vector<std::unique_ptr<GPUStagedBatch>> free_batches;
 };
 
-/// Stages the blocks a reader reads into batches. A batch is sealed when every column has `batch_rows` rows, a column
-/// fills its pinned memory, a block cannot follow the staged ones, or a part ends.
+/// Stages the blocks a reader reads into batches, by the streams of the layout. A batch is sealed when every stream has
+/// `batch_rows` rows, a stream fills its pinned memory, a block cannot follow the staged ones, or a part ends.
 class GPUBlockStager
 {
 public:
     static constexpr size_t max_column_bytes = 32UL << 20;
 
-    GPUBlockStager(std::shared_ptr<const GPUCompressedLayout> layout_, std::shared_ptr<GPUStagedBatchPool> pool_);
+    GPUBlockStager(std::shared_ptr<const GPUReadLayout> layout_, std::shared_ptr<GPUStagedBatchPool> pool_);
 
-    /// The column takes `kept_bytes` of what the block expands to, after `skipped_bytes`.
+    /// The stream takes `kept_bytes` of what the block expands to, after `skipped_bytes`.
     void addCompressedBlock(
-        size_t column,
+        size_t stream,
         UInt8 method,
         std::string_view payload,
         size_t decompressed_bytes,
@@ -113,8 +123,8 @@ public:
         size_t skipped_bytes,
         size_t kept_bytes);
 
-    std::span<char> reserveRawBytes(size_t column, size_t max_bytes, size_t expected_bytes);
-    void commitRawBytes(size_t column, size_t bytes);
+    std::span<char> reserveRawBytes(size_t stream, size_t max_bytes, size_t expected_bytes);
+    void commitRawBytes(size_t stream, size_t bytes);
 
     /// The part ends, of `num_rows` rows: seals the batch being staged, even an empty one.
     void finishPart(size_t num_rows);
@@ -122,17 +132,17 @@ public:
     std::unique_ptr<GPUStagedBatch> takeSealed();
 
 private:
-    CompressedHostColumn & columnOrThrow(size_t column);
+    CompressedHostColumn & streamOrThrow(size_t stream);
     bool isFull() const;
     void seal(std::optional<size_t> part_rows = {});
 
-    const std::shared_ptr<const GPUCompressedLayout> layout;
+    const std::shared_ptr<const GPUReadLayout> layout;
     const std::shared_ptr<GPUStagedBatchPool> pool;
     std::unique_ptr<GPUStagedBatch> current;
     std::deque<std::unique_ptr<GPUStagedBatch>> sealed;
 };
 
-/// The columns of a batch on the device, as its layout numbers them. Freed in the order of the uploader's stream, after
+/// The streams of a batch on the device, as its layout numbers them. Freed in the order of the uploader's stream, after
 /// the stream given to `moveTo` is done with them.
 class GPUDeviceBatch
 {
@@ -155,14 +165,15 @@ public:
 private:
     friend class GPUBatchUploader;
 
-    GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_, std::shared_ptr<const GPUCompressedLayout> layout_);
+    GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_, std::shared_ptr<const GPUReadLayout> layout_);
 
     /// Shared, so the memory is freed in the uploader's stream order even after the uploader is gone.
     std::shared_ptr<StreamPtr> upload_stream;
-    std::shared_ptr<const GPUCompressedLayout> layout;
+    std::shared_ptr<const GPUReadLayout> layout;
     std::vector<DeviceBuffer> buffers;
-    /// Of each column, where its rows start; of a column of sizes, the offsets of the rows, one more than them.
+    /// Of each stream, where its rows start; of a stream of sizes, the offsets of the rows, one more than them.
     std::vector<char *> starts;
+    /// Of each stream of the bytes of a `String`, those that the rows of the batch take.
     std::vector<uint64_t> variable_bytes;
     size_t num_rows = 0;
     EventPtr ready = createEvent();
@@ -171,17 +182,17 @@ private:
 };
 
 /// Sends the staged batches of one reader to the device and expands them, on a stream of its own. A batch has the rows
-/// that every column has; the rest of each column waits on the device for the next one.
+/// that every stream has; the rest of each stream waits on the device for the next one.
 class GPUBatchUploader
 {
 public:
-    explicit GPUBatchUploader(std::shared_ptr<const GPUCompressedLayout> layout_);
+    explicit GPUBatchUploader(std::shared_ptr<const GPUReadLayout> layout_);
 
     GPUBatchUploader(const GPUBatchUploader &) = delete;
     GPUBatchUploader & operator=(const GPUBatchUploader &) = delete;
 
     /// The staged memory is free once it returns, on an exception too, after which the uploader takes no more batches.
-    /// Nothing where no row is complete in every column.
+    /// Nothing where no row is complete in every stream.
     std::optional<GPUDeviceBatch> upload(const GPUStagedBatch & staged);
 
 private:
@@ -189,10 +200,10 @@ private:
 
     /// Declared first, so that the buffers below are freed in its order before it goes.
     const std::shared_ptr<StreamPtr> stream;
-    const std::shared_ptr<const GPUCompressedLayout> layout;
-    /// What the batches so far did not take: bytes, or of a column of sizes, the offsets left, from 0.
+    const std::shared_ptr<const GPUReadLayout> layout;
+    /// Of each stream, what the batches so far did not take: bytes, or of a stream of sizes, the offsets left, from 0.
     std::vector<DeviceBuffer> carried;
-    /// Of each column of sizes, the bytes of a size that a block cut, fewer than 8.
+    /// Of each stream of sizes, the bytes of a size that a block cut, fewer than 8.
     std::vector<DeviceBuffer> carried_size_tails;
     DecompressionBatch decompression;
     EventPtr staged_sent = createEvent();
