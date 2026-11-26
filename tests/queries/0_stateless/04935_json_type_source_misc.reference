@@ -40,11 +40,11 @@ CAST between the types with the source keeps the stored text
 {"a":1}	{"a" : 1, "b" : 2}
 {"a":1}	{"a" :  1}
 {"a":1}	{"a" :  1}
-a conversion keeps the parsed object, not the stored source, under either output setting
-[]
-[]
-{"a":0}
-[]
+a conversion parses the source, under either output setting
+['secret']
+['secret']
+{}
+['secret']
 skip indexes on paths and values are not used for the source
 1
 1

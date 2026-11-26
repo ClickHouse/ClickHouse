@@ -1412,6 +1412,13 @@ std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, 
 
     /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
     serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res);
+
+    /// The source is a part of the value, so it is a part of the key in aggregation.
+    if (hasSource())
+    {
+        auto source_ref = getSourceColumn().serializeValueIntoArena(n, arena, begin, settings);
+        res = std::string_view{source_ref.data() - res.size(), res.size() + source_ref.size()};
+    }
     return res;
 }
 
@@ -1485,10 +1492,8 @@ void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
     deserializeDynamicPathsAndSharedDataFromArena(in);
 
-    /// The source is not serialized into the arena: it would make objects with equal paths and values
-    /// but different JSON text different aggregation keys. So create it from the restored object.
     if (hasSource())
-        materializeSourceForLastRow();
+        getSourceColumn().deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
@@ -1645,12 +1650,8 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             dynamic_column->updateHashWithValue(n, hash);
         }
     }
-}
 
-void ColumnObject::updateHashForValueName(size_t n, SipHash & hash) const
-{
-    updateHashWithValue(n, hash);
-    /// The source is read through `__source`, so it distinguishes a constant's name, unlike the value hash.
+    /// The source is a part of the value, as in `compareAt`.
     if (hasSource())
         getSourceColumn().updateHashWithValue(n, hash);
 }
@@ -1671,6 +1672,8 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     }
 
     shared_data->updateHashWithValueRange(begin, end, hash);
+    if (hasSource())
+        source->updateHashWithValueRange(begin, end, hash);
 }
 
 NO_SANITIZE_UNSIGNED_OVERFLOW
@@ -1731,6 +1734,10 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
             }
         }
     }
+
+    /// The source is a part of the value, as in `compareAt`.
+    if (hasSource())
+        getSourceColumn().computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
 
     if (initial)
     {
@@ -3034,12 +3041,15 @@ int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_d
         rhs_it.next();
     }
 
-    if (it.end() && rhs_it.end())
-        return 0;
-
-    if (it.end())
+    if (!it.end())
+        return 1;
+    if (!rhs_it.end())
         return -1;
-    return 1;
+
+    /// The source is a part of the value: equal objects with different JSON text are different values.
+    if (hasSource() && rhs_object.hasSource())
+        return getSourceColumn().compareAt(n, m, rhs_object.getSourceColumn(), nan_direction_hint);
+    return 0;
 }
 
 void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)

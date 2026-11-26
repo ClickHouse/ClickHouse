@@ -1,0 +1,29 @@
+comparison
+0	1
+0	1
+ORDER BY
+2	{ "a" : 1 }
+1	{"a":1}
+3	{"a":1}
+4	{"a":2}
+GROUP BY keeps the text of each group
+{ "a" : 1 }	1
+{"a":1}	2
+{"a":2}	1
+DISTINCT
+{ "a" : 1 }
+{"a":1}
+{"a":2}
+uniqExact and groupUniqArray
+3
+['{ "a" : 1 }','{"a":1}','{"a":2}']
+JOIN
+1	1
+1	3
+2	2
+3	1
+3	3
+4	4
+insert deduplication
+{ "a" : 1 }
+{"a":1}

@@ -1651,7 +1651,6 @@ the object instead of the input, and then it has the canonical formatting of the
 (no extra spaces, keys sorted, values formatted according to their inferred types). It happens when the
 original text is not available:
 
-- values that went through aggregation or a `JOIN` key (the JSON text is not a part of the key),
 - values inserted in a binary format without the JSON text, for example `RowBinary` without the setting
   [input_format_binary_read_json_as_string](/reference/settings/formats/input-format#input_format_binary_read_json_as_string),
 - values of nested `JSON(with_source=1)` type hints (for example `JSON(with_source=1, a JSON(with_source=1))`):
@@ -1684,9 +1683,33 @@ SELECT '{"a" : {"__source" : 42}}'::JSON(with_source=1) AS json, json.a.`__sourc
 
 <Note>
 The stored text is not a JSON path: it's not returned by [introspection functions](#introspection-functions)
-like `JSONAllPaths`, and it doesn't participate in [comparison](#comparison-between-values-of-the-json-type)
-of `JSON` values, so two values with the same content but different formatting are still equal.
+like `JSONAllPaths`.
+</Note>
 
+### The stored text is a part of the value {#json-source-sub-column-is-part-of-value}
+
+For a type with `with_source=1` the stored text is a part of the value: two values with the same paths and
+values but different text are different values. It affects [comparison](#comparison-between-values-of-the-json-type)
+(objects are compared first and the text orders the equal ones), `GROUP BY`, `DISTINCT` and `JOIN` keys,
+functions like `uniqExact`, and insert deduplication:
+
+```sql title="Query"
+SELECT '{"a":1}'::JSON(with_source=1) = '{ "a" : 1 }'::JSON(with_source=1) AS with_source,
+       '{"a":1}'::JSON = '{ "a" : 1 }'::JSON AS without_source;
+```
+
+```text title="Response"
+┌─with_source─┬─without_source─┐
+│           0 │              1 │
+└─────────────┴────────────────┘
+```
+
+The object is always what parsing the stored text under the type gives, so converting a value with the source
+to another `JSON` type (for example with `CAST` or `ALTER TABLE ... MODIFY COLUMN`) parses the stored text again
+under the new type. For example, a path skipped by a `SKIP` clause of the old type appears in the result if the
+new type doesn't skip it.
+
+<Note>
 Adding or removing the `with_source` parameter with `ALTER TABLE ... MODIFY COLUMN` always rewrites the
 data of existing parts, because it changes the set of sub-columns stored in a part.
 </Note>
@@ -2523,6 +2546,9 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 ```
 
 **Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](/reference/data-types/variant#comparing-values-of-variant-data) of `Variant` data type.
+
+For a type with `with_source=1` equal objects are then compared by their stored JSON text, see
+[the stored text is a part of the value](#json-source-sub-column-is-part-of-value).
 
 ## Data skipping indexes for JSON {#data-skipping-indexes-for-json}
 
