@@ -13,7 +13,9 @@ class MetadataStorageFromCacheObjectStorage : public IMetadataStorage
     friend class MetadataStorageFromCacheObjectStorageTransaction;
 
 public:
-    explicit MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_);
+    /// `object_storage_` is the object storage of the wrapped disk. It is asked whether it is read-only on every
+    /// call of `hasDeadBlobsQueue`, because its `readonly` setting may change on config reload.
+    MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_);
     ~MetadataStorageFromCacheObjectStorage() override = default;
 
     MetadataStoragePtr getUnderlying() const;
@@ -43,7 +45,6 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
-    bool supportsChmod() const override;
     bool supportsStat() const override;
     struct stat stat(const String & path) const override;
 
@@ -76,11 +77,15 @@ public:
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
+    bool hasPendingRemovalBatches(const BatchIds & batch_ids) const override;
     int64_t getDeadBlobsQueueEstimate() override;
+    bool hasDeadBlobsQueue() const override;
+    void setDeadBlobsQueuedCallback(std::function<void()> callback) override;
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override;
     bool hasUnreplicatedBlobs(const Location & location_to_check) override;
+    bool hasMissingBlobsQueue() const override;
 
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override;
     void updateCacheFromSerializedDescription(const std::string & serialized_cache_update_description) override;
@@ -91,9 +96,16 @@ public:
 
 private:
     const MetadataStoragePtr underlying;
+    const ObjectStoragePtr object_storage;
 
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
+
+    /// Queues the blobs removed by a committed transaction and wakes up the blob killer.
+    void submitForRemoval(const StoredObjects & blobs);
+
+    std::mutex dead_blobs_queued_callback_mutex;
+    std::function<void()> dead_blobs_queued_callback TSA_GUARDED_BY(dead_blobs_queued_callback_mutex);
 };
 
 class MetadataStorageFromCacheObjectStorageTransaction : public IMetadataTransaction
@@ -108,9 +120,6 @@ public:
     void writeStringToFile(const std::string & path, const std::string & data) override;
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-
-    bool supportsChmod() const override;
-    void chmod(const String & path, mode_t mode) override;
 
     void setReadOnly(const std::string & path) override;
 
@@ -130,6 +139,7 @@ public:
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
     void recordBlobsReplication(const StoredObject & blob, const Locations & missing_locations) override;
     StoredObjects getSubmittedForRemovalBlobs() override;
+    BatchIds getSubmittedForRemovalBatches() override;
 
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;

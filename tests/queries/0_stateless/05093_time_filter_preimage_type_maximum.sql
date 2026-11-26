@@ -52,8 +52,8 @@ CREATE TABLE t_preimage_ordinary (d Date) ENGINE = MergeTree ORDER BY d;
 INSERT INTO t_preimage_ordinary VALUES ('2019-12-31'),('2020-01-01'),('2020-06-15'),('2020-12-31'),('2021-01-01');
 SELECT count() FROM t_preimage_ordinary WHERE toYear(d) = 2020;
 SELECT count() FROM t_preimage_ordinary WHERE toYear(d) = 2020 SETTINGS optimize_time_filter_with_preimage = 0;
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_ordinary WHERE toYear(d) = 2020) WHERE explain LIKE '%2021-01-01%' SETTINGS enable_analyzer = 1;
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_date WHERE toYear(d) = 2149) WHERE explain LIKE '%2150-01-01%' SETTINGS enable_analyzer = 1;
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_ordinary WHERE toYear(d) = 2020) WHERE explain LIKE '%2021-01-01%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_date WHERE toYear(d) = 2149) WHERE explain LIKE '%2150-01-01%';
 
 SELECT 'Date32 spans the whole representable range';
 DROP TABLE IF EXISTS t_preimage_date32;

@@ -50,7 +50,7 @@ struct EqualRange
     size_t from;   /// inclusive
     size_t to;     /// exclusive
     EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from <= to); }
-    size_t size() const { return to - from; }
+    [[nodiscard]] size_t size() const { return to - from; }
 };
 
 /// The planes a column's rows live in, for a reader that copies rows by number straight from
@@ -118,18 +118,8 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
     ColumnCheckpoints nested;
 };
 
-struct RowStorePointers
-{
-    /// Either `ptrs` or `base_ptr` should be used.
-    /// Pre-resolved pointers into `RowDataStore` rows, one entry per output row.
-    /// A nullptr entry is interpreted as a default value.
-    VectorWithMemoryTracking<const char *> ptrs;
-    /// Whether `ptrs` contains any nullptr entry.
-    bool has_defaults = false;
-    /// A contiguous run of rows: row `i` is `base_ptr + i * row_length`.
-    const char * base_ptr = nullptr;
-    size_t row_length = 0;
-};
+/// Pre-resolved pointers to rows, one entry per output row.
+using RowPointers = VectorWithMemoryTracking<const char *>;
 
 /// Helper throw functions so Column headers don't need to include Exception.h.
 [[noreturn]] void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size);
@@ -403,7 +393,8 @@ public:
     /// cannot be used and serializeValueIntoArena should be used instead,
     virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
-    virtual void batchSerializeValueIntoMemory(std::span<char *> /* memories */, const SerializationSettings * settings) const;
+    /// Serialize the rows starting from `start_row`, one row into each element of `memories`, and advance the elements.
+    virtual void batchSerializeValueIntoMemory(std::span<char *> /* memories */, size_t /* start_row */, const SerializationSettings * settings) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual std::string_view serializeValueIntoArenaWithNull(
@@ -415,7 +406,7 @@ public:
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    virtual void batchSerializeValueIntoMemoryWithNull(std::span<char *> /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
+    virtual void batchSerializeValueIntoMemoryWithNull(std::span<char *> /* memories */, size_t /* start_row */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
     /// If `is_null` is not nullptr, also take null byte into account.
@@ -513,6 +504,13 @@ public:
       * If inverted is true, inverted mask will be used.
       */
     virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
+
+    /// Appends `condition.size()` rows: row `i` of `src_true` where `condition[i]` is non-zero and row `i` of
+    /// `src_false` otherwise. A source with `*_is_const` set has a single row, used for every row it provides
+    /// (e.g. the data column of a `ColumnConst`, or a default value). The sources must have the type of this
+    /// column and must not be this column. Is used in `if` and to fill the non-joined rows of a `JOIN`.
+    virtual void insertFromEither(
+        const IColumn & src_true, bool src_true_is_const, const IColumn & src_false, bool src_false_is_const, const Filter & condition);
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
@@ -655,7 +653,7 @@ public:
     virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
 
     /** Copies each element according offsets parameter.
-      * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
+      * (i-th element should be copied offsets[i] - offsets[static_cast<ssize_t>(i) - 1] times.)
       * It is necessary in ARRAY JOIN operation.
       */
     using Offset = UInt64;
@@ -716,6 +714,9 @@ public:
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could not be determined.
     [[nodiscard]] virtual size_t allocatedBytes() const = 0;
+
+    /// `sizeof` of the column object itself, which `allocatedBytes` does not count. Implemented by `COWHelper`.
+    [[nodiscard]] virtual size_t sizeOfObject() const = 0;
 
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
@@ -828,13 +829,24 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from pre-resolved row-store pointers.
-    virtual void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
+    /// Appends the field at `field_offset` of rows `[begin, begin + count)` of `rows`.
+    /// With `null_map`, the field starts with the null byte.
+    virtual void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
 
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+    void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count)
     {
-        fillFromRowStorePtrs(type, row_store_ptrs, field_offset, field_size, begin, count, /*null_map=*/ nullptr);
+        gatherFromRows(rows, field_offset, field_size, begin, count, /*null_map=*/ nullptr);
     }
+
+    /// Writes rows `[start, start + count)` into the row at `field_offset` of consecutive rows of `row_length` bytes.
+    /// With `null_map`, the field starts with the null byte.
+    virtual void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const;
+
+    /// Writes fixed-width values of `source_rows` into the field at `field_offset` of `destination_rows`.
+    /// With the null byte first when `null_map` is set.
+    virtual void gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const;
+
+    virtual size_t rowStoreOverflowBytes(size_t /*start*/, size_t /*count*/) const { return 0; }
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -847,12 +859,66 @@ public:
         return finalized;
     }
 
-    [[nodiscard]] static MutablePtr mutate(Ptr ptr)
+    /// Implementation detail of `mutate`: makes every sub-column of an already-mutable column
+    /// exclusively owned, and does it without ever leaving a sub-column slot empty.
+    /// A sub-column that is already exclusively owned is mutated in place - nothing is cloned,
+    /// so the walk stays free for the unshared case. A shared sub-column has to be copied
+    /// anyway, and the copy is built completely (including its own recursion) before it is
+    /// published into the slot, so an exception leaves the original sub-column tree untouched.
+    /// Nothing here holds an extra reference to a sub-column, so a shared sub-column is still
+    /// reported as shared and the ownership assertions still surface the sites we look for.
+    static void mutateSubcolumnsDeeply(IColumn & column)
     {
-        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
+        column.forEachMutableSubcolumn([](WrappedPtr & subcolumn)
+        {
+            if (std::as_const(subcolumn)->use_count() == 1)
+            {
+                mutateSubcolumnsDeeply(*subcolumn);
+            }
+            else
+            {
+                MutablePtr replacement = std::as_const(subcolumn)->shallowMutate();
+                mutateSubcolumnsDeeply(*replacement);
+                subcolumn = std::move(replacement);
+            }
+
+            chassert(std::as_const(subcolumn)->use_count() == 1);
+        });
+    }
+
+    /// The rvalue overload leaves the source intact if anything throws. This is important for
+    /// owning slots: callers can move a slot into `mutate` without publishing a null slot when
+    /// allocation fails. The caller's slot is released only after the whole deep-ownership walk
+    /// has succeeded, and the walk itself never takes a sub-column out of its slot, so no part of
+    /// the source tree is null or half-built while a cloning step can still throw.
+    [[nodiscard]] static MutablePtr mutate(Ptr && ptr)
+    {
+        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2 for an exclusively owned source.
+        mutateSubcolumnsDeeply(*res);
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Verify that all sub-columns, at every depth, are exclusively owned. This is done once for
+        /// the whole tree here rather than at every level of `mutateSubcolumnsDeeply`: a check of the
+        /// whole subtree at every level costs O(depth * size) and makes deeply nested columns
+        /// (e.g. nested `Dynamic`) extremely slow in debug and sanitizer builds.
+        /// Use the recursive callback that takes `const IColumn &` directly: passing a `WrappedPtr`
+        /// to a callback for columns that store children as `ColumnPtr` (e.g.
+        /// `ColumnFunction::captured_columns`) would construct a temporary `WrappedPtr` that itself
+        /// holds a reference, making the `use_count() == 1` check over-count by one.
+        std::as_const(*res).forEachSubcolumnRecursively([](const IColumn & sub)
+        {
+            chassert(sub.use_count() == 1);
+        });
+#endif
+        /// Only now the source can be released: until this point an exception has to leave it valid.
+        /// Keeping it alive does not affect the sub-column counters, so it does not hide sharing.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
+    }
+
+    [[nodiscard]] static MutablePtr mutate(const Ptr & ptr)
+    {
+        Ptr copy = ptr;
+        return mutate(std::move(copy));
     }
 
     /// Checks if column has dynamic internal structure (like JSON or Dynamic).
@@ -1076,10 +1142,18 @@ private:
     IColumnHelper(const IColumnHelper &) = default;
 
     /// Devirtualize insertFrom.
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
+    [[nodiscard]] VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
+
+    /// Devirtualize insertFrom, insertRangeFrom and insertManyFrom.
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     /// Devirtualize compareAt.
     void compareColumn(
@@ -1091,19 +1165,19 @@ private:
         int nan_direction_hint) const override;
 
     /// Devirtualize compareAt.
-    bool hasEqualValues() const override;
+    [[nodiscard]] bool hasEqualValues() const override;
 
     /// Devirtualize compareAt.
     [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     /// Devirtualize isDefaultAt.
-    double getRatioOfDefaultRows(double sample_ratio) const override;
+    [[nodiscard]] double getRatioOfDefaultRows(double sample_ratio) const override;
 
     /// Devirtualize isDefaultAt.
-    UInt64 getNumberOfDefaultRows() const override;
+    [[nodiscard]] UInt64 getNumberOfDefaultRows() const override;
 
     /// Devirtualize isDefaultAt — early-exit loop.
-    bool hasOnlyTypeDefaults() const override;
+    [[nodiscard]] bool hasOnlyTypeDefaults() const override;
 
     /// Devirtualize isDefaultAt.
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
@@ -1112,20 +1186,20 @@ private:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     /// Devirtualize insertFrom.
-    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
+    [[nodiscard]] ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
 
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from pre-resolved row-store pointers
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+    /// Appends the field at `field_offset` of rows `[begin, begin + count)` of `rows`.
+    void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemoryWithNull(std::span<char *> memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemoryWithNull(std::span<char *> memories, size_t start_row, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;

@@ -1,7 +1,6 @@
 -- Regression: segfault in executeActionForPartialResult when filter expression contains arrayJoin
 -- and the convertOuterJoinToInnerJoin optimization tries to evaluate the filter with partial (null) arguments.
 
-SET enable_analyzer = 1;
 SELECT DISTINCT
     2,
     1048575

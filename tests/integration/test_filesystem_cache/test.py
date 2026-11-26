@@ -645,6 +645,9 @@ def test_caches_with_the_same_configuration(cluster, node_name):
             """
         )
 
+    for table in ["test", "test2"]:
+        node.query(f"SYSTEM WAIT BLOBS CLEANUP '{table}'")
+
     size = int(
         node.query(
             "SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'"
@@ -729,7 +732,7 @@ def test_custom_cached_disk(non_shared_cluster):
         DROP TABLE IF EXISTS test SYNC;
         CREATE TABLE test (a Int32)
         ENGINE = MergeTree() ORDER BY tuple()
-        SETTINGS disk = disk(type = cache, path = 'kek', max_size = 10, disk = 'hdd_blob');
+        SETTINGS disk = disk(type = cache, path = 'kek', max_size = 10, max_file_segment_size = 4, boundary_alignment = 4, disk = 'hdd_blob');
         """
     )
 
@@ -751,7 +754,7 @@ def test_custom_cached_disk(non_shared_cluster):
         """
     CREATE TABLE test (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 10, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 10, max_file_segment_size = 4, boundary_alignment = 4, disk = 'hdd_blob');
     """
     )
 
@@ -787,7 +790,7 @@ def test_custom_cached_disk(non_shared_cluster):
         """
     CREATE TABLE test2 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 10, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 10, max_file_segment_size = 4, boundary_alignment = 4, disk = 'hdd_blob');
     """
     )
 
@@ -807,7 +810,7 @@ def test_custom_cached_disk(non_shared_cluster):
         """
     CREATE TABLE test3 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 10, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 10, max_file_segment_size = 4, boundary_alignment = 4, disk = 'hdd_blob');
     """
     )
 
@@ -822,7 +825,7 @@ def test_custom_cached_disk(non_shared_cluster):
         """
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 10, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 10, max_file_segment_size = 4, boundary_alignment = 4, disk = 'hdd_blob');
     """
     )
 
@@ -830,7 +833,7 @@ def test_custom_cached_disk(non_shared_cluster):
         """
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 10, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 10, max_file_segment_size = 4, boundary_alignment = 4, disk = 'hdd_blob');
     """
     )
 
@@ -1304,6 +1307,7 @@ cache_dynamic_resize_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize>
                 <type>cache</type>
@@ -1685,14 +1689,15 @@ cache_dynamic_resize_slru_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize_slru>
                 <type>cache</type>
                 <disk>hdd_blob</disk>
                 <max_size>{max_size}</max_size>
                 <max_elements>{max_elements}</max_elements>
-                <max_file_segment_size>10</max_file_segment_size>
-                <boundary_alignment>10</boundary_alignment>
+                <max_file_segment_size>4</max_file_segment_size>
+                <boundary_alignment>4</boundary_alignment>
                 <cache_policy>SLRU</cache_policy>
                 <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
                 <path>./cache_dynamic_resize_slru/</path>
@@ -2049,6 +2054,8 @@ def test_reserve_granularity_reclaims_surplus_after_read(cluster):
         "SELECT value FROM test_reserve_granularity WHERE key = 0 SETTINGS max_read_buffer_size = 65536"
     )
 
+    node.query("SYSTEM WAIT BLOBS CLEANUP 'reserve_granularity_cache'")
+
     # The read buffer is destroyed and no background download is configured, so the touched
     # segment is completed and shrunk. `size` is the (boundary-aligned) segment range, while
     # `downloaded_size` is what was actually written; the segment must be partially downloaded
@@ -2096,6 +2103,7 @@ cache_dynamic_settings_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize>
                 <type>cache</type>

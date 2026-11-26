@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Primeros pasos",
+      "group": "Get started",
       "pages": [
         "es/products/managed-postgres/overview",
         "es/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Funcionalidades",
+      "group": "Features",
       "pages": [
         "es/products/managed-postgres/connection",
         "es/products/managed-postgres/settings",
@@ -43,20 +43,40 @@
       ]
     },
     {
-      "group": "Precios",
+      "group": "Guides",
+      "pages": [
+        "es/products/managed-postgres/guides/bun",
+        "es/products/managed-postgres/guides/cloudflare-workers",
+        "es/products/managed-postgres/guides/django",
+        "es/products/managed-postgres/guides/dotnet",
+        "es/products/managed-postgres/guides/drizzle",
+        "es/products/managed-postgres/guides/fastapi",
+        "es/products/managed-postgres/guides/go",
+        "es/products/managed-postgres/guides/kysely",
+        "es/products/managed-postgres/guides/laravel",
+        "es/products/managed-postgres/guides/nodejs",
+        "es/products/managed-postgres/guides/phoenix",
+        "es/products/managed-postgres/guides/prisma",
+        "es/products/managed-postgres/guides/ruby-on-rails",
+        "es/products/managed-postgres/guides/rust",
+        "es/products/managed-postgres/guides/spring-boot"
+      ]
+    },
+    {
+      "group": "Pricing",
       "pages": [
         "es/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "Integración con ClickHouse",
+      "group": "ClickHouse Integration",
       "pages": [
         "es/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "es/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "Migraciones",
+      "group": "Migrations",
       "pages": [
         "es/products/managed-postgres/migrations/overview",
         "es/products/managed-postgres/migrations/clickpipes",
@@ -69,7 +89,7 @@
       ]
     },
     {
-      "group": "Monitorización",
+      "group": "Monitoring",
       "pages": [
         "es/products/managed-postgres/monitoring/overview",
         "es/products/managed-postgres/monitoring/dashboard",
@@ -80,7 +100,7 @@
       ]
     },
     {
-      "group": "Preguntas frecuentes",
+      "group": "FAQ",
       "pages": [
         "es/products/managed-postgres/faq"
       ]

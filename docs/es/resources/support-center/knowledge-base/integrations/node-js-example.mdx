@@ -6,9 +6,7 @@ tags: ['Clientes de lenguaje']
 keywords: ['NodeJS']
 ---
 
-<div id="use-nodejs-with-clickhouseclient">
-  ## Usa NodeJS con @clickhouse/client
-</div>
+## Usa NodeJS con @clickhouse/client {#use-nodejs-with-clickhouseclient}
 
 Aquí tienes un archivo de ejemplo con un fragmento de código básico: `main.ts`.
 
@@ -56,8 +54,8 @@ interface Count {
   c: number;
 }
 
-//Reemplace los parámetros de conexión del cliente como `host`,
-//`username`, `passowrd`, `database` según corresponda.
+//Please replace client connection parameters like`host`
+//`username`, `password`, `database` as needed.
 
 const initClickHouseClient = async (): Promise<ClickHouseClient> => {
   const client = createClient({
@@ -116,9 +114,9 @@ $ npx ts-node src/main.ts
 mostrará:
 
 ```
-Inicializando el cliente de ClickHouse
-Ping a ClickHouse
-¡Pong de ClickHouse!
-¡He encontrado 120 tablas del sistema!
+Initialising clickhouse client
+ClickHouse ping
+ClickHouse pong!
+I have found 120 system tables!
 👋
 ```

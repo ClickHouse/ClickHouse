@@ -2,6 +2,7 @@
 #if USE_AVRO
 
 #include <chrono>
+#include <filesystem>
 #include <unordered_set>
 
 #include <Common/Exception.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +37,7 @@ extern const int BAD_ARGUMENTS;
 namespace Setting
 {
 extern const SettingsUInt64 iceberg_orphan_files_older_than_seconds;
+extern const SettingsUInt64 iceberg_orphan_files_min_retention_seconds;
 }
 
 namespace Iceberg
@@ -119,11 +122,35 @@ OrphanScanResult findOrphanFiles(
 {
     OrphanScanResult scan;
 
+    /// A filesystem names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
+    const auto storage_type = object_storage->getType();
+    const bool is_filesystem = storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS;
+    const String key_prefix = object_storage->getCommonKeyPrefix();
+    /// The local storage opens a relative key as `resolvePathRelativelyToBase` maps it, from the current directory.
+    auto normalize = [&](const String & path)
+    {
+        std::filesystem::path file(path);
+        if (storage_type == ObjectStorageType::Local && file.is_relative())
+            file = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
+        return file.lexically_normal().string();
+    };
+    std::unordered_set<String> normalized_reachable;
+    if (is_filesystem)
+        for (const auto & reachable_path : reachable)
+            normalized_reachable.insert(normalize(reachable_path));
+
+    auto is_reachable = [&](const String & path)
+    {
+        if (is_filesystem)
+            return normalized_reachable.contains(normalize(path));
+        return reachable.contains(path);
+    };
+
     for (const auto & file_ptr : actual_files)
     {
         const String & path = file_ptr->relative_path;
 
-        if (reachable.contains(path))
+        if (is_reachable(path))
             continue;
 
         std::optional<ObjectMetadata> fetched_metadata;
@@ -317,7 +344,7 @@ Pipe executeRemoveOrphanFiles(
     /// between queries. Resolve the same metadata file the scan below roots at, so the
     /// gate and the scan judge one table state.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [_metadata_version, latest_metadata_path, compression_method, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_name,
@@ -350,6 +377,8 @@ Pipe executeRemoveOrphanFiles(
     auto parsed = makeSchema().parse(args);
 
     RemoveOrphanFilesParams params;
+    const auto now_tp = std::chrono::system_clock::now();
+    const time_t now = std::chrono::system_clock::to_time_t(now_tp);
     if (parsed.has("older_than"))
     {
         String older_than_str = parsed.getAs<String>("older_than");
@@ -357,7 +386,6 @@ Pipe executeRemoveOrphanFiles(
         time_t ts = 0;
         readDateTimeText(ts, buf);
 
-        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         if (ts > now)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -368,9 +396,19 @@ Pipe executeRemoveOrphanFiles(
     else
     {
         UInt64 threshold_seconds = context->getSettingsRef()[Setting::iceberg_orphan_files_older_than_seconds].value;
-        auto now = std::chrono::system_clock::now();
-        params.older_than = std::chrono::system_clock::to_time_t(now - std::chrono::seconds(threshold_seconds));
+        params.older_than = std::chrono::system_clock::to_time_t(now_tp - std::chrono::seconds(threshold_seconds));
     }
+
+    /// Files of a write that has not committed yet are unreferenced by the table metadata, so only their age keeps them out of the orphan set.
+    UInt64 min_retention = context->getSettingsRef()[Setting::iceberg_orphan_files_min_retention_seconds];
+    if (*params.older_than > now || static_cast<UInt64>(now - *params.older_than) < min_retention)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "older_than must be at least {} seconds before now (setting iceberg_orphan_files_min_retention_seconds), got {} seconds: "
+            "files of a write that has not committed yet are not referenced by the table metadata and would be deleted. "
+            "Use an earlier older_than, or lower the setting if no write to the table can be in progress",
+            min_retention,
+            *params.older_than > now ? 0 : now - *params.older_than);
     if (parsed.has("location"))
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;

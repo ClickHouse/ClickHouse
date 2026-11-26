@@ -1,0 +1,54 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/elixir
+description: '适用于 ClickHouse Observability 和自管理部署的 Elixir 设置与配置。'
+title: 'Elixir'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', '插桩']
+sidebarTitle: 'Elixir'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+使用 OpenTelemetry Erlang/Elixir SDK 将链路追踪数据发送至 ClickHouse Observability。
+
+<ClickStackIntegrates signals={['traces']} />
+
+## 设置 OpenTelemetry {#set-up-opentelemetry}
+
+请按照官方的 [OpenTelemetry Erlang/Elixir 入门指南](https://opentelemetry.io/docs/languages/erlang/getting-started/)初始化 SDK，并为您的应用程序插桩。
+
+使用下方的连接设置，为链路追踪配置[基于 HTTP 的 OTLP 导出](https://opentelemetry.io/docs/languages/erlang/exporters/)。请替换上游文档中的所有示例目标端，包括针对特定信号的端点覆盖配置。
+
+## 配置目标端 {#configure-destination}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版本" />
+
+    在您的服务中打开 **团队设置 → 数据 → Managed Telemetry**，复制 **OTLP HTTP 端点** 和 **API key**。请使用包含端口在内的完整 HTTPS 端点：
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="自管理">
+    使用采集器的 OTLP HTTP 端点和摄取密钥。如果采集器未配置 TLS，请使用 `http://` 而非 `https://`。有关如何设置采集器，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured)。
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## 验证摄取 {#verify-ingestion}
+
+启动已插桩的应用程序并生成一些活动。在 ClickHouse Observability 中选择最近的时间范围，然后在 Traces 中找到你的应用程序的服务名称。
+
+有关插桩和导出器的故障排查，请参阅 [OpenTelemetry Erlang/Elixir 文档](https://opentelemetry.io/docs/languages/erlang/)。

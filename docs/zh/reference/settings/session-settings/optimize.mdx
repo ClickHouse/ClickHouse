@@ -49,6 +49,14 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 始终，
 * 负整数 - 从不。
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：当相等谓词能够证明所有通过过滤的值都等于某个常量时，将过滤后的列替换为 `ColumnConst`。"}]}]} />
+
+当相等谓词能够证明所有通过过滤的值都等于某个常量时，将过滤后的列替换为 `ColumnConst`。
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -268,6 +276,18 @@ SELECT * FROM test2;
 投影重写) 后，执行第二轮 `PREWHERE` 提升。若已存在 `PREWHERE`，新的
 过滤器会通过 `AND` 合并到其中，而不是保留为单独的过滤器步骤。
 
+## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "新增设置，用于控制投影选择在比较成本之前何时应用基表中被延后的跳过索引：仅当最佳投影候选结果读取的标记数超过父表仅基于主键估算的标记数的该比例时，才会执行这一额外步骤。设为此前的值 1.0 即可恢复原有行为：当 ratio = 1 时，该细化步骤永远不会执行，因为它只可能影响那些在仅基于主键的比较中本来就会被淘汰的候选结果。"}]}]} />
+
+启用 `use_skip_indexes_on_data_read` 时，基表的跳过索引会在读取数据时才应用，因此普通投影候选结果所比较的标记数仅由主键估算得出。如果最佳普通投影候选结果读取的标记数超过该估算值的此比例，且基表存在可用于该查询的跳过索引，则会在规划阶段对基表应用这些跳过索引，并使用细化后的标记数进行比较。`0` 表示始终应用跳过索引，`1` 表示保持仅基于主键的比较。聚合投影不受此设置影响。
+
+可选值：
+
+* 取值范围为 `[0, 1]` 的浮点数。
+
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -297,9 +317,9 @@ SELECT * FROM test2;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置，用于在使用 `FINAL` 修饰符从 `ReplacingMergeTree` 表按 sorting key 逆序读取时启用按序读取（read-in-order）优化。"}]}]} />
 
-允许在带 `FINAL` 修饰符的 `SELECT` 查询中，从 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表按 sorting key 的逆序读取数据。仅在同时启用 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings/optimize#optimize_read_in_order) 时生效。
+允许在带 `FINAL` 修饰符的 `SELECT` 查询中，从 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表按 sorting key 的逆序读取数据；若所有底层表均支持，也可从 [Merge](/zh/reference/engines/table-engines/special/merge) 表按此方式读取。仅在同时启用 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings/optimize#optimize_read_in_order) 时生效。
 
-可能的值：
+可选值：
 
 * 0 — 禁用带 `FINAL` 的逆序读取。
 * 1 — 启用带 `FINAL` 的逆序读取。
@@ -388,6 +408,14 @@ FROM default.fuse_tbl AS __table1
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "当 ORDER BY 前缀已覆盖所有 GROUP BY 键时，移除 ORDER BY 末尾的多余元素。"}]}]} />
 
 当 ORDER BY 前缀已覆盖所有 GROUP BY 键时，移除 ORDER BY 末尾的多余元素。
+
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，用于在不带 `GROUP BY` 的情况下计算单个 `uniqExact` 或 `count(DISTINCT)` 时，按值的哈希进行分区，而不是合并各线程的哈希集合。"}]}]} />
+
+对于不带 `GROUP BY` 的查询，在计算单个 `uniqExact` (以及默认使用它的 `count(DISTINCT)`) 时，按值的哈希对值进行分区，而不是合并各线程的哈希集合。每个线程将各自的值路由到对应分区，随后并行对各分区去重，每个分区所用的哈希集合都足够小，可以完整驻留在 CPU 缓存中，最终结果即为各分区大小之和。当结果在同一服务器上完成最终计算时，该设置适用于以下类型的单个参数：不超过 64 位的数值类型、`Date`、`Date32`、`DateTime`、`Enum`、`IPv4`、`IPv6`、`UUID`、128 位整数、`String`、`FixedString`，以及上述类型对应的 `Nullable` 类型。与普通聚合相同，每个线程会持续向自己的小集合插入数据，直到该集合超出 CPU 缓存容量为止，因此只有在 high-cardinality 输入下才会启用路由；如果某个线程发现其大部分值都是重复的，则会退回到使用自己的集合。
 
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 

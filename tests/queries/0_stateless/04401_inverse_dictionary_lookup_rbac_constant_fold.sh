@@ -52,7 +52,7 @@ plan_in=$(${CLICKHOUSE_CLIENT} --user="${user}" --query "
     SELECT color_id FROM ${db_name}.${table_name}
     WHERE dictGetString('${db_name}.${dict_name}', 'name', color_id) = 'red'
     ORDER BY color_id
-    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1")
+    SETTINGS optimize_inverse_dictionary_lookup = 1")
 echo "dictGet occurrences in plan (expect 0): $(echo "$plan_in" | grep -c dictGet)"
 echo "dictionary() subquery occurrences in plan (expect 0): $(echo "$plan_in" | grep -c 'dictionary(')"
 
@@ -61,14 +61,14 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "
     SELECT color_id FROM ${db_name}.${table_name}
     WHERE dictGetString('${db_name}.${dict_name}', 'name', color_id) = 'red'
     ORDER BY color_id
-    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1"
+    SETTINGS optimize_inverse_dictionary_lookup = 1"
 
 echo '-- multi-key fold (IN): result with optimization off (must match)'
 ${CLICKHOUSE_CLIENT} --user="${user}" --query "
     SELECT color_id FROM ${db_name}.${table_name}
     WHERE dictGetString('${db_name}.${dict_name}', 'name', color_id) = 'red'
     ORDER BY color_id
-    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 0"
+    SETTINGS optimize_inverse_dictionary_lookup = 0"
 
 echo '-- single-key fold (=): EXPLAIN must not contain dictGet or a dictionary() subquery'
 plan_eq=$(${CLICKHOUSE_CLIENT} --user="${user}" --query "
@@ -76,7 +76,7 @@ plan_eq=$(${CLICKHOUSE_CLIENT} --user="${user}" --query "
     SELECT color_id FROM ${db_name}.${table_name}
     WHERE dictGetString('${db_name}.${dict_name}', 'name', color_id) = 'blue'
     ORDER BY color_id
-    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1")
+    SETTINGS optimize_inverse_dictionary_lookup = 1")
 echo "dictGet occurrences in plan (expect 0): $(echo "$plan_eq" | grep -c dictGet)"
 echo "dictionary() subquery occurrences in plan (expect 0): $(echo "$plan_eq" | grep -c 'dictionary(')"
 
@@ -85,7 +85,7 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "
     SELECT color_id FROM ${db_name}.${table_name}
     WHERE dictGetString('${db_name}.${dict_name}', 'name', color_id) = 'blue'
     ORDER BY color_id
-    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1"
+    SETTINGS optimize_inverse_dictionary_lookup = 1"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP USER IF EXISTS ${user};

@@ -24,9 +24,13 @@ namespace ProfileEvents
 {
     extern const Event BlobKillerThreadRuns;
     extern const Event BlobKillerThreadLockedBlobs;
+    extern const Event BlobKillerThreadLockedSingleBlobs;
+    extern const Event BlobKillerThreadLockedBatchedBlobs;
     extern const Event BlobKillerThreadRemoveTasks;
     extern const Event BlobKillerThreadRemovedBlobs;
     extern const Event BlobKillerThreadRecordedBlobs;
+    extern const Event BlobKillerThreadRecordedSingleBlobs;
+    extern const Event BlobKillerThreadRecordedBatchedBlobs;
     extern const Event BlobKillerThreadLockBlobsErrors;
     extern const Event BlobKillerThreadRemoveBlobsErrors;
     extern const Event BlobKillerThreadRecordBlobsErrors;
@@ -87,7 +91,14 @@ BlobKillerEffectiveParams calculateBlobKillerEffectiveParams(
     return {batch, blobs, threads};
 }
 
-IMetadataStorage::BlobsToRemove findBlobsToRemove(
+/// One cleanup round takes blobs at two granularities: whole batches and single blobs.
+struct RemovalWork
+{
+    IMetadataStorage::BlobsToRemove blobs;
+    IMetadataStorage::BatchesToRemove batches;
+};
+
+RemovalWork findBlobsToRemove(
     size_t request_batch,
     const ClusterConfigurationPtr & cluster,
     const MetadataStoragePtr & metadata_storage,
@@ -95,9 +106,20 @@ IMetadataStorage::BlobsToRemove findBlobsToRemove(
 {
     try
     {
-        auto blobs_to_remove = metadata_storage->getBlobsToRemove(cluster, request_batch);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadLockedBlobs, blobs_to_remove.size());
-        return blobs_to_remove;
+        RemovalWork work;
+        work.batches = metadata_storage->getBatchesToRemove(cluster, request_batch);
+        size_t batched_blobs = 0;
+        for (const auto & batch : work.batches)
+            batched_blobs += batch.blobs.size();
+        /// A zero request means no limit, see `BlobKillerThread::shutdown`.
+        if (request_batch == 0)
+            work.blobs = metadata_storage->getBlobsToRemove(cluster, 0);
+        else if (batched_blobs < request_batch)
+            work.blobs = metadata_storage->getBlobsToRemove(cluster, request_batch - batched_blobs);
+        ProfileEvents::increment(ProfileEvents::BlobKillerThreadLockedBlobs, work.blobs.size() + batched_blobs);
+        ProfileEvents::increment(ProfileEvents::BlobKillerThreadLockedSingleBlobs, work.blobs.size());
+        ProfileEvents::increment(ProfileEvents::BlobKillerThreadLockedBatchedBlobs, batched_blobs);
+        return work;
     }
     catch (...)
     {
@@ -166,6 +188,7 @@ std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> schedule
 
     try
     {
+        running_removals.reserve(batches_to_remove.size());
         for (const auto & [location, remove_batch] : batches_to_remove)
             running_removals.push_back(remove_tasks_runner.enqueueAndGiveOwnership([&location, &remove_batch, &object_storages, &log]()
             {
@@ -180,15 +203,19 @@ std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> schedule
     return running_removals;
 }
 
-void recordBlobsRemoval(
+void recordRemoval(
     const StoredObjects & removed_blobs,
+    const IMetadataStorage::BatchesToRemove & removed_batches,
     const MetadataStoragePtr & metadata_storage,
     const LoggerPtr & log) noexcept
 {
     try
     {
-        int64_t recorded_count = metadata_storage->recordAsRemoved(removed_blobs);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordedBlobs, recorded_count);
+        const int64_t recorded_single_blobs = metadata_storage->recordAsRemoved(removed_blobs);
+        const int64_t recorded_batched_blobs = metadata_storage->recordBatchesAsRemoved(removed_batches);
+        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordedBlobs, recorded_single_blobs + recorded_batched_blobs);
+        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordedSingleBlobs, recorded_single_blobs);
+        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordedBatchedBlobs, recorded_batched_blobs);
     }
     catch (...)
     {
@@ -197,17 +224,14 @@ void recordBlobsRemoval(
     }
 }
 
-int64_t removeBlobs(
+/// Returns the locations that still hold each blob after the removal attempt.
+IMetadataStorage::BlobsToRemove removeFromObjectStorages(
     IMetadataStorage::BlobsToRemove blobs_to_remove,
     size_t blobs_in_task,
     ThreadPoolCallbackRunnerLocal<bool> & remove_tasks_runner,
-    const MetadataStoragePtr & metadata_storage,
     const ObjectStorageRouterPtr & object_storages,
     const LoggerPtr & log) noexcept
 {
-    if (blobs_to_remove.empty())
-        return 0;
-
     auto tasks = sliceIntoRemoveTasks(blobs_to_remove, blobs_in_task);
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemoveTasks, tasks.size());
     LOG_TRACE(log, "Distributed removal of {} blobs into {} tasks", blobs_to_remove.size(), tasks.size());
@@ -218,20 +242,50 @@ int64_t removeBlobs(
     for (auto [removal, task] : std::views::zip(removals, tasks))
     {
         const auto & [location, remove_batch] = task;
-        const bool is_removed = removal->future.get();
-        if (is_removed)
+        if (removal->future.get())
             for (const auto & removed_blob : remove_batch)
                 blobs_to_remove[removed_blob].erase(location);
     }
 
-    /// If removal from some locations failed we should not mark this blob in metadata storage.
-    StoredObjects blobs_removed_from_all_locations;
-    for (const auto & [blob, locations_cleanup_list] : blobs_to_remove)
-        if (locations_cleanup_list.empty())
-            blobs_removed_from_all_locations.push_back(blob);
+    return blobs_to_remove;
+}
 
-    recordBlobsRemoval(blobs_removed_from_all_locations, metadata_storage, log);
-    return blobs_removed_from_all_locations.size();
+int64_t removeBlobs(
+    RemovalWork work,
+    size_t blobs_in_task,
+    ThreadPoolCallbackRunnerLocal<bool> & remove_tasks_runner,
+    const MetadataStoragePtr & metadata_storage,
+    const ObjectStorageRouterPtr & object_storages,
+    const LoggerPtr & log) noexcept
+{
+    /// Tasks are sliced per location over all blobs, so batched blobs and single blobs are removed together.
+    IMetadataStorage::BlobsToRemove all_blobs = work.blobs;
+    for (const auto & batch : work.batches)
+        all_blobs.insert_range(batch.blobs);
+
+    if (all_blobs.empty())
+        return 0;
+
+    const auto remaining_locations = removeFromObjectStorages(std::move(all_blobs), blobs_in_task, remove_tasks_runner, object_storages, log);
+    auto is_removed = [&](const StoredObject & blob) { return remaining_locations.at(blob).empty(); };
+
+    /// Only blobs removed from all locations are recorded. A partially removed batch keeps its lease and is retried whole.
+    StoredObjects removed_blobs;
+    for (const auto & blob : work.blobs | std::views::keys)
+        if (is_removed(blob))
+            removed_blobs.push_back(blob);
+
+    IMetadataStorage::BatchesToRemove removed_batches;
+    for (auto & batch : work.batches)
+        if (std::ranges::all_of(batch.blobs | std::views::keys, is_removed))
+            removed_batches.push_back(std::move(batch));
+
+    recordRemoval(removed_blobs, removed_batches, metadata_storage, log);
+
+    int64_t removed_count = std::ssize(removed_blobs);
+    for (const auto & batch : removed_batches)
+        removed_count += std::ssize(batch.blobs);
+    return removed_count;
 }
 
 int64_t executeBlobsCleanup(
@@ -244,8 +298,8 @@ int64_t executeBlobsCleanup(
     const LoggerPtr & log) noexcept
 {
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRuns);
-    auto blobs_to_remove = findBlobsToRemove(max_to_remove, cluster, metadata, log);
-    return removeBlobs(std::move(blobs_to_remove), blobs_in_task, remove_tasks_runner, metadata, object_storages, log);
+    auto work = findBlobsToRemove(max_to_remove, cluster, metadata, log);
+    return removeBlobs(std::move(work), blobs_in_task, remove_tasks_runner, metadata, object_storages, log);
 }
 
 }
@@ -268,17 +322,41 @@ BlobKillerThread::BlobKillerThread(
 {
     task = context->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
     task->deactivate();
+
+    /// Scheduling does nothing while the task is deactivated, so the callback is harmless before `startup`
+    /// and after `shutdown`. It only wakes up a task that stopped polling: while the task is polling, a round
+    /// is either running or pending (delayed by `reschedule_interval_sec`), and that round will see the queued
+    /// blobs, so ordinary asynchronous removals are still batched.
+    metadata_storage->setDeadBlobsQueuedCallback([this]() { wakeUpIfPollingStopped(); });
 }
 
 BlobKillerThread::~BlobKillerThread()
 {
+    metadata_storage->setDeadBlobsQueuedCallback({});
     task->deactivate();
+}
+
+void BlobKillerThread::wakeUpIfPollingStopped()
+{
+    std::lock_guard guard(polling_mutex);
+    if (!polling_stopped)
+        return;
+
+    polling_stopped = false;
+    task->schedule();
 }
 
 void BlobKillerThread::run()
 {
     auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::run");
     LOG_TEST(log, "Starting cleanup");
+
+    {
+        /// The round is running, so the blobs queued from now on are seen either by it or by the next round,
+        /// which is scheduled at its end.
+        std::lock_guard guard(polling_mutex);
+        polling_stopped = false;
+    }
 
     const int64_t dead_queue_estimate = metadata_storage->getDeadBlobsQueueEstimate();
     const auto [round_request_batch, round_blobs_in_task, round_threads_count] = calculateBlobKillerEffectiveParams(
@@ -290,6 +368,20 @@ void BlobKillerThread::run()
     int64_t removed_blobs = executeBlobsCleanup(round_request_batch, round_blobs_in_task, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
     finished_rounds.fetch_add(1);
     finished_rounds.notify_all();
+
+    {
+        /// The queue is drained and nothing new can be queued, e.g. a cache layer over a `plain` disk that was
+        /// reloaded as read-only. The task stays active: the metadata storage wakes it up when it queues blobs.
+        /// The check is done under the mutex: the metadata storage queues blobs before it calls the callback,
+        /// so a commit either makes the check answer `true` or wakes up the task after it stopped polling.
+        std::lock_guard guard(polling_mutex);
+        if (!metadata_storage->hasDeadBlobsQueue())
+        {
+            polling_stopped = true;
+            LOG_TEST(log, "Nothing more to clean up, not rescheduling");
+            return;
+        }
+    }
 
     if (removed_blobs < static_cast<int64_t>(0.9 * static_cast<double>(round_request_batch)))
     {
@@ -310,9 +402,26 @@ void BlobKillerThread::startup()
     started = true;
 
     if (enabled)
+        activateTask();
+}
+
+void BlobKillerThread::activateTask()
+{
+    /// The task is activated even when there is nothing to do, so that `trigger` and the metadata storage
+    /// can schedule it later. It is only scheduled when the metadata storage may have dead blobs.
+    task->activate();
+
+    std::lock_guard guard(polling_mutex);
+    if (metadata_storage->hasDeadBlobsQueue())
     {
         LOG_INFO(log, "Execution started");
-        task->activateAndSchedule();
+        polling_stopped = false;
+        task->schedule();
+    }
+    else
+    {
+        LOG_INFO(log, "Execution is not needed: the metadata storage does not defer blob removal");
+        polling_stopped = true;
     }
 }
 
@@ -322,6 +431,9 @@ void BlobKillerThread::shutdown()
     LOG_INFO(log, "Shutting down Blob Killer thread");
 
     task->deactivate();
+
+    if (!metadata_storage->hasDeadBlobsQueue())
+        return;
 
     /// We need to execute it here explicitly because some blobs may be in the metadata storage queue.
     executeBlobsCleanup(/*max_to_remove=*/0, blobs_in_task, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
@@ -352,6 +464,15 @@ void BlobKillerThread::waitRound(int64_t expected_round)
 
 void BlobKillerThread::triggerAndWait()
 {
+    /// There is nothing to wait for in such a storage.
+    /// The wrapped storage of a cache layer may still have dead blobs of its own, so wait for it anyway.
+    if (!metadata_storage->hasDeadBlobsQueue())
+    {
+        if (wrapped_blob_killer)
+            wrapped_blob_killer->triggerAndWait();
+        return;
+    }
+
     int64_t expected_round = trigger();
 
     if (wrapped_blob_killer)
@@ -375,7 +496,7 @@ void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration 
     LOG_INFO(log, "Applying new settings: Enabled: {}, Started: {}", enabled.load(), started.load());
 
     if (enabled && started)
-        task->activateAndSchedule();
+        activateTask();
     else
         task->deactivate();
 }

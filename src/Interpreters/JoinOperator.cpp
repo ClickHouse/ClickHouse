@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <vector>
 #include <Interpreters/JoinOperator.h>
 #include <Core/ProtocolDefines.h>
@@ -17,6 +19,7 @@
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/MergeJoin.h>
 
@@ -28,8 +31,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -55,6 +58,7 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsHashJoinLayout hash_join_layout;
 
     extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
@@ -83,14 +87,18 @@ namespace Setting
 
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
+    extern const SettingsBool enable_robin_hood_hash_for_joins;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const SettingsBool enable_packed_string_keys_in_hash_join;
+    extern const SettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const SettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
 }
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
+    extern const QueryPlanSerializationSettingsQueryPlanJoinAlgorithm join_algorithm;
     extern const QueryPlanSerializationSettingsBool allow_block_nested_loop_join;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
@@ -114,6 +122,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_joins;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
     extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
+    extern const QueryPlanSerializationSettingsHashJoinLayout hash_join_layout;
 
     extern const QueryPlanSerializationSettingsBool joined_block_split_single_row;
     extern const QueryPlanSerializationSettingsBool parallel_non_joined_rows_processing;
@@ -139,9 +148,19 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
     extern const QueryPlanSerializationSettingsBool enable_join_key_only_hash_tables;
+    extern const QueryPlanSerializationSettingsBool enable_robin_hood_hash_for_joins;
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_hash_join;
+    extern const QueryPlanSerializationSettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
     extern const QueryPlanSerializationSettingsBool enable_hash_join_row_store;
     extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const QueryPlanSerializationSettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
+}
+
+bool JoinSettings::hasDefaultJoinAlgorithms() const
+{
+    static const std::vector<JoinAlgorithm> default_algorithms = Settings{}[Setting::join_algorithm];
+    return join_algorithms == default_algorithms;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
@@ -184,6 +203,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     collect_hash_table_stats_during_joins = query_settings[Setting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = query_settings[Setting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
+    hash_join_layout = query_settings[Setting::hash_join_layout];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
@@ -202,9 +222,13 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = query_settings[Setting::enable_join_key_only_hash_tables];
+    enable_robin_hood_hash_for_joins = query_settings[Setting::enable_robin_hood_hash_for_joins];
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
+    enable_packed_string_keys_in_hash_join = query_settings[Setting::enable_packed_string_keys_in_hash_join];
+    min_rows_for_packed_string_keys_in_hash_join = query_settings[Setting::min_rows_for_packed_string_keys_in_hash_join];
     enable_hash_join_row_store = query_settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
+    min_string_column_bytes_for_hash_join_row_store = query_settings[Setting::min_string_column_bytes_for_hash_join_row_store];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
@@ -239,6 +263,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     collect_hash_table_stats_during_joins = settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
+    /// An older initiator does not write the name, so its plans get `auto`.
+    hash_join_layout = settings[QueryPlanSerializationSetting::hash_join_layout];
 
     joined_block_split_single_row = settings[QueryPlanSerializationSetting::joined_block_split_single_row];
     parallel_non_joined_rows_processing = settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing];
@@ -266,13 +292,17 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
+    enable_robin_hood_hash_for_joins = settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
+    enable_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join];
+    min_rows_for_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join];
     enable_hash_join_row_store = settings[QueryPlanSerializationSetting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
+    min_string_column_bytes_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store];
 }
 
 /// `join_algorithm` is an ordered preference list, and these entries produce a join for any step that reaches
-/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
+/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` or
 /// `SpillingHashJoin` (`src/Planner/PlannerJoins.cpp`, `src/Interpreters/ExpressionAnalyzer.cpp`). Whatever follows
 /// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
 /// the same order. Note that `prefer_partial_merge` stops the walk, but not always with a hash join: it tries
@@ -281,7 +311,6 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 static bool alwaysProducesJoin(JoinAlgorithm algorithm)
 {
     return algorithm == JoinAlgorithm::HASH
-        || algorithm == JoinAlgorithm::PARALLEL_HASH
         || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
         || algorithm == JoinAlgorithm::DEFAULT
         || algorithm == JoinAlgorithm::AUTO;
@@ -336,7 +365,7 @@ static bool producesJoinForStep(JoinAlgorithm algorithm, const JoinOperator & jo
 
     /// `FullSortingMergeJoin::isSupported` and `MergeJoin::isSupported` are the kind / strictness predicate plus
     /// conditions on the `ON` clause that a plain equi-join satisfies. A `direct` join needs a key-value right side
-    /// a plan step never has, `ie_join` claims a step before the list is consulted at all: neither is relied upon.
+    /// a plan step never has, `inequality` claims a step before the list is consulted at all: neither is relied upon.
     if (!isPlainEquiJoin(join_operator))
         return false;
 
@@ -368,7 +397,7 @@ static bool runsStepWithHashFamily(JoinAlgorithm algorithm, const JoinOperator &
 /// the top level. `JoinStepLogical::buildPhysicalJoinImpl` turns exactly those predicates into the join keys of a
 /// single `TableJoin` clause (`addJoinPredicatesToTableJoin`), which is what `TableJoin::oneDisjunct` checks.
 /// Without one, the step never has a one-clause hash join on either side: a single top-level `OR` is split into
-/// one clause per disjunct, two inequalities become an `IEJoinStep` when `ie_join` is enabled, an `INNER ALL` join
+/// one clause per disjunct, two inequalities become an `InequalityJoinStep` when `inequality` is enabled, an `INNER ALL` join
 /// is converted to a CROSS join with a residual filter, and anything else is refused - none of which spills.
 static bool hasEqualityKeys(const JoinOperator & join_operator)
 {
@@ -406,7 +435,7 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
     /// Only a `GraceHashJoin` (standalone, or inside the `SpillingHashJoin` of the hash family) treats the size
     /// limits as a spill trigger, and only a step it supports can ever be run by one, on either side. An ASOF join,
     /// a kind outside INNER / LEFT / RIGHT / FULL, and an `ON` clause without equality keys (a disjunction, an
-    /// inequality-only join that becomes an `IEJoinStep` or a CROSS join) are run by algorithms that check the
+    /// inequality-only join that becomes an `InequalityJoinStep` or a CROSS join) are run by algorithms that check the
     /// limits as hard caps on both sides, and the spill threshold does not apply to any of them.
     if (!graceHashSupports(join_operator))
         return false;
@@ -442,7 +471,7 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
         }
     }
 
-    /// Nothing in the list is known to run the step (`direct`, `ie_join`, a merge algorithm the `ON` clause could
+    /// Nothing in the list is known to run the step (`direct`, `inequality`, a merge algorithm the `ON` clause could
     /// make decline it): with a size limit the answer depends on more than the step tells, so stay on the safe side.
     return size_limits_set;
 }
@@ -450,8 +479,8 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so the name goes on the wire only towards a peer
-    /// that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
+    /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so the name goes on
+    /// the wire only towards a peer that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN)
         settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -480,6 +509,10 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins] = collect_hash_table_stats_during_joins;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins] = max_size_to_preallocate_for_joins;
     settings[QueryPlanSerializationSetting::parallel_hash_join_threshold] = parallel_hash_join_threshold;
+    /// A peer below this version does not know the name and picks the layout itself. That can change only the speed,
+    /// the memory use and the order of rows, so the plan is not refused.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT)
+        settings[QueryPlanSerializationSetting::hash_join_layout] = hash_join_layout;
 
     settings[QueryPlanSerializationSetting::joined_block_split_single_row] = joined_block_split_single_row;
     settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing] = parallel_non_joined_rows_processing;
@@ -500,8 +533,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only
-    /// towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
+    /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so this name may
+    /// go on the wire only towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
     /// a peer below that version keeps the old contract for the settings it does know, so a plan that
     /// depends on the unified spill trigger has to be refused rather than executed with the old meaning.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)
@@ -519,44 +552,29 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables] = enable_join_key_only_hash_tables;
+    settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins] = enable_robin_hood_hash_for_joins;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
+    settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join] = enable_packed_string_keys_in_hash_join;
+    settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join] = min_rows_for_packed_string_keys_in_hash_join;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES)
+        settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store] = min_string_column_bytes_for_hash_join_row_store;
+}
+
+bool JoinSettings::canRunGraceHash() const
+{
+    const auto global_context = Context::getGlobalContextInstance();
+    if (!global_context || !global_context->getSharedTempDataOnDisk())
+        return false;
+
+    return legacy_join_size_limits_trigger_spilling || max_bytes_before_external_join > 0 || join_algorithms.size() == 1;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
 {
-    std::optional<UInt64> threshold;
-    if (max_bytes_before_external_join != 0)
-        threshold = max_bytes_before_external_join;
-
-    if (max_bytes_ratio_before_external_join != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_join;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_join should be >= 0 and < 1 ({:.3f})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            UInt64 ratio_in_bytes = static_cast<UInt64>(static_cast<double>(*available_system_memory) * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {:.3f}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("JoinSettings"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_join");
-        }
-    }
-
-    return threshold.value_or(0);
+    return getMaxBytesBeforeExternalProcessing(
+        max_bytes_before_external_join, max_bytes_ratio_before_external_join, "max_bytes_ratio_before_external_join");
 }
 
 String toString(const JoinActionRef & node)
@@ -571,7 +589,7 @@ String toString(const JoinActionRef & node)
     return out.str();
 }
 
-static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id, const std::vector<JoinActionRef> & nodes)
+static void serializeNodeList(WriteBuffer & out, const UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> & node_to_id, const VectorWithMemoryTracking<JoinActionRef> & nodes)
 {
     writeVarUInt(nodes.size(), out);
     for (const auto & action : nodes)
@@ -584,7 +602,7 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
     }
 }
 
-void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
+void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag, UInt64 step_version) const
 {
     auto node_to_id = actions_dag->getNodeToIdMap();
     serializeNodeList(out, node_to_id, expression);
@@ -593,16 +611,26 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
+
+    if (step_version == 0 && set_operation != JoinSetOperation::None)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing the join of `{}` requires query plan serialization version >= {}",
+            toString(set_operation),
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN);
+
+    if (step_version >= 1)
+        serializeJoinSetOperation(set_operation, out);
 }
 
-static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
+static VectorWithMemoryTracking<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
 {
     size_t num_nodes = 0;
     readVarUInt(num_nodes, in);
 
     size_t max_node_id = id_to_node.size();
 
-    std::vector<JoinActionRef> result;
+    VectorWithMemoryTracking<JoinActionRef> result;
     result.reserve(num_nodes);
 
     for (size_t i = 0; i < num_nodes; ++i)
@@ -617,7 +645,7 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
     return result;
 }
 
-JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 step_version)
 {
     auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
     auto actions = deserializeNodeList(in, id_to_node, expression_actions);
@@ -631,13 +659,17 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     result.expression = std::move(actions);
     result.residual_filter = std::move(residual_filter);
 
+    /// Version 1 of the `Join` step added the set operation.
+    if (step_version >= 1)
+        result.set_operation = deserializeJoinSetOperation(in);
+
     return result;
 }
 
 String JoinOperator::dump() const
 {
-    return fmt::format("JoinOperator(kind={}, strictness={}, locality={}, expression=[{}], residual_filter=[{}])",
-        toString(kind), toString(strictness), toString(locality),
+    return fmt::format("JoinOperator(kind={}, strictness={}{}, locality={}, expression=[{}], residual_filter=[{}])",
+        toString(kind), toString(strictness), set_operation == JoinSetOperation::None ? "" : fmt::format(", set_operation={}", toString(set_operation)), toString(locality),
         fmt::join(expression | std::views::transform(&JoinActionRef::dump), ", "),
         fmt::join(residual_filter | std::views::transform(&JoinActionRef::dump), ", "));
 }
