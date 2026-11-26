@@ -8,10 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
-  ## 向 ClickHouse 插入数据与向 OLTP 数据库插入数据的区别
+  ## 向 ClickHouse 插入数据与向 OLTP 数据库插入数据的区别 {#inserting-into-clickhouse-vs-oltp-databases}
 </div>
 
 作为一种 OLAP (联机分析处理) 数据库，ClickHouse 针对高性能和可扩展性进行了优化，理论上可以实现每秒插入数百万行。
@@ -26,11 +24,11 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 遵循这些规则将有助于避免用户初次使用 ClickHouse 时经常遇到的问题，以及避免试图照搬适用于 OLTP 数据库的插入策略所带来的问题。
 
 <div id="best-practices-for-inserts">
-  ## 插入的最佳实践
+  ## 插入的最佳实践 {#best-practices-for-inserts}
 </div>
 
 <div id="insert-in-large-batch-sizes">
-  ### 按较大的批次插入
+  ### 按较大的批次插入 {#insert-in-large-batch-sizes}
 </div>
 
 默认情况下，发送到 ClickHouse 的每次插入，都会让 ClickHouse 立即创建一个存储分片，其中包含本次插入的数据以及其他需要存储的元数据。
@@ -41,7 +39,7 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 如果无法做到大批次插入，请使用下文介绍的异步插入。
 
 <div id="ensure-consistent-batches-for-idempotent-retries">
-  ### 确保批次一致，以实现幂等重试
+  ### 确保批次一致，以实现幂等重试 {#ensure-consistent-batches-for-idempotent-retries}
 </div>
 
 默认情况下，向 ClickHouse 执行的插入是同步且幂等的 (即多次执行同一插入操作，与执行一次的效果相同) 。
@@ -56,7 +54,7 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 只要重试的插入查询包含相同的数据且顺序一致，如果原始插入 (虽未获确认) 实际上已成功，ClickHouse 就会自动忽略这次重试插入。
 
 <div id="insert-to-a-mergetree-table-or-a-distributed-table">
-  ### 插入到 MergeTree 表或分布式表
+  ### 插入到 MergeTree 表或分布式表 {#insert-to-a-mergetree-table-or-a-distributed-table}
 </div>
 
 我们建议直接插入到 MergeTree (或 Replicated 表) 中；如果数据已分片，则在一组节点之间对这些请求做负载均衡，并设置 `internal_replication=true`。
@@ -65,9 +63,7 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 如果客户端侧负载均衡不方便，也可以通过[分布式表](/zh/reference/engines/table-engines/special/distributed)进行插入，由它将写入分发到各个节点。同样，建议设置 `internal_replication=true`。
 但需要注意的是，这种方式性能会稍差一些，因为写入必须先在包含分布式表的节点上本地执行，然后再发送到各个分片。
 
-<div id="use-asynchronous-inserts-for-small-batches">
-  ### 对小批次使用异步插入
-</div>
+### 对小批次使用异步插入 {#use-asynchronous-inserts-for-small-batches}
 
 在某些场景下，客户端侧批处理并不可行，例如在可观测性场景中，有数百甚至数千个单一用途的 agent 持续发送日志、指标、链路追踪等数据。
 在这种情况下，实时传输这些数据对于尽快发现问题和异常至关重要。
@@ -76,7 +72,11 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 
 启用异步插入后，数据会先写入缓冲区，然后再按下图所示分 3 步写入数据库存储：
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts" />
+<div className="ch-image-md">
+  <Frame>
+    ![Postgres inserts](/images/guides/postgres-inserts.webp)
+  </Frame>
+</div>
 
 启用异步插入后，ClickHouse 会：
 
@@ -95,7 +95,7 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### 使用官方 ClickHouse 客户端
+  ### 使用官方 ClickHouse 客户端 {#use-official-clickhouse-clients}
 </div>
 
 ClickHouse 为最常用的编程语言提供了客户端。
@@ -104,7 +104,7 @@ ClickHouse 为最常用的编程语言提供了客户端。
 有关可用 ClickHouse 客户端和驱动程序的完整列表，请参阅[原生客户端和接口](/zh/concepts/features/interfaces/native-clients-interfaces-index)。
 
 <div id="prefer-the-native-format">
-  ### 优先使用 Native 格式
+  ### 优先使用 Native 格式 {#prefer-the-native-format}
 </div>
 
 ClickHouse 在插入 (以及查询) 时支持多种[输入格式](/zh/reference/formats/index)。
@@ -120,7 +120,7 @@ ClickHouse 在插入 (以及查询) 时支持多种[输入格式](/zh/reference/
 如果你的写入吞吐量较低，并且希望快速集成，也可以考虑 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow) 格式。但要注意，这种格式会让 ClickHouse 在解析时产生额外的 CPU 开销。
 
 <div id="use-the-http-interface">
-  ### 使用 HTTP 接口
+  ### 使用 HTTP 接口 {#use-the-http-interface}
 </div>
 
 与许多传统数据库不同，ClickHouse 支持 HTTP 接口。
@@ -133,7 +133,7 @@ ClickHouse 在插入 (以及查询) 时支持多种[输入格式](/zh/reference/
 更多详情，请参阅 [HTTP Interface](/zh/concepts/features/interfaces/http)。
 
 <div id="basic-example">
-  ## 基本示例
+  ## 基本示例 {#basic-example}
 </div>
 
 您可以在 ClickHouse 中使用熟悉的 `INSERT INTO TABLE` 命令。下面我们将一些数据插入到之前在快速入门指南[“在 ClickHouse 中创建表”](/zh/get-started/quickstarts/creating-tables)里创建的表中。
@@ -163,7 +163,7 @@ user_id message                                             timestamp           
 ```
 
 <div id="loading-data-from-postgres">
-  ## 从 Postgres 加载数据
+  ## 从 Postgres 加载数据 {#loading-data-from-postgres}
 </div>
 
 如需从 Postgres 加载数据，可以使用：
@@ -181,7 +181,7 @@ user_id message                                             timestamp           
 </Info>
 
 <div id="inserting-data-from-command-line">
-  ## 从命令行插入数据
+  ## 从命令行插入数据 {#inserting-data-from-command-line}
 </div>
 
 **前置条件**

@@ -15,7 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupporte
 
 Para revocar privilegios, use la sentencia [REVOKE](/es/reference/statements/revoke). También puede enumerar los privilegios otorgados con la sentencia [SHOW GRANTS](/es/reference/statements/show#show-grants).
 
-## Sintaxis para otorgar privilegios
+## Sintaxis para otorgar privilegios {#granting-privilege-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -28,7 +28,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 La cláusula `WITH GRANT OPTION` otorga al `user` o al `role` el permiso para ejecutar la consulta `GRANT`. Los usuarios pueden otorgar privilegios del mismo alcance que poseen o de un alcance menor.
 La cláusula `WITH REPLACE OPTION` reemplaza los privilegios anteriores por privilegios nuevos para el `user` o `role`; si no se especifica, agrega privilegios.
 
-## Sintaxis para asignar un rol
+## Sintaxis para asignar un rol {#assigning-role-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -40,7 +40,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 La cláusula `WITH ADMIN OPTION` otorga el privilegio [ADMIN OPTION](#admin-option) a `user` o `role`.
 La cláusula `WITH REPLACE OPTION` reemplaza los roles anteriores por el nuevo rol para `user` o `role`; si no se especifica, añade los roles.
 
-## Sintaxis de GRANT CURRENT GRANTS
+## Sintaxis de GRANT CURRENT GRANTS {#grant-current-grants-syntax}
 
 ```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -53,7 +53,7 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 Usar la sentencia `CURRENT GRANTS` permite conceder todos los privilegios especificados al usuario o rol indicado.
 Si no se especifica ninguno de los privilegios, el usuario o rol indicado recibirá todos los privilegios disponibles para `CURRENT_USER`.
 
-## Uso
+## Uso {#usage}
 
 Para usar `GRANT`, tu cuenta debe tener el privilegio `GRANT OPTION`. Solo puedes conceder privilegios dentro del alcance de los privilegios de tu cuenta.
 
@@ -82,7 +82,7 @@ El acceso a la base de datos `system` siempre está permitido (ya que esta base 
 
 Puede conceder varios privilegios a varias cuentas en una sola consulta. La consulta `GRANT SELECT, INSERT ON *.* TO john, robin` permite que las cuentas `john` y `robin` ejecuten las consultas `INSERT` y `SELECT` sobre todas las tablas de todas las bases de datos del servidor.
 
-## Privilegios con comodines
+## Privilegios con comodines {#wildcard-grants}
 
 Al especificar privilegios, puede usar un asterisco (`*`) en lugar del nombre de una tabla o de una base de datos. Por ejemplo, la consulta `GRANT SELECT ON db.* TO john` permite a `john` ejecutar la consulta `SELECT` sobre todas las tablas de la base de datos `db`.
 Además, puede omitir el nombre de la base de datos. En ese caso, los privilegios se otorgan para la base de datos actual.
@@ -133,7 +133,7 @@ GRANT SELECT ON *suffix TO john -- incorrecto
 GRANT SELECT(foo) ON db.table* TO john -- incorrecto
 ```
 
-## Privilegios
+## Privilegios {#privileges}
 
 Un privilegio es un permiso otorgado a un usuario para ejecutar determinados tipos de consultas.
 
@@ -142,7 +142,7 @@ Los privilegios tienen una estructura jerárquica y el conjunto de consultas per
 A continuación se muestra la jerarquía de privilegios en ClickHouse:
 
 * [`ALL`](#all)
-  * [`GESTIÓN DE ACCESOS`](#access-management)
+  * [`ACCESS MANAGEMENT`](#access-management)
     * `ALLOW SQL SECURITY NONE`
     * `ALTER QUOTA`
     * `ALTER ROLE`
@@ -167,6 +167,15 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
+  * [`AI FUNCTIONS`](#ai-functions)
+    * `aiClassify`
+    * `aiEmbed`
+    * `aiExtract`
+    * `aiFilter`
+    * `aiGenerate`
+    * `aiRedact`
+    * `aiSimilarity`
+    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -218,20 +227,25 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
-    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-    * `CREATE WORKLOAD`
+  * `CREATE RESOURCE`
+  * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
-    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-    * `DROP WORKLOAD`
+  * `DROP RESOURCE`
+  * `DROP WORKLOAD`
+  * `HANDLER ADMIN`
+    * `ALTER HANDLER`
+    * `CREATE HANDLER`
+    * `DROP HANDLER`
+    * `SHOW HANDLERS`
   * [`INSERT`](#insert)
   * [`INTROSPECTION`](#introspection)
     * `addressToLine`
@@ -257,7 +271,7 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
     * `SHOW DICTIONARIES`
     * `SHOW TABLES`
   * `SHOW FILESYSTEM CACHES`
-  * [`FUENTES`](#sources)
+  * [`SOURCES`](#sources)
     * `AZURE`
     * `BIGQUERY`
     * `DISK`
@@ -296,6 +310,7 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
       * `SYSTEM DROP QUERY CACHE`
       * `SYSTEM DROP S3 CLIENT CACHE`
       * `SYSTEM DROP SCHEMA CACHE`
+      * `SYSTEM DROP TIME SERIES CACHES`
       * `SYSTEM DROP UNCOMPRESSED CACHE`
     * `SYSTEM DROP REPLICA`
     * `SYSTEM FAILPOINT`
@@ -313,6 +328,7 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
     * `SYSTEM RESET DDL WORKER`
+    * `SYSTEM RESET FILELOG`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -378,7 +394,7 @@ Si un usuario o un rol no tiene privilegios, se muestra el privilegio [NONE](#no
 
 Algunas consultas, por su implementación, requieren un conjunto de privilegios. Por ejemplo, para ejecutar la consulta [RENAME](/es/reference/statements/optimize) se necesitan los siguientes privilegios: `SELECT`, `CREATE TABLE`, `INSERT` y `DROP TABLE`.
 
-### SELECT
+### SELECT {#select}
 
 Permite ejecutar consultas [SELECT](/es/reference/statements/select/index).
 
@@ -396,7 +412,7 @@ GRANT SELECT(x,y) ON db.table TO john
 
 Este privilegio permite a `john` ejecutar cualquier consulta `SELECT` que utilice datos de las columnas `x` y/o `y` de `db.table`, por ejemplo, `SELECT x FROM db.table`. `john` no puede ejecutar `SELECT z FROM db.table`. Tampoco puede ejecutar `SELECT * FROM db.table`. Al procesar esta consulta, ClickHouse no devuelve ningún dato, ni siquiera `x` e `y`. La única excepción es si una tabla contiene solo las columnas `x` e `y`; en ese caso, ClickHouse devuelve todos los datos.
 
-### INSERT
+### INSERT {#insert}
 
 Permite ejecutar consultas [INSERT](/es/reference/statements/insert-into).
 
@@ -414,7 +430,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 El privilegio otorgado permite a `john` insertar datos en las columnas `x` y/o `y` de la tabla `db.table`.
 
-### ALTER
+### ALTER {#alter}
 
 Permite ejecutar consultas [ALTER](/es/reference/statements/alter/index) según la siguiente jerarquía de privilegios:
 
@@ -464,11 +480,11 @@ Ejemplos de cómo se aplica esta jerarquía:
 * La operación `DETACH` requiere el privilegio [DROP](#drop).
 * Para detener una mutación con la consulta [KILL MUTATION](/es/reference/statements/kill#kill-mutation), debes tener el privilegio necesario para iniciar esa mutación. Por ejemplo, si quieres detener la consulta `ALTER UPDATE`, necesitas el privilegio `ALTER UPDATE`, `ALTER TABLE` o `ALTER`.
 
-### BACKUP
+### BACKUP {#backup}
 
 Permite ejecutar [`BACKUP`] en las consultas. Para obtener más información sobre las copias de seguridad, consulte [&quot;Copia de seguridad y restauración&quot;](/es/concepts/features/backup-restore/overview).
 
-### CREATE
+### CREATE {#create}
 
 Permite ejecutar las consultas DDL [CREATE](/es/reference/statements/create/index) y [ATTACH](/es/reference/statements/attach) según la siguiente jerarquía de privilegios:
 
@@ -484,7 +500,7 @@ Permite ejecutar las consultas DDL [CREATE](/es/reference/statements/create/inde
 
 * Para eliminar la tabla creada, el usuario necesita [DROP](#drop).
 
-### CLUSTER
+### CLUSTER {#cluster}
 
 Permite ejecutar consultas `ON CLUSTER`.
 
@@ -508,7 +524,7 @@ ubicada en la sección `access_control_improvements` de `config.xml` (véase má
 </access_control_improvements>
 ```
 
-### DROP
+### DROP {#drop}
 
 Permite ejecutar consultas [DROP](/es/reference/statements/drop) y [DETACH](/es/reference/statements/detach) según la siguiente jerarquía de privilegios:
 
@@ -518,19 +534,19 @@ Permite ejecutar consultas [DROP](/es/reference/statements/drop) y [DETACH](/es/
   * `DROP VIEW`. Nivel: `VIEW`
   * `DROP DICTIONARY`. Nivel: `DICTIONARY`
 
-### TRUNCATE
+### TRUNCATE {#truncate}
 
 Permite ejecutar consultas [TRUNCATE](/es/reference/statements/truncate).
 
 Nivel de privilegio: `TABLE`.
 
-### OPTIMIZE
+### OPTIMIZE {#optimize}
 
 Permite ejecutar consultas [OPTIMIZE TABLE](/es/reference/statements/optimize).
 
 Nivel de privilegio: `TABLE`.
 
-### SHOW
+### SHOW {#show}
 
 Permite ejecutar consultas `SHOW`, `DESCRIBE`, `USE` y `EXISTS` según la siguiente jerarquía de privilegios:
 
@@ -544,7 +560,7 @@ Permite ejecutar consultas `SHOW`, `DESCRIBE`, `USE` y `EXISTS` según la siguie
 
 Un usuario tiene el privilegio `SHOW` si tiene cualquier otro privilegio sobre la tabla, el diccionario o la base de datos especificados.
 
-### KILL QUERY
+### KILL QUERY {#kill-query}
 
 Permite ejecutar consultas [KILL](/es/reference/statements/kill#kill-query) según la siguiente jerarquía de privilegios:
 
@@ -554,7 +570,7 @@ Nivel de privilegio: `GLOBAL`.
 
 El privilegio `KILL QUERY` permite que un usuario finalice las consultas de otros usuarios.
 
-### GESTIÓN DE ACCESO
+### GESTIÓN DE ACCESO {#access-management}
 
 Permite a un usuario ejecutar consultas para administrar usuarios, roles y políticas de fila.
 
@@ -588,7 +604,7 @@ El privilegio `ROLE ADMIN` permite a un usuario asignar y revocar cualquier rol,
 
 El privilegio `CREATE TOKEN` permite a un usuario añadir un método de autenticación a su propia cuenta, mediante [`CREATE TOKEN`](/es/reference/statements/create/token) o mediante la sentencia equivalente `ALTER USER <current user> ADD IDENTIFIED ...`, sin poder administrar cuentas en ningún otro sentido. Es independiente de `ALTER USER` porque permite que un usuario rebaje el nivel de seguridad de su propia cuenta, por ejemplo añadiendo una contraseña de larga duración a una cuenta a la que, de otro modo, solo se podría acceder con un certificado.
 
-### SYSTEM
+### SYSTEM {#system}
 
 Permite a un usuario ejecutar consultas [SYSTEM](/es/reference/statements/system) según la siguiente jerarquía de privilegios.
 
@@ -623,7 +639,7 @@ Los comandos `SYSTEM UNLOAD DICTIONARY` y `SYSTEM UNLOAD DICTIONARIES` reutiliza
 
 El privilegio `SYSTEM RELOAD EMBEDDED DICTIONARIES` se concede implícitamente con el privilegio `SYSTEM RELOAD DICTIONARY ON *.*`.
 
-### INTROSPECTION
+### INTROSPECTION {#introspection}
 
 Permite utilizar funciones de [introspección](/es/concepts/features/performance/troubleshoot/sampling-query-profiler).
 
@@ -633,7 +649,26 @@ Permite utilizar funciones de [introspección](/es/concepts/features/performance
   * `addressToSymbol`. Nivel: `GLOBAL`
   * `demangle`. Nivel: `GLOBAL`
 
-### FUENTES
+### AI FUNCTIONS {#ai-functions}
+
+Permite usar [funciones de IA](/es/reference/functions/regular-functions/ai-functions). Para llamar a una función de IA también se requiere el privilegio `NAMED COLLECTION` sobre las credenciales seleccionadas.
+
+* `AI FUNCTIONS`. Nivel: `GROUP`
+  * `aiClassify`. Nivel: `GLOBAL`
+  * `aiEmbed`. Nivel: `GLOBAL`
+  * `aiExtract`. Nivel: `GLOBAL`
+  * `aiFilter`. Nivel: `GLOBAL`
+  * `aiGenerate`. Nivel: `GLOBAL`
+  * `aiRedact`. Nivel: `GLOBAL`
+  * `aiSimilarity`. Nivel: `GLOBAL`
+  * `aiTranslate`. Nivel: `GLOBAL`
+
+Ejemplos:
+
+* `GRANT AI FUNCTIONS ON *.* TO john`
+* `GRANT aiGenerate, aiClassify ON *.* TO john`
+
+### fuentes {#sources}
 
 Permite usar fuentes de datos externas. Se aplica a los [motores de base de datos](/es/reference/engines/database-engines/index) respaldados por fuentes, a los [motores de tabla](/es/reference/engines/table-engines/index) y a las [funciones de tabla](/es/reference/functions/table-functions/index).
 También se requiere para las ubicaciones de copias de seguridad: `BACKUP`/`RESTORE` y `ENGINE = Backup` autorizan su ubicación mediante estos privilegios.
@@ -646,6 +681,7 @@ Parámetros posibles:
 * `AZURE`
 * `BIGQUERY`
 * `DISK`
+* `ELASTICSEARCH`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -675,14 +711,14 @@ Ejemplos:
 * Para crear una tabla con el [motor de tabla MySQL](/es/reference/engines/table-engines/integrations/mysql), se necesitan los privilegios `CREATE TABLE (ON db.table_name)` y `MYSQL`.
 * Para usar la [función de tabla MySQL](/es/reference/functions/table-functions/mysql), se necesitan los privilegios `CREATE TEMPORARY TABLE` y `MYSQL`.
 
-### Privilegios con filtro por origen
+### Permisos con filtro por fuente {#source-filter-grants}
 
 <Note>
   Esta función está disponible a partir de la versión 25.8 y solo con la configuración del servidor
   `access_control_improvements.enable_read_write_grants`
 </Note>
 
-Puede conceder acceso a URI de origen específicas mediante filtros de expresiones regulares. Esto permite un control más preciso sobre las fuentes de datos externas a las que pueden acceder los usuarios.
+Puede conceder acceso a URI de fuente específicas mediante filtros de expresiones regulares. Esto permite un control más preciso sobre las fuentes de datos externas a las que pueden acceder los usuarios.
 
 **Sintaxis:**
 
@@ -690,7 +726,7 @@ Puede conceder acceso a URI de origen específicas mediante filtros de expresion
 GRANT READ ON S3('regexp_pattern') TO user
 ```
 
-Este privilegio permitirá al usuario leer únicamente desde URI de S3 que coincidan con el patrón de expresión regular especificado.
+Este permiso permitirá al usuario leer únicamente desde URI de S3 que coincidan con el patrón de expresión regular especificado.
 
 **Ejemplos:**
 
@@ -709,7 +745,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
 <Warning>
-  El filtro de origen usa **regexp** como parámetro, por lo que un privilegio
+  El filtro de fuente usa **regexp** como parámetro, por lo que un permiso
   `GRANT READ ON URL('http://www.google.com') TO john;`
 
   permitirá consultas como
@@ -720,7 +756,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
   ```
 
   porque `.` se interpreta como `cualquier carácter individual` en las expresiones regulares.
-  Esto puede dar lugar a una posible vulnerabilidad. El privilegio correcto debería ser
+  Esto puede dar lugar a una posible vulnerabilidad. El permiso correcto debería ser
 
   ```sql
   GRANT READ ON URL('https://www\.google\.com') TO john;
@@ -729,7 +765,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
 
 **Volver a conceder con GRANT OPTION:**
 
-Si el privilegio original incluye `WITH GRANT OPTION`, puede volver a concederse con `GRANT CURRENT GRANTS`:
+Si el permiso original incluye `WITH GRANT OPTION`, puede volver a concederse con `GRANT CURRENT GRANTS`:
 
 ```sql
 -- Original grant with GRANT OPTION
@@ -739,12 +775,23 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**Revocación:**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **Limitaciones importantes:**
 
-* **No se permiten revocaciones parciales:** No puede revocar solo un subconjunto de un patrón de filtro ya concedido. Debe revocar el privilegio completo y volver a concederlo con nuevos patrones si es necesario.
-* **No se permiten privilegios con comodines:** No puede usar `GRANT READ ON *('regexp')` ni patrones similares basados únicamente en comodines. Debe proporcionarse una source específica.
+* **Los filtros se comparan como cadenas:** `REVOKE` elimina únicamente el filtro que coincide exactamente con el concedido. Revocar `S3('s3://foo/bar/.*')` lanza una excepción en lugar de restringir un permiso sobre `S3('s3://foo/.*')`.
+* **No se permiten revocaciones parciales:** No puede revocar solo un subconjunto de un patrón de filtro ya concedido. Debe revocar el permiso completo y volver a concederlo con nuevos patrones si es necesario.
+* **No se permiten permisos con comodines:** No puede usar `GRANT READ ON *('regexp')` ni patrones similares basados únicamente en comodines. Debe proporcionarse una fuente específica.
 
-### dictGet
+### dictGet {#dictget}
 
 * `dictGet`. Alias: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
@@ -757,7 +804,7 @@ Nivel de privilegio: `DICTIONARY`.
 * `GRANT dictGet ON mydb.mydictionary TO john`
 * `GRANT dictGet ON mydictionary TO john`
 
-### displaySecretsInShowAndSelect
+### displaySecretsInShowAndSelect {#displaysecretsinshowandselect}
 
 Permite que un usuario vea secretos en consultas `SHOW` y `SELECT` si tanto la
 [`display_secrets_in_show_and_select` configuración del servidor](/es/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
@@ -765,7 +812,7 @@ como la
 [`format_display_secrets_in_show_and_select` configuración de formato](/es/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 están activadas.
 
-### NAMED COLLECTION ADMIN
+### NAMED COLLECTION ADMIN {#named-collection-admin}
 
 Permite realizar una operación determinada sobre una colección con nombre especificada. Antes de la versión 23.7 se llamaba NAMED COLLECTION CONTROL, y a partir de la 23.7 se añadió NAMED COLLECTION ADMIN, mientras que NAMED COLLECTION CONTROL se conserva como alias.
 
@@ -785,7 +832,7 @@ Suponiendo que una colección con nombre se llama abc, otorgamos el privilegio C
 
 * `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
-### TABLE ENGINE
+### TABLE ENGINE {#table-engine}
 
 <CloudNotSupportedBadge />
 
@@ -808,7 +855,7 @@ Por ejemplo, para el motor de tabla AzureBlobStorage, puede ser necesario el sig
 
 * `GRANT READ, WRITE ON AZURE TO john`
 
-### ALL
+### ALL {#all}
 
 <CloudNotSupportedBadge />
 
@@ -819,11 +866,11 @@ Otorga todos los privilegios sobre una entidad a una cuenta de usuario o a un ro
   Los usuarios también pueden usar `GRANT CURRENT GRANTS` con el usuario `default` para lograr un efecto similar a `ALL`.
 </Note>
 
-### NONE
+### NONE {#none}
 
 No otorga ningún privilegio.
 
-### ADMIN OPTION
+### ADMIN OPTION {#admin-option}
 
 El privilegio `ADMIN OPTION` permite a un usuario conceder su rol a otro usuario.
 

@@ -40,7 +40,7 @@ SQLQueryPiece applyBinaryOperator(
     if (isBinaryOperatorUnless(operator_name))
         return applyBinaryOperatorUnless(operator_node, std::move(left_argument), std::move(right_argument), context);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", operator_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented", operator_node->getTypeAndName());
 }
 
 }

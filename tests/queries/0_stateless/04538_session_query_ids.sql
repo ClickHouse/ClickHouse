@@ -33,10 +33,11 @@ WHERE sequence_number + 2 <= (SELECT max(sequence_number) FROM system.session_qu
     AND query_id NOT IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday());
 
 -- The failed query's id joins to its exception entry in system.query_log.
+-- GLOBAL: with parallel replicas a plain IN subquery also runs on the follower replicas, which have no session history.
 SELECT count() FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday()
     AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')
-    AND query_id IN (SELECT query_id FROM system.session_query_ids);
+    AND query_id GLOBAL IN (SELECT query_id FROM system.session_query_ids);
 
 -- Eviction: with a small history size only the newest entries remain and sequence numbers stay monotonic.
 SET session_query_ids_history_size = 3;

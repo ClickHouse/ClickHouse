@@ -14,9 +14,15 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_async_executor_for_materialized_views">
-  ## use_async_executor_for_materialized_views
-</div>
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "La conversion à deux niveaux de `GROUP BY` compare `group_by_two_level_threshold_bytes` uniquement à la mémoire occupée par l’état d’agrégation, mesurée par un composant de suivi de la mémoire dédié (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490). Avant la version 26.7, elle se fondait sur l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de choisir la manière dont la conversion à deux niveaux de `GROUP BY` mesure la mémoire d’agrégation. La modification qu’il conditionne a été livrée dans la version 26.7, et la régression de mémoire associée a été corrigée dans la version 26.9."}]}]} />
+
+Mesure la taille de l’état d’agrégation, comparée à `group_by_two_level_threshold_bytes`, à l’aide du composant de suivi de la mémoire dédié à l’agrégation. Lorsque ce paramètre est désactivé, la taille correspond à l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête depuis la création de l’agrégation : une agrégation dont l’état est de petite taille peut donc être convertie en agrégation à deux niveaux.
+
+## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,9 +30,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Utilise une exécution asynchrone et potentiellement multithreadée de la requête de vue matérialisée, ce qui peut accélérer le traitement des vues lors des INSERT, mais consomme aussi davantage de mémoire.
 
-<div id="use_cache_for_count_from_files">
-  ## use_cache_for_count_from_files
-</div>
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,37 +38,32 @@ Active la mise en cache du nombre de lignes lors du comptage depuis des fichiers
 
 Activé par défaut.
 
-<div id="use_client_time_zone">
-  ## use_client_time_zone
-</div>
+## use_client_time_zone {#use_client_time_zone}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Utilise le fuseau horaire du client pour interpréter les valeurs de chaîne DateTime, au lieu de celui du serveur.
 
-<div id="use_compact_format_in_distributed_parts_names">
-  ## use_compact_format_in_distributed_parts_names
-</div>
+## use_columns_cache {#use_columns_cache}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Utilise par défaut le format compact pour les INSERT asynchrones dans les tables Distributed"}]}]} />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-Utilise le format compact pour stocker les blocs des INSERT en arrière-plan (`distributed_foreground_insert`) dans les tables utilisant le moteur `Distributed`.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre expérimental permettant d'activer le cache de colonnes pour les tables MergeTree, désactivé par défaut."}]}]} />
 
-Valeurs possibles :
+Détermine si le cache de colonnes est utilisé. Accepte 0 ou 1. Valeur par défaut : 0 (désactivé).
+Le cache de colonnes stocke les colonnes désérialisées issues des tables `MergeTree`, ce qui évite de décompresser et de désérialiser à plusieurs reprises les données fréquemment consultées. Il peut ainsi réduire considérablement la latence des requêtes répétées sur les mêmes données. Le cache est indexé par l&#39;UUID de la table, le nom de la part, le nom de la colonne et un stripe de granules consécutifs d&#39;environ 65536 lignes.
 
-* 0 — Utilise le format de répertoire `user[:password]@host:port#default_database`.
-* 1 — Utilise le format de répertoire `[shard{shard_index}[_replica{replica_index}]]`.
+Les entrées étant indexées par l&#39;UUID de la table, le cache n&#39;est actif que pour les tables des bases de données qui attribuent des UUID, comme `Atomic`, `Replicated` et `Shared` (le moteur de base de données par défaut dans ClickHouse Cloud) ; les tables `MergeTree` des bases de données legacy `Ordinary` ont un UUID nul et ignorent silencieusement ce paramètre.
 
-<Note>
-  - avec `use_compact_format_in_distributed_parts_names=0`, les modifications de la définition du cluster ne seront pas appliquées aux INSERT en arrière-plan.
-  - avec `use_compact_format_in_distributed_parts_names=1`, modifier l’ordre des nœuds dans la définition du cluster changera `shard_index`/`replica_index` ; tenez-en compte.
-</Note>
+Le cache s&#39;applique aussi bien aux parts wide qu&#39;aux parts compact, y compris aux parts des projections.
 
-<div id="use_concurrency_control">
-  ## use_concurrency_control
-</div>
+Une entrée contient une plage contiguë de granules d&#39;un même stripe : un granule n&#39;entre dans le cache qu&#39;une fois lu intégralement, de sa première à sa dernière ligne ; une lecture est servie depuis le cache granule par granule, et les plages écrites par des lectures distinctes sont fusionnées, de sorte que des lectures découpant une part en plages de marques différentes partagent les mêmes entrées.
+
+Le cache s&#39;applique également aux fichiers `Parquet` lus depuis le système de fichiers local (la fonction de table `file` et le table engine `File`) ou depuis des stockages d&#39;objets (`s3`, `azureBlobStorage` et leurs table engines), ainsi qu&#39;à ceux lus par les tables de lac de données. Dans ce cas, une entrée contient un fragment de 65536 lignes d&#39;une colonne d&#39;un groupe de lignes (le dernier fragment d&#39;un groupe de lignes peut être plus court), indexé par le chemin du fichier, sa version (l&#39;ETag d&#39;un objet, ou la date de modification, l&#39;inode et la taille d&#39;un fichier local), la colonne du fichier et le type sous lequel elle est lue. Un groupe de lignes qui utilise le cache est lu par fragments de cette taille, quels que soient les paramètres de taille de bloc. Un fragment est écrit dans le cache au fil de son décodage, sans copie, si toutes ses lignes ont été lues avant l&#39;application de tout filtre : avec `PREWHERE`, c&#39;est le cas des colonnes du filtre, tandis que les autres colonnes ne sont lues que pour les lignes qui le satisfont. Une colonne d&#39;un groupe de lignes n&#39;est servie depuis le cache que lorsque tous ses fragments y sont présents ; les fragments d&#39;une colonne qui ne peuvent pas tous être écrits sont donc retirés du cache. Un fichier local n&#39;est mis en cache que s&#39;il n&#39;a pas été modifié depuis quelques secondes, afin que sa version identifie bien son contenu.
+
+## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -72,9 +71,21 @@ Valeurs possibles :
 
 Respecte le contrôle de la concurrence du serveur (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`). Si ce paramètre est désactivé, il permet d&#39;utiliser un plus grand nombre de threads même si le serveur est surchargé (non recommandé en usage normal, et surtout nécessaire pour les tests).
 
-<div id="use_constant_folding_in_index_analysis">
-  ## use_constant_folding_in_index_analysis
-</div>
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de déterminer le parallélisme d’une requête à partir de la part équitable des créneaux CPU du contrôle de concurrence"}]}]} />
+
+Détermine le parallélisme d’une requête (le nombre de flux et de fils d’exécution prévus lors de sa planification) à partir de la part équitable des créneaux CPU du contrôle de concurrence du serveur, plutôt qu’à partir du nombre de cœurs CPU. La part équitable correspond à la limite de créneaux (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`) répartie à parts égales entre les pipelines en cours d’exécution et la nouvelle requête.
+
+Ainsi, lorsque de nombreuses requêtes s’exécutent simultanément, chacune est planifiée avec moins de flux : elle consomme moins de mémoire et moins de CPU pour fusionner les résultats partiels de ses fils d’exécution (par exemple, les états d’agrégation), ce qui augmente le débit global. Une requête planifiée alors que le serveur est inactif utilise tous les cœurs CPU, comme auparavant.
+
+La part équitable est déterminée une seule fois par requête, lors de la construction de son plan, afin que toutes les parties de la requête (sous-requêtes, sets, tables jointes) soient planifiées avec le même nombre de flux.
+
+Ce paramètre ne s’applique que si `max_threads` vaut `auto` (non défini explicitement) et si `use_concurrency_control` est activé.
+
+## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +106,15 @@ Valeurs possibles :
 * 0 — Désactivé.
 * 1 — Activé.
 
-<div id="use_hash_table_stats_for_join_reordering">
-  ## use_hash_table_stats_for_join_reordering
-</div>
+## use_datalake_metadata_statistics {#use_datalake_metadata_statistics}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant d’estimer, à partir des métadonnées de la table, le nombre de lignes et les statistiques de colonne des lectures de lac de données (Iceberg pour l’instant) pour le réordonnancement des JOIN."}]}]} />
+
+Lorsque [`use_statistics`](/fr/reference/settings/session-settings/use-statistics#use_statistics) est activé, estime une lecture de lac de données à partir des métadonnées de la table, sans lire les données, pour le réordonnancement des JOIN. Seul Iceberg est pris en charge : l’estimation s’appuie sur les manifestes de ses fichiers de données qui subsistent après l’élagage par partition et par min-max selon le filtre de la requête. Le nombre de lignes est tiré de leur `record_count`, tandis que le nombre de valeurs distinctes, les valeurs min/max et la fraction de NULL des colonnes renvoyées sont tirés de leurs valeurs de partition identity, de leurs bornes de valeurs et de leurs nombres de NULL. Le filtre, le `PREWHERE` et la politique de ligne de la lecture sont estimés à partir de ces statistiques, comme pour les tables MergeTree dotées de statistiques de colonne ; si aucune des colonnes demandées ne dispose de statistiques, un filtre qui n’élague aucun fichier ne produit aucune estimation, comme pour les tables MergeTree qui en sont dépourvues. L’estimation du nombre de lignes est exacte en l’absence de filtre et de fichiers de suppression. L’élagage par le filtre nécessite l’activation de [use&#95;iceberg&#95;partition&#95;pruning](/fr/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning).
+
+## use_hash_table_stats_for_join_reordering {#use_hash_table_stats_for_join_reordering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -105,9 +122,7 @@ Valeurs possibles :
 
 Active l’utilisation des statistiques de table de hachage collectées pour l’estimation de la cardinalité lors de la réorganisation des jointures
 
-<div id="use_hedged_requests">
-  ## use_hedged_requests
-</div>
+## use_hedged_requests {#use_hedged_requests}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,9 +137,7 @@ Activé par défaut.
 
 Valeur par défaut dans Cloud : `0`.
 
-<div id="use_hive_partitioning">
-  ## use_hive_partitioning
-</div>
+## use_hive_partitioning {#use_hive_partitioning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -132,9 +145,7 @@ Valeur par défaut dans Cloud : `0`.
 
 Lorsqu’il est activé, ClickHouse détecte le partitionnement de style Hive dans le chemin (`/name=value/`) des moteurs de table de type fichier [File](/fr/reference/functions/table-functions/file#hive-style-partitioning)/[S3](/fr/reference/functions/table-functions/s3#hive-style-partitioning)/[URL](/fr/reference/functions/table-functions/url#hive-style-partitioning)/[HDFS](/fr/reference/functions/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage#hive-style-partitioning), et permet d’utiliser les colonnes de partition comme colonnes virtuelles dans les requêtes. Ces colonnes virtuelles porteront les mêmes noms que dans le chemin partitionné, précédés de `_`.
 
-<div id="use_indexes_refiner_in_read_pools">
-  ## use_indexes_refiner_in_read_pools
-</div>
+## use_indexes_refiner_in_read_pools {#use_indexes_refiner_in_read_pools}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -144,9 +155,7 @@ Applique les index évalués lors de la lecture des données directement dans le
 
 Dans le pool de lecture avec prélecture, les plages exclues ne sont jamais préchargées, mais les limites des tâches et l’admission de la prélecture via `filesystem_prefetch_max_memory_usage` / `filesystem_prefetches_limit` sont toujours déterminées avant le filtrage ; avec des filtres très sélectifs, les tâches restantes peuvent donc être plus petites que la taille de tâche prévue et l’admission peut être prudente.
 
-<div id="use_join_disjunctions_push_down">
-  ## use_join_disjunctions_push_down
-</div>
+## use_join_disjunctions_push_down {#use_join_disjunctions_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -157,9 +166,17 @@ Cela permet aux moteurs de stockage de filtrer plus tôt, ce qui peut réduire l
 L&#39;optimisation préserve la sémantique et n&#39;est appliquée que lorsque chaque branche OR de premier niveau apporte au moins un
 prédicat déterministe pour le côté cible.
 
-<div id="use_legacy_to_time">
-  ## use_legacy_to_time
-</div>
+## use_join_runtime_filters_for_iceberg_pruning {#use_join_runtime_filters_for_iceberg_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d’élaguer les fichiers de données Iceberg, ainsi que les groupes de lignes et les pages Parquet, à l’aide des filtres JOIN à l’exécution."}]}]} />
+
+Ignore les fichiers de données Iceberg, ainsi que les groupes de lignes et les pages Parquet des fichiers lus, qui ne peuvent contenir aucune clé d’un filtre d’exécution de JOIN (voir [enable&#95;join&#95;runtime&#95;filters](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Une fois le côté build de la jointure terminé, les clés du filtre (ou leur plage min/max, si le set est trop volumineux) sont comparées aux limites des colonnes figurant dans les manifestes, aux statistiques des groupes de lignes et à l’index des pages. Les fichiers de données demandés avant ce stade sont lus intégralement.
+
+Nécessite [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) et [use&#95;iceberg&#95;partition&#95;pruning](/fr/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Pour les groupes de lignes, [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_filter_push_down) est également requis ; pour les pages, ce paramètre ainsi que [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down) sont requis.
+
+## use_legacy_to_time {#use_legacy_to_time}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -173,9 +190,7 @@ qui convertit des valeurs de différents types en type [`Time`](/fr/reference/da
 La fonction legacy reste également accessible sans condition sous le nom `toTimeWithFixedDate`, indépendamment de ce paramètre.
 Lorsque ce paramètre est activé, utilisez `CAST(x AS Time)` ou `x::Time` pour convertir vers le type `Time`.
 
-<div id="use_lightweight_primary_key_index_analysis">
-  ## use_lightweight_primary_key_index_analysis
-</div>
+## use_lightweight_primary_key_index_analysis {#use_lightweight_primary_key_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -190,9 +205,17 @@ Valeurs possibles :
 * 0 — Désactivé. Toutes les colonnes de la clé primaire sont traitées lors de l’analyse d’index.
 * 1 — Activé.
 
-<div id="use_parquet_metadata_cache">
-  ## use_parquet_metadata_cache
-</div>
+## use_lz4_library_decompression {#use_lz4_library_decompression}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre : permet d’utiliser, en option, le décodeur de la bibliothèque amont `LZ4` à la place du décodeur adaptatif de ClickHouse."}]}]} />
+
+Utilise la bibliothèque amont `LZ4` pour décompresser les blocs natifs ClickHouse, y compris les données compressées avec `LZ4HC` ou avec une chaîne de codecs contenant `LZ4`.
+Désactivé par défaut : c’est alors le décodeur `LZ4` adaptatif de ClickHouse qui est utilisé. Les deux décodeurs lisent les mêmes données stockées ; modifier ce paramètre ne nécessite donc pas de réécrire les parts.
+Le paramètre s’applique à la décompression effectuée dans le contexte de la requête. En dehors d’une requête, c’est le paramètre du contexte global qui s’applique ou, en l’absence de contexte, le décodeur de ClickHouse.
+
+## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -200,14 +223,14 @@ Valeurs possibles :
 
 Lorsque ce paramètre est activé, le format Parquet peut utiliser le cache des métadonnées Parquet.
 
-Valeurs possibles :
+Pour le table engine `File` et la fonction de table `file`, une lecture avec filtre conserve également dans le cache les statistiques min/max des colonnes filtrées. Une requête ultérieure ignore alors un fichier sans l&#39;ouvrir si ces statistiques indiquent qu&#39;aucun groupe de lignes du fichier ne peut satisfaire son filtre. Les erreurs que seule l&#39;ouverture d&#39;un tel fichier lèverait (par exemple, une colonne sélectionnée absente du fichier alors que `input_format_parquet_allow_missing_columns` est désactivé) dépendent donc de la présence ou non de ses statistiques dans le cache. Désactiver ce paramètre désactive également la conservation des statistiques et le saut de fichiers.
+
+Valeurs possibles :
 
 * 0 - Désactivé
 * 1 - Activé
 
-<div id="use_primary_key">
-  ## use_primary_key
-</div>
+## use_primary_key {#use_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -220,9 +243,7 @@ Valeurs possibles :
 * 0 — Désactivé.
 * 1 — Activé.
 
-<div id="use_reader_executor">
-  ## use_reader_executor
-</div>
+## use_reader_executor {#use_reader_executor}
 
 <ExperimentalBadge />
 
@@ -232,9 +253,7 @@ Valeurs possibles :
 
 Expérimental. Achemine les lectures via le nouveau pipeline `ReaderExecutor` au lieu de la matriochka legacy des tampons de lecture. Bascule sur le chemin legacy pour les configurations que l&#39;exécuteur ne prend pas encore en charge.
 
-<div id="use_roaring_bitmap_iceberg_positional_deletes">
-  ## use_roaring_bitmap_iceberg_positional_deletes
-</div>
+## use_roaring_bitmap_iceberg_positional_deletes {#use_roaring_bitmap_iceberg_positional_deletes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -242,9 +261,7 @@ Expérimental. Achemine les lectures via le nouveau pipeline `ReaderExecutor` au
 
 Utiliser un bitmap roaring pour les suppressions positionnelles d’Iceberg.
 
-<div id="use_streaming_marks_compression">
-  ## use_streaming_marks_compression
-</div>
+## use_streaming_marks_compression {#use_streaming_marks_compression}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -252,9 +269,7 @@ Utiliser un bitmap roaring pour les suppressions positionnelles d’Iceberg.
 
 Lors du chargement des marks pour les parts MergeTree, compressez-les dans leur représentation en mémoire un bloc à la fois (streaming), au lieu de matérialiser d’abord l’ensemble du tableau de marks bruts. Cela réduit considérablement le pic de mémoire lors du chargement des marks pour les compact parts avec de nombreux sous-flux (par exemple, les tables avec des colonnes JSON et `write_marks_for_substreams_in_compact_parts` activé).
 
-<div id="use_strict_insert_block_limits">
-  ## use_strict_insert_block_limits
-</div>
+## use_strict_insert_block_limits {#use_strict_insert_block_limits}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -277,9 +292,7 @@ Lorsqu’il est désactivé, un bloc est émis lorsque :
 
 Désactivé par défaut.
 
-<div id="use_structure_from_insertion_table_in_table_functions">
-  ## use_structure_from_insertion_table_in_table_functions
-</div>
+## use_structure_from_insertion_table_in_table_functions {#use_structure_from_insertion_table_in_table_functions}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -287,9 +300,7 @@ Désactivé par défaut.
 
 Utilise la structure de la table d’insertion au lieu de l’inférence de schéma à partir des données. Valeurs possibles : 0 - désactivé, 1 - activé, 2 - auto
 
-<div id="use_uncompressed_cache">
-  ## use_uncompressed_cache
-</div>
+## use_uncompressed_cache {#use_uncompressed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -298,9 +309,7 @@ L’utilisation du cache non compressé (uniquement pour les tables de la famill
 
 Pour les requêtes qui lisent un volume de données déjà important (un million de lignes ou plus), le cache non compressé est automatiquement désactivé afin de réserver l’espace aux requêtes véritablement petites. Cela signifie que vous pouvez laisser le paramètre &#39;use&#95;uncompressed&#95;cache&#39; toujours défini sur 1.
 
-<div id="use_with_fill_by_sorting_prefix">
-  ## use_with_fill_by_sorting_prefix
-</div>
+## use_with_fill_by_sorting_prefix {#use_with_fill_by_sorting_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

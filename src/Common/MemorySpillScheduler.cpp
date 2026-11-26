@@ -1,24 +1,23 @@
 #include <mutex>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/MemorySpillScheduler.h>
-#include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
 
 
 namespace DB
 {
-void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
+size_t MemorySpillScheduler::checkAndSpill(ISpillable * processor)
 {
-    chassert(processor->isSpillable());
     if (!enable || !getHardLimit())
-        return;
+        return 0;
 
     auto stats = processor->getMemoryStats();
     auto * selected_processor = selectSpilledProcessor(processor, stats);
 
     if (processor == selected_processor)
-    {
-        processor->spillOnSize(stats.spillable_memory_bytes);
-    }
+        return processor->spill(stats.spillable_memory_bytes);
+
+    return 0;
 }
 
 Int64 MemorySpillScheduler::getHardLimit()
@@ -34,13 +33,24 @@ Int64 MemorySpillScheduler::getHardLimit()
     return hard_limit;
 }
 
-void MemorySpillScheduler::remove(IProcessor * processor)
+void MemorySpillScheduler::registerSpillable(ISpillable * spillable)
 {
-    // Only the spillable processors are tracked.
-    if (!enable || !processor->isSpillable())
+    if (!enable)
         return;
     std::lock_guard lock(mutex);
-    processor_stats.erase(processor);
+    ++processor_stats[spillable].owners;
+}
+
+void MemorySpillScheduler::unregisterSpillable(ISpillable * spillable)
+{
+    if (!enable)
+        return;
+    std::lock_guard lock(mutex);
+    auto it = processor_stats.find(spillable);
+    chassert(it != processor_stats.end() && it->second.owners);
+    if (--it->second.owners)
+        return;
+    processor_stats.erase(it);
     updateTopProcessor();
 }
 
@@ -48,8 +58,10 @@ void MemorySpillScheduler::updateTopProcessor()
 {
     Int64 max_spillable_memory_bytes = 0;
     max_reserved_memory_bytes = 0;
-    for (const auto & [proc, stats] : processor_stats)
+    top_processor = nullptr;
+    for (const auto & [proc, entry] : processor_stats)
     {
+        const auto & stats = entry.stats;
         max_reserved_memory_bytes = std::max(stats.need_reserved_memory_bytes, max_reserved_memory_bytes);
         if (!top_processor || stats.spillable_memory_bytes > max_spillable_memory_bytes)
         {
@@ -59,12 +71,12 @@ void MemorySpillScheduler::updateTopProcessor()
     }
 }
 
-IProcessor * MemorySpillScheduler::selectSpilledProcessor(IProcessor * current_processor, const ProcessorMemoryStats & mem_stats)
+ISpillable * MemorySpillScheduler::selectSpilledProcessor(ISpillable * current_processor, const ProcessorMemoryStats & mem_stats)
 {
     auto current_mem_used = getCurrentQueryMemoryUsage();
     auto limit = getHardLimit();
     std::lock_guard lock(mutex);
-    processor_stats[current_processor] = mem_stats;
+    processor_stats.at(current_processor).stats = mem_stats;
 
     // quick check
     max_reserved_memory_bytes = std::max(mem_stats.need_reserved_memory_bytes, max_reserved_memory_bytes);

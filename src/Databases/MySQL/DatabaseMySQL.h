@@ -5,6 +5,7 @@
 
 #include <mysqlxx/Pool.h>
 
+#include <Common/SecretString.h>
 #include <Common/ThreadPool.h>
 #include <Core/LogsLevel.h>
 #include <Storages/ColumnsDescription.h>
@@ -99,7 +100,7 @@ protected:
 
 private:
     String metadata_path;
-    ASTPtr database_engine_define;
+    SecretString database_engine_define;
     String database_name_in_mysql;
     std::unique_ptr<MySQLSettings> mysql_settings;
 
@@ -126,6 +127,8 @@ private:
     void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const TSA_REQUIRES(mutex);
 
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const TSA_REQUIRES(mutex);
+
+    StoragePtr createStorage(const String & table_name, const ColumnsDescription & columns) const TSA_REQUIRES(mutex);
 
     ThreadFromGlobalPool thread;
 

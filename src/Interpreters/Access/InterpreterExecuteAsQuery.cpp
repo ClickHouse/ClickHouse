@@ -44,6 +44,7 @@ namespace
 
         new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
         new_context->setProgressCallback(context->getProgressCallback());
+        new_context->setQueryExecutionStartedCallback(context->getQueryExecutionStartedCallback());
         new_context->setProcessListElement(context->getProcessListElement());
 
         if (context->getCurrentTransaction())
@@ -130,9 +131,13 @@ BlockIO InterpreterExecuteAsQuery::execute()
         /// without it the access checks of `CREATE` subqueries would be skipped, so the impersonated statement
         /// would not be limited to the privileges of the target user.
         return executeQuery(
-                   query.subquery->formatWithSecretsOneLine(), subquery_context,
-                   QueryFlags{ .internal = true, .user_initiated = true })
-            .second;
+            query.subquery->formatWithSecretsOneLine(),
+            subquery_context,
+            QueryFlags{
+                .internal = true,
+                .user_initiated = true,
+                .parse_server_owned_query_without_limits = getContext()->shouldParseServerOwnedQueryWithoutLimits(),
+            }).second;
     }
     else
     {

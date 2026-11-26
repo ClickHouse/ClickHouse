@@ -11,15 +11,16 @@ doc_type: 'reference'
 
 指定したスキーマでランダムデータを生成します。
 そのデータを使用してテスト用テーブルにデータを投入できます。
-すべての型がサポートされているわけではありません。
+`JSON`、`Dynamic`、`Variant`、`BFloat16`、`Time`、`Time64`を含め、テーブルに格納できるすべてのデータ型をサポートしています。
+`AggregateFunction`、`Interval`、`Nothing`、`QBit`型はサポートされていません。
 
-## 構文
+## 構文 {#syntax}
 
 ```sql
-generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
+generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]][, SETTINGS setting = value[, ...]])
 ```
 
-## 引数
+## 引数 {#arguments}
 
 | 引数                  | 説明                                                      |
 | ------------------- | ------------------------------------------------------- |
@@ -29,11 +30,37 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | 生成されるすべての文字列の最大長。既定値は `10` です。                          |
 | `max_array_length`  | 生成されるすべてのArrayまたは Map の最大要素数。既定値は `10` です。                 |
 
-## 戻り値
+## 設定 {#settings}
+
+`SETTINGS` は呼び出しの最後の引数で、`Nullable`、`Variant`、`Dynamic`、`JSON` の値の生成方法を制御します。
+
+| 設定                         | 型        | デフォルト    | 説明                                                                                                                                       |
+| -------------------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `null_ratio`               | `Float`  | `0.0625` | `Nullable`、`Variant`、`Dynamic` の値が `NULL` になる確率、および `JSON` のキーが行に存在しない確率の基準値です。一部のスパースなキーは、この基準値の数倍の確率で存在しません。`[0, 1]` の範囲内で指定する必要があります。 |
+| `max_json_depth`           | `UInt64` | `3`      | 生成される `JSON` オブジェクトの最大ネスト深度です。`1` はネストのないオブジェクトを意味し、配列内のオブジェクトも1階層として数えます。`[1, 32]` の範囲内で指定する必要があります。                                    |
+| `max_json_keys_per_object` | `UInt64` | `8`      | `JSON` オブジェクトの各階層で生成されるキーの最大数です。ルートオブジェクトには、この値の半数以上のキーが生成されます。`0` は型付きパスのみを生成することを意味します。最大値は `1000` です。                                 |
+
+```sql
+SELECT * FROM generateRandom('x JSON', 3, 4, 2, SETTINGS max_json_depth = 1, max_json_keys_per_object = 3) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"cursor":"","id":[],"parent":-3723905664592977020}}
+{"x":{"cursor":"","id":[7037090064212902336]}}
+{"x":{"id":[287913403506346525],"parent":-4417942528676528098}}
+```
+
+`SETTINGS` のみを引数として指定することもできます。この場合、挿入先テーブルの構造が維持されます。ҩ
+
+```sql
+INSERT INTO test_table SELECT * FROM generateRandom(SETTINGS null_ratio = 0.5) LIMIT 10;
+```
+
+## 戻り値 {#returned-value}
 
 指定したスキーマを持つテーブルオブジェクト。
 
-## 使用例
+## 使用例 {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -106,7 +133,40 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` で `max_array_length` を十分大きくすると、複合型 (`Array`, `Tuple`, `Map`, `Nested`) のネストが深くなる可能性がある (最大 16 階層) ため、出力が非常に大きくなることがあります。
 </Note>
 
-## 関連コンテンツ
+## JSON の生成 {#generating-json}
+
+生成された `JSON` カラムは、単一のスキーマを持つドキュメントのストリームとして読み取れます。キーの集合と各キーの型は
+乱数シードによって決まり、カラム全体を通して変わりません。一方、値や
+欠落するキー、配列の長さは行ごとに変わります。オブジェクトの深さは
+`max_json_depth`、各階層のキー数は `max_json_keys_per_object` で制限され、各キーは
+`null_ratio` の確率で行から欠落します。末端の値には、実際のドキュメントから JSON パーサーが推論する型、
+すなわち `Int64`、`UInt64`、`Float64`、`Bool`、`String`、`Date`、`DateTime`、これらの型の配列、
+オブジェクトの配列、混合型の配列が使われます。また、アプリケーションから収集したデータと同様に、
+一部のキーは少数の行で異なる型になります。
+
+型宣言によって、生成されるスキーマが決まります。型付きパスは宣言された
+型で必ず存在し、`SKIP` と `SKIP REGEXP` で除外されたパスは生成されません。また、
+`max_dynamic_paths` と `max_dynamic_types` の両方の制限が適用されるため、`max_dynamic_paths` の上限を超えたパスは
+カラムの共有データに格納されます。
+
+```sql
+SELECT * FROM generateRandom('x JSON', 1) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"product_id":"2050-12-17 01:46:35","stage":"g|(&Ql","started":{"group":-80611897324989285}}}
+{"x":{"product_id":"2013-10-17 22:35:26","stage":"^ipx|,=a5N","started":{"group":-1326235429680389454}}}
+{"x":{"product_id":"1974-11-17 22:22:46","stage":"(U]p'l`","started":{"group":-344141642787805595}}}
+```
+
+データの構造を挿入先テーブルの定義に任せることもできます。`JSON`、`Dynamic`、`Variant` 型のカラムを持つテーブルにデータを追加する場合に便利です。
+
+```sql
+CREATE TABLE t (x JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
+```
+
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseでランダムデータを生成する方法](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

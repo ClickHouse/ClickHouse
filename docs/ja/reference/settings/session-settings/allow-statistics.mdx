@@ -13,27 +13,23 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="allow_statistics">
-  ## allow_statistics
-</div>
+## allow_statistics {#allow_statistics}
 
 **別名**: `allow_experimental_statistics`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "列STATISTICSが GA になりました"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "列STATISTICSが GA になりました。これは別名 `allow_experimental_statistics` にも適用されます。"}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "この設定はリネームされました。以前の名前は `allow_experimental_statistic` です。当時この設定は `allow_experimental_statistics` という名前でしたが、現在はこの設定の別名になっています。"}]}]} />
 
 カラムに [STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) を定義し、[manipulate STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) を操作できるようにします。
 
-<div id="allow_statistics_optimize">
-  ## allow_statistics_optimize
-</div>
+## allow_statistics_optimize {#allow_statistics_optimize}
 
 **別名**: `allow_statistic_optimize`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "この最適化はデフォルトで有効です。"}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "この設定はリネームされました。以前の名前は `allow_statistic_optimize` です。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "この最適化はデフォルトで有効です。これは別名 `allow_statistic_optimize` にも適用されます。"}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "この設定はリネームされました。以前の名前は `allow_statistic_optimize` です。"}]}]} />
 
 STATISTICSを使用したクエリの最適化を許可します
 
