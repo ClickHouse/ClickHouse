@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- The query condition cache must not record a verdict computed from a non-deterministic default.
 -- Every case prints the count with the cache and without it.
 
