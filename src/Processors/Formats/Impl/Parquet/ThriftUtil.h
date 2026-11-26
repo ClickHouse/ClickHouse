@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <generated/parquet_types.h> // in contrib/arrow/cpp/src/ , generated from parquet.thrift
@@ -9,6 +10,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <type_traits>
 
 namespace DB
@@ -66,19 +68,23 @@ struct FileColumnChunks
 };
 using FileColumnChunksPtr = std::shared_ptr<const FileColumnChunks>;
 
-/// Validated offset indexes of a file's column chunks, kept by ParquetMetadataCache with the cached footer (see
+/// Validated offset and column indexes of a file's column chunks, kept by ParquetMetadataCache with the cached footer (see
 /// `ParquetMetadataCache::keepOffsetIndexes`). Only grows; shared by the cache cells of a file version that replace each other.
 class KeptOffsetIndexes
 {
 public:
     using OffsetIndexPtr = std::shared_ptr<const parq::OffsetIndex>;
+    /// A serialized `parq::ColumnIndex`, as read from the file.
+    using ColumnIndexPtr = std::shared_ptr<const StringWithMemoryTracking>;
 
     struct Entry
     {
         size_t row_group_idx = 0;
         /// Parquet column index.
         size_t column_idx = 0;
-        OffsetIndexPtr offset_index;
+        /// Either may be null.
+        OffsetIndexPtr offset_index = nullptr;
+        ColumnIndexPtr column_index = nullptr;
     };
 
     explicit KeptOffsetIndexes(size_t max_bytes_) : max_bytes(max_bytes_) {}
@@ -88,12 +94,16 @@ public:
 
     /// nullptr if not kept.
     OffsetIndexPtr get(size_t row_group_idx, size_t column_idx) const;
-    /// Keeps the entries not kept yet, while all kept entries take at most `max_bytes`. Returns whether any was added.
+    ColumnIndexPtr getColumnIndex(size_t row_group_idx, size_t column_idx) const;
+    /// Keeps the indexes not kept yet, up to `max_bytes` of offset and of column indexes. Returns whether any was added.
     /// Keeps none if it throws.
     bool add(const VectorWithMemoryTracking<Entry> & entries);
     size_t bytes() const;
     size_t remainingBytes() const;
+    size_t remainingColumnIndexBytes() const;
     static size_t entryBytes(const parq::OffsetIndex & offset_index);
+    static size_t entryBytes(std::span<const char> column_index);
+    static size_t columnIndexEntryBytes(size_t column_index_size);
 
 private:
     static UInt64 makeKey(size_t row_group_idx, size_t column_idx) { return (UInt64(row_group_idx) << 32) | column_idx; }
@@ -101,7 +111,9 @@ private:
     const size_t max_bytes;
     mutable std::mutex mutex;
     UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr> offset_indexes TSA_GUARDED_BY(mutex);
-    size_t total_bytes TSA_GUARDED_BY(mutex) = 0;
+    UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr> column_indexes TSA_GUARDED_BY(mutex);
+    size_t offset_index_bytes TSA_GUARDED_BY(mutex) = 0;
+    size_t column_index_bytes TSA_GUARDED_BY(mutex) = 0;
 };
 using KeptOffsetIndexesPtr = std::shared_ptr<KeptOffsetIndexes>;
 
