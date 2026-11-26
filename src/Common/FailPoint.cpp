@@ -357,6 +357,7 @@ static struct InitFiu
     ONCE(backup_fail_lock_file_write_after_commit) \
     ONCE(backup_fail_lock_file_write_after_open) \
     ONCE(backup_fail_reading_archive_size) \
+    ONCE(backup_coordination_finish_zk_fail_before_op) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
     PAUSEABLE_ONCE(backup_pause_after_lock_file_creation) \
     PAUSEABLE(backup_pause_before_reading_file_contents) \

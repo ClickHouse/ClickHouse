@@ -3,6 +3,7 @@
 #include <base/chrono_io.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -29,6 +30,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+}
+
+namespace FailPoints
+{
+    extern const char backup_coordination_finish_zk_fail_before_op[];
 }
 
 namespace
@@ -994,16 +1000,6 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
 
 void BackupCoordinationStageSync::finish(bool throw_if_error)
 {
-    WithRetries::Kind retries_kind = WithRetries::kNormal;
-    if (throw_if_error)
-        retries_kind = WithRetries::kErrorHandling;
-
-    finishImpl(throw_if_error, retries_kind);
-}
-
-
-void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::Kind retries_kind)
-{
     {
         std::lock_guard lock{mutex};
 
@@ -1050,10 +1046,12 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::finish");
     try
     {
-        auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::finish", retries_kind);
+        auto holder = with_retries.createRetriesControlHolder(
+            "BackupCoordinationStageSync::finish", WithRetries::kindForThrowIfError(throw_if_error));
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zookeeper);
+            fiu_do_on(FailPoints::backup_coordination_finish_zk_fail_before_op, { zookeeper->forceFailureBeforeOperation(); });
             createFinishNodeAndRemoveAliveNode(zookeeper, throw_if_error);
         });
     }

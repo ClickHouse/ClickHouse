@@ -134,7 +134,6 @@ private:
     bool checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const TSA_REQUIRES(mutex);
 
     /// Creates the 'finish' node.
-    void finishImpl(bool throw_if_error, WithRetries::Kind retries_kind);
     void createFinishNodeAndRemoveAliveNode(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper, bool throw_if_error);
 
     /// Returns the version used by the initiator.

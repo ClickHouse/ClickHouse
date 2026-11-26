@@ -11,12 +11,6 @@ BackupCoordinationCleaner::BackupCoordinationCleaner(bool is_restore_, const Str
 
 void BackupCoordinationCleaner::cleanup(bool throw_if_error)
 {
-    WithRetries::Kind retries_kind = throw_if_error ? WithRetries::kNormal : WithRetries::kErrorHandling;
-    cleanupImpl(throw_if_error, retries_kind);
-}
-
-void BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Kind retries_kind)
-{
     {
         std::lock_guard lock{mutex};
         if (succeeded)
@@ -35,7 +29,7 @@ void BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Ki
     try
     {
         LOG_TRACE(log, "Removing nodes from ZooKeeper");
-        auto holder = with_retries.createRetriesControlHolder("removeAllNodes", retries_kind);
+        auto holder = with_retries.createRetriesControlHolder("removeAllNodes", WithRetries::kindForThrowIfError(throw_if_error));
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zookeeper);
