@@ -17,8 +17,7 @@ DB="db_05219_${CLICKHOUSE_DATABASE}"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}"
-    rm -rf "${BASE}"
+    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}" && rm -rf "${BASE}"
 }
 trap cleanup EXIT
 

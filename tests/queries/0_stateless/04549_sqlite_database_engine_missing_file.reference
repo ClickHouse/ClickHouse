@@ -3,6 +3,8 @@ system.tables enumeration does not throw:
 0
 Table lookup fails closed:
 Cannot access sqlite database
+The error names the database file:
+yes
 SQLite database file was not created by ATTACH
 Tables after the file appeared:
 t1

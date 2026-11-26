@@ -600,64 +600,6 @@ fi
 [ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
 [ -s /test_output/unreadable_row_policy_tables.txt ] || rm -f /test_output/unreadable_row_policy_tables.txt
 
-# A SQLite database or table whose file is gone is test garbage: a test removes the file in its cleanup even when
-# the `DROP` before it never reached the server, and the upgraded server would log the failed open at startup.
-echo "Drop the SQLite databases and tables whose database file is gone"
-
-: > /test_output/undropped_sqlite_errors.txt
-sqlite_drop_failed=0
-sqlite_path_re="^ENGINE = SQLite\('([^'\\]+)'"
-if timeout 1m clickhouse-client --query "
-        SELECT 'DATABASE', base64Encode(name), '', ''
-        FROM system.databases WHERE engine = 'SQLite'
-        UNION ALL
-        SELECT 'TABLE', base64Encode(database), base64Encode(name), base64Encode(engine_full)
-        FROM system.tables
-        WHERE engine = 'SQLite' AND database NOT IN (SELECT name FROM system.databases WHERE engine = 'SQLite')
-        FORMAT TSV" > /tmp/sqlite_objects.tsv \
-    && user_files_path=$(timeout 1m clickhouse-client --query "SELECT value FROM system.server_settings WHERE name = 'user_files_path'") \
-    && [ -n "$user_files_path" ]
-then
-    while IFS=$'\t' read -r sqlite_kind encoded_database encoded_table encoded_engine
-    do
-        [ -n "$sqlite_kind" ] || continue
-        sqlite_database=$(base64 -d <<< "$encoded_database")
-        # `system.databases.engine_full` is empty for SQLite databases, so their path is read from `SHOW CREATE`.
-        if [ "$sqlite_kind" = DATABASE ]
-        then
-            sqlite_create=$(timeout 1m clickhouse-client --param_database="$sqlite_database" \
-                --query "SHOW CREATE DATABASE {database:Identifier} FORMAT TSVRaw" 2>> /test_output/undropped_sqlite_errors.txt) \
-                || { sqlite_drop_failed=1; continue; }
-            sqlite_create=${sqlite_create#*$'\n'}
-        else
-            sqlite_create="ENGINE = $(base64 -d <<< "$encoded_engine")"
-        fi
-        # An object whose file argument is not a plain quoted path is kept.
-        [[ $sqlite_create =~ $sqlite_path_re ]] || continue
-        sqlite_path=${BASH_REMATCH[1]}
-        [[ $sqlite_path == /* ]] || sqlite_path="${user_files_path%/}/$sqlite_path"
-        [ -e "$sqlite_path" ] && continue
-        if [ "$sqlite_kind" = DATABASE ]
-        then
-            timeout 1m clickhouse-client --param_database="$sqlite_database" \
-                --query "DROP DATABASE {database:Identifier} SYNC" \
-                2>> /test_output/undropped_sqlite_errors.txt || sqlite_drop_failed=1
-        else
-            timeout 1m clickhouse-client --param_database="$sqlite_database" --param_table="$(base64 -d <<< "$encoded_table")" \
-                --query "DROP TABLE {database:Identifier}.{table:Identifier} SYNC" \
-                2>> /test_output/undropped_sqlite_errors.txt || sqlite_drop_failed=1
-        fi
-    done < /tmp/sqlite_objects.tsv
-else
-    echo -e "Cannot list the SQLite databases and tables left by the stress phase$FAIL" >> /test_output/test_results.tsv
-fi
-
-if [ "$sqlite_drop_failed" != 0 ] || [ -s /test_output/undropped_sqlite_errors.txt ]
-then
-    echo -e "Cannot drop the SQLite databases and tables whose database file is gone (see undropped_sqlite_errors.txt)$FAIL$(head_escaped /test_output/undropped_sqlite_errors.txt)" >> /test_output/test_results.tsv
-fi
-[ -s /test_output/undropped_sqlite_errors.txt ] || rm -f /test_output/undropped_sqlite_errors.txt
-
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -918,8 +860,6 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # Row-policy errors are absent for the same reason: the row policies whose filter cannot be applied to a table they
 #       cover are dropped before the upgrade. When a leftover policy's error reaches this scan, it is that drop step
 #       that is wrong.
-# `SQLiteEngine: Cannot access sqlite database` is absent for the same reason: the SQLite databases and tables
-#       whose file the stress phase removed are dropped before the upgrade.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
@@ -1102,6 +1042,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
+# `SQLiteEngine: Cannot access sqlite database` + `Error status: 14` + a `user_files/` fixture path of one of the SQLite
+#       tests listed in the matcher below is a database or table that the previous release's copy of the test left
+#       without its file: its cleanup removes the file even when the `DROP` before it did not run (04500, 04506 and 04538
+#       also remove it mid-test on purpose), and the upgraded server cannot open the object at startup. A failed open
+#       of any other SQLite database or table still fails this job. A prefix is removable once the previous release's
+#       copy of its test removes the file only after a successful `DROP`.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1194,6 +1140,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
+    | grep -av -e "SQLiteEngine: Cannot access sqlite database '[^']*/user_files/\(04141_sqlite_escaping_\|04500_sqlite_reclassify_\|04505_sqlite_dqs_\|04506_sqlite_missing_file_\|04538_sqlite_query_missing_\|04549_sqlite_db_missing_\|05055_anchor_\|05137_sqlite_create_missing_\|05219_sqlite_db_replaced_\|05222_sqlite_file_replacement_\|05259_sqlite_concurrent_\|05261_sqlite_hot_journal_\|test_04618_sqlite_\)[^']*'\. Error status: 14\. Message: unable to open database file" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

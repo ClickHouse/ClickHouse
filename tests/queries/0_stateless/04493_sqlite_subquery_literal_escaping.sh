@@ -10,8 +10,8 @@ DB_PATH="${USER_FILES_PATH}/04493_sqlite_subquery_escaping_${CLICKHOUSE_DATABASE
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_04493_engine"
-    rm -f "${DB_PATH}"
+    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_04493_engine" \
+        && rm -f "${DB_PATH}"
 }
 trap cleanup EXIT
 cleanup
