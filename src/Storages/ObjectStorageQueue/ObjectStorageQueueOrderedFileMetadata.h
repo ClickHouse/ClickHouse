@@ -121,6 +121,8 @@ private:
     /// `zk_path/buckets/<N>/processed`.  Stores NodeMetadata and is used for
     /// global version-pinning and for writes via doPrepareProcessedRequests.
     const std::string processed_bucket_path;
+    /// HIVE mode: the partition node older versions used, if its name changed. Only read, never written.
+    const std::optional<std::string> old_processed_node_path;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -142,13 +144,16 @@ private:
     /// `processed_bucket_path` is the bucket-level processed pointer node.
     /// `partition_node_path` is the partition-specific child node (optional, for HIVE/REGEX modes).
     /// `failed_node_path` is the per-file failed node (optional).
+    /// With `check_hive_partition`, partition nodes count only if they hold a file of `file_path`'s hive partition.
     static ProcessingStateFromKeeper getProcessingStateFromKeeper(
         const std::string & processed_bucket_path,
         const std::string & file_path,
         std::optional<std::string> partition_node_path = std::nullopt,
         std::optional<std::string> failed_node_path = std::nullopt,
         LoggerPtr log_ = nullptr,
-        const std::string & zookeeper_name_ = {});
+        const std::string & zookeeper_name_ = {},
+        std::optional<std::string> old_partition_node_path = std::nullopt,
+        bool check_hive_partition = false);
 
     static bool getMaxProcessedFilesByPartition(
         std::unordered_map<std::string, std::string> & last_processed_path_per_partition,

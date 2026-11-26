@@ -1,0 +1,12 @@
+Two partitions with the same old node name
+[1,2,3,4]
+___5f3d76faf0d03af0fe55e6436182140f	date=2025-01-01/_city=x/a.csv
+___6b8ed6bec623070d3f17b69f518e3c58	date=2025-01-02/_city=x/a.csv
+___862da1f1c532e85bf18a12defc76473f	date=2025-01-01_/city=x/b.csv
+date=2025-01-03_city=z	date=2025-01-03/city=z/a.csv
+Keeper nodes left by an older version
+[11,12,14]
+___5f3d76faf0d03af0fe55e6436182140f	date=2025-01-01/_city=x/a.csv
+___862da1f1c532e85bf18a12defc76473f	date=2025-01-01_/city=x/c.csv
+date=2025-01-01___city=x	date=2025-01-01_/city=x/b.csv
+date=2025-01-03_city=z	date=2025-01-03/city=z/c.csv
