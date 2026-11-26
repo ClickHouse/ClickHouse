@@ -1,22 +1,22 @@
 ---
 slug: /best-practices/use-data-skipping-indices-where-appropriate
-sidebarTitle: 'Índices de omissão de dados'
-title: 'Use índices de omissão de dados quando apropriado'
-description: 'Página que descreve como e quando usar índices de omissão de dados'
-keywords: ['índice de omissão de dados', 'índice de omissão']
+sidebarTitle: 'Índices de salto de dados'
+title: 'Use índices de salto de dados quando apropriado'
+description: 'Página que descreve como e quando usar índices de salto de dados'
+keywords: ['índice de salto de dados', 'índice de omissão']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-Os índices de omissão de dados devem ser considerados quando as melhores práticas anteriores tiverem sido seguidas, ou seja, quando os tipos estiverem otimizados, uma boa chave primária tiver sido selecionada e visões materializadas tiverem sido aproveitadas. Se você ainda não conhece índices de omissão, [este guia](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) é um bom ponto de partida.
+Os índices de salto de dados devem ser considerados quando as melhores práticas anteriores tiverem sido seguidas, ou seja, quando os tipos estiverem otimizados, uma boa chave primária tiver sido selecionada e visões materializadas tiverem sido aproveitadas. Se você ainda não conhece índices de salto de dados, [este guia](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) é um bom ponto de partida.
 
 Esses tipos de índices podem ser usados para acelerar o desempenho das consultas, desde que sejam usados com cuidado e com entendimento de como funcionam.
 
-O ClickHouse fornece um mecanismo poderoso chamado **índices de omissão de dados** que pode reduzir drasticamente a quantidade de dados examinados durante a execução de consultas — principalmente quando a chave primária não é útil para uma condição de filtro específica. Ao contrário dos bancos de dados tradicionais, que dependem de índices secundários baseados em linhas (como B-trees), o ClickHouse é um banco de dados colunar e não armazena localizações de linhas de uma forma que suporte esse tipo de estrutura. Em vez disso, ele usa índices de omissão, que ajudam a evitar a leitura de blocos de dados que certamente não correspondem às condições de filtragem de uma consulta.
+O ClickHouse fornece um mecanismo poderoso chamado **índices de salto de dados** que pode reduzir drasticamente a quantidade de dados examinados durante a execução de consultas — principalmente quando a chave primária não é útil para uma condição de filtro específica. Ao contrário dos bancos de dados tradicionais, que dependem de índices secundários baseados em linhas (como B-trees), o ClickHouse é um banco de dados colunar e não armazena localizações de linhas de uma forma que suporte esse tipo de estrutura. Em vez disso, ele usa índices de omissão, que ajudam a evitar a leitura de blocos de dados que certamente não correspondem às condições de filtragem de uma consulta.
 
 Os índices de omissão funcionam armazenando metadados sobre blocos de dados — como valores mínimos/máximos, conjuntos de valores ou representações de filtro de Bloom — e usando esses metadados durante a execução da consulta para determinar quais blocos de dados podem ser totalmente ignorados. Eles se aplicam apenas à [família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) de motores de tabela e são definidos usando uma expressão, um tipo de índice, um nome e uma granularidade que define o tamanho de cada bloco indexado. Esses índices são armazenados junto com os dados da tabela e são consultados quando o filtro da consulta corresponde à expressão do índice.
 
-Existem vários tipos de índices de omissão de dados, cada um adequado a diferentes tipos de consultas e distribuições de dados:
+Existem vários tipos de índices de salto de dados, cada um adequado a diferentes tipos de consultas e distribuições de dados:
 
 * **minmax**: Rastreia o valor mínimo e máximo de uma expressão por bloco. Ideal para consultas de intervalo em dados pouco ordenados.
 * **set(N)**: Rastreia um conjunto de valores até um tamanho N especificado para cada bloco. Eficaz em colunas com baixa cardinalidade por bloco.
@@ -28,7 +28,7 @@ Embora poderosos, os índices de omissão devem ser usados com cuidado. Eles só
 
 **O uso eficaz de índices de omissão frequentemente depende de uma forte correlação entre a coluna indexada e a chave primária da tabela, ou da inserção de dados de uma forma que agrupe valores semelhantes.**
 
-Em geral, os índices de omissão de dados são mais bem aplicados depois de garantir um bom design de chave primária e a otimização dos tipos. Eles são particularmente úteis para:
+Em geral, os índices de salto de dados são mais bem aplicados depois de garantir um bom design de chave primária e a otimização dos tipos. Eles são particularmente úteis para:
 
 * Colunas com alta cardinalidade geral, mas baixa cardinalidade dentro de um bloco.
 * Valores raros que são críticos para busca (por exemplo, códigos de erro, IDs específicos).
@@ -44,33 +44,31 @@ Sempre:
 
 **Quando usados adequadamente, os índices de omissão podem proporcionar um ganho substancial de desempenho — quando usados sem critério, podem adicionar custo desnecessário.**
 
-Para um guia mais detalhado sobre Índices de Omissão de Dados, veja [aqui](/pt-BR/reference/statements/alter/skipping-index).
+Para um guia mais detalhado sobre Índices de Salto de Dados, veja [aqui](/pt-BR/reference/statements/alter/skipping-index).
 
-<div id="example">
-  ## Exemplo
-</div>
+## Exemplo {#example}
 
 Considere a tabela otimizada a seguir. Ela contém dados do Stack Overflow com uma linha por publicação.
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `Id` Int32 CODEC(Delta, Default),
   `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
   `AcceptedAnswerId` UInt32,
   `CreationDate` DateTime64(3, 'UTC'),
   `Score` Int32,
-  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `ViewCount` UInt32 CODEC(Delta, Default),
   `Body` String,
   `OwnerUserId` Int32,
   `OwnerDisplayName` String,
   `LastEditorUserId` Int32,
   `LastEditorDisplayName` String,
-  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
   `LastActivityDate` DateTime64(3, 'UTC'),
   `Title` String,
   `Tags` String,
-  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `AnswerCount` UInt16 CODEC(Delta, Default),
   `CommentCount` UInt8,
   `FavoriteCount` UInt8,
   `ContentLicense` LowCardinality(String),
@@ -83,7 +81,7 @@ PARTITION BY toYear(CreationDate)
 ORDER BY (PostTypeId, toDate(CreationDate))
 ```
 
-Esta tabela é otimizada para consultas que filtram e agregam por tipo de post e data. Suponha que quiséssemos contar o número de posts com mais de 10.000.000 de visualizações publicados após 2009.
+Esta tabela é otimizada para consultas que filtram e agregam por tipo de publicação e data. Suponha que quiséssemos contar o número de publicações com mais de 10.000.000 de visualizações publicadas após 2009.
 
 ```sql
 SELECT count()
@@ -139,13 +137,13 @@ LIMIT 1
 25 rows in set. Elapsed: 0.070 sec.
 ```
 
-Uma análise simples mostra que `ViewCount` é correlacionado com `CreationDate` (uma chave primária), como era de se esperar — quanto mais tempo uma postagem existe, mais tempo ela tem para ser visualizada.
+Uma análise simples mostra que `ViewCount` é correlacionado com `CreationDate` (uma chave primária), como era de se esperar — quanto mais tempo uma publicação existe, mais tempo ela tem para ser visualizada.
 
 ```sql
 SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
 ```
 
-Isso faz dele, portanto, uma escolha lógica para um índice de omissão de dados. Dado o tipo numérico, um índice minmax faz sentido. Adicionamos um índice com os seguintes comandos `ALTER TABLE` — primeiro o adicionamos e, em seguida, &quot;o materializamos&quot;.
+Isso faz dele, portanto, uma escolha lógica para um índice de salto de dados. Dado o tipo numérico, um índice minmax faz sentido. Adicionamos um índice com os seguintes comandos `ALTER TABLE` — primeiro o adicionamos e, em seguida, &quot;o materializamos&quot;.
 
 ```sql
 ALTER TABLE stackoverflow.posts
@@ -159,22 +157,22 @@ Este índice também poderia ter sido adicionado durante a criação inicial da 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `Id` Int32 CODEC(Delta, Default),
   `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
   `AcceptedAnswerId` UInt32,
   `CreationDate` DateTime64(3, 'UTC'),
   `Score` Int32,
-  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `ViewCount` UInt32 CODEC(Delta, Default),
   `Body` String,
   `OwnerUserId` Int32,
   `OwnerDisplayName` String,
   `LastEditorUserId` Int32,
   `LastEditorDisplayName` String,
-  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
   `LastActivityDate` DateTime64(3, 'UTC'),
   `Title` String,
   `Tags` String,
-  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `AnswerCount` UInt16 CODEC(Delta, Default),
   `CommentCount` UInt8,
   `FavoriteCount` UInt8,
   `ContentLicense` LowCardinality(String),
@@ -191,13 +189,9 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 A animação a seguir ilustra como nosso índice minmax de omissão é criado para a tabela de exemplo, registrando os valores mínimo e máximo de `ViewCount` para cada bloco de linhas (grânulo) da tabela:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Criando índices de omissão](/images/bestpractices/building_skipping_indices.webp)
-
-</Frame>
-
+  <Frame>
+    ![Criando índices de salto de dados](/images/bestpractices/building_skipping_indices.webp)
+  </Frame>
 </div>
 
 Ao repetir a consulta anterior, vemos melhorias significativas no desempenho. Observe o número reduzido de linhas analisadas:
@@ -264,20 +258,14 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 Também mostramos uma animação de como o índice minmax de omissão descarta todos os blocos de linhas que não podem conter correspondências para o predicado `ViewCount` &gt; 10,000,000 em nossa consulta de exemplo:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Usando índices de omissão](/images/bestpractices/using_skipping_indices.webp)
-
-</Frame>
-
+  <Frame>
+    ![Usando índices de salto de dados](/images/bestpractices/using_skipping_indices.webp)
+  </Frame>
 </div>
 
-<div id="related-docs">
-  ## Documentação relacionada
-</div>
+## Documentação relacionada {#related-docs}
 
-* [Guia sobre índices de omissão de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes)
-* [Exemplos de índices de omissão de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [Como manipular índices de omissão de dados](/pt-BR/reference/statements/alter/skipping-index)
-* [Informações sobre a tabela do sistema](/pt-BR/reference/system-tables/data_skipping_indices)
+* [Guia de índices de salto de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Exemplos de índices de salto de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Manipulação de índices de salto de dados](/pt-BR/reference/statements/alter/skipping-index)
+* [Informações da tabela de sistema](/pt-BR/reference/system-tables/data_skipping_indices)

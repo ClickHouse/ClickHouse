@@ -1,0 +1,96 @@
+---
+slug: /clickstack/observability/features/dashboards/release-markers
+title: 'Marcadores de versiones en gráficos de panel de control'
+sidebarTitle: 'Marcadores de versiones'
+description: 'Superponga en los gráficos temporales del panel de control el momento en que apareció por primera vez cada versión de un servicio, obtenido a partir de la expresión de versión del servicio configurada en la fuente del bloque'
+doc_type: 'guide'
+keywords: ['clickstack', 'paneles de control', 'marcadores de versiones', 'seguimiento de implementaciones', 'service.version', 'anotaciones', 'observabilidad']
+---
+
+Ante un pico de latencia o de errores, lo primero que suele preguntarse es si se ha desplegado algo. Los gráficos temporales del panel de control pueden responderlo sin salir de ellos: active los marcadores de versiones y cada bloque dibujará una línea vertical discontinua en el momento en que una versión de un servicio apareció por primera vez en su telemetría.
+
+Las versiones provienen de la telemetría que ya envía y se leen mediante una expresión definida en la fuente del bloque. No hay que conectar ninguna integración de CI ni enviar nada en el momento del despliegue.
+
+## Activar los marcadores {#turn-on}
+
+Los marcadores de versiones están desactivados de forma predeterminada. Abra el menú de desbordamiento de un panel de control y seleccione **Show release markers**.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Menú de desbordamiento del panel de control con la opción Show release markers en la sección View, debajo de Show alert annotations](/images/clickstack/dashboards/release-markers-menu.webp)
+  </Frame>
+</div>
+
+El toggle añade `releaseMarkers=true` a la URL del panel de control, por lo que cualquier enlace que comparta se abrirá con los marcadores ya activados. Se trata de un estado de la vista, no de la configuración del panel de control: no se guarda con el panel de control y, al desactivarlo, el parámetro desaparece de la URL.
+
+Los marcadores se dibujan en los bloques de time-series cuya fuente sea de logs o de trazas. Las [anotaciones de alertas](/es/clickstack/observability/features/alerts) se activan desde el mismo menú y pueden mostrarse a la vez: ambos conjuntos de marcadores se dibujan juntos y cada uno conserva sus propias etiquetas.
+
+## Configurar de dónde proviene la versión {#version-expression}
+
+De forma predeterminada, ClickHouse Observability lee `ResourceAttributes['service.version']`, el atributo de recurso de OpenTelemetry. Si sus servicios siguen las [convenciones semánticas del recurso de servicio](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/), los marcadores funcionan sin necesidad de configuración adicional.
+
+Para leer la versión desde otro origen, configure **Service Version Expression** en la fuente de logs o de trazas. Edite la fuente en **Team Settings → Sources**. En una fuente de logs, el campo se encuentra dentro de **Configure Optional Fields**; en una fuente de trazas, aparece directamente en el formulario, debajo de **Service Name Expression**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Campo Service Version Expression en los campos opcionales de una fuente de logs, que muestra el marcador de posición predeterminado ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
+  </Frame>
+</div>
+
+El valor es una expresión SQL, no un nombre de atributo, lo que permite cubrir dos casos habituales:
+
+* **El identificador de versión está en otro atributo.** Con GitOps, lo que identifica una versión suele ser la etiqueta de imagen del contenedor, que llega como `container.image.tag`. Apuntar la fuente a `ResourceAttributes['container.image.tag']` resulta mucho más económico que modificar la instrumentación en toda una flota.
+* **Los servicios de una misma tabla no coinciden.** Use `coalesce` para recurrir a una alternativa entre los distintos atributos:
+
+```sql
+coalesce(
+  nullIf(ResourceAttributes['service.version'], ''),
+  nullIf(ResourceAttributes['container.image.tag'], '')
+)
+```
+
+El campo también está disponible como `serviceVersionExpression` en las fuentes de logs y de trazas de la [API de fuentes](/es/clickstack/observability/api-reference), por lo que puede configurarlo al aprovisionar fuentes mediante programación. En el caso de implementaciones autogestionadas, consulte la lista completa de ajustes de fuentes para [logs](/es/clickstack/self-configured/managing/config#logs) y [trazas](/es/clickstack/self-configured/managing/config#traces).
+
+## Qué significa un marcador {#what-a-marker-means}
+
+Un marcador registra que un valor de versión apareció por primera vez en los datos del bloque dentro de la ventana visible. Se aproxima a una implementación, pero deliberadamente no afirma lo mismo; por eso se denominan marcadores de versiones y no marcadores de implementación:
+
+* Un despliegue que no cambia la cadena de versión no genera ningún marcador.
+* Un servicio que permanece inactivo durante más tiempo que el período de retrospección genera un marcador cuando vuelve a escalar.
+
+La versión que ya estaba en ejecución cuando se abrió la ventana se reconoce y se descarta, en lugar de mostrarse como una versión que nunca llegó a publicarse. Para ello, la consulta retrocede antes del inicio de la ventana (30 minutos, o el 10% de la ventana si este valor es mayor) para identificar la versión vigente.
+
+## Qué versiones muestra un bloque {#scoping}
+
+La consulta de versiones se ejecuta sobre la fuente del propio bloque y con sus propios predicados: su cláusula `WHERE`, el filtro de cada serie y cualquier [filtro del panel de control](/es/clickstack/observability/features/dashboards/overview#custom-filters). Lo que muestra un bloque depende de lo que representa en el gráfico:
+
+| Bloque                             | Marcadores                                                                            |
+| :--------------------------------- | :------------------------------------------------------------------------------------ |
+| Filtrado a un solo servicio        | Las versiones de ese servicio                                                         |
+| Agrupado por servicio              | Las versiones de cada servicio representado, cada una con el color de su propia línea |
+| Línea agregada de varios servicios | Ninguno, salvo que todas las versiones de la ventana procedan de un único servicio    |
+
+En el tercer caso, el servicio de un marcador no tiene ninguna línea correspondiente en el gráfico, por lo que los marcadores se eliminan. Si todas las versiones de la ventana proceden de un único servicio, sí se dibujan, con el color de marcador predeterminado.
+
+## Lectura de marcadores en un gráfico con mucha información {#reading-markers}
+
+Pase el cursor sobre la etiqueta de un marcador para ver todas las versiones en ese punto, cada una con el servicio que la publicó, su versión y la hora.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Tooltip al pasar el cursor sobre un marcador de versión que indica el servicio frontend y la versión 2.0.2 con la hora en que apareció por primera vez, en un gráfico de dos servicios](/images/clickstack/dashboards/release-marker-tooltip.webp)
+  </Frame>
+</div>
+
+El color vincula un marcador con su serie, pero la leyenda de un gráfico muestra como máximo cuatro entradas y agrupa el resto bajo «+N more», de modo que a partir de ese punto no queda nada en pantalla con lo que identificar el color. El tooltip indica el servicio explícitamente, por lo que funciona con independencia de cuántas series represente el bloque.
+
+Los marcadores demasiado próximos entre sí para etiquetarse por separado se agrupan en un único ancla etiquetada como `N releases`; al pasar el cursor sobre ella se muestran todos. Un grupo que abarca varios servicios se dibuja en un color neutro en lugar de adoptar el de alguno de ellos, de modo que el recuento sigue siendo exacto sin sugerir un propietario.
+
+Arrastrar horizontalmente sobre el área del gráfico sigue aplicando zoom mientras se muestran los marcadores.
+
+## Limitaciones {#limitations}
+
+* **Solo bloques de time-series.** Las tablas, los números y los mapas de calor no muestran marcadores.
+* **Solo fuentes de logs y de trazas.** Una fuente de métricas resuelve su tabla según el tipo de métrica, por lo que no existe una única tabla que volver a agregar ni manera de que los filtros de un bloque tengan sentido sobre ella. Para anotar datos de métricas, coloque un bloque de logs o de trazas junto a ellos en el mismo panel de control.
+* **Los valores de versión vacíos se omiten.** Un servicio que no emite ninguna versión no genera marcadores. Si un bloque no encuentra ningún cambio de versión, la interfaz de usuario muestra `No releases found` para que no tenga que preguntarse si la funcionalidad está fallando.
+* **Se leen hasta 500 versiones distintas** por ventana.

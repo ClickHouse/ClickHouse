@@ -12,11 +12,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 <Info>
   **Кратко**
 
-  Собирайте и визуализируйте логи из журнала systemd в ClickStack с помощью приёмника journald в OpenTelemetry Collector. Включает демо-набор данных и преднастроенный дашборд.
+  Собирайте и визуализируйте журналы из журнала systemd в ClickStack с помощью приёмника journald в OpenTelemetry Collector. Включает демо-набор данных и преднастроенный дашборд.
 </Info>
 
 <div id="existing-systems">
-  ## Интеграция с существующими системами
+  ## Интеграция с существующими системами {#existing-systems}
 </div>
 
 Отслеживайте записи journald в существующей Linux-системе, запустив OpenTelemetry Collector с приёмником journald, чтобы собирать системные журналы и отправлять их в ClickStack через OTLP.
@@ -24,7 +24,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Если вы хотите сначала протестировать эту интеграцию, не изменяя текущую конфигурацию, перейдите к [разделу о демо-наборе данных](#demo-dataset).
 
 <div id="prerequisites">
-  ##### Предварительные требования
+  ##### Предварительные требования {#prerequisites}
 </div>
 
 * Запущенный экземпляр ClickStack
@@ -35,19 +35,15 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   <Step title="Получите ключ API ClickStack" id="get-api-key">
     OpenTelemetry Collector отправляет данные в конечную точку OTLP ClickStack, для которой требуется аутентификация.
 
-    1. Откройте HyperDX по URL-адресу ClickStack (например, http://localhost:8080)
+    1. Откройте интерфейс ClickStack по URL-адресу ClickStack (например, http://localhost:8080)
     2. Создайте учётную запись или войдите в систему, если требуется
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **ключ API для приёма данных**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Ключ API ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
     </div>
 
     5. Задайте его как переменную окружения:
@@ -61,13 +57,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Убедитесь, что в системе используется systemd и доступны логи journal:
 
     ```bash
-    # Проверить версию systemd
+    # Check systemd version
     systemctl --version
 
-    # Посмотреть последние записи journal
+    # View recent journal entries
     journalctl -n 20
 
-    # Проверить использование диска journal
+    # Check journal disk usage
     journalctl --disk-usage
     ```
 
@@ -183,8 +179,8 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Проверьте логи в HyperDX" id="verifying-logs">
-    После настройки войдите в HyperDX и убедитесь, что логи поступают:
+  <Step title="Проверьте логи в интерфейсе ClickStack" id="verifying-logs">
+    После настройки войдите в интерфейс ClickStack и убедитесь, что логи поступают:
 
     1. Перейдите в представление Search
     2. Установите source в Logs
@@ -192,29 +188,21 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     4. Вы должны увидеть структурированные записи логов с такими полями, как `unit`, `priority`, `MESSAGE`, `_HOSTNAME`
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Представление поиска по логам](/images/clickstack/systemd/systemd-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Представление поиска по логам](/images/clickstack/systemd/systemd-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Представление логов](/images/clickstack/systemd/systemd-log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Представление логов](/images/clickstack/systemd/systemd-log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## Демо-набор данных
+  ## Демо-набор данных {#demo-dataset}
 </div>
 
 Для пользователей, которые хотят протестировать интеграцию журналов systemd перед настройкой своих систем в продакшн, мы предоставляем пример набора заранее сгенерированных журналов systemd с реалистичными паттернами.
@@ -281,44 +269,34 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Проверьте журналы в HyperDX" id="verify-demo-logs">
+  <Step title="Проверьте журналы в интерфейсе ClickStack" id="verify-demo-logs">
     После запуска ClickStack:
 
-    1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учётную запись
+    1. Откройте [интерфейс ClickStack](http://localhost:8080/) и войдите в свою учётную запись
     2. Перейдите в представление Search и установите источник `Logs`
     3. Установите временной диапазон **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Представление поиска по журналам](/images/clickstack/systemd/systemd-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Представление поиска по журналам](/images/clickstack/systemd/systemd-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Представление логов](/images/clickstack/systemd/systemd-log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Представление логов](/images/clickstack/systemd/systemd-log-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **Отображение часового пояса**
 
-      HyperDX отображает временные метки в локальном часовом поясе вашего браузера. Демо-данные охватывают период **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**. Благодаря широкому временному диапазону вы увидите демо-журналы независимо от своего местоположения.
+      Интерфейс ClickStack отображает временные метки в локальном часовом поясе вашего браузера. Демо-данные охватывают период **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**. Благодаря широкому временному диапазону вы увидите демо-журналы независимо от своего местоположения.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Панели мониторинга и визуализация
-</div>
+## Панели мониторинга и визуализация {#dashboards}
 
 Чтобы вам было проще начать мониторинг журналов systemd с помощью ClickStack, мы предоставляем базовые визуализации для данных журнала systemd.
 
@@ -328,29 +306,21 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
-    1. Откройте HyperDX и перейдите в раздел Dashboards
+    1. Откройте интерфейс ClickStack и перейдите в раздел панелей мониторинга
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. Загрузите файл `systemd-logs-dashboard.json` и нажмите **Finish Import**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Завершение импорта](/images/clickstack/systemd/finish-import-systemd.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Завершение импорта](/images/clickstack/systemd/finish-import-systemd.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -364,28 +334,22 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Уровня ошибок
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Пример панели мониторинга](/images/clickstack/systemd/systemd-logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Пример панели мониторинга](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
-      Для демо-набора данных установите диапазон времени **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (с учётом вашего локального часового пояса).
+      Для демо-набора данных установите временной диапазон **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (с учётом вашего локального часового пояса).
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubleshooting}
 </div>
 
-<div id="no-logs">
-  ### В HyperDX не отображаются журналы
-</div>
+### В интерфейсе ClickStack не отображаются журналы {#no-logs}
 
 Проверьте, доходят ли журналы до ClickHouse:
 
@@ -404,7 +368,7 @@ docker logs otel-collector | grep -i "error\|journald" | tail -20
 ```
 
 <div id="journalctl-not-found">
-  ### ошибка «journalctl not found»
+  ### ошибка «journalctl not found» {#journalctl-not-found}
 </div>
 
 Если вы видите `exec: "journalctl": executable file not found in $PATH`:
@@ -423,16 +387,14 @@ otelcol-contrib --config=otel-config.yaml
 2. **Используйте подход с экспортом в текстовый формат** (как в демо), где приёмник `filelog` читает экспортированные данные journald
 
 <div id="next-steps">
-  ## Следующие шаги
+  ## Следующие шаги {#next-steps}
 </div>
 
 * Настройте [оповещения](/ru/clickstack/features/alerts) для отслеживания критически важных системных событий (сбоев сервисов, ошибок аутентификации, завершения процессов из-за OOM)
 * Создайте дополнительные [панели мониторинга](/ru/clickstack/features/dashboards/overview) для конкретных сценариев использования (мониторинга безопасности SSH, состояния сервисов)
 * Фильтруйте по конкретным юнитам systemd, чтобы уменьшить шум и сосредоточиться на важных сервисах
 
-<div id="going-to-production">
-  ## Переход в продакшн
-</div>
+## Переход в продакшн {#going-to-production}
 
 В этом руководстве используется отдельный OpenTelemetry Collector для чтения журналов systemd и отправки их в конечную точку OTLP ClickStack — это рекомендуемый вариант для продакшн-среды.
 

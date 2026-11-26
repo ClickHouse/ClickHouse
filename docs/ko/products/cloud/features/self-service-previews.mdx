@@ -1,0 +1,41 @@
+---
+sidebarTitle: '셀프서비스 프리뷰'
+title: '셀프서비스 프리뷰'
+description: 'ClickHouse Cloud에서 공개 미리 보기 기능을 활성화하고 비공개 프리뷰 기능에 대한 액세스를 요청하는 방법을 설명합니다.'
+keywords: ['ClickHouse Cloud 프리뷰 기능', '공개 미리 보기', '비공개 프리뷰', '얼리 액세스']
+doc_type: 'guide'
+mode: 'wide'
+---
+
+import { PreviewFeatures } from "/snippets/ko/components/PreviewFeatures/PreviewFeatures.jsx";
+
+ClickHouse Cloud의 **프리뷰 기능** 페이지에서 사용 가능한 공개 미리 보기 기능을 활성화하고, 사용 가능한 비공개 프리뷰 기능에 대한 액세스를 요청할 수 있습니다.
+
+<Warning>
+  프리뷰 기능은 아직 개발 단계에 있으므로 변경될 수 있으며, 표준 ClickHouse Cloud SLA가 적용되지 않습니다.
+</Warning>
+
+## 사용 가능한 프리뷰 기능 {#available-preview-features}
+
+이 목록은 ClickHouse Cloud에서 가져오며, 프리뷰가 추가·변경·제거될 때마다 최신 상태로 갱신됩니다.
+
+<PreviewFeatures />
+
+<Note>
+  목록에 있는 일부 프리뷰는 조직에 따라 사용할 수 없을 수도 있습니다. ClickHouse Cloud에 프리뷰가 표시되지 않으면 [Cloud 지원](https://clickhouse.com/support/program)에 문의하십시오.
+</Note>
+
+## 공개 미리 보기 활성화 {#enable-public-preview}
+
+1. 클라우드 콘솔에 로그인한 후 해당 조직을 선택하십시오.
+2. 조직 메뉴를 열고 **프리뷰 기능**을 선택하십시오. 조직 사이드바에서도 액세스할 수 있습니다.
+3. 원하는 기능을 찾아 **Learn more**를 선택해 요구 사항과 제한 사항을 확인한 다음, 스위치를 켜십시오. 스위치가 비활성화되어 있으면 조직 관리자에게 해당 기능을 활성화해 달라고 요청하십시오.
+4. 제공되는 경우 **Go to...** 또는 **View in...** 서비스 링크를 통해 기능을 바로 사용할 수 있습니다.
+5. 피드백을 보내려면 기능 옆의 **Give feedback**을 선택하고, 해당 기능을 사용할 의향이 있으면 **Thumbs up**을, 그렇지 않으면 **Thumbs down**을 선택하십시오. 필요하면 텍스트 입력란에 세부 내용을 추가하고 피드백 관련 연락 수신에 동의한 후 **Send feedback**을 선택하십시오.
+
+## 비공개 프리뷰 활성화 {#enable-private-preview}
+
+1. 비공개 프리뷰 기능을 찾은 후 **Learn more**를 선택하여 요구 사항과 제한 사항을 확인하십시오.
+2. **Request access**를 선택하십시오. 이 작업은 접근 요청을 제출할 뿐이며 기능이 즉시 활성화되지는 않습니다. 요청이 접수되면 ClickHouse Cloud에서 접수 확인 메시지를 표시합니다.
+3. 요청이 승인되어 액세스가 활성화되면 **Go to...** 또는 **View in...** 서비스 링크(제공되는 경우)를 사용하여 기능을 사용하십시오.
+4. 피드백을 공유하려면 기능 옆의 **Give feedback**을 선택한 후, 해당 기능을 사용할 의향이 있으면 **Thumbs up**을, 그렇지 않으면 **Thumbs down**을 선택하십시오. 필요하면 텍스트 입력란에 세부 내용을 추가하고 피드백 관련 연락 수신에 동의한 다음 **Send feedback**을 선택하십시오.

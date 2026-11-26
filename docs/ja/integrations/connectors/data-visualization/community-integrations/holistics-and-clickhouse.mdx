@@ -16,7 +16,7 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 ClickHouse を Holistics に接続すると、コードベースのセマンティックレイヤーを基盤とした、高速で信頼性の高い AI 活用型のセルフサービス環境をチームに提供できます。ビジネスユーザーはドラッグ＆ドロップや AI を使って安心してデータを分析できる一方、メトリクス定義は Git で再利用可能かつ組み合わせ可能な形で、バージョン管理された状態に保てます。
 
 <div id="prerequisites">
-  ## 前提条件
+  ## 前提条件 {#prerequisites}
 </div>
 
 接続する前に、以下を満たしていることを確認してください。
@@ -25,9 +25,7 @@ ClickHouse を Holistics に接続すると、コードベースのセマンテ�
 * **ネットワークアクセス:** ClickHouse server が [Holistics の IP アドレス](https://docs.holistics.io/docs/connect/ip-whitelisting) からアクセス可能である必要があります。
 * **データベースユーザー:** 管理者アカウントは使用せず、Holistics 専用の読み取り専用ユーザーを作成してください。
 
-<div id="recommended-privileges">
-  ### 推奨権限
-</div>
+### 推奨権限 {#recommended-privileges}
 
 専用ユーザーには、クエリ対象のテーブルに対する`SELECT`権限に加え、`system`テーブルに対する権限 (スキーマ検出用) も必要です。
 
@@ -48,19 +46,15 @@ GRANT SELECT ON system.* TO holistics_user;
     | **Host**          | ClickHouse server のホスト名 (例: `mz322.eu-central-1.aws.clickhouse.cloud`) 。     |
     | **Port**          | ClickHouse Cloud (SSL/TLS) の場合は **8443**。SSL なしのセルフマネージドインスタンスの場合は **8123**。 |
     | **Database Name** | 接続先の database 名。通常、既定値は `default` です。                                        |
-    | **Username**      | database ユーザー名。既定値は `default` です。                                            |
-    | **Password**      | database ユーザーのパスワード。                                                         |
+    | **ユーザー名**      | データベースユーザー名。既定値は `default` です。                                            |
+    | **パスワード**      | データベースユーザーのパスワード。                                                         |
 
     これらの情報は、ClickHouse Cloud console で **Connect** ボタンをクリックし、**HTTPS** を選択すると確認できます。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse Cloud console における Connect ボタンの場所](/images/integrations/data-visualization/holistics_01.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse Cloud console における Connect ボタンの場所](/images/integrations/data-visualization/holistics_01.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -70,13 +64,9 @@ GRANT SELECT ON system.* TO holistics_user;
     1. **Direct Connection (推奨) :** ファイアウォールまたは ClickHouse Cloud の IP Access List で、Holistics の IP アドレスを許可リストに追加します。IP アドレスの一覧は [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting) で確認できます。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![ClickHouse Cloud での IP 許可リスト登録の例](/images/integrations/data-visualization/holistics_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![ClickHouse Cloud での IP 許可リスト登録の例](/images/integrations/data-visualization/holistics_02.webp)
+         </Frame>
        </div>
 
     2. **Reverse SSH Tunnel:** database がプライベートネットワーク (VPC) 内にあり、公開できない場合は、[Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel) を使用します。
@@ -86,25 +76,17 @@ GRANT SELECT ON system.* TO holistics_user;
     1. Holistics で **Settings → データソース** に移動します。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Holistics の設定で データソース に移動する](/images/integrations/data-visualization/holistics_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Holistics の設定で データソース に移動する](/images/integrations/data-visualization/holistics_03.webp)
+         </Frame>
        </div>
 
-    2. **New Data Source** をクリックし、**ClickHouse** を選択します。
+    2. **New データソース** をクリックし、**ClickHouse** を選択します。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![新しい データソース の一覧から ClickHouse を選択する](/images/integrations/data-visualization/holistics_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![新しい データソース の一覧から ClickHouse を選択する](/images/integrations/data-visualization/holistics_04.webp)
+         </Frame>
        </div>
 
     3. ステップ 1 で確認した情報をフォームに入力します。
@@ -117,34 +99,26 @@ GRANT SELECT ON system.* TO holistics_user;
        | **Database Name** | `default` (または使用する DB)                                     |
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Holistics で ClickHouse の接続情報を入力する](/images/integrations/data-visualization/holistics_05.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Holistics で ClickHouse の接続情報を入力する](/images/integrations/data-visualization/holistics_05.webp)
+         </Frame>
        </div>
 
     4. **Test Connection** をクリックします。
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Holistics で ClickHouse 接続テストが成功した状態](/images/integrations/data-visualization/holistics_06.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Holistics で ClickHouse 接続テストが成功した状態](/images/integrations/data-visualization/holistics_06.webp)
+         </Frame>
        </div>
 
        * **Success:** **Save** をクリックします。
-       * **Failure:** username/password を確認し、[Holistics の IP が許可リストに追加されている](https://docs.holistics.io/docs/connect/ip-whitelisting)ことを確認してください。
+       * **Failure:** ユーザー名/パスワード を確認し、[Holistics の IP が許可リストに追加されている](https://docs.holistics.io/docs/connect/ip-whitelisting)ことを確認してください。
   </Step>
 </Steps>
 
 <div id="known-limitations">
-  ## 既知の制限事項
+  ## 既知の制限事項 {#known-limitations}
 </div>
 
 Holistics は ClickHouse の標準的な SQL 機能の大半をサポートしていますが、以下の点は例外です。
