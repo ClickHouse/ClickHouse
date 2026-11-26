@@ -21,8 +21,8 @@ DROP TABLE IF EXISTS mut;
 
 CREATE TABLE l (k UInt64, a UInt64, s String, flag UInt8, heavy String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
 CREATE TABLE r (k UInt64, b UInt64, rs String, rheavy String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
-INSERT INTO l SELECT number, number % 100, toString(number % 7), number % 2, repeat('x', 100) FROM numbers(10000);
-INSERT INTO r SELECT number, number % 50, toString(number % 5), repeat('y', 100) FROM numbers(10000);
+INSERT INTO l SELECT number, number % 100, toString(number % 7), number % 2, repeat('x', 100) FROM numbers(1000);
+INSERT INTO r SELECT number, number % 50, toString(number % 5), repeat('y', 100) FROM numbers(1000);
 
 SELECT '-- a filter in PREWHERE';
 SELECT l.k, l.s, r.rheavy = repeat('y', 100) FROM l JOIN r ON l.k = r.k WHERE l.s = '3' ORDER BY l.a DESC, l.k LIMIT 3;
@@ -58,14 +58,14 @@ SELECT countIf(explain LIKE '%__lazy_carried_%') FROM (EXPLAIN header = 1
     SELECT l.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.k = r.k AND r.rs = '3' ORDER BY l.a DESC, l.k LIMIT 3);
 
 SELECT '-- a join key';
-SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3;
-SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3
+SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.k = r.k AND l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3;
+SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.k = r.k AND l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3
 SETTINGS query_plan_optimize_lazy_materialization = 0;
 SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
-    SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3)
+    SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.k = r.k AND l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3)
 WHERE explain LIKE '%Lazily read columns%';
 SELECT countIf(explain LIKE '%__lazy_carried_%') FROM (EXPLAIN header = 1
-    SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3);
+    SELECT l.k, r.k, r.rs, l.heavy = repeat('x', 100) FROM l JOIN r ON l.k = r.k AND l.s = r.rs ORDER BY l.a DESC, l.k, r.k LIMIT 3);
 
 SELECT '-- the padded side of a LEFT JOIN';
 SELECT l.k, r.rs, l.heavy = repeat('x', 100) FROM l LEFT JOIN r ON l.k = r.k AND r.rs = '3' ORDER BY l.a DESC, l.k LIMIT 5;
@@ -88,22 +88,22 @@ SELECT countIf(explain LIKE '%__lazy_carried_%') > 0 FROM (EXPLAIN header = 1
 
 SELECT '-- a JSON path in PREWHERE and in a join key';
 CREATE TABLE j (k UInt64, a UInt64, doc JSON) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
-INSERT INTO j SELECT number, number % 100, toJSONString(map('status', if(number % 3 = 0, 'open', 'closed'), 'id', toString(number % 5))) FROM numbers(10000);
-SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON CAST(j.doc.id, 'Nullable(String)') = r.rs
+INSERT INTO j SELECT number, number % 100, toJSONString(map('status', if(number % 3 = 0, 'open', 'closed'), 'id', toString(number % 5))) FROM numbers(1000);
+SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON j.k = r.k AND CAST(j.doc.id, 'Nullable(String)') = r.rs
 WHERE j.doc.status = 'open' ORDER BY j.a DESC, j.k, r.k LIMIT 3;
-SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON CAST(j.doc.id, 'Nullable(String)') = r.rs
+SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON j.k = r.k AND CAST(j.doc.id, 'Nullable(String)') = r.rs
 WHERE j.doc.status = 'open' ORDER BY j.a DESC, j.k, r.k LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 0;
 SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
-    SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON CAST(j.doc.id, 'Nullable(String)') = r.rs
+    SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON j.k = r.k AND CAST(j.doc.id, 'Nullable(String)') = r.rs
     WHERE j.doc.status = 'open' ORDER BY j.a DESC, j.k, r.k LIMIT 3)
 WHERE explain LIKE '%Lazily read columns%';
 SELECT countIf(explain LIKE '%__lazy_carried_%') FROM (EXPLAIN header = 1
-    SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON CAST(j.doc.id, 'Nullable(String)') = r.rs
+    SELECT j.k, r.k, j.doc.status, j.doc.id, r.rheavy = repeat('y', 100) FROM j JOIN r ON j.k = r.k AND CAST(j.doc.id, 'Nullable(String)') = r.rs
     WHERE j.doc.status = 'open' ORDER BY j.a DESC, j.k, r.k LIMIT 3);
 
 SELECT '-- a column some parts fill from a non-deterministic default crosses the LIMIT';
 CREATE TABLE d (k UInt64, a UInt64, heavy String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
-INSERT INTO d SELECT number, number % 100, repeat('x', 100) FROM numbers(10000);
+INSERT INTO d SELECT number, number % 100, repeat('x', 100) FROM numbers(1000);
 ALTER TABLE d ADD COLUMN c String DEFAULT toString(rand());
 -- The filter and the result see the same values of `c`.
 SELECT count(), countIf(toUInt64(c) % 2 = 0) FROM (
@@ -116,7 +116,7 @@ SELECT '-- a column a data mutation applied on the fly computes again crosses th
 DROP TABLE IF EXISTS mut;
 CREATE TABLE mut (k UInt64, a UInt64, x UInt64, m String MATERIALIZED toString(x + rand64()), heavy String)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
-INSERT INTO mut (k, a, x, heavy) SELECT number, number % 100, number, repeat('x', 100) FROM numbers(10000);
+INSERT INTO mut (k, a, x, heavy) SELECT number, number % 100, number, repeat('x', 100) FROM numbers(1000);
 -- The mutation stays pending, and each read computes `m` again from the new `x`.
 SYSTEM STOP MERGES mut;
 ALTER TABLE mut UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;

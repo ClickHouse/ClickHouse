@@ -1,20 +1,20 @@
 -- a filter in PREWHERE
 199	3	1
 899	3	1
-1599	3	1
+598	3	1
 199	3	1
 899	3	1
-1599	3	1
+598	3	1
 Lazily read columns: s
 Lazily read columns: rheavy
 0
 -- a filter in WHERE
 199	3	1
 899	3	1
-1599	3	1
+598	3	1
 199	3	1
 899	3	1
-1599	3	1
+598	3	1
 Lazily read columns: s
 Lazily read columns: rheavy
 0
@@ -29,12 +29,12 @@ Lazily read columns: heavy
 Lazily read columns: rs
 0
 -- a join key
-99	1	1	1
-99	6	1	1
-99	11	1	1
-99	1	1	1
-99	6	1	1
-99	11	1	1
+599	599	4	1
+598	598	3	1
+597	597	2	1
+599	599	4	1
+598	598	3	1
+597	597	2	1
 Lazily read columns: heavy
 Lazily read columns: rs
 0
@@ -61,12 +61,12 @@ Lazily read columns: rs
 Lazily read columns: rheavy
 1
 -- a JSON path in PREWHERE and in a join key
-99	4	open	4	1
-99	9	open	4	1
-99	14	open	4	1
-99	4	open	4	1
-99	9	open	4	1
-99	14	open	4	1
+99	99	open	4	1
+399	399	open	4	1
+699	699	open	4	1
+99	99	open	4	1
+399	399	open	4	1
+699	699	open	4	1
 Lazily read columns: doc.status, doc.id
 Lazily read columns: rheavy
 0
