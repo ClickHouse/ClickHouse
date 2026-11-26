@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # With one row per granule, merges and mutations process one row per block, so `sleepEachRow(0.1)`
-# keeps them running for seconds and they notice a cancellation within one block.
+# keeps them running for minutes, past the check below, and they notice a cancellation within one block.
 for table in t_merge t_mutation; do
     $CLICKHOUSE_CLIENT -q "
         CREATE TABLE $table (p UInt8, x UInt64)
@@ -21,8 +21,8 @@ done
 
 # A merge in partition 1. The parts have no column `s`, so the merge evaluates its default for every row.
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_merge"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_merge SELECT 1, number FROM numbers(100)"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_merge SELECT 1, number FROM numbers(100)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_merge SELECT 1, number FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_merge SELECT 1, number FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_merge SELECT 2, number FROM numbers(100)"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_merge ADD COLUMN s UInt8 DEFAULT sleepEachRow(0.1)"
 $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_merge"
@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_merge PARTITION 1 FINAL" 2>/dev/null &
 optimize_pid=$!
 
 # A mutation in partition 1. Partition 2 is inserted after the mutation, so the mutation has nothing to do there.
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_mutation SELECT 1, number FROM numbers(100)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_mutation SELECT 1, number FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mutation UPDATE x = x + sleepEachRow(0.1) IN PARTITION 1 WHERE 1 SETTINGS mutations_sync = 0"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_mutation SELECT 2, number FROM numbers(100)"
 

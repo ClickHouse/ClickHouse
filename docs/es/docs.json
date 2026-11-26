@@ -4,7 +4,7 @@
       "pages": [
         "es/index"
       ],
-      "tab": "Inicio"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -29,14 +29,14 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "Bases de datos"
+      "tab": "Databases"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Implementaciones"
+          "item": "Deployments"
         },
         {
           "$ref": "./products/cloud/navigation.json"
@@ -48,32 +48,41 @@
           ]
         },
         {
+          "item": "Private",
+          "pages": [
+            "es/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
+          ]
+        },
+        {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Aplicaciones"
+          "item": "Applications"
         },
         {
           "$ref": "./clickstack/navigation.json"
         },
         {
+          "$ref": "./agents/navigation.json"
+        },
+        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Ingeniería de IA"
+          "item": "AI Engineering"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Seguridad"
+          "item": "Security"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Código abierto"
+          "item": "Open source"
         },
         {
           "item": "ClickStack",
           "pages": [
-            "es/clickstack/index"
+            "es/clickstack"
           ]
         },
         {
@@ -87,12 +96,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "Productos"
+      "tab": "Products"
     },
     {
       "menu": [
         {
-          "item": "Ecosistema",
+          "item": "Ecosystem",
           "pages": [
             "es/integrations/home",
             "es/integrations/data-catalogs"
@@ -108,7 +117,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integraciones"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -125,7 +134,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Recursos"
+      "tab": "Resources"
     }
   ]
 }

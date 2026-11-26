@@ -11,9 +11,9 @@ doc_type: 'guide'
 
 ## تزويد ClickHouse بسياق التتبع {#supplying-trace-context-to-clickhouse}
 
-يقبل ClickHouse ترويسات HTTP الخاصة بسياق التتبع، كما هو موضح في [توصية W3C](https://www.w3.org/TR/trace-context/). كما يقبل سياق التتبع عبر البروتوكول الأصلي المستخدم للتواصل بين خوادم ClickHouse أو بين العميل والخادم. ولأغراض الاختبار اليدوي، يمكن تمرير ترويسات سياق التتبع المتوافقة مع توصية Trace Context إلى `clickhouse-client` باستخدام الخيارين `--opentelemetry-traceparent` و`--opentelemetry-tracestate`.
+يقبل ClickHouse ترويسات HTTP الخاصة بسياق التتبع، كما هو موضح في [توصية W3C](https://www.w3.org/TR/trace-context/). كما يقبل سياق التتبع عبر البروتوكول الأصلي المستخدم للتواصل بين خوادم ClickHouse أو بين العميل والخادم. وتقبل معالجات HTTP الخاصة ببروتوكولات Prometheus (عرض المقاييس، والكتابة عن بُعد، والقراءة عن بُعد، وواجهة برمجة تطبيقات الاستعلام) ترويسات HTTP الخاصة بسياق التتبع كذلك. ولأغراض الاختبار اليدوي، يمكن تمرير ترويسات سياق التتبع المتوافقة مع توصية Trace Context إلى `clickhouse-client` باستخدام الخيارين `--opentelemetry-traceparent` و`--opentelemetry-tracestate`.
 
-إذا لم يتم تمرير سياق تتبع أصل، أو كان سياق التتبع الممرَّر غير متوافق مع معيار W3C المذكور أعلاه، يمكن لـ ClickHouse بدء تتبّع جديد باحتمال يتحكم فيه إعداد [opentelemetry&#95;start&#95;trace&#95;probability](/ar/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
+إذا لم يتم تمرير سياق تتبع أصل، أو كان سياق التتبع الممرَّر غير متوافق مع معيار W3C المذكور أعلاه، يمكن لـ ClickHouse بدء تتبّع جديد باحتمال يتحكم فيه إعداد [opentelemetry&#95;start&#95;trace&#95;probability](/ar/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
 ## نشر سياق التتبع {#propagating-the-trace-context}
 

@@ -249,6 +249,7 @@ private:
         MergeTreeDataMergerMutator & merger_mutator,
         MergeTreeData & data,
         const CommittingBlocks & committing_blocks,
+        bool merges_delayed_after_startup,
         std::unique_lock<SharedMutex> & state_lock) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
@@ -481,9 +482,9 @@ public:
         MutationsSnapshot() = default;
         MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_);
 
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getColumnsChangedOnFly() const override;
+        [[nodiscard]] MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        [[nodiscard]] std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        [[nodiscard]] NameSet getColumnsChangedOnFly() const override;
     };
 
     /// Return mutation commands for part which could be not applied to

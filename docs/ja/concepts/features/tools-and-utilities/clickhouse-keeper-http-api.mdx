@@ -9,9 +9,7 @@ doc_type: 'reference'
 ClickHouse Keeper は、監視、ヘルスチェック、ストレージ管理のための HTTP API と埋め込み Web ダッシュボードを提供します。
 このインターフェイスを使用すると、Web ブラウザーや HTTP クライアントを通じて、運用担当者はクラスターの状態を確認し、コマンドを実行し、Keeper ストレージを管理できます。
 
-<div id="configuration">
-  ## 設定
-</div>
+## 設定 {#configuration}
 
 HTTP API を有効にするには、`keeper_server` 設定に `http_control` セクションを追加します。
 
@@ -26,9 +24,7 @@ HTTP API を有効にするには、`keeper_server` 設定に `http_control` セ
 </keeper_server>
 ```
 
-<div id="configuration-options">
-  ### 設定オプション
-</div>
+### 設定オプション {#configuration-options}
 
 | 設定                                        | デフォルト    | 説明                       |
 | ----------------------------------------- | -------- | ------------------------ |
@@ -37,13 +33,9 @@ HTTP API を有効にするには、`keeper_server` 設定に `http_control` セ
 | `http_control.readiness.endpoint`         | `/ready` | レディネスプローブ用のカスタムパス        |
 | `http_control.storage.session_timeout_ms` | `30000`  | ストレージ API 操作のセッションタイムアウト |
 
-<div id="endpoints">
-  ## エンドポイント
-</div>
+## エンドポイント {#endpoints}
 
-<div id="dashboard">
-  ### ダッシュボード
-</div>
+### ダッシュボード {#dashboard}
 
 * **パス**: `/dashboard`
 * **メソッド**: GET
@@ -56,9 +48,7 @@ HTTP API を有効にするには、`keeper_server` 設定に `http_control` セ
 * ストレージブラウザー
 * コマンド実行用インターフェイス
 
-<div id="dashboard-cluster-tab">
-  #### クラスタータブ
-</div>
+#### クラスタータブ {#dashboard-cluster-tab}
 
 **クラスター**タブでは、Raft メンバーシップをトポロジーグラフとテーブルで表示します。各メンバーのヘルス状態は、次の色で示されます。
 
@@ -69,9 +59,7 @@ HTTP API を有効にするには、`keeper_server` 設定に `http_control` セ
 
 テーブルには、各メンバーのロール (リーダー、フォロワー、オブザーバー) 、Raft の優先度、最後のログ索引、リーダーに対するレプリケーションラグ、最後に成功した Raft 応答からの経過時間も表示されます。現在のノードがリーダーではない場合、このタブにはリーダーのダッシュボードを開くディープリンクが表示され、そこですべてのピアのヘルス状態を確認できます。このタブは `/dashboard?tab=cluster` で直接開くこともできます。
 
-<div id="readiness-probe">
-  ### レディネスプローブ
-</div>
+### レディネスプローブ {#readiness-probe}
 
 * **パス**: `/ready` (設定可能) 
 * **メソッド**: GET
@@ -89,9 +77,7 @@ HTTP API を有効にするには、`keeper_server` 設定に `http_control` セ
 }
 ```
 
-<div id="commands-api">
-  ### Commands API
-</div>
+### Commands API {#commands-api}
 
 * **パス**: `/api/v1/commands/{command}`
 * **メソッド**: GET, POST
@@ -100,21 +86,19 @@ HTTP API を有効にするには、`keeper_server` 設定に `http_control` セ
 クエリパラメータ:
 
 * `command` - 実行するコマンド
-* `cwd` - パスベースのコマンドのカレントワーキングディレクトリ (デフォルト: `/`) 
+* `cwd` - パスベースのコマンドのカレントワーキングディレクトリ。絶対パスで指定する必要があります (デフォルト: `/`)
 
 例:
 
 ```bash
-# Four-Letter Wordコマンド
+# Four-Letter Word command
 curl http://localhost:9182/api/v1/commands/stat
 
-# ZooKeeper CLIコマンド
+# ZooKeeper CLI command
 curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ```
 
-<div id="storage-api">
-  ### Storage API
-</div>
+### Storage API {#storage-api}
 
 * **ベースパス**: `/api/v1/storage`
 * **説明**: Keeper ストレージ操作用の REST API
