@@ -87,6 +87,9 @@ public:
     /// Prunes by the global row index `_part_starting_offset + _part_offset` with the predicate the builder makes on it.
     void setGlobalRowIndexPruning(DynamicPredicateBuilder predicate_builder);
 
+    /// Prunes by the elements of array columns: the indexes of the arrays get the predicate the builder makes on the elements.
+    void setArrayElementPruning(DynamicPredicateBuilder predicate_builder, MergeTreeIndices indexes, DynamicSkipIndexFilter index_filter);
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -107,6 +110,10 @@ private:
     ExpressionActionsPtr global_row_index_key_expression;
     MergeTreeIndices dynamic_skip_indexes;
     DynamicSkipIndexFilter dynamic_skip_index_filter;
+    /// The same for the keys that are elements of array columns. Unset if not pruned this way.
+    DynamicPredicateBuilder array_element_predicate_builder;
+    MergeTreeIndices array_element_skip_indexes;
+    DynamicSkipIndexFilter array_element_skip_index_filter;
 
     std::optional<size_t> top_k_primary_key_column_position;
     TopKThresholdTrackerPtr top_k_threshold_tracker;

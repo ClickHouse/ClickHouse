@@ -102,11 +102,20 @@ void MergeTreeSkipIndexReader::setGlobalRowIndexPruning(DynamicPredicateBuilder 
     global_row_index_key_expression = std::make_shared<ExpressionActions>(std::move(key_dag), ExpressionActionsSettings{});
 }
 
+void MergeTreeSkipIndexReader::setArrayElementPruning(
+    DynamicPredicateBuilder predicate_builder, MergeTreeIndices indexes, DynamicSkipIndexFilter index_filter)
+{
+    array_element_predicate_builder = std::move(predicate_builder);
+    array_element_skip_indexes = std::move(indexes);
+    array_element_skip_index_filter = std::move(index_filter);
+}
+
 bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
 {
     /// The dynamic predicate can prune only through the primary key, the global row index
     /// (`_part_starting_offset + _part_offset`) or the skip indexes on its keys (`dynamic_skip_indexes`).
-    return (dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty())) || global_row_index_predicate_builder;
+    return (dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty())) || global_row_index_predicate_builder
+        || array_element_predicate_builder;
 }
 
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
@@ -204,14 +213,15 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     }
 
     /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys). The primary key and skip indexes
-    /// get a predicate on their keys only, and the global row index a predicate on it only: the conditions recognize their
-    /// keys by name, so with one predicate a column named like the global row index expression would be taken for it.
+    /// get a predicate on their keys only, the indexes of arrays a predicate on the elements only, and the global row index
+    /// a predicate on it only: the conditions recognize their keys by name, so with one predicate a column named like
+    /// the global row index expression or like `arrayJoin(column)` would be taken for it.
     /// Pruning by the global row index relies on the rows of a granule having consecutive indexes, starting at
     /// `part_starting_offset_in_query` plus the granule's first row. In a projection part `_part_offset` is not the position
     /// of the row in that part (it may be the offset in the parent part stored by the projection), so the projection part
     /// is not pruned this way.
     const bool use_global_row_index = global_row_index_predicate_builder && !part_info->isProjectionPart();
-    if ((dynamic_predicate_builder || use_global_row_index) && !ranges.empty())
+    if ((dynamic_predicate_builder || array_element_predicate_builder || use_global_row_index) && !ranges.empty())
     {
         /// Pruning by the primary key needs the part itself.
         auto data_part = part_info->getDataPart();
@@ -222,14 +232,18 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         ActionsDAG predicate_dag;
         const ActionsDAG::Node * predicate = dynamic_predicate_builder ? dynamic_predicate_builder(predicate_dag) : nullptr;
+        ActionsDAG array_element_predicate_dag;
+        const ActionsDAG::Node * array_element_predicate
+            = array_element_predicate_builder ? array_element_predicate_builder(array_element_predicate_dag) : nullptr;
         ActionsDAG global_row_index_predicate_dag;
         const ActionsDAG::Node * global_row_index_predicate
             = use_global_row_index ? global_row_index_predicate_builder(global_row_index_predicate_dag) : nullptr;
 
-        if (predicate || global_row_index_predicate)
+        if (predicate || array_element_predicate || global_row_index_predicate)
         {
             const size_t granules_before = ranges.getNumberOfMarks();
             ActionsDAGWithInversionPushDown filter_dag(predicate, context, /*boolean_context=*/true);
+            ActionsDAGWithInversionPushDown array_element_filter_dag(array_element_predicate, context, /*boolean_context=*/true);
             ActionsDAGWithInversionPushDown global_row_index_filter_dag(global_row_index_predicate, context, /*boolean_context=*/true);
 
             if ((prune_primary_key && predicate) || global_row_index_predicate)
@@ -267,39 +281,45 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             }
 
             MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
-            for (const auto & index_helper : dynamic_skip_indexes)
+            auto prune_by_skip_indexes = [&](
+                const MergeTreeIndices & indexes, const DynamicSkipIndexFilter & index_filter, const ActionsDAGWithInversionPushDown & index_filter_dag)
             {
-                if (!predicate || ranges.empty())
-                    break;
-                if (dynamic_skip_index_filter && !dynamic_skip_index_filter(*index_helper))
-                    continue;
-                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()); !can_use)
-                    continue;
+                for (const auto & index_helper : indexes)
+                {
+                    if (!index_filter_dag.predicate || ranges.empty())
+                        break;
+                    if (index_filter && !index_filter(*index_helper))
+                        continue;
+                    if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()); !can_use)
+                        continue;
 
-                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
-                if (!condition || condition->alwaysUnknownOrTrue())
-                    continue;
+                    auto condition = index_helper->createIndexCondition(index_filter_dag.predicate, context);
+                    if (!condition || condition->alwaysUnknownOrTrue())
+                        continue;
 
-                auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
-                    index_helper,
-                    condition,
-                    /*key_condition_rpn_template=*/nullptr,
-                    part_info,
-                    ranges,
-                    input.read_hints,
-                    reader_settings,
-                    mark_cache.get(),
-                    uncompressed_cache.get(),
-                    vector_similarity_index_cache.get(),
-                    /*use_skip_indexes_for_disjunctions=*/false,
-                    no_disjunctions,
-                    context->getProcessListElementSafe(),
-                    log);
-                ranges = std::move(filtered_ranges);
-                if (ranges.getNumberOfMarks() < total_granules)
-                    add_used_index(index_helper->index.name);
-                total_granules = ranges.getNumberOfMarks();
-            }
+                    auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+                        index_helper,
+                        condition,
+                        /*key_condition_rpn_template=*/nullptr,
+                        part_info,
+                        ranges,
+                        input.read_hints,
+                        reader_settings,
+                        mark_cache.get(),
+                        uncompressed_cache.get(),
+                        vector_similarity_index_cache.get(),
+                        /*use_skip_indexes_for_disjunctions=*/false,
+                        no_disjunctions,
+                        context->getProcessListElementSafe(),
+                        log);
+                    ranges = std::move(filtered_ranges);
+                    if (ranges.getNumberOfMarks() < total_granules)
+                        add_used_index(index_helper->index.name);
+                    total_granules = ranges.getNumberOfMarks();
+                }
+            };
+            prune_by_skip_indexes(dynamic_skip_indexes, dynamic_skip_index_filter, filter_dag);
+            prune_by_skip_indexes(array_element_skip_indexes, array_element_skip_index_filter, array_element_filter_dag);
 
             const size_t granules_after = ranges.getNumberOfMarks();
             ProfileEvents::increment(ProfileEvents::RuntimeFilterGranulesConsidered, granules_before);
