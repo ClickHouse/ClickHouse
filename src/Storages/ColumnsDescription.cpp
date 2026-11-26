@@ -771,6 +771,13 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
             res = getAllPhysical();
             break;
         }
+        case GetColumnsOptions::AllPhysicalAndEphemeral:
+        {
+            res = getAllPhysical();
+            auto ephemeral = getEphemeral();
+            res.insert(res.end(), ephemeral.begin(), ephemeral.end());
+            break;
+        }
         case GetColumnsOptions::OrdinaryAndAliases:
         {
             res = getOrdinary();

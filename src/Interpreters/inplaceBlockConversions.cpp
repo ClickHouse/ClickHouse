@@ -72,6 +72,8 @@ namespace ErrorCodes
 namespace
 {
 /// Replace the identifiers `name` with `getSubcolumn(column_name, 'subcolumn_name')`.
+/// Only the free references are replaced: a parameter of a lambda stays an identifier, and the body of a lambda
+/// that binds `name` (`arrayMap(`a.x` -> `a.x` + 1, arr)`) refers to the parameter, not to the subcolumn.
 void replaceIdentifierWithSubcolumnExtraction(ASTPtr & ast, const String & name, const String & column_name, const String & subcolumn_name)
 {
     checkStackSize();
@@ -85,6 +87,26 @@ void replaceIdentifierWithSubcolumnExtraction(ASTPtr & ast, const String & name,
             if (!alias.empty())
                 ast->setAlias(alias);
         }
+        return;
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
+        && function->arguments->children.size() == 2)
+    {
+        /// The parameters are `tuple(x, y)`, see `RequiredSourceColumnsMatcher`.
+        const auto & parameters = function->arguments->children[0];
+        if (const auto * parameters_tuple = parameters->as<ASTFunction>(); parameters_tuple && parameters_tuple->arguments)
+        {
+            for (const auto & parameter : parameters_tuple->arguments->children)
+                if (const auto * parameter_identifier = parameter->as<ASTIdentifier>();
+                    parameter_identifier && parameter_identifier->name() == name)
+                    return;
+        }
+        else if (const auto * parameter_identifier = parameters->as<ASTIdentifier>();
+                 parameter_identifier && parameter_identifier->name() == name)
+            return;
+
+        replaceIdentifierWithSubcolumnExtraction(function->arguments->children[1], name, column_name, subcolumn_name);
         return;
     }
 
@@ -136,8 +158,7 @@ void addDefaultRequiredExpressionsRecursively(
                 continue;
 
             /// An `EPHEMERAL` column is an input of a default expression as well.
-            static constexpr auto columns_with_ephemeral = static_cast<GetColumnsOptions::Kind>(GetColumnsOptions::AllPhysical | GetColumnsOptions::Ephemeral);
-            auto subcolumn = columns.tryGetColumnOrSubcolumn(columns_with_ephemeral, name);
+            auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysicalAndEphemeral, name);
             if (!subcolumn || !subcolumn->isSubcolumn())
                 continue;
 

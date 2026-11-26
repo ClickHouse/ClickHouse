@@ -64,6 +64,7 @@ struct GetColumnsOptions
         OrdinaryAndAliases = Ordinary | Aliases,
         AllPhysical = Ordinary | Materialized,
         AllPhysicalAndAliases = AllPhysical | Aliases,
+        AllPhysicalAndEphemeral = AllPhysical | Ephemeral,
         All = AllPhysical | Aliases | Ephemeral,
     };
 
