@@ -1,0 +1,8 @@
+--- a streaming reader holds the lazy stand-in of the table
+--- incremental refresh from the table
+[1,2]
+--- incremental refresh from a Merge table over it
+[1,2]
+[1,2,3]
+--- the reader is still running
+reader 3
