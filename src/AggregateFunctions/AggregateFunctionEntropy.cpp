@@ -11,6 +11,8 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <cmath>
 
 
@@ -21,6 +23,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -43,6 +46,15 @@ struct EntropyData
 
     Map map;
 
+    /// The weight is the number of occurrences of a value, so a sum that does not fit `Weight` cannot be represented.
+    static Weight addWeights(Weight lhs, Weight rhs)
+    {
+        Weight sum = 0;
+        if (common::addOverflow(lhs, rhs, sum))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The count of a value in aggregate function `entropy` does not fit UInt64");
+        return sum;
+    }
+
     void add(const Value & x)
     {
         if (!isNaN(x))
@@ -52,13 +64,19 @@ struct EntropyData
     void add(const Value & x, const Weight & weight)
     {
         if (!isNaN(x))
-            map[x] += weight;
+        {
+            auto & value_weight = map[x];
+            value_weight = addWeights(value_weight, weight);
+        }
     }
 
     void merge(const EntropyData & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getKey()] += pair.getMapped();
+        {
+            auto & value_weight = map[pair.getKey()];
+            value_weight = addWeights(value_weight, pair.getMapped());
+        }
     }
 
     void serialize(WriteBuffer & buf) const
@@ -78,14 +96,16 @@ struct EntropyData
 
     [[nodiscard]] Float64 get() const
     {
-        UInt64 total_value = 0;
+        /// The sum of the weights may not fit `Weight`.
+        UInt128 total_value = 0;
         for (const auto & pair : map)
             total_value += pair.getMapped();
+        const Float64 total = static_cast<Float64>(total_value);
 
         Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            Float64 frequency = static_cast<Float64>(pair.getMapped()) / static_cast<Float64>(total_value);
+            Float64 frequency = static_cast<Float64>(pair.getMapped()) / total;
             shannon_entropy -= frequency * log2(frequency);
         }
 
