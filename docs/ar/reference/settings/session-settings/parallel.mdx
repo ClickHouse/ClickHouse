@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم إنشاؤها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="parallel_distributed_insert_select">
-  ## parallel_distributed_insert_select
-</div>
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -24,45 +22,50 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُفعّل استعلام `INSERT ... SELECT` الموزّع المتوازي.
 
-إذا نفّذنا استعلامات `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` وكان كلا الجدولين يستخدمان العنقود نفسه، وكان كلاهما إما [مكرّرًا](/ar/reference/engines/table-engines/mergetree-family/replication) أو غير مكرّر، فستُعالَج هذه query محليًا على كل shard.
+إذا نفّذنا استعلامات `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` وكان كلا الجدولين يستخدمان العنقود نفسه، وكان كلاهما إما [مكرّرًا](/ar/reference/engines/table-engines/mergetree-family/replication) أو غير مكرّر، فسيُعالَج هذا الاستعلام محليًا على كل مقطع.
 
 القيم الممكنة:
 
 * `0` — معطّل.
-* `1` — سيُنفَّذ `SELECT` على كل shard من الجدول الأساسي للمحرك الموزّع.
-* `2` — سيُنفَّذ `SELECT` و`INSERT` على كل shard من/إلى الجدول الأساسي للمحرك الموزّع.
+* `1` — سيُنفَّذ `SELECT` على كل مقطع من الجدول الأساسي للمحرك الموزّع.
+* `2` — سيُنفَّذ `SELECT` و`INSERT` على كل مقطع من/إلى الجدول الأساسي للمحرك الموزّع.
 
 اعتبارًا من v25.4، يمكن أيضًا تنفيذ `INSERT ... SELECT` من مصدر `ReplicatedMergeTree` أو `SharedMergeTree` بالتوازي عبر النسخ المتماثلة. لتمكين ذلك:
 
 * `parallel_distributed_insert_select = 2`
 * `enable_parallel_replicas = 1`
 
-<div id="parallel_hash_join_threshold">
-  ## parallel_hash_join_threshold
-</div>
+<Note>
+  يُنفَّذ الاستعلام المُعاد كتابته، بما في ذلك كل تعبير في `SELECT` (الاستعلامات الفرعية وUDFs وغيرها)، على المقاطع ببيانات اعتماد تهيئة العنقود، وهو نموذج الثقة نفسه المتّبع في سائر عمليات المعالجة على جانب المقاطع، مثل الاستعلامات الفرعية لعبارة `IN` غير `GLOBAL`. هيّئ secret بين الخوادم (العنصر `secret` في تهيئة العنقود) إذا لزم تفويض عمليات القراءة على جانب المقاطع باسم المستخدم المُستدعي.
+</Note>
+
+## parallel_hash_join_threshold {#parallel_hash_join_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100000"},{"label": "إعداد جديد"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "إعداد جديد"}]}, {"id": "row-3","items": [{"label": "25.3"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-عند استخدام خوارزمية join المعتمدة على hash، تساعد هذه العتبة في تحديد ما إذا كان سيتم استخدام `hash` أو `parallel_hash` (وذلك فقط إذا كان تقدير حجم الجدول الأيمن متاحًا).
-ويُستخدم الخيار الأول عندما يكون معروفًا أن حجم الجدول الأيمن أقل من هذه العتبة.
+في الربط بالتجزئة من النوع `INNER` أو `LEFT` أو `RIGHT` أو `FULL`، تحدد هذه العتبة طريقة بناء جدول التجزئة.
+إذا كان العدد التقديري للصفوف في الجدول الأيمن أقل من العتبة، تبني عملية الربط جدول التجزئة كجزء واحد باستخدام خيط تنفيذ واحد.
+أما عند بلوغ العتبة أو تجاوزها، وكذلك عند عدم توفر أي تقدير، فتقسّم عملية الربط جدول التجزئة إلى أجزاء يملؤها في الوقت نفسه عددٌ من خيوط التنفيذ يصل إلى `max_threads` (خيط تنفيذ واحد عند `max_threads = 1`).
+تؤدي القيمة `0` دائمًا إلى تقسيم جدول التجزئة.
+عند ضبط `hash_join_layout` على `serial` أو `parallel`، لا تُستخدم هذه العتبة؛ إذ تبني عملية الربط جزءًا واحدًا أو تقسّم جدول التجزئة بغض النظر عن التقدير.
+يُستمد التقدير من خطة تنفيذ الاستعلام، أو من إحصاءات عمليات التشغيل السابقة لعملية الربط نفسها (راجع `collect_hash_table_stats_during_joins`).
+تقدّر خطة تنفيذ الاستعلام عدد الصفوف بـ 0 عندما يكون الجدول الأيمن معروفًا بأنه فارغ، مثل جدول `MergeTree` لا يحتوي على أجزاء بيانات.
+لا تحصل عمليات الربط من النوع `ASOF` على تقدير أبدًا، وعند ضبط `query_plan_optimize_join_order_limit = 0` لا تحصل أي عملية ربط على تقدير.
 
-<div id="parallel_non_joined_rows_processing">
-  ## parallel_non_joined_rows_processing
-</div>
+## parallel_non_joined_rows_processing {#parallel_non_joined_rows_processing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "إعداد جديد لتمكين المعالجة المتوازية للصفوف غير المنضمّة في عمليات RIGHT\/FULL JOIN باستخدام parallel_hash."}]}]} />
 
 يسمح لعدة خيوط تنفيذ بمعالجة الصفوف غير المنضمّة من الجدول الأيمن بالتوازي أثناء عمليات RIGHT وFULL JOIN.
-يمكن أن يسرّع ذلك مرحلة الصفوف غير المنضمّة عند استخدام خوارزمية JOIN ‏`parallel_hash` مع الجداول الكبيرة.
-عند تعطيله، تُعالَج الصفوف غير المنضمّة بواسطة خيط تنفيذ واحد.
+يمكن أن يسرّع ذلك مرحلة الصفوف غير المنضمّة في عمليات الربط بالتجزئة التي تتضمن جداول يمنى كبيرة يُبنى جدول التجزئة الخاص بها على عدة خيوط تنفيذ (راجع `parallel_hash_join_threshold`).
+عند تعطيله، أو عندما يُبنى جدول التجزئة على خيط تنفيذ واحد، تُعالَج الصفوف غير المنضمّة بواسطة خيط تنفيذ واحد.
+في جميع الحالات، تُخرَج الصفوف غير المنضمّة دون ترتيب ثابت. استخدم `ORDER BY` عندما يتطلب الاستعلام ترتيبًا ثابتًا.
 
-<div id="parallel_replica_offset">
-  ## parallel_replica_offset
-</div>
+## parallel_replica_offset {#parallel_replica_offset}
 
 <BetaBadge />
 
@@ -70,9 +73,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذا إعداد داخلي لا ينبغي استخدامه مباشرةً، ويمثل تفصيلًا تنفيذيًا لوضع «النسخ المتماثلة المتوازية». سيُضبط هذا الإعداد تلقائيًا بواسطة الخادم البادئ للاستعلامات الموزعة، بحيث يحدد فهرس النسخة المتماثلة المشاركة في معالجة الاستعلام ضمن النسخ المتماثلة المتوازية.
 
-<div id="parallel_view_processing">
-  ## parallel_view_processing
-</div>
+## parallel_view_processing {#parallel_view_processing}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
