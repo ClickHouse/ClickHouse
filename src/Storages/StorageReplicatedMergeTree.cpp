@@ -9424,7 +9424,8 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
 
     LightweightUpdateHolderInKeeper update_holder;
     update_holder.zookeeper = zookeeper;
-    update_holder.lock = getLockForLightweightUpdateInKeeper(commands, query_context, zookeeper, zookeeper_path);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    update_holder.lock = getLockForLightweightUpdateInKeeper(commands, metadata_snapshot->getColumns(), query_context, zookeeper, zookeeper_path);
     update_holder.partition_block_numbers = allocateBlockNumbersInAffectedPartitions(commands, CommittingBlock::Op::Update, query_context, zookeeper);
 
     fiu_do_on(FailPoints::rmt_lightweight_update_sleep_after_block_allocation,

@@ -1,0 +1,18 @@
+MergeTree W1 refused 1
+MergeTree W2 refused 1
+MergeTree W3 refused 0
+MergeTree W4 refused 0
+MergeTree W5 refused 1
+0	1	1	5	2
+1	10	20	30	30
+2	40	1	0	41
+3	10	1	7	11
+ReplicatedMergeTree W1 refused 1
+ReplicatedMergeTree W2 refused 1
+ReplicatedMergeTree W3 refused 0
+ReplicatedMergeTree W4 refused 0
+ReplicatedMergeTree W5 refused 1
+0	1	1	5	2
+1	10	20	30	30
+2	40	1	0	41
+3	10	1	7	11
