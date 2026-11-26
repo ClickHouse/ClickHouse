@@ -43,6 +43,14 @@ public:
     /// columns when loading rewrote a type that an older version stored (see `getStoredDataType`).
     [[nodiscard]] static std::optional<std::array<char, 16>> getStoredColumnsHash(const IMergeTreeDataPart & part);
 
+    /// The columns hash of the text of a `columns.txt`.
+    [[nodiscard]] static std::array<char, 16> getColumnsHash(const String & columns_text);
+
+    /// The header of a local part. It has the hash of the `columns.txt` of the part as stored when loading rewrote
+    /// a type of it (see `IMergeTreeDataPart::getLegacyColumnsHash`): the part is fetched with that file unchanged,
+    /// so a replica of an older version, which reads it as written, has to find the same hash in ZooKeeper.
+    static ReplicatedMergeTreePartHeader fromPart(const IMergeTreeDataPart & part);
+
 private:
     ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_)
         : columns_hash(std::move(columns_hash_)), checksums(std::move(checksums_))

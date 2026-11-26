@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string_view>
 
 #include <Common/UniqueLock.h>
@@ -242,6 +243,11 @@ public:
     void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return shared_part_columns->columns; }
+
+    /// The hash (see `ReplicatedMergeTreePartHeader`) of the `columns.txt` of the part as stored, set only when the
+    /// part was loaded from a `columns.txt` with a type that `getStoredDataType` reads under another name, so that
+    /// `getColumns` no longer gives the text of the file.
+    const std::optional<std::array<char, 16>> & getLegacyColumnsHash() const { return legacy_columns_hash; }
     const ColumnsDescription & getColumnsDescription() const { return *shared_part_columns->columns_description; }
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *shared_part_columns->columns_description_with_collected_nested; }
     const ColumnsSubstreams & getColumnsSubstreams() const { return *columns_substreams; }
@@ -963,6 +969,9 @@ private:
     /// to) the per-table cache in `MergeTreeData`, see `SharedPartColumns.h`. The holder makes the
     /// reference accounting impossible to bypass (see `SharedPartColumnsHolder`).
     SharedPartColumnsHolder shared_part_columns;
+
+    /// See `getLegacyColumnsHash`.
+    std::optional<std::array<char, 16>> legacy_columns_hash;
 
     /// List of substreams in order of serialization/deserialization for each column.
     /// Shared across parts of the table with the same substreams. Never null.

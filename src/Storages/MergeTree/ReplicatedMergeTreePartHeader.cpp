@@ -44,6 +44,22 @@ std::optional<std::array<char, 16>> ReplicatedMergeTreePartHeader::getStoredColu
     return getSipHash(columns);
 }
 
+std::array<char, 16> ReplicatedMergeTreePartHeader::getColumnsHash(const String & columns_text)
+{
+    return getSipHash(columns_text);
+}
+
+ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromPart(const IMergeTreeDataPart & part)
+{
+    if (const auto & legacy_columns_hash = part.getLegacyColumnsHash())
+    {
+        MinimalisticDataPartChecksums checksums;
+        checksums.computeTotalChecksums(part.checksums);
+        return ReplicatedMergeTreePartHeader(*legacy_columns_hash, std::move(checksums));
+    }
+    return fromColumnsAndChecksums(part.getColumns(), part.checksums);
+}
+
 void ReplicatedMergeTreePartHeader::read(ReadBuffer & in)
 {
     in >> "part header format version: 1\n";

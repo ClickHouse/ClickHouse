@@ -2346,7 +2346,7 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
     if (part_name.empty())
         part_name = part->name;
 
-    auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums);
+    auto local_part_header = ReplicatedMergeTreePartHeader::fromPart(*part);
 
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
@@ -5709,8 +5709,7 @@ bool StorageReplicatedMergeTree::fetchPart(
         /// Fetch for zero-copy replication is cheap and straightforward, so we don't use local clone here
         if (source_part && !is_zero_copy_part(source_part))
         {
-            auto source_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-                source_part->getColumns(), source_part->checksums);
+            auto source_part_header = ReplicatedMergeTreePartHeader::fromPart(*source_part);
 
             String part_path = fs::path(source_replica_path) / "parts" / part_name;
             String part_znode = zookeeper->get(part_path);
@@ -10678,7 +10677,7 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     /// Information about the part, in the replica
     ops.emplace_back(zkutil::makeCreateRequest(
         fs::path(replica_path) / "parts" / part->name,
-        ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums).toString(),
+        ReplicatedMergeTreePartHeader::fromPart(*part).toString(),
         zkutil::CreateMode::Persistent));
 }
 

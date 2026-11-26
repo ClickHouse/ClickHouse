@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -253,9 +254,12 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
 
 }
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool stored_definition)
 {
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+    const auto get_data_type = [&](const ASTPtr & type_ast)
+    {
+        return stored_definition ? getStoredDataType(type_ast) : DataTypeFactory::instance().get(type_ast);
+    };
 
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -269,7 +273,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = get_data_type(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
             /// A stored column has to spell its state version out in the metadata the same way
             /// `CREATE TABLE` does (see `InterpreterCreateQuery::getColumnType`): an unversioned
@@ -339,7 +343,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = get_data_type(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
             /// Deliberately NOT pinning the current state version here, unlike ADD COLUMN above.
             /// `DataTypeAggregateFunction::equals` ignores the state version, so a version change is

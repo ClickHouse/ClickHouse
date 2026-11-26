@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/PrimaryIndexLoader.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 
@@ -2982,7 +2983,21 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
     if (columns_file && !columns_file_is_empty)
     {
-        loaded_columns.readText(*columns_file);
+        String columns_text;
+        readStringUntilEOF(columns_text, *columns_file);
+        {
+            ReadBufferFromString columns_buf(columns_text);
+            loaded_columns.readText(columns_buf);
+        }
+
+        /// The file stays as it is, and so does its hash published in ZooKeeper, see `ReplicatedMergeTreePartHeader::fromPart`.
+        legacy_columns_hash.reset();
+        if (columns_text.contains("SimpleAggregateFunction"))
+        {
+            ReadBufferFromString columns_buf(columns_text);
+            if (NamesAndTypesList::hasRewrittenStoredDataTypes(columns_buf))
+                legacy_columns_hash = ReplicatedMergeTreePartHeader::getColumnsHash(columns_text);
+        }
 
         for (auto & column : loaded_columns)
             setVersionToAggregateFunctions(column.type, true);

@@ -111,6 +111,28 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
         assertEOF(buf);
 }
 
+bool NamesAndTypesList::hasRewrittenStoredDataTypes(ReadBuffer & buf)
+{
+    assertString("columns format version: 1\n", buf);
+    size_t count = 0;
+    DB::readText(count, buf);
+    assertString(" columns:\n", buf);
+
+    String column_name;
+    String type_name;
+    for (size_t i = 0; i < count; ++i)
+    {
+        readBackQuotedStringWithSQLStyle(column_name, buf);
+        assertChar(' ', buf);
+        readString(type_name, buf);
+        assertChar('\n', buf);
+
+        if (isRewrittenStoredDataType(type_name))
+            return true;
+    }
+    return false;
+}
+
 void NamesAndTypesList::writeText(WriteBuffer & buf) const
 {
     writeString("columns format version: 1\n", buf);

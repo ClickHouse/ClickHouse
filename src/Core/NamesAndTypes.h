@@ -89,6 +89,8 @@ public:
     NamesAndTypesList(Iterator begin, Iterator end) : ListWithMemoryTracking<NameAndTypePair>(begin, end) {}
 
     void readText(ReadBuffer & buf, bool check_eof = true);
+    /// Whether `readText` reads a type of this text under another name than the stored one, see `getStoredDataType`.
+    static bool hasRewrittenStoredDataTypes(ReadBuffer & buf);
     void writeText(WriteBuffer & buf) const;
 
     [[nodiscard]] String toString() const;

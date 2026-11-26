@@ -14,6 +14,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
@@ -278,7 +280,19 @@ void moveWrappersIntoSimpleAggregateFunction(ASTPtr & ast)
         return;
 
     for (auto & child : ast->children)
+    {
+        const ASTPtr old_child = child;
         moveWrappersIntoSimpleAggregateFunction(child);
+        if (child == old_child)
+            continue;
+
+        /// These nodes also keep the type in a named member, which is what the type creators read
+        /// (a typed path of `JSON`, an element of `Nested` or of a named `Tuple`).
+        if (auto * typed_path = ast->as<ASTObjectTypedPathArgument>(); typed_path && typed_path->type == old_child)
+            typed_path->type = child;
+        else if (auto * name_type_pair = ast->as<ASTNameTypePair>(); name_type_pair && name_type_pair->type == old_child)
+            name_type_pair->type = child;
+    }
 
     if (auto * simple = getWrappedSimpleAggregateFunction(*ast))
     {
@@ -291,6 +305,15 @@ void moveWrappersIntoSimpleAggregateFunction(ASTPtr & ast)
     }
 }
 
+}
+
+bool isRewrittenStoredDataType(const String & name)
+{
+    if (!name.contains("SimpleAggregateFunction"))
+        return false;
+
+    ParserDataType parser;
+    return hasWrappedSimpleAggregateFunction(*parseQuery(parser, name, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 }
 
 ASTPtr getStoredDataTypeAST(const ASTPtr & ast)

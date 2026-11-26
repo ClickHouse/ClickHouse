@@ -70,5 +70,7 @@ DataTypePtr getStoredDataType(const ASTPtr & ast);
 DataTypePtr getStoredDataType(const String & name);
 /// The AST of a stored type as `getStoredDataType` reads it: `ast` itself, or a rewritten copy.
 ASTPtr getStoredDataTypeAST(const ASTPtr & ast);
+/// Whether `getStoredDataType` reads the stored type `name` as a type with another name.
+bool isRewrittenStoredDataType(const String & name);
 
 }

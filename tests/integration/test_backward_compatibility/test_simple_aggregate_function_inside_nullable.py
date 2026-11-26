@@ -45,6 +45,17 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
     node.query(
         "ALTER TABLE mut MODIFY COLUMN m Nullable(SimpleAggregateFunction(sum, UInt64)) SETTINGS mutations_sync = 2"
     )
+    # The type is also kept in a typed path of `JSON` and in an element of an unflattened `Nested`.
+    node.query(
+        "CREATE TABLE j (j JSON(x Nullable(SimpleAggregateFunction(sum, UInt64)))) ENGINE = MergeTree ORDER BY tuple()",
+        settings={"enable_json_type": 1},
+    )
+    node.query("""INSERT INTO j VALUES ('{"x" : 42}')""")
+    node.query(
+        "CREATE TABLE nested (n Nested(x Nullable(SimpleAggregateFunction(sum, UInt64)))) ENGINE = MergeTree ORDER BY tuple()",
+        settings={"flatten_nested": 0},
+    )
+    node.query("INSERT INTO nested SELECT [tuple(42)]")
     variant = {"allow_experimental_variant_type": 1, "allow_experimental_dynamic_type": 1}
     node.query(
         "CREATE TABLE v (k UInt32, v Variant(SimpleAggregateFunction(any, UInt64), String)) ENGINE = MergeTree ORDER BY k",
@@ -94,6 +105,20 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
         "ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/r', '2') ORDER BY k"
     )
     assert_eq_with_retry(node, "SELECT sum(m) FROM r2", "30")
+    # The fetched parts keep their `columns.txt`, so the new replica publishes the same part headers as the old one:
+    # a replica of the older version, which reads that file as written, compares it with the header of its source.
+    assert (
+        node.query(
+            "SELECT count(), uniqExact(name), uniqExact((name, value)) FROM system.zookeeper "
+            "WHERE path IN ('/clickhouse/tables/r/replicas/1/parts', '/clickhouse/tables/r/replicas/2/parts')"
+        )
+        == "2\t1\t1\n"
+    )
+    assert node.query("SELECT j.x, toTypeName(j.x) FROM j") == "42\tSimpleAggregateFunction(sum, Nullable(UInt64))\n"
+    assert (
+        node.query("SELECT n.x, toTypeName(n.x) FROM nested")
+        == "[42]\tArray(SimpleAggregateFunction(sum, Nullable(UInt64)))\n"
+    )
     node.query("OPTIMIZE TABLE t FINAL")
     assert node.query("SELECT k, m, s, n FROM t") == "1\t30\ta\t20\n"
     assert node.query("SELECT k, m FROM mut") == "1\t10\n"
