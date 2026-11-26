@@ -59,6 +59,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/itoa.h>
@@ -215,6 +216,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             {
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = Range(value);
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -291,6 +293,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -299,6 +302,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -307,6 +311,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -315,6 +320,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -323,6 +329,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -331,6 +338,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -505,6 +513,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.function = RPNElement::FUNCTION_IS_NOT_NULL;
                 // isNotNull means (-Inf, +Inf)
                 out.range = Range::createWholeUniverseWithoutNull();
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -517,6 +526,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 // ranges, instead will use the inverse of (-Inf, +Inf). The inversion happens in
                 // checkInHyperrectangle.
                 out.range = Range::createWholeUniverseWithoutNull();
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -1968,6 +1978,7 @@ bool KeyCondition::isRelaxed() const
     const auto is_relaxed_atom = [](const RPNElement & elem)
     {
         return elem.relaxed
+            || (elem.hides_null && elem.null_on_null_key)
             || elem.function == RPNElement::FUNCTION_UNKNOWN
             || ((elem.function == RPNElement::FUNCTION_IN_SET || elem.function == RPNElement::FUNCTION_NOT_IN_SET)
                 && elem.set_index->size() > 1);
@@ -3306,6 +3317,36 @@ static bool deterministicTransformMayHideNull(
     return !nested_null_is_ordinary_value && tupleTypeMayHoldNestedNull(input_type);
 }
 
+/// The same for the key expression in `dag`. The types don't show a hidden NULL for an expression like
+/// `toNullable(ifNull(x, 0))`, so this also runs the expression on a NULL. An expression with `assumeNotNull`,
+/// like `nullIf(assumeNotNull(x), 0)`, reads the value stored under a NULL, so it can differ from one NULL to the
+/// next. It counts as hiding a NULL without being run.
+static bool deterministicTransformMayHideNull(
+    const DeterministicKeyTransformDag & dag, const DataTypePtr & key_type, const String & input_name, bool nested_null_is_ordinary_value)
+{
+    if (deterministicTransformMayHideNull(dag.input_type, key_type, nested_null_is_ordinary_value))
+        return true;
+    if (!isNullableOrLowCardinalityNullable(dag.input_type))
+        return false;
+    if (QueryPlanOptimizations::dagReadsUnspecifiedValueUnderNull(dag.actions->getActionsDAG()))
+        return true;
+
+    /// Not `executeDeterministicDag`, which returns false when the output holds a NULL.
+    Block block;
+    block.insert({dag.input_type->createColumnConst(1, Field())->convertToFullColumnIfConst(), dag.input_type, input_name});
+    try
+    {
+        dag.actions->execute(block, false, true);
+    }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return true;
+    }
+    return !block.getByName(dag.output_name).column->isNullAt(0);
+}
+
 /// Returns true if `output_name` depends on `input_name` and the whole sub-DAG is injective w.r.t. that input
 /// Assumes this sub-DAG depends only on `input_name` (checked by the caller)
 /// May not catch all cases, but should be sufficient for most practical cases
@@ -3560,7 +3601,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         /// - A value of that column may hold a `NULL`, which makes the comparison `NULL` at row level,
         ///   and `WHERE` rejects the row. When the transform maps such a value to an ordinary key value,
         ///   the index compares it as unequal to the constant, so a negated atom claims the row as
-        ///   matching, and `mayReadNullKeyValue` cannot see it from the key type. A null-safe comparison
+        ///   matching, and the key range doesn't show the `NULL`. A null-safe comparison
         ///   never answers `NULL`, so a `NULL` nested in a `Tuple` does not matter for it.
         /// - The normalization of the constant lost information. The key point then has more than one
         ///   preimage, as for a non-injective transform.
@@ -3568,6 +3609,9 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             || deterministicTransformMayHideNull(candidate.dag.input_type, candidate.key_column_type, nested_null_is_ordinary_value)
             || !normalization_is_exact
             || !isDeterministicTransformInjective(candidate.dag.actions->getActionsDAG(), expr_name, candidate.dag.output_name);
+
+        const bool hides_null
+            = deterministicTransformMayHideNull(candidate.dag, candidate.key_column_type, expr_name, nested_null_is_ordinary_value);
 
         Field transformed_value = (*transformed_const_column)[0];
 
@@ -3584,7 +3628,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             .value = std::move(transformed_value),
             .type = transformed_const_type,
             .is_fixed_string = transformed_is_fixed_string,
-            .requires_relaxed_atom = requires_relaxed_atom});
+            .requires_relaxed_atom = requires_relaxed_atom,
+            .hides_null = hides_null});
     }
 
     return result;
@@ -3658,6 +3703,8 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
             const auto & dag = transform->dag;
             if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), dag.input_name, dag.output_name))
                 candidate.is_relaxed = true;
+            if (deterministicTransformMayHideNull(dag, transform->key_column_type, dag.input_name, /*nested_null_is_ordinary_value*/ false))
+                candidate.hides_null = true;
 
             candidate.column_mappings.push_back({
                 .index_mapping = {.tuple_index = tuple_index, .key_index = transform->key_column_num, .functions = {}},
@@ -4277,6 +4324,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
 
     RPNElement element;
     element.relaxed = candidate.is_relaxed;
+    element.hides_null = candidate.hides_null;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     indexes_mapping.reserve(candidate.column_mappings.size());
     for (auto & mapping : candidate.column_mappings)
@@ -4362,6 +4410,8 @@ void KeyCondition::appendSetAtoms(
                 continue;
 
             SetAtomCandidate set_candidate;
+            set_candidate.hides_null = deterministicTransformMayHideNull(
+                candidate.dag, candidate.key_column_type, candidate.dag.input_name, /*nested_null_is_ordinary_value*/ false);
             set_candidate.column_mappings.push_back({
                 .index_mapping = std::move(mapping),
                 .set_transform = std::move(candidate.dag),
@@ -6028,7 +6078,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
 
     /// The constant was already pushed through a key-side recipe, so it compares
     /// against the key column directly and the check-time chain is empty.
-    auto add_transformed_constant_candidate = [&](const TransformedConstant & transformed, bool is_relaxed)
+    auto add_transformed_constant_candidate = [&](const TransformedConstant & transformed, bool is_relaxed, bool hides_null)
     {
         candidates.push_back(ComparisonAtomCandidate{
             .key_column_num = transformed.key_column_num,
@@ -6039,6 +6089,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .const_type = transformed.type,
             .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
+            .hides_null = hides_null,
             .reverse_comparison = transformed.reverse_comparison});
     };
 
@@ -6188,8 +6239,12 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 return monotonicity.is_always_monotonic || monotonicity.is_always_monotonic_where_defined;
             });
 
+        /// The chain isn't run on a NULL, so the atom hides any NULL that the argument can hold.
+        const DataTypePtr & key_arg_type = key_arg.getDAGNode()->result_type;
+        const bool hides_null = isNullableOrLowCardinalityNullable(key_arg_type) || tupleTypeMayHoldNestedNull(key_arg_type);
+
         for (const auto & transformed : transformed_candidates)
-            add_transformed_constant_candidate(transformed, /*is_relaxed*/ true);
+            add_transformed_constant_candidate(transformed, /*is_relaxed*/ true, hides_null);
     }
 
     /// 3. The deterministic constant transform contributes candidates for the key columns
@@ -6215,7 +6270,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             key_arg, info, constant_for_transform, /*nested_null_is_ordinary_value*/ func_name == "isNotDistinctFrom");
 
         for (const auto & transformed : transformed_candidates)
-            add_transformed_constant_candidate(transformed, /*is_relaxed*/ transformed.requires_relaxed_atom);
+            add_transformed_constant_candidate(transformed, /*is_relaxed*/ transformed.requires_relaxed_atom, transformed.hides_null);
     }
 
     return candidates;
@@ -6369,6 +6424,21 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 /// `ALWAYS_TRUE` would claim that every row matches.
                 chassert(!is_relaxed);
 
+                /// A `Nullable` expression makes the comparison NULL on a NULL, so it isn't a constant. It becomes a range
+                /// atom that holds every non-NULL value, or none.
+                if (key_expr_type_is_nullable)
+                {
+                    RPNElement element(
+                        RPNElement::FUNCTION_IN_RANGE,
+                        {candidate.key_column_num},
+                        float_rewrite_element.function == RPNElement::ALWAYS_TRUE
+                            ? Range::createWholeUniverseWithoutNull()
+                            : Range(NEGATIVE_INFINITY, false, NEGATIVE_INFINITY, false));
+                    element.monotonic_functions_chain = chain;
+                    element.argument_num_of_space_filling_curve = candidate.argument_num_of_space_filling_curve;
+                    return element;
+                }
+
                 /// The comparison folded to a constant. Return it directly so `atom_map` does not
                 /// overwrite its `ALWAYS_TRUE` or `ALWAYS_FALSE` function.
                 float_rewrite_element.key_columns.push_back(candidate.key_column_num);
@@ -6443,6 +6513,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
     element.monotonic_functions_chain = std::move(chain);
     element.argument_num_of_space_filling_curve = candidate.argument_num_of_space_filling_curve;
     element.relaxed = is_relaxed;
+    element.hides_null = candidate.hides_null;
 
     const auto atom_it = atom_map.find(func_name);
     chassert(atom_it != atom_map.end());
@@ -7366,8 +7437,8 @@ static BoolMask forAnySparseHyperrectangle(
 
     auto result = BoolMask::combine(initial_mask, callback(sparse_hyperrectangle));
 
-    /// isComplete() means that both `can_be_true` = true and ``can_be_false` = true. No `result = BoolMask::combine(result, ...)`
-    /// can change `result` anymore. So, there is no need to continue.
+    /// isComplete() means that `can_be_true` = true and `canBeFalseOrNull()` = true. No `result = BoolMask::combine(result, ...)`
+    /// can change them anymore. So, there is no need to continue.
     if (result.isComplete())
         return result;
 
@@ -7873,7 +7944,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         /// relaxation handling. Operator elements (`FUNCTION_AND`, `FUNCTION_OR`, `FUNCTION_NOT`,
         /// `ALWAYS_TRUE`, `ALWAYS_FALSE`) are never set as relaxed; relaxation propagates through them
         /// via their child atoms (see the comment on `KeyCondition::isRelaxed` in `KeyCondition.h`).
-        if (element.relaxed)
+        /// An atom that hides a NULL can be NULL anywhere on a range, so it doesn't yield exact ranges either.
+        if (element.relaxed || (element.hides_null && element.null_on_null_key))
             return false;
 
         if (element.function == RPNElement::FUNCTION_AND)
@@ -8177,13 +8249,35 @@ bool rangeOfKeyColumnMayHoldNull(
         || (atomMayClaimNestedNullOrNaN(element) && keyTypeMayHoldNestedNullOrNaN(key_type));
 }
 
+/// Whether `element` may be NULL on some row of the key ranges. `range_of` returns the range of a key column, or null if
+/// the caller has no range for it. Such a column can hold any value.
+template <typename RangeOf>
+bool atomMayBeNull(const KeyCondition::RPNElement & element, const DataTypes & key_types, RangeOf && range_of)
+{
+    if (!element.null_on_null_key)
+        return false;
+
+    if (element.hides_null)
+        return true;
+
+    static const Range whole_universe = Range::createWholeUniverse();
+    for (size_t key_column : element.key_columns)
+    {
+        const Range * range = range_of(key_column);
+        if (rangeOfKeyColumnMayHoldNull(element, range ? *range : whole_universe, key_types, key_column))
+            return true;
+    }
+
+    return false;
+}
+
 /// Pushes the mask of an atom group, given `apply_element`, which pushes the mask of one atom. Each atom
 /// bounds the mask of the whole predicate leaf, so the group's mask is their intersection (see
 /// `KeyCondition::RPNElement::group_atoms`).
 template <typename ApplyElement, typename Stack>
 void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElement & apply_element, Stack & rpn_stack)
 {
-    BoolMask group_mask(true, true);
+    BoolMask group_mask(true, true, true);
     for (const auto & atom : group.group_atoms)
     {
         apply_element(atom);
@@ -8193,88 +8287,38 @@ void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElemen
     rpn_stack.push_back(group_mask);
 }
 
-/// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
-/// answering true or false as `IS NULL` and `IS NOT NULL` do.
-bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
+/// Builds the mask for a range, set, or `IS [NOT] NULL` atom from `mask`, the result for its range or set on the key
+/// ranges, and `can_be_null`, whether the atom can be NULL on them. `column_index_to_column_bf` is null when the caller
+/// has no bloom filters.
+BoolMask atomMask(
+    const KeyCondition::RPNElement & element,
+    BoolMask mask,
+    bool can_be_null,
+    const KeyCondition::ColumnIndexToBloomFilter * column_index_to_column_bf)
 {
-    switch (function)
-    {
-        case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
-        case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
-        case KeyCondition::RPNElement::FUNCTION_IN_SET:
-        case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
-        case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
-        case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
-            return true;
-        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
-        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
-        case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
-        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
-        case KeyCondition::RPNElement::FUNCTION_NOT:
-        case KeyCondition::RPNElement::FUNCTION_AND:
-        case KeyCondition::RPNElement::FUNCTION_OR:
-        case KeyCondition::RPNElement::ALWAYS_FALSE:
-        case KeyCondition::RPNElement::ALWAYS_TRUE:
-            return false;
-    }
+    mask.can_be_null = can_be_null;
+
+    if (mask.can_be_true && element.bloom_filter_data && column_index_to_column_bf)
+        mask.can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, *column_index_to_column_bf);
+
+    /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+    /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
+    /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
+    /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
+    /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
+    /// Therefore, we must set `can_be_false = true` to be safe.
+    /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+    if (element.relaxed)
+        mask.can_be_false = true;
+
+    if (element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
+        || element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET
+        || element.function == KeyCondition::RPNElement::FUNCTION_IS_NULL)
+        mask = !mask;
+
+    return mask;
 }
 
-}
-
-/// `WHERE` rejects a row whose comparison is NULL, so a NULL key value satisfies neither a comparison
-/// nor its negation. The two-valued range algebra of `checkInHyperrectangle` cannot express that: "no
-/// NULL row lies inside the range" turns, under negation, into "every row lies outside it", which
-/// reports a granule of NULLs as wholly matching a negated comparison - and the exact-count
-/// optimization then counts the very rows the `WHERE` throws away. So the exactness of the whole
-/// analysis is gone as soon as one such atom reads a `Nullable` key column whose range may hold a
-/// NULL, or a composite key column whose values may carry a nested `NULL` or `NaN`, which is the same
-/// "neither true nor false" at row level. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
-/// the algebra describes them exactly. Only `can_be_false` is affected; `can_be_true`, and with it
-/// every pruning decision, is left alone.
-bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
-{
-    for (const auto & element : expandAtomGroups(rpn))
-    {
-        if (!atomIsNullForNullArgument(element.function))
-            continue;
-
-        for (size_t key_column : element.key_columns)
-            if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(element, hyperrectangle[key_column], key_types, key_column))
-                return true;
-    }
-
-    return false;
-}
-
-/// The same over the sparse representation of the primary index, where a key column is addressed by
-/// its position among the columns the index resolves. A key column it does not resolve is checked as the
-/// whole universe, except by a range atom, which answers `(true, true)` for such a column.
-bool KeyCondition::mayReadNullKeyValue(
-    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & key_types) const
-{
-    for (const auto & element : expandAtomGroups(rpn))
-    {
-        if (!atomIsNullForNullArgument(element.function))
-            continue;
-
-        for (size_t key_column : element.key_columns)
-        {
-            if (key_column >= key_col_to_sparse_pos.size() || key_col_to_sparse_pos[key_column] == -1)
-            {
-                if (element.function != RPNElement::FUNCTION_IN_RANGE && element.function != RPNElement::FUNCTION_NOT_IN_RANGE
-                    && rangeOfKeyColumnMayHoldNull(element, Range::createWholeUniverse(), key_types, key_column))
-                    return true;
-                continue;
-            }
-
-            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_column]);
-            if (sparse_pos < sparse_hyperrectangle.size()
-                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], key_types, key_column))
-                return true;
-        }
-    }
-
-    return false;
 }
 
 bool KeyCondition::fieldHasNullInside(const Field & field)
@@ -8309,6 +8353,77 @@ bool KeyCondition::fieldHasNullInside(const Field & field)
     }
 }
 
+std::optional<BoolMask> KeyCondition::checkRangeAtomInKeyRange(
+    const RPNElement & element, const Range & key_column_range, const DataTypes & key_types, size_t key_position) const
+{
+    /// Avoid copying Range when there is no monotonic function chain (the common case).
+    const Range * key_range_ptr = &key_column_range;
+    std::optional<Range> key_range_storage;
+
+    /// A NULL nested in a `Tuple` key value is stored above every value of its element, while
+    /// `Field` order puts it below them, so the upper bound comes out in `Field` order below
+    /// rows the key stores under it: `(2, 3)` is above `(2, NULL)`. The upper bound is widened to
+    /// `+inf`, which claims nothing about the column. A lower bound holding such a NULL only
+    /// comes out lower and needs no widening.
+    const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
+    if (unlikely(upper_bound_widened))
+    {
+        key_range_storage = *key_range_ptr;
+        key_range_storage->right = POSITIVE_INFINITY;
+        key_range_storage->right_included = true;
+        key_range_ptr = &*key_range_storage;
+    }
+
+    /// The case when the column is wrapped in a chain of possibly monotonic functions.
+    if (!element.monotonic_functions_chain.empty())
+    {
+        std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+            *key_range_ptr,
+            element.monotonic_functions_chain,
+            element.first_function_number,
+            key_types[key_position],
+            single_point
+        );
+
+        if (!new_range)
+            return {};
+        key_range_storage = *new_range;
+        key_range_ptr = &*key_range_storage;
+    }
+
+    const Range & key_range = *key_range_ptr;
+
+    bool intersects = element.range.intersectsRange(key_range);
+    bool contains = element.range.containsRange(key_range);
+
+    /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+    /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+    /// analysis may incorrectly include NaN values.
+    /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+    ///   so no comparison condition can be true.
+    /// - If only right bound is NaN: the range extends into NaN territory,
+    ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+    /// - A NaN or a NULL nested in a Tuple bound - the bound of a whole-tuple key comparison - is
+    ///   invisible to `Field::isNaN` and `Field::isNull`, and key order does not reproduce the
+    ///   row-level comparison for it either, so the containment claim is dropped.
+    ///   `intersects` is left alone: keeping the granule is the safe direction.
+    if (unlikely(key_range.left.isNaN()))
+    {
+        intersects = false;
+        contains = false;
+    }
+    else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
+    {
+        contains = false;
+    }
+    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
+    {
+        contains = false;
+    }
+
+    return BoolMask(intersects, !contains);
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -8325,9 +8440,15 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
+    const auto may_be_null = [&](const RPNElement & element)
+    {
+        return atomMayBeNull(
+            element, data_types, [&](size_t key_column) { return key_column < hyperrectangle.size() ? &hyperrectangle[key_column] : nullptr; });
+    };
+
     /// Pushes the mask of an atom or a constant onto `rpn_stack`, or applies a logical operator to it.
     /// Returns false when the element cannot be evaluated on the hyperrectangle. The pushed mask
-    /// `(true, true)` then claims nothing, and the element is reported as unknown, so it does not replace
+    /// `(true, true, true)` then allows every value, and the element is reported as unknown, so it does not replace
     /// the result that another index reported for it.
     const auto apply_element = [&](const RPNElement & element) -> bool
     {
@@ -8335,12 +8456,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
             /// we cannot process it.
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
             return false;
         }
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
             return false;
         }
 
@@ -8350,98 +8471,17 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
-            /// Avoid copying Range when there is no monotonic function chain (the common case).
-            const Range * key_range_ptr = &hyperrectangle[key_column];
-            std::optional<Range> key_range_storage;
-
-            /// A NULL nested in a `Tuple` key value is stored above every value of its element, while
-            /// `Field` order puts it below them, so the upper bound comes out in `Field` order below
-            /// rows the key stores under it: `(2, 3)` is above `(2, NULL)`. The upper bound is widened to
-            /// `+inf`, which claims nothing about the column. A lower bound holding such a NULL only
-            /// comes out lower and needs no widening.
-            const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
-            if (unlikely(upper_bound_widened))
+            const auto mask = checkRangeAtomInKeyRange(element, hyperrectangle[key_column], data_types, key_column);
+            if (!mask)
             {
-                key_range_storage = *key_range_ptr;
-                key_range_storage->right = POSITIVE_INFINITY;
-                key_range_storage->right_included = true;
-                key_range_ptr = &*key_range_storage;
+                rpn_stack.emplace_back(true, true, true);
+                return false;
             }
-
-            /// The case when the column is wrapped in a chain of possibly monotonic functions.
-            if (!element.monotonic_functions_chain.empty())
-            {
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range_ptr,
-                    element.monotonic_functions_chain,
-                    element.first_function_number,
-                    data_types[key_column],
-                    single_point
-                );
-
-                if (!new_range)
-                {
-                    rpn_stack.emplace_back(true, true);
-                    return false;
-                }
-                key_range_storage = *new_range;
-                key_range_ptr = &*key_range_storage;
-            }
-
-            const Range & key_range = *key_range_ptr;
-
-            bool intersects = element.range.intersectsRange(key_range);
-            bool contains = element.range.containsRange(key_range);
-
-            /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-            /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-            /// analysis may incorrectly include NaN values.
-            /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-            ///   so no comparison condition can be true.
-            /// - If only right bound is NaN: the range extends into NaN territory,
-            ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-            /// - A NaN or a NULL nested in a Tuple bound - the bound of a whole-tuple key comparison - is
-            ///   invisible to `Field::isNaN` and `Field::isNull`, and key order does not reproduce the
-            ///   row-level comparison for it either, so the containment claim is dropped.
-            ///   `intersects` is left alone: keeping the granule is the safe direction.
-            if (unlikely(key_range.left.isNaN()))
-            {
-                intersects = false;
-                contains = false;
-            }
-            else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
-            {
-                contains = false;
-            }
-            else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
-            {
-                contains = false;
-            }
-
-            rpn_stack.emplace_back(intersects, !contains);
-
-            // we don't create bloom_filter_data if monotonic_functions_chain is present
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
-            {
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-            }
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
-            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
-            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
-            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(element, *mask, may_be_null(element), &column_index_to_column_bf));
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
         {
@@ -8476,7 +8516,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8541,17 +8581,17 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         }
                     }
 
-                    rpn_stack.emplace_back(mask);
+                    rpn_stack.emplace_back(mask.can_be_true, mask.can_be_false, may_be_null(element));
                 }
                 else
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return false;
                 }
             }
             else
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8592,7 +8632,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
                 if (element.key_columns[0] >= hyperrectangle.size())
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return false;
                 }
 
@@ -8602,7 +8642,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return false;
                 }
 
@@ -8617,7 +8657,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8639,13 +8679,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (disjoint)
             {
                 // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
-                rpn_stack.emplace_back(false, true);
+                rpn_stack.emplace_back(false, true, may_be_null(element));
                 return true;
             }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
-            rpn_stack.emplace_back(intersects, true);
+            rpn_stack.emplace_back(intersects, true, may_be_null(element));
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -8654,7 +8694,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8664,13 +8704,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(*key_range);
             bool contains = element.range.containsRange(*key_range);
 
-            rpn_stack.emplace_back(intersects, !contains);
-
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_IS_NULL)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), may_be_null(element), nullptr));
         }
         else if (
             element.function == RPNElement::FUNCTION_IN_SET
@@ -8720,21 +8754,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, element.first_function_number, single_point));
-
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
-            {
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-            }
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(
+                element,
+                element.set_index->checkInRange(hyperrectangle, data_types, element.first_function_number, single_point),
+                may_be_null(element),
+                &column_index_to_column_bf));
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -8802,9 +8826,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
-    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(hyperrectangle, data_types)))
-        rpn_stack[0].can_be_false = true;
-
     return rpn_stack[0];
 }
 
@@ -8823,6 +8844,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return {is_key_col_present, sparse_pos};
     };
 
+    const auto may_be_null = [&](const RPNElement & element)
+    {
+        const auto sparse_range = [&](size_t key_column)
+        {
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+            return is_key_col_present && sparse_pos < sparse_hyperrectangle.size() ? &sparse_hyperrectangle[sparse_pos] : nullptr;
+        };
+        return atomMayBeNull(element, key_types, sparse_range);
+    };
+
     auto curve_type = [&](size_t key_column_pos)
     {
         for (const auto & curve : key_space_filling_curves)
@@ -8838,11 +8869,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
             /// we cannot process it.
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
         }
         else if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
               || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
@@ -8853,79 +8884,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!is_key_col_present)
             {
                 /// Column not represented – treat as unknown for index pruning.
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
             }
             else
             {
-                /// The upper bound is widened when it holds a nested NULL, as in the overload above.
-                Range sparse_key_range = sparse_hyperrectangle[sparse_pos];
-                const bool upper_bound_widened = fieldHasNullInside(sparse_key_range.right);
-                if (unlikely(upper_bound_widened))
-                {
-                    sparse_key_range.right = POSITIVE_INFINITY;
-                    sparse_key_range.right_included = true;
-                }
-
-                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
-                /// the helper returns the range unchanged.
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    std::move(sparse_key_range),
-                    element.monotonic_functions_chain,
-                    element.first_function_number,
-                    sparse_data_types[sparse_pos],
-                    single_point);
-
-                if (!new_range)
-                {
-                    /// Cannot determine monotonicity on this range – unknown.
-                    rpn_stack.emplace_back(true, true);
-                }
-                else
-                {
-                    const Range & key_range = *new_range;
-
-                    bool intersects = element.range.intersectsRange(key_range);
-                    bool contains = element.range.containsRange(key_range);
-
-                    /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                    /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-                    /// analysis may incorrectly include NaN values.
-                    /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                    ///   so no comparison condition can be true.
-                    /// - If only right bound is NaN: the range extends into NaN territory,
-                    ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                    /// - A NaN or a NULL nested in a Tuple bound is invisible to `Field::isNaN` and
-                    ///   `Field::isNull`, so only the containment claim is dropped.
-                    if (unlikely(key_range.left.isNaN()))
-                    {
-                        intersects = false;
-                        contains = false;
-                    }
-                    else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
-                    {
-                        contains = false;
-                    }
-                    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
-                    {
-                        contains = false;
-                    }
-
-                    rpn_stack.emplace_back(intersects, !contains);
-                }
+                /// A chain that can't be applied to the range leaves the atom unknown.
+                const auto mask = checkRangeAtomInKeyRange(element, sparse_hyperrectangle[sparse_pos], sparse_data_types, sparse_pos);
+                rpn_stack.push_back(mask ? atomMask(element, *mask, may_be_null(element), nullptr) : BoolMask(true, true, true));
             }
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
-            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
-            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
-            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
-                rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
         {
@@ -8962,7 +8928,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (!is_key_col_present)
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
             }
             else
             {
@@ -9027,16 +8993,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             }
                         }
 
-                        rpn_stack.emplace_back(mask);
+                        rpn_stack.emplace_back(mask.can_be_true, mask.can_be_false, may_be_null(element));
                     }
                     else
                     {
-                        rpn_stack.emplace_back(true, true);
+                        rpn_stack.emplace_back(true, true, true);
                     }
                 }
                 else
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                 }
             }
 
@@ -9079,7 +9045,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
                 if (!is_key_col_present)
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return;
                 }
 
@@ -9096,7 +9062,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (!is_x_key_col_present && !is_y_key_col_present)
                 {
                     /// Neither coordinate is available — nothing to prune on.
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return;
                 }
 
@@ -9127,7 +9093,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return;
             }
 
@@ -9149,13 +9115,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (disjoint)
             {
                 // Index box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
-                rpn_stack.emplace_back(false, true);
+                rpn_stack.emplace_back(false, true, may_be_null(element));
                 return;
             }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
-            rpn_stack.emplace_back(intersects, true);
+            rpn_stack.emplace_back(intersects, true, may_be_null(element));
         }
         else if (element.function == RPNElement::FUNCTION_IS_NULL
               || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
@@ -9165,7 +9131,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (!is_key_col_present)
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
             }
             else
             {
@@ -9175,13 +9141,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 bool intersects = element.range.intersectsRange(*key_range);
                 bool contains   = element.range.containsRange(*key_range);
 
-                rpn_stack.emplace_back(intersects, !contains);
-
-                if (element.relaxed)
-                    rpn_stack.back().can_be_false = true;
-
-                if (element.function == RPNElement::FUNCTION_IS_NULL)
-                    rpn_stack.back() = !rpn_stack.back();
+                rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), may_be_null(element), nullptr));
             }
         }
         else if (element.function == RPNElement::FUNCTION_IN_SET
@@ -9231,17 +9191,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(
-                key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, element.first_function_number, single_point));
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(
+                element,
+                element.set_index->checkInRange(
+                    key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, element.first_function_number, single_point),
+                may_be_null(element),
+                nullptr));
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -9293,9 +9248,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
-
-    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, key_types)))
-        rpn_stack[0].can_be_false = true;
 
     return rpn_stack[0];
 }
