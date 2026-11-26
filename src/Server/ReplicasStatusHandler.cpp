@@ -1,5 +1,6 @@
 #include <Server/ReplicasStatusHandler.h>
 
+#include <Common/FailPoint.h>
 #include <Common/quoteString.h>
 #include <Core/ServerSettings.h>
 #include <Databases/IDatabase.h>
@@ -33,6 +34,11 @@ namespace ErrorCodes
 {
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_IS_READ_ONLY;
+}
+
+namespace FailPoints
+{
+    extern const char replicas_status_replica_turns_readonly[];
 }
 
 ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(server.context())
@@ -87,6 +93,11 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 {
                     try
                     {
+                        /// Stands for a replica shut down between the check above and the call below.
+                        fiu_do_on(FailPoints::replicas_status_replica_turns_readonly,
+                        {
+                            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (failpoint)");
+                        });
                         table_replicated->getReplicaDelays(absolute_delay, relative_delay);
                     }
                     catch (const Exception & e)
