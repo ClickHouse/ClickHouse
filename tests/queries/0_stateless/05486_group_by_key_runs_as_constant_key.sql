@@ -1,6 +1,6 @@
 -- Blocks whose only `GROUP BY` key, of 2, 4 or 8 bytes or a `FixedString(1)`, holds one value or a few long runs of values
 -- are aggregated like a constant key.
--- Every cell compares the result with `optimize_group_by_constant_keys = 0` by `EXCEPT ALL` in both directions and prints 0.
+-- Most cells compare the result with `optimize_group_by_constant_keys = 0` by `EXCEPT ALL` in both directions and print 0.
 
 SET max_threads = 1;
 SET max_threads_min_free_memory_per_thread = 0;
@@ -164,7 +164,8 @@ SELECT count() FROM
 );
 
 -- Part `p` holds keys `4p` to `4p + 20` in runs of 10000 rows, so `GROUP BY k LIMIT 3` refuses new keys in the middle
--- of the streams; every returned key must carry the values of the full `GROUP BY`.
+-- of the streams; every returned key must carry the values of the full `GROUP BY`. Plan-based parallel replicas undercount
+-- them also with the setting off: https://github.com/ClickHouse/ClickHouse/issues/122607
 SELECT 'GROUP BY LIMIT keeps exact keys';
 DROP TABLE IF EXISTS t_key_runs_kept;
 CREATE TABLE t_key_runs_kept (p UInt8, k UInt32, v UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
@@ -175,7 +176,8 @@ INSERT INTO t_key_runs_kept SELECT 3, 12 + intDiv(number, 10000), number + 30000
 SELECT count(), countIf(lim.c != f.c OR lim.s != f.s OR lim.b != f.b)
 FROM (SELECT k, count() AS c, sum(v) AS s, groupBitmap(v) AS b FROM t_key_runs_kept GROUP BY k LIMIT 3) AS lim
 INNER JOIN (SELECT k, count() AS c, sum(v) AS s, groupBitmap(v) AS b FROM t_key_runs_kept GROUP BY k) AS f ON lim.k = f.k
-SETTINGS enable_group_by_top_k_optimization = 0, max_threads = 4, max_block_size = 65536, optimize_trivial_group_by_limit_query = 1, exact_rows_before_limit = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 1;
+SETTINGS enable_group_by_top_k_optimization = 0, max_threads = 4, max_block_size = 65536, optimize_trivial_group_by_limit_query = 1, exact_rows_before_limit = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 1,
+    parallel_replicas_plan_based = 0;
 DROP TABLE t_key_runs_kept;
 
 -- Four runs of 1024 rows in one block; each run of the sparse `v` ends with its only non-default values, 1 and 2, so a
