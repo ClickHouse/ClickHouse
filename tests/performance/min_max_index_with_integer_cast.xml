@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: ALIAS columns. -->
     <!-- A minmax skip index is analyzed through an integer conversion of the indexed column: into `DateTime`
          from a wider or signed integer, between signed and unsigned integers, into `Bool`, or of a `Nullable` column.
          The conversion is evaluated on the bounds of every granule. -->
