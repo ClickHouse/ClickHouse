@@ -28,87 +28,83 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationBucketsRetired {#adaptiveaggregationbucketsretired}
 
-在自身的合并与转换完成后、整个合并尚未结束时，其工作内存 (arena slot、暂存块引用) 即被回收的两级桶数量。
+自适应聚合的合并过程在桶的最后一个单元完成转换后，随即释放其内存分配区槽位的两级分桶数量。该槽位每次仅保存一个单元的已合并状态，因此此前每个单元的状态都会在该单元自身转换完成后释放。
+
+### AdaptiveAggregationCountFirstUnits {#adaptiveaggregationcountfirstunits}
+
+自适应聚合中先统计各分组计数、再仅为计数排名靠前的分组构建其他聚合状态的合并单元数量。采用这种方式是因为该聚合的结果会传给 `ORDER BY count() LIMIT n`，而其最终转换只会保留这些分组。
 
 ### AdaptiveAggregationDrainedRecords {#adaptiveaggregationdrainedrecords}
 
-自适应聚合在合并时排空到共享表的延迟记录数。
+自适应聚合排空到合并所用表中的暂存记录数。
 
-### AdaptiveAggregationGiveUps {#adaptiveaggregationgiveups}
+### AdaptiveAggregationFrozenTableSpills {#adaptiveaggregationfrozentablespills}
 
-在自适应聚合中，因自身数据流包含的不同键较少而放弃冻结的线程数。
+自适应聚合线程将其已冻结的本地表写入磁盘的次数。触发原因包括：该表的聚合状态持续增长期间，查询超过了外部聚合阈值；或内存调度器请求落盘。
 
 ### AdaptiveAggregationLocalFreezes {#adaptiveaggregationlocalfreezes}
 
 自适应聚合在达到冻结阈值时冻结的本地哈希表数量。
 
-### AdaptiveAggregationPressureDrainedRecords {#adaptiveaggregationpressuredrainedrecords}
+### AdaptiveAggregationMergeUnits {#adaptiveaggregationmergeunits}
 
-自适应聚合在内存压力下提前排空的暂存记录数。
-
-### AdaptiveAggregationPressureStandDowns {#adaptiveaggregationpressurestanddowns}
-
-自适应聚合中有多少线程因内存压力超过外部聚合阈值而彻底退出学习阶段，从而使其本地表通过普通的外部聚合方式落盘。
-
-### AdaptiveAggregationPressureSweeps {#adaptiveaggregationpressuresweeps}
-
-自适应聚合因内存压力而提前排空暂存记录的次数。
+自适应聚合已合并并转换的合并单元数。合并单元是指两级分桶中在同一张表内合并的分区连续序列。
 
 ### AdaptiveAggregationProbeBypasses {#adaptiveaggregationprobebypasses}
 
 在自适应聚合中，因几乎没有行命中而停止探测其已冻结本地表的线程数。
 
-### AdaptiveAggregationResidueReleases {#adaptiveaggregationresiduereleases}
+### AdaptiveAggregationPrunedRecords {#adaptiveaggregationprunedrecords}
 
-自适应聚合将其共享的排空表写出的次数：当某个已退回基线算法的线程因该表即将落盘时触发。
+自适应聚合在合并时已跳过的暂存记录数，原因是按 `count`、`uniqExact` 或 `uniqExactIf` 计算的 top-K 结果不需要这些记录中的任何分组。
 
-### AdaptiveAggregationSealedChunks {#adaptiveaggregationsealedchunks}
+### AdaptiveAggregationPrunedUnits {#adaptiveaggregationprunedunits}
 
-自适应聚合从缓冲的暂存批次中封存的合并块数量。
+自适应聚合未经排空即直接跳过的合并单元数量。跳过的原因是基于 `count`、`uniqExact` 或 `uniqExactIf` 的 top-K 不需要这些单元中的任何分组：要么这些单元的计数分配桶的上边界低于降序 top-K 的阈值，要么升序 top-K 已找到足够多具有最小可能排名的分组。
 
-### AdaptiveAggregationSealNormalizations {#adaptiveaggregationsealnormalizations}
+### AdaptiveAggregationSpilledBytes {#adaptiveaggregationspilledbytes}
 
-自适应聚合的 seal 阶段将多少个暂存的参数列从包装表示形式 (Const、Replicated、Sparse、LowCardinality) 归一化为排空阶段所消费的密集形式。
+自适应聚合在内存压力下落盘的暂存记录字节数 (压缩前) 。
 
-### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
+### AdaptiveAggregationSpilledRecords {#adaptiveaggregationspilledrecords}
 
-自适应聚合在内存压力下、达到分片上限时或收到显式落盘请求时，将其共享排出表落盘的次数。
+自适应聚合在内存压力下写入磁盘的暂存记录数。
 
-### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
+### AdaptiveAggregationSpills {#adaptiveaggregationspills}
 
-自适应聚合丢弃暂存积压的次数：当某个运行在基线算法上的线程 (可能是被解冻后重新放回该算法的线程，也可能是自行退出的线程) 即将落盘，而暂存记录仍驻留在内存中时，即会发生此情况。
-
-### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
-
-自适应聚合通过将暂存记录或共享排空残留数据写入磁盘 (而非退出自适应路径) 来响应内存调度器落盘请求的次数。
+自适应聚合线程因查询超过外部聚合阈值或内存调度器请求落盘，而将其暂存记录写入磁盘的次数。
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
-自适应聚合为合并时排空(drain)暂存的 key 字节数。
-
-### AdaptiveAggregationStagedChunkPiecesOverBound {#adaptiveaggregationstagedchunkpiecesoverbound}
-
-自适应聚合发布的、由暂存块切分而来的分片中，仍然超出该块切分时所要满足的边界的分片数量。块按桶边界切分；若某个桶自身就超出边界，则在桶内逐条记录切分，因此这类分片就是单条记录，其暂存字节本身已超出边界；此类分片只能整体认领，其排空量可能因此超出压力分片相应的幅度。
-
-### AdaptiveAggregationStagedChunkSplits {#adaptiveaggregationstagedchunksplits}
-
-自适应聚合在 publication 时沿桶边界切分暂存块的次数：因为某个块的排空量估计超过了压力分片上限。
-
-### AdaptiveAggregationStagedClaimsClosedAtBound {#adaptiveaggregationstagedclaimsclosedatbound}
-
-adaptive aggregation 的排空过程对暂存块发起的 claim 中，有多少次在遇到某个块之前就已关闭——该块一旦加入，批次就会触及压力分片的界限，因此该块被留给下一次 claim。该界限是针对排空后的批次而言的，因此两个各自刚好不到界限的块 (即一个被切分块的两部分，每部分仅比半个分片多出单条记录) 会被排空到两个表中，而不是一个表；只有单独就已超出界限的首个块才会被无条件 claim。
+自适应聚合暂存到其分区缓冲区中的 key 字节数。
 
 ### AdaptiveAggregationStagedRecords {#adaptiveaggregationstagedrecords}
 
-自适应聚合在去重前暂存的延迟记录数。
-
-### AdaptiveAggregationStagedRecordsMerged {#adaptiveaggregationstagedrecordsmerged}
-
-自适应聚合在 publish 和 seal 阶段因键重复而合并掉的暂存记录数。
+自适应聚合暂存到其分区缓冲区中的延迟记录数。
 
 ### AdaptiveAggregationThaws {#adaptiveaggregationthaws}
 
 由于暂存 stream 被判定为以重复数据为主，自适应聚合解冻本地表的次数。
+
+### AdaptiveCodecBlocksPriced {#adaptivecodecblockspriced}
+
+自适应编解码器选择从一开始就进行评估的块数量，即用每个候选编解码器分别压缩这些块，并保留输出最小的结果。
+
+### AdaptiveCodecBlocksRepriced {#adaptivecodecblocksrepriced}
+
+先前记录的最优编解码器在某些块上失去优势后，自适应编解码器选择对这些块重新评估代价的次数 (按块计) 。
+
+### AdaptiveCodecBlocksReused {#adaptivecodecblocksreused}
+
+自适应编解码器选择仅使用先前记录的最优编解码器压缩的块数。
+
+### AdaptiveCodecBytesDefault {#adaptivecodecbytesdefault}
+
+自适应编解码器选择过程中，默认编解码器在样本块上产生的压缩后字节数；每个由 `adaptive_codec_selection_period` 个块组成的窗口计一次。
+
+### AdaptiveCodecBytesWritten {#adaptivecodecbyteswritten}
+
+自适应编解码器选择在其样本块上写入的压缩后字节数。该值与 `AdaptiveCodecBytesDefault` 的比率反映了相对于默认编解码器节省的空间。
 
 ### AddressesDiscovered {#addressesdiscovered}
 
@@ -142,6 +138,10 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 在转换聚合的两级桶时，由于针对该分组自身 count() 的 HAVING 边界条件已将其排除 (即 aggregationHavingPrefilter 查询计划优化) ，因而未物化其键列的分组数量。
 
+### AggregationIndexedTables {#aggregationindexedtables}
+
+已按哈希值分区为其单元建立索引的单级聚合哈希表数量。建立索引后，合并操作可直接读取表中某一部分的单元，而无需将表转换为两级结构或遍历整个表。自适应聚合会在每个线程结束时，为该线程的单级表建立索引。
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 应用了键等值范围优化的块数
@@ -156,7 +156,7 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
-受简单 GROUP BY LIMIT 截断后共享的保留键集合限制的哈希表，在外部聚合将其刷写到临时 File 后，重新填入这些键的次数 (参见 `optimize_trivial_group_by_limit_query` 设置) 。
+在 `group_by_overflow_mode = any` 下已停止接纳新键的哈希表，在外部聚合将其刷写到临时 File 后，重新填入其保留键的次数，以便继续聚合这些键的剩余行。既涵盖简单 GROUP BY LIMIT 截断阈值对应的共享集合 (参见 `optimize_trivial_group_by_limit_query` 设置) ，也涵盖普通 `max_rows_to_group_by` 上限对应的每个 stream 各自的集合。
 
 ### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
 
@@ -190,9 +190,29 @@ top-K 阈值合并过程中完全未被访问的各线程哈希表单元数量�
 
 发送到 AI 提供商的 HTTP 请求数量。
 
+### AIAPICallsFailed {#aiapicallsfailed}
+
+在用尽所有重试后仍失败的 AI 服务提供商请求数。
+
+### AIAPICallsRetried {#aiapicallsretried}
+
+因瞬时故障而重试的 AI 服务提供商请求次数。
+
+### AIAPICallsThrottled {#aiapicallsthrottled}
+
+因 HTTP 429 (Too Many Requests) 而被拒绝的 AI 服务提供商请求数。
+
+### AICacheReadTokens {#aicachereadtokens}
+
+AI 聊天提供商报告的、从提供商缓存中读取的提示词标记数量。该值已计入 AIInputTokens。
+
+### AICacheWriteTokens {#aicachewritetokens}
+
+AI 聊天提供商报告的已写入提供商缓存的提示词标记数。已计入 AIInputTokens。
+
 ### AIInputTokens {#aiinputtokens}
 
-该查询中所有 AI 函数调用消耗的提示词标记总数。
+该查询中所有 AI 函数调用消耗的提示词标记总数，包括缓存读取和写入。
 
 ### AIORead {#aioread}
 
@@ -214,6 +234,14 @@ top-K 阈值合并过程中完全未被访问的各线程哈希表单元数量�
 
 通过 Linux 或 FreeBSD 的 AIO 接口写入的字节数
 
+### AIRequestMicroseconds {#airequestmicroseconds}
+
+向 AI 服务提供商发起请求所花费的总时间，包括失败的尝试和响应解析，但不包括重试退避时间。该值为所有线程的累计总和。
+
+### AIRetryBackoffMicroseconds {#airetrybackoffmicroseconds}
+
+重试失败的 AI 服务提供商请求前所等待的总时间。该值为所有线程的累加值。
+
 ### AIRowsProcessed {#airowsprocessed}
 
 获得 AI 结果的行数。
@@ -229,6 +257,38 @@ top-K 阈值合并过程中完全未被访问的各线程哈希表单元数量�
 ### AllUsersThrottlerSleepMicroseconds {#allusersthrottlersleepmicroseconds}
 
 查询因遵守“max&#95;network&#95;bandwidth&#95;for&#95;all&#95;users”限流而休眠的总时长。
+
+### AmberConnectionsCreated {#amberconnectionscreated}
+
+Amber 已创建的连接数
+
+### AmberConnectionsElapsedMicroseconds {#amberconnectionselapsedmicroseconds}
+
+为 Amber 创建连接所耗费的总时间
+
+### AmberConnectionsErrors {#amberconnectionserrors}
+
+为 Amber 创建连接失败的次数
+
+### AmberConnectionsExpired {#amberconnectionsexpired}
+
+Amber 中已过期连接的数量
+
+### AmberConnectionsPreserved {#amberconnectionspreserved}
+
+Amber 保留的连接数
+
+### AmberConnectionsReset {#amberconnectionsreset}
+
+Amber 中被重置的连接数
+
+### AmberConnectionsReused {#amberconnectionsreused}
+
+Amber 复用的连接数
+
+### AmberFailedPromotions {#amberfailedpromotions}
+
+该节点已获取 amber 主锁，但未能对卷完成隔离 (fence) 和恢复、因而放弃该锁的次数。
 
 ### AnalyzePatchRangesMicroseconds {#analyzepatchrangesmicroseconds}
 
@@ -428,7 +488,7 @@ top-K 阈值合并过程中完全未被访问的各线程哈希表单元数量�
 
 ### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
 
-从存储中读取的行数与已缓存的统计信息相差超过 2 倍，导致自动并行副本不作决策、转而重新收集统计信息的次数
+从存储中读取的行数与已缓存的统计信息相差超过 `automatic_parallel_replicas_statistics_drift_ratio`，导致自动并行副本不作决策、转而重新收集统计信息的次数
 
 ### AzureClients {#azureclients}
 
@@ -634,17 +694,33 @@ BlobCopier 线程执行次数
 
 BlobKiller 执行期间发生的 blob 加锁错误数量
 
+### BlobKillerThreadLockedBatchedBlobs {#blobkillerthreadlockedbatchedblobs}
+
+从元数据存储中以批次形式返回的二进制大对象数量
+
 ### BlobKillerThreadLockedBlobs {#blobkillerthreadlockedblobs}
 
 元数据存储返回的 blob 数量
+
+### BlobKillerThreadLockedSingleBlobs {#blobkillerthreadlockedsingleblobs}
+
+从元数据存储中逐个返回的二进制大对象数量
 
 ### BlobKillerThreadRecordBlobsErrors {#blobkillerthreadrecordblobserrors}
 
 BlobKiller 执行期间发生的 blob 记录错误次数
 
+### BlobKillerThreadRecordedBatchedBlobs {#blobkillerthreadrecordedbatchedblobs}
+
+以批次方式移除、且 BlobKiller 的移除操作已记录到元数据存储中的二进制大对象数量
+
 ### BlobKillerThreadRecordedBlobs {#blobkillerthreadrecordedblobs}
 
 BlobKiller 已将其删除操作记录到元数据存储中的 blob 数量
+
+### BlobKillerThreadRecordedSingleBlobs {#blobkillerthreadrecordedsingleblobs}
+
+逐个移除、且 BlobKiller 的移除操作已记录到元数据存储中的二进制大对象数量
 
 ### BlobKillerThreadRemoveBlobsErrors {#blobkillerthreadremoveblobserrors}
 
@@ -837,6 +913,18 @@ Common executor 任务在 `executeStep()` 中的耗时。
 ### CompressedReadBufferChecksumDoesntMatchSingleBitMismatch {#compressedreadbufferchecksumdoesntmatchsinglebitmismatch}
 
 因单个比特差异导致压缩块校验和不匹配的次数。
+
+### CompressedWriteBufferBlocks {#compressedwritebufferblocks}
+
+`CompressedWriteBuffer` (用于文件、网络、临时数据) 写入的压缩块数量 (压缩块是指彼此独立压缩的数据块) 。
+
+### CompressedWriteBufferBytes {#compressedwritebufferbytes}
+
+由 `CompressedWriteBuffer` 传递给压缩编解码器的未压缩字节数 (即压缩前的字节数) 。
+
+### CompressedWriteBufferCompressMicroseconds {#compressedwritebuffercompressmicroseconds}
+
+在 `CompressedWriteBuffer` 中执行压缩编解码器所耗费的总时间。
 
 ### ConcurrencyControlDownscales {#concurrencycontroldownscales}
 
@@ -1269,6 +1357,18 @@ Azure 磁盘写入请求被限流的数量。
 
 S3ObjectStorage 中由 &#39;plain&#95;rewritable&#39; 元数据存储移除的目录数量。
 
+### DiskPlainRewritableSnapshotRead {#diskplainrewritablesnapshotread}
+
+只读 &#39;plain&#95;rewritable&#39; 磁盘从快照文件加载状态 (而非列出对象存储) 的次数 (若刷新时发现快照未发生变化，则不会读取快照，也不计入该次数) 。
+
+### DiskPlainRewritableSnapshotWriteFailed {#diskplainrewritablesnapshotwritefailed}
+
+写入 &#39;plain&#95;rewritable&#39; 磁盘的快照文件失败的尝试次数 (失败后会重试写入) 。
+
+### DiskPlainRewritableSnapshotWritten {#diskplainrewritablesnapshotwritten}
+
+由 &#39;plain&#95;rewritable&#39; 磁盘写入的快照文件数量。
+
 ### DiskPlainRewritableUndoStageRetries {#diskplainrewritableundostageretries}
 
 因对象存储拒绝请求，回滚失败的 &#39;plain&#95;rewritable&#39; 元数据事务时某个 step 必须重试的次数。
@@ -1433,6 +1533,14 @@ Distributed Cache 客户端事件。表示在发出请求前连接分布式缓�
 
 分布式缓存连接事件。连接分布式缓存所耗费的时间
 
+### DistrCacheEndRequestMicroseconds {#distrcacheendrequestmicroseconds}
+
+Distributed Cache 客户端事件。向分布式缓存发送 EndRequest 数据包所耗费的时间
+
+### DistrCacheEndRequestNotSentSocketNotWritable {#distrcacheendrequestnotsentsocketnotwritable}
+
+Distributed Cache 客户端事件。因套接字不可写 (服务器已停止排空该套接字) 而未能发送的 EndRequest 数据包数量：此时会改为直接断开连接，由服务器检测到 EOF
+
 ### DistrCacheEstimatedInflightBytesOnSeek {#distrcacheestimatedinflightbytesonseek}
 
 分布式缓存读取缓冲区事件。在考虑丢弃 connection 的那些寻道操作时，估算的在传输中的字节数 (可与 DistrCacheUnusedDataPacketsBytesReadRangeIdChanged 对比)
@@ -1456,6 +1564,14 @@ Distributed Cache registry 事件。分布式缓存哈希环重建的次数
 ### DistrCacheInlineWrites {#distrcacheinlinewrites}
 
 分布式缓存写入缓冲区事件。在调用线程上以内联方式执行的缓存写入次数 (即临时数据的写入，这类写入没有可与之重叠的对象存储写入)
+
+### DistrCacheKeptConnectionsInflightBytes {#distrcachekeptconnectionsinflightbytes}
+
+分布式缓存读取缓冲区事件。DistrCacheKeptConnectionsWithInflightData 所统计连接的估算在途字节数 (可与 DistrCacheUnusedDataPacketsBytesUnknownRequest 对比)
+
+### DistrCacheKeptConnectionsWithInflightData {#distrcachekeptconnectionswithinflightdata}
+
+分布式缓存读取缓冲区事件。读取请求被取消但仍可能有数据到达时，因估算的在途字节数未超过 `distributed_cache_min_inflight_bytes_to_discard_connection` 而将连接保留在对象池中的次数
 
 ### DistrCacheLockRegistryMicroseconds {#distrcachelockregistrymicroseconds}
 
@@ -1525,6 +1641,10 @@ Distributed Cache 客户端事件。读取请求期间发生的不可重试分�
 
 Distributed Cache 客户端事件。读取请求期间发生的可重试分布式缓存错误数 (每次发生都会计数，包括通过重试恢复的错误)
 
+### DistrCacheReadFinalAckFailed {#distrcachereadfinalackfailed}
+
+Distributed Cache 事件。在收到最终确认前连接即已断开的读取次数；已完整接收的范围仍被接受
+
 ### DistrCacheReadMicroseconds {#distrcachereadmicroseconds}
 
 分布式缓存读取缓冲区事件。从分布式缓存读取所花费的时间
@@ -1593,6 +1713,10 @@ Distributed Cache registry 事件。分布式缓存 registry 的更新次数
 
 分布式缓存连接事件。表示从连接池中移除过期连接所耗费的时间
 
+### DistrCacheRequestsEndedOnRelease {#distrcacherequestsendedonrelease}
+
+Distributed Cache 客户端事件。客户端在释放未结束的请求时被迫自行结束这些请求 (例如发生了重新连接的重试、在未完成的请求上发起新请求，或客户端退出) ，而非由读取器显式结束这些请求的次数
+
 ### DistrCacheReusedConnections {#distrcachereusedconnections}
 
 分布式缓存连接事件。分布式缓存中复用的连接数
@@ -1657,6 +1781,10 @@ Distributed Cache 服务器事件。从文件系统缓存读取时写入分布�
 
 Distributed Cache 服务器事件。在从文件系统缓存读取时，分布式缓存中从对象存储读取的字节数。
 
+### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
+
+Distributed Cache 服务器事件。发生争用时等待已提交临时 File互斥锁所耗费的时间。
+
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
 分布式缓存服务器事件。出现竞争 (注册/注销/识别/淘汰) 时，等待单个客户端连接桶互斥锁 所花费的时间
@@ -1697,6 +1825,10 @@ Distributed Cache 服务器事件。在 DistributedCache 服务器端处理请�
 
 Distributed Cache 服务器事件。DistributedCacheServer 中收到的 RefreshCredentials 客户端数据包数量
 
+### DistrCacheServerRequestsClosedWithoutEndRequest {#distrcacheserverrequestsclosedwithoutendrequest}
+
+Distributed Cache 服务器事件。客户端未发送 EndRequest 即关闭连接的请求数 (例如客户端已被终止、客户端套接字不可写，或客户端版本较旧) ，服务器在读到 EOF 时停止处理这些请求。由该服务器自身发起的关闭 (服务器关闭或连接淘汰) 不计入此项
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Distributed Cache 服务器事件。复用的已缓存 S3 客户端数量
@@ -1716,6 +1848,38 @@ Distributed Cache 服务器事件。表示 DistributedCacheServer 中 StartReque
 ### DistrCacheServerSwitches {#distrcacheserverswitches}
 
 分布式缓存读取缓冲区事件。在读穿/写穿缓存中，分布式缓存各服务器之间切换的次数
+
+### DistrCacheServerTemporaryCleanupScheduleFailures {#distrcacheservertemporarycleanupschedulefailures}
+
+Distributed Cache 服务器事件。已提交的临时清理调度失败次数
+
+### DistrCacheServerTemporaryDataControlMicroseconds {#distrcacheservertemporarydatacontrolmicroseconds}
+
+Distributed Cache 服务器事件。处理已提交的临时数据控制消息所耗费的时间
+
+### DistrCacheServerTemporaryFilesExpired {#distrcacheservertemporaryfilesexpired}
+
+Distributed Cache 服务器事件。已过期的已提交临时 File 数量
+
+### DistrCacheServerTemporaryFilesExtended {#distrcacheservertemporaryfilesextended}
+
+Distributed Cache 服务器事件。已提交的临时 File 生存时间 (TTL) 延长次数
+
+### DistrCacheServerTemporaryFilesPublished {#distrcacheservertemporaryfilespublished}
+
+Distributed Cache 服务器事件。已发布的已提交临时 File 数量
+
+### DistrCacheServerTemporaryFilesPublishRejected {#distrcacheservertemporaryfilespublishrejected}
+
+Distributed Cache 服务器事件。已提交的临时发布中被拒绝的数量
+
+### DistrCacheServerTemporaryFilesReleased {#distrcacheservertemporaryfilesreleased}
+
+Distributed Cache 服务器事件。已释放的已提交临时 File 数量
+
+### DistrCacheServerTemporaryReadRejected {#distrcacheservertemporaryreadrejected}
+
+Distributed Cache 服务器事件。被拒绝的已提交临时读取次数
 
 ### DistrCacheServerUpdates {#distrcacheserverupdates}
 
@@ -1745,13 +1909,65 @@ Distributed Cache registry 事件。服务器 registry 成功更新的次数
 
 Distributed Cache 客户端事件。在请求内部信息系统表 (system.distributed&#95;cache、system.distributed&#95;cache&#95;metrics、system.distributed&#95;cache&#95;events) 时发生的分布式缓存错误数量。这些请求不会重试，因此可重试错误和不可重试错误会合并统计
 
+### DistrCacheTemporaryDataRegistryCallbackFailures {#distrcachetemporarydataregistrycallbackfailures}
+
+Distributed Cache 已提交临时数据事件。其中包含的临时数据 registry 回调函数失败次数
+
+### DistrCacheTemporaryDataRegistryLockWaitMicroseconds {#distrcachetemporarydataregistrylockwaitmicroseconds}
+
+Distributed Cache 已提交临时数据事件。发生争用时，等待临时数据 registry 互斥锁所耗费的时间
+
+### DistrCacheTemporaryDataRegistryScheduleFailures {#distrcachetemporarydataregistryschedulefailures}
+
+Distributed Cache 已提交临时数据事件。临时数据 registry 任务调度失败的次数
+
+### DistrCacheTemporaryDataReleaseBatches {#distrcachetemporarydatareleasebatches}
+
+Distributed Cache 已提交临时数据事件。释放批次数
+
+### DistrCacheTemporaryDataReleaseBatchFailures {#distrcachetemporarydatareleasebatchfailures}
+
+Distributed Cache 已提交临时数据事件。释放失败的批次数量
+
+### DistrCacheTemporaryDataReleasesDropped {#distrcachetemporarydatareleasesdropped}
+
+Distributed Cache 已提交临时数据事件。因不可恢复的故障，或在重试期间超过服务端生存时间 (TTL) 而被放弃、留待 TTL 清理的释放操作数量
+
+### DistrCacheTemporaryDataRenewBatches {#distrcachetemporarydatarenewbatches}
+
+Distributed Cache 已提交临时数据事件。续订批次数
+
+### DistrCacheTemporaryDataRenewBatchFailures {#distrcachetemporarydatarenewbatchfailures}
+
+Distributed Cache 已提交临时数据事件。续订失败的批次数
+
 ### DistrCacheTemporaryFilesBytesWritten {#distrcachetemporaryfilesbyteswritten}
 
 分布式缓存连接事件。在分布式缓存中创建的临时 File 的写入字节数
 
+### DistrCacheTemporaryFilesConfirmationFailed {#distrcachetemporaryfilesconfirmationfailed}
+
+Distributed Cache 已提交临时数据相关事件。发布确认失败的次数
+
+### DistrCacheTemporaryFilesConfirmed {#distrcachetemporaryfilesconfirmed}
+
+Distributed Cache 已提交临时数据事件。在原始服务器上已确认的发布数量。
+
 ### DistrCacheTemporaryFilesCreated {#distrcachetemporaryfilescreated}
 
 分布式缓存连接事件。分布式缓存中创建的临时 File 的数量
+
+### DistrCacheTemporaryFilesHandoffFailed {#distrcachetemporaryfileshandofffailed}
+
+Distributed Cache 已提交临时数据事件。所有者移交失败的次数。
+
+### DistrCacheTemporaryFilesPublicationAmbiguous {#distrcachetemporaryfilespublicationambiguous}
+
+Distributed Cache 已提交临时数据事件。结果不明确的 publication 响应次数
+
+### DistrCacheTemporaryFilesPublished {#distrcachetemporaryfilespublished}
+
+Distributed Cache 已提交临时数据事件。客户端发布的文件数量
 
 ### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
 
@@ -2265,6 +2481,14 @@ File 段优先级提升时间
 
 等待处于 DOWNLOADING 状态的 File 段时发生超时的次数 (参见 `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+等待处于 DOWNLOADING 状态的 File 段时，因下载器尚未下载到所等待的偏移量就释放了该段，导致等待结束的次数
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+`FileSegmentWaitWithoutData` 所统计的等待耗费的时间
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 File 段 write() 耗时
@@ -2421,6 +2645,10 @@ FileCache::assertCacheCorrectness 耗费的时间
 
 写入优先队列时锁定文件系统缓存的时间
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+在 SLRU 缓存策略中，从 probationary 队列提升 (移动) 至受保护队列的 File 段数量。
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 采用预先预留 (reserve-ahead) 方式的文件系统缓存预留因空间不足而失败、随后改为严格按请求大小重试的次数
@@ -2505,9 +2733,25 @@ SQL 常规函数调用次数 (SQL 函数按块调用，因此该数值表示块�
 
 等待新线程启动的总耗时。
 
+### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
+
+PREWHERE 读取器读取的粒度数 (即执行了 PREWHERE 求值的粒度) 。即使某个粒度被拆分到多个读取块中，也只计为一次。
+
+### GranulesSkippedByPrewhereReaders {#granulesskippedbyprewherereaders}
+
+被 PREWHERE 完全排除的粒度数量，即粒度中的所有行均被过滤掉。只要粒度中至少有一行保留下来，就不计入该值。即使某个粒度被拆分到多个读取块中，也只计数一次。这是逻辑层面的过滤计数，并不表示主读取器未从该粒度中读取任何数据。
+
 ### 硬缺页错误 {#hardpagefaults}
 
 查询执行线程中的硬缺页错误数量。数值较高表明：要么你忘记在服务器上关闭 swap，要么是在内存压力极高时 ClickHouse 可执行文件的内存页被驱逐，要么是成功使用了表数据的 `mmap` 读取方法。
+
+### HashJoinBuiltWithParallelLayout {#hashjoinbuiltwithparallellayout}
+
+为哈希连接构建的、拆分为多个分片的哈希表数量。最多可由 `max_threads` 个线程同时填充这些分片；当 `max_threads = 1` 时，则由单个线程填充全部分片。哪些哈希连接采用这种方式构建，由 `parallel_hash_join_threshold` 设置决定。
+
+### HashJoinBuiltWithSerialLayout {#hashjoinbuiltwithseriallayout}
+
+为哈希连接以单个整体、逐次插入的方式构建的哈希表数量。每个哈希表只计一次，因此 Grace 哈希连接每将一个桶加载到内存中，该值就加一。另请参阅 HashJoinBuiltWithParallelLayout。
 
 ### HashJoinPreallocatedElementsInHashTables {#hashjoinpreallocatedelementsinhashtables}
 
@@ -2649,6 +2893,10 @@ Iceberg 元数据文件在 Iceberg 元数据缓存中未命中，因此必须从
 
 从存储中读取的 Iceberg `metadata.json` 文件数 (不含命中 Iceberg 元数据缓存的文件) 。
 
+### IcebergMetadataJSONValidations {#icebergmetadatajsonvalidations}
+
+检查 Iceberg `metadata.json` 是否包含 Iceberg 规范所要求字段的次数。对于从 Iceberg 元数据缓存中读取的文件，只会检查一次。
+
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
 所有读取线程在等待 Iceberg 元数据文件被读取和解析时耗费的总时间之和。
@@ -2680,6 +2928,10 @@ Iceberg 分区剪枝期间跳过的文件数量
 ### IcebergPartitionPrunedManifestFiles {#icebergpartitionprunedmanifestfiles}
 
 借助 manifest 列表中的分区摘要，被跳过而未读取的 Iceberg manifest 文件数量
+
+### IcebergRuntimeFilterPrunedFiles {#icebergruntimefilterprunedfiles}
+
+因 manifest 中记录的取值范围不可能包含 JOIN 运行时过滤器中的任何键而被跳过的 Iceberg 数据文件数量
 
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
@@ -2873,6 +3125,14 @@ NonJoinedBlocksTransform 输出的块数。
 
 执行 JOIN 执行计划优化所花费的总时间。
 
+### JoinPackedStringKeysHashed {#joinpackedstringkeyshashed}
+
+哈希连接以 128 位 `SipHash` 形式插入其哈希表的单个 `String` 连接键 (长度不小于 16 字节) 的数量 (参见 `enable_packed_string_keys_in_hash_join`) 。带有 `OR` 的连接会为每个条件各插入一个键。某一行被再次插入时会被重复计数：例如 `grace_hash` 连接拆分其桶之后，或发生溢写的连接切换为 `grace_hash` 之后。
+
+### JoinPackedStringKeysInline {#joinpackedstringkeysinline}
+
+哈希连接以内联方式插入其哈希表的单个 `String` 连接键 (长度不超过 15 字节) 的数量 (参见 `enable_packed_string_keys_in_hash_join`) 。包含 `OR` 的连接会为每个条件各插入一个键。同一行若被再次插入，则会被重复计数：例如 `grace_hash` 连接拆分其桶之后，或发生溢写的连接切换为 `grace_hash` 之后。
+
 ### JoinProbeTableRowCount {#joinprobetablerowcount}
 
 JOIN 操作中探测表中的总行数。
@@ -2887,7 +3147,11 @@ JOIN 操作结果的总行数。
 
 ### JoinSpillingHashJoinSwitchedToGraceJoin {#joinspillinghashjoinswitchedtogracejoin}
 
-在 SpillingHashJoin 中因达到内存限制而从 (Concurrent)HashJoin 切换为 GraceHashJoin 的次数。
+在 SpillingHashJoin 中因达到内存限制而从 HashJoin 切换为 GraceHashJoin 的次数。
+
+### JoinSpillingHashJoinSwitchedToMergeJoin {#joinspillinghashjoinswitchedtomergejoin}
+
+在 SpillingHashJoin 中因达到内存限制而将 HashJoin 切换为 MergeJoin 的次数。当查询计划要求连接保留左侧数据流的行顺序时，会选用 MergeJoin 而非 GraceHashJoin。
 
 ### KafkaBackgroundReads {#kafkabackgroundreads}
 
@@ -3321,9 +3585,17 @@ Keeper 按批次处理的读取请求总数
 
 发送至跟随者的快照对象数量
 
+### KeeperReadSnapshotStreamingSeeks {#keeperreadsnapshotstreamingseeks}
+
+流式快照传输因 NuRaft 请求的不是下一个对象而重新定位其读取器的次数
+
 ### KeeperReconfigRequest {#keeperreconfigrequest}
 
 重新配置请求数量
+
+### KeeperRejectedCommittedLogRollback {#keeperrejectedcommittedlogrollback}
+
+Keeper 拒绝可能导致已提交日志条目被回滚的请求的次数
 
 ### KeeperRemoveRequest {#keeperremoverequest}
 
@@ -3673,6 +3945,30 @@ MemoryWorker 执行后台工作的总耗时
 
 已启动的后台合并次数。
 
+### MergeCheckpointable {#mergecheckpointable}
+
+在启用 `enable_merge_checkpoints` 的情况下已启动、且已创建检查点的后台合并数量。
+
+### MergeCheckpointSaveMicroseconds {#mergecheckpointsavemicroseconds}
+
+保存合并检查点 (包括其提交) 所耗费的总时间。
+
+### MergeCheckpointsDiscarded {#mergecheckpointsdiscarded}
+
+因无法从中恢复合并而被移除的合并检查点数量。
+
+### MergeCheckpointsRemoved {#mergecheckpointsremoved}
+
+因自身清理或表被删除而移除的合并检查点数量。
+
+### MergeCheckpointsResumed {#mergecheckpointsresumed}
+
+从合并检查点恢复的合并次数。
+
+### MergeCheckpointsSaved {#mergecheckpointssaved}
+
+已保存的合并检查点数量。
+
 ### MergeCommitMilliseconds {#mergecommitmilliseconds}
 
 提交合并结果 (分片重命名、校验和验证、ZooKeeper 更新) 所花费的总时间
@@ -3728,6 +4024,10 @@ MergeMutate 执行器 任务执行 executeStep() 所花费的时间。
 ### MergeMutateBackgroundExecutorWaitMicroseconds {#mergemutatebackgroundexecutorwaitmicroseconds}
 
 在 MergeMutate 执行器中等待完成的耗时。
+
+### MergeNonCheckpointable {#mergenoncheckpointable}
+
+启用 `enable_merge_checkpoints` 时已启动、但无法创建检查点的后台合并数量，例如水平合并。
 
 ### MergePrewarmStageExecuteMilliseconds {#mergeprewarmstageexecutemilliseconds}
 
@@ -4109,6 +4409,10 @@ Move 执行器 任务在 cancel() 中耗费的时间。
 
 未匹配 glob 或 regex 模式、因此在列出时被跳过的对象。
 
+### ObjectStorageHiddenFilteredObjects {#objectstoragehiddenfilteredobjects}
+
+在列出过程中被跳过的对象数，即在非通配符前缀之下包含隐藏路径片段 (以 &#39;&#95;&#39; 或 &#39;.&#39; 开头) 的对象。
+
 ### ObjectStorageListedObjects {#objectstoragelistedobjects}
 
 应用任何过滤器之前，对象存储列出 API 返回的对象总数。
@@ -4457,6 +4761,10 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 被布隆过滤器裁剪掉的 Parquet 行组总数。
 
+### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
+
+对于位于对象存储中或 URL 处的文件，其 Parquet 读取器在分配给自身的 max&#95;download&#95;threads 配额内，于解码被调度之前便已开始读取列数据的行组数
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 经过过滤器的列总数
@@ -4480,6 +4788,10 @@ Parquet 读取器解压缩的 Parquet 数据页 (包括数据页和字典页) �
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 解码线程读取 Parquet 文件时的等待时间 (不包括预取线程)
+
+### ParquetFilesSkippedByCachedStatistics {#parquetfilesskippedbycachedstatistics}
+
+读取时未打开即被跳过的 Parquet 文件数量。跳过的原因是：先前对同一文件版本的读取已将过滤列的 min/max 统计信息随已缓存的文件元数据一并保存，而这些统计信息表明所有行组均可排除
 
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
@@ -4548,6 +4860,18 @@ DB::Parquet::Prefetcher 所读取的范围中，实际被 Parquet 读取器使�
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 经过过滤器的总行数
+
+### ParquetRuntimeFilterPrunedPages {#parquetruntimefilterprunedpages}
+
+因页索引表明其不可能包含 JOIN 运行时过滤器中的键而被跳过的 Parquet 数据页数量
+
+### ParquetRuntimeFilterPrunedRowGroups {#parquetruntimefilterprunedrowgroups}
+
+因列统计信息表明不可能包含 JOIN 运行时过滤器中的任何键而被跳过的 Parquet 行组数量
+
+### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
+
+因 min/max 统计信息无法确定边界，而改用字典中可通过过滤器的值来确定 `ORDER BY ... LIMIT` 排序列范围的 Parquet 行组数量 (参见 `use_top_k_dynamic_filtering`)
 
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
@@ -4961,6 +5285,10 @@ QueryProfiler 的运行次数。
 
 在所有缓存层级都未命中后 (包括前台读取和后台预取，也包括后来被丢弃而浪费掉的预取字节) ，ReaderExecutor 向源端发出的物理字节数；不包含由消费者提供的字节数——参见 ReaderExecutorDeliveredBytes。
 
+### ReaderExecutorBytesOutsideRequestMap {#readerexecutorbytesoutsiderequestmap}
+
+ReaderExecutorBytesFromSource 中位于读取器所声明的请求映射范围之外的部分。对于不带映射的读取，该值为 0。
+
 ### ReaderExecutorCacheGetRequests {#readerexecutorcachegetrequests}
 
 ReaderExecutor 中 `ICacheHandle::get` 的调用次数。在引入 ReaderExecutor 缓存层级之前，该值为零。
@@ -5256,6 +5584,10 @@ ReplicatedMergeTree 表中的数据分区片段成功完成变更的次数。
 ### RowsReadByPrewhereReaders {#rowsreadbyprewherereaders}
 
 prewhere 读取器从 MergeTree 表中总共读取的行数。
+
+### RowsSkippedByPrewhereReaders {#rowsskippedbyprewherereaders}
+
+被 PREWHERE 拒绝的行数，即 PREWHERE 条件求值为 false 的行。该值是逻辑层面的过滤计数，并不意味着主读取器未读取这些行。
 
 ### RuntimeDataflowStatisticsInputBytes {#runtimedataflowstatisticsinputbytes}
 
@@ -6389,6 +6721,10 @@ MergeTree 表中共享数据分区片段锁的获取次数
 
 表函数调用次数。
 
+### TextIndexDictionaryDFABuilds {#textindexdictionarydfabuilds}
+
+为跳过文本索引中的字典块而根据 LIKE 模式构建 DFA 的次数。复用已构建的 DFA 不计入此数。
+
 ### TextIndexDiscardHint {#textindexdiscardhint}
 
 添加了从文本索引直接读取提示、但因选择性低而被丢弃的索引粒度数量。
@@ -6669,6 +7005,94 @@ ThreadPoolReader 内部未从 页缓存 读取、而是转交给线程池处理�
 
 读取过程中被跳过的粒度数量。跳过这些粒度的原因是：主索引表明其中所有行均超出了当前动态更新的 top-K 阈值。该阈值由聚合 (参见 `enable_group_by_top_k_dynamic_filtering`) 或排序 (参见 `use_top_k_dynamic_filtering`) 发布。
 
+### TransactionBeginMicroseconds {#transactionbeginmicroseconds}
+
+执行 `BEGIN TRANSACTION` (显式或隐式) 所耗费的时间
+
+### TransactionBegins {#transactionbegins}
+
+`BEGIN TRANSACTION` 的执行次数 (包括显式和隐式)
+
+### TransactionBeginSnapshotBehindLatest {#transactionbeginsnapshotbehindlatest}
+
+因全局水位线延迟，而以低于最新 CSN 的快照开始的事务数量
+
+### TransactionCommitAfterCSNMicroseconds {#transactioncommitaftercsnmicroseconds}
+
+分配 CSN 后，完成已提交事务的收尾处理所花费的时间
+
+### TransactionCommitAllocateCSNMicroseconds {#transactioncommitallocatecsnmicroseconds}
+
+从事务提交开始到 Keeper 为其分配 CSN 所经过的时间
+
+### TransactionCommitConflicts {#transactioncommitconflicts}
+
+因并发操作修改了某个分片而以 `SERIALIZATION_ERROR` 失败的事务提交次数
+
+### TransactionCommitMicroseconds {#transactioncommitmicroseconds}
+
+提交事务所花费的时间，不包括等待 CSN 加载的时间
+
+### TransactionCommits {#transactioncommits}
+
+已开始的事务提交次数，包括只读事务提交和失败的事务提交
+
+### TransactionCommitsWithCSN {#transactioncommitswithcsn}
+
+由 Keeper 分配了 CSN 的事务提交次数
+
+### TransactionCommitUnknownStatus {#transactioncommitunknownstatus}
+
+因 Keeper 硬件错误导致结果未知的事务提交数量
+
+### TransactionCommitUnknownStatusWaitMicroseconds {#transactioncommitunknownstatuswaitmicroseconds}
+
+等待状态未知的提交的结果所花费的时间
+
+### TransactionDeadReplicasMarked {#transactiondeadreplicasmarked}
+
+当前副本在事务处理中标记为失效的副本数量
+
+### TransactionLogLoadedEntries {#transactionlogloadedentries}
+
+从 Keeper 读取的事务日志 (`/log`) 条目数
+
+### TransactionLogLoadMicroseconds {#transactionlogloadmicroseconds}
+
+从 Keeper 加载事务日志 (`/log`) 所花费的时间，包括列出日志、读取新条目以及应用这些条目
+
+### TransactionLogLoads {#transactionlogloads}
+
+从 Keeper 加载事务日志 (`/log`) 的次数
+
+### TransactionsCommitted {#transactionscommitted}
+
+已提交的事务数量 (包括只读事务)
+
+### TransactionsRolledBack {#transactionsrolledback}
+
+已回滚的事务数
+
+### TransactionTIDsInvalidated {#transactiontidsinvalidated}
+
+此副本置为失效的事务 ID 数量
+
+### TransactionWaitCSNLoaded {#transactionwaitcsnloaded}
+
+同步 `COMMIT` 或 `SYSTEM SYNC TRANSACTION LOG` 等待 CSN 加载到最新快照中的次数
+
+### TransactionWaitCSNLoadedMicroseconds {#transactionwaitcsnloadedmicroseconds}
+
+等待 CSN 加载到最新快照中所耗费的时间
+
+### TransactionWaitWatermark {#transactionwaitwatermark}
+
+通过带 `wait_visible` 的 `COMMIT` 或 `SYSTEM SYNC TRANSACTION LOG` 等待水位线到达某个 CSN 的次数，水位线到达该 CSN 后，此副本上的新事务即可看到它
+
+### TransactionWaitWatermarkMicroseconds {#transactionwaitwatermarkmicroseconds}
+
+等待水位线推进到某个 CSN 所耗费的时间
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 在未压缩缓存中命中数据块的次数 (从而避免了解压) 。
@@ -6784,6 +7208,38 @@ DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 
 ### VersionedCollapsingSortedMilliseconds {#versionedcollapsingsortedmilliseconds}
 
 对已排序列进行版本折叠所花费的总时间
+
+### VortexConvertMicroseconds {#vortexconvertmicroseconds}
+
+将 Vortex 扫描输出的 Arrow 数组转换为 ClickHouse 列所耗费的时间
+
+### VortexFilterPushdownConjunctsDropped {#vortexfilterpushdownconjunctsdropped}
+
+无法转换为 Vortex 扫描条件、只能随后由 ClickHouse 自行应用的顶层 WHERE 合取项数量
+
+### VortexFilterPushdownConjunctsPushed {#vortexfilterpushdownconjunctspushed}
+
+已转换并下推到 Vortex 扫描中的顶层 WHERE 合取项数量
+
+### VortexReadBytes {#vortexreadbytes}
+
+Vortex 扫描通过 ClickHouse 读取缓冲区读取的字节数
+
+### VortexReadRequests {#vortexreadrequests}
+
+Vortex 扫描通过 ClickHouse 读取缓冲区发出的读取请求数
+
+### VortexReadWaitMicroseconds {#vortexreadwaitmicroseconds}
+
+管道等待 Vortex 扫描返回下一个拆分所耗费的时间
+
+### VortexScanEmptySplits {#vortexscanemptysplits}
+
+所有行均被下推过滤器过滤掉的 Vortex 扫描拆分数量。只有当扫描保持文件顺序 (`input_format_vortex_preserve_order`) 时，此类拆分才会被传递，从而被计入——只有该读取器会处理此类拆分
+
+### VortexScanSplits {#vortexscansplits}
+
+Vortex 扫描产出的拆分数量
 
 ### WaitMarksLoadMicroseconds {#waitmarksloadmicroseconds}
 

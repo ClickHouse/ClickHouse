@@ -6,9 +6,7 @@ tags: ['Fuentes de datos', 'Formatos de datos']
 keywords: ['Conversión', 'Parquet', 'CSV', 'JSON']
 ---
 
-<div id="converting-files-from-parquet-to-csv-or-json">
-  ## Convertir archivos de Parquet a CSV o JSON
-</div>
+## Convertir archivos de Parquet a CSV o JSON {#converting-files-from-parquet-to-csv-or-json}
 
 Puede usar `clickhouse-local` para convertir archivos entre cualquiera de los [formatos de entrada y salida](/es/reference/formats/index) compatibles con ClickHouse (¡más de 70 formatos distintos!). En este artículo, convertiremos un archivo Parquet en S3 a archivos CSV y JSON.
 
@@ -20,9 +18,7 @@ Pero primero, descarguemos el binario `clickhouse`:
 curl https://clickhouse.com/ | sh
 ```
 
-<div id="accessing-the-data-using-a-table-function">
-  ## Acceder a los datos mediante una función de tabla
-</div>
+## Acceder a los datos mediante una función de tabla {#accessing-the-data-using-a-table-function}
 
 Verifiquemos que podemos leer el archivo usando `DESCRIBE` sobre la tabla resultante que crea la función de tabla `s3`:
 
@@ -76,9 +72,7 @@ ASCOT	551491.2975753123
 WEYBRIDGE	548974.828692494
 ```
 
-<div id="convert-the-parquet-file-to-a-csv">
-  ## Convierte el archivo Parquet en un CSV
-</div>
+## Convierte el archivo Parquet en un CSV {#convert-the-parquet-file-to-a-csv}
 
 Puedes enviar el resultado de cualquier consulta SQL a un archivo. Tomemos todas las columnas de nuestro archivo Parquet en S3 y enviemos el resultado a un nuevo archivo CSV. Como el archivo de salida termina en `.csv`, ClickHouse sabe que debe usar el formato de salida `CSV`:
 
@@ -104,9 +98,7 @@ $ tail house_prices.csv
 250000,15950,"YO8","9YD","detached",0,"freehold","3","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
 ```
 
-<div id="convert-the-parquet-file-to-a-json">
-  ## Convertir el archivo Parquet a JSON
-</div>
+## Convertir el archivo Parquet a JSON {#convert-the-parquet-file-to-a-json}
 
 Para convertir el archivo Parquet a JSON, basta con cambiar la extensión del nombre del archivo de salida:
 
@@ -132,9 +124,7 @@ Verifiquemos que haya funcionado:
 {"price":"250000","date":15950,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"3","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
 ```
 
-<div id="convert-csv-to-parquet">
-  ## Convertir CSV a Parquet
-</div>
+## Convertir CSV a Parquet {#convert-csv-to-parquet}
 
 Funciona en ambos sentidos: podemos leer fácilmente el nuevo archivo CSV y escribirlo como un archivo Parquet. El archivo local `house_prices.csv` puede leerse en ClickHouse mediante la función de tabla `file`, y ClickHouse genera el archivo en formato Parquet según que el nombre del archivo termine en `.parquet` (o podríamos haber añadido la cláusula `FORMAT Parquet`):
 

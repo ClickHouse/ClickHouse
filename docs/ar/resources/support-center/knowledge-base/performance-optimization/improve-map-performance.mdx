@@ -6,11 +6,9 @@ tags: ['الأداء والتحسينات']
 keywords: ['أداء Map']
 ---
 
-<div id="problem">
-  ## المشكلة
-</div>
+## المشكلة {#problem}
 
-تعمل عملية البحث مثل `a['key']` بتعقيد خطي (كما هو مذكور [هنا](/ar/reference/data-types/map))، وقد تكون غير فعّالة. ويعود ذلك إلى أن اختيار قيمة بمفتاح محدد من جدول يتطلب المرور على جميع المفاتيح (~M) عبر كل الصفوف (N) في عمود Map، ما ينتج عنه نحو ~MxN من عمليات البحث.
+يعمل البحث بالمفتاح في Map مثل `a['key']` بتعقيد خطي (كما هو مذكور [هنا](/ar/reference/data-types/map))، وقد يكون غير فعّال. ويعود ذلك إلى أن اختيار قيمة بمفتاح محدد من جدول يتطلب المرور على جميع المفاتيح (~M) عبر كل الصفوف (N) في عمود Map، ما ينتج عنه نحو ~MxN من عمليات البحث.
 
 قد تكون عملية البحث باستخدام Map أبطأ بمقدار 10x مقارنةً بعمود String. وتُظهر التجربة أدناه أيضًا تباطؤًا بنحو ~10x في الاستعلام البارد، إلى جانب فارق بعدة مراتب في حجم البيانات المُعالجة (7.21 MB مقابل 5.65 GB).
 
@@ -18,12 +16,12 @@ keywords: ['أداء Map']
 -- create table with SpanNAme as String and ResourceAttributes as Map
 DROP TABLE IF EXISTS tbl;
 CREATE TABLE tbl (
-    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
-    `TraceId` String CODEC (ZSTD(1)),
-    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
-    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
-    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
-    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
+    `Timestamp` DateTime64(9) CODEC(Delta, Default),
+    `TraceId` String,
+    `ServiceName` LowCardinality(String),
+    `Duration` UInt8, -- Int64
+    `SpanName` LowCardinality(String),
+    `ResourceAttributes` Map(LowCardinality(String), String)
 )
 ENGINE = MergeTree
 PARTITION BY toDate(Timestamp)
@@ -73,7 +71,7 @@ GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
 ```
 
 **الحل**
-لتحسين الاستعلام، يمكننا إضافة عمود آخر تُضبط قيمته افتراضيًا على مفتاح معيّن في عمود Map، ثم تحويله إلى عمود مادي لتعبئة القيمة للصفوف الموجودة. بهذه الطريقة، نستخرج القيمة المطلوبة ونخزّنها وقت الإدراج، مما يسرّع عملية البحث وقت تنفيذ الاستعلام.
+لتحسين الاستعلام، يمكننا إضافة عمود آخر تُضبط قيمته افتراضيًا على مفتاح معيّن في عمود Map، ثم تجسيده لتعبئة القيمة للصفوف الموجودة. بهذه الطريقة، نستخرج القيمة المطلوبة ونخزّنها وقت الإدراج، مما يسرّع عملية البحث وقت تنفيذ الاستعلام.
 
 ```sql
 -- solution is to add a column with value defaulting to a particular key in Map
