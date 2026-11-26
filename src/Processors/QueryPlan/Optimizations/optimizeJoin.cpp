@@ -554,7 +554,7 @@ static bool hasEqualityUnsafeAsJoinKey(const ActionsDAG & dag)
 /// is why `tryMergeFilterIntoJoinCondition` skips it too.
 static bool hasPreparedStorageJoin(const QueryPlan::Node * node)
 {
-    std::vector<const QueryPlan::Node *> stack{node};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{node};
     while (!stack.empty())
     {
         const auto * current = stack.back();
@@ -652,7 +652,7 @@ static bool hasEqualityUnsafeAsJoinKeyInSubplan(const QueryPlan::Node * node)
 static const QueryPlan::Node * peelMergeableStepsAboveJoin(
     const QueryPlan::Node * node, bool merge_expression_into_join, bool merge_filters_into_join, bool below_null_supplying)
 {
-    std::vector<const QueryPlan::Node *> chain;
+    VectorWithMemoryTracking<const QueryPlan::Node *> chain;
     while (isMergeableStepAboveJoin(node, merge_expression_into_join, merge_filters_into_join, below_null_supplying))
     {
         chain.push_back(node);
@@ -729,8 +729,8 @@ static void mergeStepIntoQueryGraph(QueryGraphBuilder & child_graph, IQueryPlanS
     /// The atoms are visited in the written order, left to right, and a shared atom keeps its first
     /// occurrence: the edges applied at one join step are evaluated in this order, and a conjunct can
     /// guard the ones written after it (`notEmpty(s) AND toInt32(s) > 0`).
-    std::vector<JoinActionRef> pending{JoinActionRef(condition_node, child_graph.expression_actions)};
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<JoinActionRef> pending{JoinActionRef(condition_node, child_graph.expression_actions)};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     while (!pending.empty())
     {
         auto condition = pending.back().resolveAliases();
@@ -809,7 +809,7 @@ static size_t addChildQueryGraph(
         node = root_node;
     }
 
-    std::vector<QueryPlan::Node *> merge_steps;
+    VectorWithMemoryTracking<QueryPlan::Node *> merge_steps;
     const auto * join_candidate = peelMergeableStepsAboveJoin(root_node, merge_expression_into_join, merge_filters_into_join, below_null_supplying);
     while (root_node != join_candidate)
     {
@@ -1961,7 +1961,7 @@ static void collectJoinGraphRelationHeaders(
             const auto & child_join_header = join_candidate->step->getOutputHeader();
             if (node != join_candidate && chain_top_header)
             {
-                std::unordered_map<std::string_view, size_t> child_name_counts;
+                UnorderedMapWithMemoryTracking<std::string_view, size_t> child_name_counts;
                 if (child_join_header)
                     for (const auto & column : *child_join_header)
                         ++child_name_counts[column.name];
