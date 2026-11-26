@@ -3,6 +3,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <memory>
 #include <optional>
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Joins.h>
@@ -28,6 +29,8 @@
 #include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
@@ -679,6 +682,27 @@ public:
                 limit_node.children = {&partial_sorting_node};
                 fragment_root = &limit_node;
             }
+            /// `LIMIT -n` leaves the sort unbounded. The last `n` rows plus the offsets come from the last as many
+            /// rows of each replica. The shape is that of the preliminary limit of query-based parallel replicas,
+            /// `Offset(0)` included, so that automatic parallel replicas finds it in the single-node plan.
+            else if (const auto local_negative_limit = negativeLimitAboveSort())
+            {
+                if (local_negative_limit->over_offset)
+                {
+                    auto & offset_node = nodes.emplace_back();
+                    offset_node.step = std::make_unique<OffsetStep>(fragment_root->step->getOutputHeader(), 0);
+                    offset_node.children = {fragment_root};
+                    fragment_root = &offset_node;
+                }
+
+                auto & limit_node = nodes.emplace_back();
+                auto limit_step = std::make_unique<NegativeLimitStep>(fragment_root->step->getOutputHeader(), local_negative_limit->rows, 0);
+                limit_step->markAsShardLimit();
+                limit_node.step = std::move(limit_step);
+                limit_node.step->setStepDescription("local top-N");
+                limit_node.children = {fragment_root};
+                fragment_root = &limit_node;
+            }
 
             auto & new_split_node = nodes.emplace_back();
             new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(fragment_root->step->getOutputHeader());
@@ -727,6 +751,40 @@ private:
             if (auto * node = stack[index - i].node; typeid_cast<const LimitStep *>(node->step.get()))
                 return node;
         return nullptr;
+    }
+
+    struct LocalNegativeLimit
+    {
+        UInt64 rows;
+        bool over_offset;
+    };
+
+    /// The rows a replica must keep for `LIMIT -n` right above the sorted split, i.e. `NegativeLimit`, optionally over
+    /// an `Offset`: the limit plus both offsets, or `nullopt` if there is no such limit or the sum overflows.
+    [[nodiscard]] std::optional<LocalNegativeLimit> negativeLimitAboveSort() const
+    {
+        if (stack.size() < 3)
+            return std::nullopt;
+
+        size_t index = stack.size() - 3;
+        UInt64 offset = 0;
+        const auto * offset_step = typeid_cast<const OffsetStep *>(stack[index].node->step.get());
+        if (offset_step)
+        {
+            if (index == 0)
+                return std::nullopt;
+            offset = offset_step->getOffset();
+            --index;
+        }
+
+        const auto * negative_limit = typeid_cast<const NegativeLimitStep *>(stack[index].node->step.get());
+        if (!negative_limit || negative_limit->withTies())
+            return std::nullopt;
+
+        UInt64 rows = 0;
+        if (common::addOverflow(negative_limit->getLimit(), negative_limit->getOffset(), rows) || common::addOverflow(rows, offset, rows))
+            return std::nullopt;
+        return LocalNegativeLimit{.rows = rows, .over_offset = offset_step != nullptr};
     }
 
     /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).

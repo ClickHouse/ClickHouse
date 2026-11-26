@@ -23,6 +23,8 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     [[nodiscard]] UInt64 getLimit() const { return limit; }
+    [[nodiscard]] UInt64 getOffset() const { return offset; }
+    [[nodiscard]] bool withTies() const { return with_ties; }
 
     void markAsShardLimit() { is_shard_limit = true; }
 
