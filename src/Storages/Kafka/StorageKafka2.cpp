@@ -631,8 +631,7 @@ void StorageKafka2::shutdown(bool)
     cv.notify_all();
     activating_task->deactivate();
     partialShutdown();
-    /// The drain task stays on: it serves the consumers while `cleanConsumers` waits for them, and
-    /// those still held by direct SELECTs afterwards.
+    /// The drain task is stopped in `cleanConsumers()`.
     LOG_TRACE(log, "Closing consumers");
     cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
@@ -1549,8 +1548,7 @@ void StorageKafka2::drainEventsTask()
 
     {
         std::lock_guard lock(consumers_mutex);
-        /// Nothing takes the consumers again after the shutdown: stop once the direct SELECTs
-        /// released those they held.
+        /// After the shutdown the task stops by itself once no consumer is left to serve.
         const bool has_consumers
             = std::any_of(consumers.begin(), consumers.end(), [](const auto & consumer) { return consumer && consumer->hasConsumer(); });
         if (shutdown_called && !has_consumers)
@@ -1585,9 +1583,7 @@ void StorageKafka2::cleanConsumers()
             LOG_WARNING(log, "Timed out waiting for consumer(s) to be released, proceeding with shutdown");
         }
 
-        /// The drain task serves the consumers during the wait above, but must not poll a handle
-        /// while it is taken away below. It waits for its current round, and that round takes this
-        /// mutex as well, so stop it with the mutex released.
+        /// Stop the drain task before taking handles away: it waits for its round, and the round takes this mutex.
         lock.unlock();
         drain_task->deactivate();
         lock.lock();
@@ -1614,8 +1610,7 @@ void StorageKafka2::cleanConsumers()
     bool has_held_consumers = false;
     {
         std::lock_guard lock(consumers_mutex);
-        /// Consumers still held by direct SELECTs stay in their slots for the drain task, until
-        /// `releaseConsumer` drops them.
+        /// Consumers still in use stay in their slots for the drain task.
         for (auto & consumer : consumers)
         {
             if (consumer && !consumer->hasConsumer())
