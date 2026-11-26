@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ## Geometry {#geometry}
 
-Les fonctions de géométrie vous permettent de calculer le périmètre et l&#39;aire de types géométriques tels que POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING et POINT. Utilisez les géométries dans le type Geometry. Si la valeur d&#39;entrée est `NULL`, toutes les fonctions ci-dessous renverront 0.
+Les fonctions de géométrie vous permettent de calculer le périmètre, l&#39;aire et la longueur de types géométriques tels que POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING et POINT. Utilisez les géométries dans le type Geometry. Si la valeur d&#39;entrée est `NULL`, toutes les fonctions ci-dessous renverront 0.
 
 ## perimeterCartesian {#perimetercartesian}
 
@@ -136,4 +136,108 @@ SELECT areaSpherical(geom) FROM geo_dst;
 ┌─areaSpherical(geom)────┐
 │ -0.0003046096848622019 │
 └────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+Calcule la longueur des lignes d&#39;un objet Geometry dans le système de coordonnées cartésien (plat) : la somme des distances entre points consécutifs.
+La longueur d&#39;un `MultiLineString` correspond à la longueur totale de ses lignes, et un `Ring` est mesuré comme la ligne passant par ses points, tout comme un tableau de points sans nom de type, qui est de type `Ring`.
+Les points, les polygones et les multipolygones n&#39;ont pas de longueur : la fonction renvoie donc 0 dans ce cas. Pour obtenir le périmètre d&#39;un polygone, utilisez [perimeterCartesian](#perimetercartesian).
+Pour mesurer un tableau de tableaux de points, convertissez-le en `MultiLineString` : sans nom de type, il est de type `Polygon`.
+
+Alias : `ST_Length`.
+
+**Syntaxe**
+
+```sql
+lengthCartesian(geom)
+```
+
+**Arguments**
+
+* `geom` — Objet Geometry. [Geometry](/fr/reference/data-types/geo).
+
+**Valeurs renvoyées**
+
+* Nombre — Longueur des lignes, exprimée dans les unités du système de coordonnées. [Float64](/fr/reference/data-types/float).
+
+**Exemple**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+Calcule la longueur des lignes d’un objet Geometry à la surface d’une sphère, les points étant exprimés sous la forme (longitude, latitude) en degrés.
+Le résultat est un angle en radians, qui correspond à la longueur sur une sphère de rayon 1, à l’instar du résultat de [perimeterSpherical](#perimeterspherical).
+Multipliez-le par le rayon moyen de la Terre, soit 6371008.8 mètres, pour obtenir une longueur approximative en mètres, ou utilisez [lengthSpheroid](#lengthspheroid) pour obtenir une valeur précise.
+Comme [lengthCartesian](#lengthcartesian), elle renvoie 0 pour les points, les polygones et les multipolygones.
+
+**Syntaxe**
+
+```sql
+lengthSpherical(geom)
+```
+
+**Arguments**
+
+* `geom` — Objet Geometry. [Geometry](/fr/reference/data-types/geo).
+
+**Valeurs renvoyées**
+
+* Nombre — Longueur des lignes en radians. [Float64](/fr/reference/data-types/float).
+
+**Exemple**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+Calcule la longueur des lignes d&#39;un objet Geometry en mètres sur le sphéroïde WGS84, le modèle de la Terre utilisé par le GPS, les points étant exprimés sous la forme (longitude, latitude) en degrés.
+Chaque segment correspond au plus court chemin entre ses points sur le sphéroïde (une géodésique), calculé à l&#39;aide de l&#39;algorithme de Karney, comme dans GeographicLib.
+Comme [lengthCartesian](#lengthcartesian), elle renvoie 0 pour les points, les polygones et les multipolygones.
+Pour des coordonnées stockées au format (latitude, longitude), comme en entrée de `ST_Length_Spheroid` dans DuckDB, commencez par les intervertir avec [flipCoordinates](/fr/reference/functions/regular-functions/geo/flipCoordinates) : sinon, le résultat correspond à la longueur d&#39;une autre ligne.
+Si une coordonnée vaut NaN ou est infinie, ou si une latitude est en dehors de l&#39;intervalle [-90, 90], le résultat est NaN.
+
+**Syntaxe**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**Arguments**
+
+* `geom` — Objet Geometry. [Geometry](/fr/reference/data-types/geo).
+
+**Valeurs renvoyées**
+
+* Nombre — Longueur des lignes en mètres. [Float64](/fr/reference/data-types/float).
+
+**Exemple**
+
+Longueur d&#39;une ligne reliant Londres à Berlin en passant par Paris :
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
 ```
