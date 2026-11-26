@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, zookeeper
-# no-parallel: the fail points are server-wide and pause the first query that reaches them.
+# Tags: no-parallel, no-fasttest, zookeeper
+# no-parallel, no-fasttest: the fail points are server-wide and pause the first query that reaches them.
 
 # A query that waits for a mutation (`mutations_sync`) must not take a mutation that is finished,
 # and whose entry is already removed by the cleanup thread, for a killed one.
