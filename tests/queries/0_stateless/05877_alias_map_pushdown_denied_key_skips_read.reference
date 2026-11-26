@@ -1,0 +1,14 @@
+--- denied key reads no rows
+0
+0
+0
+0
+--- without the pass the same filter scans the table
+--- results match the unoptimized ALIAS
+10000
+10000
+3333
+3333
+--- after the policy allows the key, it is read again
+1000
+0
