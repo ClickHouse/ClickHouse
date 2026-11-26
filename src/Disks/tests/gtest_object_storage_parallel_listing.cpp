@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+#include <base/defines.h>
 
 #include <atomic>
 #include <algorithm>
@@ -34,6 +35,15 @@ namespace CurrentMetrics
 namespace
 {
 
+/// The splitmix64 mixing function. As any hash function, it wraps around modulo 2^64 on purpose.
+NO_SANITIZE_UNSIGNED_OVERFLOW uint64_t splitMix64(uint64_t i)
+{
+    uint64_t z = i + 0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
 /// A well-distributed `digits`-hex-digit name derived from `i` (splitmix64). A plain LCG sampled at its
 /// low bits (`hex[x & 0xf]`) is unusable here: the low nibble of an LCG cycles with a tiny period that does
 /// not depend on the seed's high bits, so all `i` sharing `i mod 16` collapse to one name (~16 distinct
@@ -41,10 +51,7 @@ namespace
 /// first byte, so keyspace splitting is genuinely exercised. `digits` must be <= 16.
 std::string hexName(uint64_t i, size_t digits = 16)
 {
-    uint64_t z = i + 0x9E3779B97F4A7C15ULL;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    z = z ^ (z >> 31);
+    const uint64_t z = splitMix64(i);
     static constexpr char hex[] = "0123456789abcdef";
     std::string s;
     s.reserve(digits);
