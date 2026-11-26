@@ -207,7 +207,7 @@ private:
     void readAheadFirstRowGroup();
     void addMemoryUsage(size_t stage_idx, ssize_t bytes);
     /// With `stream_memory`, that of both readers of the source, which share one stream's budget.
-    size_t getColumnDataMemoryUsage() const;
+    [[nodiscard]] size_t getColumnDataMemoryUsage() const;
     void addColumnDataPrefetches(const Task & task, VectorWithMemoryTracking<PrefetchHandle *> & out);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
