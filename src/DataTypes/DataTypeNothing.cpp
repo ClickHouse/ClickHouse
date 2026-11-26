@@ -12,6 +12,11 @@ MutableColumnPtr DataTypeNothing::createColumn() const
     return ColumnNothing::create(0);
 }
 
+void DataTypeNothing::insertDefaultInto(IColumn & column) const
+{
+    column.insertDefault();
+}
+
 bool DataTypeNothing::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this);

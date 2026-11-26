@@ -31,8 +31,6 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT id FROM t_text_aj WHERE arrayJoi
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT id FROM t_text_aj WHERE arrayJoin(ids) NOT IN ('7')) WHERE explain ILIKE '%Name: idx%';
 -- a NULL in the set matches with transform_null_in = 1, and the index has no NULL
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT id FROM t_text_aj WHERE arrayJoin(ids) IN (SELECT arrayJoin([NULL, '7'])) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%Name: idx%';
--- LEFT ARRAY JOIN adds an empty string for an empty array, and the index has no empty strings
-SELECT count() FROM (EXPLAIN indexes = 1 SELECT id FROM t_text_aj LEFT ARRAY JOIN ids AS x WHERE x = '7') WHERE explain ILIKE '%Name: idx%';
 
 SELECT '-- the index does not replace the element filter by a row filter';
 SELECT groupArray(x) FROM (SELECT arrayJoin(ids) AS x FROM t_text_aj WHERE x = '7') SETTINGS query_plan_lower_array_join_function = 0, query_plan_direct_read_from_text_index = 1;

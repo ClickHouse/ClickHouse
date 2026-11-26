@@ -124,6 +124,16 @@ public:
     /// Never spill to disk: deduplicate in memory only.
     void disableExternalDistinct() { external_distinct_disabled = true; }
 
+    /// The input rows are already distinct, so the step only enforces the limit on rows, with the rows it passes as the
+    /// set.
+    void skipDeduplication() { skip_deduplication = true; }
+    [[nodiscard]] bool isDeduplicationSkipped() const { return skip_deduplication; }
+
+    /// The step removes the duplicates of the join that executes `EXCEPT DISTINCT`, over all of its columns. It is needed
+    /// only when the join stays LEFT ANTI after optimization.
+    void markDeduplicatesExceptJoin() { deduplicates_except_join = true; }
+    [[nodiscard]] bool deduplicatesExceptJoin() const { return deduplicates_except_join; }
+
 private:
     void updateOutputHeader() override;
 
@@ -146,6 +156,8 @@ private:
     Float64 pass_ratio_threshold_for_disabling_bloom_filter;
     Float64 max_ratio_of_set_bits_in_bloom_filter;
     bool external_distinct_disabled = false;
+    bool skip_deduplication = false;
+    bool deduplicates_except_join = false;
 };
 
 }

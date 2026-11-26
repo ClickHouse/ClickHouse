@@ -1,0 +1,87 @@
+negate of an ascending subquery, DESC NULLS FIRST
+nan
+-1
+-2
+nan
+-1
+-2
+negate of a descending subquery, ASC NULLS FIRST
+nan
+-2
+-1
+nan
+-2
+-1
+under an outer LIMIT, where the wrong order also returns wrong rows
+nan
+nan
+the placement the stream already has can still be elided
+-1
+-2
+nan
+-1
+-2
+nan
+NULL through a division by a negative constant
+\N
+-0.5
+-1
+\N
+-0.5
+-1
+a decreasing chain with a function that turns NaN into an ordinary value
+1
+1
+-1
+1
+1
+-1
+1
+1
+1
+1
+the same for an increasing function of a descending subquery
+1
+1
+1
+1
+negate of the minimum of a signed integer type
+-1
+-2
+-9223372036854775808
+-1
+-2
+-9223372036854775808
+-1
+-1
+negate of the minimum of an interval
+-1
+-2
+-9223372036854775808
+-1
+-2
+-9223372036854775808
+-1
+-1
+negate of the minimum of a decimal
+-1
+-1
+-1
+-2
+-9223372036854775808
+-1
+-2
+-9223372036854775808
+-1
+-1
+-1
+-1
+a conversion to BFloat16 that turns NaN into infinity
+inf
+1
+-1
+inf
+1
+-1
+inf
+inf

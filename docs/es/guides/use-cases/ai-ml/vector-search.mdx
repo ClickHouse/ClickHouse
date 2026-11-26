@@ -18,7 +18,7 @@ doc_type: 'guide'
 </Info>
 
 <div id="vector-search-primer">
-  ## Introducción a la búsqueda vectorial
+  ## Introducción a la búsqueda vectorial {#vector-search-primer}
 </div>
 
 En matemáticas y física, un vector se define formalmente como un objeto que tiene magnitud y dirección.
@@ -38,21 +38,15 @@ Impulsa las recomendaciones musicales, la generación aumentada por recuperació
 Los usuarios suelen preferir las bases de datos convencionales con capacidades vectoriales ad hoc a los almacenes vectoriales totalmente especializados, a pesar de las ventajas de estas bases de datos especializadas.
 ClickHouse admite la [búsqueda vectorial por fuerza bruta](/es/reference/engines/table-engines/mergetree-family/annindexes#exact-nearest-neighbor-search), así como [métodos de búsqueda aproximada del vecino más cercano (ANN)](/es/reference/engines/table-engines/mergetree-family/annindexes#approximate-nearest-neighbor-search), incluido HNSW, el estándar actual para la recuperación rápida de vectores.
 
-<div id="understanding-embeddings">
-  ### Comprender los embeddings
-</div>
+### Comprender los embeddings {#understanding-embeddings}
 
 Veamos un ejemplo sencillo para entender cómo funciona la búsqueda vectorial.
 Consideremos embeddings (representaciones vectoriales) de palabras:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Visualización de embeddings de frutas y animales](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Visualización de embeddings de frutas y animales](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+  </Frame>
 </div>
 
 Crea la siguiente table con algunos embeddings de ejemplo:
@@ -101,14 +95,14 @@ query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
 ```
 
 <div id="approximate-nearest-neighbours">
-  ## Vecinos más cercanos aproximados (ANN)
+  ## Vecinos más cercanos aproximados (ANN) {#approximate-nearest-neighbours}
 </div>
 
 Para conjuntos de datos grandes, la búsqueda por fuerza bruta se vuelve demasiado lenta.
 Aquí es donde resultan útiles los métodos de vecinos más cercanos aproximados.
 
 <div id="quantisation">
-  ### Cuantización
+  ### Cuantización {#quantisation}
 </div>
 
 La cuantización consiste en convertir a tipos numéricos de menor tamaño.
@@ -120,18 +114,12 @@ Tienes dos opciones:
 1. **Mantener la copia cuantizada junto a la columna original** - Esto duplica el almacenamiento, pero es una opción segura porque siempre podemos volver a la precisión completa
 2. **Reemplazar por completo los valores originales** (convirtiéndolos a un tipo menor durante la inserción) - Esto ahorra espacio y E/S, pero no tiene vuelta atrás
 
-<div id="hnsw">
-  ### Hierarchical Navigable Small World (HNSW)
-</div>
+### Hierarchical Navigable Small World (HNSW) {#hnsw}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Estructura por capas de HNSW](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Estructura por capas de HNSW](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+  </Frame>
 </div>
 
 HNSW se construye a partir de múltiples capas de nodos (vectores). Cada nodo se asigna aleatoriamente a una o más capas, y la probabilidad de aparecer en capas superiores disminuye exponencialmente.
@@ -148,7 +136,7 @@ Gracias a este diseño por capas, HNSW alcanza una complejidad de búsqueda loga
 </Warning>
 
 <div id="comparison-approaches">
-  ### Comparación de enfoques
+  ### Comparación de enfoques {#comparison-approaches}
 </div>
 
 | Categoría     | Fuerza bruta                                                  | HNSW                                               | QBit                       |
@@ -158,24 +146,18 @@ Gracias a este diseño por capas, HNSW alcanza una complejidad de búsqueda loga
 | **Otros**     | Cuantización: más espacio o pérdida irreversible de precisión | El índice debe caber en memoria y debe construirse | Sigue siendo O(#registros) |
 
 <div id="qbit-deepdive">
-  ## Profundización en QBit
+  ## Profundización en QBit {#qbit-deepdive}
 </div>
 
-<div id="quantised-bit">
-  ### Bit cuantizado (QBit)
-</div>
+### Bit cuantizado (QBit) {#quantised-bit}
 
 QBit es una nueva estructura de datos que puede almacenar valores `BFloat16`, `Float32` y `Float64` aprovechando la forma en que se representan los números de coma flotante: como bits.
 En lugar de almacenar cada número completo, QBit divide los valores en **planos de bits**: el primer bit de cada valor, el segundo, el tercero, y así sucesivamente.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Concepto de planos de bits de QBit](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Concepto de planos de bits de QBit](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+  </Frame>
 </div>
 
 Este enfoque resuelve la principal limitación de la cuantización tradicional. No hace falta almacenar datos duplicados ni arriesgarse a que los valores pierdan significado. Además, evita los cuellos de botella de RAM de HNSW, ya que QBit trabaja directamente con los datos almacenados en lugar de mantener un índice en memoria.
@@ -193,9 +175,7 @@ Este enfoque resuelve la principal limitación de la cuantización tradicional. 
   Aunque QBit acelera la búsqueda vectorial, su complejidad computacional sigue siendo O(n). En otras palabras: si tu conjunto de datos es lo bastante pequeño como para que un índice HNSW quepa cómodamente en RAM, esa sigue siendo la opción más rápida.
 </Info>
 
-<div id="the-data-type">
-  ### El tipo de dato
-</div>
+### El tipo de dato {#the-data-type}
 
 A continuación se muestra cómo crear una columna QBit:
 
@@ -218,13 +198,9 @@ INSERT INTO fruit_animal VALUES
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Transposición de la estructura de datos de QBit](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Transposición de la estructura de datos de QBit](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+  </Frame>
 </div>
 
 Cuando los datos se insertan en una columna QBit, se transponen de modo que todos los primeros bits queden alineados, todos los segundos bits queden alineados, y así sucesivamente. A esto lo llamamos **grupos**.
@@ -238,7 +214,7 @@ Cada grupo se almacena en una columna `FixedString(N)` independiente: cadenas de
 </Tip>
 
 <div id="the-distance-calculation">
-  ### El cálculo de la distancia
+  ### El cálculo de la distancia {#the-distance-calculation}
 </div>
 
 Para realizar consultas con QBit, use la función [`L2DistanceTransposed`](/es/reference/functions/regular-functions/distance-functions#L2DistanceTransposed) con un parámetro de precisión:
@@ -263,18 +239,12 @@ ORDER BY distance;
 
 El tercer parámetro (16) especifica el nivel de precisión, en bits.
 
-<div id="io-optimisation">
-  ### Optimización de E/S
-</div>
+### Optimización de E/S {#io-optimisation}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Optimización de E/S de QBit](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Optimización de E/S de QBit](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+  </Frame>
 </div>
 
 Antes de poder calcular distancias, es necesario leer del disco los datos requeridos y luego destransponerlos (es decir, volver de la representación de bits agrupados a vectores completos). Como QBit almacena los valores transpuestos por bits según el nivel de precisión, ClickHouse puede leer solo los planos de bits más altos necesarios para reconstruir números con la precisión deseada.
@@ -282,29 +252,19 @@ Antes de poder calcular distancias, es necesario leer del disco los datos requer
 En la consulta anterior, usamos un nivel de precisión de 16. Como un Float64 tiene 64 bits, solo leemos los primeros 16 planos de bits, **omitiendo el 75 % de los datos**.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Reconstrucción de QBit](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Reconstrucción de QBit](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+  </Frame>
 </div>
 
 Después de la lectura, reconstruimos solo la parte más significativa de cada número a partir de los planos de bits cargados, dejando en cero los bits no leídos.
 
-<div id="calculation-optimisation">
-  ### Optimización del cálculo
-</div>
+### Optimización del cálculo {#calculation-optimisation}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Comparación de conversión a un tipo menor](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Comparación de conversión a un tipo menor](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+  </Frame>
 </div>
 
 Cabe preguntarse si convertir a un tipo menor, como Float32 o BFloat16, podría eliminar esta parte no utilizada. Funciona, pero las conversiones explícitas resultan costosas cuando se aplican a cada fila.
@@ -312,13 +272,13 @@ Cabe preguntarse si convertir a un tipo menor, como Float32 o BFloat16, podría 
 En su lugar, podemos reducir el tipo solo del vector de referencia y tratar los datos de QBit como si contuvieran valores de menor tamaño (&quot;olvidando&quot; la existencia de algunas columnas), ya que su disposición suele corresponder a una versión truncada de esos tipos.
 
 <div id="bfloat16-optimization">
-  #### Optimización de BFloat16
+  #### Optimización de BFloat16 {#bfloat16-optimization}
 </div>
 
 BFloat16 es un Float32 truncado a la mitad. Conserva el mismo bit de signo y el exponente de 8 bits, pero solo los 7 bits superiores de la mantisa de 23 bits. Por ello, leer los primeros 16 planos de bits de una columna QBit reproduce en la práctica la estructura de los valores BFloat16. Así que, en este caso, podemos (y de hecho lo hacemos) convertir con seguridad el vector de referencia a BFloat16.
 
 <div id="float64-complexity">
-  #### Complejidad de Float64
+  #### Complejidad de Float64 {#float64-complexity}
 </div>
 
 Float64, sin embargo, es otra historia. Usa un exponente de 11 bits y una mantisa de 52 bits, lo que significa que no es simplemente un Float32 con el doble de bits. Su estructura y el sesgo del exponente son completamente distintos. Reducir un Float64 a un formato más pequeño, como Float32, requiere una conversión IEEE-754 propiamente dicha, en la que cada valor se redondea al Float32 representable más cercano. Este paso de redondeo es costoso desde el punto de vista computacional.
@@ -328,13 +288,13 @@ Float64, sin embargo, es otra historia. Usa un exponente de 11 bits y una mantis
 </Tip>
 
 <div id="example">
-  ## Ejemplo con DBpedia
+  ## Ejemplo con DBpedia {#example}
 </div>
 
 Veamos QBit en acción con un ejemplo del mundo real que utiliza el conjunto de datos de DBpedia, que contiene 1 millón de artículos de Wikipedia representados como embeddings de Float32.
 
 <div id="setup">
-  ### Configuración
+  ### Configuración {#setup}
 </div>
 
 Primero, crea la tabla
@@ -397,7 +357,7 @@ ALTER TABLE dbpedia UPDATE qbit = vector WHERE 1;
 ```
 
 <div id="search-query">
-  ### Consulta de búsqueda
+  ### Consulta de búsqueda {#search-query}
 </div>
 
 Buscaremos los conceptos más relacionados con estos términos de búsqueda sobre el espacio: Moon, Apollo 11, Space Shuttle, Astronaut, Rocket:
@@ -701,7 +661,7 @@ Peak memory usage: 327.04 MiB.
 </Accordion>
 
 <div id="key-insight">
-  ### Idea clave
+  ### Idea clave {#key-insight}
 </div>
 
 ¿Los resultados? No solo buenos. Sorprendentemente buenos. No es obvio que los números de punto flotante, despojados de toda su mantisa y de la mitad de su exponente, sigan conservando información significativa.
@@ -711,7 +671,7 @@ Peak memory usage: 327.04 MiB.
 El uso de memoria se redujo de **6.05 GB a 740 MB** manteniendo una excelente calidad de búsqueda semántica.
 
 <div id="result">
-  ## Conclusión
+  ## Conclusión {#result}
 </div>
 
 QBit es un tipo de columna que almacena valores de coma flotante como planos de bits.

@@ -113,6 +113,7 @@ struct QueryPlanOptimizationSettings
     bool convert_outer_join_to_inner_join;
     bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
+    bool remove_unused_joins;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
@@ -142,6 +143,9 @@ struct QueryPlanOptimizationSettings
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
+    /// The `distributed_group_by_top_k` of the initiator, on a parallel replicas follower only.
+    UInt64 distributed_group_by_top_k = 0;
+    UInt64 max_rows_to_group_by = 0;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -328,6 +332,7 @@ struct QueryPlanOptimizationSettings
     float automatic_parallel_replicas_max_duplicated_read_ratio;
     float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
+    UInt64 automatic_parallel_replicas_undecided_retry_after_executions = 0;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.
     UInt64 parallel_replicas_boundary_settings_hash = 0;
