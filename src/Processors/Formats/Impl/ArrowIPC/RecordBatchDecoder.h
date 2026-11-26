@@ -6,6 +6,7 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -119,6 +120,13 @@ size_t rawByteWidth(const WhichDataType & which);
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
 
+/// Reinterpret the raw bytes of a fixed_size_binary column (`ColumnFixedString`) as a UUID, IPv6, or big
+/// integer, matching the ClickHouse Arrow writer (which stores those types as fixed_size_binary) and the
+/// library reader. Returns nullptr when `to_no_null` is not one of those types. Throws on a width mismatch:
+/// a wrong-width value is corrupt for these fixed-width targets (the library reader rejects it too), and
+/// letting it fall through to `castColumn` would text-parse the bytes.
+MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, const DataTypePtr & to_no_null);
+
 /// Decodes a column the writer had no Arrow mapping for and wrote with `serializeBinary`, back into the type
 /// its `clickhouse.opaque` tag names. Returns null when the field is not one, or names a type other than
 /// `to_no_null`, leaving the bytes to be read as `String`.
@@ -213,6 +221,23 @@ public:
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
+
+    /// A record batch whose layout is given directly rather than by a `RecordBatch` message: the pre-ordered field
+    /// nodes, the buffers each pointing to its own memory, and the variadic buffer counts of the view fields. This is
+    /// how a batch of the Arrow C data interface is decoded (see `ArrowCData`). Dictionary-encoded fields are not
+    /// supported here, as they have no record batch of their own.
+    struct ExternalBatch
+    {
+        Int64 length = 0;
+        VectorWithMemoryTracking<flatbuf::FieldNode> nodes;
+        VectorWithMemoryTracking<Slice> buffers;
+        VectorWithMemoryTracking<Int64> variadic_counts;
+    };
+
+    /// Decodes all fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
+    /// for the duration of the call only: the decoded columns own their data.
+    DecodedColumns decodeExternalBatch(
+        const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
 
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
     /// hint (`use`), following the same rules as inline values. `target_types_` supplies requested subcolumn
@@ -406,8 +431,13 @@ private:
     const FormatSettings & settings;
     const DictionaryRegistry & registry;
 
-    /// State valid only during a single decode call.
-    const flatbuf::RecordBatch * current_batch = nullptr;
+    /// Points the node cursor at the nodes and length of `batch`, or clears them for null.
+    void setBatchNodes(const flatbuf::RecordBatch * batch);
+
+    /// State valid only during a single decode call: the field nodes and the row count of the current batch.
+    const flatbuf::FieldNode * current_nodes = nullptr;
+    size_t current_num_nodes = 0;
+    Int64 current_length = 0;
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;

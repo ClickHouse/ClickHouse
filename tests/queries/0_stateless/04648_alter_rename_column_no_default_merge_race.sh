@@ -90,7 +90,6 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default"
 # carry a default expression, so it is a type where the bug is unavoidable rather than observable.
 ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS t_rename_no_default_dynamic;
-    SET allow_experimental_dynamic_type = 1;
     CREATE TABLE t_rename_no_default_dynamic (x UInt64, y UInt64)
     ENGINE = MergeTree() ORDER BY x
     SETTINGS min_bytes_for_wide_part = 0;

@@ -1,0 +1,12 @@
+a scoped and an unscoped command in one pending entry
+1	1	777	888
+2	2	20	888
+after it materialized
+1	1	777	888
+2	2	20	888
+two scoped commands in one pending entry do not cross-apply
+1	1	777	100
+2	2	20	888
+after it materialized
+1	1	777	100
+2	2	20	888

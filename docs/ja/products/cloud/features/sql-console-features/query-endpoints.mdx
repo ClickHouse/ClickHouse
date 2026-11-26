@@ -13,38 +13,28 @@ doc_type: 'guide'
 **クエリ API エンドポイント** 機能を使用すると、ClickHouse Cloud console に保存された任意の保存クエリから API エンドポイントを直接作成できます。
 これにより、ネイティブドライバーを使って ClickHouse Cloud サービスに接続しなくても、HTTP 経由で API エンドポイントにアクセスして保存クエリを実行できます。
 
-<div id="ip-access-control">
-  ## IP アクセス制御
-</div>
+## IP アクセス制御 {#ip-access-control}
 
-クエリ API エンドポイントでは、API キー単位の IP 許可リストが適用されます。SQL Console と同様に、クエリ API エンドポイントは ClickHouse のインフラストラクチャ内部からリクエストをプロキシするため、サービスレベルの IP 許可リスト設定は適用されません。
+クエリ API エンドポイントでは、APIキー単位の IP 許可リストが適用されます。SQL Console と同様に、クエリ API エンドポイントは ClickHouse のインフラストラクチャ内部からリクエストをプロキシするため、サービスレベルの IP 許可リスト設定は適用されません。
 
 クエリ API エンドポイントを呼び出せるクライアントを制限するには、次の手順に従います。
 
 <Steps>
   <Step title="API キーの設定を開く" id="open-settings">
-    1. ClickHouse Cloud Console → **Organization** → **API Keys** に移動します
+    1. ClickHouse Cloud Console → **Organization** → **APIキー** に移動します
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![API Keys](/images/cloud/guides/query-endpoints/console-api-keys.webp)
-
-    </Frame>
-
+      <Frame>
+        ![APIキー](/images/cloud/guides/query-endpoints/console-api-keys.webp)
+      </Frame>
     </div>
 
-    2. クエリ API エンドポイントで使用する API キーの横にある **Edit** をクリックします
+    2. クエリ API エンドポイントで使用する APIキーの横にある **Edit** をクリックします
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Edit](/images/cloud/guides/query-endpoints/api-key-edit.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Edit](/images/cloud/guides/query-endpoints/api-key-edit.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -54,16 +44,12 @@ doc_type: 'guide'
     3. 必要に応じて複数のエントリを追加します
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Specific locations](/images/cloud/guides/query-endpoints/specific-locations.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Specific locations](/images/cloud/guides/query-endpoints/specific-locations.webp)
+      </Frame>
     </div>
 
-    クエリ API エンドポイントを作成するには、Admin Console ロールと、適切な権限を持つ API キーが必要です。
+    クエリ API エンドポイントを作成するには、Admin Console ロールと、適切な権限を持つ APIキーが必要です。
   </Step>
 </Steps>
 

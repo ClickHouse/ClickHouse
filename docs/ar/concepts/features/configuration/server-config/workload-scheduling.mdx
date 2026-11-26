@@ -405,7 +405,9 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 
 ## تخزين أحمال العمل والموارد {#workload_entity_storage}
 
-تُخزَّن تعريفات جميع أحمال العمل والموارد، بصيغة استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`، تخزينًا دائمًا إما على القرص في `workload_path` أو في ZooKeeper عند `workload_zookeeper_path`. ويُوصى باستخدام التخزين في ZooKeeper لتحقيق الاتساق بين العُقد. وبدلًا من ذلك، يمكن استخدام البند `ON CLUSTER` إلى جانب التخزين على القرص.
+تُخزَّن تعريفات جميع أحمال العمل والموارد، بصيغة استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`، تخزينًا دائمًا إما على القرص في `workload_path` أو في ZooKeeper عند `workload_zookeeper_path`. ويُوصى باستخدام التخزين في ZooKeeper لتحقيق الاتساق بين العُقد. وبدلًا من ذلك، يمكن استخدام البند `ON CLUSTER` إلى جانب التخزين على القرص.
+
+يتطلب إنشاء أحمال العمل والموارد وحذفها امتيازات `CREATE WORKLOAD` و`CREATE RESOURCE` و`DROP WORKLOAD` و`DROP RESOURCE`. ولا تندرج هذه الامتيازات ضمن مجموعتَي امتيازات `CREATE` و`DROP`، لذا يجب منحها صراحةً أو عبر `GRANT ALL`.
 
 ## أحمال العمل والموارد المستندة إلى التهيئة {#config_based_workloads}
 

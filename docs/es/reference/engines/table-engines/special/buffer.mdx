@@ -20,41 +20,27 @@ Mantiene en RAM los datos que se van a escribir y los vacía periódicamente a o
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
 ```
 
-<div id="engine-parameters">
-  ### Parámetros del motor
-</div>
+### Parámetros del motor {#engine-parameters}
 
-<div id="database">
-  #### `database`
-</div>
+#### `database` {#database}
 
 `database` – Nombre de la base de datos. Puede usar `currentDatabase()` u otra expresión constante que devuelva una cadena.
 
-<div id="table">
-  #### `table`
-</div>
+#### `table` {#table}
 
 `table` – Tabla en la que se vacían los datos.
 
-<div id="num_layers">
-  #### `num_layers`
-</div>
+#### `num_layers` {#num_layers}
 
 `num_layers` – Capa de paralelismo. Físicamente, la tabla se representará en `num_layers` búferes independientes.
 
-<div id="min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes">
-  #### `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes`
-</div>
+#### `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes` {#min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes}
 
 Condiciones para vaciar datos del búfer.
 
-<div id="optional-engine-parameters">
-  ### Parámetros opcionales del motor
-</div>
+### Parámetros opcionales del motor {#optional-engine-parameters}
 
-<div id="flush_time-flush_rows-and-flush_bytes">
-  #### `flush_time`, `flush_rows`, y `flush_bytes`
-</div>
+#### `flush_time`, `flush_rows`, y `flush_bytes` {#flush_time-flush_rows-and-flush_bytes}
 
 Condiciones para vaciar los datos del búfer en segundo plano (si se omiten o valen cero, significa que no hay parámetros `flush*`).
 
@@ -62,21 +48,15 @@ Los datos se vacían del búfer y se escriben en la tabla de destino si se cumpl
 
 Además, si se cumple al menos una condición `flush*`, se inicia un vaciado en segundo plano. Esto difiere de `max*`, ya que `flush*` permite configurar por separado los vaciados en segundo plano para evitar añadir latencia a las consultas `INSERT` en tablas Buffer.
 
-<div id="min_time-max_time-and-flush_time">
-  #### `min_time`, `max_time` y `flush_time`
-</div>
+#### `min_time`, `max_time` y `flush_time` {#min_time-max_time-and-flush_time}
 
 Condición para el tiempo, en segundos, desde el momento de la primera escritura en el búfer.
 
-<div id="min_rows-max_rows-and-flush_rows">
-  #### `min_rows`, `max_rows`, y `flush_rows`
-</div>
+#### `min_rows`, `max_rows`, y `flush_rows` {#min_rows-max_rows-and-flush_rows}
 
 Condición sobre la cantidad de filas en el búfer.
 
-<div id="min_bytes-max_bytes-and-flush_bytes">
-  #### `min_bytes`, `max_bytes`, and `flush_bytes`
-</div>
+#### `min_bytes`, `max_bytes`, and `flush_bytes` {#min_bytes-max_bytes-and-flush_bytes}
 
 Condición para el número de bytes en el búfer.
 
@@ -111,10 +91,6 @@ Si el conjunto de columnas de la tabla Buffer no coincide con el conjunto de col
 Si los tipos no coinciden en alguna de las columnas de la tabla Buffer y una tabla subyacente, se registra un mensaje de error en el registro del servidor y el búfer se borra.
 Lo mismo ocurre si la tabla subyacente no existe cuando se vacía el búfer.
 
-<Note>
-  Ejecutar ALTER en la tabla Buffer en versiones anteriores al 26 Oct 2021 provocará un error `Block structure mismatch` (consulte [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) y [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), por lo que eliminar la tabla Buffer y volver a crearla es la única opción. Verifique que este error esté corregido en su versión antes de intentar ejecutar ALTER en la tabla Buffer.
-</Note>
-
 Si el servidor se reinicia de forma anómala, los datos del búfer se pierden.
 
 `FINAL` y `SAMPLE` no funcionan correctamente con las tablas Buffer. Estas condiciones se pasan a la tabla de destino, pero no se usan para procesar los datos del búfer. Si necesita estas características, recomendamos usar la tabla Buffer solo para escritura y leer desde la tabla de destino.
@@ -129,6 +105,6 @@ Debido a estas desventajas, solo podemos recomendar el uso de una tabla Buffer e
 
 Se usa una tabla Buffer cuando se reciben demasiados INSERTs desde un gran número de servidores en un periodo de tiempo, y los datos no pueden almacenarse en búfer antes de la inserción, lo que significa que los INSERTs no pueden ejecutarse con suficiente rapidez.
 
-Tenga en cuenta que no tiene sentido insertar datos de una fila en una, incluso en las tablas Buffer. Esto solo ofrece una velocidad de unos pocos miles de filas por segundo, mientras que insertar bloques de datos más grandes puede superar el millón de filas por segundo.
+Tenga en cuenta que no tiene sentido insertar datos fila a fila, ni siquiera en tablas Buffer. De este modo solo se obtiene una velocidad de unos pocos miles de filas por segundo, mientras que insertar bloques de datos más grandes permite superar el millón de filas por segundo.
 
 {/*AUTOGENERATED_END*/}

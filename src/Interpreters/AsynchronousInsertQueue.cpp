@@ -83,6 +83,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char async_insert_pause_before_schedule[];
+    extern const char async_insert_throw_before_schedule[];
     extern const char async_insert_flush_pause_after_set_user[];
 }
 
@@ -121,13 +122,14 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int INVALID_SETTING_VALUE;
     extern const int NOT_IMPLEMENTED;
     extern const int USER_EXPIRED;
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-static const NameSet settings_to_skip
+[[clang::no_destroy]] static const NameSet settings_to_skip
 {
     /// We don't consider this setting because it is only for deduplication,
     /// which means we can put two inserts with different tokens in the same block safely.
@@ -496,8 +498,6 @@ void AsynchronousInsertQueue::clear()
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
     const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group)
 {
-    FailPointInjection::pauseFailPoint(FailPoints::async_insert_pause_before_schedule);
-
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
     chassert(!data->entries.empty());
@@ -507,26 +507,36 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     /// Doing it in one place keeps the metrics correct for all the flush triggers.
     discountFromQueueMetrics(*data);
 
-    /// Wrap 'unique_ptr' with 'shared_ptr' to make this
-    /// lambda copyable and allow to save it to the thread pool.
-    auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
-
-    /// The job's own copy of the key outlives the pushing query and is freed on a flush thread that can't
-    /// uncharge it, so allocate and release it the same way, charged to neither side.
-    std::shared_ptr<const InsertQuery> job_key;
-    {
-        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
-        job_key = std::shared_ptr<const InsertQuery>(
-            new InsertQuery(key),
-            [](const InsertQuery * ptr)
-            {
-                MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
-                delete ptr;
-            });
-    }
-
+    /// Owned by `data` or `data_shared`, both alive in the `catch` below.
+    auto & entries = data->entries;
+    std::shared_ptr<InsertDataPtr> data_shared;
     try
     {
+        FailPointInjection::pauseFailPoint(FailPoints::async_insert_pause_before_schedule);
+
+        /// Wrap 'unique_ptr' with 'shared_ptr' to make this
+        /// lambda copyable and allow to save it to the thread pool.
+        data_shared = std::make_shared<InsertDataPtr>(std::move(data));
+
+        fiu_do_on(FailPoints::async_insert_throw_before_schedule,
+        {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected memory limit exceeded while scheduling an asynchronous insert flush");
+        });
+
+        /// The job's own copy of the key outlives the pushing query and is freed on a flush thread that can't
+        /// uncharge it, so allocate and release it the same way, charged to neither side.
+        std::shared_ptr<const InsertQuery> job_key;
+        {
+            MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
+            job_key = std::shared_ptr<const InsertQuery>(
+                new InsertQuery(key),
+                [](const InsertQuery * ptr)
+                {
+                    MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+                    delete ptr;
+                });
+        }
+
         pool.scheduleOrThrowOnError(
             [this, job_key, global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
             {
@@ -541,7 +551,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     }
     catch (...)
     {
-        for (auto & entry : (**data_shared).entries)
+        /// The batch has left the queue and never reaches `processData`, so release what it would have.
+        CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, entries.size());
+        for (auto & entry : entries)
             entry->finish(std::current_exception());
     }
 }
