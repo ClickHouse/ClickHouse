@@ -170,7 +170,7 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     {
         throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
             "IcebergPathResolver::resolve failed first branch. raw_path='{}', table_location='{}', table_root='{}'",
-            raw_path, table_location, table_root);
+            metadata_path, table_location, table_root);
     }
 
 
@@ -185,7 +185,7 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
             throw ::DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
                 "IcebergPathResolver::resolve failed in the second branch. raw_path='{}', table_location='{}', table_root='{}'",
-                raw_path,
+                metadata_path,
                 table_location,
                 table_root);
         }

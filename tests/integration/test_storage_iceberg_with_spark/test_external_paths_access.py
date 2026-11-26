@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import struct
 
 import pytest
 
@@ -556,6 +557,58 @@ def test_reference_bound_userinfo_not_in_logs(started_cluster_iceberg_with_spark
         f"WHERE query_id = '{query_id}' AND content_type = 'ManifestFileEntry'")
     assert "reader:[HIDDEN]@account" in content, content
     assert secret not in content, content
+
+
+def test_data_file_userinfo_not_in_pruning_and_estimate_logs(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_data_file_userinfo_logs_{get_uuid_str()}"
+    data_bucket = external_bucket(started_cluster_iceberg_with_spark)
+    secret = f"secret_{get_uuid_str()}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    relocate_data_files_to_bucket(
+        started_cluster_iceberg_with_spark, TABLE_NAME, data_bucket,
+        endpoint=f"http://reader:{secret}@{started_cluster_iceberg_with_spark.minio_ip}:{started_cluster_iceberg_with_spark.minio_port}")
+
+    # Inverted bounds of `id` (field id 1) and a negative record count make pruning and the estimate log the data file.
+    def invert_id_bounds(bound_value):
+        def modifier(bounds):
+            if not bounds:
+                return bounds
+            return [{**b, "value": struct.pack("<i", bound_value)} if b["key"] == 1 else b for b in bounds]
+        return modifier
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    for mf in find_files(os.path.join(host_path, "metadata"), ".avro"):
+        if os.path.basename(mf).startswith("snap-"):
+            continue
+        modify_avro_file(mf, ["data_file", "lower_bounds"], invert_id_bounds(100))
+        modify_avro_file(mf, ["data_file", "upper_bounds"], invert_id_bounds(0))
+        modify_avro_file(mf, ["data_file", "record_count"], lambda _: -1)
+        started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(mf, f"{base_path}/{os.path.relpath(mf, host_path)}")
+    shutil.rmtree(temp_dir)
+
+    table_function = f"icebergS3({get_query_args('s3', started_cluster_iceberg_with_spark, base_path)})"
+    settings = {
+        "object_storage_propagate_credentials_to_other_storages": 1,
+        "s3_allow_server_credentials_in_user_queries": 1,
+        "use_iceberg_metadata_files_cache": 0,
+        "send_logs_level": "warning",
+    }
+
+    _, logs = instance.query_and_get_answer_with_error(
+        f"SELECT * FROM {table_function} WHERE id > 0", settings=settings)
+    assert "declares a lower bound above the upper bound" in logs, logs
+    assert secret not in logs, logs
+
+    _, logs = instance.query_and_get_answer_with_error(
+        f"EXPLAIN SELECT count() FROM numbers(10) AS n JOIN {table_function} AS t ON n.number = t.id WHERE t.id > 0",
+        settings={**settings, "use_statistics": 1, "use_datalake_metadata_statistics": 1})
+    assert "has a negative record count" in logs, logs
+    assert secret not in logs, logs
+
+    assert not instance.contains_in_log(secret)
 
 
 def test_missing_external_local_file_does_not_create_directories(started_cluster_iceberg_with_spark):

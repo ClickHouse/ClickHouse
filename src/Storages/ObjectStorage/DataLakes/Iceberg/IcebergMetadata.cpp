@@ -1688,7 +1688,7 @@ std::optional<UInt64> countDeletedRows(
                 LOG_WARNING(
                     log,
                     "Position delete file '{}' has a negative record count {}, so the read gets no row estimate",
-                    entry.file_path_key.serialize(),
+                    entry.file_path_key,
                     entry.record_count);
                 return std::nullopt;
             }
@@ -1900,7 +1900,7 @@ IcebergMetadata::estimateRead(
                 LOG_WARNING(
                     log,
                     "Data file '{}' of manifest '{}' has a negative record count {}, so the read gets no row estimate",
-                    data_file->parsed_entry->file_path_key.serialize(),
+                    data_file->parsed_entry->file_path_key,
                     manifest_list_entry.manifest_file_path,
                     data_file->parsed_entry->record_count);
                 return estimate;

@@ -1609,7 +1609,7 @@ static bool writeMetadataFiles(
                     tryLogCurrentException(log, "Failed to remove orphaned statistics file during cleanup");
                 }
             }
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Metadata file {} already exists", generated_metadata_info.path.serialize());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Metadata file {} already exists", generated_metadata_info.path);
         }
 
         return tryWriteVersionHintFile(
