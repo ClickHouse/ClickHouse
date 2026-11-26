@@ -1271,16 +1271,31 @@ StorageWriteSessionPtr InsertDependenciesBuilder::getWriteSession(const StorageI
         select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_contexts.at(view_id), async_insert);
 
     write_sessions.emplace(view_id, session);
-    write_sessions_order.push_back(view_id);
     return session;
 }
 
 ProcessorPtr InsertDependenciesBuilder::createCommitSink(SharedHeader header) const
 {
+    /// The reversed post-order of the views: a view goes after all the views it depends on, even if it is reached by several paths.
+    std::vector<StorageIDMaybeEmpty> views_order;
+    StorageIDSet visited;
+    std::function<void(const StorageIDMaybeEmpty &)> visit = [&](const StorageIDMaybeEmpty & view_id)
+    {
+        if (!visited.insert(view_id).second)
+            return;
+        for (const auto & child_view_id : dependent_views.at(view_id) | std::views::reverse)
+            visit(child_view_id);
+        views_order.push_back(view_id);
+    };
+    visit(root_view);
+
     std::vector<InsertCommitSink::Session> sessions;
-    sessions.reserve(write_sessions_order.size());
-    for (const auto & view_id : write_sessions_order)
-        sessions.emplace_back(view_id, write_sessions.at(view_id), materialized_views_ignore_errors && view_id != root_view);
+    sessions.reserve(write_sessions.size());
+    for (const auto & view_id : views_order | std::views::reverse)
+        if (auto it = write_sessions.find(view_id); it != write_sessions.end())
+            sessions.emplace_back(view_id, it->second, materialized_views_ignore_errors && view_id != root_view);
+
+    chassert(sessions.size() == write_sessions.size());
     return std::make_shared<InsertCommitSink>(std::move(header), std::move(sessions));
 }
 

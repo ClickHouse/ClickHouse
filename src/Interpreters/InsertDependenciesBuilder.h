@@ -289,8 +289,6 @@ private:
     size_t sink_stream_size = 1;
     /// The sessions of the tables this insert has sinks for, see `getWriteSession`.
     mutable MapIdWriteSession write_sessions;
-    /// The ids of `write_sessions` in the order the sessions began, a table before its dependent views.
-    mutable std::vector<StorageIDMaybeEmpty> write_sessions_order;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
     /// When the insertion is made into a regular table (it is init_table_id), the root_view is {} / StorageID::createEmpty() and dependent_views contains init_table_id.
