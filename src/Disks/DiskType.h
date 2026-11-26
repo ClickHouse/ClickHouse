@@ -62,6 +62,13 @@ struct DataSourceDescription
 };
 
 class IDisk;
+
+/// A "plain local" disk is a local filesystem disk (`DiskLocal`) with no encryption or caching
+/// layer, so the bytes at `disk.getPath()` are exactly the logical file contents and can be
+/// accessed safely through `std::filesystem` / `ReadBufferFromFile`. Remote disks, `DiskEncrypted`
+/// (ciphertext at the backing path), and cached disks are NOT plain local.
+bool isPlainLocalDisk(const IDisk & disk);
+
 bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk);
 
 }

@@ -50,6 +50,7 @@ public:
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return true; }
+    [[nodiscard]] bool cachesObjectMetadata() const override { return object_metadata_cache != nullptr; }
     /// Blobs are removed right in the transaction, and there is nothing to replicate.
     bool hasDeadBlobsQueue() const override { return false; }
     bool hasMissingBlobsQueue() const override { return false; }
@@ -88,7 +89,9 @@ public:
     void commit(const TransactionCommitOptionsVariant & options) override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 
-    void createMetadataFile(const std::string & /*path*/, const StoredObjects & /* objects */) override {}
+    /// The object itself is already written, there is no metadata to create. But the object may have
+    /// replaced an existing one, so its cached size and modification time are no longer valid.
+    void createMetadataFile(const std::string & path, const StoredObjects & /* objects */) override;
     void createDirectory(const std::string & /*path*/) override {}
     void createDirectoryRecursive(const std::string & /*path*/) override {}
 
@@ -100,6 +103,8 @@ public:
     StoredObjects getSubmittedForRemovalBlobs() override;
 
 private:
+    void invalidateObjectMetadataCache(const std::string & path);
+
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
     StoredObjects objects_to_remove;

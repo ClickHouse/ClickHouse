@@ -6,6 +6,12 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
+# `user_files_path` of this node is turned into a symlink before the test queries it.
+node_symlinked_root = cluster.add_instance(
+    "node_symlinked_root",
+    main_configs=["configs/symlinked_user_files_path.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -100,3 +106,51 @@ def test_direct_outside_path():
     assert "DATABASE_ACCESS_DENIED" in node.query_and_get_error(
         "SELECT * FROM filesystem('/tmp/link_target/test.log')"
     )
+
+
+def test_symlinked_user_files_path():
+    """When `user_files_path` itself is a symlink, an absolute path under the configured
+    (symlink) path is inside `user_files`: containment on a plain `user_files_path` is lexical,
+    so the prefix must not be canonicalized to the symlink target."""
+    node_symlinked_root.stop_clickhouse()
+    node_symlinked_root.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /var/lib/clickhouse/symlinked_user_files /var/lib/clickhouse/symlinked_user_files_target"
+            " && mkdir -p /var/lib/clickhouse/symlinked_user_files_target"
+            " && touch /var/lib/clickhouse/symlinked_user_files_target/a.file"
+            " && chown -R --reference=/var/lib/clickhouse /var/lib/clickhouse/symlinked_user_files_target"
+            " && ln -s /var/lib/clickhouse/symlinked_user_files_target /var/lib/clickhouse/symlinked_user_files",
+        ],
+        privileged=True,
+        user="root",
+    )
+    node_symlinked_root.start_clickhouse()
+
+    assert (
+        node_symlinked_root.query(
+            "SELECT name FROM filesystem('/var/lib/clickhouse/symlinked_user_files/') WHERE type = 'regular' ORDER BY name"
+        )
+        == "a.file\n"
+    )
+    assert (
+        node_symlinked_root.query(
+            "SELECT count() FROM filesystem('/var/lib/clickhouse/symlinked_user_files/a.file')"
+        )
+        == "1\n"
+    )
+    assert node_symlinked_root.query("SELECT count() FROM filesystem('a.file')") == "1\n"
+
+    # `EmbeddedRocksDB` keeps accepting an absolute physical `rocksdb_dir` beneath the symlink
+    # target, as it did before `user_files_policy`, including when an existing table is attached.
+    node_symlinked_root.query("DROP TABLE IF EXISTS rocksdb_physical_dir SYNC")
+    node_symlinked_root.query(
+        "CREATE TABLE rocksdb_physical_dir (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, "
+        "'/var/lib/clickhouse/symlinked_user_files_target/rocksdb_physical_dir') PRIMARY KEY k"
+    )
+    node_symlinked_root.query("INSERT INTO rocksdb_physical_dir VALUES (1, 'a')")
+    node_symlinked_root.query("DETACH TABLE rocksdb_physical_dir")
+    node_symlinked_root.query("ATTACH TABLE rocksdb_physical_dir")
+    assert node_symlinked_root.query("SELECT v FROM rocksdb_physical_dir") == "a\n"
+    node_symlinked_root.query("DROP TABLE rocksdb_physical_dir SYNC")

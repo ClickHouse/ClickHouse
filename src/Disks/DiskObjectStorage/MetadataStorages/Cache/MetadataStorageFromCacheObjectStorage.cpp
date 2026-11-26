@@ -194,6 +194,11 @@ bool MetadataStorageFromCacheObjectStorage::isPlain() const
     return underlying->isPlain();
 }
 
+bool MetadataStorageFromCacheObjectStorage::cachesObjectMetadata() const
+{
+    return underlying->cachesObjectMetadata();
+}
+
 bool MetadataStorageFromCacheObjectStorage::isWriteOnce() const
 {
     return underlying->isWriteOnce();
