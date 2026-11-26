@@ -1,5 +1,5 @@
--- `DISTINCT` keeps binary identity, so Float values that compare equal (0.0 and -0.0, all NaN
--- payloads) survive as separate rows, as they do under `GROUP BY` and `LIMIT BY`. The final DISTINCT
+-- `DISTINCT` keeps binary identity (except that -0.0 is replaced with 0.0), so NaN payloads that compare
+-- equal survive as separate rows, as they do under `GROUP BY` and `LIMIT BY`. The final DISTINCT
 -- over a stream sorted by a prefix of the distinct columns used to deduplicate that prefix by
 -- comparison equality and collapse them into one row per equality class, so the row count depended on
 -- which variant the plan picked. A Float column now stops the sorted prefix, and the hash variant -
@@ -20,16 +20,16 @@ SET max_threads = 1;
 -- `ExternalDistinctTransform`, which is the same hash variant with spilling to disk.
 SET max_bytes_before_external_distinct = 0, max_bytes_ratio_before_external_distinct = 0;
 
-SELECT '-- hash DISTINCT keeps binary identity: all four rows survive';
+SELECT '-- hash DISTINCT keeps binary identity, except that the zeros are one key: three rows survive';
 SET optimize_distinct_in_order = 0;
-SELECT count(), arraySort(groupArray(reinterpretAsUInt64(f))) FROM (SELECT DISTINCT f, b FROM t_distinct_float ORDER BY f);
+SELECT count(), arraySort(groupArray(if(f = 0, 0, reinterpretAsUInt64(f)))) FROM (SELECT DISTINCT f, b FROM t_distinct_float ORDER BY f);
 
 SET optimize_distinct_in_order = 1;
 
 SELECT '-- a Float column keeps the sorted variant out of the plan: both distincts are hash ones';
 SELECT arraySort(groupArray(trimLeft(explain))) FROM (EXPLAIN PIPELINE SELECT DISTINCT f, b FROM t_distinct_float ORDER BY f SETTINGS enable_parallel_replicas = 0) WHERE trimLeft(explain) IN ('DistinctSortedStreamTransform', 'DistinctTransform');
 
-SELECT '-- the in-order plan keeps binary identity too: both zeros and both NaN payloads survive';
+SELECT '-- the in-order plan keeps binary identity too: one zero and both NaN payloads survive';
 -- Which value of a class is printed first depends on the order the equal values leave the sort, so
 -- pin the equality classes, not the binary payloads.
 SELECT count(), arraySort(groupArray(if(isNaN(f), 'nan', 'zero'))) FROM (SELECT DISTINCT f, b FROM t_distinct_float ORDER BY f);

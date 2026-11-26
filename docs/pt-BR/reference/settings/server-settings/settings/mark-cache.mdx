@@ -14,7 +14,7 @@ Estas configurações configuram o ClickHouse server e são geradas automaticame
 
 ## mark_cache_policy {#mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache de marcas. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de evicção do cache de marcas (índice das tabelas da família MergeTree). Valores possíveis: `LRU`, `SLRU`, `SIEVE`. Consulte [`mark_cache_size`](/pt-BR/reference/settings/server-settings/settings/mark-cache#mark_cache_size) para a capacidade do cache e [`mark_cache_size_ratio`](/pt-BR/reference/settings/server-settings/settings/mark-cache#mark_cache_size_ratio) para o tamanho da fila protegida na política SLRU.
 
 ## mark_cache_prewarm_ratio {#mark_cache_prewarm_ratio}
 

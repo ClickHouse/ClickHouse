@@ -1,0 +1,252 @@
+---
+slug: /clickstack/observability/integration-examples/nodejs-traces
+title: 'Monitorización de trazas de Node.js con ClickHouse Observability'
+sidebarTitle: 'Trazas de Node.js'
+description: 'Configuración de la monitorización de trazas de Node.js con ClickHouse Observability, tanto en ClickHouse Observability como en implementaciones autogestionadas.'
+doc_type: 'guide'
+keywords: ['Node.js', 'trazas', 'OTEL', 'ClickHouse Observability', 'trazado distribuido']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Capture las trazas de su aplicación Node.js con la instrumentación automática de OpenTelemetry y envíelas a ClickHouse Observability. Utilice el [conjunto de datos de demostración](#demo-dataset) para probar la integración sin necesidad de instrumentar una aplicación.
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability
+* Para su aplicación: Node.js 22 o una versión posterior y npm
+* Para la demo: Docker y `curl`
+
+### Datos de conexión {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta en fase beta" />
+
+    Abra ClickHouse Observability y vaya a **Team Settings → Data → Managed Telemetry**. Copie su endpoint OTLP HTTP y su clave de API. Puede usar **Copy connection details** para copiar la configuración o **Reveal key** para ver la clave enmascarada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datos de conexión de Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Defina estas variables de conexión en el terminal donde vaya a ejecutar su aplicación o el recolector de demostración:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Sustituya los marcadores de posición por el endpoint exacto de su servicio, incluido el puerto, y por su clave de API. Use el endpoint HTTP base sin el sufijo `/v1/traces`; el exportador añade al final la ruta de cada señal.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Use el endpoint OTLP HTTP accesible de su recolector (por ejemplo, `http://YOUR_COLLECTOR_HOST:4318`) y sus ajustes de autenticación. Si su recolector no requiere autenticación, omita el bloque `headers` del exportador en las configuraciones siguientes. Consulte la [guía de introducción para la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) para obtener instrucciones de configuración.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+## Integración con una aplicación Node.js existente {#existing-nodejs}
+
+<Steps>
+  <Step title="Instalar OpenTelemetry" id="install-instrumentation">
+    Desde el directorio de su aplicación, instale los paquetes de instrumentación:
+
+    ```bash
+    npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node@0.81.0
+    ```
+
+    Estos pasos utilizan la [instrumentación automática de OpenTelemetry](https://opentelemetry.io/docs/zero-code/js/) para aplicaciones CommonJS. Los módulos ES nativos requieren la [configuración ESM](https://github.com/open-telemetry/opentelemetry-js/blob/main/doc/esm-support.md). Utilice una sola configuración de instrumentación por aplicación para evitar spans duplicados.
+  </Step>
+
+  <Step title="Configurar el tracing e iniciar la aplicación" id="run-application">
+    En el terminal donde definió las variables de conexión, ejecute:
+
+    ```bash
+    export OTEL_SERVICE_NAME='nodejs-service'
+    export OTEL_TRACES_EXPORTER='otlp'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_HEADERS="Authorization=${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+    export OTEL_METRICS_EXPORTER='none'
+    export OTEL_LOGS_EXPORTER='none'
+
+    node --require @opentelemetry/auto-instrumentations-node/register app.js
+    ```
+
+    Reemplace `app.js` por el punto de entrada de su aplicación. La precarga inicializa la instrumentación antes de que la aplicación importe sus bibliotecas. Si usa un endpoint autogestionado sin autenticación, omita la exportación de los encabezados y ejecute `unset OTEL_EXPORTER_OTLP_HEADERS`.
+
+    El endpoint debe ser accesible desde la aplicación. Si esta se ejecuta en un contenedor, `localhost` hace referencia a ese contenedor.
+  </Step>
+
+  <Step title="Generar tráfico" id="generate-traffic">
+    Envíe solicitudes a un endpoint expuesto por su aplicación. Por ejemplo, para una aplicación que escucha en el puerto `3000`:
+
+    ```bash
+    curl http://localhost:3000/
+    ```
+
+    Espere unos segundos a que el exportador envíe los spans.
+  </Step>
+
+  <Step title="Verificar las trazas" id="verify-traces">
+    Abra **Búsqueda**, seleccione **Traces**, filtre por `ServiceName:nodejs-service` y seleccione **Last 15 minutes**. Abra una traza para examinar sus spans, tiempos y atributos.
+  </Step>
+</Steps>
+
+## Conjunto de datos de demostración {#demo-dataset}
+
+La muestra contiene 822 spans de `nodejs-demo-api`. No necesita tener una aplicación Node.js en ejecución.
+
+<Steps>
+  <Step title="Descargar el conjunto de datos de muestra" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
+    ```
+  </Step>
+
+  <Step title="Configurar el recolector de demostración" id="configure-demo-collector">
+    Guarde lo siguiente como `nodejs-traces-demo.yaml` en el directorio de descarga:
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        trace_statements:
+          - context: span
+            statements:
+              - set(cache["duration_ns"], end_time_unix_nano - start_time_unix_nano)
+              - >-
+                set(start_time,
+                  Now() - Duration("2m") -
+                  (Time("2025-10-27T17:59:15Z", "%Y-%m-%dT%H:%M:%SZ") - start_time)
+                )
+              - set(end_time_unix_nano, start_time_unix_nano + cache["duration_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        traces/nodejs-demo:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      El procesador `transform/demo_timestamps`, exclusivo de la demostración, desplaza esta muestra aproximadamente a las últimas 24 horas, de modo que termine dos minutos antes de la ingesta, y conserva las duraciones de los spans y el patrón de tráfico. Omita este procesador con sus propias trazas de Node.js para conservar sus marcas de tiempo originales. Si vuelve a enviar la muestra, pueden generarse spans duplicados.
+    </Note>
+  </Step>
+
+  <Step title="Ejecutar el recolector de demostración" id="run-demo-collector">
+    <Note>
+      Si el recolector de destino se ejecuta en este mismo equipo, establezca `OTEL_EXPORTER_OTLP_ENDPOINT` en `http://host.docker.internal:4318`. El siguiente comando ya incluye la asignación del host de Docker.
+    </Note>
+
+    Ejecute OpenTelemetry Collector Contrib `0.161.0` desde el directorio que contiene la configuración, en el terminal donde estableció las variables de conexión. Mantenga este terminal abierto:
+
+    ```bash
+    docker run --rm --name nodejs-traces-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/nodejs-traces-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    El receptor local usa el puerto `14318` para evitar conflictos con un recolector que ya esté usando el puerto `4318`. El recolector reenvía las trazas al endpoint configurado con los ajustes de autenticación indicados anteriormente.
+  </Step>
+
+  <Step title="Enviar las trazas" id="send-traces">
+    En otro terminal, desde el directorio de descarga, envíe la muestra original al recolector local:
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/traces \
+      -H "Content-Type: application/json" \
+      --data-binary @nodejs-traces-sample.json
+    ```
+
+    Una respuesta vacía de éxito, como `{}` o `{"partialSuccess":{}}`, indica que el recolector local aceptó la solicitud. Revise la salida del recolector por si hay errores de exportación y espere unos segundos a que el lote llegue a su servicio. Cuando termine, detenga el recolector de demostración con **Ctrl+C**.
+  </Step>
+
+  <Step title="Verificar las trazas de demostración" id="verify-demo-traces">
+    Abra **Búsqueda**, seleccione **Traces**, filtre por `ServiceName:nodejs-demo-api` y seleccione **últimos 2 días** para incluir todo el conjunto de datos desplazado. Abra una traza para inspeccionar sus atributos HTTP.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Trazas de demostración de Node.js en la búsqueda de ClickHouse Observability](/images/clickstack/observability-nodejs-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Paneles y visualización {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json" download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">Descargar la configuración del panel de control</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Importar el panel de control" id="import-dashboard">
+    1. Abra **Dashboards** y haga clic en **Import** en la esquina superior derecha.
+    2. Cargue `nodejs-traces-dashboard.json`.
+    3. Asigne los gráficos a su fuente **Traces** y haga clic en **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página Dashboards con el botón Import resaltado](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Ver el panel de control" id="view-dashboard">
+    Para los datos de muestra, seleccione **últimos 2 días** y, si lo desea, filtre por `ServiceName:nodejs-demo-api`. Para su propia aplicación, seleccione el nombre de su servicio y un intervalo de tiempo que abarque sus solicitudes.
+
+    El panel de control utiliza los atributos HTTP de los spans de la muestra. Según la versión de la instrumentación, los nombres de los atributos pueden variar; si los spans de su aplicación son distintos, ajuste los campos de los gráficos.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panel de control de trazas de Node.js que muestra solicitudes, latencia, puntos de conexión, códigos de estado HTTP, métodos y consultas a la base de datos](/images/clickstack/observability-nodejs-traces-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Resolución de problemas {#troubleshooting}
+
+### No aparecen trazas de la aplicación {#no-application-traces}
+
+Revise la salida de la aplicación en busca de errores de exportación. Verifique la configuración del endpoint, el protocolo y la autenticación. Cargue la instrumentación antes que las bibliotecas de la aplicación, genere solicitudes y compruebe el filtro por nombre de servicio y el intervalo de tiempo. Para módulos ES nativos, siga las instrucciones de configuración de ESM enlazadas.
+
+### No aparecen las trazas de demostración {#no-demo-traces}
+
+Revise la salida del recolector de demostración para detectar errores de autenticación o de exportación. Una respuesta correcta de `curl` confirma que los datos se aceptaron localmente; espere unos segundos a que se reenvíen a su servicio. Incluya `transform/demo_timestamps` en la canalización y seleccione **Últimos 2 días**. Si vuelve a enviar la muestra, pueden generarse duplicados.
+
+## Próximos pasos {#next-steps}
+
+* Configure [alertas](/es/clickstack/observability/features/alerts) de errores y latencia.
+* Cree [dashboards](/es/clickstack/observability/features/dashboards/overview) adicionales.

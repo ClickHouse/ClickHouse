@@ -22,18 +22,6 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 执行 drop 时，是否删除所有 Iceberg 文件。
 
-## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "为此前硬编码的队列容量（位于 Iceberg data manifest 解码任务与查询之间）新增的设置。"}]}]} />
-
-Iceberg data manifest 解码任务与查询之间队列的容量，以数据文件条目数计。
-
-队列已满且查询未消费数据时，解码任务会暂停，因此该设置也限定了预读量。
-
-必须大于零。
-
 ## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -43,55 +31,6 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 在 S3 或 Azure 上查找按路径读取的 Iceberg 表的最新元数据文件时，仅列出键前缀 `metadata/v`，从而避免列出同样存储在 `metadata` 目录中的清单文件。如果该前缀下存在 `.metadata.json` 文件，则仅将这些文件作为候选结果；否则会列出整个目录。使用 `iceberg_use_version_hint`、`iceberg_metadata_file_path`、`iceberg_metadata_table_uuid` 或 `iceberg_recent_metadata_file_by_last_updated_ms_field` 时，该设置不生效；该设置也不适用于数据湖目录数据库中的表。
 
 仅当表的所有元数据文件均以 `v<N>...` 命名时 (ClickHouse 和 Hadoop 目录均采用此命名方式) 才应启用此设置：如果目录中还存在 `<N>-<uuid>.metadata.json` 文件，这些文件永远不会成为候选结果，因此其写入器提交的变更将无法被识别。
-
-## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
-
-**别名**: `iceberg_delete_manifest_decode_concurrency`
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
-
-<VersionHistory
-  rows={[
-{
-  id: "row-1",
-  items: [
-    { label: "26.9" },
-    { label: "4" },
-    {
-      label:
-        "新增设置，用于限制并发解码的 Iceberg manifest 文件数量，对 delete manifest 和 data manifest 同样适用。它取代了 `iceberg_delete_manifest_decode_concurrency`（保留为别名）。取值 `2` 近似于 26.9 之前的数据路径行为：一次解码一个 manifest，同时下一个 manifest 的拉取已在进行中；因此当 `compatibility` 为 26.8 或更低时，delete 解码也会以 2 而非其发布默认值 4 运行，从而保持旧数据路径的内存占用规模，代价是损失部分 delete 解码的重叠执行。"
-    }
-  ]
-},
-{
-  id: "row-2",
-  items: [
-    { label: "26.8" },
-    { label: "4" },
-    {
-      label:
-        "新增设置，用于限制在读取第一行之前并发解码的 Iceberg delete manifest 文件数量。在 26.8 之前，一次只解码一个 manifest，同时下一个 manifest 的拉取已在进行中，因此 `2` 最接近之前的行为；在之前的行为下，这些 manifest 的对象存储往返耗时总和都落在读取第一行之前的关键路径上。当时该设置名为 `iceberg_delete_manifest_decode_concurrency`，现已成为该设置的别名。"
-    }
-  ]
-},
-{
-  id: "row-3",
-  items: [
-    { label: "26.11" },
-    { label: "16" },
-    { label: "将并发解码 Iceberg manifest 文件数量的默认值从 4 提高到 16，以便在包含大量 manifest 的表上让更多对象存储往返请求重叠进行。" }
-  ]
-}
-]}
-/>
-
-读取表时并发解码的 Iceberg manifest 文件的最大数量。
-
-所有 delete manifest 都会在读取任何数据文件之前解码完成；data manifest 则在生成查询所需的数据文件列表的过程中解码，且只有当查询消费掉已解码的条目后，才会继续解码新的 manifest。同时解码多个 manifest，可以让对象存储的往返请求与逐条目的裁剪工作重叠进行。
-
-当 Iceberg 元数据文件缓存被禁用或已满时，取值越高峰值内存占用越大，因为此时每个处理中的 manifest 都会各自持有自己解码后的内容。
-
-该值必须大于零；取 `1` 表示逐个解码 manifest。
 
 ## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 

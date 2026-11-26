@@ -649,8 +649,6 @@ try
         LOG_INFO(log, "Listening for {}", server.getDescription());
     }
 
-    async_metrics.start();
-
     Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
 
     /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
@@ -766,6 +764,11 @@ try
 
 
     buildLoggers(config(), logger());
+
+    /// Start the metrics only after the loggers are rebuilt: `buildLoggers` replaces the log channel and registers its
+    /// queues, and the metrics read them.
+    async_metrics.start();
+
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;

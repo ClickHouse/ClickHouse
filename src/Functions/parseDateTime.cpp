@@ -24,8 +24,10 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
-#include <expected>
 #include <base/sanitizer_defs.h>
+
+#include <expected>
+#include <limits>
 
 
 namespace DB
@@ -859,7 +861,13 @@ namespace
                     if (result = datetime.buildDateTime(time_zone); result.has_value())
                     {
                         if constexpr (return_type == ReturnType::DateTime)
-                            res_data[i] = static_cast<UInt32>(*result);
+                        {
+                            if (*result > std::numeric_limits<UInt32>::max()) [[unlikely]]
+                                result = std::unexpected(ErrorCodeAndMessage(
+                                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch exceeds the maximum DateTime value"));
+                            else
+                                res_data[i] = static_cast<UInt32>(*result);
+                        }
                         else
                             res_data[i] = static_cast<Int64>(*result) * multiplier + datetime.microsecond;
                     }
