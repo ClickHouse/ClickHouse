@@ -672,6 +672,10 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                 }
                 case QueryTreeNodeType::TABLE:
                 {
+                    /// Each replica reads this table, or expands this view, with the context of the (sub)query reading it.
+                    if (context->canUseParallelReplicasOnInitiator() && !current_context->canUseTaskBasedParallelReplicas())
+                        return nullptr;
+
                     const auto & table_node = node->as<const TableNode &>();
                     const auto & storage = table_node.getStorage();
 

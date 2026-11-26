@@ -238,7 +238,8 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             }
             case QueryTreeNodeType::JOIN:
             {
-                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
+                    || !current_context->getSettingsRef()[Setting::parallel_replicas_for_queries_with_multiple_tables])
                     return {};
 
                 const auto & join_node = query_tree_node->as<JoinNode &>();
@@ -576,6 +577,11 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.back() == query_tree_node.get())
         return nullptr;
+
+    /// Each replica plans every one of these (sub)queries with its own context, the shipped one included (see `Planner`).
+    for (const auto * node : stack)
+        if (!node->getContext()->canUseTaskBasedParallelReplicas())
+            return nullptr;
 
     /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);
