@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
@@ -36,7 +37,7 @@ namespace QueryPlanOptimizations
 
 bool planReadsFromRemote(QueryPlan::Node & root)
 {
-    std::vector<QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         auto * node = stack.back();
@@ -364,7 +365,7 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
 
 void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans)
 {
-    std::vector<QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         auto * node = stack.back();

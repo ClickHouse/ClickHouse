@@ -14,7 +14,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
-#include <unordered_set>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -64,7 +63,7 @@ IQueryPlanStep::UnneededInputPositions LimitStep::getUnneededColumns(const Vecto
     if (distributed_top_k_candidate_sort_description)
     {
         const auto & header = *input_headers.front();
-        std::unordered_set<size_t> sort_key_positions;
+        UnorderedSetWithMemoryTracking<size_t> sort_key_positions;
         for (const auto & column : *distributed_top_k_candidate_sort_description)
             sort_key_positions.insert(header.getPositionByName(column.column_name));
 

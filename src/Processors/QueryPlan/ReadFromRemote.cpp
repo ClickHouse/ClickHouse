@@ -252,7 +252,7 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
 void ReadFromRemote::setDistributedTopKCoordination(UInt64 limit_, SortDescription sort_description)
 {
     Block candidate_header;
-    std::unordered_set<String> candidate_names;
+    UnorderedSetWithMemoryTracking<String> candidate_names;
     for (const auto & key : sort_description)
     {
         if (candidate_names.emplace(key.column_name).second)
