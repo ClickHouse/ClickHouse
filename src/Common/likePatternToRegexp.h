@@ -54,4 +54,7 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
 /// i.e. a backslash followed by a byte other than '%', '_' or '\', or a trailing backslash.
 bool likePatternHasUnknownBackslashEscape(std::string_view pattern);
 
+/// Escapes the LIKE metacharacters so that `needle` is matched literally.
+String escapeForLikePattern(std::string_view needle);
+
 }
