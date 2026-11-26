@@ -92,6 +92,8 @@ public:
 
     virtual std::any visitMetricName(PromQLParser::MetricNameContext *context) = 0;
 
+    virtual std::any visitMetricNameKeyword(PromQLParser::MetricNameKeywordContext *context) = 0;
+
     virtual std::any visitKeyword(PromQLParser::KeywordContext *context) = 0;
 
     virtual std::any visitLiteral(PromQLParser::LiteralContext *context) = 0;

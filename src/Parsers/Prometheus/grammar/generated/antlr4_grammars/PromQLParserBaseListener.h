@@ -126,6 +126,9 @@ public:
   virtual void enterMetricName(PromQLParser::MetricNameContext * /*ctx*/) override { }
   virtual void exitMetricName(PromQLParser::MetricNameContext * /*ctx*/) override { }
 
+  virtual void enterMetricNameKeyword(PromQLParser::MetricNameKeywordContext * /*ctx*/) override { }
+  virtual void exitMetricNameKeyword(PromQLParser::MetricNameKeywordContext * /*ctx*/) override { }
+
   virtual void enterKeyword(PromQLParser::KeywordContext * /*ctx*/) override { }
   virtual void exitKeyword(PromQLParser::KeywordContext * /*ctx*/) override { }
 

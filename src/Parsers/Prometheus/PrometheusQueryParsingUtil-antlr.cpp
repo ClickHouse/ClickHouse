@@ -1246,6 +1246,12 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
         catch (const antlr4::ParseCancellationException &)
         {
             /// The parser stopped at a syntax error, which `error_listener` has already recorded.
+            chassert(error_listener.hasError());
+            if (error_message)
+                *error_message = error_listener.getErrorMessage();
+            if (error_pos)
+                *error_pos = error_listener.getErrorPos();
+            return false;
         }
     }
 

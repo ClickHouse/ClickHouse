@@ -33,7 +33,7 @@ public:
     RuleFunction_ = 22, RuleParameter = 23, RuleParameterList = 24, RuleAggregation = 25, 
     RuleBy = 26, RuleWithout = 27, RuleGrouping = 28, RuleOn_ = 29, RuleIgnoring = 30, 
     RuleGroupLeft = 31, RuleGroupRight = 32, RuleLabelName = 33, RuleLabelNameList = 34, 
-    RuleMetricName = 35, RuleKeyword = 36, RuleLiteral = 37
+    RuleMetricName = 35, RuleMetricNameKeyword = 36, RuleKeyword = 37, RuleLiteral = 38
   };
 
   explicit PromQLParser(antlr4::TokenStream *input);
@@ -89,6 +89,7 @@ public:
   class LabelNameContext;
   class LabelNameListContext;
   class MetricNameContext;
+  class MetricNameKeywordContext;
   class KeywordContext;
   class LiteralContext; 
 
@@ -510,7 +511,6 @@ public:
   public:
     ParameterContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    LiteralContext *literal();
     VectorOperationContext *vectorOperation();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -717,7 +717,7 @@ public:
     MetricNameContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *METRIC_NAME();
-    KeywordContext *keyword();
+    MetricNameKeywordContext *metricNameKeyword();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -727,6 +727,30 @@ public:
   };
 
   MetricNameContext* metricName();
+
+  class  MetricNameKeywordContext : public antlr4::ParserRuleContext {
+  public:
+    MetricNameKeywordContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *AND();
+    antlr4::tree::TerminalNode *OR();
+    antlr4::tree::TerminalNode *UNLESS();
+    antlr4::tree::TerminalNode *BY();
+    antlr4::tree::TerminalNode *WITHOUT();
+    antlr4::tree::TerminalNode *OFFSET();
+    antlr4::tree::TerminalNode *START();
+    antlr4::tree::TerminalNode *END();
+    antlr4::tree::TerminalNode *AGGREGATION_OPERATOR();
+    antlr4::tree::TerminalNode *FUNCTION();
+
+    virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
+    virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  MetricNameKeywordContext* metricNameKeyword();
 
   class  KeywordContext : public antlr4::ParserRuleContext {
   public:
