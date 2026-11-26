@@ -87,7 +87,7 @@ public:
         return std::make_shared<FunctionAiSimilarity>(context);
     }
 
-    explicit FunctionAiSimilarity(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfBackgroundExpression(context); }
+    explicit FunctionAiSimilarity(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfNotAllowed(context); }
 
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] bool isVariadic() const override { return true; }
