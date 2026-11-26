@@ -1,0 +1,19 @@
+right join, view on the extended side
+1	1	match
+1	1	match
+full join, both sides extended
+1	1	match
+1	1	match
+left join, view on the preserved side
+1	1
+1	1
+array join
+1	1
+1	2
+1	1
+1	2
+or of several comparisons on the same view
+1
+2
+1
+2

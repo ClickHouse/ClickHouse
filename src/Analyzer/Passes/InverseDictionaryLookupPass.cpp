@@ -429,12 +429,16 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
         /// The `dictGet` comes from the view definition, which may run under the definer's rights
         /// (`SQL SECURITY DEFINER`). After the rewrite the dictionary is read with the invoker's rights,
         /// so skip the optimization if the invoker is not allowed to use the dictionary directly.
-        /// A missing dictionary is not hidden here: the error propagates, the same as when the view is executed.
+        /// The access is checked before the dictionary is loaded: loading may contact its source or fail,
+        /// and neither must be visible to an invoker without access.
+        /// A missing dictionary is not hidden from an invoker with access: the error propagates, the same as when the view is executed.
         const String dict_name = info->dict_name_node->getValue().safeGet<String>();
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+        const auto & dictionaries_loader = context->getExternalDictionariesLoader();
+        const auto resolved_dict = dictionaries_loader.resolveDictionary(dict_name, context);
         if (!context->getAccess()->isGranted(
-                AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName()))
+                AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(resolved_dict.id), resolved_dict.id.getTableName()))
             return std::nullopt;
+        (void)dictionaries_loader.getDictionary(resolved_dict, context);
 
         const auto & projection_columns = column_definition->source_query_node->getProjectionColumns();
         const auto & projection_nodes = column_definition->source_query_node->getProjection().getNodes();
@@ -1011,8 +1015,9 @@ public:
             auto dict_get_keys_fn = std::make_shared<FunctionNode>("dictGetKeys");
             auto & dict_get_keys_args = dict_get_keys_fn->getArguments().getNodes();
 
-            dict_get_keys_args.push_back(dictget_function_info.dict_name_node);
-            dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node);
+            /// The constants may belong to a cached view inspection tree shared by every comparison of the query: do not alias them.
+            dict_get_keys_args.push_back(dictget_function_info.dict_name_node->clone());
+            dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node->clone());
             dict_get_keys_args.push_back(dict_side == Side::LHS ? arguments[1] : arguments[0]);
 
             QueryAnalyzer analyzer(false);
@@ -1378,7 +1383,8 @@ private:
         const auto & dict_structure = lookup.dict->getStructure();
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
-        dict_table_function->getArguments().getNodes().push_back(lookup.dictget_function_info.dict_name_node);
+        /// The constant may belong to a cached view inspection tree shared by every comparison of the query: do not alias it.
+        dict_table_function->getArguments().getNodes().push_back(lookup.dictget_function_info.dict_name_node->clone());
 
         auto dict_table_storage = std::make_shared<StorageDictionary>(
             StorageID(ITableFunction::getDatabaseName(), "dictionary"),

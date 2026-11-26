@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: Dictionary is not available on parallel-replica workers.
+
 # The inverse dictionary lookup rewrite through an `SQL SECURITY INVOKER` view must not drop the
 # access check of the view column it replaces.
 
@@ -53,4 +56,6 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER IF EXISTS ${user};
     DROP VIEW ${view_name};
     DROP DICTIONARY ${dict_name};
+    DROP TABLE ${data_table};
+    DROP TABLE ${ref_table};
 "
