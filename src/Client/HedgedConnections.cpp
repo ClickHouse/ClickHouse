@@ -279,25 +279,44 @@ void HedgedConnections::disconnect()
             if (replica.connection)
                 finishProcessReplica(replica, true);
 
-    /// Must precede the factory stop: it empties the factory epoll, after which
-    /// numberOfProcessingReplicas() reads 0 and the descriptor would leak.
-    if (hedged_connections_factory.hasEventsInProcess()
-        && hedged_connections_factory.numberOfProcessingReplicas() > 0)
-        epoll.remove(hedged_connections_factory.getFileDescriptor());
-
     stopChoosingReplicasAndRetractPending();
 }
 
 void HedgedConnections::stopChoosingReplicasAndRetractPending()
 {
-    if (hedged_connections_factory.hasEventsInProcess())
-        hedged_connections_factory.stopChoosingReplicas();
+    /// After the factory is stopped no replacement can arrive, so no offset may stay pending:
+    /// a pending flag would never be cleared and would suppress the receive timeout.
+    for (size_t offset : offsets_queue)
+        offset_states[offset].next_replica_in_process = false;
+    offsets_queue.clear();
 
-    /// Unconditional: an offset can be queued while the factory is already idle.
-    while (!offsets_queue.empty())
+    /// Nothing is pending now, so this takes the factory's descriptor out of `epoll`.
+    /// A stopped factory never signals it again, and `drain` waits until `epoll` is empty.
+    updateFactoryRegistration();
+
+    hedged_connections_factory.stopChoosingReplicas();
+}
+
+void HedgedConnections::updateFactoryRegistration()
+{
+    const bool has_pending_offsets = !offsets_queue.empty();
+
+    /// Otherwise the pending offsets would wait for an event that never comes.
+    chassert(!has_pending_offsets || hedged_connections_factory.hasEventsInProcess());
+
+    if (has_pending_offsets == factory_fd_registered)
+        return;
+
+    if (has_pending_offsets)
     {
-        offset_states[offsets_queue.front()].next_replica_in_process = false;
-        offsets_queue.pop();
+        epoll.add(hedged_connections_factory.getFileDescriptor());
+        factory_fd_registered = true;
+    }
+    else
+    {
+        /// Cleared first, so that a failed removal is not attempted again from `disconnect`.
+        factory_fd_registered = false;
+        epoll.remove(hedged_connections_factory.getFileDescriptor());
     }
 }
 
@@ -448,17 +467,20 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
         else if (timeout_fd_to_replica_location.contains(event_fd))
         {
             ReplicaLocation location = timeout_fd_to_replica_location[event_fd];
-            offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
-            offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
+            OffsetState & offset_state = offset_states[location.offset];
+            offset_state.replicas[location.index].change_replica_timeout.reset();
+            offset_state.replicas[location.index].is_change_replica_timeout_expired = true;
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
 
-            /// The factory is already stopped, so no replacement can arrive; marking the offset
-            /// as pending would suppress the timeout exit in resumePacketReceiver().
-            if (cancelled)
+            /// No replacement is wanted once the query is cancelled (the factory is stopped, so
+            /// none can arrive) or the offset committed to a replica (a second one would stream
+            /// the same data again). Marking the offset as pending would only suppress the
+            /// timeout exit in `resumePacketReceiver`.
+            if (cancelled || !offset_state.can_change_replica)
                 continue;
 
-            offset_states[location.offset].next_replica_in_process = true;
-            offsets_queue.push(static_cast<int>(location.offset));
+            offset_state.next_replica_in_process = true;
+            offsets_queue.push_back(location.offset);
             startNewReplica();
         }
         else
@@ -582,6 +604,16 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
     ++offsets_with_disabled_changing_replica;
     offset_state.can_change_replica = false;
 
+    /// The offset does not wait for a replacement anymore. Retract it now: otherwise the next ready
+    /// connection would become a second replica streaming this offset's data, the offset that
+    /// really waits for that connection would never get it, and the stale pending flag would
+    /// suppress the receive timeout of the replica we have just committed to.
+    if (offset_state.next_replica_in_process)
+    {
+        std::erase(offsets_queue, replica_location.offset);
+        offset_state.next_replica_in_process = false;
+    }
+
     for (size_t i = 0; i != offset_state.replicas.size(); ++i)
     {
         if (i != replica_location.index && offset_state.replicas[i].connection)
@@ -593,13 +625,9 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
 
     /// If we disabled changing replica with all offsets, we need to stop choosing new replicas.
     if (offsets_with_disabled_changing_replica == offset_states.size())
-    {
-        if (hedged_connections_factory.hasEventsInProcess()
-            && hedged_connections_factory.numberOfProcessingReplicas() > 0)
-            epoll.remove(hedged_connections_factory.getFileDescriptor());
-
         stopChoosingReplicasAndRetractPending();
-    }
+    else
+        updateFactoryRegistration();
 }
 
 void HedgedConnections::startNewReplica()
@@ -607,32 +635,38 @@ void HedgedConnections::startNewReplica()
     Connection * connection = nullptr;
     HedgedConnectionsFactory::State state = hedged_connections_factory.startNewConnection(connection);
 
-    /// Check if we need to add hedged_connections_factory file descriptor to epoll.
-    if (state == HedgedConnectionsFactory::State::NOT_READY && hedged_connections_factory.numberOfProcessingReplicas() == 1)
-        epoll.add(hedged_connections_factory.getFileDescriptor());
-
     processNewReplicaState(state, connection);
+
+    /// `NOT_READY` means that the factory has connections in process, and the offset stays pending.
+    updateFactoryRegistration();
 }
 
 void HedgedConnections::checkNewReplica()
 {
-    Connection * connection = nullptr;
-    HedgedConnectionsFactory::State state = hedged_connections_factory.waitForReadyConnections(connection);
-
-    if (cancelled)
+    /// The factory hands out one connection per call, while several offsets can wait for the same
+    /// connection in process. So keep asking while offsets are pending and the factory has nothing
+    /// left in process: it then answers at once, either with a usable stale replica or with
+    /// `CANNOT_CHOOSE`, which retracts the pending offsets (or fails the query if one of them is
+    /// left without a replica). Otherwise they would stay pending forever.
+    do
     {
-        /// Do not start new connection if query is already canceled.
-        if (connection)
-            connection->disconnect();
+        Connection * connection = nullptr;
+        HedgedConnectionsFactory::State state = hedged_connections_factory.waitForReadyConnections(connection);
 
-        state = HedgedConnectionsFactory::State::CANNOT_CHOOSE;
+        if (cancelled)
+        {
+            /// Do not start new connection if query is already canceled.
+            if (connection)
+                connection->disconnect();
+
+            state = HedgedConnectionsFactory::State::CANNOT_CHOOSE;
+        }
+
+        processNewReplicaState(state, connection);
     }
+    while (!offsets_queue.empty() && !hedged_connections_factory.hasEventsInProcess());
 
-    processNewReplicaState(state, connection);
-
-    /// Check if we don't need to listen hedged_connections_factory file descriptor in epoll anymore.
-    if (hedged_connections_factory.numberOfProcessingReplicas() == 0)
-        epoll.remove(hedged_connections_factory.getFileDescriptor());
+    updateFactoryRegistration();
 }
 
 void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State state, Connection * connection)
@@ -641,8 +675,12 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
     {
         case HedgedConnectionsFactory::State::READY:
         {
+            if (offsets_queue.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got a connection to a new replica, but no offset is waiting for it");
+
             size_t offset = offsets_queue.front();
-            offsets_queue.pop();
+            offsets_queue.pop_front();
+            chassert(offset_states[offset].can_change_replica);
 
             offset_states[offset].replicas.emplace_back(connection);
             ++offset_states[offset].active_connection_count;
@@ -666,7 +704,7 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
                 if (offset_states[offsets_queue.front()].active_connection_count == 0)
                     throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot find enough connections to replicas");
                 offset_states[offsets_queue.front()].next_replica_in_process = false;
-                offsets_queue.pop();
+                offsets_queue.pop_front();
             }
             break;
         }

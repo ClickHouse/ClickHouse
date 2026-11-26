@@ -2,8 +2,8 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <atomic>
+#include <deque>
 #include <functional>
-#include <queue>
 #include <optional>
 
 #include <Client/HedgedConnectionsFactory.h>
@@ -53,10 +53,11 @@ public:
         size_t active_connection_count = 0;
         bool can_change_replica = true;
 
-        /// This flag is true when this offset is in queue for
-        /// new replicas. It's needed to process receive timeout
+        /// This flag is true exactly while this offset is in `offsets_queue`,
+        /// waiting for a new replica. It's needed to process receive timeout
         /// (throw an exception when receive timeout expired and there is no
-        /// new replica in process)
+        /// new replica in process). Only an offset that can still change
+        /// replica waits for one.
         bool next_replica_in_process = false;
     };
 
@@ -166,6 +167,10 @@ private:
     /// stopped no replacement can arrive, so a pending flag would never be cleared.
     void stopChoosingReplicasAndRetractPending();
 
+    /// Keeps the factory's descriptor in `epoll` exactly while some offset waits for a new replica.
+    /// Must be called after every change of `offsets_queue`.
+    void updateFactoryRegistration();
+
     void startNewReplica();
 
     void checkNewReplica();
@@ -191,8 +196,15 @@ private:
 
     /// A queue of offsets for new replicas. When we get RECEIVE_DATA_TIMEOUT from
     /// the replica, we push it's offset to this queue and start trying to get
-    /// new replica.
-    std::queue<int> offsets_queue;
+    /// new replica. An offset leaves the queue when it gets a replica, when it
+    /// commits to the replica it already has, or when no replica can arrive anymore.
+    /// While the queue is not empty, the factory has connections in process.
+    std::deque<size_t> offsets_queue;
+
+    /// Whether the factory's descriptor is registered in `epoll`. Tracked here because nothing
+    /// the factory counts tells it: its descriptor must be added and removed exactly once per
+    /// transition, whatever happened to the connections it was establishing in between.
+    bool factory_fd_registered = false;
 
     /// The current number of valid connections to the replicas of this shard.
     /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.

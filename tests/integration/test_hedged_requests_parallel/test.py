@@ -46,9 +46,25 @@ def started_cluster():
                 "INSERT INTO test_hedged SELECT number, toDateTime(number) FROM numbers(100)"
             )
 
+            # A table with a sampling key: with `parallel_replicas_mode = 'sampling_key'` a shard is
+            # read from two replicas, and each of them reads its own part of the data.
+            node.query(
+                """CREATE TABLE test_hedged_sampled (id UInt32, date Date) ENGINE =
+            MergeTree()  ORDER BY intHash32(id) SAMPLE BY intHash32(id)"""
+            )
+
+            node.query(
+                "INSERT INTO test_hedged_sampled SELECT number, toDateTime(number) FROM numbers(100)"
+            )
+
         NODES["node"].query(
             """CREATE TABLE distributed (id UInt32, date Date) ENGINE =
             Distributed('test_cluster', 'default', 'test_hedged')"""
+        )
+
+        NODES["node"].query(
+            """CREATE TABLE distributed_sampled_three_replicas (id UInt32, date Date) ENGINE =
+            Distributed('test_cluster_three_replicas', 'default', 'test_hedged_sampled')"""
         )
 
         yield cluster
@@ -234,3 +250,46 @@ def test_query_with_no_data_to_sample(started_cluster):
     # so we will change only the first replica here.
     check_query(query=QUERY_2)
     check_changing_replica_events(1)
+
+
+def test_offset_without_new_replica_times_out(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
+    # The query has two offsets, on node_1 and node_2, and both replicas get stuck sending the data.
+    # node_3 is the only replica left and it is slow to connect to, so both offsets wait for the
+    # same connection. It goes to one of them, and that offset completes on node_3.
+    # Nothing is left for the other offset, so it must stop waiting for a new replica: when the
+    # replica it has reaches the receive timeout, the query has to fail instead of waiting forever.
+    update_configs(
+        node_1_sleep_in_send_data=sleep_time,
+        node_2_sleep_in_send_data=sleep_time,
+        node_3_sleep_in_send_tables_status=3000,
+    )
+
+    # Start with empty connection pools, so that the connections get the timeouts of this query.
+    NODES["node"].restart_clickhouse()
+
+    # The shard is read from two replicas only in an offset based mode of parallel replicas, and only
+    # by a query that does not depend on the order of the streams, such as an aggregation without keys.
+    # With the sampling key every replica reads its own part of the table, so each offset has data to send.
+    # hedged_connection_timeout_ms is raised to keep node_3 out of the initial connections.
+    start = time.time()
+    error = NODES["node"].query_and_get_error(
+        "SELECT count() FROM distributed_sampled_three_replicas "
+        "SETTINGS automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, "
+        "parallel_replicas_mode = 'sampling_key', max_parallel_replicas = 2, "
+        "parallel_replicas_for_non_replicated_merge_tree = 1, "
+        "receive_timeout = 15, hedged_connection_timeout_ms = 5000",
+        timeout=120,
+    )
+    query_time = time.time() - start
+    print("Query time:", query_time)
+
+    # The timeout of the stuck replica, not of the connection between the client and the node.
+    # With a single offset the query would succeed on node_3 instead.
+    assert "Timeout exceeded while reading from socket" in error
+    assert "node_1:9000" in error or "node_2:9000" in error
+
+    # The stuck replica would answer after sleep_time, the query has to fail before that.
+    assert query_time < sleep_time / 1000
