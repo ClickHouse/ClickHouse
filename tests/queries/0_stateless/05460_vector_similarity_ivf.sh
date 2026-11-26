@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: needs usearch for the fallback to `hnsw`
+# no-fasttest: the `vector_similarity` index needs usearch
 
-# Recall of the `ivf` vector similarity index against exact search: both distance functions, after
-# reload and merge, all lists probed. The vectors are clustered, as real data are. Without a usable GPU the searches by `ORDER BY ... LIMIT` run with `hnsw`, and the
-# checks that need the device print what they would, so the test runs everywhere.
+# Recall of the `ivf` vector similarity index against exact search: both distance functions, after reload and merge, all
+# lists probed. The vectors are clustered, as real data are.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,29 +37,8 @@ query_vector()
     $CLICKHOUSE_CLIENT --query "SELECT $(vector_of "(1000000 + $1)")"
 }
 
-USE_GPU=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'USE_GPU'")
-
-# Arguments of `vector_similarity` around the distance function.
-METHOD="'hnsw'"
-METHOD_PARAMETERS="$DIMENSIONS"
-HAS_DEVICE=0
-if [ "$USE_GPU" == "1" ]; then
-    # The build of the index needs the device; no device or no `GLIBC_TUNABLES` falls back, other errors are printed.
-    PROBE_ERROR=$($CLICKHOUSE_CLIENT --query "
-        CREATE TABLE probe (id UInt64, vec Array(Float32), INDEX idx vec TYPE vector_similarity('ivf', 'L2Distance', $DIMENSIONS))
-        ENGINE = MergeTree ORDER BY id;
-        INSERT INTO probe $(vectors 0 1000);
-        SELECT id FROM probe ORDER BY L2Distance(vec, $(query_vector 0)) LIMIT 1 FORMAT Null;
-        DROP TABLE probe;" 2>&1 > /dev/null)
-    if [ -z "$PROBE_ERROR" ]; then
-        METHOD="'ivf'"
-        METHOD_PARAMETERS="$DIMENSIONS, $LISTS"
-        HAS_DEVICE=1
-    elif [[ "$PROBE_ERROR" != *"There is no GPU"* && "$PROBE_ERROR" != *"GLIBC_TUNABLES"* ]]; then
-        echo "$PROBE_ERROR"
-    fi
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS probe"
-fi
+METHOD="'ivf'"
+METHOD_PARAMETERS="$DIMENSIONS, $LISTS"
 
 # Recall@K over `QUERIES` queries is at least 0.9, and the index is used. The settings go on the outer query: the plan
 # is optimized by the settings of the query, not of a subquery.
@@ -106,25 +84,17 @@ $CLICKHOUSE_CLIENT --query "
 check_recall t_merged L2Distance "$SETTINGS"
 
 echo "-- All lists probed: the search is exact"
-if [ "$HAS_DEVICE" == "1" ]; then
-    VECTOR=$(query_vector 0)
-    $CLICKHOUSE_CLIENT --query "
-        SELECT (SELECT groupArray(id) FROM (SELECT id FROM t_L2Distance ORDER BY L2Distance(vec, $VECTOR) LIMIT $K))
-             = (SELECT groupArray(id) FROM (SELECT id FROM t_L2Distance ORDER BY L2Distance(vec, $VECTOR) LIMIT $K SETTINGS use_skip_indexes = 0))
-        SETTINGS vector_search_ivf_probes = $LISTS"
-else
-    echo 1
-fi
+VECTOR=$(query_vector 0)
+$CLICKHOUSE_CLIENT --query "
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM t_L2Distance ORDER BY L2Distance(vec, $VECTOR) LIMIT $K))
+         = (SELECT groupArray(id) FROM (SELECT id FROM t_L2Distance ORDER BY L2Distance(vec, $VECTOR) LIMIT $K SETTINGS use_skip_indexes = 0))
+    SETTINGS vector_search_ivf_probes = $LISTS"
 
 echo "-- Invalid arguments"
 check_error()
 {
-    if [ "$USE_GPU" == "1" ]; then
-        $CLICKHOUSE_CLIENT --query "CREATE TABLE t_invalid (vec Array(Float32), INDEX idx vec TYPE vector_similarity($1)) ENGINE = MergeTree ORDER BY tuple()" 2>&1 \
-            | grep -o -m1 "INCORRECT_DATA\|INCORRECT_QUERY\|ILLEGAL_COLUMN"
-    else
-        echo "$2"
-    fi
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE t_invalid (vec Array(Float32), INDEX idx vec TYPE vector_similarity($1)) ENGINE = MergeTree ORDER BY tuple()" 2>&1 \
+        | grep -o -m1 "INCORRECT_DATA\|INCORRECT_QUERY\|ILLEGAL_COLUMN"
 }
 check_error "'ivf', 'L2Distance', 32, 64, 1" INCORRECT_QUERY
 check_error "'ivf', 'L2Distance', 32, 'f32'" INCORRECT_QUERY
@@ -132,15 +102,10 @@ check_error "'ivf', 'dotProduct', 32" INCORRECT_DATA
 check_error "'ivf', 'L2Distance', 0" INCORRECT_DATA
 
 echo "-- The experimental setting"
-if [ "$USE_GPU" == "1" ]; then
-    $CLICKHOUSE_CLIENT_WITHOUT_IVF --query "
-        CREATE TABLE t_disabled (vec Array(Float32), INDEX idx vec TYPE vector_similarity('ivf', 'L2Distance', 32)) ENGINE = MergeTree ORDER BY tuple()" 2>&1 \
-        | grep -o -m1 "SUPPORT_IS_DISABLED"
-    $CLICKHOUSE_CLIENT_WITHOUT_IVF --query "
-        CREATE TABLE t_disabled (vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
-        ALTER TABLE t_disabled ADD INDEX idx vec TYPE vector_similarity('ivf', 'L2Distance', 32);" 2>&1 \
-        | grep -o -m1 "SUPPORT_IS_DISABLED"
-else
-    echo SUPPORT_IS_DISABLED
-    echo SUPPORT_IS_DISABLED
-fi
+$CLICKHOUSE_CLIENT_WITHOUT_IVF --query "
+    CREATE TABLE t_disabled (vec Array(Float32), INDEX idx vec TYPE vector_similarity('ivf', 'L2Distance', 32)) ENGINE = MergeTree ORDER BY tuple()" 2>&1 \
+    | grep -o -m1 "SUPPORT_IS_DISABLED"
+$CLICKHOUSE_CLIENT_WITHOUT_IVF --query "
+    CREATE TABLE t_disabled (vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
+    ALTER TABLE t_disabled ADD INDEX idx vec TYPE vector_similarity('ivf', 'L2Distance', 32);" 2>&1 \
+    | grep -o -m1 "SUPPORT_IS_DISABLED"

@@ -1,9 +1,5 @@
 #pragma once
 
-#include "config.h"
-
-#if USE_GPU
-
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -19,7 +15,7 @@
 namespace DB
 {
 /// vector_similarity('ivf', 'L2Distance' | 'cosineDistance', dimensions[, lists]): lists of 4-bit codes of rotated residuals,
-/// scanned on the GPU, reached through a tree of centroids (see `IvfTree`), and the exact distances of the best candidates.
+/// reached through a tree of centroids (see `IvfTree`), and the exact distances of the best candidates.
 enum class IvfMetric : uint8_t
 {
     L2 = 0,
@@ -29,8 +25,6 @@ enum class IvfMetric : uint8_t
 struct IvfParams
 {
     size_t lists = 0;
-    /// Built and searched on the GPU, or else on the CPU, in the same format.
-    bool on_gpu = true;
 };
 
 class TemporaryDataBuffer;
@@ -44,7 +38,7 @@ struct IvfListBucket
 
 struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleIvf(const String & index_name_, IvfMetric metric_, size_t dimensions_, bool on_gpu_);
+    MergeTreeIndexGranuleIvf(const String & index_name_, IvfMetric metric_, size_t dimensions_);
     ~MergeTreeIndexGranuleIvf() override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -62,7 +56,6 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     const String index_name;
     const IvfMetric metric;
     size_t dimensions;
-    const bool on_gpu;
     size_t rows = 0;
     size_t lists = 0;
     /// The lists are the leaves of the tree.
@@ -165,5 +158,3 @@ MergeTreeIndexPtr ivfIndexCreator(StorageMetadataPtr metadata_snapshot, const In
 void ivfIndexValidator(const IndexDescription & index, const FieldVector & args);
 
 }
-
-#endif

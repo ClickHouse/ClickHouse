@@ -10307,7 +10307,7 @@ The size of the dynamic candidate list when searching the vector similarity inde
 )", 0, \
         {"24.10", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."}) \
     DECLARE(Bool, allow_experimental_ivf_index, false, R"(
-Allows to create a vector similarity index of the `ivf` method, which is built and searched on the GPU.
+Allows to create a vector similarity index of the `ivf` method.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, vector_search_ivf_probes, 64, R"(

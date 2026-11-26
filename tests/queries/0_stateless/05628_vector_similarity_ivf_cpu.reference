@@ -1,7 +1,0 @@
-t_cpu: recall at least 0.9: 1
--- The index built anew by a merge of two parts
-t_cpu_merged: recall at least 0.9: 1
--- All lists probed: the search is exact
-1
--- The device is 'gpu' or 'cpu'
-INCORRECT_QUERY
