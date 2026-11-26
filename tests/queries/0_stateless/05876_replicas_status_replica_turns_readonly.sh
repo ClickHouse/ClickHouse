@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-shared-merge-tree
+# Tags: zookeeper, no-shared-merge-tree, no-parallel, no-fasttest
 # Tag zookeeper: the page under test reports on replicated tables.
 # Tag no-shared-merge-tree: the page walks ReplicatedMergeTree tables only; the private CI rewrites the engine.
+# Tag no-parallel: the failpoint is server-wide and changes the page for every concurrent request.
+# Tag no-fasttest: tests that run alone are kept out of the fast test.
 
 # `/replicas_status` checks that a replica is not read-only and then asks it for its delays, which
 # checks the same again and throws. A replica shut down in between (a concurrent `DROP TABLE`,
@@ -19,21 +21,16 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_live (a UInt64) ENGINE = ReplicatedMerge
 # In range: the replica is not read-only, so the page does ask it for its delays.
 ${CLICKHOUSE_CLIENT} -q "SELECT table, is_readonly FROM system.replicas WHERE database = currentDatabase()"
 
-# The failpoint is server-wide, and another run of this test can switch it off at any moment, so
-# ask again until a page built with the failpoint on arrives. Only the line of this test's own
-# table and the status of that same response are looked at.
-status=''
-for _ in {1..100}
-do
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT replicas_status_replica_turns_readonly"
-    response=$(${CLICKHOUSE_CURL} -sS -w '\n%{http_code}' "${STATUS_URL}?verbose=1")
-    if echo "$response" | grep -q "^${CLICKHOUSE_DATABASE}\.t_live:.*is readonly"
-    then
-        status=$(echo "$response" | tail -n 1)
-        break
-    fi
-done
+# Only the line of this test's own table and the status of that same response are looked at.
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT replicas_status_replica_turns_readonly"
+response=$(${CLICKHOUSE_CURL} -sS -w '\n%{http_code}' "${STATUS_URL}?verbose=1")
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT replicas_status_replica_turns_readonly"
+
+status=''
+if echo "$response" | grep -q "^${CLICKHOUSE_DATABASE}\.t_live:.*is readonly"
+then
+    status=$(echo "$response" | tail -n 1)
+fi
 
 echo "status of the page reporting the replica as read-only: ${status}"
 
