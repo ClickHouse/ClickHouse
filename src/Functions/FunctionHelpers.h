@@ -216,9 +216,10 @@ struct FunctionResultSetting;
 /// counts as any type, since it holds one at runtime):
 /// - the settings of parsing text apply only when `from` has text, of writing text only when `to` has text, and the spellings of
 ///   `Bool` when either has text;
-/// - the settings of `JSON` apply only when either has `JSON`, and of type inference only when `to` has a `Dynamic`, `Variant` or
-///   `JSON`;
-/// - `session_timezone` applies when a `DateTime` or `DateTime64` without an explicit time zone is written as text, when a type is
+/// - the settings of `JSON` apply only when either has `JSON`, of writing `JSON` as text only when `from` has `JSON` and `to` has
+///   text, and of type inference only when `to` has a `Dynamic`, `Variant` or `JSON`;
+/// - `session_timezone` applies when a `DateTime` or `DateTime64` without an explicit time zone (or a `Dynamic`, `Variant` or
+///   `JSON` value, which can hold one) is written as text, when a type is
 ///   inferred from text, when `to` has such a time that the function creates (`creates_result_type`), which takes the time zone of
 ///   the session, and otherwise when text or a value without a time zone (`Date`, `Time`) becomes such a time.
 /// Any other setting always applies.

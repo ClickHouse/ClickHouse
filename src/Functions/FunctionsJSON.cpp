@@ -36,6 +36,7 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
@@ -65,6 +66,7 @@ namespace Setting
     extern const SettingsBool json_extract_named_tuples_as_objects;
     extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
     extern const SettingsBool json_type_escape_dots_in_keys;
+    JSON_WRITING_RESULT_SETTINGS(DECLARE_JSON_WRITING_RESULT_SETTING)
     extern const SettingsBool precise_float_parsing;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
@@ -1829,8 +1831,10 @@ constexpr FunctionResultSetting json_type_settings[] = {
 constexpr FunctionResultSetting json_numeric_settings[] = {
     Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::precise_float_parsing};
 
+/// A path of a `JSON` value is written as text.
 constexpr FunctionResultSetting json_raw_settings[] = {
-    Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::input_format_json_max_depth};
+    Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::input_format_json_max_depth,
+    JSON_WRITING_RESULT_SETTINGS(LIST_JSON_WRITING_RESULT_SETTING)};
 
 constexpr FunctionResultSetting json_typed_settings[] = {
     Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::input_format_json_max_depth,

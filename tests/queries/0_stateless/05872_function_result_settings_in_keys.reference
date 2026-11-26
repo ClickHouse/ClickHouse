@@ -38,6 +38,10 @@ json string expected	1
 json string	1
 json to string expected	1
 json to string	1
+json raw quote expected	1
+json raw quote	1
+json text quote expected	1
+json text quote	1
 json has expected	1
 json has	1
 time zone expected	1
@@ -63,6 +67,8 @@ json string time expected	1
 json string time	1
 format row time expected	1
 format row time	1
+dynamic time text expected	1
+dynamic time text	1
 start of day expected	1
 start of day	1
 if of numbers uses the index	2

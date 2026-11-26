@@ -49,3 +49,18 @@ struct CapturedResultSettings
 };
 
 }
+
+/// The settings of writing a `JSON` value as text, all `SettingsBool`. See `conversionResultDependsOnSetting`.
+#define JSON_WRITING_RESULT_SETTINGS(M) \
+    M(output_format_json_quote_64bit_integers) \
+    M(output_format_json_quote_64bit_floats) \
+    M(output_format_json_quote_denormals) \
+    M(output_format_json_quote_decimals) \
+    M(output_format_json_escape_forward_slashes) \
+    M(output_format_json_named_tuples_as_objects) \
+    M(output_format_json_skip_null_value_in_named_tuples) \
+    M(output_format_json_validate_utf8) \
+    M(output_format_json_map_as_array_of_tuples)
+
+#define DECLARE_JSON_WRITING_RESULT_SETTING(NAME) extern const SettingsBool NAME;
+#define LIST_JSON_WRITING_RESULT_SETTING(NAME) Setting::NAME,

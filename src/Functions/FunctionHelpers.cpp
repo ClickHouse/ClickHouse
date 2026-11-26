@@ -58,6 +58,7 @@ namespace Setting
     extern const SettingsBool input_format_tsv_use_best_effort_in_schema_inference;
     extern const SettingsUInt64Auto schema_inference_make_columns_nullable;
     extern const SettingsTimezone session_timezone;
+    JSON_WRITING_RESULT_SETTINGS(DECLARE_JSON_WRITING_RESULT_SETTING)
     extern const SettingsBool decimal_check_overflow;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
@@ -544,6 +545,9 @@ bool conversionResultDependsOnSetting(
     /// The spellings of `Bool` values, used both to write and to parse them.
     static const FunctionResultSetting bool_settings[] = {Setting::bool_true_representation, Setting::bool_false_representation};
 
+    /// The settings of writing a `JSON` value as text.
+    static const FunctionResultSetting json_writing_settings[] = {JSON_WRITING_RESULT_SETTINGS(LIST_JSON_WRITING_RESULT_SETTING)};
+
     /// The settings of the `JSON` type.
     static const FunctionResultSetting json_settings[] = {
         Setting::type_json_skip_null_typed_paths, Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_invalid_typed_paths,
@@ -567,6 +571,8 @@ bool conversionResultDependsOnSetting(
         return has_type(to, is_text);
     if (std::ranges::contains(bool_settings, setting))
         return has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); }) || has_type(to, is_text);
+    if (std::ranges::contains(json_writing_settings, setting))
+        return has_type(from, may_hold_any) && has_type(to, is_text);
     if (std::ranges::contains(json_settings, setting))
         return has_type(from, may_hold_any) || has_type(to, may_hold_any);
 
@@ -579,8 +585,9 @@ bool conversionResultDependsOnSetting(
         return time_zone && !time_zone->hasExplicitTimeZone();
     };
 
-    /// A time without an explicit time zone is written as text in the time zone of the session, e.g. `toString([dt])`.
-    if (has_type(from, has_implicit_time_zone) && has_type(to, is_text))
+    /// A time without an explicit time zone is written as text in the time zone of the session, e.g. `toString([dt])`, also when
+    /// a `Dynamic` value holds it.
+    if ((has_type(from, has_implicit_time_zone) || has_type(from, may_hold_any)) && has_type(to, is_text))
         return true;
 
     /// A type inferred from text can be a `DateTime` in the time zone of the session, e.g. a path of `CAST(s AS JSON)`.

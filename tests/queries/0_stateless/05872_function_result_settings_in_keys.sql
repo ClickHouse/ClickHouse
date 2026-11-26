@@ -36,6 +36,9 @@ DROP TABLE IF EXISTS t_shared_prefix;
 DROP TABLE IF EXISTS t_lambda_text;
 DROP TABLE IF EXISTS t_plus_int;
 DROP TABLE IF EXISTS t_start_of_day;
+DROP TABLE IF EXISTS t_json_raw_quote;
+DROP TABLE IF EXISTS t_json_text_quote;
+DROP TABLE IF EXISTS t_dynamic_time_text;
 DROP TABLE IF EXISTS t_json_string_time;
 DROP TABLE IF EXISTS t_format_row_time;
 
@@ -134,6 +137,12 @@ CREATE TABLE t_plus_int (x UInt64) ENGINE = MergeTree ORDER BY x + 1 SETTINGS in
 INSERT INTO t_plus_int SELECT number FROM numbers(100);
 CREATE TABLE t_start_of_day (d Date) ENGINE = MergeTree ORDER BY toStartOfDay(d) SETTINGS index_granularity = 1;
 INSERT INTO t_start_of_day SELECT toDate('2024-01-01') + number FROM numbers(10);
+CREATE TABLE t_json_raw_quote (j JSON(a UInt64)) ENGINE = MergeTree ORDER BY JSONExtractRaw(j, 'a') SETTINGS index_granularity = 1;
+INSERT INTO t_json_raw_quote SELECT concat('{"a":', toString(number), '}') FROM numbers(20);
+CREATE TABLE t_json_text_quote (j JSON(a UInt64)) ENGINE = MergeTree ORDER BY toString(j) SETTINGS index_granularity = 1;
+INSERT INTO t_json_text_quote SELECT concat('{"a":', toString(number), '}') FROM numbers(20);
+CREATE TABLE t_dynamic_time_text (d Dynamic) ENGINE = MergeTree ORDER BY toString(d) SETTINGS index_granularity = 1;
+INSERT INTO t_dynamic_time_text SELECT [toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600]::Array(DateTime) FROM numbers(24);
 CREATE TABLE t_json_string_time (dt DateTime) ENGINE = MergeTree ORDER BY toJSONString(dt) SETTINGS index_granularity = 1;
 INSERT INTO t_json_string_time SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24);
 CREATE TABLE t_format_row_time (dt DateTime) ENGINE = MergeTree ORDER BY formatRowNoNewline('TSV', dt) SETTINGS index_granularity = 1;
@@ -204,6 +213,14 @@ SELECT 'json string expected', count() FROM t_json_string WHERE toJSONString(j) 
 SELECT 'json string', count() FROM t_json_string WHERE toJSONString(j) = '{}';
 SELECT 'json to string expected', count() FROM t_json_to_string WHERE toString(j) = '{}' SETTINGS use_primary_key = 0;
 SELECT 'json to string', count() FROM t_json_to_string WHERE toString(j) = '{}';
+SELECT 'json raw quote expected', count() FROM t_json_raw_quote WHERE JSONExtractRaw(j, 'a') = '"1"'
+SETTINGS output_format_json_quote_64bit_integers = 1, use_primary_key = 0;
+SELECT 'json raw quote', count() FROM t_json_raw_quote WHERE JSONExtractRaw(j, 'a') = '"1"'
+SETTINGS output_format_json_quote_64bit_integers = 1, type_json_skip_null_typed_paths = 0;
+SELECT 'json text quote expected', count() FROM t_json_text_quote WHERE toString(j) = '{"a":"1"}'
+SETTINGS output_format_json_quote_64bit_integers = 1, use_primary_key = 0;
+SELECT 'json text quote', count() FROM t_json_text_quote WHERE toString(j) = '{"a":"1"}'
+SETTINGS output_format_json_quote_64bit_integers = 1, type_json_skip_null_typed_paths = 0;
 SELECT 'json has expected', count() FROM t_json_has WHERE JSONHas(j, 'a') = 0 SETTINGS use_primary_key = 0;
 SELECT 'json has', count() FROM t_json_has WHERE JSONHas(j, 'a') = 0;
 SET session_timezone = 'Pacific/Kiritimati';
@@ -240,6 +257,8 @@ SELECT 'format row time expected', count() FROM t_format_row_time WHERE formatRo
 SETTINGS use_primary_key = 0;
 SELECT 'format row time', count() FROM t_format_row_time WHERE formatRowNoNewline('TSV', dt) = '2024-01-01 19:00:00'
 SETTINGS format_csv_delimiter = ',';
+SELECT 'dynamic time text expected', count() FROM t_dynamic_time_text WHERE toString(d) = '[''2024-01-01 19:00:00'']' SETTINGS use_primary_key = 0;
+SELECT 'dynamic time text', count() FROM t_dynamic_time_text WHERE toString(d) = '[''2024-01-01 19:00:00'']';
 SET optimize_time_filter_with_preimage = 0;
 SELECT 'start of day expected', count() FROM t_start_of_day WHERE toStartOfDay(d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati')
 SETTINGS use_primary_key = 0;
@@ -282,6 +301,9 @@ DROP TABLE t_shared_prefix;
 DROP TABLE t_lambda_text;
 DROP TABLE t_plus_int;
 DROP TABLE t_start_of_day;
+DROP TABLE t_json_raw_quote;
+DROP TABLE t_json_text_quote;
+DROP TABLE t_dynamic_time_text;
 DROP TABLE t_json_string_time;
 DROP TABLE t_format_row_time;
 DROP TABLE t_sort;
