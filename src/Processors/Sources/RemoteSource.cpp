@@ -318,9 +318,6 @@ Pipe createRemoteSourcePipe(
 {
     chassert(parallel_marshalling_threads);
 
-    /// The pipe reads the result of a distributed query, and its header is the structure of that result.
-    query_executor->setHeaderDescribesResult();
-
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
     pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AddSequenceNumber>(header); });
 

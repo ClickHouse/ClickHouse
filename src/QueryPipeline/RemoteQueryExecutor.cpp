@@ -419,23 +419,8 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
   */
-static Block adaptBlockStructure(Block block, const Block & header, bool header_describes_result)
+static Block adaptBlockStructure(Block block, const Block & header)
 {
-    if (header.empty())
-    {
-        /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
-        if (!header_describes_result)
-            return block;
-
-        /// The result is known to have no columns, but the remote server may still send the columns it
-        /// computed for it, e.g. a filter column of a constant view that is not needed after the filter.
-        /// Only the number of rows matters then: keep it and drop the columns.
-        Block res;
-        res.info = block.info;
-        res.setRowsWithoutColumns(block.rows());
-        return res;
-    }
-
     /// Columns may be moved out of `block` below, so compute the number of rows up front.
     /// The block can have rows and no columns: the columns synthesized below are sized from that number.
     const size_t num_rows = block.rows();
@@ -526,7 +511,23 @@ static Block adaptBlockStructure(Block block, const Block & header, bool header_
 
         res.insert({column, elem.type, elem.name});
     }
+
+    /// The result can have no columns at all, while the remote server still sends the columns it computed
+    /// for it, e.g. a filter column of a constant view that is not needed after the filter. Only the number
+    /// of rows matters then.
+    if (res.columns() == 0)
+        res.setRowsWithoutColumns(num_rows);
+
     return res;
+}
+
+Block RemoteQueryExecutor::adaptBlock(Block block) const
+{
+    /// Without a header, the caller takes the blocks as the remote server sends them.
+    if (!header)
+        return block;
+
+    return adaptBlockStructure(std::move(block), *header);
 }
 
 OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() const
@@ -1002,9 +1003,11 @@ void RemoteQueryExecutor::throwIfColumnLessResultFromOldServer() const
     /// the end of its data and of the stream, so checking the sender of each block of rows, of the last
     /// block of each replica and of each `EndOfStream` packet refuses such a query. Only the sender
     /// matters: with hedged requests, a losing replica is cancelled and sends nothing more, so an old one
-    /// must not fail the query that a newer replica answers. Only a header that is known to describe the
-    /// result can tell that the result has no columns.
-    if (header_describes_result && header->columns() == 0
+    /// must not fail the query that a newer replica answers.
+    ///
+    /// Only an intermediate result can have rows and no columns: at `Complete` a result always has columns,
+    /// and a statement without a result, such as an `INSERT SELECT` sent to the shards, has no rows to lose.
+    if (header && header->columns() == 0 && stage != QueryProcessingStage::Complete
         && connections->getServerRevisionOfLastPacket() < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -1055,7 +1058,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!packet.block.empty() && (packet.block.rows() > 0))
             {
                 got_data_from_replica = true;
-                return ReadResult(adaptBlockStructure(std::move(packet.block), *header, header_describes_result));
+                return ReadResult(adaptBlock(std::move(packet.block)));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -1116,13 +1119,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Totals:
             totals = std::move(packet.block);
             if (!totals.empty())
-                totals = adaptBlockStructure(std::move(totals), *header, header_describes_result);
+                totals = adaptBlock(std::move(totals));
             break;
 
         case Protocol::Server::Extremes:
             extremes = std::move(packet.block);
             if (!extremes.empty())
-                extremes = adaptBlockStructure(std::move(extremes), *header, header_describes_result);
+                extremes = adaptBlock(std::move(extremes));
             break;
 
         case Protocol::Server::Log:
