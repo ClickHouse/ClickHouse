@@ -156,7 +156,7 @@ protected:
             try
             {
                 auto files = cur.iceberg_metadata->getFilesForManifest(
-                    cur.data_snapshot, cur.table_state, cur.next_manifest_index, context_copy);
+                    cur.data_snapshot, cur.table_state, cur.next_manifest_index, context_copy, verified_directories);
 
                 for (auto & file : files)
                 {
@@ -370,6 +370,7 @@ private:
         bool broken = false;
     };
     std::optional<TableCursor> current_table_cursor;
+    VerifiedLocalDirectories verified_directories;
 #endif
 };
 
@@ -456,7 +457,7 @@ StorageSystemIcebergFiles::StorageSystemIcebergFiles(const StorageID & table_id_
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"snapshot_id", std::make_shared<DataTypeInt64>(), "Snapshot ID at which the file was added."},
         {"content", content_enum, "File content kind."},
-        {"file_path", std::make_shared<DataTypeString>(), "Resolved storage path of the file."},
+        {"file_path", std::make_shared<DataTypeString>(), "Path of the file as written in the manifest, which may be an absolute URI outside the table location."},
         {"file_format", std::make_shared<DataTypeString>(), "File format, e.g. 'PARQUET'."},
         {"record_count", std::make_shared<DataTypeInt64>(), "Number of records in the file."},
         {"file_size_in_bytes", std::make_shared<DataTypeInt64>(), "Size of the file in bytes."},

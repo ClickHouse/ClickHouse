@@ -21,6 +21,8 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -33,7 +35,9 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const IcebergPathFromMetadata & filename);
+    const IcebergPathFromMetadata & filename,
+    ExternalStorageCache & external_storages,
+    VerifiedLocalDirectories * verified_directories = nullptr);
 
 /// Creates a fully initialized ManifestFileIterator from a cache key.
 /// All entries are drained so that aggregate methods (e.g. getRowsCountInAllFilesExcludingDeleted)
@@ -44,7 +48,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     ContextPtr local_context,
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id);
+    Int32 table_snapshot_schema_id,
+    ExternalStorageCache & external_storages);
 
 Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
     const ManifestFileCacheableInfo & manifest_file,
@@ -59,7 +64,8 @@ ManifestFileCacheKeys getManifestList(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     const IcebergPathFromMetadata & filename,
-    LoggerPtr log);
+    LoggerPtr log,
+    ExternalStorageCache & external_storages);
 
 /// Reads manifest files ahead, in order, on the IO thread pool. Not thread-safe.
 class ManifestFilesPrefetcher : private boost::noncopyable
@@ -96,7 +102,8 @@ public:
         const PersistentTableComponents & persistent_table_components_,
         ContextPtr local_context_,
         LoggerPtr log_,
-        ManifestFileCacheKeys manifests_);
+        ManifestFileCacheKeys manifests_,
+        std::shared_ptr<ExternalStorageCache> external_storages_);
 
     ~ManifestFilesPrefetcher();
 
@@ -116,6 +123,9 @@ private:
     const ContextPtr local_context;
     const LoggerPtr log;
     const ManifestFileCacheKeys manifests;
+    const std::shared_ptr<ExternalStorageCache> external_storages;
+    /// Shared with the reads, which resolve the paths of the manifest files too.
+    const std::shared_ptr<VerifiedLocalDirectories> verified_directories = std::make_shared<VerifiedLocalDirectories>();
     const bool use_metadata_cache;
 
     size_t next_to_fetch = 0;

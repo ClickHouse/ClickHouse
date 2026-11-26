@@ -99,7 +99,7 @@ namespace
                 "{} of data file '{}'; ignoring the declared bounds for this column",
                 path_to_manifest_file,
                 field_id,
-                parsed_entry.file_path_key.serialize());
+                parsed_entry.file_path_key);
             return std::nullopt;
         }
 
@@ -205,7 +205,7 @@ namespace
                 "for column id {} of data file '{}'; ignoring the bounds of this column",
                 path_to_manifest_file,
                 column_id,
-                parsed_entry.file_path_key.serialize());
+                parsed_entry.file_path_key);
             return std::nullopt;
         }
 
@@ -231,7 +231,7 @@ namespace
                 "ignoring the bounds of this column",
                 path_to_manifest_file,
                 column_id,
-                parsed_entry.file_path_key.serialize());
+                parsed_entry.file_path_key);
             return std::nullopt;
         }
 
@@ -246,7 +246,7 @@ namespace
                 "{} of data file '{}'; ignoring the bounds of this column",
                 path_to_manifest_file,
                 column_id,
-                parsed_entry.file_path_key.serialize());
+                parsed_entry.file_path_key);
             return std::nullopt;
         }
 

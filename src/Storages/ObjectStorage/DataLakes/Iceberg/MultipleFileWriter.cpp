@@ -4,6 +4,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -68,6 +69,7 @@ MultipleFileWriter::MultipleFileWriter(
     DataFileUploads & data_file_uploads_,
     const Iceberg::IcebergPathResolver & path_resolver_,
     ObjectStoragePtr object_storage_,
+    ExternalStorageCache & external_storages_,
     ContextPtr context_,
     const std::optional<FormatSettings> & format_settings_,
     const String & write_format_,
@@ -81,6 +83,7 @@ MultipleFileWriter::MultipleFileWriter(
     , data_file_uploads(data_file_uploads_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
+    , external_storages(external_storages_)
     , context(context_)
     , format_settings(format_settings_)
     , write_format(std::move(write_format_))
@@ -96,10 +99,13 @@ void MultipleFileWriter::startNewFile()
     current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block), required_field_ids);
     current_file_num_rows = 0;
     auto metadata_path = filename_generator.generateDataFileName();
-    auto storage_path = path_resolver.resolve(metadata_path);
+    /// Resolved as a scan resolves it, so that the next read finds the written file.
+    auto [storage, storage_path] = resolveObjectStorageForWrite(
+        path_resolver.getTableLocation(), metadata_path.serialize(), object_storage, external_storages, context, path_resolver);
 
     data_file_names.push_back(metadata_path);
-    buffer = object_storage->writeObject(
+    data_file_objects.emplace_back(storage, storage_path);
+    buffer = storage->writeObject(
         StoredObject(storage_path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     if (format_settings)
@@ -190,8 +196,8 @@ void MultipleFileWriter::cancel()
 
 void MultipleFileWriter::clearAllDataFiles() const
 {
-    for (const auto & metadata_path : data_file_names)
-        object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(metadata_path)));
+    for (const auto & [storage, key] : data_file_objects)
+        storage->removeObjectIfExists(StoredObject(key));
 }
 
 UInt64 MultipleFileWriter::getResultBytes() const
