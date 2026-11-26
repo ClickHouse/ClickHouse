@@ -4,16 +4,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A `GROUP BY` without aggregate functions stages the misses of a frozen table as key-only records, and the repeats of a
-# missed key combine into its record, as the rows of a lone `count` do. The keys come in runs of 300 equal rows, which
-# stay together within the blocks of `numbers_mt`, and the frozen tables hold only the first keys, so nearly every run
-# is staged as one record: a few thousand records where about 570,000 rows miss, and each check asks for fewer than a
-# tenth of the rows. A `String` key takes the map method without aggregates, a `UInt64` key and a `UInt64, String` key
-# take set methods. The methods of fixed-width keys and one `String` key have no set form, so they are off, and the
-# `UInt64, String` key takes the serialized set method. The interleaved `String` key repeats each of four keys every
-# fourth row, so no run forms, and the per-partition cache of the last missed key combines the repeats instead. Each
-# check compares the result with the one of the feature off; it runs in a clickhouse-local process of its own, so the
-# counters in `system.events` belong to it alone.
+# A `GROUP BY` without aggregate functions stages the misses of a frozen table as key-only records, and the
+# repeats of a missed key combine into its record, as the rows of a lone `count` do. The keys come in runs of
+# 300 equal rows, which stay together within the blocks of `numbers_mt`, and the frozen tables hold only the
+# first keys, so nearly every run is staged as one record: a few thousand records where about 570,000 rows
+# miss, and each check asks for fewer than a tenth of the rows. A `String` key takes the map method without
+# aggregates, a `UInt64` key and a `UInt64, String` key take set methods. The methods of fixed-width keys and
+# one `String` key have no set form, so they are off, and the `UInt64, String` key takes the serialized set
+# method. The interleaved `String` key repeats each of four keys every fourth row, so no run forms, and each
+# repeat combines into the tail of its key's partition instead (see `AdaptivePartitionTails`). Each check
+# compares the result with the one of the feature off; it runs in a clickhouse-local process of its own, so
+# the counters in `system.events` belong to it alone.
 function check()
 {
     local label=$1 query=$2
