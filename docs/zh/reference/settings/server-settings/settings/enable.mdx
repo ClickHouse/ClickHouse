@@ -20,6 +20,10 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />在服务端启动时占用 GPU，并使用其执行查询。如果服务端构建时未启用 GPU 支持，或者没有可用的 CUDA 设备，服务端将拒绝启动。
 
+## enable_iceberg_rest_catalog {#enable_iceberg_rest_catalog}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用实验性的 Iceberg REST 目录服务端，该服务端在 `iceberg_rest_catalog` 部分中进行配置。更改此设置后需重启服务端才能生效。
+
 ## enable_read_through_distributed_cache {#enable_read_through_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />仅在 ClickHouse Cloud 中有效。允许从分布式缓存读取。这是一个无需重启即可生效的服务器级开关，因此没有自身查询 profile 的后台操作 (合并、变更、`Buffer` 表刷写) 也会遵循此设置。各个查询可通过 `force_read_through_distributed_cache` 设置覆盖此设置。
