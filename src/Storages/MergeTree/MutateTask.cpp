@@ -62,6 +62,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -1491,6 +1492,7 @@ getColumnsForNewDataPart(
     NameSet removed_columns;
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
+    UnorderedSetWithMemoryTracking<String> renamed_from_absent_columns;
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
@@ -1527,6 +1529,8 @@ getColumnsForNewDataPart(
                     renamed_columns_to_from.emplace(command.rename_to, command.column_name);
                     renamed_columns_from_to.emplace(command.column_name, command.rename_to);
                 }
+                else
+                    renamed_from_absent_columns.insert(command.rename_to);
             }
             continue;
         }
@@ -1556,7 +1560,7 @@ getColumnsForNewDataPart(
     /// `removed_columns` has names of the source part. In the new part, a removed name that a column is renamed to is that column.
     auto is_removed_from_new_part = [&](const String & name)
     {
-        return removed_columns.contains(name) && !renamed_columns_to_from.contains(name);
+        return removed_columns.contains(name) && !renamed_columns_to_from.contains(name) && !renamed_from_absent_columns.contains(name);
     };
 
     for (const auto & [name, type] : persistent_virtuals)
