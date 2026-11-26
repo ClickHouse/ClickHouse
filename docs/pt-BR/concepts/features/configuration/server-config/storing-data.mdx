@@ -337,6 +337,8 @@ Os valores padrão do S3 mudaram ao longo das versões: `use_environment_credent
 
 Credenciais explícitas têm precedência sobre provedores de credenciais. Defina `session_token` ao usar credenciais explícitas temporárias. Com `use_environment_credentials=true`, o ClickHouse pode obter credenciais do ambiente, de arquivos de credenciais da AWS, de web identity ou de funções de instância/contêiner. Essa opção habilita uma cadeia de provedores, e não apenas variáveis de ambiente.
 
+Com web identity (as variáveis de ambiente `AWS_ROLE_ARN` e `AWS_WEB_IDENTITY_TOKEN_FILE`), o ClickHouse solicita credenciais ao AWS STS na região definida por `AWS_DEFAULT_REGION` ou pelo perfil da AWS. Se nenhum dos dois definir uma região, o ClickHouse usa a região do disco: o parâmetro `region` ou a região indicada no endpoint, como `eu-central-1` para `https://s3.eu-central-1.amazonaws.com/`. Se o disco também não tiver região, ou se `remote_url_allow_hosts` não permitir o endpoint do STS dessa região (`sts.eu-central-1.amazonaws.com`), o STS é chamado em `us-east-1`. Para garantir que o STS seja sempre chamado em uma região específica, defina `AWS_DEFAULT_REGION`. A variável de ambiente `AWS_REGION` não define a região do STS.
+
 #### Parâmetros opcionais {#optional-parameters-s3}
 
 Os valores padrão abaixo se aplicam, a menos que sejam sobrescritos na configuração de disco ou herdados de configurações `s3_*` alteradas no contexto de inicialização. As opções de cliente/autenticação usam chaves de disco sem prefixo; já as opções de requisição, como `s3_retry_attempts`, usam o prefixo `s3_`. As consultas podem sobrescrever as configurações de requisição de leitura e de gravação individualmente; para alterar as configurações do cliente, é necessário reconfigurá-lo.

@@ -328,7 +328,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 #### エンドポイントと認証 {#required-parameters-s3}
 
-| パラメーター               | 説明                                                                                                                                                         |
+| パラメーター              | 説明                                                                                                                                                         |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `endpoint`          | `path` または `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html) 形式の S3 エンドポイント URL。データ保存用のバケットとルートパスを含める必要があります。 |
 | `access_key_id`     | S3 のアクセスキー ID。認証情報プロバイダーを使用する場合は任意です。                                                                                                                      |
@@ -337,6 +337,8 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 S3 のデフォルト値はリリースによって変更されています。`use_environment_credentials` は `23.4` で `false` から `true` に、`connect_timeout_ms` は `23.5` で `10000` から `1000` に、`request_timeout_ms` は `22.10` で `5000` から `30000` に変更されました。明示的に設定した値は、これらのデフォルト値の変更による影響を受けません。
 
 明示的な認証情報は、認証情報プロバイダーよりも優先されます。一時的な認証情報を明示的に指定する場合は、`session_token` を設定してください。`use_environment_credentials=true` の場合、ClickHouse は環境変数、AWS 認証情報ファイル、Web アイデンティティ、またはインスタンス/コンテナのロールから認証情報を取得できます。このオプションで有効になるのは環境変数だけではなく、プロバイダーチェーン全体です。
+
+Web アイデンティティ (環境変数 `AWS_ROLE_ARN` および `AWS_WEB_IDENTITY_TOKEN_FILE`) を使用する場合、ClickHouse は `AWS_DEFAULT_REGION` または AWS プロファイルで設定されたリージョンの AWS STS に認証情報をリクエストします。どちらでもリージョンが設定されていない場合は、ディスクのリージョン、つまり `region` パラメータの値、またはエンドポイントから導かれるリージョン (例: `https://s3.eu-central-1.amazonaws.com/` であれば `eu-central-1`) を使用します。ディスクにもリージョンがない場合、または `remote_url_allow_hosts` でそのリージョンの STS エンドポイント (`sts.eu-central-1.amazonaws.com`) が許可されていない場合は、`us-east-1` の STS が呼び出されます。常に特定のリージョンの STS を呼び出すには、`AWS_DEFAULT_REGION` を設定してください。なお、環境変数 `AWS_REGION` では STS のリージョンは設定されません。
 
 #### パラメータ {#optional-parameters-s3}
 

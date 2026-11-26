@@ -319,15 +319,17 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 #### 端点和身份验证 {#required-parameters-s3}
 
-| 参数                  | 说明                                                                                                                                    |
+| 参数                  | 描述                                                                                                                                    |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `endpoint`          | 采用 `path` 或 `virtual hosted` [样式](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html) 的 S3 端点 URL。应包含存储数据所用的存储桶和根路径。 |
+| `endpoint`          | 采用 `path` 或 `virtual hosted` [样式](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html) 的 S3 端点 URL。应包含存储数据所用的桶和根路径。 |
 | `access_key_id`     | S3 访问密钥 ID。使用凭证提供程序时可省略。                                                                                                              |
 | `secret_access_key` | S3 私密访问密钥，使用显式凭据时需与 `access_key_id` 一同提供。                                                                                             |
 
 S3 默认值在不同发行版中有所变化：`use_environment_credentials` 在 `23.4` 中从 `false` 改为 `true`，`connect_timeout_ms` 在 `23.5` 中从 `10000` 改为 `1000`，`request_timeout_ms` 在 `22.10` 中从 `5000` 改为 `30000`。显式配置的值不受这些默认值变更的影响。
 
 显式凭据优先于凭证提供程序。使用临时显式凭据时，请设置 `session_token`。当 `use_environment_credentials=true` 时，ClickHouse 可以从环境、AWS 凭证文件、Web 身份或实例/容器角色获取凭证。此选项启用的是凭证提供程序链，而非仅从环境变量获取凭证。
+
+使用 Web 身份 (即 `AWS_ROLE_ARN` 和 `AWS_WEB_IDENTITY_TOKEN_FILE` 环境变量) 时，ClickHouse 会在 `AWS_DEFAULT_REGION` 或 AWS profile 所设置的区域中向 AWS STS 请求凭证。如果两者均未设置区域，则使用磁盘的区域，即 `region` 参数，或从端点中解析出的区域，例如 `https://s3.eu-central-1.amazonaws.com/` 对应 `eu-central-1`。如果磁盘也未指定区域，或者 `remote_url_allow_hosts` 不允许访问该区域的 STS 端点 (`sts.eu-central-1.amazonaws.com`) ，则会改为在 `us-east-1` 中调用 STS。如需始终在特定区域调用 STS，请设置 `AWS_DEFAULT_REGION`。`AWS_REGION` 环境变量不会影响 STS 所用的区域。
 
 #### 可选参数 {#optional-parameters-s3}
 

@@ -325,15 +325,17 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 #### 엔드포인트 및 인증 {#required-parameters-s3}
 
-| 매개변수                | 설명                                                                                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 매개변수                | 설명                                                                                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `endpoint`          | `path` 또는 `virtual hosted` [방식](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html)의 S3 엔드포인트 URL입니다. 데이터 저장용 버킷과 루트 경로를 포함해야 합니다. |
-| `access_key_id`     | S3 액세스 키 ID입니다. 자격 증명 provider를 사용하는 경우에는 선택 사항입니다.                                                                                                    |
-| `secret_access_key` | S3 시크릿 액세스 키입니다. 명시적으로 제공된 인증 정보를 사용할 때 `access_key_id`와 함께 지정합니다.                                                                                     |
+| `access_key_id`     | S3 액세스 키 ID입니다. 자격 증명 provider를 사용하는 경우에는 선택 사항입니다.                                                                                                 |
+| `secret_access_key` | S3 시크릿 액세스 키입니다. 명시적으로 제공된 인증 정보를 사용할 때 `access_key_id`와 함께 지정합니다.                                                                                  |
 
 S3 기본값은 릴리스마다 변경되어 왔습니다. `23.4`에서는 `use_environment_credentials`가 `false`에서 `true`로, `23.5`에서는 `connect_timeout_ms`가 `10000`에서 `1000`으로, `22.10`에서는 `request_timeout_ms`가 `5000`에서 `30000`으로 변경되었습니다. 명시적으로 구성한 값은 이러한 기본값 변경의 영향을 받지 않습니다.
 
 명시적으로 제공된 인증 정보가 자격 증명 provider보다 우선합니다. 임시 자격 증명을 명시적으로 사용하는 경우 `session_token`을 설정하십시오. `use_environment_credentials=true`로 설정하면 ClickHouse는 환경, AWS 자격 증명 파일, 웹 아이덴티티 또는 인스턴스/컨테이너 역할(role)에서 자격 증명을 가져올 수 있습니다. 즉, 이 옵션은 환경 변수만이 아니라 provider 연쇄 전체를 활성화합니다.
+
+웹 아이덴티티(`AWS_ROLE_ARN` 및 `AWS_WEB_IDENTITY_TOKEN_FILE` 환경 변수)를 사용하는 경우, ClickHouse는 `AWS_DEFAULT_REGION` 또는 AWS 프로필에 설정된 리전의 AWS STS에 자격 증명을 요청합니다. 둘 다 리전을 설정하지 않으면 디스크의 리전, 즉 `region` 매개변수 또는 엔드포인트에서 추출한 리전(예: `https://s3.eu-central-1.amazonaws.com/`의 경우 `eu-central-1`)을 사용합니다. 디스크에도 리전이 없거나 `remote_url_allow_hosts`가 해당 리전의 STS 엔드포인트(`sts.eu-central-1.amazonaws.com`)를 허용하지 않으면 `us-east-1`의 STS를 호출합니다. 항상 특정 리전의 STS를 호출하려면 `AWS_DEFAULT_REGION`을 설정하십시오. `AWS_REGION` 환경 변수로는 STS의 리전이 설정되지 않습니다.
 
 #### 선택적 매개변수 {#optional-parameters-s3}
 
