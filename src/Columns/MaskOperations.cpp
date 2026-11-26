@@ -389,7 +389,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
         /// since the values won't be used by `if`. But they are still converted together with the used values,
         /// e.g. when `if` converts its branches to the common type, so they must be valid values of the type.
-        auto filtered = column_function->filter(mask, -1);
+        auto filtered = column_function->filter(mask, countBytesInFilter(mask));
         auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
         auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
         mut_column->expand(mask, false);
@@ -427,7 +427,7 @@ static MaskInfo maskedExecuteAndUpdateMaskImpl(
     /// result directly instead of expanding it to the full block and reading it again.
     /// Only this path accepts compact columns; the public `extractMask` functions keep
     /// requiring full-sized columns.
-    auto filtered = column_function->filter(mask, -1);
+    auto filtered = column_function->filter(mask, countBytesInFilter(mask));
     auto result = assert_cast<const ColumnFunction &>(*filtered).reduce();
     return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
 }
