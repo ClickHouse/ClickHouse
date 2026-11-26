@@ -8,6 +8,9 @@
 -- If any range is not cached, the file is read as before. The file names are unique per database, so the cache starts
 -- empty.
 
+-- The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+SET table_engine_read_through_distributed_cache = 0;
+
 -- One row group of three uncompressed column chunks: a (~1 MB), b (~2.3 MB), c (~1 MB). The settings limits keep this layout.
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '_05836_f1.parquet', format = Parquet)
 SELECT number AS a, toString(cityHash64(number)) AS b, number * 3 AS c FROM numbers(100000)
