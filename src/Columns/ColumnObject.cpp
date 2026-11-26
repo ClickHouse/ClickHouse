@@ -1647,6 +1647,14 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
     }
 }
 
+void ColumnObject::updateHashForValueName(size_t n, SipHash & hash) const
+{
+    updateHashWithValue(n, hash);
+    /// The source is read through `__source`, so it distinguishes a constant's name, unlike the value hash.
+    if (hasSource())
+        getSourceColumn().updateHashWithValue(n, hash);
+}
+
 void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
     /// Typed paths are always in the same order for all instances of the same Object type,

@@ -73,7 +73,7 @@ String IColumn::getValueName(size_t n, const Options & options) const
         return name_buf.str();
 
     HashState h;
-    updateHashWithValue(n, h);
+    updateHashForValueName(n, h);
     auto p = getSipHash128AsPair(h);
     return fmt::format("{}_{}", p.high64, p.low64);
 }

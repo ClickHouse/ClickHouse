@@ -3821,11 +3821,9 @@ ColumnPtr convertObjectColumns(
     if (!dst_type.hasSource())
         return result;
 
-    /// The source is the JSON text as it was given, so it is kept; a type that gains the source gets the text of the
-    /// converted object.
-    ColumnPtr source = src.hasSource()
-        ? src.getSourcePtr()
-        : createSourceFromObject(assert_cast<const ColumnObject &>(*result), dst_type, format_settings);
+    /// A type that gains the source gets the text of the converted object. Values that already have the source are
+    /// converted by `convertObjectViaSourceParse` instead.
+    ColumnPtr source = createSourceFromObject(assert_cast<const ColumnObject &>(*result), dst_type, format_settings);
     return ColumnObject::create(
         dst_typed_columns,
         dst_dynamic_columns,
@@ -3837,23 +3835,6 @@ ColumnPtr convertObjectColumns(
         /*statistics_=*/ {},
         dst_type.getPtr(),
         source);
-}
-
-/// A conversion between types with the source keeps the stored JSON text of each row, as `convertObjectColumns` does.
-ColumnPtr keepStoredSource(ColumnPtr result, const IColumn & src_column)
-{
-    const auto * src_object = typeid_cast<const ColumnObject *>(&src_column);
-    if (!src_object || !src_object->hasSource())
-        return result;
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(result.get()))
-        return ColumnNullable::create(keepStoredSource(nullable->getNestedColumnPtr(), src_column), nullable->getNullMapColumnPtr());
-
-    auto mutable_result = IColumn::mutate(std::move(result));
-    auto & result_object = assert_cast<ColumnObject &>(*mutable_result);
-    if (result_object.hasSource())
-        result_object.getSourcePtr() = src_object->getSourcePtr();
-    return mutable_result;
 }
 
 /// Format+parse fallback for Object->Object conversion (existing approach).
@@ -3886,13 +3867,28 @@ ColumnPtr convertObjectViaFormatParse(
 
     ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
     if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-        return keepStoredSource(
-            ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, parse_settings),
-            *arguments[0].column);
+        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, parse_settings);
 
-    return keepStoredSource(
-        ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings),
-        *arguments[0].column);
+    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings);
+}
+
+/// The object of a JSON value with the source is what parsing the source gives, so such a value is converted by parsing
+/// its source as a String is: a destination with the source then stores the same text.
+ColumnPtr convertObjectViaSourceParse(
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    const ColumnNullable * nullable_source,
+    size_t input_rows_count,
+    const FunctionConvertSettings & cast_settings,
+    bool requested_result_is_nullable,
+    CastType cast_type)
+{
+    const auto & src_object = assert_cast<const ColumnObject &>(*arguments[0].column);
+    ColumnsWithTypeAndName args_with_source = {ColumnWithTypeAndName(src_object.getSourcePtr(), std::make_shared<DataTypeString>(), "")};
+    if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+        return ConvertImplGenericFromString<false>::execute(args_with_source, makeNullable(result_type), nullable_source, input_rows_count, cast_settings);
+
+    return ConvertImplGenericFromString<true>::execute(args_with_source, result_type, nullable_source, input_rows_count, cast_settings);
 }
 
 } /// anonymous namespace
@@ -3922,6 +3918,19 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         };
     }
 
+    /// A value with the source is converted by parsing the source, so that the object of a type with the source is
+    /// always what its parser gives for the source (for example, a removed SKIP rule brings the skipped paths back).
+    /// TODO: convert without parsing when the change of the type cannot expose more of the source.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()); from_object && from_object->hasSource())
+    {
+        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        {
+            return convertObjectViaSourceParse(
+                arguments, result_type, nullable_source, input_rows_count,
+                settings, requested_result_is_nullable, cast_type);
+        };
+    }
+
     /// Optimized Object(JSON) -> Object(JSON) conversion: avoid full serialize+parse when
     /// only a subset of paths are affected by parameter changes (typed paths, skip rules).
     if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
@@ -3931,8 +3940,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         auto plan = buildObjectConversionPlan(*from_object, *to_object);
 
         /// Identity: only metadata changes (e.g. removing skip rules) — return source column directly.
-        /// A change of `with_source` adds or drops the source column, so it is not an identity.
-        if (plan.isIdentity() && from_object->hasSource() == to_object->hasSource())
+        /// Adding `with_source` adds the source column, so it is not an identity.
+        if (plan.isIdentity() && !to_object->hasSource())
         {
             return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
             {

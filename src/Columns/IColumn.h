@@ -234,6 +234,11 @@ public:
     virtual void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
     String getValueName(size_t n, const Options & options) const;
 
+    /// The hash of a value for its unique name (e.g. a constant's action node name), used when the name
+    /// is too long to spell out. Unlike `updateHashWithValue`, it may distinguish values that compare
+    /// equal but behave differently (the JSON source subcolumn), so it must not be used for grouping.
+    virtual void updateHashForValueName(size_t n, SipHash & hash) const { updateHashWithValue(n, hash); }
+
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual std::string_view getDataAt(size_t n) const = 0;

@@ -65,3 +65,9 @@ constants that differ only in the source keep their own source
 {"a":1}	{ "a" : 1 }
 {"a":1}	{ "a" : 1 }
 {"a":1}	{ "a" : 1 }
+{"a":1}	{ "a" : 1 }
+a value with the source is converted by parsing the source
+{"a":1,"b":2}	['a','b']	{"a" : 1, "b" : 2}
+{"a":1,"b":2}	['a','b']
+300	{"a" : 300}
+2020-01-01 00:00:00.123

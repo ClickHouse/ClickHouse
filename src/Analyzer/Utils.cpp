@@ -1706,6 +1706,11 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::Object:
         {
             const auto & object_column = assert_cast<const ColumnObject &>(*column);
+            /// The object of a type with the source is what parsing the source gives, so the source is the literal:
+            /// it keeps the text that `__source` reads.
+            if (object_column.hasSource() && !is_inside_object)
+                return Field(String(object_column.getSourceColumn().getDataAt(row)));
+
             const auto & typed_paths_types = assert_cast<const DataTypeObject &>(*data_type).getTypedPaths();
             Object object;
             /// Typed paths have an explicit declared type, so DateTime64/Time64 leaves can be rendered as

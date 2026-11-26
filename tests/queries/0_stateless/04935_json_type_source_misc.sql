@@ -135,3 +135,13 @@ SELECT 'constants that differ only in the source keep their own source';
 SELECT materialize('{"a":1}'::JSON(with_source=1)).__source, materialize('{ "a" : 1 }'::JSON(with_source=1)).__source;
 SELECT tupleElement(materialize(tuple('{"a":1}'::JSON(with_source=1))), 1).__source, tupleElement(materialize(tuple('{ "a" : 1 }'::JSON(with_source=1))), 1).__source;
 SELECT materialize(['{"a":1}'::JSON(with_source=1)])[1].__source, materialize(['{ "a" : 1 }'::JSON(with_source=1)])[1].__source;
+-- The same holds when the constant's action name is hashed instead of spelled out.
+SELECT materialize('{"a":1}'::JSON(with_source=1)).__source, materialize('{ "a" : 1 }'::JSON(with_source=1)).__source SETTINGS optimize_const_name_size = 0;
+
+SELECT 'a value with the source is converted by parsing the source';
+-- A removed SKIP rule brings the skipped path back, with and without the source in the destination.
+SELECT j, JSONAllPaths(j), j.__source FROM (SELECT CAST('{"a" : 1, "b" : 2}'::JSON(with_source=1, SKIP b) AS JSON(with_source=1)) AS j);
+SELECT j, JSONAllPaths(j) FROM (SELECT CAST('{"a" : 1, "b" : 2}'::JSON(with_source=1, SKIP b) AS JSON) AS j);
+-- A value the source type could not hold is read again under the destination type.
+SELECT j.a, j.__source FROM (SELECT CAST('{"a" : 300}'::JSON(with_source=1, a UInt8) AS JSON(with_source=1, a UInt32)) AS j) SETTINGS type_json_skip_invalid_typed_paths = 1;
+SELECT j.a FROM (SELECT CAST('{"a" : "2020-01-01 00:00:00.123"}'::JSON(with_source=1, a DateTime('UTC')) AS JSON(with_source=1, a DateTime64(3, 'UTC'))) AS j);
