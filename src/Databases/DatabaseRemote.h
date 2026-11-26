@@ -192,8 +192,8 @@ private:
     /// `ignore_visibility` (meaningful only together with `only_table`) answers from the local shard
     /// regardless of whether the caller is allowed to see the table; see
     /// `isTableExistIgnoringVisibility`.
-    /// `wait_for_local_tables = false` (used by `getAllTableNames`) takes the names of a local shard from the
-    /// local database's `getAllTableNames`, which does not wait for its tables to load.
+    /// `wait_for_local_tables = false` lists a local shard with its `getAllTableNames`, which does not
+    /// wait for the tables to load.
     Strings fetchTablesList(
         ContextPtr local_context, const String * only_table = nullptr, bool ignore_visibility = false, bool wait_for_local_tables = true) const;
 
