@@ -2,6 +2,13 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
@@ -9,6 +16,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -16,6 +24,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -79,6 +88,10 @@ namespace Setting
 {
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsUInt64 max_expanded_ast_elements;
 }
 
 namespace MergeTreeSetting
@@ -103,6 +116,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsBool enable_row_mask_update_coalescing;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_keys;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_key_bytes;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_commands;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_ast_bytes;
 }
 
 namespace FailPoints
@@ -129,6 +147,305 @@ enum class ExecuteTTLType : uint8_t
 
 namespace MutationHelpers
 {
+
+/// A sequence of row-mask updates with one key per `IN` predicate has the same
+/// final mask as an update over all matching keys. Equal prefixes use one `IN`
+/// predicate; mixed prefixes require an `IN` predicate over prefix/key tuples.
+/// This is only used while processing a part; the persisted mutation commands
+/// and their versions are left intact.
+struct SingletonRowMaskUpdate
+{
+    String prefix_column;
+    Field prefix_value;
+    String key_column;
+    String key_value;
+    bool key_from_uint128_array_join = false;
+    size_t predicate_ast_size = 0;
+};
+
+static bool containsAliasedExpression(const ASTPtr & ast)
+{
+    if (!ast->tryGetAlias().empty())
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (containsAliasedExpression(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// The targeted singleton `IN` source is `SELECT toUInt128(arrayJoin(['id']))`.
+/// Accept only that exact one-column, one-expression `SELECT` shape. In
+/// particular, a `FROM`, `WHERE`, `LIMIT`, `UNION`, or different cast is not folded.
+static const ASTLiteral * getSingletonUInt128ArrayJoin(const ASTPtr & rhs)
+{
+    const auto * subquery = rhs->as<ASTSubquery>();
+    if (!subquery || subquery->children.size() != 1)
+        return nullptr;
+
+    const auto * union_query = subquery->children[0]->as<ASTSelectWithUnionQuery>();
+    if (!union_query || union_query->children.size() != 1 || !union_query->list_of_selects)
+        return nullptr;
+
+    const auto * selects = union_query->list_of_selects->as<ASTExpressionList>();
+    if (!selects || selects->children.size() != 1)
+        return nullptr;
+
+    const auto * select = selects->children[0]->as<ASTSelectQuery>();
+    if (!select || select->children.size() != 1 || !select->select()
+        || select->recursive_with || select->distinct || select->group_by_all
+        || select->group_by_with_totals || select->group_by_with_rollup
+        || select->group_by_with_cube || select->group_by_with_constant_keys
+        || select->group_by_with_grouping_sets || select->order_by_all
+        || select->limit_with_ties || select->limit_by_all)
+        return nullptr;
+
+    const auto * projections = select->select()->as<ASTExpressionList>();
+    if (!projections || projections->children.size() != 1)
+        return nullptr;
+
+    const auto * conversion = projections->children[0]->as<ASTFunction>();
+    if (!conversion || conversion->name != "toUInt128" || !conversion->arguments
+        || conversion->arguments->children.size() != 1)
+        return nullptr;
+
+    const auto * array_join = conversion->arguments->children[0]->as<ASTFunction>();
+    if (!array_join || array_join->name != "arrayJoin" || !array_join->arguments
+        || array_join->arguments->children.size() != 1)
+        return nullptr;
+
+    const auto * values = array_join->arguments->children[0]->as<ASTLiteral>();
+    if (!values || values->value.getType() != Field::Types::Array)
+        return nullptr;
+
+    const auto & array = values->value.safeGet<Array>();
+    if (array.size() != 1 || array[0].getType() != Field::Types::String)
+        return nullptr;
+
+    UInt128 parsed;
+    if (!tryParse(parsed, array[0].safeGet<String>()))
+        return nullptr;
+
+    return values;
+}
+
+static std::optional<SingletonRowMaskUpdate> getSingletonRowMaskUpdate(
+    const MutationCommand & command, UInt64 max_combined_key_bytes)
+{
+    if (command.type != MutationCommand::UPDATE)
+        return std::nullopt;
+
+    auto alter = command.ast();
+    if (!alter || alter->partition || !alter->predicate || !alter->update_assignments
+        || alter->update_assignments->children.size() != 1)
+        return std::nullopt;
+
+    const auto * assignment = alter->update_assignments->children[0]->as<ASTAssignment>();
+    const auto * assigned_value = assignment ? assignment->expression()->as<ASTLiteral>() : nullptr;
+    if (!assignment || assignment->column_name != RowExistsColumn::name
+        || !assigned_value || assigned_value->value != Field(UInt64(0))
+        || !assigned_value->tryGetAlias().empty())
+        return std::nullopt;
+
+    const auto * predicate = alter->predicate->as<ASTFunction>();
+    if (!predicate || predicate->name != "and" || !predicate->arguments || predicate->arguments->children.size() != 2)
+        return std::nullopt;
+
+    const auto * prefix = predicate->arguments->children[0]->as<ASTFunction>();
+    const auto * membership = predicate->arguments->children[1]->as<ASTFunction>();
+    if (!prefix || prefix->name != "equals" || !prefix->arguments || prefix->arguments->children.size() != 2
+        || !membership || membership->name != "in" || !membership->arguments || membership->arguments->children.size() != 2)
+        return std::nullopt;
+
+    const auto * prefix_column = prefix->arguments->children[0]->as<ASTIdentifier>();
+    const auto * prefix_value = prefix->arguments->children[1]->as<ASTLiteral>();
+    const auto * key_column = membership->arguments->children[0]->as<ASTIdentifier>();
+    const auto * key_value = membership->arguments->children[1]->as<ASTLiteral>();
+    const auto * subquery_value = key_value ? nullptr : getSingletonUInt128ArrayJoin(membership->arguments->children[1]);
+    if (!prefix_column || !prefix_column->isShort() || prefix_column->isParam()
+        || !prefix_value || prefix_value->value.getType() != Field::Types::UInt64
+        || !key_column || !key_column->isShort() || key_column->isParam()
+        || (!key_value && !subquery_value)
+        || (key_value && key_value->value.getType() != Field::Types::String)
+        || prefix_column->name() == key_column->name()
+        || prefix_column->name() == RowExistsColumn::name || key_column->name() == RowExistsColumn::name)
+        return std::nullopt;
+
+    if (containsAliasedExpression(alter->predicate))
+        return std::nullopt;
+
+    const auto & key = key_value ? key_value->value.safeGet<String>() : subquery_value->value.safeGet<Array>()[0].safeGet<String>();
+    if (key.size() > max_combined_key_bytes)
+        return std::nullopt;
+
+    return SingletonRowMaskUpdate{
+        prefix_column->name(), prefix_value->value, key_column->name(), key, subquery_value != nullptr, alter->predicate->size()};
+}
+
+static bool hasStableRowMaskKeyTypes(
+    const SingletonRowMaskUpdate & first, const StorageMetadataPtr & metadata_snapshot, const ColumnsDescription & source_columns)
+{
+    if (first.prefix_value.getType() != Field::Types::UInt64)
+        return false;
+
+    const auto prefix = metadata_snapshot->getColumns().tryGetPhysical(first.prefix_column);
+    const auto key = metadata_snapshot->getColumns().tryGetPhysical(first.key_column);
+    const auto source_prefix = source_columns.tryGetPhysical(first.prefix_column);
+    const auto source_key = source_columns.tryGetPhysical(first.key_column);
+    if (!prefix || !key || !source_prefix || !source_key
+        || !prefix->type->equals(*source_prefix->type) || !key->type->equals(*source_key->type))
+        return false;
+
+    const auto type = prefix->type->getTypeId();
+    const bool valid_prefix = (type == TypeIndex::UInt32 && first.prefix_value.safeGet<UInt64>() <= std::numeric_limits<UInt32>::max())
+        || type == TypeIndex::UInt64;
+    const auto key_type = key->type->getTypeId();
+    return valid_prefix && (first.key_from_uint128_array_join ? key_type == TypeIndex::UInt128 : key_type == TypeIndex::String);
+}
+
+static MutationCommands coalesceSingletonRowMaskUpdates(
+    const MutationCommands & commands, const ContextPtr & context, const StorageMetadataPtr & metadata_snapshot,
+    const ColumnsDescription & source_columns, UInt64 max_keys_per_command, UInt64 max_combined_key_bytes)
+{
+    if (commands.size() < 2 || max_keys_per_command < 2 || !max_combined_key_bytes)
+        return commands;
+
+    /// A larger `IN` set must not start throwing or silently truncate where each
+    /// original singleton set would fit the effective background settings.
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::max_bytes_in_set])
+        return commands;
+
+    auto max_rows_in_set = settings[Setting::max_rows_in_set];
+    if (max_rows_in_set && max_rows_in_set < max_keys_per_command)
+        max_keys_per_command = max_rows_in_set;
+    if (max_keys_per_command < 2)
+        return commands;
+
+    /// The analyzer counts expanded QueryTree nodes, including source
+    /// expressions retained by folded constants. The raw mutation AST size is
+    /// not an upper bound for that limit, so keep the original commands when
+    /// the user has configured a finite expanded-tree limit.
+    if (settings[Setting::max_expanded_ast_elements] && settings.isChanged("max_expanded_ast_elements"))
+        return commands;
+
+    MutationCommands result;
+    result.reserve(commands.size());
+
+    for (size_t i = 0; i < commands.size();)
+    {
+        const auto first = getSingletonRowMaskUpdate(commands[i], max_combined_key_bytes);
+        if (!first || !hasStableRowMaskKeyTypes(*first, metadata_snapshot, source_columns)
+            || (commands[i].max_parser_depth && commands[i].max_parser_depth < DBMS_DEFAULT_MAX_PARSER_DEPTH)
+            || (commands[i].max_parser_backtracks && commands[i].max_parser_backtracks < DBMS_DEFAULT_MAX_PARSER_BACKTRACKS))
+        {
+            result.push_back(commands[i++]);
+            continue;
+        }
+
+        Tuple keys{first->key_value};
+        UInt64 combined_key_bytes = first->key_value.size();
+        size_t original_predicate_ast_size = first->predicate_ast_size;
+        std::vector<Field> prefixes{first->prefix_value};
+        const bool can_mix_prefixes = first->key_from_uint128_array_join;
+        bool mixed_prefixes = false;
+        size_t end = i + 1;
+        while (end < commands.size() && keys.size() < max_keys_per_command)
+        {
+            const auto next = getSingletonRowMaskUpdate(commands[end], max_combined_key_bytes);
+            if (!next || next->key_value.size() > max_combined_key_bytes - combined_key_bytes
+                || commands[end].mutation_version != commands[i].mutation_version
+                || commands[end].max_parser_depth != commands[i].max_parser_depth
+                || commands[end].max_parser_backtracks != commands[i].max_parser_backtracks
+                || next->prefix_column != first->prefix_column
+                || (next->prefix_value != first->prefix_value
+                    && (!can_mix_prefixes || !hasStableRowMaskKeyTypes(*next, metadata_snapshot, source_columns)))
+                || next->key_column != first->key_column
+                || next->key_from_uint128_array_join != first->key_from_uint128_array_join)
+                break;
+
+            keys.emplace_back(next->key_value);
+            combined_key_bytes += next->key_value.size();
+            original_predicate_ast_size += next->predicate_ast_size;
+            prefixes.emplace_back(next->prefix_value);
+            mixed_prefixes |= next->prefix_value != first->prefix_value;
+            ++end;
+        }
+
+        if (keys.size() == 1)
+        {
+            result.push_back(commands[i]);
+        }
+        else
+        {
+            auto combined = commands[i];
+            auto alter = combined.mutateAst();
+            auto * predicate = alter->predicate->as<ASTFunction>();
+            auto * membership = predicate->arguments->children[1]->as<ASTFunction>();
+            if (mixed_prefixes)
+            {
+                auto pairs = makeASTFunction("tuple");
+                for (size_t j = 0; j < keys.size(); ++j)
+                {
+                    pairs->arguments->children.push_back(makeASTFunction(
+                        "tuple",
+                        make_intrusive<ASTLiteral>(prefixes[j]),
+                        makeASTFunction("toUInt128", make_intrusive<ASTLiteral>(keys[j]))));
+                }
+
+                static_cast<IAST &>(*alter).replace(alter->predicate, makeASTFunction(
+                    "in",
+                    makeASTFunction(
+                        "tuple",
+                        make_intrusive<ASTIdentifier>(first->prefix_column),
+                        make_intrusive<ASTIdentifier>(first->key_column)),
+                    pairs));
+            }
+            else if (first->key_from_uint128_array_join)
+            {
+                auto * subquery = membership->arguments->children[1]->as<ASTSubquery>();
+                auto * union_query = subquery->children[0]->as<ASTSelectWithUnionQuery>();
+                auto * selects = union_query->list_of_selects->as<ASTExpressionList>();
+                auto * select = selects->children[0]->as<ASTSelectQuery>();
+                auto * projections = select->select()->as<ASTExpressionList>();
+                auto * conversion = projections->children[0]->as<ASTFunction>();
+                auto * array_join = conversion->arguments->children[0]->as<ASTFunction>();
+                Array values;
+                values.reserve(keys.size());
+                for (const auto & key : keys)
+                    values.emplace_back(key);
+                array_join->arguments->children[0] = make_intrusive<ASTLiteral>(std::move(values));
+            }
+            else
+            {
+                membership->arguments->children[1] = make_intrusive<ASTLiteral>(std::move(keys));
+            }
+            alter.commit();
+            const auto combined_ast = combined.ast();
+            const auto combined_ast_size = combined_ast->size();
+            if (combined_ast->predicate->size() > original_predicate_ast_size
+                || (settings[Setting::max_ast_elements] && combined_ast_size > settings[Setting::max_ast_elements])
+                || (settings[Setting::max_expanded_ast_elements]
+                    && combined_ast_size > settings[Setting::max_expanded_ast_elements]))
+            {
+                /// Keep the original commands if their combined predicate grows
+                /// the affected-row query or exceeds effective background limits.
+                for (size_t j = i; j < end; ++j)
+                    result.push_back(commands[j]);
+            }
+            else
+            {
+                result.push_back(std::move(combined));
+            }
+        }
+        i = end;
+    }
+
+    return result;
+}
 
 /// Placeholder substream that `getColumnsForNewDataPart` records for a column that will be written
 /// later by the mutation and is therefore not yet present in the part. It is not a real stream and
@@ -271,12 +588,6 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
-    auto nameInPart = [&](String name)
-    {
-        if (alter_conversions->isColumnRenamed(name))
-            name = alter_conversions->getColumnOldName(name);
-        return name;
-    };
 
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
@@ -291,37 +602,23 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                auto marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
-                {
-                    auto materialize_frozen = command;
-                    materialize_frozen.type = MutationCommand::Type::READ_COLUMN;
-                    materialize_frozen.data_type = table_columns.getPhysical(command.column_name).type;
-                    for_interpreter.push_back(std::move(materialize_frozen));
-                    mutated_columns.emplace(command.column_name);
-                }
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-                else
+                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
                 {
-                    auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
-                    {
-                        for_interpreter.push_back(command);
-                        mutated_columns.emplace(command.column_name);
-                    }
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
                 }
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
                 /// Here we add it "for renames" because these set of commands also removes redundant files
-                if (part_columns.has(nameInPart(command.column_name)))
+                if (part_columns.has(command.column_name))
                     for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::READ_COLUMN)
             {
-                const auto name_in_part = nameInPart(command.column_name);
-                bool has_column = part_columns.has(name_in_part) || part_columns.hasNested(name_in_part)
-                    || part->getSerializationInfos().isMissingColumn(name_in_part);
+                bool has_column = part_columns.has(command.column_name) || part_columns.hasNested(command.column_name);
                 if (has_column || command.read_for_patch)
                 {
                     for_interpreter.push_back(command);
@@ -435,20 +732,6 @@ static void splitAndModifyMutationCommands(
                     }
                 }
             }
-            else if (command.type == MutationCommand::Type::DROP_COLUMN)
-            {
-                /// Marker-only DROP/CLEAR must still update metadata and dependencies.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
-                {
-                    if (command.clear)
-                    {
-                        for_interpreter.push_back(command);
-                        mutated_columns.emplace(command.column_name);
-                    }
-                    for_file_renames.push_back(command);
-                }
-            }
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
@@ -477,19 +760,20 @@ static void splitAndModifyMutationCommands(
 
                 part_columns.rename(rename_from, rename_to);
             }
-            else if (part->getSerializationInfos().isMissingColumn(rename_from))
-            {
-                /// Keep marker metadata aligned with the rename.
-                for_file_renames.push_back(
-                {
-                     .type = MutationCommand::Type::RENAME_COLUMN,
-                     .column_name = rename_from,
-                     .rename_to = rename_to
-                });
-            }
         }
 
-        /// Packed parts rebuild stored indices/projections and must read absent dependencies.
+        /// When the source part is non-wide-or-non-full (Compact or packed), `MutateFromLogEntryTask::prepare`
+        /// force-recalculates ALL pre-existing skip indices on the part (see `need_recalculate` in `prepare`).
+        /// The mutation pipeline must read every column required by those indices, even when the current
+        /// mutation does not explicitly materialize them. Otherwise force-recalculation produces a block
+        /// that is missing the column and we throw `NOT_FOUND_COLUMN_IN_BLOCK`. This is the regression
+        /// reported in issue #104872 for tables that contain a skip index over a column that is in the
+        /// table metadata but absent from the part on disk (for example, a part created in 25.8 where
+        /// `MATERIALIZE INDEX` did not yet write the index's columns to the part).
+        ///
+        /// The original `MATERIALIZE INDEX` branch above only adds columns for the explicitly-materialized
+        /// index, so a pre-existing index over a different absent column is missed. Walk all indices that
+        /// the source part has (and that are not being dropped) and add their absent columns here.
         NameSet indices_being_dropped;
         for (const auto & command : commands)
             if (command.type == MutationCommand::Type::DROP_INDEX)
@@ -510,6 +794,8 @@ static void splitAndModifyMutationCommands(
             }
         }
 
+        /// Same logic for projections: a non-full-storage (packed) source part also force-recalculates
+        /// every pre-existing projection in `prepare`. Their required columns must be in the read set.
         NameSet projections_being_dropped;
         for (const auto & command : commands)
             if (command.type == MutationCommand::Type::DROP_PROJECTION)
@@ -613,26 +899,15 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                auto marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
-                {
-                    auto materialize_frozen = command;
-                    materialize_frozen.type = MutationCommand::Type::READ_COLUMN;
-                    materialize_frozen.data_type = table_columns.getPhysical(command.column_name).type;
-                    for_interpreter.push_back(std::move(materialize_frozen));
-                }
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-                else
-                {
-                    auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
-                        for_interpreter.push_back(command);
-                }
+                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    for_interpreter.push_back(command);
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
                 /// Here we add it "for renames" because these set of commands also removes redundant files
-                if (part_columns.has(nameInPart(command.column_name)))
+                if (part_columns.has(command.column_name))
                     for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
@@ -663,10 +938,7 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::READ_COLUMN)
             {
-                const auto name_in_part = nameInPart(command.column_name);
-                if (part_columns.has(name_in_part)
-                    || part->getSerializationInfos().isMissingColumn(name_in_part)
-                    || command.read_for_patch)
+                if (part_columns.has(command.column_name) || command.read_for_patch)
                 {
                     for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
@@ -684,17 +956,6 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(command);
 
                 for_file_renames.push_back(command);
-            }
-            else if (command.type == MutationCommand::Type::DROP_COLUMN)
-            {
-                /// Marker-only DROP/CLEAR has the same logical effect as physical data.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
-                {
-                    if (command.clear)
-                        for_interpreter.push_back(command);
-                    for_file_renames.push_back(command);
-                }
             }
         }
 
@@ -735,28 +996,6 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
-static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
-{
-    if (storage_columns_set.contains(RowExistsColumn::name))
-        return false;
-
-    if (command.type == MutationCommand::READ_COLUMN)
-        return command.read_for_patch && command.column_name == RowExistsColumn::name;
-
-    if (command.type == MutationCommand::UPDATE)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments)
-            return false;
-        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
-        {
-            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
-        });
-    }
-
-    return false;
-}
-
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -779,9 +1018,7 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    bool deleted_mask_updated = false;
     bool affects_all_columns = false;
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -790,9 +1027,6 @@ getColumnsForNewDataPart(
     for (const auto & command : all_commands)
     {
         affects_all_columns |= command.affectsAllColumns();
-
-        if (supports_lightweight_deletes)
-            deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
@@ -811,12 +1045,6 @@ getColumnsForNewDataPart(
                     renamed_columns_to_from.emplace(command.rename_to, original_name);
                     renamed_columns_from_to.emplace(original_name, command.rename_to);
                 }
-                else if (serialization_infos.isMissingColumn(command.column_name))
-                {
-                    /// Marker metadata follows physical renames.
-                    renamed_columns_to_from.emplace(command.rename_to, command.column_name);
-                    renamed_columns_from_to.emplace(command.column_name, command.rename_to);
-                }
             }
             continue;
         }
@@ -831,18 +1059,6 @@ getColumnsForNewDataPart(
         }
     }
 
-    /// Resolve marker-only drops after the complete rename chain is known.
-    for (const auto & command : all_commands)
-    {
-        if (command.type != MutationCommand::DROP_COLUMN || part_columns.has(command.column_name))
-            continue;
-
-        auto it = renamed_columns_to_from.find(command.column_name);
-        const String & original_name = it != renamed_columns_to_from.end() ? it->second : command.column_name;
-        if (serialization_infos.isMissingColumn(original_name))
-            removed_columns.insert(command.column_name);
-    }
-
     for (const auto & [name, type] : persistent_virtuals)
     {
         if (storage_columns_set.contains(name))
@@ -850,7 +1066,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+            need_column = updated_header.has(name) || (part_columns.has(name) && !affects_all_columns);
         else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
             need_column = part_columns.has(name) || updated_header.has(name);
         else
@@ -896,13 +1112,6 @@ getColumnsForNewDataPart(
     /// Otherwise use fresh settings from storage.
     else
         settings = storage_serialization_settings;
-
-    if (!serialization_infos.getMissingColumns().empty())
-    {
-        settings.version = std::max(
-            settings.version,
-            MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
-    }
 
     SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
@@ -966,29 +1175,6 @@ getColumnsForNewDataPart(
 
         new_info = old_info->createWithType(*old_type, *new_type, settings);
         new_serialization_infos.emplace(new_name, std::move(new_info));
-    }
-
-    /// Preserve markers for columns that remain absent after this mutation.
-    {
-        SerializationInfoByName::MissingColumns new_missing;
-        for (const auto & mc : serialization_infos.getMissingColumns())
-        {
-            auto it = renamed_columns_from_to.find(mc.name);
-            auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
-
-            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
-                continue;
-            if (updated_header.has(new_name))
-                continue;
-
-            auto entry = mc;
-            entry.name = new_name;
-            new_missing.push_back(std::move(entry));
-        }
-        if (!new_missing.empty())
-        {
-            new_serialization_infos.setMissingColumns(std::move(new_missing));
-        }
     }
 
     /// Column mutations preserve source part serialization settings even when they differ from storage defaults,
@@ -1765,26 +1951,9 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out_checksums));
     }
 
-    /// `default_compression_codec.txt` records the part's own default codec as a fact:
-    /// `loadDefaultCompressionCodec` trusts it verbatim on every later load. When the source's own codec
-    /// could only be recovered approximately (see `IMergeTreeDataPart::default_codec_is_approximate`),
-    /// the mutated part still has no authoritative part-wide codec: most columns are hardlinked and
-    /// keep whatever, possibly different, codec they were written with. This remains true even when a
-    /// current table or `RECOMPRESS` policy chose an exact codec for the columns that this mutation
-    /// rewrote. Writing any value out would launder partial information into authoritative metadata:
-    /// the next load could let it suppress a due `RECOMPRESS` TTL for the untouched columns.
-    /// Record an explicit unknown marker instead of omitting the file. A descendant of a legacy part
-    /// whose columns all have explicit codecs has no column that can recover its default; its freshly
-    /// written `checksums.txt` is modern and therefore cannot prove the old part's default either.
-    /// The marker preserves the approximate provenance across reloads without laundering a guessed
-    /// codec into authoritative metadata.
-    const bool codec_is_approximate = source_part->default_codec_is_approximate;
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
-        if (codec_is_approximate)
-            DB::writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, *out_comp);
-        else
-            DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
+        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
@@ -1847,9 +2016,6 @@ static void finalizeMutatedPart(
         new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
-    /// Keep the provenance with the value: nothing on disk claims this codec is exact anymore, and the
-    /// in-memory part must not claim it either until it is reloaded from disk.
-    new_data_part->default_codec_is_approximate = codec_is_approximate;
 
     /// This hardlink / mutate-some-columns path assembles the checksums and index granularity in the
     /// default arenas (the full-rewrite path re-homes them in `MergedBlockOutputStream::finalizePartAsync`).
@@ -1891,7 +2057,6 @@ struct MutationContext
     ReservationSharedPtr space_reservation;
 
     CompressionCodecPtr compression_codec;
-    bool is_explicit_recompression = false;
 
     std::unique_ptr<CurrentMetrics::Increment> num_mutations;
 
@@ -2257,6 +2422,8 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
+    chassert(!ctx->new_data_part->hasLightweightDelete() || block.has(RowExistsColumn::name));
+
     const auto & projection = *ctx->projections_to_build[projection_idx];
 
     /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
@@ -2315,10 +2482,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         result,
         projection,
         ctx->new_data_part.get(),
-        ctx->compression_codec,
         ++projection_block_num,
-        /*use_selected_codec=*/ ctx->source_part->default_codec_is_approximate,
-        ctx->is_explicit_recompression,
         ctx->context);
 
     tmp_part->finalize();
@@ -2608,12 +2772,7 @@ private:
         auto part_compression_codec = ctx->data->getCompressionCodecForPart(
             ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
         ctx->compression_codec = std::move(part_compression_codec.codec);
-        ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
-        /// Record the chosen codec on the part so that its projections merged by the sub-merge in
-        /// `MergeTask` (see the projection branch there) inherit the same codec, together with
-        /// whether it was asked for by an explicit `RECOMPRESS` TTL.
-        ctx->new_data_part->default_codec = ctx->compression_codec;
-        ctx->new_data_part->default_codec_is_explicit_recompression = ctx->is_explicit_recompression;
+        const bool is_explicit_recompression = part_compression_codec.is_explicit_recompression;
 
         NameSet entries_to_hardlink;
         NameSet removed_indices;
@@ -2850,7 +3009,7 @@ private:
         const auto & new_part_columns = ctx->new_data_part->getColumns();
         const bool has_block_columns = new_part_columns.contains(BlockNumberColumn::name) && new_part_columns.contains(BlockOffsetColumn::name);
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings(), has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(*ctx->metadata_snapshot, ctx->data->getSettings(), has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
@@ -2880,7 +3039,7 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
+            /*try_adaptive_codec=*/ !is_explicit_recompression);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3184,34 +3343,10 @@ private:
                 new_disk_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
         }
 
-        /// Column-only mutations normally keep the source part's codec. However, a part whose
-        /// `default_compression_codec.txt` is missing has only an approximate recovered codec.
-        /// Reusing that estimate here would make it a real write-path decision for the rewritten
-        /// columns. Choose the codec from the current table and TTL policy instead, as the
-        /// full-rewrite mutation path does. The part-wide codec remains approximate because the
-        /// other columns are hardlinked from the source part.
-        const bool codec_is_approximate = ctx->source_part->default_codec_is_approximate;
-        ctx->is_explicit_recompression = false;
-        if (codec_is_approximate)
-        {
-            auto part_compression_codec = ctx->data->getCompressionCodecForPart(
-                ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
-            ctx->compression_codec = std::move(part_compression_codec.codec);
-            ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
-        }
-        else
-        {
-            ctx->compression_codec = ctx->source_part->default_codec;
-            ctx->is_explicit_recompression = isExplicitRecompression(
-                ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
-        }
-
-        /// Record the chosen writer codec so that projections merged by the sub-merge in `MergeTask`
-        /// (see the projection branch there) use the same codec. Its provenance remains approximate
-        /// whenever the source part-wide value was approximate.
-        ctx->new_data_part->default_codec = ctx->compression_codec;
-        ctx->new_data_part->default_codec_is_approximate = codec_is_approximate;
-        ctx->new_data_part->default_codec_is_explicit_recompression = ctx->is_explicit_recompression;
+        /// Column-only mutations keep the source part's codec, only the explicitness of a due `RECOMPRESS` is consulted.
+        ctx->compression_codec = ctx->source_part->default_codec;
+        const bool is_explicit_recompression = isExplicitRecompression(
+            ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
@@ -3269,7 +3404,7 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
-                /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
+                /*try_adaptive_codec=*/ !is_explicit_recompression);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would
@@ -3642,21 +3777,6 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
         if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
-    else if (alter && alter->partitions)
-    {
-        bool part_in_partitions = false;
-        for (const auto & partition_ast : alter->partitions->children)
-        {
-            auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
-            if (part->info.getPartitionId() == command_partition_id)
-            {
-                part_in_partitions = true;
-                break;
-            }
-        }
-        if (!part_in_partitions)
-            return true;
-    }
 
     /// APPLY PATCHES command is handled separately.
     if (command.type == MutationCommand::APPLY_PATCHES)
@@ -3869,8 +3989,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && !ctx->indices_to_recalc.empty();
 
+        /// An unsupported archive cannot be updated, so it would keep granules of the old data.
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
-            || (source_has_archive && writer_can_open_archive);
+            || (source_has_archive && writer_can_open_archive)
+            || source_disk_storage->hasUnsupportedSkipIndicesPackedArchive();
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
@@ -4008,11 +4130,57 @@ bool MutateTask::prepare()
         });
     }
 
+    /// Coalesce before splitting so a `DROP` or `RENAME` that the split omits
+    /// remains a grouping barrier. Keep file-rename planning based on the
+    /// original commands, including one `UPDATE` entry per original command.
+    const auto merge_tree_settings = ctx->data->getSettings();
+    const UInt64 max_coalescing_commands = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_commands];
+    const UInt64 max_coalescing_ast_bytes = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_ast_bytes];
+    const UInt64 max_coalescing_keys = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_keys];
+    const UInt64 max_coalescing_key_bytes = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_key_bytes];
+    bool can_coalesce_row_mask_updates = (*merge_tree_settings)[MergeTreeSetting::enable_row_mask_update_coalescing]
+        && max_coalescing_commands && max_coalescing_ast_bytes && max_coalescing_keys > 1 && max_coalescing_key_bytes
+        && ctx->commands_for_part.size() > 1
+        && ctx->commands_for_part.size() <= max_coalescing_commands
+        && isWidePart(ctx->source_part)
+        && isFullPartStorage(ctx->source_part->getDataPartStorage())
+        && !MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
+        && !MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        && !context_for_reading->getSettingsRef()[Setting::max_bytes_in_set];
+    if (can_coalesce_row_mask_updates)
+    {
+        /// Copying the command list for part-local execution must stay bounded.
+        UInt64 input_bytes = 0;
+        for (const auto & command : ctx->commands_for_part)
+        {
+            if (command.ast_text.size() > max_coalescing_ast_bytes - input_bytes)
+            {
+                can_coalesce_row_mask_updates = false;
+                break;
+            }
+            input_bytes += command.ast_text.size();
+        }
+    }
+    MutationCommands coalesced_commands;
+    const MutationCommands * commands_for_execution = &ctx->commands_for_part;
+    if (can_coalesce_row_mask_updates)
+    {
+        coalesced_commands = MutationHelpers::coalesceSingletonRowMaskUpdates(
+            ctx->commands_for_part, context_for_reading, ctx->metadata_snapshot,
+            ColumnsDescription(ctx->source_part->getColumns()), max_coalescing_keys, max_coalescing_key_bytes);
+        if (coalesced_commands.size() != ctx->commands_for_part.size())
+        {
+            commands_for_execution = &coalesced_commands;
+            LOG_TRACE(ctx->log, "Coalesced row-mask updates for part {} (mutation commands {} -> {})",
+                ctx->source_part->name, ctx->commands_for_part.size(), coalesced_commands.size());
+        }
+    }
+
     auto is_storage_touched = isStorageTouchedByMutations(
         ctx->source_part,
         mutations_snapshot,
         ctx->metadata_snapshot,
-        ctx->commands_for_part,
+        *commands_for_execution,
         context_for_reading,
         [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
     );
@@ -4115,6 +4283,21 @@ bool MutateTask::prepare()
         ctx->for_file_renames,
         suitable_for_ttl_optimization,
         ctx->log);
+
+    if (commands_for_execution != &ctx->commands_for_part)
+    {
+        ctx->for_interpreter.clear();
+        MutationCommands unused_file_renames;
+        MutationHelpers::splitAndModifyMutationCommands(
+            ctx->source_part,
+            ctx->metadata_snapshot,
+            alter_conversions,
+            *commands_for_execution,
+            ctx->for_interpreter,
+            unused_file_renames,
+            suitable_for_ttl_optimization,
+            ctx->log);
+    }
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 

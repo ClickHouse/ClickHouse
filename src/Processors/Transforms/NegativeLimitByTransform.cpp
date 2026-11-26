@@ -479,9 +479,10 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
 
     /// Segment the sorted chunk into maximal runs of rows that share the same key; each run is
     /// one group.
+    SortedKeyRuns key_runs(normalized_keys.size());
     while (run_start < num_rows)
     {
-        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_keys, run_start, num_rows, 1);
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_keys, run_start, num_rows, 1);
 
         append_run(run_start, run_end - run_start);
 

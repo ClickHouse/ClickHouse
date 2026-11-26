@@ -7,7 +7,7 @@ import random
 import threading
 import time
 
-from kafka import KafkaProducer
+from kafka import KafkaAdminClient, KafkaProducer
 import kafka.errors
 import pytest
 
@@ -1259,6 +1259,8 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
         consumer_group=f"{topic_name}-group",
     )
 
+    # A streaming loop keeps the materialized views it started with, so one that began before the
+    # second view existed commits without it; detaching and re-attaching joins it before producing.
     instance.query(f"""
         DROP TABLE IF EXISTS test.{kafka_table}_view1;
         DROP TABLE IF EXISTS test.{kafka_table}_view2;
@@ -1275,11 +1277,10 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             SELECT * FROM test.{kafka_table};
         CREATE MATERIALIZED VIEW test.{kafka_table}_consumer2 TO test.{kafka_table}_view2 AS
             SELECT * FROM test.{kafka_table};
-    """)
 
-    # we have to wait > kafka_poll_timeout_ms before producing data,
-    #  otherwise it is expected that data might go via the first MV only
-    time.sleep(3)
+        DETACH TABLE test.{kafka_table} SYNC;
+        ATTACH TABLE test.{kafka_table};
+    """)
 
     messages = []
     for i in range(50):
@@ -1310,8 +1311,8 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             DROP TABLE test.{kafka_table}_view2;
         """)
 
-        k.kafka_check_result(result1, True)
-        k.kafka_check_result(result2, True)
+        assert k.kafka_check_result(result1), f"view1 got: {result1!r}"
+        assert k.kafka_check_result(result2), f"view2 got: {result2!r}"
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -1932,6 +1933,57 @@ def test_kafka_producer_consumer_separate_settings(
 
 
 @pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
+    ],
+)
+def test_kafka_password_not_logged(kafka_cluster, create_query_generator):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    username = f"kafka_user_{suffix}"
+    password = f"secret_kafka_password_{suffix}"
+
+    instance.rotate_logs()
+    instance.query(
+        create_query_generator(
+            kafka_table,
+            "key UInt64",
+            topic_list="password_not_logged",
+            consumer_group="test",
+            settings={
+                "kafka_sasl_username": username,
+                "kafka_sasl_password": password,
+            },
+        )
+    )
+
+    # Create an mv to initialize the librdkafka consumers
+    instance.query(f"CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table}")
+    instance.wait_for_log_line(f"{kafka_table}.*Created #0 consumer")
+    instance.query(f"DROP TABLE test.{kafka_table}_view")
+    instance.query(f"INSERT INTO test.{kafka_table} VALUES (1)")
+
+    assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
+
+    # The property-logging loops ran for both the consumer and the producer,
+    # but they hid the values of the sensitive properties. `sasl.username` is
+    # hidden because librdkafka marks it with the _RK_SENSITIVE flag, not
+    # because of the name, so it validates the generated blacklist.
+    for client_type in ["Consumer", "Producer"]:
+        for property_name in ["sasl.username", "sasl.password"]:
+            assert instance.contains_in_log(
+                f"{kafka_table}.*{client_type} set property {property_name}:\\[HIDDEN\\]"
+            )
+    # The username still appears in the logged CREATE TABLE text (only
+    # kafka_sasl_password is masked there), so check only the password value.
+    assert not instance.contains_in_log(password)
+
+    instance.query(f"DROP TABLE test.{kafka_table}")
+
+
+@pytest.mark.parametrize(
     "create_query_generator, log_line",
     [
         (k.generate_new_create_table_query, "Saved offset 5"),
@@ -2146,7 +2198,9 @@ def test_kafka_insert_avro(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_config = {
         # default retention, since predefined timestamp_ms is used.
         "retention.ms": "-1",
@@ -2261,7 +2315,9 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_name = "flush_by_time" + k.get_topic_postfix(create_query_generator)
 
     with k.kafka_topic(admin_client, topic_name):
@@ -2404,7 +2460,9 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     topic_name = "topic_with_multiple_partitions2" + k.get_topic_postfix(
         create_query_generator
@@ -2467,7 +2525,9 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_name = "no_holes_when_write_suffix_failed" + k.get_topic_postfix(
         create_query_generator
     )
@@ -3006,7 +3066,9 @@ def test_kafka_predefined_configuration(kafka_cluster):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_name = "conf"
     k.kafka_create_topic(admin_client, topic_name)
 
@@ -3343,7 +3405,9 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     topic_name = "system_kafka_cons" + k.get_topic_postfix(create_query_generator)
 
@@ -3443,7 +3507,9 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
     kafka_table = f"kafka_{suffix}"
 
     # based on test_kafka_consumer_hang2
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(cluster.kafka_port),
@@ -3562,7 +3628,9 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(cluster.kafka_port),

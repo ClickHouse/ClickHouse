@@ -14,7 +14,6 @@ import re
 import subprocess
 from pathlib import Path
 
-from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -71,10 +70,7 @@ def get_merge_base_profiler_url() -> str:
     for sha in commits:
         if not re.fullmatch(r"[0-9a-f]{40}", sha):
             continue
-        prefix = _Environment.get_s3_prefix_static(
-            pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
-        )
-        url = f"{MASTER_PROFILER_BASE_URL}/{prefix}/build_arm_release/clickhouse-examples"
+        url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{sha}/build_arm_release/clickhouse-examples"
         if Shell.check(f"curl -sfI '{url}' > /dev/null"):
             print(f"Using master binary from commit {sha[:12]}")
             return url
@@ -698,18 +694,7 @@ def format_profile_html(stacks, total_bytes, label):
 
 
 def generate_html_report(
-    query_results,
-    total_master,
-    total_pr,
-    total_regressions,
-    total_improvements,
-    total_errors,
-    duration,
-    output_path,
-    *,
-    report_title="Parser AST Memory Check Report",
-    report_subtitle="Measuring AST allocated memory during SQL parsing (not query execution).",
-    item_label="Query",
+    query_results, total_master, total_pr, total_regressions, total_improvements, total_errors, duration, output_path
 ):
     """Generate a standalone HTML report viewable in browser.
     Detail panels live OUTSIDE the table to avoid table-layout issues with SVG/nested tables."""
@@ -788,7 +773,7 @@ def generate_html_report(
             f"</tr>\n"
             f'<tr class="detail-row" id="detail-{qid}" style="display:none">'
             f'<td colspan="7"><div class="detail-content">'
-            f'<div class="detail-query"><strong>{html_escape(item_label)} {qid}:</strong> <code>{query_escaped}</code></div>'
+            f'<div class="detail-query"><strong>Query {qid}:</strong> <code>{query_escaped}</code></div>'
             f'<div class="detail-summary">'
             f'<span>Master: <strong>{r["master_bytes"]:,}</strong> B</span>'
             f'<span>PR: <strong>{r["pr_bytes"]:,}</strong> B</span>'
@@ -810,7 +795,7 @@ def generate_html_report(
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>{html_escape(report_title)}</title>
+<title>Parser AST Memory Check Report</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #333; padding: 12px; }}
@@ -875,8 +860,8 @@ def generate_html_report(
 </head>
 <body>
 
-<h1>{html_escape(report_title)}</h1>
-<p class="subtitle">{html_escape(report_subtitle)} Direction: Master &rarr; PR.</p>
+<h1>Parser AST Memory Check Report</h1>
+<p class="subtitle">Measuring AST allocated memory during SQL parsing (not query execution). Direction: Master &rarr; PR.</p>
 
 <div class="summary">
   <div class="summary-item">
@@ -884,7 +869,7 @@ def generate_html_report(
     <span class="summary-value {'fail' if (total_regressions > 0 or total_errors > 0) else 'ok'}">{overall_status}</span>
   </div>
   <div class="summary-item">
-    <span class="summary-label">{html_escape(item_label)}s</span>
+    <span class="summary-label">Queries</span>
     <span class="summary-value">{num_queries}</span>
   </div>
   <div class="summary-item">
@@ -925,7 +910,7 @@ def generate_html_report(
   <thead>
     <tr>
       <th onclick="sortTable(0, 'num')" style="width:50px"># <span class="sort-arrow">&#9650;&#9660;</span></th>
-      <th onclick="sortTable(1, 'str')">{html_escape(item_label)} <span class="sort-arrow">&#9650;&#9660;</span></th>
+      <th onclick="sortTable(1, 'str')">Query <span class="sort-arrow">&#9650;&#9660;</span></th>
       <th onclick="sortTable(2, 'num')" style="width:100px">Master (B) <span class="sort-arrow">&#9650;&#9660;</span></th>
       <th onclick="sortTable(3, 'num')" style="width:100px">PR (B) <span class="sort-arrow">&#9650;&#9660;</span></th>
       <th onclick="sortTable(4, 'num')" style="width:100px">Change (B) <span class="sort-arrow">&#9650;&#9660;</span></th>

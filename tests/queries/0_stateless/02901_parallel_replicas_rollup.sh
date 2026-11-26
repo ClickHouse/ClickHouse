@@ -32,7 +32,6 @@ $CLICKHOUSE_CLIENT \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \
   --parallel_replicas_only_with_analyzer 0 \
-  --enable_analyzer 1 \
   --query "
   SELECT 1 FROM nested
   GROUP BY 1 WITH ROLLUP
@@ -42,7 +41,7 @@ were_parallel_replicas_used $query_id
 
 # It was a bug in analyzer distributed header.
 echo "Distributed query with analyzer"
-$CLICKHOUSE_CLIENT --enable_analyzer 1 --query "SELECT 1 FROM remote('127.0.0.{2,3}', currentDatabase(), nested) GROUP BY 1 WITH ROLLUP ORDER BY max((SELECT 1 WHERE 0))"
+$CLICKHOUSE_CLIENT --query "SELECT 1 FROM remote('127.0.0.{2,3}', currentDatabase(), nested) GROUP BY 1 WITH ROLLUP ORDER BY max((SELECT 1 WHERE 0))"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS nested"
 

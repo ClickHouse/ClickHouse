@@ -148,6 +148,9 @@ public:
         /// All work is done (all data is processed or all output are closed), nothing more to do.
         Finished,
 
+        /// No one needs data on output ports.
+        /// Unneeded,
+
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
@@ -166,7 +169,7 @@ public:
       *
       * It may access input and output ports,
       *  indicate the need for work by another processor by returning NeedData or PortFull,
-      *  or indicate that processing has finished by returning `Finished`,
+      *  or indicate the absence of work by returning Finished or Unneeded,
       *  it may pull data from input ports and push data to output ports.
       *
       * The method is not thread-safe and must be called from a single thread in one moment of time,
@@ -303,7 +306,7 @@ public:
     /// Step of QueryPlan from which processor was created
     void setQueryPlanStep(const IQueryPlanStep * step, size_t group = 0);
 
-    void setQueryPlanStepGroup(size_t group);
+    void setQueryPlanStepGroup(size_t group) { query_plan_step_group = group; }
 
     /// Copy the query step fields from parent processor to child processor
     /// The group can be adjusted manually, since even though the processors can be
@@ -317,7 +320,6 @@ public:
     const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
-    uint64_t getNumExecutedJobs() const { return num_executed_jobs; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
 
@@ -399,8 +401,6 @@ protected:
 private:
     /// For:
     /// - elapsed_ns
-    /// - num_executed_jobs
-    /// - query_plan_step_wall_clock_ptr
     friend class ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
@@ -411,7 +411,6 @@ private:
 
     /// For processors_profile_log
     uint64_t elapsed_ns = 0;
-    uint64_t num_executed_jobs = 0;
     Stopwatch input_wait_watch;
     uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
@@ -422,7 +421,6 @@ private:
     const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
     size_t query_plan_step_group = 0;
-    StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
 
     size_t processor_index = 0;
     String plan_step_name;

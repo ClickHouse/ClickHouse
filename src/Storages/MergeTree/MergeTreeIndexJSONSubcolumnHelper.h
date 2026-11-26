@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <optional>
+#include <string_view>
 
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -8,6 +10,9 @@
 
 namespace DB
 {
+
+/// Whether another column claims the subcolumn `name` of `json_column`, e.g. a column `j.a` beside `JSON` `j`.
+using IsShadowingJSONSubcolumn = std::function<bool(std::string_view name, std::string_view json_column)>;
 
 /// Information extracted from a column name that references a JSON subcolumn
 /// matched against a JSONAllPaths(...) index column.
@@ -29,16 +34,19 @@ struct JSONSubcolumnIndexInfo
 /// Returns nullopt if:
 ///   - No matching index column is found in the header
 ///   - The subcolumn is a sub-object access (^ prefix) or a combined literal+sub-object access (@ prefix)
+///   - Another column claims the name (`is_shadowing_subcolumn`)
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
-    const String & json_function_name);
+    const String & json_function_name,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Names & index_columns,
-    const String & json_function_name);
+    const String & json_function_name,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
 
 class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 
@@ -48,13 +56,15 @@ class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Block & header,
-    const String & json_function_name);
+    const String & json_function_name,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Names & index_columns,
-    const String & json_function_name);
+    const String & json_function_name,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
 
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:

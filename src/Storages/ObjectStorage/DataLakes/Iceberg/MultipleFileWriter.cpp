@@ -85,6 +85,12 @@ void MultipleFileWriter::finalize()
 {
     output_format->flush();
     output_format->finalize();
+
+    auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
+    if (current_file_stats)
+        current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+    stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+
     buffer->finalize();
     UInt64 file_bytes = buffer->count();
     total_bytes += file_bytes;
@@ -93,6 +99,9 @@ void MultipleFileWriter::finalize()
         completed_file_stats.push_back(std::move(current_file_stats));
     data_file_byte_counts.push_back(file_bytes);
     data_file_row_counts.push_back(current_file_num_rows.value_or(0));
+
+    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
+    release();
 }
 
 void MultipleFileWriter::release()

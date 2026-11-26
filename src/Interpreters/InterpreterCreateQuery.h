@@ -63,6 +63,12 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    /// Only `loadMetadata` may set this: it is the sole caller that executes a definition this server wrote.
+    void setIsMetadataReplay(bool is_metadata_replay_)
+    {
+        is_metadata_replay = is_metadata_replay_;
+    }
+
     void setDontNeedDDLGuard()
     {
         need_ddl_guard = false;
@@ -111,6 +117,16 @@ private:
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
+    /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
+    /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
+    void checkExportAccess(const ASTCreateQuery & create) const;
+
+    /// A `Dictionary` table, including the inner table of a materialized view and a table created `AS dictionary(...)`,
+    /// needs access to the dictionary it reads, see `StorageDictionary::checkDictionaryAccess`. Checked here, while the
+    /// query still runs as the user: `Replicated` and `ON CLUSTER` replays run with full access, and so does the deferred
+    /// creation of a table function with an explicit column list. Replaces the dictionary name argument with the evaluated name.
+    void checkDictionaryEngineAccess(ASTCreateQuery & create) const;
+
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
@@ -119,11 +135,8 @@ private:
     /// Converts the "*MergeTree" table engine to "Replicated*MergeTree" or "Shared*MergeTree" if the corresponding settings are enabled.
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
 #endif
-    /// Inserts data in created table if it's CREATE ... SELECT (or attaches the source partitions if it's
-    /// CREATE ... CLONE AS). `published_table_name`, when not empty, is the user-visible name the table
-    /// being filled will be published under: the table itself carries the internal `_tmp_replace_*` name of
-    /// `doCreateOrReplaceTable`, so the fill is authorized against `published_table_name` instead.
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, const String & published_table_name = {});
+    /// Inserts data in created table if it's CREATE ... SELECT
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
 
     /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
@@ -202,6 +215,7 @@ private:
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
+    bool is_metadata_replay = false;
 
     String as_database_saved;
     String as_table_saved;

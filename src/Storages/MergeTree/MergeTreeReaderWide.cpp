@@ -22,6 +22,14 @@ namespace DB
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+
+    /// The streams of these columns are known only after reading the serialization prefixes:
+    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
+    bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
+    {
+        return column.getTypeInStorage()->hasDynamicStructure()
+            || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
+    }
 }
 
 namespace ErrorCodes
@@ -72,7 +80,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -98,7 +106,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -224,7 +232,7 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
@@ -332,7 +340,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     ISerialization::SubstreamsCache & cache)
 {
     /// If substream have already been read.
-    if (cache.contains(ISerialization::getSubcolumnNameForStream(substream_path)))
+    if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
         return nullptr;
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
@@ -388,7 +396,7 @@ void MergeTreeReaderWide::deserializePrefix(
     if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
-        deserialize_settings.object_and_dynamic_read_statistics = true;
+        deserialize_settings.read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
         deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;
@@ -560,8 +568,6 @@ void MergeTreeReaderWide::prefetchForColumn(
     bool continue_reading,
     ISerialization::SubstreamsCache & cache)
 {
-    const bool prefix_deserialized = deserialize_binary_bulk_state_map.contains(name_and_type.name);
-
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
         /// Skip ephemeral subcolumns that don't store any real data.
@@ -570,15 +576,6 @@ void MergeTreeReaderWide::prefetchForColumn(
 
         /// Skip substreams that don't need to be prefetched.
         if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
-            return;
-
-        /// Metadata streams (for example, the structure of `Dynamic` or `JSON`) are read only while deserializing
-        /// the prefix, which always reads from the beginning of the file, and are released right after that.
-        /// Prefetching such a stream pays off only in `prefetchBeginOfRange` for a range starting at mark 0:
-        /// there the prefix is not deserialized yet, and it will reuse exactly this prefetch. Otherwise the
-        /// prefetch is either at a wrong offset or the prefix is already deserialized, and the only effect is
-        /// creating the stream again and reading the file a second time.
-        if (ISerialization::isMetadataStream(substream_path) && (prefix_deserialized || from_mark != 0))
             return;
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
@@ -692,8 +689,11 @@ void MergeTreeReaderWide::readData(
 
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
 {
-    /// We need to read prefixes to be able to collect all streams (because of dynamic structure of some columns).
-    deserializePrefixForAllColumns(columns_to_read.size(), 0);
+    /// Prefixes of other columns are not needed to list the streams and can be large, e.g. `LowCardinality` dictionaries.
+    const auto & infos = data_part_info_for_read->getSerializationInfos();
+    if (std::ranges::any_of(columns_to_read, [&](const auto & column) { return streamsDependOnPrefixes(column, infos); }))
+        deserializePrefixForAllColumns(columns_to_read.size(), 0);
+
     std::unordered_map<String, std::vector<String>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {

@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 
 namespace DB
@@ -10,6 +11,12 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char aggregator_merge_batch_throw[];
 }
 
 DataTypePtr IAggregateFunction::getStateType() const
@@ -143,6 +150,14 @@ void IAggregateFunction::parallelizeMergeMulti(
             return;
         merge(places[0], places[i], thread_pool, is_cancelled, arena);
     }
+}
+
+void IAggregateFunction::injectMergeBatchFault()
+{
+    fiu_do_on(FailPoints::aggregator_merge_batch_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in the batch merge of aggregate function states");
+    });
 }
 
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const

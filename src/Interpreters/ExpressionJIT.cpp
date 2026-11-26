@@ -388,6 +388,14 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
         {
             return false;
         }
+
+        /// Declared argument types can disagree with the children: a DAG rewrite may repoint a child
+        /// without updating `function_base`, and an alias carries its own copy of the type, which a
+        /// rewrite can leave behind. Compilation lowers the type the argument actually holds.
+        if (i < node.children.size() && !canBeNativeType(*removeAliasIfNecessary(node.children[i])->result_type))
+        {
+            return false;
+        }
     }
 
     return function.isCompilable();

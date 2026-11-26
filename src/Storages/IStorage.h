@@ -198,6 +198,9 @@ public:
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
+    /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
+    virtual bool hasBucketedMapSerialization() const { return false; }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -238,8 +241,9 @@ public:
     /// The default implementation falls back to the parameterless version.
     virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
-    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
-    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
+    /// and covers only the data visible to the user of `query_context`.
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
@@ -402,6 +406,14 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
+    virtual Pipe watch(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum & /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/);
+
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
@@ -447,10 +459,6 @@ private:
     virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
-    /// Returns an upper bound on the number of sources created for a read request.
-    /// The default is conservative: a storage may create one source per requested stream.
-    virtual size_t getMaxReadStreams(size_t num_streams, ContextPtr) { return num_streams; }
-
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     /// Can be called after `shutdown`, but not after `drop`.
@@ -644,16 +652,6 @@ public:
     /// Might be called multiple times; only the first call needs to be processed.
     /// Data in memory need to be persistent. Any background work that affects other tables
     /// (e.g. materialized view refreshes that create/drop tables) needs to be stopped.
-    /** Hand over rows that are still buffered in memory, before any database is shut down.
-      *
-      * A `Buffer` table writes into another table, which may live in another database or be another
-      * `Buffer`. Databases shut down one at a time in name order, so by the time a `Buffer` prepares
-      * for shutdown its destination can already be gone, and one pass moves rows at most one link
-      * down a chain. `DatabaseCatalog` therefore calls this for every table first, repeating while
-      * rows keep moving; the return value is the number of buffers this call actually flushed.
-      */
-    virtual size_t flushBufferedRowsBeforeShutdown() { return 0; }
-
     virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type

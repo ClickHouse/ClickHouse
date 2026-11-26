@@ -2,6 +2,9 @@
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <Databases/IDatabase.h>
 
@@ -183,6 +186,7 @@ namespace Setting
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace DistributedSetting
@@ -717,8 +721,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     // LIMIT
     // OFFSET
-    // LIMIT AFTER/UNTIL (the no-count forms leave hasLimit() false but must still be applied once on the initiator)
-    if (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitAfter() || query_node.hasLimitUntil())
+    if (query_node.hasLimit() || query_node.hasOffset())
         return default_stage;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -801,8 +804,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     // LIMIT
     // OFFSET
-    // LIMIT AFTER/UNTIL (the no-count forms leave limitLength() false but must still be applied once on the initiator)
-    if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
+    if (select.limitLength() || select.limitOffset())
         return default_stage;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -1519,6 +1521,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
 
     StoragePtr src_storage;
+    bool src_is_table_function = false;
 
     /// Distributed write only works in the most trivial case INSERT ... SELECT
     /// without any unions or joins on the right side
@@ -1535,6 +1538,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
             if (joined_tables.tablesCount() == 1)
             {
                 src_storage = joined_tables.getLeftTableStorage();
+                src_is_table_function = joined_tables.isLeftTableFunction();
             }
         }
     }
@@ -1542,8 +1546,22 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     if (!src_storage)
         return {};
 
+    /// This is the only place source SELECT access is enforced in this case
+    /// (table functions have been already checked in ITableFunction::execute)
+    const auto src_id = src_storage->getStorageID();
+    if (!src_is_table_function
+        && !local_context->getAccess()->isGranted(AccessType::SELECT, src_id.database_name, src_id.table_name))
+        return {};
+    if (auto row_policy_filter = local_context->getRowPolicyFilter(src_id.database_name, src_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        return {};
+    /// It is not easy to match this table only, analyzer also do not do it
+    if (!settings[Setting::additional_table_filters].value.empty())
+        return {};
+
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
     {
+        src_distributed->checkLocalShardAccess(AccessType::SELECT, local_context);
         return distributedWriteBetweenDistributedTables(*src_distributed, query, local_context);
     }
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
@@ -2288,7 +2306,7 @@ void registerStorageDistributed(StorageFactory & factory)
         if (engine_args.size() >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
-            storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            storage_policy = args.getStoragePolicy(checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy"))->getName();
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
@@ -2342,10 +2360,10 @@ void registerStorageDistributed(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-<Warning title="Distributed engine in Cloud">
+:::warning Distributed engine in Cloud
 To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions.
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
-</Warning>
+:::
 
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used if they exist.
@@ -2430,7 +2448,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
 
-<Note>
+:::note
 **Durability settings** (`fsync_...`):
 
 - Affect only background `INSERT`s (i.e. `distributed_foreground_insert=false`) when data is first stored on the initiator node disk and later, in the background, when sent to shards.
@@ -2442,7 +2460,7 @@ For **Insert limit settings** (`..._insert`) see also:
 - [`distributed_foreground_insert`](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting
 - [`prefer_localhost_replica`](/reference/settings/session-settings/prefer#prefer_localhost_replica) setting
 - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
-</Note>
+:::
 
 **Example**
 
@@ -2552,10 +2570,6 @@ First, you can define which servers to write which data to and perform the write
 
 Second, you can perform `INSERT` statements on a `Distributed` table. In this case, the table will distribute the inserted data across the servers itself. In order to write to a `Distributed` table, it must have the `sharding_key` parameter configured (except if there is only one shard).
 
-<Tip>
-For compatible `INSERT ... SELECT` queries between `Distributed` tables that use the same cluster, [`parallel_distributed_insert_select`](/reference/settings/session-settings/parallel#parallel_distributed_insert_select) can execute the query in parallel on each shard.
-</Tip>
-
 Each shard can have a `<weight>` defined in the config file. By default, the weight is `1`. Data is distributed across shards in the amount proportional to the shard weight. All shard weights are summed up, then each shard's weight is divided by the total to determine each shard's proportion. For example, if there are two shards and the first has a weight of 1 while the second has a weight of 2, the first will be sent one third (1 / 3) of inserted rows and the second will be sent two thirds (2 / 3).
 
 Each shard can have the `internal_replication` parameter defined in the config file. If this parameter is set to `true`, the write operation selects the first healthy replica and writes data to it. Use this if the tables underlying the `Distributed` table are replicated tables (e.g. any of the `Replicated*MergeTree` table engines). One of the table replicas will receive the write, and it will be replicated to the other replicas automatically.
@@ -2591,9 +2605,9 @@ To learn more about how distributed `in` and `global in` queries are processed, 
 
 `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](/reference/data-types/int-uint).
 
-<Note>
+:::note
 Since [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/reference/functions/table-functions/cluster) table functions internally create temporary Distributed table, `_shard_num` is available there too.
-</Note>
+:::
 
 **See Also**
 

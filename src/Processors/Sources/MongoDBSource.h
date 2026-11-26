@@ -32,8 +32,6 @@ public:
     String getName() const override { return "MongoDB"; }
 
 private:
-    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
-
     static void insertDefaultValue(IColumn & column, const IColumn & sample_column);
     void insertValue(IColumn & column, const size_t & idx, const DataTypePtr & type, const std::string & name, const bsoncxx::document::element & value);
 

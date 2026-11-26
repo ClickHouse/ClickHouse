@@ -50,11 +50,6 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
-bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
-{
-    return true;
-}
-
 bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
 {
     std::lock_guard lock{mutex};
@@ -82,7 +77,7 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
             return;
     }
 
-    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* for_restore= */ true};
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
     new_uuids.copyToQuery(create_query);
 
     {

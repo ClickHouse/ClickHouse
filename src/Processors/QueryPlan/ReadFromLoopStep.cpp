@@ -72,7 +72,9 @@ namespace
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
+            /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+            InterpreterSelectQueryAnalyzer interpreter(
+                select_ast, context, options, context->isViewInnerQuery() ? nullptr : context->getViewSource(), column_names);
             if (query_info.storage_limits)
                 interpreter.addStorageLimits(*query_info.storage_limits);
             plan = std::move(interpreter).extractQueryPlan();
@@ -160,7 +162,6 @@ public:
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
             query_pipeline = QueryPipeline(std::move(pipe));
             query_pipeline.addResources(std::move(resources));
-            query_pipeline.disableProfileEventUpdate();
             executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
         }
         loop = true;

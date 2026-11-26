@@ -71,6 +71,12 @@ const StorageSnapshotPtr & TableFunctionNode::getStorageSnapshot() const
     return storage_snapshot;
 }
 
+bool TableFunctionNode::isParameterizedView() const
+{
+    const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+    return storage_view && storage_view->isParameterizedView();
+}
+
 void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "TABLE_FUNCTION id: " << format_state.getNodeId(this);
@@ -167,8 +173,7 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// An unqualified parameterized-view name re-resolves against the receiving server's default
     /// database, so qualify it from `storage_id`. Only a 2-part result is resolvable as a
     /// parameterized view, so a dotted database name is left alone.
-    if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
-        storage_view && storage_view->isParameterizedView() && storage_id.hasDatabase()
+    if (isParameterizedView() && storage_id.hasDatabase()
         && Identifier{table_function_name}.getPartsSize() == 1)
     {
         const auto database_name = storage_id.getDatabaseName();

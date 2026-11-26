@@ -82,6 +82,7 @@ namespace Setting
     extern const SettingsBool http_wait_end_of_query;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;
@@ -94,6 +95,7 @@ namespace Setting
     extern const SettingsBool http_allow_table_as_file;
     extern const SettingsBool http_allow_filters_as_path;
     extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
+    extern const SettingsBool http_x_clickhouse_format_overrides_output_format;
     extern const SettingsString compression;
     extern const SettingsString filter;
     extern const SettingsString format;
@@ -393,20 +395,15 @@ void HTTPHandler::processQuery(
             deferred_unrecognized_params.emplace_back(key, value);
     }
 
-    /// The `X-ClickHouse-Database` header is an alias for the `database` setting, and
-    /// `X-ClickHouse-Format` is an alias for the `output_format` setting. They override any matching
-    /// URL parameter (preserving the historical precedence).
-    ///
-    /// `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`: sending this
-    /// header means the client definitely wants the response in that format, so it is an explicit
-    /// override (winning over the query's `FORMAT` clause and the path extension), not a fallback
-    /// used only when nothing else selects a format. It maps to `output_format` and not to the
-    /// bidirectional `format`, because the header has always described the response only: the same
-    /// header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
+    /// The `X-ClickHouse-Database` header is an alias for the `database` setting. It overrides a
+    /// matching URL parameter (preserving the historical precedence).
     if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())
         settings_changes.setSetting("database", header_value);
-    if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
-        settings_changes.setSetting("output_format", header_value);
+
+    /// The `X-ClickHouse-Format` header is applied below, once the settings from the URL and the user
+    /// profile are in effect: which setting it aliases depends on
+    /// `http_x_clickhouse_format_overrides_output_format`.
+    const String format_header_value = request.get("X-ClickHouse-Format", "");
 
     ContextMutablePtr context;
     {
@@ -479,6 +476,29 @@ void HTTPHandler::processQuery(
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
+
+    /// The `X-ClickHouse-Format` header is an alias for the `output_format` setting, or - when
+    /// `http_x_clickhouse_format_overrides_output_format` is disabled - for the `default_format`
+    /// setting, which is what it meant before 26.8. Either way it overrides the URL parameter of the
+    /// same name (preserving the historical precedence). The choice is read from the context after
+    /// the URL parameters and the user profile have been applied, so the compatibility setting can
+    /// come from either of them.
+    ///
+    /// By default `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`:
+    /// sending this header means the client definitely wants the response in that format, so it is
+    /// an explicit override (winning over the query's `FORMAT` clause and the path extension), not a
+    /// fallback used only when nothing else selects a format. It maps to `output_format` and not to
+    /// the bidirectional `format`, because the header has always described the response only: the
+    /// same header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
+    if (!format_header_value.empty())
+    {
+        SettingsChanges format_header_changes;
+        format_header_changes.setSetting(
+            context->getSettingsRef()[Setting::http_x_clickhouse_format_overrides_output_format] ? "output_format" : "default_format",
+            format_header_value);
+        context->checkSettingsConstraints(format_header_changes, SettingSource::QUERY);
+        context->applySettingsChanges(format_header_changes);
+    }
 
     const auto & settings = context->getSettingsRef();
 
@@ -702,6 +722,15 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    /// `http_zlib_compression_level` is for the zlib-based methods only. Other methods have their own ranges
+    /// and meanings of levels (e.g. `lz4` switches to the slow high-compression mode starting from level 2),
+    /// so they use the generic `output_format_compression_level`.
+    auto compression_level_for_method = [&](CompressionMethod method)
+    {
+        if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+            return static_cast<int>(http_zlib_compression_level);
+        return static_cast<int>(settings[Setting::output_format_compression_level]);
+    };
     /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
     /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
     auto snappy_mode = SnappyMode::Framed;
@@ -720,7 +749,7 @@ void HTTPHandler::processQuery(
         used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
             used_output.out.get(),
             http_response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
+            compression_level_for_method(http_response_compression_method),
             0,
             snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
@@ -746,7 +775,7 @@ void HTTPHandler::processQuery(
             used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
                 used_output.out.get(),
                 response_compression_method,
-                static_cast<int>(http_zlib_compression_level),
+                compression_level_for_method(response_compression_method),
                 0,
                 settings[Setting::snappy_mode],
                 DBMS_DEFAULT_BUFFER_SIZE,

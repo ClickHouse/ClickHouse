@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
 class ParquetBlockOutputFormat final : public IOutputFormat
 {
 public:
@@ -19,6 +22,8 @@ public:
     ~ParquetBlockOutputFormat() override;
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
+
+    std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
 
 private:
     struct MemoryToken
@@ -94,6 +99,7 @@ private:
 
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void collectColumnSizesOnDisk(const Block & header);
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
@@ -101,8 +107,9 @@ private:
     void writeRowGroupInOneThread(Chunk chunk);
     void writeRowGroupInParallel(std::vector<Chunk> chunks);
 
-    void threadFunction();
+    void threadFunction(ThreadGroupPtr & thread_group);
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
+    void stopThreads();
 
     /// Called in single-threaded fashion. Writes to the file.
     void reapCompletedRowGroups(std::unique_lock<std::mutex> & lock);
@@ -119,16 +126,19 @@ private:
     Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
+    std::unordered_map<String, size_t> column_sizes_on_disk;
     size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;
-    std::condition_variable condvar; // wakes up consume()
-    std::unique_ptr<ThreadPool> pool;
+    std::condition_variable condvar; // wakes up consume() and stopThreads()
+    /// Shared by all Parquet writers of the process (`getParquetEncoderThreadPool`).
+    ThreadPool * pool = nullptr;
 
     std::atomic_bool is_stopped{false};
     std::exception_ptr background_exception = nullptr;
 
     /// Invariant: if there's at least one task then there's at least one thread.
+    /// Counts the jobs scheduled on `pool` until they exit, queued ones included.
     size_t threads_running = 0;
     std::atomic<size_t> bytes_in_flight{0};
 

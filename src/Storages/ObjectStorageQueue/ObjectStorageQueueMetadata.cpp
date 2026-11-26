@@ -10,7 +10,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Storages/StorageSnapshot.h>
@@ -53,6 +52,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int METADATA_MISMATCH;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -95,11 +95,6 @@ namespace
         return mode == ObjectStorageQueueMode::UNORDERED;
     }
 
-    bool isExclusive(ObjectStorageQueueMode mode)
-    {
-        return mode == ObjectStorageQueueMode::EXCLUSIVE;
-    }
-
     UInt128 getMetadataCacheKey(const std::string & path)
     {
         SipHash hash;
@@ -129,8 +124,8 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
+    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
@@ -167,12 +162,11 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     }
 
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, metadata_cache_size_bytes: {},"
-        "metadata_cache_size_elements: {}, result buckets num: {}, use persistent processing nodes: {}, "
+        log, "Mode: {}, buckets: {}, processing threads: {}, "
+        "result buckets num: {}, use persistent processing nodes: {}, "
         "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), metadata_cache_size_bytes_,
-        metadata_cache_size_elements_, buckets_num,
+        table_metadata.processing_threads_num.load(), buckets_num,
         use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
 }
 
@@ -278,28 +272,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 use_persistent_processing_nodes,
                 zookeeper_name,
                 log);
-        case ObjectStorageQueueMode::EXCLUSIVE:
-            return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
-                path,
-                file_status,
-                table_metadata.loading_retries,
-                *metadata_ref_count,
-                *this,
-                zookeeper_name,
-                log);
     }
-}
-
-bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
-{
-    std::lock_guard lock(exclusive_processing_paths_mutex);
-    return exclusive_processing_paths.insert(getMetadataCacheKey(path)).second;
-}
-
-void ObjectStorageQueueMetadata::releaseExclusiveProcessing(const std::string & path)
-{
-    std::lock_guard lock(exclusive_processing_paths_mutex);
-    exclusive_processing_paths.erase(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -395,7 +368,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     Coordination::Stat stat;
     auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
-    auto new_table_metadata{table_metadata};
+    auto new_table_metadata{metadata_from_zk};
 
     for (const auto & change : changes)
     {
@@ -421,7 +394,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         if (change.name == "processing_threads_num")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.processing_threads_num == value)
+            if (new_table_metadata.processing_threads_num == value)
             {
                 LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
                         "Will do nothing", value);
@@ -432,7 +405,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "loading_retries")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.loading_retries == value)
+            if (new_table_metadata.loading_retries == value)
             {
                 LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
                         "Will do nothing", value);
@@ -443,7 +416,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "after_processing")
         {
             const auto value = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
-            if (table_metadata.after_processing == value)
+            if (new_table_metadata.after_processing == value)
             {
                 LOG_TRACE(log, "Setting `after_processing` already equals {}. "
                         "Will do nothing", value);
@@ -454,7 +427,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_files_limit")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.tracked_files_limit == value)
+            if (new_table_metadata.tracked_files_limit == value)
             {
                 LOG_TRACE(log, "Setting `tracked_files_limit` already equals {}. "
                         "Will do nothing", value);
@@ -465,7 +438,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_file_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.tracked_files_ttl_sec == value)
+            if (new_table_metadata.tracked_files_ttl_sec == value)
             {
                 LOG_TRACE(log, "Setting `tracked_file_ttl_sec` already equals {}. "
                         "Will do nothing", value);
@@ -494,6 +467,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             if (table_metadata.buckets == value)
             {
                 LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
+                new_table_metadata.buckets = value;
                 continue;
             }
             if (table_metadata.buckets > 1)
@@ -522,7 +496,10 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     if (is_initial_query)
         zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
-    table_metadata.syncChangeableSettings(new_table_metadata);
+    NameSet changed_names;
+    for (const auto & change : changes)
+        changed_names.insert(change.name);
+    table_metadata.syncChangeableSettings(new_table_metadata, changed_names);
 }
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
@@ -546,10 +523,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const ColumnsDescription & columns,
     const std::string & format,
     const ContextPtr & context,
-    bool is_attach,
+    const ObjectStorageQueueTableMetadata::Source & source,
+    bool strict,
     LoggerPtr log)
 {
-    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
+    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format, source);
 
     std::vector<std::string> metadata_paths;
     size_t buckets_num = 0;
@@ -564,10 +542,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         LOG_TRACE(log, "Local buckets num: {}", buckets_num);
 
         metadata_paths = ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num);
-    }
-    else if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
-    {
-        metadata_paths = ObjectStorageQueueExclusiveFileMetadata::getMetadataPaths();
     }
     else
     {
@@ -590,16 +564,38 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         {
             auto zk_client = getZooKeeper(log, zookeeper_name);
             std::optional<ObjectStorageQueueTableMetadata> metadata_from_zk;
+            Coordination::Stat stat;
             if (zk_client->exists(table_metadata_path))
             {
-                const auto metadata_str = zk_client->get(table_metadata_path);
+                const auto metadata_str = zk_client->get(table_metadata_path, &stat);
                 LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
                 metadata_from_zk.emplace(ObjectStorageQueueTableMetadata::parse(metadata_str));
             }
             if (metadata_from_zk.has_value())
             {
                 table_metadata.adjustFromKeeper(metadata_from_zk.value());
+                /// A named collection can change without an `ALTER` of the table, so its source is always checked.
+                if (!strict && !source.from_named_collection && !metadata_from_zk->source_hash.empty()
+                    && table_metadata.source_hash != metadata_from_zk->source_hash)
+                {
+                    LOG_WARNING(log, "The source of this table differs from the source of the queue");
+                    table_metadata.source_hash = metadata_from_zk->source_hash;
+                }
                 table_metadata.checkEquals(metadata_from_zk.value());
+                if (metadata_from_zk->source_hash.empty())
+                {
+                    if (strict)
+                        throw Exception(
+                            ErrorCodes::METADATA_MISMATCH,
+                            "Existing table metadata in ZooKeeper has no source, as an older version wrote it. "
+                            "Attach the main table (following the same `keeper_path`) of this queue on an upgraded server, or use another `keeper_path`");
+
+                    if (!table_metadata.source_hash.empty())
+                    {
+                        metadata_from_zk->source_hash = table_metadata.source_hash;
+                        code = zk_client->trySet(table_metadata_path, metadata_from_zk->toString(), stat.version);
+                    }
+                }
                 return;
             }
 
@@ -612,7 +608,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
                     "will not work properly. Please specify them in the CREATE query. See documentation for more details.";
 
-                if (is_attach)
+                if (!strict)
                 {
                     LOG_WARNING(log, "{}", message);
                     warned = true;
@@ -677,6 +673,9 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                         *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
                 continue;
             }
+            /// Keeper was changed after the metadata was read, for example by another server, so start again.
+            if (*code == Coordination::Error::ZBADVERSION || *code == Coordination::Error::ZNONODE)
+                continue;
             if (*code != Coordination::Error::ZOK)
                 zkutil::KeeperMultiException::check(*code, requests, responses);
         }

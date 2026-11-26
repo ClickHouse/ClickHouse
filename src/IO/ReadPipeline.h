@@ -31,9 +31,6 @@ using FileCachePtr = std::shared_ptr<FileCache>;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
-/// Cached: `getLogger` takes a process-global mutex, and a read pipeline is built per read buffer.
-LoggerPtr getReadPipelineLogger();
-
 /// ReadPipeline: a declarative specification for creating a read buffer chain.
 ///
 /// Instead of imperatively nesting read buffers (the "matryoshka" pattern),
@@ -124,7 +121,7 @@ public:
     void needFilesystemCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// Overload with a custom cache key and origin, bypassing the default `FileCacheKey::fromPath` derivation.
-    /// Used by `StorageObjectStorageSource` where the cache key is `SipHash(path + etag)`.
+    /// Used by `StorageObjectStorageSource` where the cache key is `SipHash(<storage hash> + path + etag)`.
     void needFilesystemCache(
         FileCachePtr cache,
         FileCacheKey cache_key,
@@ -138,7 +135,7 @@ public:
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
     /// `cache_path_prefix + object.remote_path` derivation.
-    /// Used by `StorageObjectStorageSource` where the key is `"s3:" + path` with `"etag:" + etag`.
+    /// Used by `StorageObjectStorageSource` where the key is `"s3:<storage hash>:" + path` with `"etag:" + etag`.
     void needMemoryCache(
         String custom_cache_path,
         String custom_file_version,
@@ -241,7 +238,7 @@ private:
     /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
     std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 
-    LoggerPtr log = getReadPipelineLogger();
+    LoggerPtr log = getLogger("ReadPipeline");
 
     /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`). Returns nullptr when the
     /// setting is off, the source variant is not supported, or a stage the executor cannot handle is

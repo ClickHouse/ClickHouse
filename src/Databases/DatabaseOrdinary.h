@@ -88,6 +88,10 @@ public:
 
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
+    /// The name of the engine that `setMergeTreeEngine` sets for a table of the engine `engine_name`.
+    /// For `replicated = false`, `engine_name` must start with `Replicated`.
+    static String getConvertedMergeTreeEngineName(const String & engine_name, bool replicated);
+
     /// Rejects a conversion to a replicated engine whose Keeper path would not be a safe one.
     /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.
     static void checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
@@ -117,7 +121,7 @@ protected:
     DiskPtr metadata_disk_ptr;
 
 private:
-    bool shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
+    bool shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const;
     void loadTableLazy(
         ContextMutablePtr local_context,
         const QualifiedTableName & name,
@@ -126,11 +130,7 @@ private:
 
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
-    /// The flag lives in the table's data directory. Take the create query for a table that is not
-    /// attached yet: the data path then comes from the UUID in the query, whereas the name overload
-    /// resolves the path through the database's attached-table map.
-    String getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query);
-    String getConvertToReplicatedFlagPath(const String & table_name);
+    String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);
 };
 
 }

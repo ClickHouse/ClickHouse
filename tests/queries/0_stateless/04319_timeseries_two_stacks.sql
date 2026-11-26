@@ -1,10 +1,9 @@
--- Drives the sliding two-stack aggregation path. The linear-regression functions (`timeSeriesDerivToGrid`,
--- `timeSeriesPredictLinearToGrid`), the sum functions (`timeSeriesSumToGrid`, `timeSeriesAvgToGrid`) and the
--- extremum functions (`timeSeriesMaxToGrid`, `timeSeriesMinToGrid`) use two-stacks; they switch to it once a window
--- holds enough populated buckets (`AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS`) or can hold at least
--- `BPW_TO_FORCE_TWO_STACKS`. The other timeSeries*ToGrid functions always recompute. Both scenarios below span
--- 50 and 51 buckets per window — above every `BPW_TO_FORCE_TWO_STACKS` — so those six functions run on two-stacks
--- while the rest recompute, and the window slides across the data so buckets both enter and leave.
+-- Drives the sliding two-stack aggregation path. Only the linear-regression functions (`timeSeriesDerivToGrid`,
+-- `timeSeriesPredictLinearToGrid`) ever use two-stacks; they switch to it once a window holds enough populated
+-- buckets (`AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS`) or can hold at least `BPW_TO_FORCE_TWO_STACKS`. The other
+-- timeSeries*ToGrid functions always recompute. Both scenarios below span 50 and 51 buckets per window — above
+-- `BPW_TO_FORCE_TWO_STACKS` — so the two regression functions run on two-stacks while the rest recompute, and the
+-- window slides across the data so buckets both enter and leave.
 -- Covers a whole-multiple window (`window % step == 0`) and a window that splits each step (`window % step != 0`).
 SET allow_experimental_time_series_aggregate_functions = 1;
 SET allow_experimental_ts_to_grid_aggregate_function = 1;
@@ -26,8 +25,6 @@ SELECT timeSeriesInstantRateToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_tw
 SELECT timeSeriesInstantDeltaToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesDerivToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesPredictLinearToGrid(100, 120, 1, 50, 10)(timestamp, value) FROM ts_two_stacks;
-SELECT timeSeriesMaxToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
-SELECT timeSeriesMinToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 
 -- step=2 over [100,120] -> 11 grid points. window=51 -> 51 buckets/window (>= threshold -> two-stacks); window % step == 1, so each step is split.
 SELECT 'two-stacks, window splits step (window=51, step=2):';
@@ -40,8 +37,6 @@ SELECT timeSeriesInstantRateToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_tw
 SELECT timeSeriesInstantDeltaToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesDerivToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesPredictLinearToGrid(100, 120, 2, 51, 10)(timestamp, value) FROM ts_two_stacks;
-SELECT timeSeriesMaxToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
-SELECT timeSeriesMinToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 
 -- Cross-check the two-stack eviction logic: the sliding value at a grid point whose window has evicted buckets
 -- that entered at an earlier grid point must equal a single-grid-point aggregate over the same window, which
@@ -54,13 +49,6 @@ SELECT abs(timeSeriesDerivToGrid(100, 120, 1, 50)(timestamp, value)[21]
          - timeSeriesDerivToGrid(120, 120, 1, 50)(timestamp, value)[1]) < 1e-9 FROM ts_two_stacks;
 SELECT abs(timeSeriesPredictLinearToGrid(100, 120, 1, 50, 10)(timestamp, value)[21]
          - timeSeriesPredictLinearToGrid(120, 120, 1, 50, 10)(timestamp, value)[1]) < 1e-9 FROM ts_two_stacks;
--- The extremum summary keeps exact values, so sliding two-stack results must equal the fresh aggregate exactly.
-SELECT timeSeriesMaxToGrid(100, 120, 1, 50)(timestamp, value)[11]
-     = timeSeriesMaxToGrid(110, 110, 1, 50)(timestamp, value)[1] FROM ts_two_stacks;
-SELECT timeSeriesMaxToGrid(100, 120, 1, 50)(timestamp, value)[21]
-     = timeSeriesMaxToGrid(120, 120, 1, 50)(timestamp, value)[1] FROM ts_two_stacks;
-SELECT timeSeriesMinToGrid(100, 120, 1, 50)(timestamp, value)[21]
-     = timeSeriesMinToGrid(120, 120, 1, 50)(timestamp, value)[1] FROM ts_two_stacks;
 
 -- Serialization round-trip over the new step-split bucket layout (window=51, step=2 -> window % step != 0):
 -- merging two partial -State aggregates (built over disjoint row subsets) must reproduce the direct aggregate
@@ -74,22 +62,13 @@ SELECT timeSeriesResetsToGrid(100, 120, 2, 51)(timestamp, value)
      = (SELECT timeSeriesResetsToGridMerge(100, 120, 2, 51)(s)
         FROM (SELECT timeSeriesResetsToGridState(100, 120, 2, 51)(timestamp, value) AS s
               FROM ts_two_stacks GROUP BY toUnixTimestamp(timestamp) % 2)) FROM ts_two_stacks;
-SELECT timeSeriesMaxToGrid(100, 120, 2, 51)(timestamp, value)
-     = (SELECT timeSeriesMaxToGridMerge(100, 120, 2, 51)(s)
-        FROM (SELECT timeSeriesMaxToGridState(100, 120, 2, 51)(timestamp, value) AS s
-              FROM ts_two_stacks GROUP BY toUnixTimestamp(timestamp) % 2)) FROM ts_two_stacks;
-SELECT timeSeriesMinToGrid(100, 120, 2, 51)(timestamp, value)
-     = (SELECT timeSeriesMinToGridMerge(100, 120, 2, 51)(s)
-        FROM (SELECT timeSeriesMinToGridState(100, 120, 2, 51)(timestamp, value) AS s
-              FROM ts_two_stacks GROUP BY toUnixTimestamp(timestamp) % 2)) FROM ts_two_stacks;
 
 DROP TABLE ts_two_stacks;
 
--- Two-stacks selected via the AVERAGE-density path, not the hard cap: step=1, window=10 -> buckets_per_window=10
--- (below every BPW_TO_FORCE_TWO_STACKS: 12 for the regression functions, 18 for the extremum functions), but a
--- sample in every bucket makes the average populated buckets per window (10) reach
--- AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (4 for both), so these functions pick two-stacks through the average
--- condition. The full density (populated / bucket_count = 1.0 >= BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.35)
+-- Two-stacks selected via the AVERAGE-density path, not the hard cap: step=1, window=15 -> buckets_per_window=15
+-- (below BPW_TO_FORCE_TWO_STACKS=20), but a sample in every bucket makes the average populated buckets per window
+-- (~15) >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS=10, so the regression functions pick two-stacks through the
+-- average condition. The full density (populated / bucket_count = 1.0 >= BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.35)
 -- also drives the range-scan bucket iteration. Quadratic values make the per-window slope vary, so a faulty moment
 -- merge would diverge from the fresh recompute.
 DROP TABLE IF EXISTS ts_dense;
@@ -98,13 +77,9 @@ INSERT INTO ts_dense SELECT 186 + number, number * number FROM numbers(35);  -- 
 
 -- Eviction on the average-path two-stacks must still match a fresh single-grid-point aggregate over the same window.
 SELECT 'dense average-path two-stack values match a fresh single-grid-point aggregate (all 1):';
-SELECT abs(timeSeriesDerivToGrid(200, 220, 1, 10)(timestamp, value)[21]
-         - timeSeriesDerivToGrid(220, 220, 1, 10)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
-SELECT abs(timeSeriesPredictLinearToGrid(200, 220, 1, 10, 10)(timestamp, value)[21]
-         - timeSeriesPredictLinearToGrid(220, 220, 1, 10, 10)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
-SELECT timeSeriesMaxToGrid(200, 220, 1, 10)(timestamp, value)[21]
-     = timeSeriesMaxToGrid(220, 220, 1, 10)(timestamp, value)[1] FROM ts_dense;
-SELECT timeSeriesMinToGrid(200, 220, 1, 10)(timestamp, value)[21]
-     = timeSeriesMinToGrid(220, 220, 1, 10)(timestamp, value)[1] FROM ts_dense;
+SELECT abs(timeSeriesDerivToGrid(200, 220, 1, 15)(timestamp, value)[21]
+         - timeSeriesDerivToGrid(220, 220, 1, 15)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
+SELECT abs(timeSeriesPredictLinearToGrid(200, 220, 1, 15, 10)(timestamp, value)[21]
+         - timeSeriesPredictLinearToGrid(220, 220, 1, 15, 10)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
 
 DROP TABLE ts_dense;

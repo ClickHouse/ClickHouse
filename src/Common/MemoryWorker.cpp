@@ -978,14 +978,28 @@ void MemoryWorker::updateResidentMemoryThread()
                 }
             }
 
-            /// update MemoryTracker with `allocated` information from jemalloc when:
+            /// update MemoryTracker with `allocated` (the maximum of resident and jemalloc `stats.allocated`) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true
-            if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
-                MemoryTracker::updateAllocated(resident, /*log_change=*/true);
-            else if (correct_tracker)
-                MemoryTracker::updateAllocated(resident, /*log_change=*/false);
+            if (first_run || total_memory_tracker.get() < 0 || correct_tracker)
+            {
+                /// Every allocation of `Allocator` goes through jemalloc, and `stats.allocated` counts the bytes
+                /// handed out to the application even if their pages are not touched yet, while the resident
+                /// memory does not include such pages. Correcting the tracker down to the resident memory alone
+                /// would forget memory that is allocated but not yet used and admit allocations past
+                /// `max_server_memory_usage` until the process is killed by the OOM killer. Correcting it down to
+                /// `stats.allocated` still removes the drift: bytes counted in the tracker without any allocation
+                /// behind them.
+                if (source != MemoryUsageSource::Jemalloc)
+                    epoch_mib.setValue(0);
+                const Int64 allocated = std::max<Int64>(resident, allocated_mib.getValue());
+
+                if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
+                    MemoryTracker::updateAllocated(allocated, /*log_change=*/true);
+                else
+                    MemoryTracker::updateAllocated(allocated, /*log_change=*/false);
+            }
 #else
             /// we don't update in the first run if we don't have jemalloc
             /// because we can only use resident memory information

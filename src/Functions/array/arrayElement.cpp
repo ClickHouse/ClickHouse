@@ -8,6 +8,7 @@
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/LowCardinalityValueIndex.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -33,7 +34,6 @@
 
 #include <bit>
 #include <cstring>
-#include <limits>
 #include <optional>
 
 namespace DB
@@ -1731,12 +1731,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
 
             Int64 idx = 0;
             if (index_field.getType() == Field::Types::UInt64)
-            {
-                const UInt64 value = index_field.safeGet<UInt64>();
-                idx = value > static_cast<UInt64>(std::numeric_limits<Int64>::max())
-                    ? std::numeric_limits<Int64>::max()
-                    : static_cast<Int64>(value);
-            }
+                idx = static_cast<Int64>(index_field.safeGet<UInt64>());
             else
                 idx = index_field.safeGet<Int64>();
 
@@ -1870,6 +1865,17 @@ struct MatcherNumberConst
     bool match(size_t row_data, size_t /* row_index */) const { return data[row_data] == index; }
 };
 
+/// Matcher for keys of a ColumnLowCardinality. The requested key is resolved to its dictionary
+/// position once, so a key is matched without comparing the key values.
+template <typename IndexType>
+struct MatcherLowCardinalityConst
+{
+    const IndexType * indexes;
+    IndexType key_index;
+
+    bool match(size_t row_data, size_t /* row_index */) const { return indexes[row_data] == key_index; }
+};
+
 }
 
 template <ArrayElementExceptionMode mode>
@@ -1936,11 +1942,6 @@ bool castColumnString(const IColumn * column, F && f)
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
 
-bool isStringOrFixedStringColumn(const IColumn & column)
-{
-    return typeid_cast<const ColumnString *>(&column) || typeid_cast<const ColumnFixedString *>(&column);
-}
-
 template <ArrayElementExceptionMode mode>
 bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     const IColumn & data, const Offsets & offsets, const Field & index, PaddedPODArray<UInt64> & matched_idxs)
@@ -1948,37 +1949,27 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     if (index.getType() != Field::Types::String)
         return false;
 
-    /// The dictionary lookup below is defined only for String and FixedString keys. For other
-    /// LowCardinality key types, fall through so that the regular dispatch reports the type error
-    /// instead of silently finding no match.
-    const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data);
-    if (low_cardinality_data
-        && isStringOrFixedStringColumn(*low_cardinality_data->getDictionary().getNestedNotNullableColumn()))
+    if (const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data))
     {
-        const auto & requested_key = index.safeGet<String>();
-        auto dictionary_index = low_cardinality_data->getDictionary().getOrFindValueIndex(requested_key);
         matched_idxs.reserve(offsets.size());
 
-        if (!dictionary_index)
+        auto lookup_result = callWithLowCardinalityValueIndex(
+            *low_cardinality_data,
+            index.safeGet<String>(),
+            [&](const auto * indexes, auto key_index)
+            {
+                MatcherLowCardinalityConst<decltype(key_index)> matcher{indexes, key_index};
+                executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+            });
+
+        /// For LowCardinality key types without a dictionary lookup, fall through so that the regular
+        /// dispatch reports the type error instead of silently finding no match.
+        if (lookup_result != LowCardinalityValueLookupResult::Unsupported)
         {
-            matched_idxs.resize_fill(offsets.size());
+            if (lookup_result == LowCardinalityValueLookupResult::NotFound)
+                matched_idxs.resize_fill(offsets.size());
             return true;
         }
-
-        struct MatcherLowCardinalityStringConst
-        {
-            const ColumnLowCardinality & data;
-            UInt64 dictionary_index;
-
-            bool match(size_t row_data, size_t /* row_index */) const
-            {
-                return data.getIndexAt(row_data) == dictionary_index;
-            }
-        };
-
-        MatcherLowCardinalityStringConst matcher{*low_cardinality_data, *dictionary_index};
-        executeMatchKeyToIndex(offsets, matched_idxs, matcher);
-        return true;
     }
 
     return castColumnString(
@@ -3387,9 +3378,9 @@ The index elements may be nullable. A `NULL` index produces `NULL` (and makes th
 wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), a `NULL` index produces the
 default value instead. This is the same behavior as for a scalar `NULL` index.
 
-<Note>
+:::note
 Arrays in ClickHouse are one-indexed.
-</Note>
+:::
 
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
@@ -3426,9 +3417,9 @@ When `n` is an array of integers, returns an array of the elements at the specif
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
 Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array, following the same rule as for a scalar index.
 
-<Note>
+:::note
 Arrays in ClickHouse are one-indexed.
-</Note>
+:::
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 )";
@@ -3441,7 +3432,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\\N"},
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"},
         {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};

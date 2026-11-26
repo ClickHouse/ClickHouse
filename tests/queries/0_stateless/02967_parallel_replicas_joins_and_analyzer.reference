@@ -355,8 +355,7 @@ Expression
                               ReadFromMergeTree
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMemoryStorage
       Expression
         ReadFromRemoteParallelReplicas
 --

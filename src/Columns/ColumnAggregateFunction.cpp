@@ -1,6 +1,5 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -33,12 +32,14 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
 {
     extern const char column_aggregate_function_ensureOwnership_exception[];
+    extern const char column_aggregate_function_expand_exception[];
 }
 
 
@@ -76,19 +77,32 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 }
 
 
+/// A window function may keep its state in a faster layout that the type name does not show
+/// (see `AggregateFunctionStateVariant`). Such a state must not get into a column: other code can
+/// make the column's type again from its name, and would then read the state with the wrong layout.
+static void checkOrdinaryStateLayout(const IAggregateFunction & func)
+{
+    if (func.getStateVariant() != AggregateFunctionStateVariant::Aggregation)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "A column of `{}` states cannot hold states in the window function layout", func.getName());
+}
+
+
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
     : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
+    checkOrdinaryStateLayout(*func);
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
     : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
 {
-
+    checkOrdinaryStateLayout(*func);
 }
 
 void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
 {
+    checkOrdinaryStateLayout(*func_);
     func = func_;
     version = version_;
     type_string = getTypeString(func, version);
@@ -183,14 +197,8 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     callback(*res);
     res->forEachMutableSubcolumnRecursively(callback);
 
-    /// Use `insertMergeResultInto` so every State-combinator state is copied into
-    /// `res`'s own arena. The pointer-sharing `insertResultInto` path is unsafe
-    /// here: a flag=0 row in `-OrFill` calls `res.insertDefault` ->
-    /// `res.ensureOwnership` which resets `res.src`, so any later flag=1 row would
-    /// dangle once the source column is destroyed (issue #105742). For non-State
-    /// functions `insertMergeResultInto` just delegates to `insertResultInto`.
     for (auto * val : data)
-        func->insertMergeResultInto(val, *res, &column_aggregate_func.createOrGetArena());
+        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
 
     return res;
 }
@@ -398,32 +406,61 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
     if (mask.size() < data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t from = data.size() - 1;
-    ssize_t index = mask.size() - 1;
-    data.resize(mask.size());
-    while (index >= 0)
+    const size_t set_bytes = countBytesInFilter(mask);
+    const size_t selected = inverted ? mask.size() - set_bytes : set_bytes;
+    if (selected > data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+    if (selected < data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    bool inject_memory_limit_exceeded = false;
+    /// Avoid checking failpoint in a loop, since it uses atomic's
+    fiu_do_on(FailPoints::column_aggregate_function_expand_exception,
     {
-        if (!!mask[index] ^ inverted)
-        {
-            if (from < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+        inject_memory_limit_exceeded = true;
+    });
 
-            /// Copy only if it makes sense.
-            if (index != from)
-                data[index] = data[from];
-            --from;
-        }
-        else
-        {
-            data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
-            func->create(data[index]);
-        }
+    /// The destructor destroys every state in `data`, so `data` must never hold a pointer to a state
+    /// that is not created. Build the expanded array aside and publish it only when it is complete.
+    Container new_data;
+    new_data.resize_exact(mask.size());
 
-        --index;
+    size_t from = 0;
+    size_t index = 0;
+    try
+    {
+        for (; index < mask.size(); ++index)
+        {
+            if (!!mask[index] ^ inverted)
+            {
+                new_data[index] = data[from];
+                ++from;
+            }
+            else
+            {
+                new_data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+                func->create(new_data[index]);
+
+                /// Throw after a state is created, so that the cleanup has something to destroy.
+                if (unlikely(inject_memory_limit_exceeded))
+                {
+                    ++index;
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        /// Destroy the states created so far; the ones taken from `data` stay owned by `data`.
+        if (!func->hasTrivialDestructor())
+            for (size_t i = 0; i < index; ++i)
+                if (!(!!mask[i] ^ inverted))
+                    func->destroy(new_data[i]);
+        throw;
     }
 
-    if (from != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+    data.swap(new_data);
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
@@ -640,12 +677,6 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
     }
 }
 
-bool ColumnAggregateFunction::acceptsStateTypeName(const String & state_type_name) const
-{
-    return type_string == state_type_name
-        || DataTypeAggregateFunction::nameMatchesState(state_type_name, func, version.value_or(func->getDefaultVersion()));
-}
-
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
@@ -654,8 +685,8 @@ void ColumnAggregateFunction::insert(const Field & x)
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (!acceptsStateTypeName(field_name))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert field with type {} into column with type {}",
+    if (type_string != field_name)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
                 field_name, type_string);
 
     ensureOwnership();
@@ -671,7 +702,7 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
         return false;
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (!acceptsStateTypeName(field_name))
+    if (type_string != field_name)
         return false;
 
     ensureOwnership();
@@ -710,6 +741,11 @@ void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, con
     func->deserialize(data.back(), in, version, &dst_arena);
 }
 
+void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
+}
+
 void ColumnAggregateFunction::popBack(size_t n)
 {
     if (n > size())
@@ -723,6 +759,14 @@ void ColumnAggregateFunction::popBack(size_t n)
             func->destroy(data[i]);
 
     data.resize_assume_reserved(new_size);
+}
+
+void ColumnAggregateFunction::popBackWithoutDestroy(size_t n)
+{
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    data.resize_assume_reserved(data.size() - n);
 }
 
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const

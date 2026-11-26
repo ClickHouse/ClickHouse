@@ -1,4 +1,5 @@
 #include <Core/BaseSettings.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
@@ -14,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_SETTING;
 }
@@ -28,7 +30,14 @@ void BaseSettingsHelpers::writeString(std::string_view str, WriteBuffer & out)
 String BaseSettingsHelpers::readString(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
+    return str;
+}
+
+String BaseSettingsHelpers::readName(ReadBuffer & in)
+{
+    String str;
+    readStringBinaryGrowing(str, in, MAX_SETTING_NAME_SIZE);
     return str;
 }
 
@@ -59,6 +68,11 @@ SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
     throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
+}
+
+void BaseSettingsHelpers::throwTooManySettings(std::string_view what)
+{
+    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many {} received (maximum: {})", String{what}, MAX_SETTINGS_IN_A_SEQUENCE);
 }
 
 void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name, std::string_view type)
@@ -112,6 +126,15 @@ void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 
         unknown_settings_warning_logged = true;
     }
+}
+
+bool BaseSettingsHelpers::skipInvalidSettingValue(std::string_view name, const Exception & e)
+{
+    if (e.code() != ErrorCodes::BAD_ARGUMENTS && !isParseError(e.code()))
+        return false;
+
+    LOG_WARNING(getLogger("Settings"), "Cannot parse the value of setting `{}`, skipping it: {}", name, e.message());
+    return true;
 }
 
 void BaseSettingsHelpers::flushWarnings()

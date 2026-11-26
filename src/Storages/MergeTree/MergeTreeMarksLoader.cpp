@@ -331,17 +331,14 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
     /// Avoid queueing jobs into thread pool if marks are in cache
-    if (mark_cache)
+    auto data_part_storage = data_part_reader->getDataPartStorage();
+    auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
     {
-        auto data_part_storage = data_part_reader->getDataPartStorage();
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
-        if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
-        {
-            ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
-            auto promise = std::promise<MarkCache::MappedPtr>();
-            promise.set_value(std::move(loaded_marks));
-            return promise.get_future();
-        }
+        ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
+        auto promise = std::promise<MarkCache::MappedPtr>();
+        promise.set_value(std::move(loaded_marks));
+        return promise.get_future();
     }
 
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(

@@ -43,16 +43,20 @@ MaterializedCTEPtr extractCTE(StoragePtr storage)
 
 /// Each call to a parameterized view with a different set of argument values produces a fresh
 /// `StorageView` that carries the substituted inner query but shares the original `StorageID`.
-/// Return that substituted query so callers can distinguish such storages by content.
-ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
+/// Return the hash of that query so `isEqualImpl` and `updateTreeHashImpl` can distinguish such
+/// storages by content.
+///
+/// The hash is computed once per node: the inner query can be very large, and the tree hash of
+/// every expression that references a column of the view descends into this node, so traversing
+/// the query on every call made analysis of large parameterized view trees several times slower.
+std::optional<IASTHash> getParameterizedViewQueryHash(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
 {
     if (!storage)
-        return nullptr;
-    auto * view = storage->as<StorageView>();
+        return {};
+    const auto * view = storage->as<StorageView>();
     if (!view || !view->isParameterizedView())
-        return nullptr;
-    auto metadata_snapshot = view->getInMemoryMetadataPtr(nullptr, false);
-    return metadata_snapshot->getSelectQuery().inner_query;
+        return {};
+    return storage_snapshot->metadata->getSelectQuery().inner_query->getTreeHash(/*ignore_aliases=*/false);
 }
 
 }
@@ -65,6 +69,7 @@ TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder
     , storage_metadata(storage_snapshot_->metadata)
     , storage_snapshot(std::move(storage_snapshot_))
     , materialized_cte(extractCTE(storage))
+    , parameterized_view_query_hash(getParameterizedViewQueryHash(storage, storage_snapshot))
 {}
 
 TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
@@ -75,6 +80,7 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
     , storage_metadata(storage_snapshot_->metadata)
     , storage_snapshot(std::move(storage_snapshot_))
     , materialized_cte(extractCTE(storage))
+    , parameterized_view_query_hash(getParameterizedViewQueryHash(storage, storage_snapshot))
 {
 }
 
@@ -86,6 +92,7 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
     , storage_metadata(storage->getInMemoryMetadataPtr(context, false))
     , storage_snapshot(storage->getStorageSnapshot(storage_metadata, context))
     , materialized_cte(extractCTE(storage))
+    , parameterized_view_query_hash(getParameterizedViewQueryHash(storage, storage_snapshot))
 {
 }
 
@@ -133,6 +140,8 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
 
     if (table_expression_modifiers)
         storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
+
+    parameterized_view_query_hash = getParameterizedViewQueryHash(storage, storage_snapshot);
 }
 
 void TableNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
@@ -179,16 +188,7 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     /// Parameterized views: two calls with different argument values share the same `StorageID` but
     /// hold different substituted queries. Compare the substituted queries so downstream passes that
     /// key off the tree hash (e.g. `PreparedSets` in `CollectSets`) do not collapse them.
-    auto lhs_inner = getParameterizedViewInnerQuery(storage);
-    auto rhs_inner = getParameterizedViewInnerQuery(rhs_typed.storage);
-    if (lhs_inner || rhs_inner)
-    {
-        if (!lhs_inner || !rhs_inner)
-            return false;
-        return lhs_inner->getTreeHash(/*ignore_aliases=*/false) == rhs_inner->getTreeHash(/*ignore_aliases=*/false);
-    }
-
-    return true;
+    return parameterized_view_query_hash == rhs_typed.parameterized_view_query_hash;
 }
 
 void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -213,8 +213,11 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     /// See note in `isEqualImpl`: parameterized-view calls reuse the same `StorageID`, so we mix in
     /// the substituted inner query to keep distinct argument values hashing to distinct values.
-    if (auto inner_query = getParameterizedViewInnerQuery(storage))
-        inner_query->updateTreeHash(state, /*ignore_aliases=*/false);
+    if (parameterized_view_query_hash)
+    {
+        state.update(parameterized_view_query_hash->low64);
+        state.update(parameterized_view_query_hash->high64);
+    }
 }
 
 QueryTreeNodePtr TableNode::cloneImpl() const
@@ -224,6 +227,7 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     result_table_node->temporary_table_name = temporary_table_name;
 
     result_table_node->materialized_cte = materialized_cte;
+    result_table_node->parameterized_view_query_hash = parameterized_view_query_hash;
 
     return result_table_node;
 }

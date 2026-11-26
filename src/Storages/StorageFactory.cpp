@@ -1,9 +1,13 @@
 #include <Storages/StorageFactory.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
+#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -51,6 +55,22 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
     if (!ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
     return ptr;
+}
+
+DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
+{
+    auto disk = getContext()->getDisk(name);
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext());
+    return disk;
+}
+
+StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name) const
+{
+    auto storage_policy = getContext()->getStoragePolicy(name);
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext());
+    return storage_policy;
 }
 
 
@@ -105,6 +125,10 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
+        else if (query.is_window_view)
+        {
+            name = "WindowView";
+        }
         else
         {
             if (!query.storage)
@@ -138,6 +162,14 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
+            if (name == "WindowView")
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE WindowView "
+                    "is not supported, use CREATE WINDOW VIEW statement");
+            }
+
             auto it = storages.find(name);
             if (it == storages.end())
             {
@@ -263,6 +295,50 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
     if (it == storages.end())
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
     return it->second.features;
+}
+
+AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
+{
+    AccessRightsElements res;
+    auto add = [&](const ASTStorage & storage)
+    {
+        if (!storage.engine || !storage.settings)
+            return;
+        auto it = storages.find(storage.engine->name);
+        if (it != storages.end() && it->second.features.get_export_access_fn)
+            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes, /* own_engine */ true));
+    };
+
+    if (create.storage)
+        add(*create.storage);
+    if (create.targets)
+    {
+        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+            add(*inner_engine);
+    }
+    return res;
+}
+
+AccessRightsElements StorageFactory::getExportAccess(const SettingsChanges & changes, const String & engine) const
+{
+    AccessRightsElements res;
+    for (const auto & [name, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn)
+            res.append_range(creator.features.get_export_access_fn(changes, name == engine));
+    }
+    return res;
+}
+
+AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes) const
+{
+    AccessRightsElements res;
+    for (const auto & [_, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn)
+            res.append_range(creator.features.get_export_access_fn(changes, /* own_engine */ true));
+    }
+    return res;
 }
 
 }

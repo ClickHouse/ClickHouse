@@ -168,6 +168,7 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(const QueryTreeNodes & keys, bool 
             {
                 for (const auto & argument : function_node->getArguments())
                 {
+                    // We can skip constants here because aggregation key is already not a constant.
                     if (argument->getNodeType() != QueryTreeNodeType::CONSTANT)
                         nodes_to_process.push(argument);
                 }

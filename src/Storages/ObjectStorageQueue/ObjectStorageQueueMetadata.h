@@ -1,9 +1,8 @@
 #pragma once
 
 #include <filesystem>
-#include <optional>
 #include <mutex>
-#include <unordered_set>
+#include <optional>
 #include <unordered_map>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
@@ -102,6 +101,8 @@ public:
     /// - adjust, if needed and allowed, passed queue settings according to
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
+    /// - if not `strict` or from a named collection, a table is loaded even if its source differs from keeper;
+    /// - if keeper has no `source` (metadata written by an older version), save the table's `source` there;
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
         const fs::path & zookeeper_path,
@@ -109,7 +110,8 @@ public:
         const ColumnsDescription & columns,
         const std::string & format,
         const ContextPtr & context,
-        bool is_attach,
+        const ObjectStorageQueueTableMetadata::Source & source,
+        bool strict,
         LoggerPtr log);
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
@@ -134,9 +136,6 @@ public:
     FileMetadataPtr getFileMetadata(
         const std::string & path,
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
-
-    bool tryAcquireExclusiveProcessing(const std::string & path);
-    void releaseExclusiveProcessing(const std::string & path);
 
     /// Register table in keeper metadata.
     /// active = false:
@@ -268,8 +267,6 @@ private:
     BackgroundSchedulePoolTaskHolder cleanup_task;
 
     FileStatusesCache local_file_statuses;
-    std::mutex exclusive_processing_paths_mutex;
-    std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths TSA_GUARDED_BY(exclusive_processing_paths_mutex);
 
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().

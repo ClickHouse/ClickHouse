@@ -3,6 +3,7 @@ import json
 import math
 import multiprocessing
 import os
+import pathlib
 import re
 import shlex
 from concurrent.futures import ProcessPoolExecutor
@@ -878,6 +879,125 @@ def check_catch_all(files) -> str:
     return "\n".join(violations)
 
 
+# Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
+# taken from `DatabaseCatalog` may be the proxy rather than the engine.
+DEFERRABLE_STORAGE_CLASSES = (
+    "MergeTreeData",
+    "StorageMergeTree",
+    "StorageReplicatedMergeTree",
+    "StorageSharedMergeTree",
+    "StorageSetOrJoinBase",
+    "StorageSet",
+    "StorageJoin",
+    "StorageSharedSet",
+    "StorageSharedJoin",
+    "StorageEmbeddedRocksDB",
+    "IKeyValueEntity",
+    "IStorageURLBase",
+    "IBackgroundOperation",
+    "StorageWithCommonVirtualColumns",
+    "StorageLog",
+    "StorageStripeLog",
+    "StorageURL",
+    "StorageObjectStorage",
+    "StorageKeeperMap",
+    "StorageMySQL",
+    "StoragePostgreSQL",
+    "StorageMongoDB",
+    "StorageRedis",
+    "StorageSQLite",
+    "StorageXDBC",
+    "StorageHive",
+    "StorageArrowFlight",
+    "StorageYTsaurus",
+    "StorageBigQuery",
+    "StorageKafka",
+    "StorageKafka2",
+    "StorageFileLog",
+    "StorageRabbitMQ",
+    "StorageNATS",
+    "StorageObjectStorageQueue",
+    "IStreamingStorage",
+)
+
+# Casts on an operand that cannot be a catalog pointer, so no proxy can be in the way.
+_NOT_A_CATALOG_POINTER = re.compile(
+    r"^(?:\*?this\b"
+    r"|shared_from_this\(\)"
+    r"|&?\w*(?:snapshot|storage_snapshot)->storage\b"
+    r"|&?\w*reading->getMergeTreeData\(\)"
+    r")"
+)
+
+
+def _without_comments(text):
+    """Blanks out comments, keeping the line layout so offsets and line numbers still match."""
+    return re.sub(
+        r"//[^\n]*|/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S
+    )
+
+
+def _cast_operand(text, open_paren):
+    """The argument of a cast whose '(' is at `open_paren`, or None when unbalanced."""
+    depth = 0
+    for i in range(open_paren, min(open_paren + 2000, len(text))):
+        depth += (text[i] == "(") - (text[i] == ")")
+        if not depth:
+            return " ".join(text[open_paren + 1 : i].split())
+    return None
+
+
+def check_storage_casts(files) -> str:
+    """Require `castStorage` for casts to an engine that supports deferred loading.
+
+    Such a table lives behind `StorageTableProxy` until its first access and the catalog keeps
+    handing out that proxy afterwards, so a direct cast fails for the whole life of the table.
+    """
+    types = "|".join(DEFERRABLE_STORAGE_CLASSES)
+    cast_head = re.compile(
+        r"\b(?P<cast>dynamic_cast|typeid_cast|dynamic_pointer_cast|static_pointer_cast)\s*<\s*"
+        r"(?:const\s+)?(?:" + types + r")\s*[*&]?\s*>\s*\("
+    )
+    # `IStorage::as<T>()` is a `typeid_cast` on the receiver, so the operand is what precedes it.
+    as_cast = re.compile(
+        r"(?P<operand>[\w.\[\]()]+)(?:->|\.)as\s*<\s*(?:const\s+)?(?:" + types + r")\s*>\s*\(\s*\)"
+    )
+    resolvers = ("castStorage", "resolveStorageProxy", "resolveStorageProxyLoading")
+
+    violations = []
+    for path in files:
+        # The helpers and the proxy itself have to reach the nested storage directly.
+        if not path.endswith((".cpp", ".h")) or path.endswith(
+            ("StorageProxy.h", "StorageTableProxy.h", "StorageTableFunction.h")
+        ):
+            continue
+        try:
+            lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+
+        text = _without_comments("\n".join(lines))
+        casts = [(m, m.group("cast"), _cast_operand(text, m.end() - 1)) for m in cast_head.finditer(text)]
+        casts += [(m, "as", m.group("operand")) for m in as_cast.finditer(text)]
+
+        for match, cast, operand in casts:
+            if not operand or _NOT_A_CATALOG_POINTER.match(operand) or any(r in operand for r in resolvers):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            # The marker goes on the cast or, when the line is long, the one above it.
+            if any("NOLINT(storage-cast)" in lines[i] for i in (line - 1, line - 2) if i >= 0):
+                continue
+            violations.append(
+                f"{path}:{line}: {cast} to a deferrable storage engine on `{operand[:60]}`. Such a table "
+                "is reached through StorageTableProxy, so this cast fails for the whole life of the table "
+                "and whatever it guards is silently skipped. Use castStorage<T>(ptr, "
+                "DeferredTable::Load) when the query names this table, or DeferredTable::Skip "
+                "when this walks every table and must not load one. If the pointer cannot come from "
+                "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
+            )
+    return "\n".join(violations)
+
+
 def check_file_names(files):
     files_set = set()
     for file in files:
@@ -1092,76 +1212,6 @@ def check_clickhouse_spelling():
     return ""
 
 
-# Where the settings themselves are declared, per `SettingsChangesHistory.cpp` namespace. Used to
-# tell a setting that a change REMOVED from the code apart from one that still exists - only the
-# latter can be recorded in the history at all (see `check_settings_changes_history`). Mirrors
-# `LIST_OF_SETTINGS` in src/Core/Settings.cpp and `MERGE_TREE_SETTINGS` in
-# src/Storages/MergeTree/MergeTreeSettings.cpp.
-_SETTINGS_DECLARATION_SOURCES = {
-    "Session": ("src/Core/Settings.cpp", "src/Core/FormatFactorySettings.h"),
-    "MergeTree": ("src/Storages/MergeTree/MergeTreeSettings.cpp",),
-}
-
-# `DECLARE(Type, name, default, R"(...)", tier)` and its aliasing variant.
-_SETTINGS_DECLARE_RE = re.compile(
-    r"^\s*DECLARE(?:_WITH_ALIAS)?\(\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
-)
-# `MAKE_OBSOLETE(M, Type, name, default)` and friends. An obsolete or deprecated setting is still
-# a setting - it keeps its row in system.settings - so its history records are still required.
-# The longest alternative comes first: `MAKE_OBSOLETE` is a prefix of
-# `MAKE_OBSOLETE_MERGE_TREE_SETTING`.
-_SETTINGS_OBSOLETE_RE = re.compile(
-    r"^\s*MAKE_(?:OBSOLETE_MERGE_TREE_SETTING|OBSOLETE|DEPRECATED_BY_SERVER_CONFIG)\("
-    r"\s*\w+\s*,\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
-)
-# The alias of a `DECLARE_WITH_ALIAS` sits on the line that closes the declaration:
-# `)", 0, insert_distributed_sync) \`. An alias is a settable name of its own - system.settings
-# has a row for it and history records may use it, `applyCompatibilitySetting` resolves aliases -
-# so it counts as declared.
-_SETTINGS_ALIAS_RE = re.compile(r'^\)"\s*,\s*[^,]+,\s*([A-Za-z0-9_]+)\)\s*\\?\s*$')
-
-
-def declared_setting_names():
-    """`({namespace: {name, ...}}, "")` for every setting declared in the checked-out tree, or
-    `(None, error)` when the declarations could not be read.
-
-    Fail-close: a missing file or a namespace that parses to nothing means the declaration macros
-    or their files moved, and quietly returning an empty set would exempt every setting from the
-    current-version-block rule in `check_settings_changes_history`. Pure text parsing of the
-    declaration macros."""
-    names = {}
-    for namespace, sources in _SETTINGS_DECLARATION_SOURCES.items():
-        found = set()
-        for source in sources:
-            source_path = Path(source)
-            if not source_path.is_file():
-                return None, (
-                    f"Cannot validate the settings history: the {namespace} settings are "
-                    f"declared in {source}, which does not exist. If the declarations moved, "
-                    f"update _SETTINGS_DECLARATION_SOURCES in ci/jobs/check_style.py."
-                )
-            for line in source_path.read_text(
-                encoding="utf-8", errors="ignore"
-            ).splitlines():
-                for regexp in (
-                    _SETTINGS_DECLARE_RE,
-                    _SETTINGS_OBSOLETE_RE,
-                    _SETTINGS_ALIAS_RE,
-                ):
-                    m = regexp.match(line)
-                    if m:
-                        found.add(m.group(1))
-                        break
-        if not found:
-            return None, (
-                f"Cannot validate the settings history: no {namespace} setting declaration was "
-                f"found in {', '.join(sources)}. If the declaration macros changed, update the "
-                f"parser in ci/jobs/check_style.py."
-            )
-        names[namespace] = found
-    return names, ""
-
-
 def check_settings_changes_history():
     """Every setting added, value-changed, removed, moved to another block, or sitting in a
     block whose `addSettingsChanges` header changed, in src/Core/SettingsChangesHistory.cpp by
@@ -1186,17 +1236,6 @@ def check_settings_changes_history():
     The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
     rejects a documented name that no longer exists, so requiring it would leave no history file
     that satisfies both guards.
-
-    A setting REMOVED from the code is exempt for the same reason: its records have to go with it.
-    A record naming a setting that is not in system.settings / system.merge_tree_settings is
-    rejected by 03999_stateless_settings_history, and `applyCompatibilitySetting` resolves every
-    recorded name, so nothing can be recorded for a setting that no longer exists - demanding an
-    entry would leave no way to drop a setting that was never released. The exemption is also safe:
-    `compatibility` only ever restores values of settings that exist, so a setting that is gone has
-    no default left for any release to disagree about - unlike the deletion of a record of a
-    setting that stays, which is what the removals paragraph above is about. A setting that is
-    merely made OBSOLETE keeps its row in system.settings, so its records stay required; only a
-    real removal is exempt.
 
     Runs only when that file changed; the list of changed setting names is provided by the
     store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
@@ -1270,28 +1309,6 @@ def check_settings_changes_history():
         # block) - nothing to validate against the current version block.
         return ""
 
-    declared, declared_error = declared_setting_names()
-    if declared_error:
-        return declared_error
-
-    def setting_still_exists(item):
-        """Whether the reported setting is still declared, i.e. whether the history can record it
-        at all - a setting this change removed from the code cannot be recorded anywhere (see the
-        removal paragraph in the docstring). Direction-agnostic on purpose: a record ADDED for a
-        name that is not declared is a dangling record, which 03999_stateless_settings_history
-        rejects outright, so there is nothing for this check to demand on top of that."""
-        declared_in_namespace = declared.get(item["namespace"])
-        if declared_in_namespace is None:
-            # An unrecognized namespace cannot be resolved to declarations - do not exempt it.
-            return True
-        return item["name"] in declared_in_namespace
-
-    changed = [item for item in changed if setting_still_exists(item)]
-    if not changed:
-        # Every reported setting was removed from the code by this change - nothing left to
-        # record in the current version block.
-        return ""
-
     version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
     current_version = "{}.{}".format(
         re.search(r"SET\(VERSION_MAJOR (\d+)\)", version_txt).group(1),
@@ -1339,9 +1356,7 @@ def check_settings_changes_history():
             f"an entry for each under the '{current_version}' block (older blocks may keep their "
             f"entries for backports). If this is a correction of what an older release recorded "
             f"and not a default change made here, split it into a change that touches only "
-            f"{path}. If you REMOVED a setting from the code, remove its declaration in this "
-            f"same change - a record is only demanded for a setting that is still declared. "
-            f"If you RENAMED a setting, keep its record in the same block and change "
+            f"{path}. If you RENAMED a setting, keep its record in the same block and change "
             f"only the name in it - the values and the reason text must stay identical for the "
             f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
         )
@@ -1473,6 +1488,15 @@ if __name__ == "__main__":
             run_check_concurrent(
                 check_name=testname,
                 check_function=check_catch_all,
+                files=cpp_files,
+            )
+        )
+    testname = "storage_casts"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_storage_casts,
                 files=cpp_files,
             )
         )

@@ -37,6 +37,8 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
+        ObjectStorageQueueTableMetadata::Source source,
+        bool strict_metadata_check,
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
@@ -68,7 +70,7 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    ObjectStorageQueueSettings getSettings() const;
+    ObjectStorageQueueSettings getSettings(const ObjectStorageQueueTableMetadata * table_metadata = nullptr) const;
 
     /// Block until `path` is marked as processed (or failed) in Keeper by this
     /// queue, then return.
@@ -214,16 +216,13 @@ private:
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
-    void postProcess(
-        const StoredObjects & successful_objects,
-        UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-        const ObjectStorageQueueMetadata & metadata) const;
+    void postProcess(const StoredObjects & successful_objects, const ObjectStorageQueueMetadata & metadata) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        ObjectStorageQueueMetadata & metadata,
+        const ObjectStorageQueueMetadata & metadata,
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;

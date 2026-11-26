@@ -1,7 +1,6 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -44,8 +43,6 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "The hostname where this span was captured."},
-        {"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."},
-        {"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."},
         {"trace_id", std::make_shared<DataTypeUUID>(), "ID of the trace for executed query."},
         {"span_id", std::make_shared<DataTypeUInt64>(), "ID of the trace span."},
         {"parent_span_id", std::make_shared<DataTypeUInt64>(), "ID of the parent trace span."},
@@ -91,8 +88,6 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(span.trace_id);
     columns[i++]->insert(span.span_id);
     columns[i++]->insert(span.parent_span_id);

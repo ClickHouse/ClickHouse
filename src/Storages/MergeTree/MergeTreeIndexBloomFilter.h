@@ -52,10 +52,12 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
+            FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_HAS_ANY,
             FUNCTION_HAS_ALL,
             FUNCTION_IN,
+            FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -72,7 +74,13 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(
+        const ActionsDAG::Node * predicate,
+        ContextPtr context_,
+        const Block & header_,
+        size_t hash_functions_,
+        IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
+        ActionsDAG::NodeRawConstPtrs index_nodes_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -89,6 +97,12 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
+    const IsShadowingJSONSubcolumn is_shadowing_json_subcolumn;
+    /// By position in `header`.
+    const ActionsDAG::NodeRawConstPtrs index_nodes;
+    /// Names of `header`, with all but `JSONAllPaths` of a table column left empty.
+    const Names json_index_columns;
+    const bool validate_enum_literals_in_operators;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
@@ -99,7 +113,7 @@ private:
 
     bool traverseTreeIn(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
@@ -107,7 +121,7 @@ private:
 
     bool traverseTreeEquals(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out,

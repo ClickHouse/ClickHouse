@@ -109,8 +109,8 @@ RUN ARCH=$(uname -m) && \
     ./rustup-init -y && \
     rm rustup-init && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2026-03-22 --no-self-update && \
-    rustup default nightly-2026-03-22 && \
+    rustup toolchain install nightly-2026-11-02 --no-self-update && \
+    rustup default nightly-2026-11-02 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \
@@ -145,7 +145,7 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.17.0
+ARG SCCACHE_VERSION=v0.10.0
 ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
 # sccache requires a value for the region. So by default we use The Default Region
 ENV SCCACHE_REGION=us-east-1

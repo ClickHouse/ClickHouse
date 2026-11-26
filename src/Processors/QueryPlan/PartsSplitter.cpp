@@ -39,11 +39,6 @@ std::string toString(const Values & value)
     return fmt::format("({})", fmt::join(value, ", "));
 }
 
-} /// end anonymous namespace
-
-namespace DB
-{
-
 /** We rely that FieldVisitorAccurateLess will have strict weak ordering for any Field values including
   * NaN, Null and containers (Array, Tuple, Map) that contain NaN or Null. But right now it does not properly
   * support NaN and Nulls inside containers, because it uses Field operator< or accurate::lessOp for comparison
@@ -96,6 +91,11 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
 
     return true;
 }
+
+} /// end anonymous namespace
+
+namespace DB
+{
 
 bool isSafePrimaryKey(const KeyDescription & primary_key)
 {
@@ -1221,6 +1221,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.borders = split_ranges.borders;
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }

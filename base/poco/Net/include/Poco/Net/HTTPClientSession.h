@@ -290,6 +290,10 @@ namespace Net
         /// This method should only be called if the request contains
         /// a "Expect: 100-continue" header.
 
+        bool receiveEarlyResponse(HTTPResponse & response);
+        /// After sending the request failed, drops the rest of it and reads the response header the
+        /// server has already sent. If true, receiveResponse() must be called with the same response.
+
         virtual void flushRequest();
         /// Flushes the request stream.
         ///

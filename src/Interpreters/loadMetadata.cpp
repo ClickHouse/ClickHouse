@@ -83,6 +83,7 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
+    interpreter.setIsMetadataReplay(true);
     if (!create)
     {
         interpreter.setForceAttach(true);
@@ -554,7 +555,6 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         executeTrivialBlockIO(res, context);
 
         /// Unlock UUID mapping, because it will be locked again on database reload.
-        /// It's safe to do during metadata loading, because cleanup task is not started yet.
         DatabaseCatalog::instance().removeUUIDMappingFinally(db_uuid);
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);

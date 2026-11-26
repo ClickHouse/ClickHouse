@@ -6,13 +6,18 @@
 #include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
-#include <Databases/DatabaseReplicatedHelpers.h>
+#include <Poco/URI.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -37,12 +42,47 @@ namespace Setting
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
+    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace ObjectStorageQueueSetting
 {
-    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
+}
+
+namespace
+{
+
+#if USE_AWS_S3
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configuration & configuration, const ContextPtr & context)
+{
+    /// `S3::URI` keeps the user info in the endpoint or the bucket name, so such a URL is parsed again without it.
+    auto url = configuration.url;
+    if (!url.uri.getUserInfo().empty())
+    {
+        Poco::URI uri = url.uri;
+        uri.setUserInfo("");
+        url = S3::URI(
+            uri.toString(),
+            /*allow_archive_path_syntax*/ false,
+            /*keep_presigned_query_parameters*/ true,
+            /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+    }
+    return {configuration.getTypeName(), url.endpoint, url.bucket, configuration.getRawPath().path};
+}
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration, const ContextPtr &)
+{
+    String endpoint = configuration.getConnectionURLWithoutQuery();
+    const Poco::URI uri(endpoint);
+    if (uri.getScheme() != "http" && uri.getScheme() != "https")
+        return {};
+    return {configuration.getTypeName(), std::move(endpoint), configuration.getContainer(), configuration.getRawPath().path};
+}
+#endif
+
 }
 
 template <typename Configuration>
@@ -133,31 +173,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
-    /// In `exclusive` mode there is no coordination through Keeper: each server keeps the list of
-    /// processed files only in its own memory. If two servers read the same path, both will read
-    /// every file and every row will be inserted twice. So each server needs its own path.
-    /// But `ON CLUSTER` queries and `Replicated` databases send the same `CREATE` text to all
-    /// servers. The `{replica}` macro solves this: one query text, a different path per server.
-    /// The other modes need the opposite (the same path on all servers, because files in Keeper are
-    /// named by file path), so this code runs only for `exclusive` mode.
-    if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
-    {
-        Macros::MacroExpansionInfo info;
-        info.expand_special_macros_only = true;
-
-        const auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
-        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
-        const auto is_replicated_database = is_on_cluster && database->getEngineName() == "Replicated";
-
-        if (is_replicated_database)
-            info.replica = getReplicatedDatabaseReplicaName(database);
-        else
-            info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
-
-        auto path = configuration->getPathForRead();
-        path.path = args.getContext()->getMacros()->expand(path.path, info);
-        configuration->setPathForRead(path);
-    }
+    auto source = getQueueSource(*configuration, args.getLocalContext());
+    source.from_named_collection = configuration->initialized_from_named_collection;
 
     /// The S3 client is built once in the storage constructor and reused by background threads, so the
     /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
@@ -165,6 +182,16 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
     const bool allow_server_credentials_in_user_queries
         = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
+    /// Another replica of a `Replicated` database replays the definition that its initiator has checked.
+    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+    bool is_secondary_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    is_secondary_ddl_replay |= args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#endif
+    const bool is_replayed_definition = !isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+        || is_secondary_ddl_replay || args.getLocalContext()->isRecoveryFromStoredMetadata();
+    const bool strict_metadata_check = (args.is_restore_from_backup && !is_secondary_ddl_replay) || !is_replayed_definition;
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
@@ -178,6 +205,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         format_settings,
         args.storage_def,
         args.mode,
+        std::move(source),
+        strict_metadata_check,
         /* keep_data_in_keeper */ false);
 }
 
@@ -196,6 +225,7 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getS3QueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -237,9 +267,9 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [max_processing_time_sec_before_commit = 0,]
 ```
 
-<Warning>
+:::warning
 Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
-</Warning>
+:::
 
 **Engine parameters**
 
@@ -279,13 +309,13 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-<Note title="Setting Names (24.7+)">
+:::note Setting Names (24.7+)
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
 - **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
 - **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
-</Note>
+:::
 
 ### Mode {#mode}
 
@@ -293,11 +323,8 @@ Possible values:
 
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
-- exclusive - With exclusive mode, nothing is tracked in Zookeeper. Your S3 url (first parameter in `S3Queue()`) *must* resolve to a unique host or path. This mode is only useful for high-throughput and/or self-hosted scenarios.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
-
-When using `exclusive` mode, using the `{replica}` macro in the S3 url is supported.
 
 ### `after_processing` {#after_processing}
 
@@ -389,6 +416,8 @@ Default value: empty string.
 
 URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
 
+Setting it is the same data flow as `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, so it requires the `WRITE` grant on the `S3` source. A grant limited by a URL filter is not enough, because the move writes keys that are built from `after_processing_move_prefix` and the source keys, not from the URI. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`. The move always parses the URI with automatic style detection, as the `s3` table function does with the default `s3_uri_style`, so the `uri_style` server setting and the `s3_uri_style` query setting do not apply to it.
+
 Possible values:
 
 - String.
@@ -438,7 +467,7 @@ Default value: `10`.
 
 ### `processing_threads_num` {#processing_threads_num}
 
-Number of threads to perform processing. Applies only for `Unordered` or `Exclusive` mode.
+Number of threads to perform processing. Applies only for `Unordered` mode.
 
 Default value: Number of CPUs or 16.
 
@@ -447,9 +476,9 @@ Default value: Number of CPUs or 16.
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
 
-<Note>
+:::note
 `INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
-</Note>
+:::
 
 Default value: `false`.
 
@@ -491,7 +520,7 @@ Default value: `30000`.
 
 ### `tracked_files_limit` {#tracked_files_limit}
 
-Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' or 'exclusive' mode.
+Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
 
 Possible values:
@@ -502,7 +531,7 @@ Default value: `1000`.
 
 ### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
-Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' or 'exclusive' mode.
+Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
 After the specified number of seconds, the file will be re-imported.
 
 Possible values:
@@ -581,8 +610,7 @@ The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
 SELECT queries are forbidden by default on S3Queue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it. (Note: this setting doesn't make sense in `exclusive` mode and is ignored; `exclusive` mode always acts as if `commit_on_select` is `True`.)
-
+The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
 
 ## Description {#description}
 
@@ -790,6 +818,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getAzureQueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -836,6 +865,8 @@ Below are the settings only compatible with AzureQueue and not applicable for S3
 
 Connection string for Azure Blob Storage to move successfully processed files to, if the destination is another Azure container.
 
+Setting it requires the `WRITE` grant on the `AZURE` source. A grant limited by a URL filter is not enough, because a move has no single blob path and writes keys that are built from `after_processing_move_prefix` and the source keys. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`.
+
 Possible values:
 
 - String.
@@ -845,6 +876,8 @@ Default value: empty string.
 ### `after_processing_move_container` {#after_processing_move_container}
 
 Container name to move successfully processed files to, if the destination is another Azure container.
+
+Changing it redirects the move to another container of the same account, so it needs the same grants as `after_processing_move_connection_string`: the `WRITE` grant on the `AZURE` source without a URL filter, and `SELECT` on the table for `ALTER TABLE ... MODIFY SETTING`.
 
 Possible values:
 
@@ -872,7 +905,7 @@ SETTINGS
 
 SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it. (Note: this setting doesn't make sense in `exclusive` mode and is ignored; `exclusive` mode always acts as if `commit_on_select` is `True`.)
+The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
 
 ## Description {#description}
 

@@ -67,7 +67,7 @@ def main():
     assert check_name
     check_glibc = True
     # currently hardcoded to x86, don't enable for AARCH64
-    check_old_distributions = (
+    check_distributions = (
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
 
@@ -95,22 +95,13 @@ def main():
             )
         )
 
-    if check_old_distributions:
+    if check_distributions:
         test_results.append(
             Result.from_commands_run(
                 name="ubuntu12",
                 command=[
                     f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
                 ],
-                with_info=True,
-            )
-        )
-        test_results.append(
-            Result.from_commands_run(
-                name="ubuntu12 (rseq unavailable)",
-                command=[f"""
-                docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query "select throwIf(not(count())) from system.warnings where message like '%rseq%'"
-                """.strip()],
                 with_info=True,
             )
         )
@@ -123,25 +114,6 @@ def main():
                 with_info=True,
             )
         )
-
-    test_results.append(
-        Result.from_commands_run(
-            name="ubuntu22 (rseq available)",
-            command=[f"""
-            docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:22.04 /clickhouse local --query "select throwIf(count()) from system.warnings where message like '%rseq%'"
-            """.strip()],
-            with_info=True,
-        )
-    )
-    test_results.append(
-        Result.from_commands_run(
-            name="ubuntu22 (rseq off)",
-            command=[f"""
-            docker run --volume={temp_path}/clickhouse:/clickhouse -e GLIBC_TUNABLES=glibc.pthread.rseq=0 ubuntu:22.04 /clickhouse local --query "select throwIf(not(count())) from system.warnings where message like '%rseq%'"
-            """.strip()],
-            with_info=True,
-        )
-    )
 
     Result.create_from(results=test_results, stopwatch=stopwatch).complete_job()
 

@@ -36,12 +36,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -309,6 +309,20 @@ namespace
                 throw Exception(error_code, "Compression level {} is out of range 0..{}", level_, GRPC_COMPRESS_LEVEL_COUNT - 1);
         }
     };
+
+    /// A protobuf map has no order, so `profile` goes first for its constraints to bind the other settings.
+    SettingsChanges settingsChangesFromMap(const google::protobuf::Map<std::string, std::string> & map)
+    {
+        SettingsChanges changes;
+        for (const auto & [key, value] : map)
+        {
+            if (key == "profile")
+                changes.insert(changes.begin(), {key, value});
+            else
+                changes.push_back({key, value});
+        }
+        return changes;
+    }
 
     /// Gets session's timeout from query info or from the server config.
     std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
@@ -945,12 +959,7 @@ namespace
 
         query_context = session->makeQueryContext(std::move(client_info));
 
-        /// Prepare settings.
-        SettingsChanges settings_changes;
-        for (const auto & [key, value] : query_info.settings())
-        {
-            settings_changes.push_back({key, value});
-        }
+        auto settings_changes = settingsChangesFromMap(query_info.settings());
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
 
@@ -1277,9 +1286,7 @@ namespace
                     {
                         temp_context = Context::createCopy(query_context);
                         external_table_context = temp_context;
-                        SettingsChanges settings_changes;
-                        for (const auto & [key, value] : external_table.settings())
-                            settings_changes.push_back({key, value});
+                        auto settings_changes = settingsChangesFromMap(external_table.settings());
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
@@ -1311,12 +1318,8 @@ namespace
                         return std::make_shared<EmptySink>(header);
                     });
 
-                    auto external_table_pipeline = QueryPipelineBuilder::getPipeline(std::move(cur_pipeline));
-                    external_table_pipeline.setNumThreads(1);
-                    external_table_pipeline.setConcurrencyControl(false);
-                    external_table_pipeline.disableReadProgress();
-                    CompletedPipelineExecutor executor(external_table_pipeline);
-                    executor.execute();
+                    auto executor = cur_pipeline.execute();
+                    executor->execute(1, false);
                 }
             }
 

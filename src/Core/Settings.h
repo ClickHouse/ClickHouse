@@ -7,7 +7,6 @@
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
-#include <Common/FlatStringMap.h>
 #include <Common/SettingsChanges.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -53,6 +52,7 @@ class WriteBuffer;
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
+    M(CLASS_NAME, BoolForce) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
@@ -171,12 +171,6 @@ struct Settings
     /// `compatibility` itself instead of being forced to the sender's derived values.
     void resetSettingsChangedByCompatibility();
 
-    /// Keep the values that the `compatibility` setting derived but clear their `changed` flags (and forget
-    /// they were compatibility-derived). The resulting object still selects e.g. the client-side network codec
-    /// from the derived values, while serialization to a server skips them — the server re-derives them from
-    /// `compatibility` itself and honors its own constraints (e.g. a profile pinning a setting read-only).
-    void markSettingsChangedByCompatibilityAsUnchanged();
-
     VectorWithMemoryTracking<String> getHints(const String & name) const;
     String toString(bool show_secrets) const;
 
@@ -195,10 +189,10 @@ struct Settings
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
     void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
-    FlatStringMap changedToFlatMap(bool show_secrets) const;
+    std::map<String, String> changedToMap(bool show_secrets) const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
-    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT, bool skip_invalid_values = false);
     /// Equivalent to Settings().write(out, <any format>) but faster.
     static void writeEmpty(WriteBuffer & out);
 

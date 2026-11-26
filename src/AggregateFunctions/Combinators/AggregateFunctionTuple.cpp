@@ -472,9 +472,20 @@ void AggregateFunctionTuple::mergeAndDestroyBatch(
     std::atomic<bool> & is_cancelled,
     Arena * arena) const
 {
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-        nested_functions[i]->mergeAndDestroyBatch(
-            dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    size_t i = 0;
+    try
+    {
+        for (; i < nested_functions.size(); ++i)
+            nested_functions[i]->mergeAndDestroyBatch(
+                dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    }
+    catch (...)
+    {
+        /// The function that threw has destroyed its own states of the batch, the following ones are untouched.
+        for (size_t k = i + 1; k < nested_functions.size(); ++k)
+            nested_functions[k]->destroyBatch(0, size, rhs_places, offset + state_offsets[k]);
+        throw;
+    }
 }
 
 void AggregateFunctionTuple::serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const
@@ -497,6 +508,13 @@ void AggregateFunctionTuple::insertResultInto(AggregateDataPtr __restrict place,
 void AggregateFunctionTuple::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
 {
     insertResultIntoImpl<true>(place, to, arena);
+}
+
+void AggregateFunctionTuple::rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept
+{
+    auto & tuple_to = assert_cast<ColumnTuple &>(to);
+    for (size_t i = nested_functions.size(); i-- > 0;)
+        nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
 }
 
 bool AggregateFunctionTuple::allocatesMemoryInArena() const

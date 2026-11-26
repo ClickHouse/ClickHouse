@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -68,9 +69,6 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt64 database_atomic_delay_before_drop_table_sec;
     extern const ServerSettingsUInt64 database_catalog_drop_error_cooldown_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
 }
 
 namespace ErrorCodes
@@ -257,13 +255,6 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 void DatabaseCatalog::createBackgroundTasks()
 {
     /// It has to be done before databases are loaded (to avoid a race condition on initialization)
-    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
-    {
-        auto cleanup_task_holder
-            = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
-        cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
-    }
-
     auto drop_task_holder = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
 
@@ -273,14 +264,6 @@ void DatabaseCatalog::createBackgroundTasks()
 
 void DatabaseCatalog::startupBackgroundTasks()
 {
-    /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
-    if (cleanup_task)
-    {
-        (*cleanup_task)->activate();
-        /// Do not start task immediately on server startup, it's not urgent.
-        (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]) * 1000);
-    }
-
     (*drop_task)->activate();
     std::lock_guard lock{tables_marked_dropped_mutex};
     if (!tables_marked_dropped.empty())
@@ -291,9 +274,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 {
     is_shutting_down = true;
     wait_table_finally_dropped.notify_all();
-
-    if (cleanup_task)
-        (*cleanup_task)->deactivate();
 
     if (drop_task)
         (*drop_task)->deactivate();
@@ -311,70 +291,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     }
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
-
-    /** Hand the buffered rows over before any database goes away.
-      *
-      * A `Buffer` table flushes into its destination when its own database shuts down, and databases
-      * shut down one at a time in name order: a destination in an earlier-sorting database is already
-      * gone by then ("Destination table ... doesn't exist. Block of data is discarded."), and a chain
-      * of `Buffer` tables moves rows at most one link per pass, so the rows left in an
-      * already-prepared `Buffer` die with it. Both are silent losses of acknowledged rows on a
-      * graceful shutdown.
-      *
-      * So drain every table of every database here, repeating while a pass still moves something -
-      * one pass per link of the longest chain. The number of tables bounds the number of passes; a
-      * `Buffer` whose destination is itself would otherwise keep the loop alive forever.
-      */
-    {
-        size_t total_tables = 0;
-        std::vector<StoragePtr> buffered_tables;
-        for (const auto & database : current_databases)
-        {
-            /// Only user databases: enumerating a predefined one can materialize a lazily created
-            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
-            if (isPredefinedDatabase(database.first))
-                continue;
-
-            try
-            {
-                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
-                {
-                    ++total_tables;
-                    buffered_tables.push_back(it->table());
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(
-                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
-            }
-        }
-
-        for (size_t pass = 0; pass <= total_tables; ++pass)
-        {
-            size_t flushed = 0;
-            for (const auto & table : buffered_tables)
-            {
-                if (!table)
-                    continue;
-
-                try
-                {
-                    flushed += table->flushBufferedRowsBeforeShutdown();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(
-                        log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
-                }
-            }
-
-            if (flushed == 0)
-                break;
-
-            LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
-        }
-    }
 
     /// Delay shutdown of temporary and system databases. They will be shutdown last.
     /// Because some databases might use them until their shutdown is called, but calling shutdown
@@ -1341,8 +1257,6 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
-    chassert(!cleanup_task);
-
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
@@ -1360,6 +1274,16 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         metadata_disk_list.insert(std::move(db_disk));
     }
 
+    /// Startup may already have dropped tables, e.g. `SystemLog::prepareUnionTable` replaces union tables.
+    /// They are queued with their storage and their UUID mapping is still registered, so only drops of previous runs are loaded here.
+    auto is_drop_queued = [this](const DiskPtr & disk, const String & metadata_path)
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        return std::ranges::any_of(tables_marked_dropped, [&](const TableMarkedAsDropped & dropped)
+        {
+            return dropped.metadata_path == metadata_path && dropped.db_disk->getName() == disk->getName();
+        });
+    };
 
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
@@ -1400,6 +1324,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
             String full_path = path + sub_path_filename;
+            if (is_drop_queued(db_disk, full_path))
+            {
+                LOG_DEBUG(log, "Table {} was dropped during this startup and is already queued for removal", dropped_id.getNameForLogs());
+                continue;
+            }
+
             dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
         }
     }
@@ -1530,13 +1460,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
-    auto database = getDatabase(table_id.database_name);
-    auto db_disk = database->getDisk();
-
-    /// The table limit is checked below; wait for the database to finish loading first, otherwise
-    /// its table list is incomplete and the check would undercount. Do it before taking
-    /// `tables_marked_dropped_mutex`, because startup can drop tables.
-    database->waitDatabaseStarted();
+    auto db_disk = getDatabase(table_id.database_name)->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1569,11 +1493,6 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        /// Check the limit before moving the metadata file: a table that cannot be attached must
-        /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
-        if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
-            database_on_disk->checkTablesLimit();
-
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
@@ -1819,7 +1738,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        auto table_merge_tree = castStorage<MergeTreeData>(table.table, DeferredTable::Skip);
         if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
@@ -2142,128 +2061,6 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
 
     check(referential_dependencies);
     check(loading_dependencies);
-}
-
-void DatabaseCatalog::cleanupStoreDirectoryTask()
-{
-    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
-    {
-        if (!disk->supportsStat() || !disk->supportsChmod())
-            continue;
-
-        size_t affected_dirs = 0;
-        size_t checked_dirs = 0;
-        for (auto it = disk->iterateDirectory("store"); it->isValid(); it->next())
-        {
-            String prefix = it->name();
-            bool expected_prefix_dir = disk->existsDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
-                && isHexDigit(prefix[2]);
-
-            if (!expected_prefix_dir)
-            {
-                LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", it->path(), disk_name);
-                checked_dirs += 1;
-                affected_dirs += maybeRemoveDirectory(disk_name, disk, it->path());
-                continue;
-            }
-
-            for (auto jt = disk->iterateDirectory(it->path()); jt->isValid(); jt->next())
-            {
-                String uuid_str = jt->name();
-                UUID uuid;
-                bool parsed = tryParse(uuid, uuid_str);
-
-                bool expected_dir = disk->existsDirectory(jt->path()) && parsed && uuid != UUIDHelpers::Nil && uuid_str.starts_with(prefix);
-
-                if (!expected_dir)
-                {
-                    LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", jt->path(), disk_name);
-                    checked_dirs += 1;
-                    affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
-                    continue;
-                }
-
-                /// Order is important
-                if (!hasUUIDMapping(uuid))
-                {
-                    /// We load uuids even for detached and permanently detached tables,
-                    /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
-                    /// No table or database using this directory should concurrently appear,
-                    /// because creation of new table would fail with "directory already exists".
-                    checked_dirs += 1;
-                    affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
-                }
-            }
-        }
-
-        if (affected_dirs)
-            LOG_INFO(log, "Cleaned up {} directories from store/ on disk {}", affected_dirs, disk_name);
-        if (checked_dirs == 0)
-            LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
-    }
-
-    (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec]) * 1000);
-}
-
-bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir)
-{
-    /// "Safe" automatic removal of some directory.
-    /// At first we do not remove anything and only revoke all access right.
-    /// And remove only if nobody noticed it after, for example, one month.
-
-    try
-    {
-        struct stat st = disk->stat(unused_dir);
-
-        if (st.st_uid != geteuid())
-        {
-            /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
-            LOG_WARNING(log, "Found directory {} with unexpected owner (uid={}) on disk {}", unused_dir, st.st_uid, disk_name);
-            return false;
-        }
-
-        time_t max_modification_time = std::max({st.st_atime, st.st_mtime, st.st_ctime});
-        time_t current_time = time(nullptr);
-        if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
-        {
-            if (current_time <= max_modification_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]))
-                return false;
-
-            LOG_INFO(log, "Removing access rights for unused directory {} from disk {} (will remove it when timeout exceed)", unused_dir, disk_name);
-
-            /// Explicitly update modification time just in case
-
-            disk->setLastModified(unused_dir, Poco::Timestamp::fromEpochTime(current_time));
-
-            /// Remove all access right
-            disk->chmod(unused_dir, 0);
-
-            return true;
-        }
-
-        auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_rm_timeout_sec]);
-
-        if (!unused_dir_rm_timeout_sec)
-            return false;
-
-        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
-            return false;
-
-        LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
-
-        /// We have to set these access rights to make recursive removal work
-        disk->chmod(unused_dir, S_IRWXU);
-
-        disk->removeRecursive(unused_dir);
-
-        return true;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, fmt::format("Failed to remove unused directory {} from disk {} ({})",
-                                                unused_dir, disk->getName(), disk->getPath()));
-        return false;
-    }
 }
 
 void DatabaseCatalog::reloadDisksTask()

@@ -191,23 +191,20 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
         return false;
 
     for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
-        if (!lhs_state->argument_types[i]->equals(*rhs_state->argument_types[i]))
+    {
+        const auto & lhs_argument = lhs_state->argument_types[i];
+        const auto & rhs_argument = rhs_state->argument_types[i];
+        /// An argument can be a state itself (for example the element states of `-Tuple`), whose layout must be ignored too.
+        if (ignore_variant && typeid_cast<const DataTypeAggregateFunction *>(lhs_argument.get()))
+        {
+            if (!strictEquals(lhs_argument, rhs_argument, /*ignore_variant=*/ true))
+                return false;
+        }
+        else if (!lhs_argument->equals(*rhs_argument))
             return false;
+    }
 
     return true;
-}
-
-bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version)
-{
-    auto state_type = DataTypeFactory::instance().tryGet(state_type_name);
-    const auto * aggregate_state_type = typeid_cast<const DataTypeAggregateFunction *>(state_type.get());
-    if (!aggregate_state_type)
-        return false;
-
-    if (aggregate_state_type->getVersion() != version)
-        return false;
-
-    return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
 }
 
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const

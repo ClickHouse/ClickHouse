@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -94,16 +95,40 @@ public:
     ///  - etc
     using KindStack = std::vector<Kind>;
 
+    /// The kind of a column in the Native format is chosen by the peer that sends the data, so a
+    /// reader declares with such a set which kinds the peer is allowed to select.
+    class KindSet
+    {
+    public:
+        constexpr KindSet(std::initializer_list<Kind> kinds) /// NOLINT(google-explicit-constructor)
+        {
+            for (auto kind : kinds)
+                bits |= maskOf(kind);
+        }
+
+        static constexpr KindSet all() { return KindSet(~UInt32(0)); }
+
+        constexpr bool contains(Kind kind) const { return (bits & maskOf(kind)) != 0; }
+        constexpr KindSet without(Kind kind) const { return KindSet(bits & ~maskOf(kind)); }
+
+    private:
+        explicit constexpr KindSet(UInt32 bits_) : bits(bits_) { }
+
+        static constexpr UInt32 maskOf(Kind kind) { return UInt32(1) << static_cast<UInt8>(kind); }
+
+        UInt32 bits = 0;
+    };
+
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
-    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
-    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
-    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
-    /// Default: identity.
-    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
+    /// Create an empty column of `type` in the layout this serialization deserializes into. Each layer composes on
+    /// top of the nested one, so this reproduces the serialization's kind stack (Sparse/Replicated/Detached) and any
+    /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
+    virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
     static KindStack getKindStack(const IColumn & column);
+    static String kindToString(Kind kind);
     static String kindStackToString(const KindStack & kind);
     static KindStack stringToKindStack(const String & str);
     /// Check if provided kind stack contains specific kind.
@@ -277,11 +302,6 @@ public:
             ObjectSharedDataCopyValues,
             ObjectStructure,
 
-            MapKeyValue,
-            ObjectDistinctPaths,
-            ObjectSubObject,
-            ObjectCombinedPath,
-
             Bucket,
             MapBucketsInfo,
             MapBucketIndexes,
@@ -342,6 +362,8 @@ public:
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
+        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
+        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -483,7 +505,8 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;
@@ -704,8 +727,13 @@ public:
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
-    static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false, size_t initial_array_level = 0);
-    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false, size_t initial_array_level = 0);
+    static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, size_t initial_array_level = 0);
+    /// Rejects a stale `(path, true)` call, which would otherwise silently bind `true` to `prefix_len`.
+    static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
+
+    /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
+    static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);

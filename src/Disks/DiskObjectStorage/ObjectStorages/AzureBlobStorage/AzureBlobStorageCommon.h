@@ -50,13 +50,6 @@ struct RequestSettings
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
-
-    /// Reject upload size settings that would otherwise produce an internal error
-    /// (e.g. a failed assertion in `BufferAllocationPolicy`) deep inside the write path.
-    /// Invoked only when the multipart blob writer (`WriteBufferFromAzureBlobStorage`) is
-    /// constructed, so it is never applied to endpoints that route to
-    /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
-    void validateUploadSettings() const;
 };
 
 struct Endpoint
@@ -156,6 +149,8 @@ struct ConnectionParams
 
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
+    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
+    String getConnectionURLWithoutQuery() const;
 
     std::unique_ptr<ServiceClient> createForService() const;
     std::unique_ptr<ContainerClient> createForContainer() const;
@@ -172,6 +167,10 @@ BlobClientOptions getClientOptions(
     bool for_disk);
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
+/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 

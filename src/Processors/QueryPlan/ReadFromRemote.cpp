@@ -31,6 +31,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
@@ -292,21 +293,10 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column)
         {
-            ASTPtr literal;
-            if (typeMayContainDecimal(*node->result_type))
-                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
-                /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
-                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
-            else
-                /// Other types keep their raw Field literal. In particular a DateTime serialized as local
-                /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
-                /// share one text, and parsing picks one side), whereas the raw Unix-timestamp literal is exact.
-                literal = make_intrusive<ASTLiteral>(node->column->getField());
+            auto literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
-            /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
-            auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
+            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -669,7 +659,7 @@ void ReadFromRemote::addLazyPipe(
         // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
         if (!use_delayed_remote_source && !my_table_func_ptr)
         {
-            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
             if (!replicated_storage)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());

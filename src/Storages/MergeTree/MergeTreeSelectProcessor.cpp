@@ -126,17 +126,15 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
-    const size_t part_index = task.getInfo().part_index_in_query;
-    const auto & skip_input = read_ranges.at(part_index);
-    auto it = projection_read_ranges.find(part_index);
+    const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
+    auto it = projection_read_ranges.find(task.getInfo().part_index_in_query);
     static RangesInDataParts empty_parts_ranges;
     const auto & projection_parts_ranges = it != projection_read_ranges.end() ? it->second : empty_parts_ranges;
-    auto & remaining_marks = part_remaining_marks.at(part_index).value;
+    auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
 
     auto storage_snapshot = task.getMainReader().getStorageSnapshot();
     const auto & all_updated_columns = task.getInfo().alter_conversions->getAllUpdatedColumns();
-    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
-        part_index, task.getInfo().data_part_info, skip_input, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
@@ -145,7 +143,13 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
 
     if (part_last_task)
-        index_reader_pool->clear(part_index);
+    {
+        /// The index-read-result pool is a coordinator-only (skip-index-on-data-read) feature,
+        /// so the concrete part is present here. Assert it so a future misuse that routes a borrowed
+        /// part through this path fails loudly instead of passing nullptr to the pool.
+        chassert(task.getInfo().data_part_info->getDataPart());
+        index_reader_pool->clear(task.getInfo().data_part_info->getDataPart());
+    }
 
     return index_read_result;
 }
@@ -159,8 +163,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_,
-    const ColumnsDescription * columns_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -172,8 +175,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           index_read_tasks_,
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
-          reader_settings_.force_short_circuit_execution,
-          columns_))
+          reader_settings_.force_short_circuit_execution))
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
@@ -201,8 +203,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
-    bool force_short_circuit_execution,
-    const ColumnsDescription * columns)
+    bool force_short_circuit_execution)
 {
     PrewhereExprInfo prewhere_actions;
 
@@ -235,7 +236,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     }
 
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution)))
     {
         PrewhereExprStep prewhere_step
         {

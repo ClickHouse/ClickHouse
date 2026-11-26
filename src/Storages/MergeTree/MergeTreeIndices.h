@@ -6,6 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
@@ -20,7 +21,6 @@ namespace DB
 
 class IDataPartStorage;
 class IMergeTreeDataPart;
-class IMergeTreeDataPartInfoForReader;
 
 namespace Internal
 {
@@ -284,19 +284,10 @@ struct IMergeTreeIndex
     ///
     /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
     /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
-    ///
-    /// The physical question needs only the checksums and the storage, so it is answered without a part:
-    /// it is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
-    virtual MergeTreeIndexFormat getPhysicalFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const IDataPartStorage & storage,
-        const std::string & relative_path_prefix) const;
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
+    virtual MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
 
     /// Deliberately NON-virtual: the usability checks below must not be bypassable by a format
     /// override. Reimplement getPhysicalFormat() instead.
-    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
     MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
 
     /// True when @part's recorded physical types for the columns this index requires are
@@ -308,7 +299,6 @@ struct IMergeTreeIndex
     /// IDataType::equals() and therefore erases exactly those attributes. Ask this only about a part
     /// that HAS the index on disk: a required column whose type the part does not record is refused,
     /// because such a part can still carry the index's granules.
-    bool isPartTypeCompatible(const IMergeTreeDataPartInfoForReader & part_info) const;
     bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
 
     /// Union of every checksummed or packed on-disk version present (unlike
@@ -354,6 +344,9 @@ struct IMergeTreeIndex
 
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
+
+    /// Tells whether a name that looks like a subcolumn of a `JSON` column can belong to another column.
+    IsShadowingJSONSubcolumn getJSONSubcolumnShadowingCheck() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
@@ -419,6 +412,11 @@ void setIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+/// Every granule of a text bloom filter index eagerly allocates one filter per indexed column, so the total size of the filters
+/// (not only the size of a single filter) is limited. The check is done only for indexes being declared or changed, not on `ATTACH`
+/// and not for indexes inherited unchanged from `old_index`, so that tables created before the check still load and can be altered.
+/// Does nothing for other index types.
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);

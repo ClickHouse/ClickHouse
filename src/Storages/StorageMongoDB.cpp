@@ -14,6 +14,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/StringUtils.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -38,6 +39,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <algorithm>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -57,6 +59,7 @@ MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
@@ -84,6 +87,58 @@ void MongoDBConfiguration::checkCollection() const
     /// effectively empty collection name, which aborts the process inside the driver.
     if (collection.empty() || collection.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
+}
+
+namespace
+{
+
+void throwIfServerCredentials(const mongocxx::uri & uri, std::string_view remedy)
+{
+    /// Only these take the credentials from the connection string; `MONGODB-OIDC`, `MONGODB-AWS`, `GSSAPI` and
+    /// `MONGODB-X509` use the server's. Without a mechanism the driver uses SCRAM or no authentication. Names are case-insensitive.
+    static constexpr std::string_view allowed_mechanisms[] = {"SCRAM-SHA-1", "SCRAM-SHA-256", "PLAIN"};
+
+    const String mechanism = uri.auth_mechanism();
+    const bool is_allowed_mechanism = mechanism.empty()
+        || std::ranges::any_of(allowed_mechanisms, [&](std::string_view allowed) { return equalsCaseInsensitive(mechanism, allowed); });
+
+    if (!is_allowed_mechanism)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB authentication mechanism '{}' is not allowed, because it authenticates with "
+            "credentials of the server process. Use SCRAM-SHA-1, SCRAM-SHA-256 or PLAIN with a username and a password "
+            "in the connection string{}.",
+            mechanism, remedy);
+
+    /// The driver stores the deprecated `sslClientCertificateKeyFile` under the canonical name, so this covers both.
+    if (uri.tls_certificate_key_file())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB connection option `tlsCertificateKeyFile` is not allowed, because it makes the server present a "
+            "client certificate from its own filesystem. Use SCRAM-SHA-1, SCRAM-SHA-256 or PLAIN with a username and a "
+            "password in the connection string{}.",
+            remedy);
+}
+
+}
+
+void MongoDBConfiguration::checkServerCredentialsForTable(const ContextPtr & context) const
+{
+    if (!context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    throwIfServerCredentials(*uri,
+#if CLICKHOUSE_CLOUD
+        ""
+#else
+        ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
+#endif
+    );
+}
+
+void MongoDBConfiguration::checkServerCredentialsForDictionary() const
+{
+    throwIfServerCredentials(*uri, ", or define the dictionary in the server configuration files");
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -121,6 +176,9 @@ Pipe StorageMongoDB::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
+    /// Checked per read, with the query's settings: a table created with `mongodb(...)` is built with the global context.
+    configuration.checkServerCredentialsForTable(context);
+
     storage_snapshot->check(column_names);
 
     Block sample_block;
@@ -543,7 +601,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     const ConstantNode * limit = nullptr;
     const ConstantNode * offset = nullptr;
 
-    if (query_tree.hasLimit() && !query_tree.hasLimitAfter() && !query_tree.hasLimitUntil())
+    if (query_tree.hasLimit())
     {
         limit = query_tree.getLimit()->as<ConstantNode>();
         if (!limit)
@@ -688,10 +746,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 | `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
 | `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
 
-<Tip>
+:::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
-</Tip>
+:::
 
 Alternatively, you can pass a URI:
 
@@ -784,7 +842,7 @@ Such expressions are translated to MongoDB query language and executed on the se
 You can disable all these restriction, using [mongodb_throw_on_unsupported_query](/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query).
 In that case ClickHouse tries to convert query on best effort basis, but it can lead to full table scan and processing on ClickHouse side.
 
-<Note>
+:::note
 It's always better to explicitly set type of literal because Mongo requires strict typed filters.\
 For example you want to filter by `Date`:
 
@@ -799,7 +857,8 @@ SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024
 ```
 
 This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
-</Note>
+
+:::
 
 ## Usage example {#usage-example}
 

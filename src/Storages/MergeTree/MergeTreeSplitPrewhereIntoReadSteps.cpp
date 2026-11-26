@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
-#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -22,29 +21,10 @@ namespace
 struct NodeInfo
 {
     NameSet required_columns;
-    /// Column names resolved to their physical storage names (subcolumn suffix stripped).
-    /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
-    NameSet required_storage_columns;
 };
 
-/// Resolves a column name to its storage (physical) name.
-/// For subcolumns like `map.key_k0`, returns `map`.
-/// For regular columns, returns the name unchanged.
-String resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
-{
-    if (columns)
-    {
-        if (auto col = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-            return col->getNameInStorage();
-    }
-    return column_name;
-}
-
 /// Fills the list of required columns for a node in the DAG.
-void fillRequiredColumns(
-    const ActionsDAG::Node * node,
-    std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
-    const ColumnsDescription * columns)
+void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info)
 {
     if (nodes_info.contains(node))
         return;
@@ -54,16 +34,14 @@ void fillRequiredColumns(
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
         node_info.required_columns.insert(node->result_name);
-        node_info.required_storage_columns.insert(resolveStorageColumnName(node->result_name, columns));
         return;
     }
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info, columns);
+        fillRequiredColumns(child, nodes_info);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
-        node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
     }
 }
 
@@ -165,6 +143,40 @@ const ActionsDAG::Node & addFunction(
     return new_node;
 }
 
+/// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
+/// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
+/// but it might be required for further steps with its original uncast type.
+const ActionsDAG::Node & addCast(
+        const ActionsDAGPtr & dag,
+        const ActionsDAG::Node & node_to_cast,
+        const DataTypePtr & to_type)
+{
+    if (node_to_cast.result_type->equals(*to_type))
+        return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
+
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {}, nullptr);
+    return new_node;
+}
+
+/// Normalizes the filter node by adding AND with a constant true.
+/// This:
+/// 1. produces a result with the proper Nullable or non-Nullable UInt8 type and
+/// 2. makes sure that the result contains only 0 or 1 values even if the source column contains non-boolean values.
+const ActionsDAG::Node & addAndTrue(
+    const ActionsDAGPtr & dag,
+    const ActionsDAG::Node & filter_node_to_normalize)
+{
+    Field const_true_value(true);
+
+    auto const_true_type = std::make_shared<DataTypeUInt8>();
+    auto const_true_column = const_true_type->createColumnConst(0, const_true_value);
+
+    const auto * const_true_node = &dag->addColumn(std::move(const_true_column), std::move(const_true_type), "");
+    ActionsDAG::NodeRawConstPtrs children = {&filter_node_to_normalize, const_true_node};
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return addFunction(dag, func_builder_and, children);
+}
+
 }
 
 /// We want to build a sequence of steps that will compute parts of the prewhere condition.
@@ -191,8 +203,7 @@ bool tryBuildPrewhereSteps(
     PrewhereInfoPtr prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
-    bool force_short_circuit_execution,
-    const ColumnsDescription * columns)
+    bool force_short_circuit_execution)
 {
     if (!prewhere_info)
         return true;
@@ -208,37 +219,21 @@ bool tryBuildPrewhereSteps(
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info, columns);
+        fillRequiredColumns(node, nodes_info);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group adjacent conditions that read from the same set of physical storage columns into a single step.
-    /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
-    /// when they appear next to each other in the condition list.
-    ///
-    /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
-    /// Non-adjacent conditions on the same storage column are kept in separate steps even though this
-    /// may cause redundant reads, because the user may have intentionally interleaved a guard predicate
-    /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
-    /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
-    ///
-    /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
-    /// conditions by their physical storage columns, so subcolumns of the same column arrive here adjacent.
+    /// 4. Group conditions with the same set of columns into a single read/compute step
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        if (!condition_groups.empty()
-            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
-        {
-            condition_groups.back().push_back(node);
-        }
+        if (!condition_groups.empty() && nodes_info[condition_groups.back().back()].required_columns == node_info.required_columns)
+            condition_groups.back().push_back(node);    /// Add to the last group
         else
-        {
-            condition_groups.push_back({node});
-        }
+            condition_groups.push_back({node}); /// Start new group
     }
 
     /// 5. Build DAGs for each step
@@ -304,13 +299,21 @@ bool tryBuildPrewhereSteps(
         }
         else if (output->result_name == prewhere_info->prewhere_column_name)
         {
-            /// The PREWHERE column is an AND of all conditions, which after the earlier steps have
-            /// filtered is equivalent to the last condition alone, so only its type has to match.
+            /// Special case for final PREWHERE column: it is an AND combination of all conditions,
+            /// but we have only the condition for the last step here. We know that the combined filter is equivalent to
+            /// to the last condition after filters from previous steps are applied. We just need to CAST the last condition
+            /// to the type of combined filter. We do this in 2 steps:
+            /// 1. AND the last condition with constant True. This is needed to make sure that in the last step filter has UInt8 type
+            ///    but contains values other than 0 and 1 (e.g. if it is (number%5) it contains 2,3,4)
+            /// 2. CAST the result to the exact type of the PREWHERE column from the original DAG
             auto & last_step_dag = steps.back().actions;
             auto & last_step_result_node = steps.back().result_node;
-            const auto & condition_node = last_step_dag->addBooleanCondition(*last_step_result_node, output->result_type, nullptr);
+            /// Build AND(last_step_result_node, true)
+            const auto & and_node = addAndTrue(last_step_dag, *last_step_result_node);
+            /// Build CAST(and_node, type of PREWHERE column)
+            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type);
             /// Add alias for the result with the name of the PREWHERE column
-            const auto & prewhere_result_node = last_step_dag->addAlias(condition_node, output->result_name);
+            const auto & prewhere_result_node = last_step_dag->addAlias(cast_node, output->result_name);
             last_step_dag->getOutputs().push_back(&prewhere_result_node);
             steps.back().result_node = &prewhere_result_node;
         }

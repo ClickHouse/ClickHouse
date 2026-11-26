@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+
+<clickhouse>
+    <!-- Per-endpoint credentials so that the `url` table function, which has no credential arguments,
+         can reach MinIO through the `s3://` scheme mapping above. -->
+    <s3>
+        <minio_root>
+            <endpoint>http://minio1:9001/root/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </minio_root>
+    </s3>
+
+    <remote_servers>
+        <parallel_replicas>
+            <shard>
+                <replica><host>node</host><port>9000</port></replica>
+                <replica><host>node</host><port>9000</port></replica>
+                <replica><host>node</host><port>9000</port></replica>
+            </shard>
+        </parallel_replicas>
+    </remote_servers>
+</clickhouse>

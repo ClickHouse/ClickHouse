@@ -22,6 +22,7 @@ namespace DB
 
 struct MySQLSettings;
 class NamedCollection;
+class ASTSetQuery;
 struct StorageID;
 
 /** Implements storage in the MySQL database.
@@ -83,7 +84,9 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(
+        ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
+        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,

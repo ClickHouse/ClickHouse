@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
@@ -53,10 +52,6 @@ void NegativeLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const
         transform->markAsShardLimit();
 
     pipeline.addTransform(std::move(transform));
-
-    if (dataflow_cache_updater)
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void NegativeLimitStep::describeActions(FormatSettings & settings) const
