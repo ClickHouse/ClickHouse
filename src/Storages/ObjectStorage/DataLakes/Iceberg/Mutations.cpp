@@ -117,15 +117,6 @@ struct DataFileWriteResultWithStats
 
 using DeletedPositionsByDataFile = std::map<String, roaring::Roaring64Map>;
 
-struct WriteDataFilesResult
-{
-    DataFileWriteResultWithStats delete_file;
-    /// Empty unless this is an UPDATE, which also writes new data files.
-    DataFileWriteResultWithStats data_file;
-    /// Null without statistics.
-    std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
-};
-
 static Block getPositionDeleteFileSampleBlock()
 {
     ColumnsWithTypeAndName delete_file_columns_desc;
@@ -507,19 +498,17 @@ static void removeWrittenFiles(
         }
 }
 
-static std::optional<WriteDataFilesResult> writeDataFiles(
+static std::optional<DataFileWriteResultWithStats> writePositionDeleteFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
     StoragePtr storage_ptr,
     ObjectStoragePtr object_storage,
-    String write_format,
+    const String & write_format,
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
-    std::optional<ChunkPartitioner> & chunk_partitioner,
-    Poco::JSON::Object::Ptr data_schema,
-    bool write_statistics)
+    std::optional<ChunkPartitioner> & chunk_partitioner)
 {
     chassert(commands.size() == 1);
     DataFileWriteResultWithStats delete_files;
@@ -531,147 +520,133 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             removeWrittenFiles(delete_files, object_storage, path_resolver);
     });
 
-    if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
+    MutationsInterpreter::Settings settings(true);
+    settings.return_all_columns = true;
+    settings.return_mutated_rows = true;
+
+    auto delete_commands = commands;
+    delete_commands[0].type = MutationCommand::DELETE;
+
+    /// The deleted positions are sorted before they are written, so this read needs no order.
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+    PullingPipelineExecutor executor(pipeline);
+
+    auto header = interpreter->getUpdatedHeader();
+
+    /// The deleted rows arrive in any order of data files and positions.
+    std::unordered_map<ChunkPartitioner::PartitionKey, DeletedPositionsByDataFile, ChunkPartitioner::PartitionKeyHasher> deleted_positions;
+    PaddedPODArray<UInt64> positions_buffer;
+
+    Block block;
+    bool has_any_rows = false;
+    while (executor.pull(block))
     {
-        MutationsInterpreter::Settings settings(true);
-        settings.return_all_columns = true;
-        settings.return_mutated_rows = true;
+        if (block.rows() == 0)
+            continue;
 
-        auto delete_commands = commands;
-        delete_commands[0].type = MutationCommand::DELETE;
+        has_any_rows = true;
+        Chunk chunk(block.getColumns(), block.rows());
+        auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
-        /// The deleted positions are sorted before they are written, so this read needs no order.
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
-        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
-        PullingPipelineExecutor executor(pipeline);
+        size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
+        size_t col_position_index = block.getPositionByName(block_row_number);
 
-        auto header = interpreter->getUpdatedHeader();
-
-        /// The deleted rows arrive in any order of data files and positions.
-        std::unordered_map<ChunkPartitioner::PartitionKey, DeletedPositionsByDataFile, ChunkPartitioner::PartitionKeyHasher> deleted_positions;
-        PaddedPODArray<UInt64> positions_buffer;
-
-        Block block;
-        bool has_any_rows = false;
-        while (executor.pull(block))
+        for (const auto & [partition_key, partition_chunk] : partition_result)
         {
-            if (block.rows() == 0)
-                continue;
-
-            has_any_rows = true;
-            Chunk chunk(block.getColumns(), block.rows());
-            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
-
-            size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
-            size_t col_position_index = block.getPositionByName(block_row_number);
-
-            for (const auto & [partition_key, partition_chunk] : partition_result)
+            /// The virtual column `_iceberg_metadata_file_path` may arrive as LowCardinality(String).
+            const IColumn & file_paths = *partition_chunk.getColumns()[col_data_filename_index];
+            ColumnPtr row_numbers = partition_chunk.getColumns()[col_position_index];
+            if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(row_numbers.get()))
             {
-                /// The virtual column `_iceberg_metadata_file_path` may arrive as LowCardinality(String).
-                const IColumn & file_paths = *partition_chunk.getColumns()[col_data_filename_index];
-                ColumnPtr row_numbers = partition_chunk.getColumns()[col_position_index];
-                if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(row_numbers.get()))
-                {
-                    const auto & null_map = nullable->getNullMapData();
-                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
-                    row_numbers = nullable->getNestedColumnPtr();
-                }
+                const auto & null_map = nullable->getNullMapData();
+                if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
+                row_numbers = nullable->getNestedColumnPtr();
+            }
 
-                /// Row numbers are non-negative.
-                const size_t num_rows = partition_chunk.getNumRows();
-                const UInt64 * positions = nullptr;
-                if (const auto * row_numbers_int64 = typeid_cast<const ColumnInt64 *>(row_numbers.get()))
+            /// Row numbers are non-negative.
+            const size_t num_rows = partition_chunk.getNumRows();
+            const UInt64 * positions = nullptr;
+            if (const auto * row_numbers_int64 = typeid_cast<const ColumnInt64 *>(row_numbers.get()))
+            {
+                positions = reinterpret_cast<const UInt64 *>(row_numbers_int64->getData().data());
+            }
+            else
+            {
+                positions_buffer.resize(num_rows);
+                for (size_t row = 0; row < num_rows; ++row)
+                    positions_buffer[row] = row_numbers->get64(row);
+                positions = positions_buffer.data();
+            }
+
+            /// The rows of one data file come in runs.
+            const auto * low_cardinality_file_paths = typeid_cast<const ColumnLowCardinality *>(&file_paths);
+            auto & positions_by_data_file = deleted_positions[partition_key];
+            size_t run_begin = 0;
+            while (run_begin < num_rows)
+            {
+                size_t run_end = run_begin + 1;
+                if (isColumnConst(file_paths))
                 {
-                    positions = reinterpret_cast<const UInt64 *>(row_numbers_int64->getData().data());
+                    run_end = num_rows;
+                }
+                else if (low_cardinality_file_paths)
+                {
+                    const IColumn & indexes = low_cardinality_file_paths->getIndexes();
+                    const UInt64 index = indexes.getUInt(run_begin);
+                    while (run_end < num_rows && indexes.getUInt(run_end) == index)
+                        ++run_end;
                 }
                 else
                 {
-                    positions_buffer.resize(num_rows);
-                    for (size_t row = 0; row < num_rows; ++row)
-                        positions_buffer[row] = row_numbers->get64(row);
-                    positions = positions_buffer.data();
+                    const std::string_view path = file_paths.getDataAt(run_begin);
+                    while (run_end < num_rows && file_paths.getDataAt(run_end) == path)
+                        ++run_end;
                 }
 
-                /// The rows of one data file come in runs.
-                const auto * low_cardinality_file_paths = typeid_cast<const ColumnLowCardinality *>(&file_paths);
-                auto & positions_by_data_file = deleted_positions[partition_key];
-                size_t run_begin = 0;
-                while (run_begin < num_rows)
-                {
-                    size_t run_end = run_begin + 1;
-                    if (isColumnConst(file_paths))
-                    {
-                        run_end = num_rows;
-                    }
-                    else if (low_cardinality_file_paths)
-                    {
-                        const IColumn & indexes = low_cardinality_file_paths->getIndexes();
-                        const UInt64 index = indexes.getUInt(run_begin);
-                        while (run_end < num_rows && indexes.getUInt(run_end) == index)
-                            ++run_end;
-                    }
-                    else
-                    {
-                        const std::string_view path = file_paths.getDataAt(run_begin);
-                        while (run_end < num_rows && file_paths.getDataAt(run_end) == path)
-                            ++run_end;
-                    }
-
-                    positions_by_data_file[String(file_paths.getDataAt(run_begin))].addMany(run_end - run_begin, positions + run_begin);
-                    run_begin = run_end;
-                }
+                positions_by_data_file[String(file_paths.getDataAt(run_begin))].addMany(run_end - run_begin, positions + run_begin);
+                run_begin = run_end;
             }
-        }
-
-        if (!has_any_rows)
-            return std::nullopt;
-
-        static constexpr size_t max_pending_uploads = 16;
-        std::deque<PendingDeleteFileUpload> pending_uploads;
-        try
-        {
-            for (const auto & [partition_key, positions_by_data_file] : deleted_positions)
-            {
-                auto & partition_files = delete_files.files_by_partition[partition_key];
-                for (const auto & [data_file_path, positions] : positions_by_data_file)
-                {
-                    if (pending_uploads.size() == max_pending_uploads)
-                    {
-                        finishDeleteFileUpload(pending_uploads.front(), object_storage, path_resolver);
-                        pending_uploads.pop_front();
-                    }
-                    auto write_buffer = writePositionDeleteFile(
-                        data_file_path, positions, context, object_storage, write_format, generator, path_resolver, format_settings, partition_files);
-                    pending_uploads.push_back({&partition_files, partition_files.files.size() - 1, std::move(write_buffer)});
-                }
-            }
-            for (auto & upload : pending_uploads)
-                finishDeleteFileUpload(upload, object_storage, path_resolver);
-            CurrentThread::checkIfNotCancelled();
-        }
-        catch (...)
-        {
-            for (auto & upload : pending_uploads)
-                if (upload.write_buffer)
-                    upload.write_buffer->cancel();
-            throw;
         }
     }
 
-    UpdatedDataFiles updated_data_files;
-    if (commands[0].type == MutationCommand::UPDATE)
-        updated_data_files = writeUpdatedDataFiles(
-            commands, context, metadata, storage_ptr, object_storage, write_format, generator, path_resolver, format_settings,
-            chunk_partitioner, data_schema, write_statistics, /* preserve_row_lineage */ false);
+    if (!has_any_rows)
+        return std::nullopt;
 
-    std::optional<WriteDataFilesResult> result;
-    if (commands[0].type == MutationCommand::DELETE)
-        result = WriteDataFilesResult{std::move(delete_files), {}, nullptr};
-    else if (commands[0].type == MutationCommand::UPDATE)
-        result = WriteDataFilesResult{std::move(delete_files), std::move(updated_data_files.data_files), std::move(updated_data_files.sketches)};
+    static constexpr size_t max_pending_uploads = 16;
+    std::deque<PendingDeleteFileUpload> pending_uploads;
+    try
+    {
+        for (const auto & [partition_key, positions_by_data_file] : deleted_positions)
+        {
+            auto & partition_files = delete_files.files_by_partition[partition_key];
+            for (const auto & [data_file_path, positions] : positions_by_data_file)
+            {
+                if (pending_uploads.size() == max_pending_uploads)
+                {
+                    finishDeleteFileUpload(pending_uploads.front(), object_storage, path_resolver);
+                    pending_uploads.pop_front();
+                }
+                auto write_buffer = writePositionDeleteFile(
+                    data_file_path, positions, context, object_storage, write_format, generator, path_resolver, format_settings, partition_files);
+                pending_uploads.push_back({&partition_files, partition_files.files.size() - 1, std::move(write_buffer)});
+            }
+        }
+        for (auto & upload : pending_uploads)
+            finishDeleteFileUpload(upload, object_storage, path_resolver);
+        CurrentThread::checkIfNotCancelled();
+    }
+    catch (...)
+    {
+        for (auto & upload : pending_uploads)
+            if (upload.write_buffer)
+                upload.write_buffer->cancel();
+        throw;
+    }
+
     written = true;
-    return result;
+    return delete_files;
 }
 
 static std::map<String, roaring::Roaring64Map> collectMatchedRowPositions(
@@ -1496,7 +1471,7 @@ void mutate(
             break;
         }
 
-        auto mutation_files = writeDataFiles(
+        auto delete_files = writePositionDeleteFiles(
             commands,
             context,
             fresh_storage_metadata,
@@ -1506,35 +1481,49 @@ void mutate(
             filename_generator,
             persistent_table_components.path_resolver,
             format_settings,
-            chunk_partitioner,
-            current_schema,
-            write_statistics);
+            chunk_partitioner);
+        if (!delete_files)
+            break;
 
-        if (mutation_files)
+        UpdatedDataFiles updated_data_files;
+        if (commands[0].type == MutationCommand::UPDATE)
         {
-            if (!writeMetadataFiles(
-                    mutation_files->delete_file,
-                    mutation_files->data_file,
-                    mutation_files->updated_rows_sketches.get(),
-                    write_statistics,
-                    object_storage,
-                    context,
-                    filename_generator,
-                    persistent_table_components.path_resolver,
-                    data_lake_settings,
-                    write_format,
-                    catalog,
-                    storage_id,
-                    metadata,
-                    base_catalog_metadata_location,
-                    partititon_spec,
-                    static_cast<Int32>(partition_spec_id),
-                    chunk_partitioner,
-                    sample_block,
-                    /* deletion_vectors */ nullptr,
-                    persistent_table_components))
-                continue;
+            try
+            {
+                updated_data_files = writeUpdatedDataFiles(
+                    commands, context, fresh_storage_metadata, storage_ptr, object_storage, write_format, filename_generator,
+                    persistent_table_components.path_resolver, format_settings, chunk_partitioner, current_schema, write_statistics,
+                    /* preserve_row_lineage */ false);
+            }
+            catch (...)
+            {
+                removeWrittenFiles(*delete_files, object_storage, persistent_table_components.path_resolver);
+                throw;
+            }
         }
+
+        if (!writeMetadataFiles(
+                *delete_files,
+                updated_data_files.data_files,
+                updated_data_files.sketches.get(),
+                write_statistics,
+                object_storage,
+                context,
+                filename_generator,
+                persistent_table_components.path_resolver,
+                data_lake_settings,
+                write_format,
+                catalog,
+                storage_id,
+                metadata,
+                base_catalog_metadata_location,
+                partititon_spec,
+                static_cast<Int32>(partition_spec_id),
+                chunk_partitioner,
+                sample_block,
+                /* deletion_vectors */ nullptr,
+                persistent_table_components))
+            continue;
         break;
     }
 
