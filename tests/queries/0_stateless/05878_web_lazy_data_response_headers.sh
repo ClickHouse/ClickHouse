@@ -33,9 +33,21 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
             return
-        self.send_response(200)
+        range_header = self.headers.get('Range')
+        content_range = None
+        status = 200
+        if range_header and self.path == '/data/data.parquet':
+            begin_text, end_text = range_header.split('=')[1].split('-')
+            begin = int(begin_text)
+            end = min(int(end_text), len(data) - 1) if end_text else len(data) - 1
+            content_range = f'bytes {begin}-{end}/{len(data)}'
+            data = data[begin:end + 1]
+            status = 206
+        self.send_response(status)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Accept-Ranges', 'bytes')
+        if content_range:
+            self.send_header('Content-Range', content_range)
         self.send_header('ETag', '"stable"')
         self.send_header('X-Method', 'GET' if include_body else 'HEAD')
         self.end_headers()
