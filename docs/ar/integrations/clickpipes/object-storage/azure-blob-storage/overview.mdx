@@ -6,12 +6,12 @@ title: 'تكامل Azure Blob Storage مع ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-يوفّر ABS ClickPipe طريقة مُدارة بالكامل وموثوقة لاستيعاب البيانات من Azure Blob Storage إلى ClickHouse Cloud. وهو يدعم كلاً من **الاستيعاب لمرة واحدة** و**الاستيعاب المستمر**، مع ضمان معالجة كل سجل مرة واحدة فقط.
+يوفّر ABS ClickPipe طريقة مُدارة بالكامل وموثوقة لاستيعاب البيانات من Azure Blob Storage إلى ClickHouse Cloud. وهو يدعم كلاً من **الاستيعاب لمرة واحدة** و**الاستيعاب المستمر**، مع دلالات التسليم مرة واحدة بالضبط.
 
 يمكن نشر ABS ClickPipes وإدارتها يدويًا عبر ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="supported-formats">
-  ## التنسيقات المدعومة
+  ## التنسيقات المدعومة {#supported-formats}
 </div>
 
 * [JSON](/ar/reference/formats/JSON/JSON)
@@ -21,23 +21,23 @@ doc_type: 'guide'
 * [Avro](/ar/reference/formats/Avro/Avro)
 
 <div id="features">
-  ## الميزات
+  ## الميزات {#features}
 </div>
 
 <div id="one-time-ingestion">
-  ### الاستيعاب لمرة واحدة
+  ### الاستيعاب لمرة واحدة {#one-time-ingestion}
 </div>
 
 سيحمّل ClickPipe الخاص بـ ABS جميع الملفات المطابقة لنمط معيّن من الحاوية المحددة إلى جدول الوجهة في ClickHouse ضمن عملية دفعية واحدة. وما إن تكتمل مهمة الاستيعاب، يتوقف ClickPipe تلقائيًا. يوفّر وضع الاستيعاب لمرة واحدة هذا ضمان المعالجة مرة واحدة فقط، بما يضمن معالجة كل ملف بشكل موثوق من دون تكرار.
 
 <div id="continuous-ingestion">
-  ### الاستيعاب المستمر
+  ### الاستيعاب المستمر {#continuous-ingestion}
 </div>
 
 عند تفعيل الاستيعاب المستمر، تواصل ClickPipes استيعاب البيانات من المسار المحدد. ولتحديد ترتيب الاستيعاب، يعتمد ClickPipe الخاص بـ ABS على [الترتيب المعجمي](#continuous-ingestion-lexicographical-order) الضمني للملفات.
 
 <div id="continuous-ingestion-lexicographical-order">
-  #### الترتيب المعجمي
+  #### الترتيب المعجمي {#continuous-ingestion-lexicographical-order}
 </div>
 
 يفترض ABS ClickPipe أن الملفات تُضاف إلى الحاوية وفق الترتيب المعجمي، ويعتمد على هذا الترتيب الضمني لاستيعاب الملفات بشكل تسلسلي. وهذا يعني أن أي ملف جديد **يجب** أن يكون أكبر معجميًا من آخر ملف تم استيعابه. على سبيل المثال، ستُستوعَب الملفات المسماة `file1` و`file2` و`file3` بالتسلسل، ولكن إذا أُضيف ملف جديد باسم `file 0` إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف تم استيعابه.
@@ -45,13 +45,13 @@ doc_type: 'guide'
 في هذا الوضع، يُجري ABS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يتحقق من وجود ملفات جديدة على فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). لبدء الاستيعاب المستمر بعد ملف محدد، هيّئ **البدء بعد**. ستتخطى ClickPipes الملفات التي تكون أقل من القيمة المُهيأة أو مساوية لها معجميًا، وتتابع استيعاب الملفات الأحدث من تلك النقطة.
 
 <div id="file-pattern-matching">
-  ### مطابقة أنماط الملفات
+  ### مطابقة أنماط الملفات {#file-pattern-matching}
 </div>
 
 تتبع Object Storage ClickPipes معيار POSIX في مطابقة أنماط الملفات. جميع الأنماط **حساسة لحالة الأحرف**، وتُطابق **المسار الكامل** بعد اسم الحاوية. ولتحسين الأداء، استخدم النمط الأكثر تحديدًا قدر الإمكان (مثل `data-2024-*.csv` بدلًا من `*.csv`).
 
 <div id="supported-patterns">
-  #### الأنماط المدعومة
+  #### الأنماط المدعومة {#supported-patterns}
 </div>
 
 | النمط              | الوصف                                                                               | مثال                | يطابق                                                             |
@@ -68,7 +68,7 @@ doc_type: 'guide'
 * `https://storageaccount.blob.core.windows.net/container/data-2024-*.csv.gz`
 
 <div id="unsupported-patterns">
-  #### الأنماط غير المدعومة
+  #### الأنماط غير المدعومة {#unsupported-patterns}
 </div>
 
 | النمط       | الوصف                          | المثال                 | البدائل                              |
@@ -83,23 +83,23 @@ doc_type: 'guide'
 * `https://storageaccount.blob.core.windows.net/container/{logs,metrics}/data.parquet`
 
 <div id="exactly-once-semantics">
-  ### ضمان المعالجة مرة واحدة فقط
+  ### ضمان المعالجة مرة واحدة فقط {#exactly-once-semantics}
 </div>
 
 قد تحدث أنواع مختلفة من الإخفاقات عند استيعاب مجموعات بيانات كبيرة، ما قد يؤدي إلى عمليات إدراج جزئية أو بيانات مكررة. تتمتع Object Storage ClickPipes بالمرونة في مواجهة إخفاقات الإدراج وتوفّر ضمان المعالجة مرة واحدة فقط. ويتحقق ذلك باستخدام جداول &quot;مرحلية&quot; مؤقتة. تُدرج البيانات أولاً في الجداول المرحلية. وإذا حدث خطأ ما أثناء عملية الإدراج هذه، يمكن إفراغ الجدول المرحلي وإعادة محاولة الإدراج من حالة نظيفة. ولا تُنقل الأقسام من الجدول المرحلي إلى الجدول الهدف إلا بعد اكتمال عملية الإدراج بنجاح. ولمزيد من المعلومات حول هذه الاستراتيجية، اطّلع على [هذه التدوينة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
 
 <div id="virtual-columns">
-  ### الأعمدة الافتراضية
+  ### الأعمدة الافتراضية {#virtual-columns}
 </div>
 
 لتتبّع الملفات التي تم إدخالها، أدرِج العمود الافتراضي `_file` ضمن قائمة تعيين الأعمدة. يحتوي العمود الافتراضي `_file` على اسم ملف الكائن المصدر، ويمكن استخدامه للاستعلام عن الملفات التي تمت معالجتها.
 
 <div id="access-control">
-  ## التحكم بالوصول
+  ## التحكم بالوصول {#access-control}
 </div>
 
 <div id="permissions">
-  ### الأذونات
+  ### الأذونات {#permissions}
 </div>
 
 لا يدعم ClickPipe الخاص بـ ABS إلا الحاويات الخاصة. الحاويات العامة **غير** مدعومة.
@@ -107,7 +107,7 @@ doc_type: 'guide'
 يجب أن تسمح الحاويات بالإجراءين [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html) و[`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html) في سياسة الـ bucket.
 
 <div id="authentication">
-  ### المصادقة
+  ### المصادقة {#authentication}
 </div>
 
 <Note>
@@ -117,7 +117,7 @@ doc_type: 'guide'
 تعتمد المصادقة في Azure Blob Storage على [سلسلة اتصال](https://docs.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string)، وهي تدعم كلًا من مفاتيح الوصول وتوقيعات الوصول المشتركة (SAS).
 
 <div id="access-key">
-  #### مفتاح الوصول
+  #### مفتاح الوصول {#access-key}
 </div>
 
 للمصادقة باستخدام [مفتاح وصول الحساب](https://docs.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage)، قدّم سلسلة اتصال بالتنسيق التالي:
@@ -129,7 +129,7 @@ DefaultEndpointsProtocol=https;AccountName=storage-account-name;AccountKey=accou
 يمكنك العثور على اسم حساب التخزين ومفتاح الوصول في Azure Portal ضمن **Storage Account &gt; Access keys**.
 
 <div id="sas">
-  #### توقيع الوصول المشترك (SAS)
+  #### توقيع الوصول المشترك (SAS) {#sas}
 </div>
 
 للمصادقة باستخدام [توقيع الوصول المشترك (SAS)](https://docs.microsoft.com/en-us/azure/storage/common/storage-sas-overview)، قدِّم سلسلة اتصال تتضمن رمز SAS:
@@ -141,7 +141,7 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 أنشئ رمز SAS في Azure Portal ضمن **Storage Account &gt; Shared access signature** مع الأذونات المناسبة (`Read`، `List`) للحاوية وكائنات blob التي تريد إدخالها.
 
 <div id="network-access">
-  ### الوصول إلى الشبكة
+  ### الوصول إلى الشبكة {#network-access}
 </div>
 
 تستخدم ABS ClickPipes مسارين منفصلين للشبكة لاكتشاف البيانات الوصفية واستيعاب البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
@@ -157,9 +157,7 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.azure[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<div id="advanced-settings">
-  ## الإعدادات المتقدمة
-</div>
+## الإعدادات المتقدمة {#advanced-settings}
 
 يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة الاستخدام لديك تتطلب ضبطًا أدق، فيمكنك تعديل الإعدادات التالية:
 
@@ -173,22 +171,18 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 | `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings/max-download#max_download_threads).                                    |
 | `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفاصل استطلاع تخزين الكائنات قبل إدراج البيانات في مجموعة ClickHouse.                                                                       |
 | `Start after`                        | None          | للاستيعاب المستمر المرتب، يتخطى الملفات التي يكون اسمها أو مسارها أقل من اسم الملف أو المسار المُعدّ أو مساويًا له وفق الترتيب المعجمي.                      |
-| `Parallel distributed insert select` | 2           | [إعداد parallel distributed إدراج select](/ar/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                                 |
+| `Parallel distributed insert select` | 2             | [إعداد parallel distributed إدراج select](/ar/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                                 |
 | `Parallel view processing`           | false         | ما إذا كان سيتم تمكين تمرير البيانات إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عقد.                                                                                                           |
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![الإعدادات المتقدمة في ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
-
-</Frame>
-
+  <Frame>
+    ![الإعدادات المتقدمة لـ ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+  </Frame>
 </div>
 
 <div id="scaling">
-  ### التحجيم
+  ### التحجيم {#scaling}
 </div>
 
 يتم تحجيم Object Storage ClickPipes بناءً على الحد الأدنى لحجم خدمة ClickHouse الذي تحدده [إعدادات التحجيم التلقائي الرأسي المُعدّة](/ar/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). ويُحدَّد حجم ClickPipe عند إنشائه. ولن تؤثر أي تغييرات لاحقة على إعدادات خدمة ClickHouse في حجم ClickPipe.
@@ -196,17 +190,17 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 لزيادة معدل النقل في مهام إدخال البيانات الكبيرة، نوصي بتحجيم خدمة ClickHouse قبل إنشاء ClickPipe.
 
 <div id="known-limitations">
-  ## القيود المعروفة
+  ## القيود المعروفة {#known-limitations}
 </div>
 
 <div id="file-size">
-  ### حجم الملف
+  ### حجم الملف {#file-size}
 </div>
 
 لن يحاول ClickPipes إلا إدخال الكائنات التي يبلغ حجمها **10GB أو أقل**. وإذا تجاوز حجم الملف 10GB، فستُضاف رسالة خطأ إلى جدول الأخطاء المخصّص لـ ClickPipes.
 
 <div id="latency">
-  ### زمن الاستجابة
+  ### زمن الاستجابة {#latency}
 </div>
 
 بالنسبة إلى الحاويات التي تضم أكثر من 100,000 ملف، تضيف عمليات `LIST` في Azure blob storage زمن استجابة إضافيًا عند اكتشاف الملفات الجديدة، إلى جانب الفاصل الافتراضي للاستطلاع:
@@ -219,7 +213,7 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 بالنسبة إلى [الاستيعاب المستمر](#continuous-ingestion)، يجب على ClickPipes فحص الحاوية لتحديد الملفات الجديدة التي تأتي ترتيبًا معجميًا بعد آخر ملف تم استيعابه. نوصي بتنظيم الملفات ضمن حاويات أصغر، أو باستخدام بنى أدلة هرمية لتقليل عدد الملفات في كل عملية سرد.
 
 <div id="view-support">
-  ### دعم العروض
+  ### دعم العروض {#view-support}
 </div>
 
 العروض المادية على الجدول الهدف مدعومة أيضًا. ستُنشئ ClickPipes جداول مرحلية ليس فقط للجدول الهدف، بل أيضًا لأي عرض مادي تابع له.
@@ -227,7 +221,7 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 نحن لا ننشئ جداول مرحلية للعروض غير المادية. وهذا يعني أنه إذا كان لديك جدول هدف يتبعه عرض مادي واحد أو أكثر في المراحل اللاحقة، فينبغي أن تتجنب هذه العروض المادية تحديد البيانات عبر عرض من الجدول الهدف. وإلا، فقد تلاحظ فقدان بعض البيانات في العرض المادي.
 
 <div id="dependencies">
-  ### التبعيات
+  ### التبعيات {#dependencies}
 </div>
 
 أي تغييرات تُجرى على جدول الوجهة، أو على عروضه المادية (بما في ذلك العروض المادية المتسلسلة)، أو على الجداول الهدف للعروض المادية أثناء تشغيل ClickPipe ستؤدي إلى أخطاء قابلة لإعادة المحاولة. ولإجراء تغييرات على المخطط لهذه التبعيات، ينبغي إيقاف ClickPipe مؤقتًا، وتطبيق التغييرات، ثم استئنافه.

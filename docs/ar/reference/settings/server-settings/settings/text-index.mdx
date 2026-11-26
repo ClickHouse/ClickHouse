@@ -18,7 +18,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 ## text_index_header_cache_policy {#text_index_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء في ذاكرة التخزين المؤقت لترويسة الفهرس النصي. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />سياسة الإخلاء في ذاكرة التخزين المؤقت لترويسة الفهرس النصي. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`. راجع [`text_index_header_cache_size`](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_size) و[`text_index_header_cache_max_entries`](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) لمعرفة سعة ذاكرة التخزين المؤقت، و[`text_index_header_cache_size_ratio`](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio) لمعرفة حجم قائمة الانتظار المحمية في سياسة SLRU.
 
 ## text_index_header_cache_size {#text_index_header_cache_size}
 

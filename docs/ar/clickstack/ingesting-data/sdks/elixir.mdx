@@ -39,9 +39,9 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-### ضبط متغيرات البيئة {#configure-environment-variables}
+### تهيئة متغيرات البيئة {#configure-environment-variables}
 
-بعد ذلك، ستحتاج إلى ضبط متغيرات البيئة التالية في
+بعد ذلك، ستحتاج إلى تهيئة متغيرات البيئة التالية في
 الصدفة لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
 
 <Tabs>
@@ -60,4 +60,4 @@ config :logger,
 </Tabs>
 
 *يُستخدم متغير البيئة `OTEL_SERVICE_NAME` للتعرّف على خدمتك
-في تطبيق HyperDX، ويمكن أن يكون أي اسم تختاره.*
+في واجهة مستخدم ClickStack، ويمكن أن يكون أي اسم تختاره.*

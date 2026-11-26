@@ -3679,7 +3679,7 @@ static BlockIO executeQueryImpl(
                 }
 
                 if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
-                    context->enablePlanLogCapture();
+                    context->enablePlanLogCapture(QueryPlanLogCapture::collectedStatisticsFromSettings(settings));
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
