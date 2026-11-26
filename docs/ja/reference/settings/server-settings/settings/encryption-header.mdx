@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />暗号化ヘッダーキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ReaderExecutor の読み取りパスで使用される暗号化ヘッダーcacheのエビクションポリシー。設定可能な値: `LRU`、`SLRU`、`SIEVE`。cache容量については [`encryption_header_cache_size`](/ja/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size) を、SLRUポリシーにおける保護キューのサイズについては [`encryption_header_cache_size_ratio`](/ja/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio) を参照してください。
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 

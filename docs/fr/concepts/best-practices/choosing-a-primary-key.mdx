@@ -19,7 +19,7 @@ Choisir une clé primaire efficace dans ClickHouse est essentiel pour les perfor
 
 <br />
 
-Quelques règles simples peuvent aider à choisir une clé de tri. Les critères ci-dessous peuvent parfois entrer en conflit ; examinez-les donc dans cet ordre. **Ce processus peut vous amener à identifier plusieurs clés, mais 4 à 5 suffisent généralement** :
+Quelques règles simples peuvent aider à choisir une clé de tri. Les critères ci-dessous peuvent parfois entrer en conflit ; examinez-les donc dans cet ordre. **Ce processus peut vous amener à identifier plusieurs clés, mais 4 à 5 suffisent généralement** :
 
 <Info>
   **Important**
@@ -27,9 +27,7 @@ Quelques règles simples peuvent aider à choisir une clé de tri. Les critères
   Les clés de tri doivent être définies lors de la création de la table et ne peuvent pas être ajoutées par la suite. Il est toutefois possible d’ajouter un tri supplémentaire à une table, avant ou après l’insertion des données, à l’aide d’une fonctionnalité appelée projections. Gardez à l’esprit que cela duplique les données. Plus de détails [ici](/fr/reference/statements/alter/projection).
 </Info>
 
-<div id="example">
-  ## Exemple
-</div>
+## Exemple {#example}
 
 Considérez la table `posts_unordered` suivante. Elle contient une ligne par post Stack Overflow.
 
@@ -118,19 +116,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 `PostTypeId` a une cardinalité de 8 et constitue donc le choix logique pour la première entrée de notre clé de tri. Comme un filtrage à la granularité de la date sera probablement suffisant (tout en restant bénéfique pour les filtres DateTime), nous utilisons `toDate(CreationDate)` comme 2e composant de notre clé. Cela produira également un index plus petit, car une date peut être représentée sur 16 bits, ce qui accélère le filtrage.
 
-L’animation suivante montre comment un index primaire clairsemé optimisé est créé pour la table Posts de Stack Overflow. Au lieu d’indexer les lignes individuellement, l’index cible des blocs de lignes :
+L’animation suivante montre comment un index primaire clairsemé optimisé est créé pour la table Posts de Stack Overflow. Au lieu d’indexer les lignes individuellement, l’index cible des blocs de lignes :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Clé primaire](/images/bestpractices/create_primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![Clé primaire](/images/bestpractices/create_primary_key.webp)
+  </Frame>
 </div>
 
-Si la même requête est répétée sur une table avec cette clé de tri :
+Si la même requête est répétée sur une table avec cette clé de tri :
 
 ```sql highlight={8}
 SELECT count()
@@ -174,20 +168,16 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 13 rows in set. Elapsed: 0.004 sec.
 ```
 
-De plus, nous visualisons comment l’index clairsemé écarte tous les blocs de lignes qui ne peuvent en aucun cas contenir de correspondances pour notre requête d’exemple :
+De plus, nous visualisons comment l’index clairsemé écarte tous les blocs de lignes qui ne peuvent en aucun cas contenir de correspondances pour notre requête d’exemple :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Clé primaire](/images/bestpractices/primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![Clé primaire](/images/bestpractices/primary_key.webp)
+  </Frame>
 </div>
 
 <Note>
-  Toutes les colonnes d’une table sont triées selon la valeur de la clé de tri spécifiée, qu’elles soient ou non incluses dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : l’ordre suivra alors la même sémantique qu’une clause `ORDER BY` dans une requête `SELECT`.
+  Toutes les colonnes d’une table sont triées selon la valeur de la clé de tri spécifiée, qu’elles soient ou non incluses dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : l’ordre suivra alors la même sémantique qu’une clause `ORDER BY` dans une requête `SELECT`.
 </Note>
 
 Un guide avancé complet sur le choix des clés primaires est disponible [ici](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
