@@ -5,6 +5,8 @@ where uncached	1000	4499500
 virtual	5000	5000	12497500
 s3 warm	12497500	18890
 s3 hot	12497500	18890
+azure warm	12497500	18890
+azure hot	12497500	18890
 other column	24995000
 prewhere	1000	4499500
 row number	12497500
@@ -23,6 +25,7 @@ deletes	2500	6250000
 05857_virtual	0	0	0	5	5
 05857_top_k_off	0	0	0	5	5
 05857_s3_hot	0	0	0	10	5	0	0
+05857_azure_hot	1	0	0	10
 05857_warm	1
 05857_s3_warm	1
 05857_other_column	1

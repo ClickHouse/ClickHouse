@@ -2047,7 +2047,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && row_lineage_columns.empty() && !object_info->rows_to_read
             && !(format_filter_info
                  && (format_filter_info->prewhere_info || format_filter_info->row_level_filter || format_filter_info->top_k_filter
-                     || format_filter_info->need_row_numbers));
+                     || format_filter_info->need_row_numbers))
+            /// The caches do not know the credentials, so a read that `createReadBuffer` may authorize by a `HEAD` opens the object.
+            && getCredentialsIdentityForPageCache(*object_storage).has_value();
         if (!may_read_from_caches_only)
             open_object();
 

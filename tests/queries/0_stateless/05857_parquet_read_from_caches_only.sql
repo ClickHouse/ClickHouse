@@ -42,6 +42,13 @@ FROM s3(s3_conn, filename = concat(currentDatabase(), '_05857/data.parquet'), fo
 SETTINGS filesystem_cache_name = 'cache_for_readbigat', enable_filesystem_cache = 1, remote_filesystem_read_method = 'threadpool',
     remote_filesystem_read_prefetch = 1, max_read_buffer_size = 1048576, log_comment = '05857_s3_hot';
 
+-- The same file in Azure: the caches do not know its credentials, so it is opened.
+INSERT INTO FUNCTION azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;', 'cont05857', concat(currentDatabase(), '_05857/data.parquet'), 'Parquet', 'auto', 'id Int64, s String')
+SELECT number, toString(number) FROM numbers(5000)
+SETTINGS azure_truncate_on_insert = 1, output_format_parquet_row_group_size = 1000, output_format_parquet_row_group_size_bytes = 536870912;
+SELECT 'azure warm', sum(id), sum(length(s)) FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;', 'cont05857', concat(currentDatabase(), '_05857/data.parquet'), 'Parquet', 'auto', 'id Int64, s String');
+SELECT 'azure hot', sum(id), sum(length(s)) FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;', 'cont05857', concat(currentDatabase(), '_05857/data.parquet'), 'Parquet', 'auto', 'id Int64, s String') SETTINGS log_comment = '05857_azure_hot';
+
 -- Not every requested column is in the columns cache.
 SELECT 'other column', sum(n) FROM t SETTINGS log_comment = '05857_other_column';
 -- PREWHERE is applied by the reader.
@@ -82,6 +89,13 @@ SELECT log_comment,
     ProfileEvents['RemoteFSPrefetches'], ProfileEvents['CachedReadBufferReadFromCacheBytes']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05857_s3_hot';
+
+-- Every cache hit, but the object is opened.
+SELECT log_comment,
+    ProfileEvents['ObjectStorageReadObjects'], ProfileEvents['ColumnsCacheMisses'], ProfileEvents['ParquetMetadataCacheMisses'],
+    ProfileEvents['ColumnsCacheHits']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05857_azure_hot';
 
 SELECT log_comment, ProfileEvents['ObjectStorageReadObjects'] > 0
 FROM system.query_log
