@@ -1,0 +1,348 @@
+---
+slug: /clickstack/observability/integration-examples/mongodb-logs
+title: '使用 ClickHouse Observability 监控 MongoDB 日志'
+sidebarTitle: 'MongoDB 日志'
+description: '使用 OpenTelemetry 采集 MongoDB 的 JSON 格式服务器日志，并将其发送至 ClickHouse Observability。'
+doc_type: 'guide'
+keywords: ['MongoDB', '日志', 'OTEL', 'ClickHouse Observability', '数据库监控', '慢查询']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+使用 OpenTelemetry `filelog` 接收器收集 MongoDB 服务器日志，并将其发送至 ClickHouse Observability。即使尚未部署 MongoDB，也可以使用[演示数据集](#demo-dataset)试用此集成。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* Docker 和 `curl`
+* 如需使用自己的日志，需准备一个自管理的 MongoDB 4.4 或更高版本部署，并可访问其 JSON 日志文件
+
+### 连接详情 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    打开 ClickHouse Observability，进入 **团队设置 → Data → Managed Telemetry**。复制您的 OTLP HTTP 端点和 API key。您可以点击 **Copy connection details** 复制配置，或点击 **Reveal key** 查看被隐藏的密钥。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    为运行下文的 OTLP 导出器示例，请在将要运行采集器的终端中设置以下变量：
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    将占位符替换为您服务的准确端点 (包括端口) 和 API key。请使用不带 `/v1/logs` 后缀的基础 HTTP 端点，导出器会自动追加信号路径。
+  </Tab>
+
+  <Tab title="自管理">
+    请使用采集器可访问的 OTLP HTTP 端点 (例如 `http://YOUR_COLLECTOR_HOST:4318`) 及相应的身份验证设置。如果您的采集器无需身份验证，请在下文配置中省略导出器的 `headers` 块。有关设置说明，请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+采集器容器必须能够访问该端点。如果目标端采集器运行在本机上，请使用 `http://host.docker.internal:4318`。下文的 Docker 命令已包含主机映射。
+
+## 与现有 MongoDB 集成 {#existing-mongodb}
+
+<Steps>
+  <Step title="验证 MongoDB 日志配置" id="verify-mongodb">
+    MongoDB 4.4 及更高版本使用结构化 JSON 格式的服务器日志。请检查 MongoDB 配置文件中的 `systemLog` 部分。在 Linux 上，日志通常位于 `/var/log/mongodb/mongod.log`。
+
+    如果 MongoDB 仅将日志输出到 stdout，请在 `mongod.conf` 中配置将日志写入文件：
+
+    ```yaml
+    systemLog:
+      destination: file
+      path: /var/log/mongodb/mongod.log
+      logAppend: true
+    ```
+
+    创建该目录并设置权限，确保 MongoDB 可以写入、采集器可以读取。对于容器化部署，请将日志目录共享给采集器，并确保 MongoDB 加载了该配置文件。
+
+    按照您的部署流程重启 MongoDB，例如：
+
+    ```bash
+    sudo systemctl restart mongod
+    # 或者，对于 Docker：
+    docker restart <mongodb-container>
+    ```
+  </Step>
+
+  <Step title="配置采集器" id="configure-collector">
+    将以下内容保存为 `mongodb-monitoring.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: end
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000Z07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-service"
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mongodb:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors: [memory_limiter, transform/mongodb, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    该解析器会读取 MongoDB 的时间戳和严重级别字段，将 `msg` 移入日志正文，并将 `c`、`ctx`、`id`、`attr` 等字段保留为日志属性。请勿修改 `$$date`：采集器会将转义的美元符号解析为 MongoDB 的 `$date` 字段。由于设置了 `start_at: end`，实时接收器只读取新写入的条目。
+  </Step>
+
+  <Step title="运行采集器" id="run-collector">
+    设置好[连接变量](#connection-details)后，在配置文件所在目录中运行以下命令。如有需要，请调整主机上的日志路径。如果日志文件仅对所属组可读，请添加 `--group-add LOG_GROUP_ID`，其中组 ID 为 `ls -ln /var/log/mongodb` 输出中显示的数字。
+
+    ```bash
+    docker run --rm --name mongodb-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mongodb-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/mongodb:/var/log/mongodb:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    保持终端开启，并在服务器上执行一些操作以生成新的日志条目。测试完成后，按 **Ctrl+C** 停止。
+  </Step>
+
+  <Step title="验证日志" id="verify-logs">
+    打开 **搜索**，选择 **Logs**，按 `ServiceName:mongodb-service` 进行过滤，并选择 **Last 15 minutes**。此时应能看到已解析出时间戳和严重级别的服务器消息。
+  </Step>
+</Steps>
+
+## 演示数据集 {#demo-dataset}
+
+该样本包含 6,956 条 MongoDB 服务器日志，时间跨度约 24 小时。采集器会刷新这些日志的时间戳，同时保留原有消息和结构化属性。
+
+<Steps>
+  <Step title="下载样本" id="download-sample">
+    ```bash
+    curl -fL -o mongod.log \
+      https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mongodb/mongod.log
+    ```
+  </Step>
+
+  <Step title="配置演示采集器" id="configure-demo">
+    将以下内容保存为 `mongodb-demo.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000Z07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-demo"
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mongodb:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2026-03-09T23:59:52.193Z", "%Y-%m-%dT%H:%M:%S.%LZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors: [memory_limiter, transform/mongodb, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+  </Step>
+
+  <Step title="运行演示采集器" id="run-demo">
+    设置[连接变量](#connection-details)，然后在包含这两个文件的目录中运行：
+
+    ```bash
+    docker run --rm --name mongodb-logs-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mongodb-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/mongod.log:/var/log/mongodb/mongod.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    在验证摄取结果期间，请保持终端处于打开状态。完成后按 **Ctrl+C** 停止。再次运行演示时，会以刷新后的时间戳重新摄取样本。
+  </Step>
+
+  <Step title="验证演示日志" id="verify-demo">
+    打开 **搜索** 页面，选择 **Logs**，按 `ServiceName:mongodb-demo` 进行筛选，并选择 **最近 2 天**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 搜索页面中包含已解析消息和严重级别的 MongoDB 演示日志](/images/clickstack/observability-mongodb-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 仪表盘与可视化 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json" download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">下载仪表盘配置</TrackedLink>} id="download-dashboard" />
+
+  <Step title="导入仪表盘" id="import-dashboard">
+    1. 打开 **仪表盘**，点击右上角的 **Import**。
+    2. 上传 `mongodb-logs-dashboard.json`。
+    3. 将图表映射到您的 **Logs** source，然后点击 **完成导入**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘按钮](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="查看仪表盘" id="view-dashboard">
+    如果使用样本数据，可按 `ServiceName:mongodb-demo` 进行过滤 (可选) ，并选择 **最近 2 天**。如果使用您自己的日志，请使用 `ServiceName:mongodb-service`，并选择能覆盖您日志记录的时间范围。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中的 MongoDB 日志仪表盘，展示日志量、严重级别、组件、慢查询和连接事件](/images/clickstack/observability-mongodb-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 故障排查 {#troubleshooting}
+
+### 未显示日志 {#no-logs}
+
+检查采集器输出中是否有文件权限、解析、身份验证或导出错误。确认您的服务器将日志写入已挂载的目录，且文件名与接收器 `include` 列表中的条目匹配。当前生效的配置只会读取新写入的条目。
+
+### 日志无法正确解析 {#parsing-errors}
+
+请确认文件中每行仅包含一个 JSON 对象：
+
+```bash
+tail -n 1 /var/log/mongodb/mongod.log | python3 -m json.tool
+```
+
+该解析器适用于 MongoDB 4.4+ 的 JSON 格式日志。旧版文本日志需要使用其他解析器。请在采集器配置中保留 `$$date` 转义。
+
+## 后续步骤 {#next-steps}
+
+* 为错误或慢查询设置[告警](/zh/clickstack/observability/features/alerts)。
+* 创建更多[仪表盘](/zh/clickstack/observability/features/dashboards/overview)，用于监控副本集或跟踪连接。
+* 有关部署指南，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/observability/ingesting-data/opentelemetry)。

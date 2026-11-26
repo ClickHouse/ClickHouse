@@ -1,0 +1,202 @@
+---
+slug: /clickstack/observability/integration-partners/bindplane
+title: '使用 Bindplane 将 OpenTelemetry 数据发送到 ClickHouse Observability'
+sidebarTitle: 'Bindplane'
+description: '借助 Bindplane 集中管理采集器，将遥测数据路由到 ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', '采集器管理']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **TL;DR**
+
+  本指南介绍如何通过 Bindplane 原生的 **ClickStack** 目标端，将遥测数据路由到 ClickHouse Observability。您将了解如何：
+
+  * 在 Bindplane 中将 ClickHouse Observability 配置为目标端
+  * 创建配置，用于处理和路由遥测数据
+  * 将配置远程部署到 OTel collector 并开始采集数据
+  * 在 ClickHouse Observability 中查看遥测数据
+
+  Bindplane 负责管理您环境中的采集器，并将其采集的遥测数据转发到 ClickHouse Observability。
+
+  所需时间：10-15 分钟
+</Info>
+
+## 什么是 Bindplane？ {#what-is-bindplane}
+
+Bindplane 是一款 OpenTelemetry 原生的遥测数据管道，可对 OpenTelemetry 收集器进行集中化管理。它提供可视化配置编辑、安全的滚动发布以及管道智能分析等功能，可简化大规模采集器集群的运维工作。
+
+## 为什么选择 Bindplane + ClickHouse Observability？ {#why-bindplane-clickstack}
+
+ClickHouse Observability 提供遥测数据的存储、搜索和调查工具。Bindplane 负责管理 OpenTelemetry 收集器，由这些收集器从您的环境中采集并转发数据。
+
+Bindplane 通过以下能力解决这一问题：
+
+* 集中管理数千乃至一百万以上的 OpenTelemetry 收集器
+* 可视化编辑配置，支持安全的一键滚动发布
+* 在数据到达 ClickHouse Observability 之前，统一执行自动资源检测和富集
+* 扇出路由，可将同一遥测数据流同时发送到 ClickHouse Observability 及其他目标端
+* 全面的管道可见性，涵盖采集器健康状况、吞吐量以及端到端性能
+
+<Tip>
+  **关键要点**
+
+  * **ClickHouse Observability 负责存储遥测数据并支持调查**
+  * **Bindplane 负责管理摄取管道，并化解运行采集器集群带来的运维复杂性**
+</Tip>
+
+## 前置条件 {#prerequisites}
+
+* 一个[全托管 ClickHouse Observability 服务](/zh/clickstack/observability/getting-started)或一个[自管理部署](/zh/clickstack/self-configured/getting-started/managed)
+* 一个 Bindplane 账户 ([创建账户](https://app.bindplane.com))
+* 已安装的 Bindplane OTel Collector (参见 [Install your first collector](https://docs.bindplane.com/readme/install-your-first-collector))
+* **全托管**：在 **团队设置 → 数据 → Managed Telemetry** 中获取 OTLP HTTP 端点和摄取 API key
+* **自管理**：一个正在运行的[独立采集器](/zh/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)及其 OTLP 端点，并已在该采集器上配置 [`OTLP_AUTH_TOKEN`](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)
+* Bindplane 采集器能够通过网络访问您的 OTLP 端点
+
+## 将 ClickHouse Observability 与 Bindplane 集成 {#integrate-bindplane-clickstack}
+
+<Steps>
+  <Step title="将 ClickHouse Observability 配置为目标端" id="configure-destination">
+    在 Bindplane 中，打开 **Library → Add Destination**，然后选择 **ClickStack**。这是 Bindplane 中用于通过 OTLP 将遥测数据发送到 ClickHouse Observability 的目标端名称。
+
+    <Tabs>
+      <Tab title="全托管">
+        <BetaBadge label="Beta 版服务" />
+
+        将遥测数据发送到您的托管 OTLP 端点。摄取、schema、存储和扩缩容均由 ClickHouse 负责。
+
+        1. 将 **Protocol** 设置为 **HTTP**。
+        2. 将 **Hostname** 设置为托管 OTLP 端点中的主机名，不含 `https://` 和端口。例如，对于 `https://<service-id>.otel.<region>.aws.clickhouse.com:4318` 这样的端点，请输入 `<service-id>.otel.<region>.aws.clickhouse.com`。
+        3. 将 **Port** 设置为 `4318`。
+        4. 将 **API Ingestion Key** 设置为 `Bearer <YOUR_INGESTION_API_KEY>`，需包含 `Bearer` 前缀。该字段用于提供 `authorization` 请求头。
+        5. 开启 **Enable TLS**，并保持 **Skip TLS Certificate Verification** 为关闭状态。
+
+        请使用托管 OTLP 端点，而非端口为 `8443` 的 ClickHouse 数据库端点。
+      </Tab>
+
+      <Tab title="自管理">
+        将遥测数据发送到与您的 ClickHouse Cloud 服务相连的独立采集器。该采集器必须已在运行，并已[配置请求身份验证](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)。
+
+        1. 将 **Protocol** 设置为 **HTTP** 或 **gRPC**。
+        2. 将 **Hostname** 设置为独立采集器的主机名或 IP 地址，不含 URL 协议和端口。
+        3. 将 **Port** 设置为 `4318` (HTTP) 或 `4317` (gRPC) ，除非您配置了其他端口。
+        4. 将 **API Ingestion Key** 设置为采集器的 `OTLP_AUTH_TOKEN` 值，不带 `Bearer` 前缀。
+        5. 根据采集器端点的实际情况设置 **Enable TLS**。对于启用 TLS 的端点，请保持证书验证为启用状态。
+      </Tab>
+    </Tabs>
+
+    为目标端命名，例如 **Observability production**，然后点击 **Save**。除非已确认端点支持其他压缩算法，否则请保留默认的 gzip 压缩。
+  </Step>
+
+  <Step title="创建配置" id="create-configuration">
+    配置好目标端后，创建一个配置来处理并路由遥测数据：
+
+    1. 前往 **Configurations** → **Create Configuration**
+    2. 为该配置命名 (例如“Observability pipeline”)
+    3. 根据您的部署选择 **Collector Type** 和 **Platform**
+    4. 添加数据源：
+       * 点击 **Add Source**，从 80 多个可用数据源中进行选择
+       * 如用于测试，可以添加一个遥测数据生成器数据源来模拟流量
+       * 如用于生产环境，请为实际的遥测数据 (日志、指标、链路追踪) 添加数据源
+    5. 添加目标端：
+       * 点击 **Add Destination**
+       * 选择您在上一步中创建的目标端
+       * 选择要发送的遥测数据类型 (Logs、Metrics、Traces 或全部)
+
+    <Tip>
+      **要点**
+
+      您可以添加处理器来实现过滤、采样、脱敏、富集、批处理等功能，在遥测数据到达 ClickHouse Observability 之前对其进行整形。这样可以确保写入 ClickHouse 的数据保持一致且结构化。
+    </Tip>
+  </Step>
+
+  <Step title="添加处理器（可选）" id="add-processors">
+    Bindplane 提供管道智能分析和处理器推荐。您可以添加处理器来实现以下功能：
+
+    * **过滤**：排除不必要的遥测数据，从而降低数据量
+    * **采样**：对高流量的链路追踪应用采样策略
+    * **补充信息**：添加资源属性、标记或元数据
+    * **变换**：修改遥测数据的结构或内容
+    * **批处理**：优化批次大小，提升传输效率
+
+    这些处理器会在数据到达 ClickHouse Observability 之前，统一应用于整个采集器集群。
+  </Step>
+
+  <Step title="部署采集器并启动滚动发布" id="deploy-collectors">
+    1. 将采集器 (BDOT Collector) 添加到您的配置中：
+       * 在 Bindplane 中进入 **Collectors** 页面
+       * [按照 Bindplane 的安装说明](https://docs.bindplane.com/readme/install-your-first-collector)在目标系统上安装 Bindplane 采集器
+       * 连接成功后，该采集器会出现在您的采集器列表中
+
+    2. 将配置分配给采集器：
+       * 选择要使用的采集器
+       * 将配置分配给这些采集器
+
+    3. 启动滚动发布：
+       * 点击 **Start Rollout** 部署该配置
+       * Bindplane 会在滚动发布前校验该配置
+       * 在 Bindplane UI 中监控滚动发布状态
+
+    <Tip>
+      **要点总结**
+
+      Bindplane 提供带校验的安全一键式滚动发布。您可以在 Bindplane 界面中实时监控采集器健康状况、吞吐量以及各类错误。
+    </Tip>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![通过 Bindplane 在 ClickHouse Observability 中查看遥测数据](/images/clickstack/bindplane/bindplane-configuration.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="在 ClickHouse Observability 中验证遥测数据" id="verify-telemetry">
+    配置发布后，遥测数据便会从您的托管采集器集群流入 ClickHouse Observability：
+
+    1. 在 ClickHouse Cloud 控制台中打开对应服务的 ClickHouse Observability
+    2. 在 **搜索** 视图中搜索您的服务，并使用 **Chart Explorer** 查看指标
+    3. 确认已收到来自 Bindplane 托管采集器的预期遥测数据
+    4. 如果数据缺失，请检查 Bindplane 采集器日志中是否存在连接或身份验证错误
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![通过 Bindplane 流入 ClickHouse Observability 的遥测数据](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 高级配置 {#advanced-configuration}
+
+### 扇出路由 {#fan-out-routing}
+
+Bindplane 支持扇出路由，可将相同的遥测数据流同时发送到多个目标端。例如，您可以：
+
+* 将日志、指标和链路追踪发送到 ClickHouse Observability，用于长期存储和分析
+* 将相同的数据路由到其他可观测性平台，实现实时告警
+* 将特定的遥测数据转发到 SIEM 平台，用于安全分析
+
+只需在 Bindplane 配置中添加多个目标端即可实现。
+
+### 压缩与性能 {#compression}
+
+请保持启用 gzip 压缩，以降低带宽占用。能否使用其他压缩算法取决于所用协议，且接收端点必须支持该算法。对于全托管部署，请使用 gzip。
+
+## 后续步骤 {#next-steps}
+
+现在遥测数据已从 Bindplane 流入 ClickHouse Observability，接下来您可以：
+
+* **构建仪表盘**：在 ClickHouse Observability 中为日志、指标和链路追踪创建可视化图表
+* **设置告警**：在 ClickHouse Observability 中针对关键状况配置告警
+* **扩展部署规模**：随着可观测性需求的增长，添加更多采集器和数据源
+* **优化管道**：借助 Bindplane 的管道智能分析功能发现可优化之处
+
+## 延伸阅读 {#read-more}
+
+* [Bindplane 文档中的 ClickStack 目标端](https://docs.bindplane.com/integrations/destinations/clickstack)

@@ -1,0 +1,106 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-04-03
+title: 'Demo days - 2026-04-03'
+sidebarTitle: '2026-04-03'
+description: 'ClickStack dias de demonstração de 2026-04-03'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Novas páginas de listagem de dashboards e pesquisas salvas {#new-dashboard-and-saved-search-listing-pages}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dQCkNZElwcg" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Os dashboards e as pesquisas salvas saíram da barra lateral e ganharam páginas de listagem próprias. Para equipes que acumularam um número considerável de dashboards, a antiga barra lateral rapidamente se tornava difícil de gerenciar. As novas páginas exibem tudo em uma visualização em cartões organizada por rótulo, com busca por nome e filtragem por rótulo integradas. Também há uma visualização em lista mais compacta, caso prefira.
+
+Agora também é possível marcar favoritos. Marque um dashboard ou uma pesquisa salva com uma estrela e ele ficará fixado no topo da página de listagem e voltará a aparecer na barra lateral para acesso rápido, de forma semelhante ao funcionamento anterior, mas sem sobrecarregar a navegação dos demais usuários. A página de listagem também exibe, em cada cartão, ícones de status de alertas e metadados de &quot;criado por / atualizado por&quot;, para que você veja rapidamente quem é o responsável por cada item e se há algum alerta disparado.
+
+Para completar, há uma nova galeria de templates. Quatro dashboards pré-configurados com métricas de tempo de execução do OTel para Node.js, Python, Go e Java podem ser importados em poucos cliques. Os rótulos e a fonte de dados de métricas de destino podem ser editados durante a importação, para que você os encaixe diretamente na sua estrutura de rótulos atual.
+
+**PRs relacionados:** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) Adiciona página de listagem de dashboards, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) Adiciona página de listagem de pesquisas salvas, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) Adiciona favoritos para dashboards e pesquisas salvas, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) Agrupa dashboards e pesquisas por rótulo, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) Exibe metadados de criação/atualização, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) Adiciona ícones de alerta à página de listagem de dashboards, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) Adiciona galeria de templates de dashboard
+
+## Filtros para filtros {#filters-for-filters}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Tfe9kJygoEg" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Os filtros de variáveis de dashboard agora aceitam suas próprias condições de filtragem. A motivação é simples: se você tem uma lista suspensa de &quot;nome do serviço&quot; em um dashboard de Node.js, provavelmente quer que essa lista mostre apenas serviços Node.js, e não todos os serviços do seu ambiente. Agora é possível configurar uma condição de filtragem diretamente na variável do dashboard para restringir o que é exibido.
+
+O seletor de filtros também foi atualizado e passou a oferecer seleção múltipla. Em dashboards agrupados por serviço, poder escolher vários valores de uma só vez em uma lista suspensa torna as comparações muito mais práticas.
+
+**PRs relacionados:** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Adiciona condições aos filtros de dashboard; suporte à seleção múltipla de filtros
+
+## RBAC para dashboards predefinidos {#rbac-for-predefined-dashboards}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+O controle de acesso baseado em funções agora também se aplica aos dashboards predefinidos do ClickStack. Antes, esses dashboards nativos ignoravam completamente o RBAC, de modo que qualquer usuário podia acessá-los, independentemente da função atribuída. Essa lacuna foi corrigida.
+
+As permissões granulares de leitura funcionam como esperado. Uma função configurada com acesso read-only a serviços específicos permite que os usuários vejam apenas os dashboards predefinidos relevantes para esses serviços. Os usuários com essa função podem visualizar os dashboards e seus filtros, mas os controles de filtro ficam bloqueados para impedir a edição. A demonstração mostra um papel personalizado com uma permissão de leitura &quot;services&quot; restrita a um serviço específico, e um usuário conectado com essa função que vê exatamente os dashboards e o estado dos filtros aos quais deve ter acesso.
+
+## Otimizações para buscas {#optimizations-for-searching}
+
+*Demonstração por [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/uVD2FKzoHjM" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+A otimização de &quot;leitura em ordem&quot; do ClickHouse torna as consultas de busca rápidas ao ler os dados sequencialmente quando o ORDER BY corresponde à chave primária da tabela, interrompendo a leitura assim que o LIMIT é atingido. Ainda assim, testes de benchmarking revelaram que as buscas continuavam obtendo dados em excesso em conjuntos de dados maiores. O problema está no número de partes percorridas: mesmo com a otimização ativa, uma tabela suficientemente grande tem tantas partes que o ClickHouse acaba lendo mais dados do que o necessário.
+
+A correção consiste em adicionar uma janela de tempo de um minuto ao início do array de consultas em janelas usado nas buscas. A maioria das buscas encontra os dados de que precisa no último minuto, portanto consultar essa janela primeiro retorna resultados quase instantaneamente. Se nada for encontrado ali, a consulta recorre, como de costume, a janelas progressivamente mais amplas. Além disso, a otimização de ORDER BY não estava sendo aplicada corretamente ao schema `otel_traces`, pois a coluna de timestamp usava uma expressão `toDateTime(Timestamp)` que não era reconhecida. Isso também foi corrigido.
+
+**PRs relacionados:** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) Usar janela de 1 minuto para buscas, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) Corrigir limitações da otimização de order by para otel&#95;traces
+
+## Copiar linha e tamanhos de filtro configuráveis {#copy-row-and-configurable-filter-sizes}
+
+*Demonstração por [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e_IIKG3f6SE" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+O visualizador de linhas agora conta com um botão para copiar como JSON, que permite copiar a linha de log inteira com um clique. O botão também aparece na visualização completa da barra lateral. Ele é útil para colar uma linha em um prompt de LLM e perguntar em que ponto do código esse log seria gerado, ou simplesmente para registrar um evento completo em um relatório de incidente sem precisar selecionar todo o texto manualmente.
+
+O número de chaves de filtro obtidas na barra lateral agora é uma configuração de equipe ajustável em Configurações de consulta. Com o limite fixo anterior, em conjuntos de dados maiores apenas uma fração dos atributos de filtro disponíveis ficava visível. Agora as equipes podem aumentar esse limite para exibir mais atributos de recurso e de log. A mudança também traz melhorias de virtualização que mantêm a renderização do painel de filtros rápida, mesmo quando um grande número de grupos de filtros é exibido.
+
+**PRs relacionados:** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) Adiciona botão para copiar linha como JSON, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) Nova configuração de equipe para o número de filtros a obter, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) Virtualiza grupos de filtros aninhados
+
+## Abas e grupos em dashboards {#tabs-and-groups-in-dashboards}
+
+*Demonstração por [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/tyumDlJuDTg" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Os painéis do dashboard agora podem ser organizados em Grupos. Isso substitui o modelo anterior, que tinha dois tipos distintos de contêiner (&quot;sections&quot; e &quot;groups&quot;) e exigia que os usuários decidissem de antemão qual tipo de contêiner queriam usar. O novo conceito único de Grupo simplifica as coisas: um Grupo é recolhível por padrão, pode ter opcionalmente uma borda visível e pode receber abas. Cada aba contém seu próprio conjunto de blocos, e os blocos podem ser movidos entre grupos usando as alças de arrastar.
+
+A demonstração mostra um grupo com algumas opções de personalização sendo alternadas: recolhível ativado ou desativado, borda visível ou oculta, abas habilitadas ou não. Na época da demonstração, o PR ainda estava em revisão e o feedback de design ainda estava sendo coletado. Depois de mesclado, ele deve oferecer aos autores de dashboards um conjunto de componentes mais flexível e menos confuso do que o antigo modelo com dois tipos de contêiner.
+
+**PRs relacionados:** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) Grupos de dashboard com abas e opções de recolhimento/borda, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) Unificação de section/group em um único Grupo
+
+## CLI do ClickStack {#clickstack-cli}
+
+*Demonstração por [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+A CLI do ClickStack (`hdx`) é uma nova TUI de terminal para buscar, acompanhar em tempo real (tail) e inspecionar logs e rastros sem sair do terminal. Ela se conecta à sua instância do HyperDX usando o mesmo mecanismo de sessão web do navegador, então não há uma chave de API separada para gerenciar. Depois de executar `hdx auth login` uma única vez com a URL da sua instância e seu e-mail, ela permanece autenticada.
+
+A TUI oferece a mesma interface de busca do aplicativo web: a mesma sintaxe de consulta, a mesma seleção de fonte de dados e a mesma possibilidade de detalhar entradas de log individuais. Um dos destaques é a visualização de trace em cascata: ao clicar em uma entrada de log, o trace distribuído completo é renderizado diretamente no terminal. A demonstração também mostra uma prévia de um experimento inicial de uso agêntico: ao dar a um agente de IA acesso à saída de introspecção de schema da CLI, junto com a capacidade de executar consultas por meio do proxy do ClickHouse, o agente consegue investigar problemas de forma autônoma. A demonstração vai além e mostra o agente usando sessões web para navegar pela interface do HyperDX via Playwright, extraindo métricas de gráficos renderizados para cruzá-las com o que encontrou nos logs.
+
+**PRs relacionados:** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) Adiciona o pacote @hyperdx/cli — TUI de terminal para buscar e acompanhar eventos em tempo real

@@ -1,0 +1,75 @@
+---
+slug: /clickstack/self-configured/overview
+title: 'Self-managed ClickHouse Observability'
+sidebarTitle: 'Descripción general'
+description: 'Funcionalidades, flujos de trabajo de investigación y responsabilidades operativas de Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
+---
+
+<Note>
+  Esta página trata sobre **Self-managed ClickHouse Observability**. Para la mayoría de los equipos se recomienda la opción totalmente gestionada. [Compare las ofertas](/es/clickstack/observability/overview#compare-the-offerings) para elegir la opción más adecuada para su equipo.
+</Note>
+
+**Self-managed ClickHouse Observability** es una plataforma de observabilidad para SRE, desarrolladores y sus agentes de IA, construida sobre ClickStack de código abierto. Busque, consulte y correlacione logs, trazas y métricas de OpenTelemetry junto con reproducciones de sesiones, con control sobre la ingestión y la configuración de la base de datos. Es adecuada para equipos que necesitan personalizar esquemas, ajustar el rendimiento de las consultas o decidir cómo dimensionar y escalar su servicio.
+
+Investigue desde la UI de ClickStack o conecte sus propios agentes mediante el [servidor MCP](/es/clickstack/observability/mcp). Utilice la búsqueda y la exploración de trazas para las investigaciones del día a día, y SQL para analizar los detalles de las solicitudes, los atributos personalizados y el contexto de negocio de su telemetría.
+
+ClickHouse Cloud aloja y opera ClickHouse y la UI de ClickStack. Con la opción autogestionada, no es necesario que usted aloje la base de datos ni la UI: usted ejecuta el recolector de ingestión y gestiona la configuración de la base de datos según su workload.
+
+Para la mayoría de los equipos, el punto de partida recomendado es [ClickHouse Observability totalmente gestionado](/es/clickstack/observability/overview): envíe la telemetría a un endpoint de OpenTelemetry gestionado y ClickHouse se encargará de la ingestión, los esquemas, la infraestructura y el escalado. La opción autogestionada ofrece la misma experiencia de investigación de ClickStack, pero usted asume el ajuste de la base de datos y la planificación de la capacidad. Elíjala si necesita ese control y cuenta con la experiencia necesaria para operarla.
+
+## Cómo fluyen los datos {#architectural-overview}
+
+Las aplicaciones y la infraestructura envían telemetría a su recolector. El recolector la procesa y la escribe en su servicio de ClickHouse Cloud. La UI de ClickStack alojada consulta esos datos para la búsqueda, la visualización y la investigación.
+
+Explore los datos en la UI o conecte un agente compatible con MCP. Ambos flujos de trabajo utilizan la misma telemetría. SQL le permite correlacionar señales, comparar el comportamiento histórico e investigar cuestiones que van más allá de las vistas predefinidas. La instrumentación de sus aplicaciones y la recopilación de telemetría de su entorno siguen siendo responsabilidad suya.
+
+Consulte la [arquitectura autogestionada](/es/clickstack/self-configured/architecture) para ver el diagrama de componentes y más detalles.
+
+## Qué gestiona usted {#what-you-manage}
+
+* **Ingestión:** despliegue y opere su [recolector de OpenTelemetry](/es/clickstack/self-configured/ingesting-data/collector), incluidos sus receptores, el procesamiento, la autenticación y la conexión con ClickHouse Cloud.
+* **Esquemas y fuentes de datos:** elija sus [tablas y esquemas](/es/clickstack/self-configured/ingesting-data/schemas) y configure las [fuentes de datos](/es/clickstack/self-configured/managing/config) de la interfaz de usuario para consultarlos.
+* **Capacidad y rendimiento:** [estime los recursos](/es/clickstack/self-configured/managing/estimating-resources), configure el dimensionamiento y el escalado, y [optimice el rendimiento](/es/clickstack/self-configured/managing/performance-tuning) a medida que evolucione su workload.
+* **Retención:** defina [políticas de retención de datos](/es/clickstack/self-configured/managing/ttl) para equilibrar las necesidades de investigación y los costes de almacenamiento.
+
+ClickHouse Cloud gestiona la infraestructura subyacente, las actualizaciones de la base de datos y las copias de seguridad. Aun así, la optimización de la base de datos y la planificación de la capacidad siguen siendo responsabilidad suya.
+
+## Funcionalidades {#features}
+
+* Conecte sus propios agentes mediante [MCP](/es/clickstack/observability/mcp) para buscar en la telemetría, seguir trazas, analizar patrones y cambios, y ejecutar SQL.
+* Busque y correlacione logs, trazas, métricas y reproducciones de sesiones. Siga las solicitudes desde las interacciones en el navegador hasta los servicios de backend y las consultas a la base de datos.
+* Ejecute búsquedas y agregaciones sobre telemetría de alta cardinalidad mediante [búsqueda de texto completo y filtros de estilo Lucene](/es/clickstack/observability/features/search), como `level:err`, o mediante SQL. Consulte campos JSON y atributos personalizados en logs y spans de traza.
+* Explore la telemetría con [Cuadernos con IA](/es/clickstack/observability/notebooks) y cree [gráficos a partir de preguntas en lenguaje natural](/es/clickstack/observability/text-to-chart).
+* Cree [dashboards](/es/clickstack/observability/features/dashboards/overview), configure [alertas](/es/clickstack/observability/features/alerts) y comparta vistas de investigación mediante [enlaces profundos](/es/clickstack/observability/url-parameters).
+* Identifique fallos recurrentes con [Patrones de eventos](/es/clickstack/observability/features/event-patterns), investigue cambios con [Deltas de eventos](/es/clickstack/observability/features/event-deltas) y siga en tiempo real logs y trazas a medida que llegan nuevos eventos.
+* Ingeste datos de OpenTelemetry mediante un recolector gestionado por usted, con control sobre el procesamiento, las tablas, los esquemas y la retención.
+
+## Principios {#principles}
+
+### Usa tus propios agentes {#bring-your-own-agents}
+
+Conecta mediante MCP los agentes y las herramientas de desarrollo que tu equipo ya utiliza. Los agentes pueden buscar en los log, seguir trazas e identificar patrones y cambios a partir de los mismos datos disponibles en la interfaz de usuario. También pueden ejecutar SQL para correlacionar evidencias y explorar cuestiones que las herramientas de investigación no abordan directamente.
+
+### Fácil de usar y purpose-built {#user-friendly-purpose-built}
+
+La UI de ClickStack reúne búsqueda, exploración de trazas, gráficos, dashboards y alertas. Utilice filtros de estilo Lucene y generadores de consultas visuales para las preguntas cotidianas y recurra a SQL cuando necesite un mayor control sobre el análisis.
+
+### Observabilidad de extremo a extremo {#end-to-end-observability}
+
+Conecte las reproducciones de sesiones del frontend con los registros de aplicaciones, las trazas distribuidas y las métricas para rastrear los fallos en todo su sistema. Los eventos amplios reúnen en los logs y en los spans de traza los detalles de las solicitudes, los atributos personalizados y el contexto de negocio, lo que ayuda a ingenieros y agentes a identificar qué solicitudes, servicios y clientes se ven afectados.
+
+### Diseñado para ClickHouse {#built-for-clickhouse}
+
+El almacenamiento columnar, la compresión y la ejecución de consultas en paralelo de ClickHouse permiten realizar búsquedas y agregaciones rápidas sobre grandes volúmenes de telemetría high-cardinality. Gracias a las consultas concurrentes, ingenieros y agentes pueden investigar los mismos datos en paralelo. En las implementaciones autogestionadas, puede ajustar los esquemas, las claves de ordenación y los recursos en función de su workload.
+
+### Nativo de OpenTelemetry {#open-telemetry-native}
+
+Envíe logs, trazas y métricas mediante instrumentación, SDK y recolectores estándar de OpenTelemetry. Usted gestiona el recolector de ingestión y configura cómo procesa la telemetría antes de escribirla en ClickHouse. Así puede aprovechar la instrumentación existente sin perder el control de su canalización de ingestión.
+
+## Primeros pasos {#get-started}
+
+Siga la [guía de primeros pasos](/es/clickstack/self-configured/getting-started/managed) para configurar su servicio y conectar un recolector. Después, utilice un [conjunto de datos de ejemplo](/es/clickstack/observability/example-datasets) para explorar la interfaz de usuario; cuando estén disponibles, elija las instrucciones para **Autogestionado**.
+
+Antes de usar el servicio en producción, consulte las [recomendaciones para producción](/es/clickstack/self-configured/managing/production) y la [descripción general de la administración](/es/clickstack/self-configured/managing/overview).

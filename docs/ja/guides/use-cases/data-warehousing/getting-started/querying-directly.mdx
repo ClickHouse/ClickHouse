@@ -67,7 +67,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     Peak memory usage: 10.48 GiB.
     ```
 
-    ### クラスターバリアント
+### クラスターバリアント {#iceberg-cluster-variant}
 
     [`icebergS3Cluster`](/ja/reference/functions/table-functions/icebergCluster) 関数は、ClickHouse クラスター内の複数のノードに読み取りを分散します。イニシエーターノードはすべてのノードへの接続を確立し、データファイルを動的にディスパッチします。各ワーカーノードは、すべてのファイルが読み取られるまでタスクを要求して処理します。`icebergCluster` は `icebergS3Cluster` のエイリアスです。Azure ([`icebergAzureCluster`](/ja/reference/functions/table-functions/icebergCluster)) および HDFS ([`icebergHDFSCluster`](/ja/reference/functions/table-functions/icebergCluster)) 向けのバリアントも用意されています。
 
@@ -95,7 +95,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     LIMIT 5
     ```
 
-    ### テーブルエンジン
+### テーブルエンジン {#iceberg-table-engine}
 
     クエリのたびにテーブル関数を使用する代わりに、[`Iceberg` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)を使用して永続テーブルを作成することもできます。データは引き続きオブジェクトストレージに保存され、必要に応じて読み込まれます。ClickHouse にデータがコピーされることはありません。この方法の利点は、テーブル定義が ClickHouse に保存されるため、各ユーザーがストレージのパスや認証情報を個別に指定しなくても、ユーザーやセッションをまたいで共有できる点です。ストレージバックエンドごとにエンジンのバリアントが用意されており、`IcebergS3` (または `Iceberg` エイリアス)、`IcebergAzure`、`IcebergHDFS`、`IcebergLocal` があります。
 
@@ -197,7 +197,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     Peak memory usage: 9.16 GiB.
     ```
 
-    ### クラスターバリアント
+### クラスターバリアント {#delta-cluster-variant}
 
     [`deltaLakeCluster`](/ja/reference/functions/table-functions/deltalakeCluster) 関数は、ClickHouse クラスター内の複数のノードに読み取りを分散します。イニシエーターノードは、並列処理のためにデータファイルをワーカーノードへ動的にディスパッチします。`deltaLakeS3Cluster` は `deltaLakeCluster` のエイリアスです。Azure バリアント ([`deltaLakeAzureCluster`](/ja/reference/functions/table-functions/deltalakeCluster)) も利用可能です。
 
@@ -231,7 +231,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     LIMIT 5
     ```
 
-    ### テーブルエンジン
+### テーブルエンジン {#delta-table-engine}
 
     クエリごとにテーブル関数を使用する代わりに、S3互換ストレージを使用している場合は、[`DeltaLake` テーブルエンジン](/ja/reference/engines/table-engines/integrations/deltalake)を使用して永続テーブルを作成できます。データは引き続きオブジェクトストレージに保存され、必要に応じて読み込まれます。ClickHouseにデータがコピーされることはありません。テーブル定義がClickHouseに保存されるため、各ユーザーがストレージのパスや認証情報を個別に指定しなくても、ユーザーやセッション間で共有できるという利点があります。
 
@@ -290,7 +290,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### クラスター版
+### クラスター版 {#hudi-cluster-variant}
 
     [`hudiCluster`](/ja/reference/functions/table-functions/hudiCluster) 関数は、ClickHouseクラスター内の複数のノードに読み取りを分散します。イニシエーター ノードは、並列処理のためにデータファイルをワーカー ノードへ動的に割り当てます。
 
@@ -298,7 +298,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### テーブルエンジン
+### テーブルエンジン {#hudi-table-engine}
 
     すべてのクエリで table function を使用する代わりに、[`Hudi` table engine](/ja/reference/engines/table-engines/integrations/hudi) を使って永続的なテーブルを作成できます。データは引き続きオブジェクトストレージに格納され、必要に応じて読み取られるため、ClickHouse にデータがコピーされることはありません。利点は、テーブル定義が ClickHouse に保存されるため、各ユーザーがストレージパスや認証情報を指定しなくても、ユーザー間やセッション間で共有できることです。
 
@@ -330,7 +330,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     paimonLocal(path_to_table, [,format] [,compression_method])
     ```
 
-    ### クラスター版
+### クラスター版 {#paimon-cluster-variant}
 
     [`paimonS3Cluster`](/ja/reference/functions/table-functions/paimonCluster) 関数は、ClickHouseクラスター内の複数のノードに読み取りを分散します。イニシエーターノードは、並列処理のためにデータファイルをワーカーノードへ動的に振り分けます。`paimonCluster` は `paimonS3Cluster` の別名です。Azure 向け ([`paimonAzureCluster`](/ja/reference/functions/table-functions/paimonCluster)) および HDFS 向け ([`paimonHDFSCluster`](/ja/reference/functions/table-functions/paimonCluster)) のバリアントもあります。
 
@@ -343,9 +343,9 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
     ```
 
-    ### テーブルエンジン
+### テーブルエンジン {#paimon-table-engine}
 
-    ClickHouse では、実験的な [`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal` テーブルエンジン](/ja/reference/engines/table-engines/integrations/paimon)を提供しています。`allow_experimental_paimon_storage_engine = 1` で有効化します。
+    ClickHouse では、実験的な [`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal` テーブルエンジン](/ja/reference/engines/table-engines/integrations/paimon)を提供しています。`enable_paimon_storage_engine = 1` で有効化します。
 
     ストレージバックエンドなどのサポート状況を含む対応機能については、[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix#format-support)を参照してください。詳細なリファレンスについては、[`paimon` テーブル関数](/ja/reference/functions/table-functions/paimon)のドキュメントを参照してください。
   </Tab>

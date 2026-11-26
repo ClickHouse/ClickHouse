@@ -27,6 +27,8 @@ import { DeprecatedBadge } from "/snippets/zh/components/DeprecatedBadge/Depreca
 引入版本：v20.1.0
 
 返回 ClickHouse 服务器 的全限定域名。
+如果该函数在分布式表的上下文中执行，则会生成一个普通列，其中包含各分片对应的值。
+否则，返回一个常量值。
 
 <Note>
   此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
@@ -6356,11 +6358,11 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **参数**
 
-* `uniqThetaSketch` — uniqThetaSketch 对象。[`Tuple`](/zh/reference/data-types/tuple) 或 [`Array`](/zh/reference/data-types/array) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`String`](/zh/reference/data-types/string) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch 对象。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)
 
 **返回值**
 
-新的 uniqThetaSketch，其中包含交集结果。[`UInt64`](/zh/reference/data-types/int-uint)
+新的 uniqThetaSketch，其中包含交集结果。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)
 
 **示例**
 
@@ -6392,15 +6394,15 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **参数**
 
-* `uniqThetaSketch` — uniqThetaSketch 对象。[`Tuple`](/zh/reference/data-types/tuple) 或 [`Array`](/zh/reference/data-types/array) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`String`](/zh/reference/data-types/string) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch 对象。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)
 
 **返回值**
 
-返回一个新的 uniqThetaSketch，表示 a&#95;not&#95;b 的结果。[`UInt64`](/zh/reference/data-types/int-uint)
+返回一个新的 uniqThetaSketch，表示 a&#95;not&#95;b 的结果。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT finalizeAggregation(uniqThetaNot(a, b)) AS a_not_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
@@ -6416,7 +6418,7 @@ FROM
 
 ## uniqThetaUnion {#uniqThetaUnion}
 
-在 v22.9.0 中引入
+引入版本：v22.9.0
 
 对两个 uniqThetaSketch 对象进行并集计算 (集合运算 ∪) ，结果为一个新的 uniqThetaSketch。
 
@@ -6428,15 +6430,15 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **参数**
 
-* `uniqThetaSketch` — uniqThetaSketch 对象。[`Tuple`](/zh/reference/data-types/tuple) 或 [`Array`](/zh/reference/data-types/array) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`String`](/zh/reference/data-types/string) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch 对象。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)
 
 **返回值**
 
-返回一个新的 uniqThetaSketch，其中包含并集运算结果。[`UInt64`](/zh/reference/data-types/int-uint)
+返回一个新的 uniqThetaSketch，其中包含并集运算结果。[`AggregateFunction(uniqTheta, T)`](/zh/reference/data-types/aggregatefunction)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT finalizeAggregation(uniqThetaUnion(a, b)) AS a_union_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
