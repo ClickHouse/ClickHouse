@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WithFileSize.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
@@ -298,7 +299,7 @@ std::optional<size_t> ReadBufferFromWebServer::tryGetFileSize()
 {
     if (!impl)
         impl = initialize();
-    return impl ? impl->tryGetFileSize() : std::nullopt;
+    return impl ? tryGetFileSizeFromReadBuffer(*impl) : std::nullopt;
 }
 
 bool ReadBufferFromWebServer::checkIfActuallySeekable()
