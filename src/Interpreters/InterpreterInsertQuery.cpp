@@ -1675,8 +1675,6 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                /// The routes above may have expanded the CTEs of `query.select` in place, which loses CTE column aliases.
-                query.select = saved_select->clone();
                 auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
