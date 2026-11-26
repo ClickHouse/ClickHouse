@@ -1905,13 +1905,15 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     const auto current_settings = database_settings.get();
 
     /// The database applies the table settings to its tables itself, so they can change for any catalog type, and the
-    /// catalog does not get them.
+    /// catalog does not get them. Except `disk`, which the database checks against the other settings only when it is
+    /// created (see `validateSettings`), so it is left to the catalog, which does not allow to change it.
     SettingsChanges catalog_settings_changes;
     bool table_settings_changed = false;
     for (const auto & change : settings_changes)
     {
         DatabaseDataLakeSettings::checkCanBeSetForDatabase(change.name);
-        if (DatabaseDataLakeSettings::isDatabaseAndTableSetting(change.name))
+        if (DatabaseDataLakeSettings::isDatabaseAndTableSetting(change.name)
+            && change.name != DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::disk))
             table_settings_changed = true;
         else
             catalog_settings_changes.push_back(change);

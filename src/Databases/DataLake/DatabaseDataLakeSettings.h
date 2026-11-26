@@ -90,7 +90,8 @@ struct DatabaseDataLakeSettings
     /// Whether `name` is one of the settings of the Iceberg table engine that can be set for the database, which applies
     /// them to all its Iceberg tables: the ones marked with `DATABASE_AND_TABLE_SETTING` in
     /// `DATA_LAKE_STORAGE_RELATED_SETTINGS`.
-    /// The database handles them itself, so `ALTER DATABASE ... MODIFY SETTING` can change them for any catalog type.
+    /// The database handles them itself, so `ALTER DATABASE ... MODIFY SETTING` can change them for any catalog type,
+    /// except `disk`, see `DatabaseDataLake::applySettingsChanges`.
     static bool isDatabaseAndTableSetting(std::string_view name);
 
     /// Throws if `name` is a setting of the data lake table engines in `DATA_LAKE_STORAGE_RELATED_SETTINGS` that is not

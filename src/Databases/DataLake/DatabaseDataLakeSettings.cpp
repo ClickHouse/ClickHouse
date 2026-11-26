@@ -137,7 +137,7 @@ bool DatabaseDataLakeSettings::isDatabaseAndTableSetting(std::string_view name)
 }
 
 /// The settings of the data lake table engines that the database checks. The format settings, which it gives to all its
-/// tables too, `disk`, which is a setting of the database itself, and the obsolete settings, which do nothing, are not here.
+/// tables too, and the obsolete settings, which do nothing, are not here.
 #define TABLE_ENGINE_SETTING_NAME(TYPE, NAME, ...) #NAME,
 static constexpr auto table_engine_settings
     = std::to_array<std::string_view>({DATA_LAKE_STORAGE_RELATED_SETTINGS(TABLE_ENGINE_SETTING_NAME, TABLE_ENGINE_SETTING_NAME)});
