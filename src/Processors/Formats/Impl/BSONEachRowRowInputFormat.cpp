@@ -1,13 +1,13 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Common/checkStackSize.h>
-#include <Core/AccurateComparison.h>
 #include <Core/CaseAwareBlockNameMap.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/checkEnumValue.h>
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
@@ -48,7 +48,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int TYPE_MISMATCH;
     extern const int TOO_DEEP_RECURSION;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 namespace
@@ -127,16 +126,6 @@ static size_t readBSONSize(ReadBuffer & in)
     BSONSizeT size = 0;
     readBinaryLittleEndian(size, in);
     return size;
-}
-
-/// BSON has no Enum type, so an Enum value is its number: like CAST, reject a number that is not an element.
-template <typename EnumType, typename T>
-static void checkEnumValue(const IDataType & type, T value)
-{
-    typename EnumType::FieldType enum_value = 0;
-    if (!accurate::convertNumeric<T, typename EnumType::FieldType, false>(value, enum_value))
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", value);
-    (void)assert_cast<const EnumType &>(type).getNameForValue(enum_value);
 }
 
 template <typename T, bool check_enum_value = false>

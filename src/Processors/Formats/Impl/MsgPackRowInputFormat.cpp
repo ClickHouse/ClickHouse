@@ -16,7 +16,6 @@
 #include <cstdlib>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
-#include <Core/AccurateComparison.h>
 #include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -41,6 +40,7 @@
 
 #include <Formats/MsgPackExtensionTypes.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/checkEnumValue.h>
 
 namespace DB
 {
@@ -52,7 +52,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int TOO_DEEP_RECURSION;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
@@ -122,16 +121,6 @@ static bool checkAndInsertLowCardinality(IColumn & column, DataTypePtr type, Ins
         return true;
     }
     return false;
-}
-
-/// MessagePack has no Enum type, so an Enum value is its number: like CAST, reject a number that is not an element.
-template <typename EnumType, typename T>
-static void checkEnumValue(const IDataType & type, T value)
-{
-    typename EnumType::FieldType enum_value = 0;
-    if (!accurate::convertNumeric<T, typename EnumType::FieldType, false>(value, enum_value))
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", value);
-    (void)assert_cast<const EnumType &>(type).getNameForValue(enum_value);
 }
 
 template <typename T>
