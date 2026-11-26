@@ -284,7 +284,6 @@ def setup_build_caches_env(info):
     )
     if info.pr_number > 0 and not backport_from_repo:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
-        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
