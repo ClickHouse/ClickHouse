@@ -100,6 +100,30 @@ SELECT 's4-values', sum(b), countIf(b = 5), count() FROM t_rename_swap_drop;
 CHECK TABLE t_rename_swap_drop SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_rename_swap_drop;
 
+DROP TABLE IF EXISTS t_rename_into_recomputed;
+CREATE TABLE t_rename_into_recomputed (k UInt32, a UInt32, c UInt32 MATERIALIZED a + 1) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+INSERT INTO t_rename_into_recomputed (k, a) SELECT number, number + 41 FROM numbers(1000);
+ALTER TABLE t_rename_into_recomputed RENAME COLUMN a TO b, RENAME COLUMN c TO a, CLEAR COLUMN b;
+SELECT 's5-values', sum(b), sum(a), count() FROM t_rename_into_recomputed;
+CHECK TABLE t_rename_into_recomputed SETTINGS check_query_single_value_result = 1;
+DETACH TABLE t_rename_into_recomputed;
+ATTACH TABLE t_rename_into_recomputed;
+SELECT 's5-reload', sum(b), sum(a), count(), (SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_rename_into_recomputed') FROM t_rename_into_recomputed;
+DROP TABLE t_rename_into_recomputed;
+
+DROP TABLE IF EXISTS t_drop_rename_into_recomputed;
+CREATE TABLE t_drop_rename_into_recomputed (k UInt32, a UInt32, b UInt32, c UInt32 MATERIALIZED b + 1) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+INSERT INTO t_drop_rename_into_recomputed (k, a, b) SELECT number, 7, number + 41 FROM numbers(1000);
+ALTER TABLE t_drop_rename_into_recomputed DROP COLUMN a, RENAME COLUMN c TO a, CLEAR COLUMN b;
+SELECT 's6-values', sum(b), sum(a), count() FROM t_drop_rename_into_recomputed;
+CHECK TABLE t_drop_rename_into_recomputed SETTINGS check_query_single_value_result = 1;
+DETACH TABLE t_drop_rename_into_recomputed;
+ATTACH TABLE t_drop_rename_into_recomputed;
+SELECT 's6-reload', sum(b), sum(a), count(), (SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_drop_rename_into_recomputed') FROM t_drop_rename_into_recomputed;
+DROP TABLE t_drop_rename_into_recomputed;
+
 DROP TABLE IF EXISTS t_rename_clear_rmt;
 CREATE TABLE t_rename_clear_rmt (k UInt8, q UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_rename_clear_rmt', 'r1') ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;

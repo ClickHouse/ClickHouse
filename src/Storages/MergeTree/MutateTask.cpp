@@ -1869,6 +1869,10 @@ getColumnsForNewDataPart(
         }
     }
 
+    /// `serialization.json` must not name a column the part does not have.
+    const auto new_part_column_names = storage_columns.getNameSet();
+    std::erase_if(new_serialization_infos, [&](const auto & info) { return !new_part_column_names.contains(info.first); });
+
     return {storage_columns, new_serialization_infos, new_columns_substreams};
 }
 
