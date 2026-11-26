@@ -39,6 +39,17 @@ FROM (SELECT number AS k FROM numbers(1000000)) AS l
 INNER JOIN (SELECT number AS k, number * 3 AS v FROM numbers(1000000)) AS r ON l.k = r.k
 SETTINGS hash_join_layout = 'parallel', max_threads = 16, max_bytes_before_external_join = 30000000, log_comment = 'spill_at_threshold_parallel16_spills';
 
+-- One build thread: the buckets of the parallel layout sit behind one slot.
+SELECT 'parallel fits, 1 thread', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(1000000)) AS l
+INNER JOIN (SELECT number AS k, number * 3 AS v FROM numbers(1000000)) AS r ON l.k = r.k
+SETTINGS hash_join_layout = 'parallel', max_threads = 1, max_bytes_before_external_join = 110000000, log_comment = 'spill_at_threshold_parallel1_fits';
+
+SELECT 'parallel spills, 1 thread', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(1000000)) AS l
+INNER JOIN (SELECT number AS k, number * 3 AS v FROM numbers(1000000)) AS r ON l.k = r.k
+SETTINGS hash_join_layout = 'parallel', max_threads = 1, max_bytes_before_external_join = 30000000, log_comment = 'spill_at_threshold_parallel1_spills';
+
 -- `grace_hash` splits a bucket only when it would not fit either: one bucket here, so nothing is written to disk.
 SELECT 'grace_hash fits', count(), sum(r.v)
 FROM (SELECT number AS k FROM numbers(1000000)) AS l

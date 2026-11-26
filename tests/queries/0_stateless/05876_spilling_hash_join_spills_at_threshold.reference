@@ -3,6 +3,8 @@ serial spills	1000000	1499998500000
 parallel fits	1000000	1499998500000
 parallel spills	1000000	1499998500000
 parallel spills, 16 threads	1000000	1499998500000
+parallel fits, 1 thread	1000000	1499998500000
+parallel spills, 1 thread	1000000	1499998500000
 grace_hash fits	1000000	1499998500000
 grace_hash spills	1000000	1499998500000
 right fits	1000000	1499998500000	499999500000
@@ -16,6 +18,8 @@ serial_spills	1	1
 parallel_fits	0	0
 parallel_spills	1	1
 parallel16_spills	1	1
+parallel1_fits	0	0
+parallel1_spills	1	1
 grace_fits	0	0
 grace_spills	0	1
 right_fits	0	0
