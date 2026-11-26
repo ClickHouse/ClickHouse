@@ -378,10 +378,12 @@ struct ReplaceRegexpImpl
         UInt8 * out = res_begin;
         const auto * const haystack_begin = reinterpret_cast<const uint8_t *>(haystack_data.data());
 
+        size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const uint8_t * row_begin = haystack_begin + haystack_offsets[i - 1];
+            const uint8_t * row_begin = haystack_begin + prev_offset;
             const uint8_t * row_end = haystack_begin + haystack_offsets[i];
+            prev_offset = haystack_offsets[i];
 
             if (callJITFunction(matcher.func, row_begin, row_end, row_begin, capture_starts, capture_ends) == 1)
             {
