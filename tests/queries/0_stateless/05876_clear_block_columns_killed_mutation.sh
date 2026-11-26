@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
-# no-parallel: the test arms server-wide failpoints.
+# Tags: zookeeper, no-parallel, no-fasttest
+# no-parallel, no-fasttest: the test arms server-wide failpoints.
 
 # A part mutated by `CLEAR COLUMN _block_number` can still be committed after its mutation is killed, so lightweight
 # updates stay rejected until the running mutation of the part finishes. Otherwise an update would store the values
