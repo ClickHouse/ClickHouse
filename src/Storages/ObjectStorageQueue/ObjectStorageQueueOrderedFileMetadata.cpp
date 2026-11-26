@@ -1047,7 +1047,7 @@ void ObjectStorageQueueOrderedFileMetadata::preparePartitionProcessedMap(Partiti
     /// processed_node_path already contains the partition suffix (= processed_bucket_path / partition_key).
     const auto & partition_processed_path = processed_node_path;
 
-    auto add_node = [&](const std::string & node_path, bool keep_greater_stored_path)
+    auto add_node = [&](const std::string & node_path, bool is_old_node)
     {
         auto it = last_processed_file_per_partition.find(node_path);
         if (it == last_processed_file_per_partition.end())
@@ -1058,20 +1058,29 @@ void ObjectStorageQueueOrderedFileMetadata::preparePartitionProcessedMap(Partiti
                 auto zookeeper = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
                 std::string stored_path;
                 bool processed_path_exists
-                    = keep_greater_stored_path ? zookeeper->tryGet(node_path, stored_path) : zookeeper->exists(node_path);
+                    = is_old_node ? zookeeper->tryGet(node_path, stored_path) : zookeeper->exists(node_path);
                 it = last_processed_file_per_partition.emplace(
                     node_path, PartitionLastProcessedFileInfo({processed_path_exists, std::move(stored_path)})).first;
             });
         }
         auto & last_processed_path = it->second.file_path;
+        if (partitioning_mode == ObjectStorageQueuePartitioningMode::HIVE && !last_processed_path.empty()
+            && !isSameHivePartition(path, last_processed_path))
+        {
+            /// A partition's own node holds only its files; an old node that a kept part may own is left to that part.
+            if (!is_old_node)
+                last_processed_path.clear();
+            else if (isKeptHivePartNodeName(getHivePart(path)))
+                return;
+        }
         if (last_processed_path < node_metadata.file_path)
             last_processed_path = node_metadata.file_path;
     };
 
-    add_node(partition_processed_path, /* keep_greater_stored_path */false);
-    /// Older versions read only the old node: it keeps the greatest file of the partitions sharing it, unless a kept part may own it.
-    if (old_processed_node_path && !isKeptHivePartNodeName(getHivePart(path)))
-        add_node(*old_processed_node_path, /* keep_greater_stored_path */true);
+    add_node(partition_processed_path, /* is_old_node */false);
+    /// Older versions read only the old node, so it is advanced too.
+    if (old_processed_node_path)
+        add_node(*old_processed_node_path, /* is_old_node */true);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(

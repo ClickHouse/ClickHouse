@@ -24,11 +24,11 @@ function upload()
 
 function create_queue()
 {
-    local queue=$1
+    local queue=$1 glob=${2:-*/*/*.csv}
     $CLICKHOUSE_CLIENT --send_logs_level=error -q "
         CREATE TABLE dst_${queue} (id UInt32) ENGINE = MergeTree ORDER BY id;
         CREATE TABLE ${queue} (id UInt32)
-        ENGINE = S3Queue('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_05876_${queue}/*/*/*.csv', 'CSV')
+        ENGINE = S3Queue('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_05876_${queue}/${glob}', 'CSV')
         SETTINGS
             keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05876_${queue}',
             mode = 'ordered',
@@ -52,16 +52,21 @@ function flush()
     $CLICKHOUSE_CLIENT --max_execution_time 120 -q "SYSTEM FLUSH OBJECT STORAGE QUEUE ${queue} PATH '${CLICKHOUSE_DATABASE}_05876_${queue}/${path}'"
 }
 
-function show()
+function nodes()
 {
     local queue=$1
     $CLICKHOUSE_CLIENT -q "
-        SELECT groupArray(id) FROM (SELECT id FROM dst_${queue} ORDER BY id);
         SELECT name, replaceOne(value, '${CLICKHOUSE_DATABASE}_05876_${queue}/', '') FROM system.zookeeper
         WHERE path = '/clickhouse/${CLICKHOUSE_DATABASE}/05876_${queue}/processed' ORDER BY name;
-        DROP TABLE mv_${queue} SYNC;
-        DROP TABLE ${queue} SYNC;
     "
+}
+
+function show()
+{
+    local queue=$1
+    $CLICKHOUSE_CLIENT -q "SELECT groupArray(id) FROM (SELECT id FROM dst_${queue} ORDER BY id)"
+    nodes "${queue}"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE mv_${queue} SYNC; DROP TABLE ${queue} SYNC;"
 }
 
 echo "Two partitions with the same old node name"
@@ -102,4 +107,19 @@ flush qb "date=2025-01-01/_city=x/a.csv"
 flush qb "date=2025-01-03/city=z/c.csv"
 show qb
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE dst_qa; DROP TABLE dst_qb;"
+# `date=2025-01-01/_/city=x` and `a/b/date=2025-01-01__city=x` share the old node `date=2025-01-01____city=x`,
+# which is also the node of the second one: the first one advances it only until the second one uses it.
+echo "An underscore-only directory"
+P="${CLICKHOUSE_DATABASE}_05876_qc"
+upload "${P}/date=2025-01-01/_/city=x/a.csv" 21
+create_queue qc '*/*/*/*.csv'
+create_mv qc
+flush qc "date=2025-01-01/_/city=x/a.csv"
+nodes qc
+upload "${P}/a/b/date=2025-01-01__city=x/a.csv" 22
+flush qc "a/b/date=2025-01-01__city=x/a.csv"
+upload "${P}/date=2025-01-01/_/city=x/b.csv" 23
+flush qc "date=2025-01-01/_/city=x/b.csv"
+show qc
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE dst_qa; DROP TABLE dst_qb; DROP TABLE dst_qc;"

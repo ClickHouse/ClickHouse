@@ -12,3 +12,9 @@ ___5f3d76faf0d03af0fe55e6436182140f	date=2025-01-01/_city=x/a.csv
 ___862da1f1c532e85bf18a12defc76473f	date=2025-01-01_/city=x/c.csv
 date=2025-01-01___city=x	date=2025-01-01_/city=x/c.csv
 date=2025-01-03_city=z	date=2025-01-03/city=z/c.csv
+An underscore-only directory
+___70f3f2fe98491f2f76f3989e1c655218	date=2025-01-01/_/city=x/a.csv
+date=2025-01-01____city=x	date=2025-01-01/_/city=x/a.csv
+[21,22,23]
+___70f3f2fe98491f2f76f3989e1c655218	date=2025-01-01/_/city=x/b.csv
+date=2025-01-01____city=x	a/b/date=2025-01-01__city=x/a.csv
