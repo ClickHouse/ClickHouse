@@ -862,7 +862,7 @@ namespace
                     {
                         if constexpr (return_type == ReturnType::DateTime)
                         {
-                            if (*result > std::numeric_limits<UInt32>::max()) [[unlikely]
+                            if (*result > std::numeric_limits<UInt32>::max()) [[unlikely]]
                                 result = std::unexpected(ErrorCodeAndMessage(
                                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch exceeds the maximum DateTime value"));
                             else
