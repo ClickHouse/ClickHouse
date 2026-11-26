@@ -35,7 +35,7 @@ struct TTLAggregateDescription
     NamesAndTypesList expression_source_columns;
 
     /// Calculates the arguments of the assignment's aggregate functions, e.g. `y * 2` in `x = sum(y * 2)`; nullptr if they have none.
-    ExpressionActionsPtr buildArgumentsExpression(const ContextPtr & context) const;
+    [[nodiscard]] ExpressionActionsPtr buildArgumentsExpression(const ContextPtr & context) const;
 
     TTLAggregateDescription() = default;
     TTLAggregateDescription(const TTLAggregateDescription & other);
