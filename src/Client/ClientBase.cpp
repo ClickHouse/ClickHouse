@@ -1058,6 +1058,9 @@ try
     {
         output_buffer_canceled = false;
 
+        if (connection)
+            connection->onQueryOutputCreated();
+
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -1340,6 +1343,9 @@ void ClientBase::initLogsOutputStream()
 {
     if (!logs_out_stream)
     {
+        if (connection)
+            connection->onQueryOutputCreated();
+
         WriteBuffer * wb = out_logs_buf.get();
 
         bool color_logs = false;
@@ -2500,6 +2506,9 @@ void ClientBase::resetOutput()
         setupSignalHandler();
     }
     pager_cmd = nullptr;
+
+    if (connection)
+        connection->onQueryOutputReleased();
 
     std_out->next();
 }
@@ -4429,9 +4438,14 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     auto & storage_settings = *ast_create.storage->settings;
     bool added_new_setting = false;
 
+    /// The query may name a setting by its alias, while the changes from the command line use canonical names.
+    std::unordered_set<String> settings_in_query;
+    for (const auto & change : storage_settings.changes)
+        settings_in_query.emplace(MergeTreeSettings::resolveName(change.name));
+
     for (const auto & change : all_changed)
     {
-        if (!storage_settings.changes.tryGet(change.name))
+        if (!settings_in_query.contains(String(MergeTreeSettings::resolveName(change.name))))
         {
             storage_settings.changes.emplace_back(change.name, change.value);
             added_new_setting = true;

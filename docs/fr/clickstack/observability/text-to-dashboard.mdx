@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-dashboard
+title: 'Text-to-Dashboard'
+sidebarTitle: 'Text-to-Dashboard'
+description: 'Créez des tableaux de bord à partir de prompts en langage naturel dans ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'text-to-dashboard', 'AI', 'dashboards', 'natural language']
+---
+
+Text-to-Dashboard crée un tableau de bord à partir d&#39;une simple description, en langage courant, de ce que vous souhaitez surveiller. L&#39;IA analyse les données dont vous disposez, génère les tuiles pertinentes et enregistre un tableau de bord que vous pouvez ensuite ouvrir et modifier.
+
+Pour générer un seul graphique, utilisez plutôt [Text-to-Chart](/fr/clickstack/observability/text-to-chart).
+
+## Prérequis {#prerequisites}
+
+* Des données doivent être disponibles dans votre service ClickHouse Observability.
+* Un administrateur d’équipe doit [activer l’IA générative](/fr/clickstack/observability/notebooks#enabling-generative-ai).
+* Votre rôle doit vous autoriser à utiliser les notebooks IA et à créer des tableaux de bord.
+
+## Générer un tableau de bord {#generate-a-dashboard}
+
+<Steps>
+  <Step title="Lancer la génération du tableau de bord" id="open-dashboard-generation">
+    Sélectionnez **Tableaux de bord** dans la barre latérale. Ouvrez **New Tableau de bord**, puis sélectionnez **Generate with AI**.
+  </Step>
+
+  <Step title="Décrire le tableau de bord" id="describe-the-dashboard">
+    Dans **Generate tableau de bord with AI**, décrivez les questions auxquelles le tableau de bord doit répondre. Précisez les services, les sources de données, les champs et les types de graphiques pertinents. Par exemple :
+
+    > Create a tableau de bord using the Logs source. Show total log count, volume de journaux over time, and log counts grouped by sévérité. Use the tableau de bord time filter for every tuile.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Boîte de dialogue Generate tableau de bord with AI contenant un prompt qui décrit le volume de journaux, les erreurs par service et les messages d’erreur fréquents](/images/clickstack/observability-text-to-dashboard-prompt.png)
+      </Frame>
+    </div>
+
+    Sélectionnez **Generate tableau de bord**.
+  </Step>
+
+  <Step title="Suivre la génération dans le notebook" id="follow-dashboard-generation">
+    Un notebook IA s’ouvre avec votre demande. L’IA examine les sources et les données disponibles, crée le tableau de bord, puis présente le résultat dans le notebook. Prenez connaissance des éventuelles explications concernant des données manquantes ou des modifications apportées au tableau de bord demandé.
+  </Step>
+
+  <Step title="Ouvrir et vérifier le tableau de bord" id="review-generated-dashboard">
+    Suivez le lien vers le tableau de bord figurant dans la réponse du notebook. Le tableau de bord généré est enregistré et également accessible depuis **Tableaux de bord**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord généré par l’IA affichant le nombre total de journaux, l’évolution du volume de journaux dans le temps et le nombre de journaux par sévérité dans ClickHouse Observability](/images/clickstack/observability-text-to-dashboard-result.png)
+      </Frame>
+    </div>
+
+    Vérifiez les sources, les filtres, les agrégations et l’intervalle de temps sélectionnés. Assurez-vous que les graphiques répondent bien à votre question initiale et se mettent à jour lorsque vous modifiez le filtre temporel du tableau de bord. Vous pouvez modifier les tuiles et la disposition à l’aide des [commandes standard des tableaux de bord](/fr/clickstack/observability/features/dashboards/overview).
+
+    Pour affiner le résultat, poursuivez dans le notebook avec une demande complémentaire précise, par exemple pour ajouter un filtre par service ou modifier le regroupement d’un graphique.
+  </Step>
+</Steps>
+
+## Exemples de prompts {#example-prompts}
+
+Adaptez ces prompts aux données disponibles dans votre service :
+
+* **Supervision des journaux :** « Crée un tableau de bord affichant l’évolution du volume de journaux dans le temps, le nombre d’erreurs par service et les messages d’erreur les plus fréquents. »
+* **Performance des services :** « À partir de la source Traces, crée un tableau de bord pour le service checkout présentant le volume de requêtes, le taux d’erreur et la latence p95 par endpoint. »
+* **Investigation ciblée :** « Crée un tableau de bord consacré aux échecs de paiement. Affiche leur fréquence dans le temps et ventile-les par service et par message d’erreur. »
+
+Indiquez explicitement les champs ou attributs à utiliser lorsque leur signification ne ressort pas clairement du schéma. Précisez comment identifier une erreur ou un échec dans vos données.
+
+## Vérifier les résultats générés {#review-generated-results}
+
+Les tableaux de bord générés par l&#39;IA peuvent contenir des requêtes ou des hypothèses erronées. Vérifiez chaque tuile avant de vous en servir pour prendre des décisions opérationnelles. Un graphique vide peut signaler des données manquantes, un filtre trop restrictif ou un intervalle de temps ne contenant aucun événement correspondant.
+
+## Guides associés {#related-guides}
+
+* [Text-to-Chart](/fr/clickstack/observability/text-to-chart) : générez un graphique dans l’Explorateur de graphiques.
+* [Notebooks IA](/fr/clickstack/observability/notebooks) : analysez vos données et affinez vos requêtes avec l’IA.
+* [Tableaux de bord et visualisations](/fr/clickstack/observability/features/dashboards/overview) : modifiez et organisez les tuiles de tableau de bord.

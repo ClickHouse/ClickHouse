@@ -666,11 +666,10 @@ struct TTestMoments
         return std::sqrt(sx2 / nx + sy2 / ny);
     }
 
-    [[nodiscard]] std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom) const
+    [[nodiscard]] std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom, Float64 se) const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
-        Float64 se = getStandardError();
 
         boost::math::students_t dist(degrees_of_freedom);
         Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));
@@ -710,10 +709,17 @@ struct OneSampleTTestMoments
 
     void merge(const OneSampleTTestMoments & rhs)
     {
+        /// The population mean is set by the first value a state sees, so a state without values does not
+        /// have it yet. A merge usually starts from such a state (`-Merge`, `finalizeAggregation`,
+        /// `WITH TOTALS`, the results of several shards or parts), which has to take the mean from the
+        /// state it is merged with: otherwise the test is done against zero. It is the same for all the
+        /// states of one aggregation, so a state that already has values keeps its own.
+        if (n == 0 && rhs.n != 0)
+            population_mean = rhs.population_mean;
+
         n += rhs.n;
         x1 += rhs.x1;
         x2 += rhs.x2;
-        // Note: population_mean should be the same for merged data
     }
 
     void write(WriteBuffer & buf) const
