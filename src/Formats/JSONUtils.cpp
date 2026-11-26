@@ -220,13 +220,17 @@ namespace JSONUtils
         skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
-    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(
+        ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info, const String & name_read_before)
     {
         skipWhitespaceIfAny(in);
         assertChar('{', in);
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
+        NameSet row_field_names;
+        const String name_read_before_key
+            = settings.skip_duplicated_fields ? getColumnMatchingKeyForSchemaInference(name_read_before, settings) : String{};
         const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != '}')
         {
@@ -236,8 +240,20 @@ namespace JSONUtils
                 first = false;
 
             auto name = readFieldName(in, settings.json);
-            auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
-            names_and_types.emplace_back(name, type);
+            const String key = settings.skip_duplicated_fields ? getColumnMatchingKeyForSchemaInference(name, settings) : String{};
+            if (settings.skip_duplicated_fields && !row_field_names.insert(key).second)
+            {
+                skipJSONField(in, name, settings.json);
+            }
+            else if (settings.skip_duplicated_fields && !name_read_before.empty() && key == name_read_before_key)
+            {
+                skipJSONField(in, name, settings.json);
+                names_and_types.emplace_back(name, nullptr);
+            }
+            else
+            {
+                names_and_types.emplace_back(name, tryInferDataTypeForSingleJSONField(in, settings, inference_info));
+            }
             skipWhitespaceIfAny(in);
 
             if (settings.json.max_row_size_for_json_each_row

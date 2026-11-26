@@ -6,9 +6,7 @@ keywords: ['الحصص', 'تعقيد الاستعلام']
 description: 'تُعد الحصص وتعقيد الاستعلام من الوسائل الفعّالة للحد مما يمكن للمستخدمين فعله في ClickHouse وفرض قيود عليه. تعرض هذه المقالة في قاعدة المعارف أمثلة على كيفية تطبيق هذين النهجين المختلفين.'
 ---
 
-<div id="about-quotas-and-query-complexity">
-  ## حول الحصص وتعقيد الاستعلام
-</div>
+## حول الحصص وتعقيد الاستعلام {#about-quotas-and-query-complexity}
 
 تُعد [الحصص](/ar/concepts/features/configuration/server-config/quotas) و[تعقيد الاستعلام](/ar/concepts/features/configuration/settings/query-complexity) وسيلتين فعالتين لفرض حدود وقيود على ما يمكن للمستخدمين فعله في ClickHouse.
 
@@ -16,9 +14,7 @@ description: 'تُعد الحصص وتعقيد الاستعلام من الوس�
 
 توضح هذه المقالة في قاعدة المعارف أمثلة على كيفية تطبيق هذين النهجين المختلفين.
 
-<div id="the-sample-data">
-  ## بيانات المثال
-</div>
+## بيانات المثال {#the-sample-data}
 
 سنشير إلى جدول المثال البسيط هذا في الأمثلة التالية:
 
@@ -70,9 +66,7 @@ clickhouse-cloud :) SELECT * FROM default.test_table_00006488 LIMIT 5
 -- 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-<div id="using-quotas">
-  ## استخدام الحصة
-</div>
+## استخدام الحصة {#using-quotas}
 
 في هذا المثال، ننشئ دور سنطبّق عليه الحصة لا تسمح باسترجاع أكثر من 10 صفوف من النتائج خلال كل فترة مقدارها 10 ثوانٍ:
 
@@ -162,7 +156,7 @@ clickhouse-cloud :) SHOW GRANTS
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- check the timem
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -230,9 +224,7 @@ clickhouse-cloud :) select now()
 
 لاحظ أن المستخدم سيحتاج إلى الانتظار 5 ثوانٍ أخرى قبل أن يتمكن من الحصول على &quot;حصة&quot; جديدة من مجموعة نتائج تضم 10 صفوف.
 
-<div id="using-query-complexity">
-  ## استخدام تعقيد الاستعلام
-</div>
+## استخدام تعقيد الاستعلام {#using-query-complexity}
 
 في هذا المثال، ننشئ دورًا سنطبّق عليه `SETTING` لتعقيد الاستعلام، بحيث لا يسمح بإرجاع أكثر من صف واحد لكل query.
 

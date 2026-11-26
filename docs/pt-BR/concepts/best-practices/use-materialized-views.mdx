@@ -15,31 +15,23 @@ ClickHouse oferece suporte a dois tipos de visões materializadas: [**incrementa
 **Visões materializadas incrementais** são atualizadas em tempo real. À medida que novos dados são inseridos na tabela de origem, o ClickHouse aplica automaticamente a consulta da visão materializada ao novo bloco de dados e grava os resultados em uma tabela de destino separada. Com o tempo, o ClickHouse mescla esses resultados parciais para produzir uma visão completa e atualizada. Essa abordagem é altamente eficiente porque desloca o custo computacional para o momento da inserção e processa apenas os dados novos. Como resultado, as consultas `SELECT` na tabela de destino são rápidas e leves. Visões incrementais oferecem suporte a todas as funções de agregação e escalam bem — até mesmo para petabytes de dados — porque cada consulta opera sobre um subconjunto pequeno e recente do conjunto de dados que está sendo inserido.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Visões materializadas](/images/bestpractices/incremental_materialized_view.webp)
-
-</Frame>
-
+  <Frame>
+    ![Visões materializadas](/images/bestpractices/incremental_materialized_view.webp)
+  </Frame>
 </div>
 
 **Visões materializadas atualizáveis**, em contraste, são atualizadas em uma programação definida. Essas visões reexecutam periodicamente a consulta completa e sobrescrevem o resultado na tabela de destino. Isso é semelhante às visões materializadas em bancos de dados OLTP tradicionais, como o Postgres.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Diagrama de visão materializada atualizável](/images/bestpractices/refreshable_materialized_view.webp)
-
-</Frame>
-
+  <Frame>
+    ![Diagrama de visão materializada atualizável](/images/bestpractices/refreshable_materialized_view.webp)
+  </Frame>
 </div>
 
 A escolha entre visões materializadas incrementais e atualizáveis depende em grande parte da natureza da consulta, da frequência com que os dados mudam e de se as atualizações da visão precisam refletir cada linha à medida que ela é inserida ou se uma atualização periódica é aceitável. Entender essas compensações é fundamental para projetar visões materializadas escaláveis e de alto desempenho no ClickHouse.
 
 <div id="when-to-use-incremental-materialized-views">
-  ## Quando usar visões materializadas incrementais
+  ## Quando usar visões materializadas incrementais {#when-to-use-incremental-materialized-views}
 </div>
 
 As visões materializadas incrementais geralmente são a melhor opção, pois se atualizam automaticamente em tempo real sempre que as tabelas de origem recebem novos dados. Elas oferecem suporte a todas as funções de agregação e são particularmente eficazes para agregações em uma única tabela. Ao calcular os resultados de forma incremental no momento da inserção, as consultas são executadas sobre subconjuntos de dados significativamente menores, permitindo que essas visões escalem com facilidade até petabytes de dados. Na maioria dos casos, elas não causam nenhum impacto perceptível no desempenho geral do cluster.
@@ -53,7 +45,7 @@ Use visões materializadas incrementais quando:
 Para ver exemplos de visões materializadas incrementais, consulte [aqui](/pt-BR/concepts/features/materialized-views/incremental-materialized-view).
 
 <div id="when-to-use-refreshable-materialized-views">
-  ## Quando usar visões materializadas atualizáveis
+  ## Quando usar visões materializadas atualizáveis {#when-to-use-refreshable-materialized-views}
 </div>
 
 Visões materializadas atualizáveis executam suas consultas periodicamente, em vez de incrementalmente, armazenando o conjunto de resultados da consulta para recuperação rápida.
@@ -63,7 +55,7 @@ Elas são mais úteis quando o desempenho da consulta é crítico (por exemplo, 
 A frequência de execução deve ser ajustada com cuidado para evitar carga excessiva no sistema. Consultas extremamente complexas, que consomem muitos recursos, devem ser agendadas com cautela — elas podem degradar o desempenho geral do cluster ao impactar os caches e consumir CPU e memória. A consulta deve ser executada relativamente rápido em comparação com o intervalo de atualização para evitar sobrecarregar o cluster. Por exemplo, não agende uma view para ser atualizada a cada 10 segundos se a própria consulta leva pelo menos 10 segundos para ser processada.
 
 <div id="summary">
-  ## Resumo
+  ## Resumo {#summary}
 </div>
 
 Em resumo, use visões materializadas atualizáveis quando:
@@ -77,7 +69,7 @@ Em resumo, use visões materializadas atualizáveis quando:
 Para ver exemplos de visões materializadas atualizáveis, consulte [aqui](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view).
 
 <div id="append-vs-replace-mode">
-  ### Modo APPEND vs REPLACE
+  ### Modo APPEND vs REPLACE {#append-vs-replace-mode}
 </div>
 
 Visões materializadas atualizáveis oferecem suporte a dois modos de gravação de dados na tabela de destino: `APPEND` e `REPLACE`. Esses modos definem como o resultado da consulta da view é gravado quando ela é atualizada.

@@ -96,6 +96,10 @@ static JoinSide coordinatedJoinSide(const QueryPlan::Node * node)
     if (!join)
         return JoinSide::None;
 
+    /// A set-operation join removes duplicates only among the rows it sees, so neither side may be split.
+    if (join->getJoinOperator().set_operation != JoinSetOperation::None)
+        return JoinSide::None;
+
     const JoinKind kind = join->getJoinOperator().kind;
     const JoinStrictness strictness = join->getJoinOperator().strictness;
 
@@ -157,6 +161,11 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
     /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
     if (read.hasPinnedBlockNumbers())
+        return false;
+
+    /// A read of a `UNIQUE KEY` table cannot be serialized, see `ReadFromMergeTree::serialize`. Query-based parallel
+    /// replicas does not distribute such a read either (`isStorageEligibleForParallelReplicas`).
+    if (read.getStorageMetadata()->hasUniqueKey())
         return false;
 
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.

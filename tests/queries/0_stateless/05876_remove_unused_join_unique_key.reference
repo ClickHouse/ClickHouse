@@ -1,0 +1,49 @@
+-- { echoOn }
+
+-- A view that joins tables sharing a key.
+SELECT count() FROM (EXPLAIN SELECT sum(v1) FROM v_left) WHERE explain LIKE '%Join (%';
+0
+SELECT count(), sum(v1) FROM v_left;
+3	60
+SELECT count(), sum(v1) FROM v_left SETTINGS query_plan_remove_unused_joins = 0;
+3	60
+-- Only the join whose other side is not read goes away.
+SELECT count() FROM (EXPLAIN SELECT sum(v2) FROM v_left) WHERE explain LIKE '%Join (%';
+1
+SELECT sum(v2) FROM v_left;
+301
+-- `RIGHT`.
+SELECT count() FROM (EXPLAIN SELECT t1.id FROM t2 RIGHT JOIN t1 ON t2.id = t1.id) WHERE explain LIKE '%Join (%';
+0
+SELECT t1.id FROM t2 RIGHT JOIN t1 ON t2.id = t1.id ORDER BY t1.id;
+1
+2
+3
+-- The join keys must cover the whole `UNIQUE KEY`.
+SELECT count() FROM (EXPLAIN SELECT id FROM t1 LEFT JOIN t_ab ON t1.id = t_ab.a) WHERE explain LIKE '%Join (%';
+1
+SELECT id FROM t1 LEFT JOIN t_ab ON t1.id = t_ab.a ORDER BY id;
+1
+1
+2
+3
+SELECT count() FROM (EXPLAIN SELECT id FROM t1 LEFT JOIN t_ab ON t1.id = t_ab.a AND t1.v1 = t_ab.b) WHERE explain LIKE '%Join (%';
+0
+SELECT id FROM t1 LEFT JOIN t_ab ON t1.id = t_ab.a AND t1.v1 = t_ab.b ORDER BY id;
+1
+2
+3
+-- A table with a partition key is unique by its `UNIQUE KEY` within each partition only.
+SELECT count() FROM (EXPLAIN SELECT id FROM t1 LEFT JOIN t_part ON t1.id = t_part.id) WHERE explain LIKE '%Join (%';
+1
+SELECT id FROM t1 LEFT JOIN t_part ON t1.id = t_part.id ORDER BY id;
+1
+1
+2
+3
+-- An outer `ANY` join with a filter that rejects the rows without a match becomes `INNER`.
+SELECT count() FROM (EXPLAIN actions = 1, keep_logical_steps = 1 SELECT id, v2 FROM t1 LEFT ANY JOIN t2 USING (id) WHERE v2 > 0) WHERE explain LIKE '%Type: INNER%';
+1
+SELECT id, v2 FROM t1 LEFT ANY JOIN t2 USING (id) WHERE v2 > 0 ORDER BY id;
+1	101
+2	200
