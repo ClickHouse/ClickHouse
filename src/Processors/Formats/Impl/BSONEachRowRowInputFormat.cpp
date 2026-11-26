@@ -134,7 +134,7 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
 
     if (bson_type == BSONType::INT32)
     {
-        UInt32 value = 0;
+        Int32 value = 0;
         readBinaryLittleEndian(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
