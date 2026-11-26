@@ -616,7 +616,7 @@ printf 'options timeout:30 attempts:1\n' >> "$dir/resolv.conf"
 printf '127.0.0.1 localhost\n' > "$dir/hosts"
 mount --bind "$dir/resolv.conf" /etc/resolv.conf
 mount --bind "$dir/hosts" /etc/hosts
-timeout 20 clickhouse local --query "SELECT * FROM url('http://node9:8123/ping', 'RawBLOB') FORMAT RawBLOB"
+timeout 20 clickhouse local --http_max_tries=1 --query "SELECT * FROM url('http://node9:8123/ping', 'RawBLOB') FORMAT RawBLOB"
 """
     result = node9.exec_in_container(
         [
