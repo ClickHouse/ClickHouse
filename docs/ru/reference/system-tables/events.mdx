@@ -29,87 +29,83 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationBucketsRetired {#adaptiveaggregationbucketsretired}
 
-Количество двухуровневых бакетов, рабочая память которых (слот арены, ссылки на подготовленные фрагменты) была освобождена сразу после завершения слияния и преобразования этого бакета, не дожидаясь окончания всего слияния.
+Количество двухуровневых бакетов, слот арены которых был освобождён при слиянии в адаптивной агрегации сразу после преобразования последней единицы этого бакета. Слот одновременно хранит слитые состояния только одной единицы, поэтому состояния каждой предыдущей единицы освобождаются сразу после её собственного преобразования.
+
+### AdaptiveAggregationCountFirstUnits {#adaptiveaggregationcountfirstunits}
+
+Количество единиц слияния адаптивной агрегации, которые сначала подсчитали строки в своих группах и построили остальные состояния агрегатных функций только для групп с наибольшим количеством строк, поскольку результат агрегации передаётся в `ORDER BY count() LIMIT n`, а при финальном преобразовании сохраняются только эти группы.
 
 ### AdaptiveAggregationDrainedRecords {#adaptiveaggregationdrainedrecords}
 
-Сколько отложенных записей адаптивная агрегация перенесла в общую таблицу во время слияния.
+Сколько промежуточных записей адаптивная агрегация перенесла в таблицы слияния.
 
-### AdaptiveAggregationGiveUps {#adaptiveaggregationgiveups}
+### AdaptiveAggregationFrozenTableSpills {#adaptiveaggregationfrozentablespills}
 
-Сколько потоков отказались от фиксации при адаптивной агрегации, поскольку их поток содержал мало различных keys.
+Количество случаев, когда поток адаптивной агрегации записывал свою замороженную локальную таблицу на диск, поскольку запрос превысил порог внешней агрегации, а состояния агрегатных функций в таблице продолжали расти, либо планировщик памяти запросил сброс данных на диск.
 
 ### AdaptiveAggregationLocalFreezes {#adaptiveaggregationlocalfreezes}
 
 Количество локальных хеш-таблиц, замороженных адаптивной агрегацией по достижении порога заморозки.
 
-### AdaptiveAggregationPressureDrainedRecords {#adaptiveaggregationpressuredrainedrecords}
+### AdaptiveAggregationMergeUnits {#adaptiveaggregationmergeunits}
 
-Сколько записей из промежуточного буфера адаптивная агрегация сбросила досрочно из-за нехватки памяти.
-
-### AdaptiveAggregationPressureStandDowns {#adaptiveaggregationpressurestanddowns}
-
-Сколько потоков адаптивной агрегации окончательно вышли из фазы обучения из-за того, что нехватка памяти превысила порог внешней агрегации, и поэтому их локальные таблицы сбрасываются на диск обычной внешней агрегацией.
-
-### AdaptiveAggregationPressureSweeps {#adaptiveaggregationpressuresweeps}
-
-Сколько раз адаптивная агрегация досрочно сбрасывала записи из промежуточной стадии из-за нехватки памяти.
+Количество единиц слияния (серий партиций двухуровневого бакета, слитых в одну таблицу), которые адаптивная агрегация слила и преобразовала.
 
 ### AdaptiveAggregationProbeBypasses {#adaptiveaggregationprobebypasses}
 
 Сколько потоков перестали проверять свою замороженную локальную таблицу при адаптивной агрегации, поскольку в неё попадало почти ноль строк.
 
-### AdaptiveAggregationResidueReleases {#adaptiveaggregationresiduereleases}
+### AdaptiveAggregationPrunedRecords {#adaptiveaggregationprunedrecords}
 
-Сколько раз адаптивная агрегация записывала свою общую таблицу-накопитель, потому что из-за неё поток, работающий по базовому алгоритму, был близок к сбросу данных на диск.
+Сколько промежуточных записей было пропущено при слиянии в адаптивной агрегации, поскольку ни одна из их групп не понадобилась для top-K по `count`, `uniqExact` или `uniqExactIf`.
 
-### AdaptiveAggregationSealedChunks {#adaptiveaggregationsealedchunks}
+### AdaptiveAggregationPrunedUnits {#adaptiveaggregationprunedunits}
 
-Количество объединённых фрагментов, закрытых адаптивной агрегацией из буферизованных батчей промежуточного хранилища.
+Количество единиц слияния, которые адаптивная агрегация пропустила без выгрузки, поскольку для top-K по `count`, `uniqExact` или `uniqExactIf` не потребовалась ни одна из их групп: либо верхняя граница их корзин счётчиков оказалась ниже порога для top-K по убыванию, либо top-K по возрастанию уже нашёл достаточно групп с наименьшим возможным рангом.
 
-### AdaptiveAggregationSealNormalizations {#adaptiveaggregationsealnormalizations}
+### AdaptiveAggregationSpilledBytes {#adaptiveaggregationspilledbytes}
 
-Сколько подготовленных столбцов аргументов адаптивная агрегация при закрытии (seal) нормализовала из обёрнутого представления (Const, Replicated, Sparse, LowCardinality) в плотную форму, которую потребляет слив (drain).
+Сколько байтов промежуточных записей адаптивная агрегация сбросила на диск из-за нехватки памяти (до сжатия).
 
-### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
+### AdaptiveAggregationSpilledRecords {#adaptiveaggregationspilledrecords}
 
-Сколько раз адаптивная агрегация сбрасывала на диск свою общую таблицу сброса при нехватке памяти, по достижении границы части или по явному запросу на сброс данных на диск.
+Сколько промежуточных записей адаптивная агрегация сбросила на диск из-за нехватки памяти.
 
-### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
+### AdaptiveAggregationSpills {#adaptiveaggregationspills}
 
-Сколько раз адаптивная агрегация отбрасывала накопленную очередь отложенных записей из-за того, что поток, работающий по базовому алгоритму, — либо возвращённый туда при «оттаивании», либо перешедший на него самостоятельно — был близок к сбросу данных на диск, тогда как промежуточные записи всё ещё находились в памяти.
-
-### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
-
-Количество запросов на сброс данных на диск от планировщика памяти, которые адаптивная агрегация обработала, записав на диск промежуточные записи или общий остаток выгрузки, вместо того чтобы покинуть адаптивный путь выполнения.
+Количество случаев, когда поток адаптивной агрегации записывал свои промежуточные записи на диск из-за того, что запрос превысил порог внешней агрегации или планировщик памяти запросил сброс данных на диск.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
-Сколько байтов ключей адаптивная агрегация подготовила к выгрузке на этапе слияния.
-
-### AdaptiveAggregationStagedChunkPiecesOverBound {#adaptiveaggregationstagedchunkpiecesoverbound}
-
-Сколько частей разрезанного подготовленного фрагмента, опубликованных адаптивной агрегацией, всё равно оказались больше границы, ради соблюдения которой фрагмент и разрезался. Фрагмент режется по границам бакетов, а внутри бакета, который сам по себе превышает границу, — по отдельным записям, поэтому речь идёт об одной записи, подготовленный объём которой сам по себе превышает границу; такая часть захватывается целиком, и её выгрузка может настолько же превысить часть, отведённую под давление.
-
-### AdaptiveAggregationStagedChunkSplits {#adaptiveaggregationstagedchunksplits}
-
-Сколько подготовленных фрагментов адаптивная агрегация разделила по границам бакетов при публикации из-за того, что оценка выгрузки одного фрагмента превысила границу части давления.
-
-### AdaptiveAggregationStagedClaimsClosedAtBound {#adaptiveaggregationstagedclaimsclosedatbound}
-
-Сколько заявок на подготовленные фрагменты со стороны сливов адаптивной агрегации было закрыто перед фрагментом, добавление которого вывело бы батч за границу pressure part, — такой фрагмент остаётся следующей заявке. Граница проверяется для батча в том виде, в каком он слит, поэтому два фрагмента, каждый из которых лишь чуть её не достигает (две половины разрезанного фрагмента, превышающие половину части на одну запись), сливаются в две таблицы, а не в одну; и только первый фрагмент, который сам по себе выходит за границу, забирается заявкой в любом случае.
+Сколько байтов ключей адаптивная агрегация временно поместила в буферы своих партиций.
 
 ### AdaptiveAggregationStagedRecords {#adaptiveaggregationstagedrecords}
 
-Сколько промежуточных записей адаптивная агрегация подготовила в промежуточном буфере перед дедупликацией.
-
-### AdaptiveAggregationStagedRecordsMerged {#adaptiveaggregationstagedrecordsmerged}
-
-Сколько промежуточных (staged) записей адаптивная агрегация слила как дублирующиеся ключи при публикации и при закрытии.
+Сколько промежуточных записей адаптивная агрегация подготовила в своих буферах партиций.
 
 ### AdaptiveAggregationThaws {#adaptiveaggregationthaws}
 
 Сколько раз адаптивная агрегация размораживала локальные таблицы из-за того, что в поэтапном потоке преобладали повторяющиеся значения.
+
+### AdaptiveCodecBlocksPriced {#adaptivecodecblockspriced}
+
+Количество блоков, которые адаптивный выбор кодека оценивал с самого начала: каждый блок сжимался всеми кодеками-кандидатами, и сохранялся наименьший результат.
+
+### AdaptiveCodecBlocksRepriced {#adaptivecodecblocksrepriced}
+
+Количество блоков, для которых механизм адаптивного выбора кодека заново оценил стоимость после того, как ранее запомненный оптимальный кодек утратил на них своё преимущество.
+
+### AdaptiveCodecBlocksReused {#adaptivecodecblocksreused}
+
+Количество блоков, которые механизм адаптивного выбора кодека сжал только запомненным ранее кодеком-победителем.
+
+### AdaptiveCodecBytesDefault {#adaptivecodecbytesdefault}
+
+Количество байтов сжатых данных, которые выдал кодек по умолчанию на блоках выборки при адаптивном выборе кодека; одно значение на каждое окно из `adaptive_codec_selection_period` блоков.
+
+### AdaptiveCodecBytesWritten {#adaptivecodecbyteswritten}
+
+Объём сжатых данных (в байтах), записанных механизмом адаптивного выбора кодека в блоки выборки. Отношение к `AdaptiveCodecBytesDefault` показывает экономию по сравнению с кодеком по умолчанию.
 
 ### AddressesDiscovered {#addressesdiscovered}
 
@@ -143,6 +139,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество групп, столбцы ключа которых не были материализованы при преобразовании двухуровневого бакета агрегации, поскольку группа уже была отброшена условием HAVING на её собственный count() (оптимизация плана aggregationHavingPrefilter).
 
+### AggregationIndexedTables {#aggregationindexedtables}
+
+Количество одноуровневых хеш-таблиц агрегации, ячейки которых были проиндексированы по партициям хешей, чтобы при слиянии можно было считывать ячейки части таблицы, не преобразуя её в двухуровневую и не обходя всю таблицу целиком. Адаптивная агрегация индексирует одноуровневую таблицу каждого потока по завершении его работы.
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 Количество блоков, для которых была применена оптимизация равных диапазонов ключей
@@ -157,7 +157,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
-Количество раз, когда хеш-таблица, ограниченная общим набором ключей, сохранённых при отсечении по LIMIT для тривиальной группировки GROUP BY, повторно инициализировалась этими ключами после сброса во временный файл при внешней агрегации (см. настройку `optimize_trivial_group_by_limit_query`).
+Количество раз, когда хеш-таблица, переставшая принимать новые ключи при `group_by_overflow_mode = any`, повторно инициализировалась сохранёнными ею ключами после сброса во временный файл при внешней агрегации, чтобы оставшиеся строки для этих ключей продолжали агрегироваться. Учитывает как общий набор ключей, сохранённых при пороге отсечения при тривиальной оптимизации GROUP BY LIMIT (см. настройку `optimize_trivial_group_by_limit_query`), так и отдельное для каждого потока множество при обычном ограничении `max_rows_to_group_by`.
 
 ### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
 
@@ -191,9 +191,29 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество HTTP-запросов, отправленных провайдерам ИИ.
 
+### AIAPICallsFailed {#aiapicallsfailed}
+
+Количество запросов к провайдеру ИИ, завершившихся ошибкой после всех повторных попыток.
+
+### AIAPICallsRetried {#aiapicallsretried}
+
+Количество запросов к провайдеру ИИ, повторно выполненных после временного сбоя.
+
+### AIAPICallsThrottled {#aiapicallsthrottled}
+
+Количество запросов к провайдеру ИИ, отклонённых с кодом HTTP 429 (Too Many Requests).
+
+### AICacheReadTokens {#aicachereadtokens}
+
+Токены промпта, считанные из кэша провайдера, по данным провайдеров AI-чата. Учитываются в AIInputTokens.
+
+### AICacheWriteTokens {#aicachewritetokens}
+
+Количество токенов промпта, записанных в кэш провайдера, по данным провайдеров AI-чата. Входит в AIInputTokens.
+
 ### AIInputTokens {#aiinputtokens}
 
-Суммарное количество токенов промпта, использованных во всех вызовах функции ИИ в рамках запроса.
+Суммарное количество токенов промпта, использованных во всех вызовах функции ИИ в рамках запроса, включая чтения из кэша и операции записи в кэш.
 
 ### AIORead {#aioread}
 
@@ -215,6 +235,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество байтов, записанных с использованием интерфейса AIO в Linux или FreeBSD
 
+### AIRequestMicroseconds {#airequestmicroseconds}
+
+Общее время, затраченное на запросы к провайдеру ИИ, включая неудачные попытки и разбор ответов, без учёта задержек перед повторными попытками. Суммируется по всем потокам.
+
+### AIRetryBackoffMicroseconds {#airetrybackoffmicroseconds}
+
+Общее время ожидания перед повторными попытками неудачных запросов к провайдеру ИИ, суммарно по всем потокам.
+
 ### AIRowsProcessed {#airowsprocessed}
 
 Количество строк, которые получили результат ИИ.
@@ -230,6 +258,38 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### AllUsersThrottlerSleepMicroseconds {#allusersthrottlersleepmicroseconds}
 
 Общее время, в течение которого запрос ожидал из-за throttling по параметру &#39;max&#95;network&#95;bandwidth&#95;for&#95;all&#95;users&#39;.
+
+### AmberConnectionsCreated {#amberconnectionscreated}
+
+Количество созданных соединений для Amber
+
+### AmberConnectionsElapsedMicroseconds {#amberconnectionselapsedmicroseconds}
+
+Общее время, затраченное на создание соединений для Amber
+
+### AmberConnectionsErrors {#amberconnectionserrors}
+
+Количество неудачных попыток создать соединение для Amber
+
+### AmberConnectionsExpired {#amberconnectionsexpired}
+
+Количество соединений Amber с истекшим сроком действия
+
+### AmberConnectionsPreserved {#amberconnectionspreserved}
+
+Количество сохранённых соединений для Amber
+
+### AmberConnectionsReset {#amberconnectionsreset}
+
+Количество сброшенных соединений для Amber
+
+### AmberConnectionsReused {#amberconnectionsreused}
+
+Количество повторно использованных соединений для Amber
+
+### AmberFailedPromotions {#amberfailedpromotions}
+
+Количество случаев, когда этот узел захватывал блокировку amber master, но не смог выполнить fencing и восстановить том, после чего освобождал блокировку.
 
 ### AnalyzePatchRangesMicroseconds {#analyzepatchrangesmicroseconds}
 
@@ -429,7 +489,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
 
-Количество случаев, когда число строк, прочитанных из хранилища, отличалось от кэшированной статистики более чем в 2 раза, из-за чего механизм автоматических параллельных реплик не принимал решение, а заново собирал статистику
+Количество случаев, когда число строк, прочитанных из хранилища, отличалось от кэшированной статистики более чем на `automatic_parallel_replicas_statistics_drift_ratio`, из-за чего механизм автоматических параллельных реплик не принимал решение, а заново собирал статистику
 
 ### AzureClients {#azureclients}
 
@@ -635,17 +695,33 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество ошибок при блокировке blob-объектов во время выполнения BlobKiller
 
+### BlobKillerThreadLockedBatchedBlobs {#blobkillerthreadlockedbatchedblobs}
+
+Количество blob-объектов, возвращённых из хранилища метаданных в составе пакета
+
 ### BlobKillerThreadLockedBlobs {#blobkillerthreadlockedblobs}
 
 Количество blob-объектов, полученных из хранилища метаданных
+
+### BlobKillerThreadLockedSingleBlobs {#blobkillerthreadlockedsingleblobs}
+
+Количество blob-объектов, возвращённых из хранилища метаданных поштучно
 
 ### BlobKillerThreadRecordBlobsErrors {#blobkillerthreadrecordblobserrors}
 
 Количество ошибок записи blob-объектов, возникших во время работы BlobKiller
 
+### BlobKillerThreadRecordedBatchedBlobs {#blobkillerthreadrecordedbatchedblobs}
+
+Количество blob-объектов, удалённых в составе пакета, удаление которых компонентом BlobKiller было зафиксировано в хранилище метаданных
+
 ### BlobKillerThreadRecordedBlobs {#blobkillerthreadrecordedblobs}
 
 Количество blob-объектов, удаление которых было зафиксировано BlobKiller в хранилище метаданных
+
+### BlobKillerThreadRecordedSingleBlobs {#blobkillerthreadrecordedsingleblobs}
+
+Количество поштучно удалённых blob-объектов, удаление которых компонентом BlobKiller было зафиксировано в хранилище метаданных
 
 ### BlobKillerThreadRemoveBlobsErrors {#blobkillerthreadremoveblobserrors}
 
@@ -838,6 +914,18 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### CompressedReadBufferChecksumDoesntMatchSingleBitMismatch {#compressedreadbufferchecksumdoesntmatchsinglebitmismatch}
 
 Количество случаев, когда несовпадение контрольной суммы сжатого блока было вызвано отличием в один бит.
+
+### CompressedWriteBufferBlocks {#compressedwritebufferblocks}
+
+Количество сжатых блоков (блоков данных, сжимаемых независимо друг от друга), записанных с помощью `CompressedWriteBuffer` (в файлы, по сети, во временные данные).
+
+### CompressedWriteBufferBytes {#compressedwritebufferbytes}
+
+Количество несжатых байтов (т. е. байтов до сжатия), переданных `CompressedWriteBuffer` кодекам сжатия.
+
+### CompressedWriteBufferCompressMicroseconds {#compressedwritebuffercompressmicroseconds}
+
+Общее время, проведённое в кодеках сжатия в `CompressedWriteBuffer`.
 
 ### ConcurrencyControlDownscales {#concurrencycontroldownscales}
 
@@ -1270,6 +1358,18 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество каталогов, удалённых хранилищем метаданных &#39;plain&#95;rewritable&#39; в S3ObjectStorage.
 
+### DiskPlainRewritableSnapshotRead {#diskplainrewritablesnapshotread}
+
+Количество случаев, когда диск &#39;plain&#95;rewritable&#39; в режиме только для чтения загружал своё состояние из файла снимка состояния, а не через получение списка объектов в объектном хранилище (если при обновлении снимок не изменился, он не считывается и не учитывается).
+
+### DiskPlainRewritableSnapshotWriteFailed {#diskplainrewritablesnapshotwritefailed}
+
+Количество неудачных попыток записи файла снимка состояния диска &#39;plain&#95;rewritable&#39; (запись повторяется).
+
+### DiskPlainRewritableSnapshotWritten {#diskplainrewritablesnapshotwritten}
+
+Количество файлов снимков состояния, записанных дисками типа &#39;plain&#95;rewritable&#39;.
+
 ### DiskPlainRewritableUndoStageRetries {#diskplainrewritableundostageretries}
 
 Сколько раз шаг отката неудавшейся транзакции метаданных &#39;plain&#95;rewritable&#39; приходилось повторять из-за того, что объектное хранилище его отклонило.
@@ -1434,6 +1534,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие подключения к распределённому кэшу. Время, затраченное на подключение к распределённому кэшу.
 
+### DistrCacheEndRequestMicroseconds {#distrcacheendrequestmicroseconds}
+
+Событие клиента распределённого кэша. Время, затраченное на отправку пакетов EndRequest в distributed cache
+
+### DistrCacheEndRequestNotSentSocketNotWritable {#distrcacheendrequestnotsentsocketnotwritable}
+
+Событие клиента распределённого кэша. Количество пакетов EndRequest, которые не были отправлены, поскольку сокет был недоступен для записи (сервер перестал вычитывать из него данные): вместо этого соединение разрывается, и сервер получает EOF
+
 ### DistrCacheEstimatedInflightBytesOnSeek {#distrcacheestimatedinflightbytesonseek}
 
 Событие буфера чтения distributed cache. Оценочный объём данных «в полёте» (в байтах) при операциях seek, на которых рассматривалась возможность разорвать соединение (сравните с DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
@@ -1457,6 +1565,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### DistrCacheInlineWrites {#distrcacheinlinewrites}
 
 Событие буфера записи для Distributed Cache. Количество операций записи в кэш, выполненных inline в вызывающем потоке (запись временных данных, с которой не может быть совмещена запись в объектное хранилище)
+
+### DistrCacheKeptConnectionsInflightBytes {#distrcachekeptconnectionsinflightbytes}
+
+Событие буфера чтения Distributed Cache. Оценочный объём in-flight байтов в соединениях, учитываемых в DistrCacheKeptConnectionsWithInflightData (сравните с DistrCacheUnusedDataPacketsBytesUnknownRequest)
+
+### DistrCacheKeptConnectionsWithInflightData {#distrcachekeptconnectionswithinflightdata}
+
+Событие буфера чтения distributed cache. Количество случаев, когда при отмене запроса на чтение, пока данные ещё могли поступать, соединение оставалось в пуле, поскольку оценочный объём байтов в процессе передачи (in-flight) не превышал `distributed_cache_min_inflight_bytes_to_discard_connection`
 
 ### DistrCacheLockRegistryMicroseconds {#distrcachelockregistrymicroseconds}
 
@@ -1526,6 +1642,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие клиента распределённого кэша. Количество ошибок распределённого кэша при запросах чтения, допускающих повторную попытку (учитываются при каждом возникновении, включая ошибки, устранённые повторной попыткой)
 
+### DistrCacheReadFinalAckFailed {#distrcachereadfinalackfailed}
+
+Событие Distributed Cache. Количество чтений, при которых соединение было разорвано до получения финального подтверждения; полностью полученный диапазон был принят
+
 ### DistrCacheReadMicroseconds {#distrcachereadmicroseconds}
 
 Событие буфера чтения распределённого кэша. Время, затраченное на чтение из распределённого кэша
@@ -1594,6 +1714,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие подключения к распределённому кэшу. Время, затраченное на удаление устаревших подключений из пула
 
+### DistrCacheRequestsEndedOnRelease {#distrcacherequestsendedonrelease}
+
+Событие клиента распределённого кэша. Количество открытых запросов, которые клиенту пришлось завершить при их освобождении (повторная попытка с переподключением, новый запрос поверх незавершённого или завершение работы клиента), а не считывателю — явным образом
+
 ### DistrCacheReusedConnections {#distrcachereusedconnections}
 
 Событие подключения к распределённому кэшу. Количество повторно используемых соединений с распределённым кэшем
@@ -1658,6 +1782,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие сервера распределённого кэша. Количество байтов, прочитанных из объектного хранилища в рамках распределённого кэша при чтении из файлового кэша
 
+### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
+
+Событие сервера Distributed Cache. Время ожидания мьютекса закоммиченных временных файлов при конкуренции.
+
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
 Distributed Cache server event. Время ожидания мьютекса бакета соединений отдельного клиента при contention (register/unregister/identify/eviction)
@@ -1698,6 +1826,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Событие сервера Distributed Cache. Количество клиентских пакетов RefreshCredentials, полученных в DistributedCacheServer
 
+### DistrCacheServerRequestsClosedWithoutEndRequest {#distrcacheserverrequestsclosedwithoutendrequest}
+
+Событие сервера Distributed Cache. Количество запросов, клиент которых закрыл соединение, не отправив EndRequest (клиент был принудительно завершён, его сокет был недоступен для записи или это устаревший клиент), из-за чего сервер прекратил их обслуживание при получении EOF. Закрытия по инициативе самого сервера (остановка или вытеснение соединения) не учитываются
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Событие сервера Distributed Cache. Количество повторно использованных кэшированных клиентов S3
@@ -1717,6 +1849,38 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### DistrCacheServerSwitches {#distrcacheserverswitches}
 
 Событие буфера чтения Distributed Cache. Количество переключений между серверами Distributed Cache в кэше с политикой read/write-through
+
+### DistrCacheServerTemporaryCleanupScheduleFailures {#distrcacheservertemporarycleanupschedulefailures}
+
+Событие сервера Distributed Cache. Количество закоммиченных временных объектов, для которых не удалось запланировать очистку
+
+### DistrCacheServerTemporaryDataControlMicroseconds {#distrcacheservertemporarydatacontrolmicroseconds}
+
+Событие сервера Distributed Cache. Время, затраченное на обработку закоммиченных управляющих команд для временных данных
+
+### DistrCacheServerTemporaryFilesExpired {#distrcacheservertemporaryfilesexpired}
+
+Событие сервера Distributed Cache. Количество закоммиченных временных файлов с истекшим сроком действия
+
+### DistrCacheServerTemporaryFilesExtended {#distrcacheservertemporaryfilesextended}
+
+Событие сервера Distributed Cache. Количество закоммиченных продлений TTL временных файлов
+
+### DistrCacheServerTemporaryFilesPublished {#distrcacheservertemporaryfilespublished}
+
+Событие сервера Distributed Cache. Количество опубликованных закоммиченных временных файлов
+
+### DistrCacheServerTemporaryFilesPublishRejected {#distrcacheservertemporaryfilespublishrejected}
+
+Событие сервера Distributed Cache. Количество отклонённых закоммиченных временных публикаций
+
+### DistrCacheServerTemporaryFilesReleased {#distrcacheservertemporaryfilesreleased}
+
+Событие сервера Distributed Cache. Количество освобождённых закоммиченных временных файлов
+
+### DistrCacheServerTemporaryReadRejected {#distrcacheservertemporaryreadrejected}
+
+Событие сервера Distributed Cache. Количество отклонённых закоммиченных временных чтений
 
 ### DistrCacheServerUpdates {#distrcacheserverupdates}
 
@@ -1746,13 +1910,65 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Событие клиента распределённого кэша. Количество ошибок распределённого кэша при запросах к системным таблицам интроспекции (`system.distributed_cache`, `system.distributed_cache_metrics`, `system.distributed_cache_events`). Эти запросы не выполняются повторно, поэтому ошибки, допускающие повторную попытку, и ошибки, не допускающие её, учитываются вместе
 
+### DistrCacheTemporaryDataRegistryCallbackFailures {#distrcachetemporarydataregistrycallbackfailures}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество перехваченных сбоев функций обратного вызова реестра временных данных
+
+### DistrCacheTemporaryDataRegistryLockWaitMicroseconds {#distrcachetemporarydataregistrylockwaitmicroseconds}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Время ожидания мьютекса registry временных данных при конкуренции
+
+### DistrCacheTemporaryDataRegistryScheduleFailures {#distrcachetemporarydataregistryschedulefailures}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество сбоев при планировании задач registry временных данных
+
+### DistrCacheTemporaryDataReleaseBatches {#distrcachetemporarydatareleasebatches}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество пакетов освобождения
+
+### DistrCacheTemporaryDataReleaseBatchFailures {#distrcachetemporarydatareleasebatchfailures}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество пакетов освобождения, обработка которых завершилась сбоем
+
+### DistrCacheTemporaryDataReleasesDropped {#distrcachetemporarydatareleasesdropped}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество освобождений, от которых пришлось отказаться после неустранимой ошибки или после истечения server-side TTL во время повторных попыток; такие данные остаются для очистки по TTL
+
+### DistrCacheTemporaryDataRenewBatches {#distrcachetemporarydatarenewbatches}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество пакетов продления
+
+### DistrCacheTemporaryDataRenewBatchFailures {#distrcachetemporarydatarenewbatchfailures}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество неудачных пакетов продления
+
 ### DistrCacheTemporaryFilesBytesWritten {#distrcachetemporaryfilesbyteswritten}
 
 Событие подключения к распределённому кэшу. Количество байтов, записанных во временные файлы, созданные в распределённом кэше
 
+### DistrCacheTemporaryFilesConfirmationFailed {#distrcachetemporaryfilesconfirmationfailed}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество неудачных подтверждений публикации
+
+### DistrCacheTemporaryFilesConfirmed {#distrcachetemporaryfilesconfirmed}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество публикаций, подтверждённых на исходном сервере
+
 ### DistrCacheTemporaryFilesCreated {#distrcachetemporaryfilescreated}
 
 Событие подключения к распределённому кэшу. Количество временных файлов, созданных в распределённом кэше
+
+### DistrCacheTemporaryFilesHandoffFailed {#distrcachetemporaryfileshandofffailed}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество неудачных попыток передачи владения
+
+### DistrCacheTemporaryFilesPublicationAmbiguous {#distrcachetemporaryfilespublicationambiguous}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество неоднозначных ответов на публикацию.
+
+### DistrCacheTemporaryFilesPublished {#distrcachetemporaryfilespublished}
+
+Событие Distributed Cache, связанное с закоммиченными временными данными. Количество файлов, опубликованных клиентом
 
 ### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
 
@@ -2266,6 +2482,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Сколько раз ожидание сегмента файла в состоянии DOWNLOADING завершилось по тайм-ауту (см. `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+Количество случаев, когда ожидание сегмента файла в состоянии DOWNLOADING завершилось из-за того, что загрузчик освободил сегмент, не успев загрузить данные до ожидаемого смещения
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+Время, затраченное на ожидания, учитываемые счётчиком `FileSegmentWaitWithoutData`
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 Время выполнения write() для сегмента файла
@@ -2422,6 +2646,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Время блокировки файлового кэша при записи в очередь с приоритетом
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+Количество сегментов файла, повышенных (перемещённых) из пробационной очереди в защищённую в политике кэширования SLRU.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 Количество случаев, когда резервирование места в файловом кэше с упреждением (опережающее резервирование) не удалось выполнить из-за нехватки места и оно было повторено ровно на запрошенный размер
@@ -2506,9 +2734,25 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее время, затраченное на ожидание запуска новых потоков.
 
+### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
+
+Количество гранул, прочитанных считывателями PREWHERE (то есть гранул, для которых вычислялось условие PREWHERE). Каждая гранула учитывается один раз, даже если она разбита на несколько прочитанных блоков.
+
+### GranulesSkippedByPrewhereReaders {#granulesskippedbyprewherereaders}
+
+Количество гранул, полностью отброшенных PREWHERE: все строки гранулы были отфильтрованы. Гранула, в которой осталась хотя бы одна строка, не учитывается. Каждая гранула учитывается один раз, даже если она разбита на несколько прочитанных блоков. Это логический счётчик фильтрации: он не означает, что основной считыватель ничего не прочитал из гранулы.
+
 ### HardPageFaults {#hardpagefaults}
 
 Количество серьёзных страничных ошибок в потоках выполнения запроса. Высокие значения указывают либо на то, что вы забыли отключить swap на сервере, либо на вытеснение страниц памяти бинарного файла ClickHouse при очень высокой нехватке памяти, либо на успешное использование метода чтения &#39;mmap&#39; для данных таблицы.
+
+### HashJoinBuiltWithParallelLayout {#hashjoinbuiltwithparallellayout}
+
+Количество хеш-таблиц для хеш-соединений, построенных из нескольких частей. Части одновременно заполняют до `max_threads` потоков, а при `max_threads = 1` все части заполняет один поток. Какие хеш-соединения строятся таким образом, определяет настройка `parallel_hash_join_threshold`.
+
+### HashJoinBuiltWithSerialLayout {#hashjoinbuiltwithseriallayout}
+
+Количество хеш-таблиц, построенных для хеш-соединений одной частью, с вставкой по одной за раз. Каждая хеш-таблица учитывается один раз, поэтому хеш-соединение Grace добавляет по единице за каждый бакет, загружаемый в память. См. HashJoinBuiltWithParallelLayout.
 
 ### HashJoinPreallocatedElementsInHashTables {#hashjoinpreallocatedelementsinhashtables}
 
@@ -2650,6 +2894,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество файлов Iceberg `metadata.json`, прочитанных из хранилища (а не из кэша метаданных Iceberg).
 
+### IcebergMetadataJSONValidations {#icebergmetadatajsonvalidations}
+
+Количество проверок файла Iceberg `metadata.json` на наличие полей, которые требует спецификация Iceberg. Файл, полученный из кэша метаданных Iceberg, проверяется только один раз.
+
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
 Общее время, в течение которого потоки чтения данных ожидают, пока файлы метаданных Iceberg будут прочитаны и разобраны, в сумме по всем потокам чтения.
@@ -2681,6 +2929,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### IcebergPartitionPrunedManifestFiles {#icebergpartitionprunedmanifestfiles}
 
 Количество файлов манифеста Iceberg, пропущенных без чтения благодаря сводкам по партициям из списка файлов манифеста
+
+### IcebergRuntimeFilterPrunedFiles {#icebergruntimefilterprunedfiles}
+
+Количество файлов данных Iceberg, пропущенных из-за того, что границы в их манифестах не могут содержать ключ фильтра времени выполнения JOIN
 
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
@@ -2874,6 +3126,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее время, затраченное на выполнение оптимизаций плана выполнения JOIN.
 
+### JoinPackedStringKeysHashed {#joinpackedstringkeyshashed}
+
+Количество одиночных ключей соединения типа `String` длиной 16 байт и более, которые хеш-соединения вставили в свои хеш-таблицы в виде 128-битного `SipHash` (см. `enable_packed_string_keys_in_hash_join`). JOIN с `OR` вставляет ключ для каждого условия. Строка учитывается повторно при каждой повторной вставке: после того как JOIN с алгоритмом `grace_hash` разделяет свои корзины или после того как JOIN со сбросом данных на диск переключается на `grace_hash`.
+
+### JoinPackedStringKeysInline {#joinpackedstringkeysinline}
+
+Количество одиночных ключей соединения типа `String` размером до 15 байт, которые хеш-соединения вставили в свои хеш-таблицы во встроенном виде (см. `enable_packed_string_keys_in_hash_join`). JOIN с `OR` вставляет ключ для каждого условия. Строка учитывается повторно, если она вставляется повторно: после того как JOIN `grace_hash` разделяет свои корзины, или после того как JOIN со сбросом данных на диск переключается на `grace_hash`.
+
 ### JoinProbeTableRowCount {#joinprobetablerowcount}
 
 Общее количество строк в probe-таблице для операции JOIN.
@@ -2888,7 +3148,11 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 ### JoinSpillingHashJoinSwitchedToGraceJoin {#joinspillinghashjoinswitchedtogracejoin}
 
-Количество случаев, когда (Concurrent)HashJoin переключался на GraceHashJoin из-за ограничения по памяти в SpillingHashJoin.
+Количество случаев, когда HashJoin переключался на GraceHashJoin из-за ограничения по памяти в SpillingHashJoin.
+
+### JoinSpillingHashJoinSwitchedToMergeJoin {#joinspillinghashjoinswitchedtomergejoin}
+
+Количество случаев переключения с HashJoin на MergeJoin из-за ограничения памяти в SpillingHashJoin. MergeJoin выбирается вместо GraceHashJoin, если план запроса требует, чтобы JOIN сохранял порядок строк левого потока.
 
 ### KafkaBackgroundReads {#kafkabackgroundreads}
 
@@ -3322,9 +3586,17 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество объектов снимка, отправленных ведомым узлам
 
+### KeeperReadSnapshotStreamingSeeks {#keeperreadsnapshotstreamingseeks}
+
+Количество случаев, когда при потоковой передаче снимка считыватель менял позицию чтения, поскольку NuRaft запрашивал не следующий по порядку объект, а другой
+
 ### KeeperReconfigRequest {#keeperreconfigrequest}
 
 Число запросов на реконфигурацию
+
+### KeeperRejectedCommittedLogRollback {#keeperrejectedcommittedlogrollback}
+
+Количество случаев, когда Keeper отклонил запрос, который привёл бы к откату уже закоммиченных записей журнала
 
 ### KeeperRemoveRequest {#keeperremoverequest}
 
@@ -3674,6 +3946,30 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Число запущенных фоновых слияний.
 
+### MergeCheckpointable {#mergecheckpointable}
+
+Количество запущенных фоновых слияний с включённым `enable_merge_checkpoints`, для которых сохраняются контрольные точки.
+
+### MergeCheckpointSaveMicroseconds {#mergecheckpointsavemicroseconds}
+
+Общее время, затраченное на сохранение контрольных точек слияния, включая их коммит.
+
+### MergeCheckpointsDiscarded {#mergecheckpointsdiscarded}
+
+Количество контрольных точек слияния, удалённых из-за того, что с них не удалось возобновить слияние.
+
+### MergeCheckpointsRemoved {#mergecheckpointsremoved}
+
+Количество контрольных точек слияния, удалённых при их очистке или при удалении таблицы.
+
+### MergeCheckpointsResumed {#mergecheckpointsresumed}
+
+Количество слияний, возобновлённых с контрольной точки слияния.
+
+### MergeCheckpointsSaved {#mergecheckpointssaved}
+
+Количество сохранённых контрольных точек слияния.
+
 ### MergeCommitMilliseconds {#mergecommitmilliseconds}
 
 Общее время, затраченное на фиксацию результатов слияния (переименование части, проверка контрольной суммы, обновление ZooKeeper)
@@ -3729,6 +4025,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### MergeMutateBackgroundExecutorWaitMicroseconds {#mergemutatebackgroundexecutorwaitmicroseconds}
 
 Время, затраченное на ожидание завершения работы исполнителя MergeMutate.
+
+### MergeNonCheckpointable {#mergenoncheckpointable}
+
+Количество фоновых слияний, запущенных с `enable_merge_checkpoints`, для которых невозможно создать контрольную точку (например, горизонтальных слияний).
 
 ### MergePrewarmStageExecuteMilliseconds {#mergeprewarmstageexecutemilliseconds}
 
@@ -4110,6 +4410,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Объекты, которые не соответствовали glob-шаблону или шаблону регулярного выражения и были пропущены при перечислении объектов.
 
+### ObjectStorageHiddenFilteredObjects {#objectstoragehiddenfilteredobjects}
+
+Объекты, пропущенные при получении списка, так как их путь ниже префикса без глоб-шаблона содержит скрытый сегмент (начинающийся с `_` или `.`).
+
 ### ObjectStorageListedObjects {#objectstoragelistedobjects}
 
 Общее количество объектов, возвращённых API перечисления объектов в объектном хранилище до применения какой-либо фильтрации.
@@ -4458,6 +4762,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее количество групп строк Parquet, отсечённых bloom-фильтрами.
 
+### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
+
+Группы строк, данные столбцов которых ридер Parquet для файла в объектном хранилище или по URL начал читать ещё до того, как было запланировано их декодирование, в пределах своей доли max&#95;download&#95;threads
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 Общее количество столбцов, к которым был применён фильтр
@@ -4481,6 +4789,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 Время ожидания при чтении файла Parquet потоками декодирования (а не потоками предвыборки)
+
+### ParquetFilesSkippedByCachedStatistics {#parquetfilesskippedbycachedstatistics}
+
+Количество файлов Parquet, пропущенных при чтении без открытия, поскольку статистика min/max по столбцам фильтра, сохранённая вместе с кэшированными метаданными файла при предыдущем чтении той же версии файла, исключает все группы строк
 
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
@@ -4549,6 +4861,18 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 Общее количество строк, пропущенных фильтром
+
+### ParquetRuntimeFilterPrunedPages {#parquetruntimefilterprunedpages}
+
+Количество страниц Parquet, пропущенных из-за того, что их индекс страниц не может содержать ключ фильтра времени выполнения JOIN
+
+### ParquetRuntimeFilterPrunedRowGroups {#parquetruntimefilterprunedrowgroups}
+
+Количество групп строк Parquet, пропущенных, поскольку согласно их статистике столбцов они не могут содержать ключ фильтра времени выполнения JOIN
+
+### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
+
+Количество групп строк Parquet, для которых диапазон столбца сортировки `ORDER BY ... LIMIT` был определён по значениям их словаря, способным пройти фильтр, поскольку статистика min/max не позволила его ограничить (см. `use_top_k_dynamic_filtering`)
 
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
@@ -4962,6 +5286,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Физические байты, которые ReaderExecutor запросил у источника после промаха по всем уровням кэша (включая предзагрузку на переднем плане и в фоне, а также байты предзагрузки, впоследствии потерянные из-за отбрасывания); не включает байты, обслуженные потребителем — см. ReaderExecutorDeliveredBytes.
 
+### ReaderExecutorBytesOutsideRequestMap {#readerexecutorbytesoutsiderequestmap}
+
+Часть ReaderExecutorBytesFromSource, выходящая за пределы карты запроса, объявленной считывателем. Для чтений без карты равно нулю.
+
 ### ReaderExecutorCacheGetRequests {#readerexecutorcachegetrequests}
 
 Количество вызовов `ICacheHandle::get` в ReaderExecutor. Равно нулю до появления уровней кэша ReaderExecutor.
@@ -5257,6 +5585,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### RowsReadByPrewhereReaders {#rowsreadbyprewherereaders}
 
 Общее количество строк, прочитанных из таблиц MergeTree средствами чтения prewhere.
+
+### RowsSkippedByPrewhereReaders {#rowsskippedbyprewherereaders}
+
+Количество строк, отклонённых PREWHERE, то есть строк, для которых условие PREWHERE вернуло false. Это счётчик логической фильтрации; он не означает, что основной считыватель не читал эти строки.
 
 ### RuntimeDataflowStatisticsInputBytes {#runtimedataflowstatisticsinputbytes}
 
@@ -6390,6 +6722,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество вызовов табличной функции.
 
+### TextIndexDictionaryDFABuilds {#textindexdictionarydfabuilds}
+
+Количество случаев построения DFA по шаблону LIKE для пропуска блоков словаря текстового индекса. Повторное использование ранее построенного DFA не учитывается.
+
 ### TextIndexDiscardHint {#textindexdiscardhint}
 
 Число индексных гранул, для которых прямое чтение из текстового индекса было добавлено как подсказка, но затем отброшено из-за низкой селективности.
@@ -6670,6 +7006,94 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество гранул, пропущенных при чтении, поскольку по первичному индексу видно, что все их строки лежат за пределами текущего порога top-K, который публикуется агрегацией (см. `enable_group_by_top_k_dynamic_filtering`) или сортировкой (см. `use_top_k_dynamic_filtering`).
 
+### TransactionBeginMicroseconds {#transactionbeginmicroseconds}
+
+Время, затраченное на выполнение `BEGIN TRANSACTION` (явного или неявного)
+
+### TransactionBegins {#transactionbegins}
+
+Количество выполнений `BEGIN TRANSACTION` (явных или неявных)
+
+### TransactionBeginSnapshotBehindLatest {#transactionbeginsnapshotbehindlatest}
+
+Количество транзакций, начатых со снимком, который старше последнего CSN, из-за отставания глобальной водяной метки
+
+### TransactionCommitAfterCSNMicroseconds {#transactioncommitaftercsnmicroseconds}
+
+Время, затраченное на финализацию закоммиченных транзакций после выделения им CSN
+
+### TransactionCommitAllocateCSNMicroseconds {#transactioncommitallocatecsnmicroseconds}
+
+Время от начала фиксации транзакции до выделения ей CSN в Keeper
+
+### TransactionCommitConflicts {#transactioncommitconflicts}
+
+Количество фиксаций транзакций, завершившихся ошибкой `SERIALIZATION_ERROR`, поскольку параллельная операция изменила часть данных
+
+### TransactionCommitMicroseconds {#transactioncommitmicroseconds}
+
+Время, затраченное на коммит транзакций, без учета ожидания загрузки CSN
+
+### TransactionCommits {#transactioncommits}
+
+Количество начатых фиксаций транзакций, включая транзакции только для чтения и неудавшиеся
+
+### TransactionCommitsWithCSN {#transactioncommitswithcsn}
+
+Количество фиксаций транзакций, для которых Keeper выделил CSN
+
+### TransactionCommitUnknownStatus {#transactioncommitunknownstatus}
+
+Количество фиксаций транзакций с неизвестным результатом из-за аппаратной ошибки Keeper
+
+### TransactionCommitUnknownStatusWaitMicroseconds {#transactioncommitunknownstatuswaitmicroseconds}
+
+Время ожидания результата коммитов с неизвестным статусом
+
+### TransactionDeadReplicasMarked {#transactiondeadreplicasmarked}
+
+Количество реплик, которые данная реплика пометила как неработающие для транзакций
+
+### TransactionLogLoadedEntries {#transactionlogloadedentries}
+
+Количество записей журнала транзакций (`/log`), прочитанных из Keeper
+
+### TransactionLogLoadMicroseconds {#transactionlogloadmicroseconds}
+
+Время, затраченное на загрузку журнала транзакций (`/log`) из Keeper: получение списка его узлов, чтение новых записей и их применение
+
+### TransactionLogLoads {#transactionlogloads}
+
+Количество загрузок журнала транзакций (`/log`) из Keeper
+
+### TransactionsCommitted {#transactionscommitted}
+
+Количество закоммиченных транзакций, включая транзакции только для чтения
+
+### TransactionsRolledBack {#transactionsrolledback}
+
+Количество откаченных транзакций
+
+### TransactionTIDsInvalidated {#transactiontidsinvalidated}
+
+Количество ID транзакций, признанных этой репликой недействительными
+
+### TransactionWaitCSNLoaded {#transactionwaitcsnloaded}
+
+Количество ожиданий загрузки CSN в последний снимок при синхронном `COMMIT` или `SYSTEM SYNC TRANSACTION LOG`
+
+### TransactionWaitCSNLoadedMicroseconds {#transactionwaitcsnloadedmicroseconds}
+
+Время ожидания загрузки CSN в последний снимок
+
+### TransactionWaitWatermark {#transactionwaitwatermark}
+
+Количество ожиданий того, что водяная метка достигнет CSN и новая транзакция на этой реплике сможет его увидеть, при выполнении `COMMIT` с `wait_visible` или `SYSTEM SYNC TRANSACTION LOG`
+
+### TransactionWaitWatermarkMicroseconds {#transactionwaitwatermarkmicroseconds}
+
+Время ожидания, пока водяная метка не достигнет CSN
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 Количество раз, когда блок данных был найден в кэше несжатых данных, благодаря чему декомпрессия не потребовалась.
@@ -6785,6 +7209,38 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### VersionedCollapsingSortedMilliseconds {#versionedcollapsingsortedmilliseconds}
 
 Общее время, затраченное на схлопывание по версии для отсортированных столбцов
+
+### VortexConvertMicroseconds {#vortexconvertmicroseconds}
+
+Время, затраченное на преобразование массивов Arrow, возвращаемых при сканировании Vortex, в столбцы ClickHouse
+
+### VortexFilterPushdownConjunctsDropped {#vortexfilterpushdownconjunctsdropped}
+
+Количество top-level конъюнктов предложения WHERE, которые не удалось преобразовать для сканирования Vortex и которые поэтому применяются ClickHouse лишь на последующем этапе
+
+### VortexFilterPushdownConjunctsPushed {#vortexfilterpushdownconjunctspushed}
+
+Количество конъюнктов верхнего уровня в предложении WHERE, которые были преобразованы и перенесены в сканирование Vortex
+
+### VortexReadBytes {#vortexreadbytes}
+
+Количество байтов, прочитанных при сканировании Vortex через буфер чтения ClickHouse
+
+### VortexReadRequests {#vortexreadrequests}
+
+Количество запросов на чтение, отправленных при сканировании Vortex через буфер чтения ClickHouse
+
+### VortexReadWaitMicroseconds {#vortexreadwaitmicroseconds}
+
+Время, которое конвейер провёл в ожидании, пока сканирование Vortex выдаст следующее разделение (split)
+
+### VortexScanEmptySplits {#vortexscanemptysplits}
+
+Количество разделений (splits) при сканировании Vortex, все строки которых были отброшены фильтром, перенесённым на уровень чтения (pushdown). Такое разделение передаётся, а значит, и учитывается, только если при сканировании сохраняется порядок файла (`input_format_vortex_preserve_order`) — это единственный считыватель, для которого это имеет значение
+
+### VortexScanSplits {#vortexscansplits}
+
+Количество разделений, выданных при сканировании Vortex
 
 ### WaitMarksLoadMicroseconds {#waitmarksloadmicroseconds}
 

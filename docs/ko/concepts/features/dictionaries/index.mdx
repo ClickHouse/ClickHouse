@@ -6,8 +6,6 @@ description: '딕셔너리는 빠른 조회를 위해 데이터를 키-값 형�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 메모리 내 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 매우 짧은 지연 시간의 조회 쿼리에 최적화되어 있습니다.
 
 딕셔너리는 다음과 같은 용도에 유용합니다:
@@ -15,20 +13,28 @@ ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference
 * 특히 `JOIN`과 함께 사용할 때 쿼리 성능 향상
 * 수집 프로세스의 속도를 저하시키지 않으면서 수집된 데이터를 실시간으로 보강
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 딕셔너리의 사용 사례" />
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickHouse에서 딕셔너리의 활용 사례](/images/dictionary/dictionary-use-cases.webp)
+  </Frame>
+</div>
 
 ## 딕셔너리를 사용해 조인 속도 높이기 {#speeding-up-joins-using-a-dictionary}
 
 딕셔너리는 특정 유형의 `JOIN` 속도를 높이는 데 사용할 수 있습니다. 여기서 말하는 유형은 조인 키가 기반 키-값 저장소의 키 속성과 일치해야 하는 [`LEFT ANY` 유형](/ko/reference/statements/select/join#supported-types-of-join)입니다.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="딕셔너리를 사용한 LEFT ANY JOIN" />
+<div className="ch-image-sm">
+  <Frame>
+    ![딕셔너리를 사용한 LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+  </Frame>
+</div>
 
 이 경우 ClickHouse는 딕셔너리를 활용해 [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)을 수행할 수 있습니다. 이는 ClickHouse에서 가장 빠른 조인 알고리즘이며, 오른쪽 테이블의 기반 [테이블 엔진](/ko/reference/engines/table-engines/index)이 지연 시간이 짧은 키-값 요청을 지원할 때 적용할 수 있습니다. ClickHouse는 이를 지원하는 3개의 테이블 엔진을 제공합니다. [Join](/ko/reference/engines/table-engines/special/join)(기본적으로 미리 계산된 해시 테이블), [EmbeddedRocksDB](/ko/reference/engines/table-engines/integrations/embedded-rocksdb), [Dictionary](/ko/reference/engines/table-engines/special/dictionary)입니다. 여기서는 딕셔너리 기반 접근 방식을 설명하지만, 동작 원리는 세 엔진 모두 동일합니다.
 
 Direct Join 알고리즘을 사용하려면 오른쪽 테이블이 딕셔너리를 기반으로 해야 합니다. 즉, 해당 테이블에서 조인할 데이터가 이미 메모리에 지연 시간이 짧은 키-값 데이터 구조 형태로 존재해야 합니다.
 
 <div id="example">
-  ### 예시
+  ### 예시 {#example}
 </div>
 
 [Stack Overflow 데이터셋](/ko/get-started/sample-datasets/stackoverflow)을 사용해 다음 질문에 답해 보겠습니다.
@@ -85,9 +91,7 @@ Peak memory usage: 3.18 GiB.
 
 이 쿼리는 빠르지만, 좋은 성능을 내려면 `JOIN`을 신중하게 작성해야 합니다. 이상적으로는 메트릭을 계산하기 위해 해당 블로그 하위 집합의 `UpVote` 및 `DownVote` 수를 보기 전에, 먼저 &quot;SQL&quot;을 포함하는 게시물만 필터링하면 됩니다.
 
-<div id="applying-a-dictionary">
-  #### 딕셔너리 적용
-</div>
+#### 딕셔너리 적용 {#applying-a-dictionary}
 
 이 개념을 설명하기 위해 투표 데이터에 딕셔너리를 사용합니다. 딕셔너리는 일반적으로 메모리에 유지되므로([ssd&#95;cache](/ko/reference/statements/create/dictionary/layouts/ssd-cache)는 예외입니다) 데이터 크기를 염두에 두어야 합니다. `votes` 테이블의 크기를 확인해 보겠습니다:
 
@@ -111,7 +115,7 @@ GROUP BY table
 
 > 아래 예시에서는 딕셔너리 데이터의 원본이 ClickHouse 테이블입니다. 이것이 딕셔너리에서 가장 일반적인 소스이지만, 파일, HTTP, [Postgres](/ko/reference/statements/create/dictionary/sources/postgresql)를 포함한 데이터베이스 등 [여러 소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)도 지원됩니다. 아래에서 보시겠지만 딕셔너리는 자동으로 갱신할 수 있으므로, 자주 변경되는 소규모 데이터셋을 Direct JOIN에 사용할 수 있도록 유지하는 데 매우 적합합니다.
 
-딕셔너리에는 조회에 사용할 프라이머리 키(primary key)가 필요합니다. 이는 개념적으로 트랜잭션 데이터베이스의 프라이머리 키와 동일하며, 고유해야 합니다. 위 쿼리에서는 조인 키인 `PostId`에 대한 조회가 필요합니다. 따라서 딕셔너리는 `votes` 테이블에서 `PostId`별 upvote와 downvote의 합계로 채워져야 합니다. 다음은 이 딕셔너리 데이터를 가져오기 위한 쿼리입니다:
+딕셔너리에는 조회에 사용할 프라이머리 키(primary key)가 필요합니다. 이는 개념적으로 트랜잭션 데이터베이스의 프라이머리 키와 동일하며, 고유해야 합니다. 위 쿼리에서는 조인 키인 `PostId`에 대한 조회가 필요합니다. 따라서 딕셔너리는 `votes` 테이블에서 `PostId`별 추천과 비추천의 합계로 채워져야 합니다. 다음은 이 딕셔너리 데이터를 가져오기 위한 쿼리입니다:
 
 ```sql
 SELECT PostId,
@@ -120,6 +124,10 @@ SELECT PostId,
 FROM votes
 GROUP BY PostId
 ```
+
+<Note title="ClickHouse Cloud">
+  ClickHouse 테이블에서 데이터를 읽는 딕셔너리를 생성할 때는 `SOURCE` 절에 전용 사용자의 사용자 이름과 비밀번호를 포함하십시오. 해당 사용자에게는 원본 테이블에 대한 `SELECT` 권한(permission)이 필요합니다. 자세한 내용은 [ClickHouse 딕셔너리 소스 예시](/ko/reference/statements/create/dictionary/sources/clickhouse)를 참조하십시오.
+</Note>
 
 딕셔너리를 생성하려면 다음 DDL이 필요합니다. 여기서는 위에서 사용한 쿼리를 활용합니다.
 
@@ -156,7 +164,7 @@ WHERE name = 'votes_dict'
 └──────────┘
 ```
 
-이제 특정 `PostId`의 찬성표와 반대표는 간단한 `dictGet` 함수로 조회할 수 있습니다. 아래에서는 게시물 `11227902`의 값을 조회합니다:
+이제 특정 `PostId`의 추천과 비추천은 간단한 `dictGet` 함수로 조회할 수 있습니다. 아래에서는 게시물 `11227902`의 값을 조회합니다:
 
 ```sql
 SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
@@ -192,10 +200,10 @@ LIMIT 3
 Peak memory usage: 552.26 MiB.
 ```
 
-이 쿼리는 훨씬 더 단순할 뿐만 아니라 속도도 2배 이상 빠릅니다! 또한 upvote와 downvote가 10개를 넘는 게시물만 딕셔너리에 로드하고, 미리 계산된 controversial 값만 저장하도록 하면 더 최적화할 수 있습니다.
+이 쿼리는 훨씬 더 단순할 뿐만 아니라 속도도 2배 이상 빠릅니다! 또한 추천과 비추천이 10개를 넘는 게시물만 딕셔너리에 로드하고, 미리 계산된 controversial 값만 저장하도록 하면 더 최적화할 수 있습니다.
 
 <div id="query-time-enrichment">
-  ## 쿼리 시점 보강
+  ## 쿼리 시점 보강 {#query-time-enrichment}
 </div>
 
 딕셔너리는 쿼리 시점에 값을 조회하는 데 사용할 수 있습니다. 이러한 값은 결과로 반환되거나 집계에 활용될 수 있습니다. 예를 들어, 사용자 ID를 위치에 매핑하는 딕셔너리를 생성한다고 가정해 보겠습니다:
@@ -342,13 +350,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## 고급 딕셔너리 주제
+  ## 고급 딕셔너리 주제 {#advanced-dictionary-topics}
 </div>
 
 딕셔너리 레이아웃을 선택하는 방법, 딕셔너리와 조인 중 언제 무엇을 사용해야 하는지, 그리고 딕셔너리 사용량을 모니터링하는 방법에 대한 지침은 [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices)를 참조하십시오.
 
 <div id="refreshing-dictionaries">
-  ### 딕셔너리 갱신
+  ### 딕셔너리 갱신 {#refreshing-dictionaries}
 </div>
 
 딕셔너리에 `MIN 600 MAX 900`의 `LIFETIME`을 지정했습니다. LIFETIME은 딕셔너리의 갱신 주기이며, 여기서 설정한 값에 따라 600초에서 900초 사이의 임의 간격으로 주기적으로 다시 로드됩니다. 이러한 임의 간격은 많은 수의 서버에서 업데이트할 때 딕셔너리 소스에 걸리는 부하를 분산하기 위해 필요합니다. 업데이트 중에도 이전 버전의 딕셔너리는 계속 쿼리할 수 있으며, 쿼리가 차단되는 경우는 초기 적재 시뿐입니다. `(LIFETIME(0))`을 설정하면 딕셔너리가 갱신되지 않습니다.
@@ -357,7 +365,7 @@ Peak memory usage: 666.82 MiB.
 ClickHouse 및 Postgres와 같은 데이터베이스 소스의 경우, 주기적 간격으로 업데이트하는 대신 실제로 변경되었을 때만 딕셔너리가 업데이트되도록 쿼리를 설정할 수 있습니다(이 여부는 쿼리 응답으로 결정됩니다). 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/lifetime)에서 확인할 수 있습니다.
 
 <div id="other-dictionary-types">
-  ### 기타 딕셔너리 유형
+  ### 기타 딕셔너리 유형 {#other-dictionary-types}
 </div>
 
 ClickHouse는 [Hierarchical](/ko/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/ko/reference/statements/create/dictionary/layouts/polygon), [Regular Expression](/ko/reference/statements/create/dictionary/layouts/regexp-tree) 딕셔너리도 지원합니다.

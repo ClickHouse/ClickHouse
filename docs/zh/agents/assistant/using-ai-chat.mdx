@@ -1,0 +1,124 @@
+---
+slug: /use-cases/AI_ML/AIChat
+sidebarTitle: '概览'
+title: 'ClickHouse Cloud 中的 Assistant'
+description: '了解、启用并在 ClickHouse Cloud 控制台中使用 Assistant'
+keywords: ['AI', 'ClickHouse Cloud', 'Chat', 'SQL Console', 'Agent', 'Docs AI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+借助 Assistant，您可以使用自然语言分析 ClickHouse Cloud 服务中的数据。它能够结合当前打开的选项卡、已保存的查询、schema 和仪表盘等上下文，生成查询、可视化和摘要。
+
+Assistant 还提供 Docs AI 模式，可基于 ClickHouse 文档回答您的问题。请参照本指南启用 Assistant，并在 ClickHouse Cloud 控制台中使用这两种模式。
+
+<Steps>
+  <Step title="前置条件" id="prerequisites">
+    1. 您必须有权访问已启用 AI 功能的 ClickHouse Cloud 组织 (如果无法使用，请联系您的组织管理员或技术支持) 。
+  </Step>
+
+  <Step title="打开 AI 聊天面板" id="open-panel">
+    1. 进入任意 ClickHouse Cloud 服务。
+    2. 在左侧边栏中，点击标有“Assistant”的闪光图标。
+    3.  (快捷键) 按 <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) 或 <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) 可打开或关闭面板。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![打开 AI 聊天弹出面板](/images/use-cases/AI_ML/AIChat/1_open_chat.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="同意数据使用条款（首次使用）" id="consent">
+    1. 首次使用时，系统会弹出同意对话框，说明数据处理方式以及第三方 LLM 子处理方。
+    2. 阅读并同意后即可继续。如果您拒绝，面板将无法打开。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![同意对话框](/images/use-cases/AI_ML/AIChat/2_consent.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="选择聊天模式" id="modes">
+    AI 聊天目前支持以下模式：
+
+    * **Agent**：基于 schema 和元数据进行多步推理 (服务必须处于唤醒状态) 。
+    * **Docs AI (Ask)**：基于 ClickHouse 官方文档和最佳实践参考资料的专项问答。
+
+    可通过弹出面板左下角的模式选择器切换模式。
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![模式选择](/images/use-cases/AI_ML/AIChat/3_modes.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="编写并发送消息" id="compose">
+    1. 输入您的问题 (例如“创建一个 materialized view，按用户聚合每日事件”) 。
+    2. 按 <kbd>Enter</kbd> 发送 (按 <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行) 。
+    3. 模型处理期间，您可以点击“Stop”中断。
+  </Step>
+
+  <Step title="了解“Agent”思考步骤" id="thinking-steps">
+    在 Agent 模式下，您可能会看到可展开的中间“思考”或规划步骤，从中可以清楚了解助手是如何得出答案的。您可以根据需要折叠或展开这些步骤。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![思考步骤](/images/use-cases/AI_ML/AIChat/4_thinking.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="开始新聊天" id="new-chats">
+    点击“New Chat”按钮，即可清除上下文并开始新的会话。
+  </Step>
+
+  <Step title="查看聊天历史记录" id="history">
+    1. 下方区域会列出您最近的聊天。
+    2. 选择之前的聊天即可加载其消息。
+    3. 点击垃圾桶图标可删除对话。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![聊天历史记录列表](/images/use-cases/AI_ML/AIChat/5_history.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="使用生成的 SQL" id="sql-actions">
+    当助手返回 SQL 时：
+
+    * 检查其正确性。
+    * 点击“Open in editor”，将查询加载到新的 SQL 选项卡中。
+    * 在控制台中修改并执行。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![结果操作](/images/use-cases/AI_ML/AIChat/6_result_actions.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-md">
+      <Frame>
+        ![在编辑器中打开生成的查询](/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="停止或中断响应" id="interrupt">
+    如果响应耗时过长或偏离主题：
+
+    1. 点击“Stop”按钮 (处理期间可见) 。
+    2. 该消息会被标记为已中断；您可以优化提示词后重新发送。
+  </Step>
+
+  <Step title="键盘快捷键" id="shortcuts">
+    | 操作       | 快捷键                  |
+    | -------- | -------------------- |
+    | 打开 AI 聊天 | `⌘ + '` / `Ctrl + '` |
+    | 发送消息     | `Enter`              |
+    | 换行       | `Shift + Enter`      |
+  </Step>
+</Steps>
