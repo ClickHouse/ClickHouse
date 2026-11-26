@@ -1,4 +1,7 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeArray.h>
 
 namespace DB
 {
@@ -12,12 +15,14 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     const String & column_name_,
     const ExpressionActionsPtr & default_expression_,
     const String & default_column_name_,
-    bool is_compact_part_)
+    bool is_compact_part_,
+    bool shares_nested_offsets_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
     , default_expression(default_expression_)
     , default_column_name(default_column_name_)
     , is_compact_part(is_compact_part_)
+    , shares_nested_offsets(shares_nested_offsets_)
 {
     if (!isMinTTLExpired())
     {
@@ -27,6 +32,14 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
 
     if (isMaxTTLExpired())
         new_ttl_info.ttl_finished = true;
+}
+
+ColumnPtr TTLColumnAlgorithm::createArraysOfDefaults(const IDataType & type, const IColumn & column_with_sizes)
+{
+    const auto & column_array = assert_cast<const ColumnArray &>(column_with_sizes);
+    const auto & nested_type = assert_cast<const DataTypeArray &>(type).getNestedType();
+    auto data = nested_type->createColumnConstWithDefaultValue(column_array.getData().size());
+    return ColumnArray::create(data->convertToFullColumnIfConst(), column_array.getOffsetsPtr());
 }
 
 void TTLColumnAlgorithm::execute(Block & block)
@@ -48,6 +61,17 @@ void TTLColumnAlgorithm::execute(Block & block)
     /// projections can correctly recalculate using it.
     if (isMaxTTLExpired() && !is_compact_part)
     {
+        /// A `Nested` subcolumn stays in the part, so it has to hold the value a read would return:
+        /// its `DEFAULT` expression, or arrays of defaults with the sizes shared with the other subcolumns.
+        if (shares_nested_offsets)
+        {
+            auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+            if (!default_column)
+                default_column = createArraysOfDefaults(*column_with_type.type, *column_with_type.column);
+            column_with_type.column = default_column->convertToFullColumnIfConst();
+            return;
+        }
+
         auto empty_column = column_with_type.column->cloneEmpty();
         empty_column->insertManyDefaults(block.rows());
         column_with_type.column = std::move(empty_column);
@@ -55,6 +79,8 @@ void TTLColumnAlgorithm::execute(Block & block)
     }
 
     auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+    if (!default_column && shares_nested_offsets)
+        default_column = createArraysOfDefaults(*column_with_type.type, *column_with_type.column);
     if (default_column)
         default_column = default_column->convertToFullColumnIfConst();
 
@@ -89,7 +115,7 @@ void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
     data_part->ttl_infos.columns_ttl[column_name] = new_ttl_info;
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
-    if (is_fully_empty)
+    if (is_fully_empty && !shares_nested_offsets)
         data_part->expired_columns.insert(column_name);
 }
 
