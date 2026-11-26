@@ -11,6 +11,9 @@ udf with a scalar subquery	12	7134	589	600
 APPLY with a scalar subquery	600	180300	1	600
 array scalar subquery	2	1194	596	598
 IN table	299	89700	2	598
+folded scalar subquery	300	135150	301	600
+EXISTS	600	180300	1	600
+CTE column alias	299	89700	2	598
 case_01_plain	1
 case_02_udf_row_local	1
 case_03_offset	0
@@ -24,3 +27,6 @@ case_10_udf_scalar	0
 case_11_apply_scalar	0
 case_12_array_scalar	0
 case_13_in_table	0
+case_14_folded_scalar	0
+case_15_exists	0
+case_16_cte_column_alias	0

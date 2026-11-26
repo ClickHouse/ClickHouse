@@ -890,7 +890,7 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
     return false;
 }
 
-/// Whether the analyzed query reads a subquery, including one the dry-run analysis folded into a constant or `__getScalar`.
+/// Whether the analyzed query reads a subquery, including one the analysis folded into a constant or `__getScalar`.
 static bool hasSubqueryAfterAnalysis(const QueryTreeNodePtr & node)
 {
     if (isQueryOrUnionNode(node))
@@ -1350,7 +1350,7 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
 }
 
 std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
-    const ASTInsertQuery & query, ContextPtr local_context)
+    const ASTInsertQuery & query, const ASTPtr & original_select, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
@@ -1397,8 +1397,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
     /// Each node runs the forwarded SELECT on its share of the files: it must neither read anything else nor need the other shares.
+    /// Analyzed as the ordinary path analyzes it: the rewrite above loses CTE column aliases.
     InterpreterSelectQueryAnalyzer interpreter(
-        query.select, local_context, SelectQueryOptions(QueryProcessingStage::Complete).analyze().ignoreASTOptimizations());
+        original_select->clone(), local_context, SelectQueryOptions(QueryProcessingStage::Complete).ignoreASTOptimizations());
     const auto * analyzed_select = interpreter.getQueryTree()->as<QueryNode>();
     if (!analyzed_select || !canRunQueryOnEachReplicaShare(*analyzed_select))
         return {};
@@ -1669,7 +1670,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, saved_select, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized())

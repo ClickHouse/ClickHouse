@@ -81,6 +81,18 @@ INSERT INTO dst SELECT x FROM fileCluster('test_cluster_one_shard_three_replicas
 SELECT 'IN table', count(), sum(x), min(x), max(x) FROM dst;
 TRUNCATE TABLE dst;
 
+INSERT INTO dst SELECT x FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', {CLICKHOUSE_DATABASE:String} || '_05878_*.tsv', 'TSV', 'x UInt64') WHERE x > intDiv(1200, (SELECT x FROM allow WHERE x = 4)) SETTINGS log_comment = 'case_14_folded_scalar';
+SELECT 'folded scalar subquery', count(), sum(x), min(x), max(x) FROM dst;
+TRUNCATE TABLE dst;
+
+INSERT INTO dst SELECT x FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', {CLICKHOUSE_DATABASE:String} || '_05878_*.tsv', 'TSV', 'x UInt64') WHERE EXISTS (SELECT 1 FROM allow WHERE x = 2) SETTINGS log_comment = 'case_15_exists';
+SELECT 'EXISTS', count(), sum(x), min(x), max(x) FROM dst;
+TRUNCATE TABLE dst;
+
+INSERT INTO dst WITH t(k) AS (SELECT x FROM allow) SELECT x FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', {CLICKHOUSE_DATABASE:String} || '_05878_*.tsv', 'TSV', 'x UInt64') WHERE x IN (SELECT k FROM t) SETTINGS log_comment = 'case_16_cte_column_alias';
+SELECT 'CTE column alias', count(), sum(x), min(x), max(x) FROM dst;
+TRUNCATE TABLE dst;
+
 -- Which INSERTs were sent to the nodes.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment,
