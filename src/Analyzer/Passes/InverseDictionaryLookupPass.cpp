@@ -25,6 +25,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/Set.h>
@@ -43,7 +44,9 @@
 #include <TableFunctions/ITableFunction.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -53,6 +56,7 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/TypeTree.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 
@@ -66,6 +70,7 @@ extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsBool make_distributed_plan;
 extern const SettingsBool enable_cascades_optimizer;
+extern const SettingsBool analyzer_inline_views;
 extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
 extern const SettingsBool validate_enum_literals_in_operators;
@@ -224,6 +229,57 @@ bool dependsOnInspectionTimeValue(const ASTPtr & ast)
     return false;
 }
 
+bool hasSettingsClause(const ASTPtr & ast)
+{
+    if (ast->as<ASTSetQuery>())
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (hasSettingsClause(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// The definition of a view includes the definitions of the views it reads: with `analyzer_inline_views` their bodies
+/// are inlined into the tree resolved for inspection, and `dependsOnInspectionTimeValue` cannot see them there.
+/// A sealed view is not inlined and is not inspected, so its definition is not looked at.
+bool readsViewDependingOnInspectionTimeValue(const ASTPtr & ast, const ContextPtr & context)
+{
+    checkStackSize();
+
+    if (const auto * table_expression = ast->as<ASTTableExpression>())
+    {
+        const auto * identifier = table_expression->database_and_table_name ? table_expression->database_and_table_name->as<ASTTableIdentifier>() : nullptr;
+        if (identifier)
+        {
+            auto table_id = context->tryResolveStorageID(identifier->getTableId());
+            auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            const auto * view = typeid_cast<const StorageView *>(storage.get());
+            if (view && !view->isParameterizedView())
+            {
+                const auto metadata = view->getInMemoryMetadataPtr(context, false);
+                if (!view->isSealed(*metadata, context))
+                {
+                    const auto & inner_query = metadata->getSelectQuery().inner_query;
+                    if (dependsOnInspectionTimeValue(inner_query) || readsViewDependingOnInspectionTimeValue(inner_query, context))
+                        return true;
+                }
+            }
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (readsViewDependingOnInspectionTimeValue(child, context))
+            return true;
+    }
+
+    return false;
+}
+
 /// Resolving a view's inner query (buildQueryTree + full QueryAnalyzer::resolve) is expensive, and
 /// enterImpl below is invoked once per allowed comparison node, so the same view can be inspected
 /// many times over for a single outer query (e.g. `WHERE a = 1 AND b = 2 AND c = 3`). Memoize by
@@ -250,7 +306,11 @@ tryResolveViewInnerQueryForInspection(const TableNode & table_node, const Contex
         auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
 
         const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
-        if (!dependsOnInspectionTimeValue(inner_query))
+        /// Views are inlined only with `analyzer_inline_views`, set by the session or by the `SETTINGS` of the view:
+        /// without it, there is nothing to look through and the definitions of nested views are not walked.
+        const bool may_inline_views = view_context->getSettingsRef()[Setting::analyzer_inline_views] || hasSettingsClause(inner_query);
+        if (!dependsOnInspectionTimeValue(inner_query)
+            && !(may_inline_views && readsViewDependingOnInspectionTimeValue(inner_query, view_context)))
         {
             QueryTreeNodePtr view_query_tree = buildQueryTree(inner_query->clone(), view_context);
 
