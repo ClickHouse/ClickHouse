@@ -37,6 +37,9 @@ for f in XML JSON; do
     $CLICKHOUSE_CLIENT --allow_special_serialization_kinds_in_output_formats 1 -q "SELECT id, u, s, n FROM t_sparse_rows WHERE id < 6 ORDER BY id FORMAT $f $SETTINGS, output_format_write_statistics = 0" | tr '\0' '@'
 done
 
+echo "Markdown"
+$CLICKHOUSE_CLIENT --allow_special_serialization_kinds_in_output_formats 1 -q "SELECT id, u, s, n, fs FROM t_sparse_rows WHERE id IN (0, 1, 3, 6) ORDER BY id FORMAT Markdown $SETTINGS, output_format_markdown_escape_special_characters = 1" | tr '\0' '@'
+
 echo "RowBinary"
 $CLICKHOUSE_CLIENT --allow_special_serialization_kinds_in_output_formats 1 -q "SELECT * FROM t_sparse_rows ORDER BY id FORMAT RowBinary $SETTINGS" \
     | $CLICKHOUSE_LOCAL --input-format RowBinary --structure 'id UInt32, u UInt64, s String, f Float64, d Decimal(9, 2), n Nullable(String), e UInt8, fs FixedString(40), t Tuple(a UInt64, b String)' \

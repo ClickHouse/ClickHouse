@@ -77,6 +77,10 @@ public:
     {
         serializeRow<&ISerialization::serializeTextRaw, 7>(col, row_num, ostr, settings);
     }
+    void serializeTextMarkdown(const IColumn & col, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        serializeRow<&ISerialization::serializeTextMarkdown, 8>(col, row_num, ostr, settings);
+    }
 
     /// `SerializationSparse` does not override it, so `ISerialization`'s default applies there: `serializeTextJSON`.
     void serializeTextJSONPretty(const IColumn & col, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const override
@@ -146,7 +150,7 @@ private:
         const FormatSettings * settings = nullptr;
         StringWithMemoryTracking bytes;
     };
-    mutable std::array<CachedDefault, 8> defaults;
+    mutable std::array<CachedDefault, 9> defaults;
 };
 
 }
