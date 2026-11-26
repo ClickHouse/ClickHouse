@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="cluster_table_function_buckets_batch_size">
-  ## cluster_table_function_buckets_batch_size
-</div>
+## cluster_table_function_buckets_batch_size {#cluster_table_function_buckets_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,23 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Определяет примерный размер батча (в байтах), используемого при распределённой обработке задач в табличных функциях cluster с гранулярностью разделения `bucket`. Система накапливает данные, пока не достигнет как минимум этого объёма. Фактический размер может быть немного больше для выравнивания по границам данных.
 
-<div id="cluster_table_function_split_granularity">
-  ## cluster_table_function_split_granularity
-</div>
+## cluster_table_function_pushed_down_filter {#cluster_table_function_pushed_down_filter}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Новая внутренняя настройка."}]}]} />
+
+Это внутренняя настройка, которую не следует использовать напрямую. Initiator запроса с табличной функцией cluster передаёт в ней репликам сериализованный фильтр по таблице, чтобы реплики отбрасывали строки, не прошедшие этот фильтр, ещё до их отправки.
+
+## cluster_table_function_split_by_split_offsets {#cluster_table_function_split_by_split_offsets}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+При гранулярности разделения `bucket`, если в метаданных таблицы записаны размер файла и смещения групп строк (`split_offsets` в Iceberg), файлы разбиваются на байтовые диапазоны по этим смещениям без чтения самих файлов; каждая задача читает группы строк, которые начинаются в её диапазоне. В противном случае, а также при попадании в кэш условий запроса, initiator читает нижний колонтитул (footer) каждого файла.
+
+Требуется поддержка на всех серверах кластера: задачу с байтовым диапазоном нельзя отправить на сервер более старой версии.
+
+## cluster_table_function_split_granularity {#cluster_table_function_split_granularity}
 
 <SettingsInfoBlock type="ObjectStorageGranularityLevel" default_value="file" />
 

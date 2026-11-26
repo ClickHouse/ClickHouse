@@ -193,6 +193,16 @@ def describe_transport_error_for_host(host, error_text):
 set_transport_error_describer(describe_transport_error_for_host)
 
 
+def describe_lost_network_interfaces():
+    """The verdicts of the instances that already reported a lost interface and still have none, or ""."""
+    verdicts = [
+        instance.describe_lost_network_interface()
+        for instance in list(_INSTANCES_BY_ADDRESS.values())
+        if instance.reported_lost_network_interface
+    ]
+    return " ".join(verdict for verdict in verdicts if verdict)
+
+
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
     if path is not None:
@@ -229,7 +239,10 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-SANITIZER_SIGN = "=================="
+# ASan, MSan and TSan reports start with a `=====` banner; UBSan and CFI diagnostics reports have none.
+SANITIZER_SIGNS = ("==================", ": runtime error: ")
+# For `zgrep` (basic regex alternation).
+SANITIZER_SIGN = "\\|".join(SANITIZER_SIGNS)
 
 CLICKHOUSE_START_COMMAND = (
     "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
@@ -2386,6 +2399,7 @@ class ClickHouseCluster:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
@@ -2537,6 +2551,7 @@ class ClickHouseCluster:
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
             cpu_limit=cpu_limit,
+            cpuset=cpuset,
             pids_limit=pids_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
@@ -4806,7 +4821,8 @@ class ClickHouseCluster:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
-                        if SANITIZER_SIGN in line:
+                        # Only the banner: other containers log Go panics with `runtime error:`.
+                        if SANITIZER_SIGNS[0] in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
 
@@ -4823,7 +4839,7 @@ class ClickHouseCluster:
                     if not os.path.exists(keeper_stderr):
                         continue
                     with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
+                        if any(sign in line for line in f for sign in SANITIZER_SIGNS):
                             sanitizer_assert_instance = f"zoo{i}"
                             logging.error(
                                 "Sanitizer in Keeper instance zoo%s log %s",
@@ -5259,6 +5275,7 @@ services:
         tmpfs: {tmpfs}
         {mem_limit}
         {cpu_limit}
+        {cpuset}
         {pids_limit}
         cap_add:
             - SYS_PTRACE
@@ -5382,6 +5399,7 @@ class ClickHouseInstance:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
@@ -5411,6 +5429,9 @@ class ClickHouseInstance:
             self.cpu_limit = ""
         else:
             self.cpu_limit = f"cpus: {cpu_limit}"
+
+        # CPUs the container may run on, e.g. "0-1" (the `--cpuset-cpus` option of `docker run`).
+        self.cpuset = f'cpuset: "{cpuset}"' if cpuset is not None else ""
 
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
@@ -5555,6 +5576,7 @@ class ClickHouseInstance:
 
         self.docker_client = None
         self.ip_address = None
+        self.reported_lost_network_interface = False
         self.client = None
         self.image = image
         self.tag = tag
@@ -5690,6 +5712,7 @@ class ClickHouseInstance:
         if interfaces - DISCONNECTED_INTERFACE_NAMES:
             return ""
 
+        self.reported_lost_network_interface = True
         return (
             f"{LOST_NETWORK_INTERFACE_ERROR} {self.docker_id}: docker attached it to the "
             f"cluster network with address {expected_ip}, but the running container is "
@@ -6628,11 +6651,12 @@ class ClickHouseInstance:
                 "echo 'restart_with_original_version: From version' && /usr/bin/clickhouse server --version && echo 'To version' && /usr/share/clickhouse_original server --version",
             ]
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )
@@ -6641,6 +6665,11 @@ class ClickHouseInstance:
             latest_version_seccomp_config_path = self.latest_version_seccomp_config_path()
             if p.exists(latest_version_seccomp_config_path):
                 os.remove(latest_version_seccomp_config_path)
+        delay_merges_after_startup_config_path = (
+            self.delay_merges_after_startup_config_path()
+        )
+        if p.exists(delay_merges_after_startup_config_path):
+            os.remove(delay_merges_after_startup_config_path)
         self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
@@ -6655,6 +6684,18 @@ class ClickHouseInstance:
 
     def latest_version_seccomp_config_path(self):
         return p.join(self.config_d_dir, "zz_seccomp_latest_version.xml")
+
+    def delay_merges_after_startup_config_path(self):
+        return p.join(self.config_d_dir, "0_common_delay_merges_after_startup.xml")
+
+    def write_delay_merges_after_startup_config(self):
+        # Tests expect background merges right after a restart. Older versions do not know the setting,
+        # so it is written only for the server built from these sources.
+        with open(self.delay_merges_after_startup_config_path(), "w") as f:
+            f.write(
+                f"<{self.config_root_name}><merge_tree><delay_merges_after_startup_seconds>0"
+                f"</delay_merges_after_startup_seconds></merge_tree></{self.config_root_name}>\n"
+            )
 
     def restart_with_latest_version(
         self,
@@ -6694,15 +6735,18 @@ class ClickHouseInstance:
                 f.write(
                     f"<{self.config_root_name}><seccomp>{self.seccomp_config_for_latest_version}</seccomp></{self.config_root_name}>\n"
                 )
+        if self.copy_common_configs:
+            self.write_delay_merges_after_startup_config()
         self.exec_in_container(
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )
@@ -7077,6 +7121,12 @@ class ClickHouseInstance:
                 self.config_d_dir,
                 self.with_installed_binary,
             )
+        if (
+            self.copy_common_configs
+            and not self.with_installed_binary
+            and not self.cluster.with_dolor
+        ):
+            self.write_delay_merges_after_startup_config()
 
         if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
@@ -7371,6 +7421,7 @@ class ClickHouseInstance:
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
                     cpu_limit=self.cpu_limit,
+                    cpuset=self.cpuset,
                     pids_limit=self.pids_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),

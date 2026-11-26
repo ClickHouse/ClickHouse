@@ -223,6 +223,7 @@
               "pages": [
                 "products/cloud/features/monitoring/overview",
                 "products/cloud/features/monitoring/cloud-console",
+                "products/cloud/features/monitoring/recommendations",
                 "products/cloud/features/monitoring/advanced-dashboard",
                 "products/cloud/features/monitoring/notifications",
                 "products/cloud/features/monitoring/prometheus",
@@ -261,6 +262,7 @@
           "group": "AI tools and agents",
           "pages": [
             "products/cloud/features/ai-ml/index",
+            "products/cloud/features/ai-ml/schema-advisor",
             "products/cloud/features/ai-ml/langfuse",
             {
               "expanded": false,

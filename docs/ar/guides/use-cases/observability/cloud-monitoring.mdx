@@ -14,26 +14,20 @@ import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
 
 يوفّر هذا الدليل لفرق المؤسسات التي تقيّم ClickHouse Cloud معلومات شاملة حول إمكانات المراقبة وobservability لعمليات النشر في بيئات الإنتاج. وكثيرًا ما يسأل عملاء Enterprise عن ميزات المراقبة الجاهزة للاستخدام، وعن التكامل مع مكدسات observability الحالية لديهم، بما في ذلك أدوات مثل Datadog وAWS CloudWatch، وعن كيفية مقارنة إمكانات المراقبة في ClickHouse بعمليات النشر المستضافة ذاتيًا.
 
-<div id="advanced-observability">
-  ## لوحة المعلومات observability المتقدمة
-</div>
+## لوحة المعلومات observability المتقدمة {#advanced-observability}
 
-يوفر ClickHouse Cloud مراقبة شاملة من خلال واجهات لوحات المعلومات مدمجة يمكن الوصول إليها عبر قسم Monitoring. تعرض هذه اللوحات مقاييس النظام والأداء في الوقت الفعلي من دون الحاجة إلى إعداد إضافي، وتُعد الأدوات الأساسية للمراقبة الفورية لبيئات الإنتاج داخل ClickHouse Cloud.
+يوفر ClickHouse Cloud مراقبة شاملة من خلال واجهات لوحات المعلومات مدمجة يمكن الوصول إليها عبر قسم Monitoring. تعرض هذه اللوحات مقاييس النظام والأداء في الوقت الفعلي من دون الحاجة إلى إعداد إضافي، وتُعد الأدوات الأساسية للمراقبة الفورية لبيئة الإنتاج داخل ClickHouse Cloud.
 
-* **لوحة المعلومات المتقدمة**: توفّر واجهة لوحة المعلومات الرئيسية، التي يمكن الوصول إليها عبر Monitoring → لوحة المعلومات المتقدمة، رؤية فورية لمعدلات الاستعلامات، واستخدام الموارد، وصحة النظام، وأداء التخزين. لا تتطلب لوحة المعلومات هذه مصادقة منفصلة، ولا تمنع المثيلات من الدخول في وضع الخمول، كما أنها لا تضيف حملاً ناتجًا عن الاستعلامات إلى نظام الإنتاج لديك. يعتمد كل تصور فيها على استعلامات SQL قابلة للتخصيص، مع مخططات جاهزة مُجمَّعة ضمن مقاييس خاصة بـ ClickHouse، ومقاييس صحة النظام، ومقاييس خاصة بـ Cloud. ويمكنك توسيع نطاق المراقبة من خلال إنشاء استعلامات مخصصة مباشرة في SQL Console.
+* **لوحة المعلومات المتقدمة**: توفّر واجهة لوحة المعلومات الرئيسية، التي يمكن الوصول إليها عبر Monitoring → لوحة المعلومات المتقدمة، رؤية فورية لمعدلات الاستعلامات، واستخدام الموارد، وصحة النظام، وأداء التخزين. لا تتطلب لوحة المعلومات هذه مصادقة منفصلة، ولا تمنع المثيلات من الدخول في حالة خمول، كما أنها لا تضيف حملاً ناتجًا عن الاستعلامات إلى نظام بيئة الإنتاج لديك. يعتمد كل تصور فيها على استعلامات SQL قابلة للتخصيص، مع مخططات جاهزة مُجمَّعة ضمن مقاييس خاصة بـ ClickHouse، ومقاييس صحة النظام، ومقاييس خاصة بـ Cloud. ويمكنك توسيع نطاق المراقبة من خلال إنشاء استعلامات مخصصة مباشرة في SQL Console.
 
 <Note>
   لا يؤدي الوصول إلى هذه المقاييس إلى تنفيذ استعلام على الخدمة الأساسية، ولن يوقظ الخدمات الخاملة.
 </Note>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![لوحة المعلومات المتقدمة](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![لوحة المعلومات المتقدمة](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
 </div>
 
 يمكن للمستخدمين الذين يرغبون في توسيع هذه التصورات استخدام ميزة لوحات المعلومات في ClickHouse Cloud والاستعلام مباشرة من جداول النظام.
@@ -41,21 +35,17 @@ import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
 * **لوحة المعلومات المتقدمة الأصلية**: واجهة بديلة للوحة المعلومات يمكن الوصول إليها عبر &quot;You can still access the native advanced dashboard&quot; داخل قسم Monitoring. تُفتح هذه الواجهة في علامة تبويب منفصلة مع مصادقة، وتوفّر واجهة UI بديلة لمراقبة صحة النظام وصحة الخدمة. تتيح لوحة المعلومات هذه تحليلات متقدمة، حيث يمكنك تعديل استعلامات SQL الأساسية.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![لوحة المعلومات المتقدمة](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![لوحة المعلومات المتقدمة](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
 </div>
 
-توفّر كلتا لوحتي المعلومات رؤية فورية لصحة الخدمة والأداء من دون تبعيات خارجية، ما يميزهما عن الأدوات الخارجية التي تركّز على استكشاف الأخطاء وإصلاحها مثل ClickStack.
+توفّر كلتا لوحتي المعلومات رؤية فورية لصحة الخدمة والأداء من دون تبعيات خارجية، ما يميزهما عن الأدوات الخارجية التي تركّز على تصحيح الأخطاء مثل ClickStack.
 
 للاطلاع على تفاصيل ميزات لوحة المعلومات والمقاييس المتاحة، راجع [توثيق لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="query-insights">
-  ## Query Insights ومراقبة الموارد
+  ## Query Insights ومراقبة الموارد {#query-insights}
 </div>
 
 يتضمن ClickHouse Cloud إمكانات إضافية للمراقبة:
@@ -66,7 +56,7 @@ import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
 راجع وثائق [query insights](/ar/products/cloud/features/sql-console-features/query-insights) و[استخدام الموارد](/ar/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization) للاطلاع على الميزات بالتفصيل.
 
 <div id="prometheus">
-  ## نقطة نهاية المقاييس المتوافقة مع Prometheus
+  ## نقطة نهاية المقاييس المتوافقة مع Prometheus {#prometheus}
 </div>
 
 يوفّر ClickHouse Cloud نقطة نهاية لـ Prometheus. يتيح لك ذلك الحفاظ على سير العمل الحالية، والاستفادة من خبرات الفريق المتوفرة، ودمج مقاييس ClickHouse في منصات المراقبة المؤسسية، بما في ذلك Grafana وDatadog وغيرها من الأدوات المتوافقة مع Prometheus.
@@ -83,7 +73,7 @@ import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
 <ObservabilityIntegrations />
 
 <div id="clickstack-deployment">
-  ### خيارات نشر ClickStack
+  ### خيارات نشر ClickStack {#clickstack-deployment}
 </div>
 
 * **HyperDX in ClickHouse Cloud**  (معاينة خاصة): يمكن تشغيل HyperDX على أي خدمة ClickHouse Cloud.
@@ -102,7 +92,7 @@ import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
 <CommunityMonitoring />
 
 <div id="system-impact">
-  ## اعتبارات تأثير النظام
+  ## اعتبارات تأثير النظام {#system-impact}
 </div>
 
 تستخدم جميع الأساليب المذكورة أعلاه مزيجًا من الاعتماد على نقاط نهاية Prometheus، أو الإدارة بواسطة ClickHouse Cloud، أو الاستعلام مباشرةً من جداول النظام.

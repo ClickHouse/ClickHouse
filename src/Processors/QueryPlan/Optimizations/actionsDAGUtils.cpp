@@ -211,6 +211,13 @@ MatchedTrees::Matches matchTrees(
         inner_dag, outer_dag, check_monotonicity, max_size_for_sets_from_tuple_to_compare, /*outer_to_inner_input_names=*/nullptr);
 }
 
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
+
 static MatchedTrees::Matches matchTreesImpl(
     const ActionsDAG::NodeRawConstPtrs & inner_dag,
     const ActionsDAG & outer_dag,
@@ -241,6 +248,7 @@ static MatchedTrees::Matches matchTreesImpl(
 
                 for (const auto * child : node->children)
                 {
+                    child = skipAliases(child);
                     auto [it, inserted] = inner_parents.emplace(child, Parents());
                     it->second.emplace(node);
 
@@ -400,7 +408,7 @@ static MatchedTrees::Matches matchTreesImpl(
                                                     max_size_for_sets_from_tuple_to_compare);
                                         }
                                         else
-                                            all_children_matched = frame.mapped_children[i] == children[i];
+                                            all_children_matched = frame.mapped_children[i] == skipAliases(children[i]);
                                     }
 
                                     if (all_children_matched
@@ -526,6 +534,42 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
     return {node, std::move(chain)};
 }
 
+/// NULL and NaN are sorted at one end of the stream (see `nulls_direction`), and they stay there only if
+/// the function keeps them NULL and NaN. A function whose result cannot be NULL or NaN while its argument
+/// can (for example `sign`, which returns 1 for NaN, or `toInt64`) turns them into ordinary values at that
+/// end of the stream, so its result is not sorted even if the function is monotonic.
+static bool keepsNullAndNaN(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+{
+    if (isNullableOrLowCardinalityNullable(argument_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
+    const auto argument = removeLowCardinalityAndNullable(argument_type);
+    if (!isFloat(argument))
+        return true;
+
+    /// A conversion to `BFloat16` keeps only the high half of a `Float32`, so a NaN whose payload is
+    /// in the low half (for example a signaling NaN) becomes an infinity.
+    const auto result = removeLowCardinalityAndNullable(result_type);
+    return isFloat(result) && (!WhichDataType(result).isBFloat16() || WhichDataType(argument).isBFloat16());
+}
+
+/// `Decimal` and `Interval` are stored as signed integers, so they have the same minimum as `Int*`.
+static bool isStoredAsSignedInteger(const DataTypePtr & type)
+{
+    return isInt(type) || isDecimal(type) || isInterval(type);
+}
+
+/// The range of the argument is not known here, so it can include the minimum of a signed integer type.
+/// A decreasing function such as `negate` maps it to itself if the result is not wider than the argument
+/// (`-x` is `x` for the minimum of `Int64`, `Decimal64` or `IntervalSecond`), and then the result is not sorted.
+static bool canOverflowAtMinimum(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+{
+    const auto argument = removeLowCardinalityAndNullable(argument_type);
+    const auto result = removeLowCardinalityAndNullable(result_type);
+    return isStoredAsSignedInteger(argument) && (isInteger(result) || isStoredAsSignedInteger(result))
+        && result->getSizeOfValueInMemory() <= argument->getSizeOfValueInMemory();
+}
+
 /// Check whether all the function in chain are monotonic
 static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
@@ -542,13 +586,20 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
         ++it;
 
         const auto & type = node->children[pos]->result_type;
+        if (!keepsNullAndNaN(type, node->result_type))
+            break;
+
         const Field field{};
         auto monotonicity = node->function_base->getMonotonicityForRange(*type, field, field);
         if (!monotonicity.is_monotonic)
             break;
 
         if (!monotonicity.is_positive)
+        {
+            if (canOverflowAtMinimum(type, node->result_type))
+                break;
             chain.changes_order = !chain.changes_order;
+        }
 
         chain.is_strict = chain.is_strict && monotonicity.is_strict && !hasNullConstantArgument(*node);
 
@@ -653,8 +704,13 @@ void applyActionsToSortDescription(
         if (sort_colunm.output)
             descr.column_name = sort_colunm.output->result_name;
 
+        /// A decreasing function keeps NaN/NULL at the same end of the stream,
+        /// so their placement relative to the flipped direction flips as well.
         if (sort_colunm.changes_order)
+        {
             descr.direction *= -1;
+            descr.nulls_direction *= -1;
+        }
 
         if (!sort_colunm.is_strict)
             break;
@@ -751,6 +807,24 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
         ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
     return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
+}
+
+bool holdsInputValues(const ActionsDAG::Node & node)
+{
+    const ActionsDAG::Node * current = &node;
+    while (current->type != ActionsDAG::ActionType::INPUT)
+    {
+        bool passes_values_on = current->type == ActionsDAG::ActionType::ALIAS;
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base)
+        {
+            const auto & name = current->function_base->getName();
+            passes_values_on = name == "_CAST" || name == "CAST" || name == "materialize" || name == "toNullable";
+        }
+        if (!passes_values_on || current->children.empty())
+            return false;
+        current = current->children.front();
+    }
+    return true;
 }
 
 VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
@@ -1029,9 +1103,10 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
         /// (composing the filter through expression steps turns a renamed key into an alias
         /// of the physical column - looking through it reports the physical name).
         /// A key under nested casts, e.g. `_CAST(CAST(k, 'UInt8'), 'UInt64')`, is not reported: the pruning
-        /// predicate re-applies only the cast to the filter type, so the inner cast would be lost.
+        /// predicate applies only one cast, so the inner cast would be lost.
         const auto * key_arg = node->children[1];
         size_t casts = 0;
+        FunctionBasePtr cast;
         while (!key_arg->children.empty())
         {
             if (key_arg->type == ActionsDAG::ActionType::ALIAS)
@@ -1040,6 +1115,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
                      && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST"))
             {
                 ++casts;
+                cast = key_arg->function_base;
                 key_arg = key_arg->children.front();
             }
             else
@@ -1073,7 +1149,8 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
             if (lhs && rhs
                 && ((*lhs == "_part_offset" && *rhs == "_part_starting_offset") || (*lhs == "_part_starting_offset" && *rhs == "_part_offset")))
             {
-                res.push_back({std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true});
+                res.push_back(
+                    {std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true, cast});
             }
             continue;
         }
@@ -1081,7 +1158,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
         if (key_arg->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type, /*is_global_row_index=*/false, cast});
     }
 
     return res;

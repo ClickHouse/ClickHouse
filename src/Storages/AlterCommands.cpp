@@ -1843,6 +1843,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     }
 
     result.ast_text = ast->formatWithSecretsOneLine();
+    result.has_partition = isCommandScopedToPartitions(ast->as<const ASTAlterCommand &>());
     const auto & settings = context->getSettingsRef();
     result.max_parser_depth = settings[Setting::max_parser_depth];
     result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
@@ -2050,13 +2051,16 @@ void AlterCommands::apply(
     {
         try
         {
+            /// A codec of `RECOMPRESS` that this `ALTER` defines was checked against the settings of the query when its
+            /// `MODIFY TTL` command was applied; one that was already stored is trusted, as an unchanged column `CODEC` is.
             metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 metadata_copy.table_ttl.definition_ast,
                 metadata_copy.columns,
                 context,
                 metadata_copy.primary_key,
                 context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                     : TTLValidationMode::Validate);
+                                                                                     : TTLValidationMode::Validate,
+                /*trust_recompression_codec=*/ true);
         }
         catch (const Exception & exception)
         {
@@ -2906,6 +2910,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                 .max_parser_depth = max_parser_depth,
                 .max_parser_backtracks = max_parser_backtracks,
                 .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
+                .has_partition = isCommandScopedToPartitions(alter_cmd.ast->as<const ASTAlterCommand &>()),
             });
         }
     }
