@@ -1,5 +1,7 @@
 kinds	1
+dense rows	1
 sparse kept	1	sparse converted by the setting	1
+dense sparse kept	1	staged full	1
 parallel	1
 single thread	1
 max_threads 1	1

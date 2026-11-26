@@ -45,7 +45,7 @@ static size_t allocatedBytesOfFullColumn(const IColumn & column)
     return column.allocatedBytes();
 }
 
-/// Keeps sparse columns (shrunk) and converts the other special columns, whose compact size does not tell the full one.
+/// Keeps sparse columns (shrunk) while they are smaller than full ones, and converts the other special columns, whose compact size does not tell the full one.
 static void prepareChunkForStaging(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
@@ -54,13 +54,16 @@ static void prepareChunkForStaging(Chunk & chunk)
     {
         column = column->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated();
         const auto * sparse = typeid_cast<const ColumnSparse *>(column.get());
-        if (!sparse || sparse->allocatedBytes() <= 2 * sparse->byteSize())
-            continue;
-        auto mutable_column = IColumn::mutate(std::move(column));
-        auto & mutable_sparse = assert_cast<ColumnSparse &>(*mutable_column);
-        mutable_sparse.getValuesColumn().shrinkToFit();
-        mutable_sparse.getOffsetsColumn().shrinkToFit();
-        column = std::move(mutable_column);
+        if (sparse && sparse->allocatedBytes() > 2 * sparse->byteSize())
+        {
+            auto mutable_column = IColumn::mutate(std::move(column));
+            auto & mutable_sparse = assert_cast<ColumnSparse &>(*mutable_column);
+            mutable_sparse.getValuesColumn().shrinkToFit();
+            mutable_sparse.getOffsetsColumn().shrinkToFit();
+            column = std::move(mutable_column);
+        }
+        if (column->allocatedBytes() > allocatedBytesOfFullColumn(*column))
+            column = recursiveRemoveSparse(column);
     }
     chunk.setColumns(std::move(columns), num_rows);
 }
