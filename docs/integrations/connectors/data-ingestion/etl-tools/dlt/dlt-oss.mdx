@@ -51,7 +51,7 @@ To load data into ClickHouse, you need to create a ClickHouse database. Here's a
 
 3. Run the following SQL commands to create a new database, user and grant the necessary permissions:
 
-```bash
+```sql
 CREATE DATABASE IF NOT EXISTS dlt;
 CREATE USER dlt IDENTIFIED WITH sha256_password BY 'Dlt*12345789234567';
 GRANT CREATE, ALTER, SELECT, DELETE, DROP, TRUNCATE, OPTIMIZE, SHOW, INSERT, dictGet ON dlt.* TO dlt;
@@ -63,13 +63,13 @@ GRANT CREATE TEMPORARY TABLE, S3 ON *.* TO dlt;
 
 Next, set up the ClickHouse credentials in the `.dlt/secrets.toml` file as shown below:
 
-```bash
+```toml
 [destination.clickhouse.credentials]
 database = "dlt"                         # The database name you created
 username = "dlt"                         # ClickHouse username, default is usually "default"
 password = "Dlt*12345789234567"          # ClickHouse password if any
 host = "localhost"                       # ClickHouse server host
-port = 9000                              # ClickHouse HTTP port, default is 9000
+port = 9000                              # ClickHouse native TCP port, default is 9000
 http_port = 8443                         # HTTP Port to connect to ClickHouse server's HTTP interface. Defaults to 8443.
 secure = 1                               # Set to 1 if using HTTPS, else 0.
 
@@ -82,14 +82,14 @@ dataset_table_separator = "___"          # Separator for dataset table names fro
 
 The `http_port` parameter specifies the port number to use when connecting to the ClickHouse server's HTTP interface. This is different from default port 9000, which is used for the native TCP protocol.
 
-You must set `http_port` if you're not using external staging (i.e. you don't set the staging parameter in your pipeline). This is because the built-in ClickHouse local storage staging uses the <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse content</a> library, which communicates with ClickHouse over HTTP.
+You must set `http_port` if you're not using external staging (i.e. you don't set the staging parameter in your pipeline). This is because the built-in ClickHouse local storage staging uses the <a href="https://github.com/ClickHouse/clickhouse-connect">`clickhouse-connect`</a> library, which communicates with ClickHouse over HTTP.
 
 Make sure your ClickHouse server is configured to accept HTTP connections on the port specified by `http_port`. For example, if you set `http_port = 8443`, then ClickHouse should be listening for HTTP requests on port 8443. If you're using external staging, you can omit the `http_port` parameter, since clickhouse-connect won't be used in this case.
 </Info>
 
 You can pass a database connection string similar to the one used by the `clickhouse-driver` library. The credentials above will look like this:
 
-```bash
+```toml
 # keep it at the top of your toml file, before any section starts.
 destination.clickhouse.credentials="clickhouse://dlt:Dlt*12345789234567@localhost:9000/dlt?secure=1"
 ```
@@ -140,7 +140,7 @@ ClickHouse supports the following <a href="https://dlthub.com/docs/general-usage
 ## Table engine {#table-engine}
 By default, tables are created using the `ReplicatedMergeTree` table engine in ClickHouse. You can specify an alternate table engine using the `table_engine_type` with the clickhouse adapter:
 
-```bash
+```python
 from dlt.destinations.adapters import clickhouse_adapter
 
 @dlt.resource()
@@ -169,7 +169,7 @@ Please refer to the filesystem documentation to learn how to configure credentia
 
 To run a pipeline with staging enabled:
 
-```bash
+```python
 pipeline = dlt.pipeline(
   pipeline_name='chess_pipeline',
   destination='clickhouse',
@@ -189,7 +189,7 @@ To set up GCS staging with HMAC authentication in dlt:
 
 2. Configure the HMAC keys as well as the `client_email`, `project_id` and `private_key` for your service account in your dlt project's ClickHouse destination settings in `config.toml`:
 
-```bash
+```toml
 [destination.filesystem]
 bucket_url = "gs://dlt-ci"
 
@@ -209,7 +209,7 @@ gcp_access_key_id = "JFJ$$*f2058024835jFffsadf"
 gcp_secret_access_key = "DFJdwslf2hf57)%$02jaflsedjfasoi"
 ```
 
-Note: In addition to the HMAC keys `bashgcp_access_key_id` and `gcp_secret_access_key`), you now need to provide the `client_email`, `project_id` and `private_key` for your service account under `[destination.filesystem.credentials]`. This is because the GCS staging support is now implemented as a temporary workaround and is still unoptimized.
+Note: In addition to the HMAC keys `gcp_access_key_id` and `gcp_secret_access_key`), you now need to provide the `client_email`, `project_id` and `private_key` for your service account under `[destination.filesystem.credentials]`. This is because the GCS staging support is now implemented as a temporary workaround and is still unoptimized.
 
 dlt will pass these credentials to ClickHouse which will handle the authentication and GCS access.
 
@@ -218,7 +218,7 @@ There is active work in progress to simplify and improve the GCS staging setup f
 - Make filesystem destination <a href="https://github.com/dlt-hub/dlt/issues/1272"> work</a> with gcs in s3 compatibility mode
 - Google Cloud Storage staging area<a href="https://github.com/dlt-hub/dlt/issues/1181"> support</a>
 
-### Dbt support {#dbt-support}
+### dbt support {#dbt-support}
 Integration with <a href="https://dlthub.com/docs/dlt-ecosystem/transformations/dbt/">dbt</a> is generally supported via dbt-clickhouse.
 
 ### Syncing of `dlt` state {#syncing-of-dlt-state}
