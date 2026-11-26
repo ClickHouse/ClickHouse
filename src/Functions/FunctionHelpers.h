@@ -225,6 +225,10 @@ struct FunctionResultSetting;
 bool conversionResultDependsOnSetting(
     const FunctionResultSetting & setting, const DataTypePtr & from, const DataTypePtr & to, bool creates_result_type = true);
 
+/// For `resultDependsOnSetting` of arithmetic: `decimal_check_overflow` applies only to decimals, `date_time_overflow_behavior`
+/// only to dates and times, any other setting always applies.
+bool arithmeticResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type);
+
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 bool isLowCardinalityType(const IDataType & type);
 /// Returns true if any of the argument types is or contains LowCardinality

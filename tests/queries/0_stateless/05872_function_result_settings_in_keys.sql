@@ -34,6 +34,7 @@ DROP TABLE IF EXISTS t_time_array_text;
 DROP TABLE IF EXISTS t_unrelated_setting;
 DROP TABLE IF EXISTS t_shared_prefix;
 DROP TABLE IF EXISTS t_lambda_text;
+DROP TABLE IF EXISTS t_plus_int;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -126,6 +127,8 @@ CREATE TABLE t_lambda_text
 )
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO t_lambda_text VALUES ({'abc':'1'}), ({'def':'1'});
+CREATE TABLE t_plus_int (x UInt64) ENGINE = MergeTree ORDER BY x + 1 SETTINGS index_granularity = 1;
+INSERT INTO t_plus_int SELECT number FROM numbers(100);
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
@@ -229,6 +232,8 @@ SELECT 'cast to a number uses the index', count() FROM t_cast_number WHERE CAST(
 SELECT 'date of time uses the index', count() FROM t_date_of_time WHERE toDate(ts) = toDate('2024-01-05') SETTINGS force_primary_key = 1;
 SELECT 'explicit time zone uses the index', count() FROM t_explicit_time_zone WHERE toDateTime(s, 'UTC') = toDateTime('2024-01-01 05:00:00', 'UTC')
 SETTINGS force_primary_key = 1;
+SELECT 'integer addition uses the index', count() FROM t_plus_int WHERE x + 1 = 5
+SETTINGS decimal_check_overflow = 0, date_time_overflow_behavior = 'saturate', force_primary_key = 1;
 SELECT 'text comparison in a lambda uses the index', count() FROM t_lambda_text WHERE mapContainsKey(fm, 'abc')
 SETTINGS force_data_skipping_indices = 'idx';
 
@@ -255,6 +260,7 @@ DROP TABLE t_time_array_text;
 DROP TABLE t_unrelated_setting;
 DROP TABLE t_shared_prefix;
 DROP TABLE t_lambda_text;
+DROP TABLE t_plus_int;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;

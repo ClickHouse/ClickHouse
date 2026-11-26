@@ -58,6 +58,8 @@ namespace Setting
     extern const SettingsBool input_format_tsv_use_best_effort_in_schema_inference;
     extern const SettingsUInt64Auto schema_inference_make_columns_nullable;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool decimal_check_overflow;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
 namespace ErrorCodes
@@ -596,6 +598,21 @@ bool conversionResultDependsOnSetting(
     /// Text, and values without a time zone of their own, are placed in the time zone of the result.
     return has_type(from, [&](const IDataType & type)
         { return is_text(type) || may_hold_any(type) || isDateOrDate32(type) || isTime(type) || isTime64(type); });
+}
+
+bool arithmeticResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type)
+{
+    auto has_type = [&](const std::function<bool(const IDataType &)> & predicate)
+    {
+        return anyInTypeTree(*result_type, predicate)
+            || std::ranges::any_of(arguments, [&](const DataTypePtr & type) { return anyInTypeTree(*type, predicate); });
+    };
+
+    if (setting == FunctionResultSetting(Setting::decimal_check_overflow))
+        return has_type([](const IDataType & type) { return isDecimal(type); });
+    if (setting == FunctionResultSetting(Setting::date_time_overflow_behavior))
+        return has_type([](const IDataType & type) { return isDateOrDate32OrDateTimeOrDateTime64(type) || isTime(type) || isTime64(type); });
+    return true;
 }
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type)

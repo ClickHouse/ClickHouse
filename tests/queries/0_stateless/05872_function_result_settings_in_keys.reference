@@ -63,4 +63,5 @@ if of numbers uses the index	2
 cast to a number uses the index	1
 date of time uses the index	1
 explicit time zone uses the index	1
+integer addition uses the index	1
 text comparison in a lambda uses the index	1

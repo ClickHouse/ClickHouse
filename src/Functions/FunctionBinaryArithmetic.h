@@ -2397,6 +2397,12 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return arithmeticResultDependsOnSetting(setting, arguments, result_type);
+    }
+
     [[nodiscard]] bool isNameInsensitive() const override { return true; }
 
     [[nodiscard]] bool useDefaultImplementationForNulls() const override
