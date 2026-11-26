@@ -481,3 +481,6 @@
 	path = contrib/gdeflate
 	url = https://github.com/ClickHouse/libdeflate.git
 	branch = gdeflate
+[submodule "contrib/uriparser"]
+	path = contrib/uriparser
+	url = https://github.com/uriparser/uriparser

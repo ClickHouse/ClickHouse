@@ -19,6 +19,10 @@ if (NOT ENABLE_PARQUET)
     return()
 endif()
 
+if (NOT TARGET ch_contrib::simdjson)
+    message (FATAL_ERROR "Parquet requires simdjson (ENABLE_SIMDJSON=ON)")
+endif()
+
 # The native Parquet reader and writer (`src/Processors/Formats/Impl/Parquet`) and the native `Arrow`
 # and `ArrowStream` formats (`src/Processors/Formats/Impl/ArrowIPC`) need only the Thrift-generated
 # Parquet structures and the FlatBuffers-generated Arrow IPC bindings defined below. The Apache Arrow
@@ -271,8 +275,8 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/io/caching.cc"
         "${LIBRARY_DIR}/io/compressed.cc"
         "${LIBRARY_DIR}/io/file.cc"
-        "${LIBRARY_DIR}/io/hdfs.cc"
-        "${LIBRARY_DIR}/io/hdfs_internal.cc"
+        "${LIBRARY_DIR}/filesystem/hdfs.cc"
+        "${LIBRARY_DIR}/filesystem/hdfs_internal.cc"
         "${LIBRARY_DIR}/io/interfaces.cc"
         "${LIBRARY_DIR}/io/memory.cc"
         "${LIBRARY_DIR}/io/slow.cc"
@@ -368,21 +372,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/vendored/double-conversion/string-to-double.cc"
         "${LIBRARY_DIR}/vendored/double-conversion/strtod.cc"
         "${LIBRARY_DIR}/vendored/musl/strptime.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriCommon.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriCompare.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriEscape.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriFile.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriIp4.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriIp4Base.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriMemory.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriNormalize.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriNormalizeBase.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriParse.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriParseBase.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriQuery.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriRecompose.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriResolve.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriShorten.c"
+        "${LIBRARY_DIR}/util/simdjson_internal.cc"
         "${LIBRARY_DIR}/visitor.cc"
         )
 
@@ -452,9 +442,10 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::zstd
     ch_contrib::brotli
     ch_contrib::bzip2
+    ch_contrib::uriparser
 )
 # PUBLIC so the xsimd headers are visible to _parquet too (it links _arrow PUBLIC).
-target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
+target_link_libraries(_arrow PUBLIC ch_contrib::xsimd ch_contrib::simdjson)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
