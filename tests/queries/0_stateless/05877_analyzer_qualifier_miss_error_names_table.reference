@@ -1,0 +1,4 @@
+cannot be resolved from table with name db.tbl
+cannot be resolved from table with name a (an alias of tbl)
+cannot be resolved from table with name o (an alias of one)
+cannot be resolved from subquery with name s

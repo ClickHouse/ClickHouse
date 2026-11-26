@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-darwin, no-msan, no-flaky-check
-# no-darwin: on Darwin StackTrace::resolveAddress keeps runtime addresses (AddressKind::Unsupported).
+# Tags: no-msan, no-flaky-check
 # no-msan: the query profiler is not supported in MemorySanitizer builds.
 # no-flaky-check: flushing `trace_log` with every allocation sampled is too slow when run many times in parallel.
 

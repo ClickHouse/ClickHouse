@@ -1,4 +1,7 @@
 #include <Access/ContextAccess.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
@@ -9,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -134,7 +138,7 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     else if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
         auto old_children = node->children;
-        std::vector<const ActionsDAG::Node *> new_children;
+        ActionsDAG::NodeRawConstPtrs new_children;
 
         for (const auto & child : old_children)
             new_children.push_back(replaceNodes(dag, child, replacements));
@@ -147,13 +151,13 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
 }
 
 /// Returns the inputs that the outputs depend on. Expects the unused actions to be removed.
-std::unordered_set<const ActionsDAG::Node *> getUsedInputs(const ActionsDAG & dag)
+UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getUsedInputs(const ActionsDAG & dag)
 {
-    std::unordered_set<const ActionsDAG::Node *> used_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
     for (const auto & node : dag.getNodes())
         used_nodes.insert(node.children.begin(), node.children.end());
 
-    std::unordered_set<const ActionsDAG::Node *> used_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_inputs;
     for (const auto * input : dag.getInputs())
         if (used_nodes.contains(input))
             used_inputs.insert(input);
@@ -199,7 +203,7 @@ String optimizationInfoToString(const IndexReadTasks & index_read_tasks, const N
 /// from the whole snapshot to avoid looking up the patches of each part.
 /// Also includes every name touched by a pending `DROP COLUMN` or `RENAME COLUMN` of the parts: such a name can be
 /// reused by a new column right away, while the part still holds the index file built over the old column.
-NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step, const std::unordered_set<DataPartPtr> & parts)
+NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step, const UnorderedSetWithMemoryTracking<DataPartPtr> & parts)
 {
     const auto & mutations_snapshot = read_from_merge_tree_step.getMutationsSnapshot();
     NameSet updated_columns = mutations_snapshot->getColumnsChangedOnFly();
@@ -237,12 +241,23 @@ NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_st
 
 /// Helper function.
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
-void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+/// A read of the probe plan of automatic parallel replicas has none of its own; it takes the conditions of the
+/// single-node read it stands for, so that both plans rewrite the same functions.
+void collectTextIndexReadInfos(
+    const ReadFromMergeTree * read_from_merge_tree_step,
+    const FindSingleNodeRead & find_single_node_read,
+    TextIndexReadInfos & text_index_read_infos)
 {
     auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
 
+    const ReadFromMergeTree * indexes_source = read_from_merge_tree_step;
+    if (!read_from_merge_tree_step->getIndexes() && find_single_node_read)
+        indexes_source = find_single_node_read(*read_from_merge_tree_step);
+    if (!indexes_source)
+        return;
+
     /// Everything below is needed only for text indexes.
-    const auto & indexes = read_from_merge_tree_step->getIndexes();
+    const auto & indexes = indexes_source->getIndexes();
     if (!indexes || std::ranges::none_of(indexes->skip_indexes.useful_indices, [](const auto & index) { return index.index->isTextIndex(); }))
         return;
 
@@ -253,7 +268,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
 
-    std::unordered_set<DataPartPtr> unique_parts;
+    UnorderedSetWithMemoryTracking<DataPartPtr> unique_parts;
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
@@ -264,7 +279,11 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns); !result)
+        /// The set is query-wide, so no per-part type record can relax a type change: pass it as both sets,
+        /// so any on-the-fly change disables the index.
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(
+                index.index, metadata_snapshot, updated_columns, updated_columns, read_from_merge_tree_step->getContext());
+            !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;
@@ -369,7 +388,7 @@ ASTPtr convertSetColumnToAST(const IColumn & column)
 /// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
 /// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
 /// instead of being emitted as bare, unresolvable identifiers.
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured = {});
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> & captured = {});
 
 /// Reconstructs a captured lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
 /// `captured_values` are the columns supplied for the capture, aligned with capture.captured_names.
@@ -381,7 +400,7 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
         return nullptr;
 
     /// Bind each captured column to the value passed into the capture so the body has no dangling refs.
-    std::unordered_map<std::string, const ActionsDAG::Node *> body_captured;
+    UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> body_captured;
     for (size_t i = 0; i < capture.captured_names.size(); ++i)
         body_captured.emplace(capture.captured_names[i], captured_values[i]);
 
@@ -406,7 +425,7 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
     return lambda;
 }
 
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured)
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> & captured)
 {
     switch (node.type)
     {
@@ -515,7 +534,7 @@ public:
     std::optional<ResultReplacement> replace(const ContextPtr & context, const String & filter_column_name)
     {
         NodesReplacementMap replacements;
-        std::unordered_set<const ActionsDAG::Node *> original_inputs(actions_dag.getInputs().begin(), actions_dag.getInputs().end());
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> original_inputs(actions_dag.getInputs().begin(), actions_dag.getInputs().end());
         const auto * filter_node = filter_column_name.empty() ? nullptr : &actions_dag.findInOutputs(filter_column_name);
 
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
@@ -585,7 +604,7 @@ private:
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
     /// Input nodes of the virtual columns in the DAG, by column name.
-    std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
+    UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
     IndexReadTasks index_read_tasks;
 
@@ -611,7 +630,7 @@ private:
             || function_name == "hasPhrase";
     }
 
-    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
+    VectorWithMemoryTracking<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
         /// Canonicalize the function-node subtree so that the serialized column names
         /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
@@ -628,7 +647,7 @@ private:
         });
 
         NameSet used_index_columns;
-        std::vector<SelectedCondition> selected_conditions;
+        VectorWithMemoryTracking<SelectedCondition> selected_conditions;
 
         for (const auto & [index_name, info] : text_index_read_infos)
         {
@@ -710,7 +729,7 @@ private:
     /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
     const ActionsDAG::Node * processTextIndexFunction(
         const ActionsDAG::Node & function_node,
-        const std::vector<SelectedCondition> & selected_conditions,
+        const VectorWithMemoryTracking<SelectedCondition> & selected_conditions,
         const ContextPtr & context)
     {
         if (selected_conditions.size() != 1 || function_node.children.size() < 2 || function_node.children.size() > 3)
@@ -818,10 +837,14 @@ private:
             }
         }
 
+        /// A phrase must lie within one element, so the tokens of an Array are not flattened for it.
+        const bool match_phrase_per_element = apply_postprocessor && function_name == "hasPhrase"
+            && isArray(new_children[0]->result_type) && tokenizer->getType() != ITokenizer::Type::Array;
+
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
-        if (apply_postprocessor)
+        if (apply_postprocessor && !match_phrase_per_element)
         {
             /// Name the postprocessor's haystack input after the haystack node's actual result_name so
             /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
@@ -833,7 +856,10 @@ private:
                 &merged_outputs);
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
+        }
 
+        if (apply_postprocessor)
+        {
             /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
             /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
             if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
@@ -907,6 +933,26 @@ private:
             }
         }
 
+        if (match_phrase_per_element)
+        {
+            ActionsDAG::NodeRawConstPtrs merged_outputs;
+            actions_dag.mergeNodes(
+                postprocessor->getPhraseActionsDAG(
+                    new_children[0]->result_name,
+                    new_children[0]->result_type,
+                    tokenizer->getDescription(),
+                    needles_field.safeGet<Array>(),
+                    preprocessor_source_ast),
+                &merged_outputs);
+            chassert(merged_outputs.size() == 1);
+
+            const ActionsDAG::Node * phrase_node = merged_outputs.front();
+            if (!phrase_node->result_type->equals(*function_node.result_type))
+                phrase_node = &actions_dag.addCast(*phrase_node, function_node.result_type, "", context);
+
+            return &actions_dag.addAlias(*phrase_node, function_node.result_name);
+        }
+
         /// Recreate an argument with needles.
         auto needles_column = needles_type->createColumnConst(0, needles_field);
         new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
@@ -924,7 +970,7 @@ private:
     /// Optimizes text-search functions by replacing them with virtual columns.
     const ActionsDAG::Node * replaceFunctionsToVirtualColumns(
         const ActionsDAG::Node & function_node,
-        std::vector<SelectedCondition> selected_conditions,
+        VectorWithMemoryTracking<SelectedCondition> selected_conditions,
         const ContextPtr & context)
     {
         std::erase_if(selected_conditions, [](const auto & condition) { return condition.virtual_column.name.empty(); });
@@ -1006,8 +1052,21 @@ private:
             ActionsDAG::NodeRawConstPtrs children;
             auto function_builder = FunctionFactory::instance().get("and", context);
 
+            /// A hint is 0 only where the predicate is 0 or NULL. Map it to NULL, so the conjunction keeps the predicate's NULL.
+            const ActionsDAG::Node * zero = nullptr;
+            if (!has_exact_search && canContainNull(*function_node.result_type))
+            {
+                auto zero_type = std::make_shared<DataTypeUInt8>();
+                zero = &actions_dag.addColumn(zero_type->createColumnConst(0, 0), zero_type, "0");
+            }
+
             for (auto & condition : selected_conditions)
-                children.push_back(add_condition_to_input(condition));
+            {
+                const auto * hint = add_condition_to_input(condition);
+                if (zero)
+                    hint = &actions_dag.addFunction(FunctionFactory::instance().get("nullIf", context), {hint, zero}, "");
+                children.push_back(hint);
+            }
 
             if (!has_exact_search)
                 children.push_back(&function_node);
@@ -1067,7 +1126,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     /// The step stops reading the removed columns, so the DAG must not take them as inputs.
     {
         NameSet removed_columns(result->removed_columns.begin(), result->removed_columns.end());
-        std::unordered_set<const ActionsDAG::Node *> kept_inputs;
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> kept_inputs;
         for (const auto * input : filter_dag.getInputs())
             if (!removed_columns.contains(input->result_name))
                 kept_inputs.insert(input);
@@ -1076,7 +1135,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
+    LOG_DEBUG(logger, "Text index optimization: {}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
 
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
@@ -1115,7 +1174,7 @@ static bool applyTextIndexInject(
             conflicting_names.insert(node.result_name);
     }
 
-    std::unordered_map<const ActionsDAG::Node *, String> renamed_inputs;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, String> renamed_inputs;
     for (const auto * input : dag.getInputs())
     {
         auto it = source_columns.find(input->result_name);
@@ -1187,7 +1246,11 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 ///
 /// See TextIndexDAGReplacer class for more details.
 void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
+    const Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool direct_read_from_text_index,
+    const FindSingleNodeRead & find_single_node_read,
+    const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1198,7 +1261,7 @@ void processAndOptimizeTextIndexFunctions(
     /// analyzed skip indexes; the rest are filled in from the index definitions, so the rewrite also covers the
     /// SELECT list, steps above the scan, and queries that did not run skip-index analysis.
     TextIndexReadInfos text_index_infos;
-    collectTextIndexReadInfos(read_from_merge_tree_step, text_index_infos);
+    collectTextIndexReadInfos(read_from_merge_tree_step, find_single_node_read, text_index_infos);
     collectTextIndexInjectInfos(read_from_merge_tree_step, text_index_infos);
     if (text_index_infos.empty())
         return;

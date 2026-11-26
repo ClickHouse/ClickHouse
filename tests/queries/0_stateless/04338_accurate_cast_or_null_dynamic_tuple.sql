@@ -9,8 +9,6 @@
 --     row the Dynamic/Variant conversion yields a plain default column, so the source nulls must be
 --     reconstructed from the source.
 
-SET allow_experimental_dynamic_type = 1;
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 -- { echo }

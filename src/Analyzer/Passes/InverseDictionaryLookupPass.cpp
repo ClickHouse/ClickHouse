@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -172,12 +173,14 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
 /// equal-typed probe, yet the key constant the rewrite folds in does not compare equal to that value read
 /// from a column; a convertible probe is cast for `dictGet` while the emitted comparison keeps it uncast.
 /// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
+/// A floating point key diverges as well: a dictionary lookup tells `-0.0` from `0.0` by the representation,
+/// while `IN` matches them as equal (see `replaceNegativeZeros`).
 bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
 {
     if (key_type.hasDynamicStructure())
         return true;
 
-    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested); });
+    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested) || isFloat(nested); });
 }
 
 /// Check whether `dictGet` accepts this key expression shape for the dictionary's key columns.
@@ -550,9 +553,24 @@ public:
             return;
         }
 
-        if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
+        if (!getSettings()[Setting::optimize_inverse_dictionary_lookup] || !node->as<FunctionNode>())
             return;
 
+        /// A node referenced from several places (an alias shared by `GROUP BY` and `ORDER BY`) is visited once per
+        /// reference: rewrite it on the first visit only, and give every later reference the same result.
+        if (auto it = rewritten_nodes.find(node); it != rewritten_nodes.end())
+        {
+            node = it->second;
+            return;
+        }
+
+        QueryTreeNodePtr original_node = node;
+        rewrite(node);
+        rewritten_nodes.emplace(std::move(original_node), node);
+    }
+
+    void rewrite(QueryTreeNodePtr & node)
+    {
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
@@ -684,7 +702,9 @@ public:
                 /// key expression. Exceptions from that expression, such as an explicit user-supplied
                 /// cast or the `UInt64` conversion this pass inserts for a signed simple-key probe,
                 /// are therefore skipped together with the lookup.
-                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
+                /// A key with an aggregate function or `arrayJoin` changes the row count, so it is kept by the membership below.
+                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type)
+                    && !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin"))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
                     auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
@@ -709,6 +729,8 @@ public:
                     equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
                     resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
 
+                    /// Final, also when the key is a `dictGet`: the node is visited again inside the cast or via a shared parent.
+                    rewritten_nodes.emplace(equals_node, equals_node);
                     node = preserveResultType(equals_node, original_result_type);
                     return;
                 }
@@ -728,6 +750,8 @@ public:
                 in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
                 resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
+                /// Final for the same reason as `equals` above: `rewriteIn` would rewrite it again.
+                rewritten_nodes.emplace(in_function_node, in_function_node);
                 node = preserveResultType(in_function_node, original_result_type);
                 return;
             }
@@ -1106,6 +1130,7 @@ private:
     }
 
     std::optional<bool> create_temporary_table_granted;
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> rewritten_nodes;
 
     /// `collectKeptComparisons` of each query being visited, innermost last.
     std::vector<std::unordered_set<QueryTreeNodePtr>> kept_comparisons_stack;

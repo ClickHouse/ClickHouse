@@ -135,7 +135,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
 
-    ParserCompoundIdentifier parser_name;
+    ParserCompoundIdentifier parser_name(/* table_name_with_optional_uuid = */ false, /* allow_query_parameter = */ true);
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
     ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
@@ -1336,6 +1336,7 @@ These `ALTER` statements modify entities related to role-based access control:
 |---------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
 | [ALTER TABLE ... MODIFY COMMENT](/reference/statements/alter/comment)  | Adds, modifies, or removes comments to the table, regardless if it was set before or not. |
 | [ALTER DATABASE ... MODIFY COMMENT](/reference/statements/alter/database-comment) | Adds, modifies, or removes comments to the database, regardless if it was set before or not. |
+| [ALTER DATABASE ... MODIFY SETTING](/reference/statements/alter/database-setting) | Changes settings of a database engine. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 | [ALTER HANDLER](/reference/statements/create/handler#alter-handler) | Modifies a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler). |
 
@@ -2631,11 +2632,11 @@ The following operations are available:
 
 ## ADD INDEX {#add-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata.
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata. [`CREATE INDEX`](/reference/statements/create/skipping-index) adds an index with a standalone statement.
 
 ## DROP INDEX {#drop-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations).
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations). [`DROP INDEX ... ON`](/reference/statements/drop#drop-index) is the standalone form.
 
 ## MATERIALIZE INDEX {#materialize-index}
 
@@ -2668,7 +2669,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] n
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
 )",
         .parent = "ALTER",
-        .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
+        .related = {"ALTER", "CREATE TABLE", "CREATE INDEX", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
     };
 
     documentation["ALTER TABLE ... PROJECTION"] =
@@ -3135,8 +3136,6 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
     documentation["ALTER TABLE ... STATISTICS"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 The following operations are available:
@@ -3264,6 +3263,63 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
+    };
+
+    documentation["ALTER DATABASE ... MODIFY SETTING"] =
+    {
+        .description = R"DOCS_MD(
+Changes settings of a database engine. The settings that can be changed depend on the engine; not every engine or setting supports modification after database creation.
+
+This statement changes database engine settings, not session settings or defaults for tables in the database.
+
+## Syntax {#syntax}
+
+```sql
+ALTER DATABASE database_name [ON CLUSTER cluster]
+MODIFY SETTING setting_name = value [, ...]
+```
+
+Use `ON CLUSTER` to execute the statement on all hosts in the specified cluster.
+The statement requires the `ALTER DATABASE SETTINGS` privilege.
+
+## Supported settings {#supported-settings}
+
+Refer to the documentation for the database engine for its settings and restrictions. For example:
+
+- [`Atomic`](/reference/engines/database-engines/atomic) and [`Ordinary`](/reference/engines/database-engines/ordinary) support changing `max_tables`.
+- [`MaterializedPostgreSQL`](/reference/engines/database-engines/materialized-postgresql) supports changing selected replication settings, such as `materialized_postgresql_max_block_size`.
+- [`DataLakeCatalog`](/reference/engines/database-engines/datalake) supports changing selected catalog settings; the available settings depend on the catalog type.
+
+An unsupported engine or setting causes an exception.
+
+## Example {#example}
+
+Change the maximum number of tables in an `Atomic` database:
+
+```sql
+CREATE DATABASE example_database ENGINE = Atomic;
+
+ALTER DATABASE example_database MODIFY SETTING max_tables = 100;
+
+SHOW CREATE DATABASE example_database;
+```
+
+Set `max_tables` to `0` to remove this database-level limit:
+
+```sql
+ALTER DATABASE example_database MODIFY SETTING max_tables = 0;
+```
+
+## Related content {#related-content}
+
+- [Database engines](/reference/engines/database-engines)
+- [`ALTER TABLE ... MODIFY SETTING`](/reference/statements/alter/setting)
+)DOCS_MD",
+        .syntax = R"(
+ALTER DATABASE database_name [ON CLUSTER cluster] MODIFY SETTING setting_name = value [, ...]
+)",
+        .parent = "ALTER",
+        .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "ALTER TABLE ... MODIFY SETTING", "CREATE DATABASE", "SHOW"},
     };
 
     documentation["ALTER DATABASE ... MODIFY COMMENT"] =

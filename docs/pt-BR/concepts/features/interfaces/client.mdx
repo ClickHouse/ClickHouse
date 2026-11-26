@@ -3,10 +3,8 @@ description: 'Documentação da interface do ClickHouse Client de linha de coman
 sidebarTitle: 'ClickHouse Client'
 slug: /interfaces/client
 title: 'ClickHouse Client'
-doc_type: 'referência'
+doc_type: 'guide'
 ---
-
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 O ClickHouse fornece um cliente nativo de linha de comando para executar consultas SQL diretamente em um servidor ClickHouse.
 Ele oferece suporte tanto ao modo interativo (para executar consultas em tempo real) quanto ao modo em lote (para scripts e automação).
@@ -68,7 +66,11 @@ Para ver a lista completa de opções de linha de comando, consulte [Opções de
 
 As informações do seu serviço no ClickHouse Cloud estão disponíveis no console do ClickHouse Cloud. Selecione o serviço ao qual você deseja se conectar e clique em **Connect**:
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Botão Connect do serviço no ClickHouse Cloud" />
+<div className="ch-image-md">
+  <Frame>
+    ![Botão Connect do serviço no ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -76,7 +78,11 @@ As informações do seu serviço no ClickHouse Cloud estão disponíveis no cons
 
 Escolha **Native**, e os detalhes serão exibidos junto com um exemplo de comando `clickhouse-client`:
 
-<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="Detalhes da conexão TCP Native do ClickHouse Cloud" />
+<div className="ch-image-md">
+  <Frame>
+    ![Detalhes de conexão TCP nativo do ClickHouse Cloud](/images/_snippets/connection-details-native.webp)
+  </Frame>
+</div>
 
 ### Armazenando conexões em um arquivo de configuração {#connection-credentials}
 
@@ -103,10 +109,10 @@ O formato é o seguinte:
 </config>
 ```
 
-Consulte a [seção sobre arquivos de configuração](#configuration_files) para mais informações.
+Consulte a [seção sobre arquivos de configuração](#configuration_files) para obter mais informações.
 
 <Note>
-  Para focar na sintaxe da consulta, os exemplos a seguir omitem os detalhes da conexão (`--host`, `--port` etc.). Lembre-se de adicioná-los ao usar os comandos.
+  Para manter o foco na sintaxe de consulta, os demais exemplos omitem os detalhes de conexão (`--host`, `--port` etc.). Lembre-se de incluí-los ao executar os comandos.
 </Note>
 
 ## Modo interativo {#interactive-mode}
@@ -254,6 +260,14 @@ A lista completa de todos os atalhos de teclado disponíveis está em [replxx](h
 
   iTerm2: Vá para Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key e clique em Esc+
 </Tip>
+
+### Modo Vim {#vim-mode}
+
+Inicie o cliente com o parâmetro `--vim` para editar consultas com teclas no estilo do `vim`.
+A entrada começa no modo de inserção; `Esc` alterna para o modo normal, no qual estão disponíveis movimentos (`h`, `j`, `k`, `l`, `w`, `b`, `e`, `0`, `$`, `f`, `t`, `%`, `gg`, `G`, ...), operadores (`d`, `c`) com contagens e objetos de texto (`iw`, `aw`, `i(`, `a(`, ...), além de comandos como `x`, `r`, `s`, `o`, `A`, `I`, `D`, `C`.
+No modo Vim, `Enter` insere uma nova linha no modo de inserção e passa para a próxima linha no modo normal; pressione `Ctrl + j` para enviar a consulta.
+No modo normal, `v` abre a consulta atual no editor (não disponível no cliente embutido).
+Os atalhos de busca no histórico (`Ctrl + r`, `Ctrl + s`, `Ctrl + t`, `Alt + r`) e `Alt + #` também funcionam no modo normal.
 
 ## Modo em lote {#batch-mode}
 
@@ -861,7 +875,7 @@ Todas as opções de linha de comando podem ser especificadas diretamente na lin
 
 ### Opções gerais {#command-line-options-general}
 
-| Option                                              | Description                                                                                                                                                | Default                      |
+| Option                                              | Descrição                                                                                                                                                | Default                      |
 | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | `-c [ -C, --config, --config-file ] <path-to-file>` | Localização do arquivo de configuração do cliente, caso ele não esteja em um dos locais padrão. Consulte [Arquivos de configuração](#configuration_files). | -                            |
 | `--help`                                            | Exibe o resumo de uso e sai. Combine com `--verbose` para mostrar todas as opções possíveis, incluindo as configurações de consulta.                       | -                            |
@@ -869,6 +883,7 @@ Todas as opções de linha de comando podem ser especificadas diretamente na lin
 | `--history_max_entries`                             | Número máximo de entradas no arquivo de histórico.                                                                                                         | `1000000` (1 milhão)         |
 | `--prompt <prompt>`                                 | Especifica um prompt personalizado.                                                                                                                        | O `display_name` do servidor |
 | `--verbose`                                         | Aumenta a verbosidade da saída.                                                                                                                            | -                            |
+| `--vim`                                             | Emula o modo de edição do `vim` no modo interativo. Consulte [Modo Vim](#vim-mode).                                                                        | -                            |
 | `-V [ --version ]`                                  | Exibe a versão e sai.                                                                                                                                      | -                            |
 
 ### Opções de conexão {#command-line-options-connection}

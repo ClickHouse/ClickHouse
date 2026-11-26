@@ -3,7 +3,8 @@
 Hourly job that acts on the approvals of open pull requests:
 
 - assigns the first approver to an approved PR that has no assignees;
-- adds the `can be tested` label to an approved PR from a fork that has no such label;
+- adds the `can be tested` label to an approved PR from a fork by an external contributor
+  that has no such label;
 - adds the `can be tested` label to every open PR of the automated agents listed in
   `AGENT_AUTHORS`, unconditionally.
 
@@ -13,6 +14,7 @@ Only approvals from ClickHouse organization members count.
 import json
 import shlex
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ci.praktika.result import Result
@@ -21,42 +23,33 @@ from ci.praktika.utils import Shell, Utils
 CAN_BE_TESTED = "can be tested"
 
 # GitHub logins of the automated agents whose PRs always get the `can be tested` label.
-AGENT_AUTHORS = ["groeneai", "clickgapai"]
+AGENT_AUTHORS = ["groeneai", "clickgapai", "actueleai"]
 
 PR_FIELDS = "number,title,assignees,author,labels,isCrossRepository"
 
+# The same list that `ci/jobs/scripts/workflow_hooks/trusted.py` uses.
+TRUSTED_CONTRIBUTORS_CONFIG = Path(__file__).parents[1] / "defs" / "trusted_contributors.json"
 
-def fetch_org_contributors(org: str = "ClickHouse", limit: int = 1000) -> set:
+
+def fetch_org_contributors(org: str = "ClickHouse") -> set:
     """
-    Fetch organization members using gh CLI.
+    Fetch the complete list of organization members using gh CLI.
 
-    Args:
-        org: Organization name (default: ClickHouse)
-        limit: Maximum number of members to fetch (default: 1000)
+    The list must be complete: an author missing from it is treated as an external
+    contributor, and their approved PR gets the `can be tested` label, which reruns
+    the whole CI. So a failure of any page is an error, and the output is not truncated.
 
-    Returns:
-        Set of organization member usernames
+    Raises on failure.
     """
-    print(f"Fetching up to {limit} organization members from {org}...")
-
-    try:
-        contributors = set()
-
-        # Fetch org members only (not external contributors)
-        cmd = f"gh api orgs/{org}/members --paginate --jq '.[].login' | head -n {limit}"
-        output = Shell.get_output(cmd, verbose=True)
-        if output and output.strip():
-            members = [
-                line.strip() for line in output.strip().split("\n") if line.strip()
-            ]
-            contributors.update(members)
-            print(f"  Found {len(members)} organization members")
-
-        return contributors
-
-    except Exception as e:
-        print(f"ERROR: Failed to fetch organization members: {e}")
-        return set()
+    print(f"Fetching organization members of {org}...")
+    output = Shell.get_output_or_raise(
+        f"gh api orgs/{org}/members --paginate --jq '.[].login'", verbose=True
+    )
+    members = {line.strip() for line in output.splitlines() if line.strip()}
+    if not members:
+        raise RuntimeError(f"No organization members of {org} were returned")
+    print(f"  Found {len(members)} organization members")
+    return members
 
 
 def has_label(pr: dict, label: str) -> bool:
@@ -67,16 +60,40 @@ def needs_assignee(pr: dict) -> bool:
     return not pr.get("assignees", [])
 
 
-def needs_can_be_tested(pr: dict) -> bool:
-    # The label only gates CI for PRs from forks (see `ci/jobs/scripts/workflow_hooks/trusted.py`):
-    # PRs from branches of the main repository are tested anyway.
-    return bool(pr.get("isCrossRepository")) and not has_label(pr, CAN_BE_TESTED)
+def load_trusted_contributors() -> set:
+    return {
+        login.lower()
+        for login in json.loads(TRUSTED_CONTRIBUTORS_CONFIG.read_text(encoding="utf-8"))
+    }
 
 
-def fetch_recent_prs(hours_back: int = 4) -> List[dict]:
+def is_external_contributor(pr: dict, org_contributors: set, trusted_contributors: set) -> bool:
+    author = (pr.get("author") or {}).get("login") or ""
+    if not author:
+        # Unknown author: do not label, adding the label is the consequential action.
+        return False
+    return author not in org_contributors and author.lower() not in trusted_contributors
+
+
+def needs_can_be_tested(pr: dict, org_contributors: set, trusted_contributors: set) -> bool:
+    # The label only gates CI for PRs from forks by external contributors (see
+    # `ci/jobs/scripts/workflow_hooks/trusted.py`): PRs from branches of the main repository,
+    # and PRs from forks by organization members or trusted contributors are tested anyway.
+    # Adding the label to them is not only useless: it makes CI rerun the whole PR.
+    return (
+        bool(pr.get("isCrossRepository"))
+        and not has_label(pr, CAN_BE_TESTED)
+        and is_external_contributor(pr, org_contributors, trusted_contributors)
+    )
+
+
+def fetch_recent_prs(
+    org_contributors: set, trusted_contributors: set, hours_back: int = 4
+) -> List[dict]:
     """
     Fetch the open pull requests updated within the last `hours_back` hours that
-    either have no assignees, or come from a fork and have no `can be tested` label.
+    either have no assignees, or come from a fork of an external contributor and have
+    no `can be tested` label.
 
     Whether a PR is approved is decided later, per PR, from its full paginated review
     history: the `reviews` field of `gh pr list` is capped at the first 100 review
@@ -95,7 +112,11 @@ def fetch_recent_prs(hours_back: int = 4) -> List[dict]:
     output = Shell.get_output_or_raise(cmd, verbose=True)
     prs = json.loads(output) if output else []
 
-    candidates = [pr for pr in prs if needs_assignee(pr) or needs_can_be_tested(pr)]
+    candidates = [
+        pr
+        for pr in prs
+        if needs_assignee(pr) or needs_can_be_tested(pr, org_contributors, trusted_contributors)
+    ]
     print(
         f"  Found {len(candidates)} PRs without assignees or without the "
         f"`{CAN_BE_TESTED}` label out of {len(prs)} recently updated open PRs"
@@ -334,12 +355,17 @@ def label_agent_prs(prs: List[dict], stats: Stats) -> set:
 
 
 def process_approved_prs(
-    prs: List[dict], org_contributors: set, stats: Stats, already_labeled: set = frozenset()
+    prs: List[dict],
+    org_contributors: set,
+    trusted_contributors: set,
+    stats: Stats,
+    already_labeled: set = frozenset(),
 ) -> None:
     """
     For every PR approved by an org contributor: assign the first approver if the PR
-    has no assignees, and add the `can be tested` label if it is from a fork and has
-    no such label. `already_labeled` are the PRs that got the label earlier in this run.
+    has no assignees, and add the `can be tested` label if it is from a fork of an
+    external contributor and has no such label. `already_labeled` are the PRs that got
+    the label earlier in this run.
     """
     for pr in prs:
         pr_number = pr.get("number")
@@ -373,7 +399,9 @@ def process_approved_prs(
                 else:
                     stats.failed += 1
 
-        if needs_can_be_tested(pr) and should_add_can_be_tested(approvers, label_removed_at):
+        if needs_can_be_tested(
+            pr, org_contributors, trusted_contributors
+        ) and should_add_can_be_tested(approvers, label_removed_at):
             acted = True
             if add_can_be_tested_label(pr_number):
                 stats.labeled += 1
@@ -391,7 +419,7 @@ if __name__ == "__main__":
 
     def fetch_contributors():
         global org_contributors
-        org_contributors = fetch_org_contributors(org="ClickHouse", limit=1000)
+        org_contributors = fetch_org_contributors(org="ClickHouse")
         return len(org_contributors) > 0
 
     results.append(
@@ -422,9 +450,12 @@ if __name__ == "__main__":
     )
 
     def process_approved():
-        prs = fetch_recent_prs()
+        trusted_contributors = load_trusted_contributors()
+        prs = fetch_recent_prs(org_contributors, trusted_contributors)
         failed_before = stats.failed
-        process_approved_prs(prs, org_contributors, stats, labeled_agent_prs)
+        process_approved_prs(
+            prs, org_contributors, trusted_contributors, stats, labeled_agent_prs
+        )
         return stats.failed == failed_before
 
     results.append(

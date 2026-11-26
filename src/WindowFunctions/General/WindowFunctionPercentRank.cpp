@@ -1,31 +1,15 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
-#include <Common/Exception.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/assert_cast.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace
 {
-
-WindowFrame wholePartitionRangeFrame()
-{
-    WindowFrame frame;
-    frame.type = WindowFrame::FrameType::RANGE;
-    frame.begin_type = WindowFrame::BoundaryType::Unbounded;
-    frame.end_type = WindowFrame::BoundaryType::Unbounded;
-    return frame;
-}
 
 class WindowFunctionPercentRank final : public IGeneralWindowFunction
 {
@@ -35,23 +19,12 @@ public:
     {
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.peers = true, .partition = true};
+        return WindowFunctionRequirements{.peers_start = true, .partition_end = true};
     }
 
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        return wholePartitionRangeFrame();
-    }
-
-    void checkWindowFrameType(const WindowDescription & window) const override
-    {
-        if (window.frame != wholePartitionRangeFrame())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be '{}', '{}' given", getName(), wholePartitionRangeFrame().toString(), window.frame.toString());
-    }
-
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (Int64 i = 0; i < bounds.rows; ++i)
@@ -60,18 +33,19 @@ public:
             const Float64 denominator = partition_rows == 1 ? 1 : static_cast<Float64>(partition_rows - 1);
             data.push_back(static_cast<Float64>(bounds.peers_start[i]) / denominator);
         }
+        return bounds.row.back() + 1;
     }
 };
 
 }
 
-void registerWindowFunctionPercentRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionPercentRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionPercentRank(WindowFunctionFactory & factory);
+void registerWindowFunctionPercentRank(WindowFunctionFactory & factory)
 {
     factory.registerFunction("percentRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionPercentRank>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionPercentRank>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 returns the relative rank (i.e. percentile) of rows within a window partition.
 
@@ -82,12 +56,12 @@ Alias: `percentRank` (case-sensitive)
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+The function always reads the whole partition; a window frame, if specified, is ignored.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 
@@ -132,9 +106,9 @@ FROM salaries;
    └─────────────────┴────────┴────────────────────┘
 
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}});
 
-    factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("percent_rank", "percentRank", WindowFunctionFactory::Case::Insensitive);
 }
 
 }

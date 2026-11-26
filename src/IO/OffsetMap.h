@@ -26,11 +26,11 @@ public:
     void build(const StoredObjects & objects);
 
     /// A single file range may span multiple objects.
-    VectorWithMemoryTracking<ObjectRange> map(ByteRange file_range) const;
+    [[nodiscard]] VectorWithMemoryTracking<ObjectRange> map(ByteRange file_range) const;
 
-    size_t totalSize() const { return total_size; }
+    [[nodiscard]] size_t totalSize() const { return total_size; }
 
-    bool hasUnknownSize() const { return total_size == StoredObject::UnknownSize; }
+    [[nodiscard]] bool hasUnknownSize() const { return total_size == StoredObject::UnknownSize; }
 
 private:
     struct Segment

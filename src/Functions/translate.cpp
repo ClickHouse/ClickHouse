@@ -72,7 +72,7 @@ struct TranslateImpl
         UInt64 data_size = 0;
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * src = data.data() + offsets[i - 1];
+            const UInt8 * src = data.data() + offsets[static_cast<ssize_t>(i) - 1];
             const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)
@@ -215,7 +215,7 @@ struct TranslateUTF8Impl
 
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * src = data.data() + offsets[i - 1];
+            const UInt8 * src = data.data() + offsets[static_cast<ssize_t>(i) - 1];
             const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)
@@ -309,21 +309,21 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTranslate>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T : StringOrFixedString, const StringOrFixedString, const StringOrFixedString) -> T";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column_src = arguments[0].column;
         const ColumnPtr column_map_from = arguments[1].column;
