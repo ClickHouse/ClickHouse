@@ -363,8 +363,9 @@ static std::vector<NameSet> collectColumnsWithoutPatchesAfterStep(
     std::vector<NameSet> result(range_readers.size());
 
     NameSet overwritten_next;
-    for (size_t i = range_readers.size(); i-- > 0;)
+    for (size_t step = range_readers.size(); step > 0; --step)
     {
+        const size_t i = step - 1;
         result[i] = overwritten_next;
         for (const auto & column : chain_step_columns[i].overwritten)
             overwritten_next.insert(column);
