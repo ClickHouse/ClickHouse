@@ -22,6 +22,10 @@ text	Variant(Array(IPv6), String)
 v	Variant(Map(String, FixedString(16)), String)					
 text	Variant(Map(String, IPv6), String)
 {'k':'::1'}	Variant(Map(String, IPv6), String)
+--- a NULL inside a composite branch requested without Nullable reads as the default, as in a plain column ---
+(0)	[1,0]	{'k':0}
+--- and is refused with input_format_null_as_default = 0, as in a plain column ---
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
 --- Arrow: union children the writer stores alike are told apart by their names ---
 v	Variant(IPv6, Int128)					
 ::1	IPv6

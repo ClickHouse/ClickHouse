@@ -92,6 +92,22 @@ ${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_map.arrow', Arrow)"
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT v, toTypeName(v) FROM file('${DATA}/rt_map.arrow', Arrow, 'v Variant(Map(String, IPv6), String)') ORDER BY toString(v)"
 
+echo "--- a NULL inside a composite branch requested without Nullable reads as the default, as in a plain column ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt_null.arrow', Arrow,
+            't Variant(Tuple(a Nullable(Int32)), String), a Variant(Array(Nullable(Int32)), String), m Variant(Map(String, Nullable(Int32)), String)')
+        SETTINGS engine_file_truncate_on_insert = 1
+        SELECT CAST(CAST(tuple(NULL), 'Tuple(a Nullable(Int32))'), 'Variant(Tuple(a Nullable(Int32)), String)'),
+               CAST(CAST([1, NULL], 'Array(Nullable(Int32))'), 'Variant(Array(Nullable(Int32)), String)'),
+               CAST(CAST(map('k', NULL), 'Map(String, Nullable(Int32))'), 'Variant(Map(String, Nullable(Int32)), String)')"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT * FROM file('${DATA}/rt_null.arrow', Arrow,
+        't Variant(Tuple(a Int32), String), a Variant(Array(Int32), String), m Variant(Map(String, Int32), String)')"
+echo "--- and is refused with input_format_null_as_default = 0, as in a plain column ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT t FROM file('${DATA}/rt_null.arrow', Arrow, 't Variant(Tuple(a Int32), String)')
+    SETTINGS input_format_null_as_default = 0" 2>&1 | grep -oE 'CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN' | head -1
+
 # usage: round_trip <format> <type> <value>...; writes the values with the native writer and reads them back
 round_trip()
 {

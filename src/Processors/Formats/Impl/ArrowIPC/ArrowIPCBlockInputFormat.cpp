@@ -1135,7 +1135,10 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
             /// exactly the requested one.
             if (element_type->getName() != target->getName())
             {
-                element = castColumn({element, element_type, ""}, target);
+                auto prepared = prepareArrowColumnForCast({element, element_type, ""}, target, format_settings);
+                if (format_settings.null_as_default)
+                    insertNullAsDefaultIfNeeded(prepared, {target->createColumn(), target, ""}, 0, nullptr);
+                element = castColumn(prepared, target);
                 element_type = target;
             }
         }
