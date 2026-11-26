@@ -511,7 +511,7 @@ void LazyMaterializingTransform::prepareLazyChunk()
 
     /// At a row a join left unmatched the lazy read has nothing, and the value is the one the join stands there: the
     /// default of the type, as `IDataType::insertDefaultInto` makes it, which is not the default of the column for every
-    /// type - an `Enum` has its first element, a `Date32` the epoch.
+    /// type - an `Enum` has its first element, a `Date32` `1900-01-01`.
     if (matched_rows)
     {
         const auto & lazy_header = getInputs().back().getHeader();

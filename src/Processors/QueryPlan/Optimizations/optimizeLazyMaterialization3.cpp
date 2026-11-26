@@ -75,8 +75,7 @@ bool isNameOfThisPass(std::string_view name)
 }
 
 /// `if(mask, value, default)`: the value where the join matched the row, and the default where it padded
-/// it, which is what the join itself stands there: the one `IDataType::insertDefaultInto` makes, which for some
-/// types, such as `Date32`, is not the one `IDataType::getDefault` gives.
+/// it, which is what the join itself stands there: the one `IDataType::insertDefaultInto` makes.
 const ActionsDAG::Node & addMasked(
     ActionsDAG & dag, const ActionsDAG::Node & mask, const ActionsDAG::Node & value, const String & name, const ContextPtr & context)
 {
