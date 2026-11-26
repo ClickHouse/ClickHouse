@@ -1,0 +1,359 @@
+---
+slug: /clickstack/observability/example-datasets/local-data
+title: 'ローカルのログとメトリクス'
+toc_max_heading_level: 2
+description: 'ClickHouse オブザーバビリティでローカルのログとシステムメトリクスを収集する'
+doc_type: 'guide'
+keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセット', 'ログ', 'オブザーバビリティ']
+sidebarTitle: 'ローカルのログとメトリクス'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+ローカルのログとシステムメトリクスを収集し、**ClickHouse オブザーバビリティ** に送信して可視化・分析します。
+
+この例では、Linux 上の Docker または macOS 上の Docker Desktop を使用します。作業を始める前に、Docker をインストールして起動し、[完全マネージド型の入門ガイド](/ja/clickstack/observability/getting-started) または [セルフマネージドの入門ガイド](/ja/clickstack/self-configured/getting-started/managed) に従って ClickHouse オブザーバビリティのサービスを作成してください。
+
+## ローカルデータを収集する {#collect-local-data}
+
+以下から使用するデプロイメントを選択し、collector を設定して起動してください。セットアップ後のデータ探索の手順は、どちらのデプロイメントでも共通です。
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版として提供" />
+
+    ClickHouse オブザーバビリティのサービスで **チーム設定 → Data** を開き、OTLP HTTP エンドポイントと APIキーをコピーします。
+
+    <Steps>
+      <Step title="カスタムのOpenTelemetry設定を作成する" id="create-otel-configuration">
+        次の内容で `custom-local-config.yaml` ファイルを作成します。
+
+        ```yaml
+        receivers:
+          file_log:
+            include:
+              - /host/var/log/**/*.log
+              - /host/var/log/syslog
+              - /host/var/log/messages
+            start_at: end
+            resource:
+              service.name: system-logs
+
+          host_metrics:
+            root_path: ${env:HOST_METRICS_ROOT_PATH}
+            collection_interval: 30s
+            scrapers:
+              cpu:
+                metrics:
+                  system.cpu.utilization:
+                    enabled: true
+              memory:
+                metrics:
+                  system.memory.utilization:
+                    enabled: true
+              filesystem:
+              paging:
+              disk:
+              load:
+              network:
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          resource:
+            attributes:
+              - key: host.name
+                value: ${env:HOST_NAME}
+                action: upsert
+          batch:
+            timeout: 5s
+            send_batch_size: 1024
+
+        exporters:
+          otlp_http:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: "Bearer ${env:OTEL_EXPORTER_OTLP_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [file_log]
+              processors: [memory_limiter, resource, batch]
+              exporters: [otlp_http]
+            metrics:
+              receivers: [host_metrics]
+              processors: [memory_limiter, resource, batch]
+              exporters: [otlp_http]
+        ```
+
+        `file_log` receiver はローカルのログファイルを tail して読み取り、`host_metrics` receiver はシステムメトリクスを収集します。どちらのパイプラインも、HTTPS 経由でマネージドテレメトリーエンドポイントにデータを送信します。
+
+        <Info>
+          この例では、新しいログエントリのみを読み取ります (`start_at: end`) 。ログ本文からタイムスタンプはパースしません。元のイベント時刻を保持する必要がある場合は、file receiver にタイムスタンプパーサーを追加してください。新たに検出されたファイル内の既存のエントリも取り込むには、`start_at: beginning` を使用します。
+        </Info>
+
+        OpenTelemetry (OTel) の設定構造の詳細については、[公式ガイド](https://opentelemetry.io/docs/collector/configuration/)を参照してください。
+      </Step>
+
+      <Step title="OpenTelemetry Collectorを起動する" id="start-the-otel-collector">
+        **チーム設定 → Data** からコピーしたエンドポイントとAPIキーを設定します。
+
+        ```shell
+        export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+        printf "API key: "
+        read -r -s OTEL_EXPORTER_OTLP_API_KEY
+        printf "\n"
+        export OTEL_EXPORTER_OTLP_API_KEY
+        ```
+
+        エンドポイントには、`/v1/logs` や `/v1/metrics` を含まないベースの OTLP HTTP URL を指定します。適切なパスは collector が自動的に付加します。
+
+        <Tabs>
+          <Tab title="Linux">
+            collector がホストのメトリクスとログファイルを読み取れるよう、ホストのファイルシステムを読み取り専用でマウントします:
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e OTEL_EXPORTER_OTLP_ENDPOINT \
+              -e OTEL_EXPORTER_OTLP_API_KEY \
+              -e HOST_NAME="$(hostname)" \
+              -e HOST_METRICS_ROOT_PATH=/hostfs \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+              -v /:/hostfs:ro \
+              -v /var/log:/host/var/log:ro \
+              otel/opentelemetry-collector-contrib:0.161.0
+            ```
+          </Tab>
+
+          <Tab title="macOS (Docker Desktop)">
+            macOS のログディレクトリを読み取り専用でマウントします。メトリクスは Docker Desktop の Linux 仮想マシンのものとなるため、それに対応するホストラベルを使用します:
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e OTEL_EXPORTER_OTLP_ENDPOINT \
+              -e OTEL_EXPORTER_OTLP_API_KEY \
+              -e HOST_NAME="$(hostname)-docker-desktop" \
+              -e HOST_METRICS_ROOT_PATH=/ \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+              -v /private/var/log:/host/var/log:ro \
+              otel/opentelemetry-collector-contrib:0.161.0
+            ```
+
+            Docker Desktop に `/private/var/log` を共有するアクセス許可を付与しておく必要があります。
+          </Tab>
+        </Tabs>
+
+        collector が設定エラーやエクスポートエラーを出さずに起動することを確認します:
+
+        ```shell
+        docker logs local-otel-collector
+        ```
+
+        メトリクスは 30 秒ごとに収集されます。ログは、対象のファイルに新しいエントリが追記されると表示されます。以降の手順でデータを確認している間は、collector を実行したままにしてください。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="セルフマネージド" id="self-managed">
+    [セルフマネージド入門ガイド](/ja/clickstack/self-configured/getting-started/managed#next-steps)で説明しているとおり、ClickHouse Cloud サービスの接続用認証情報を使用します。
+
+    <Steps>
+      <Step title="カスタムのOpenTelemetry設定を作成する" id="create-otel-configuration-self-configured">
+        次の内容で `custom-local-config.yaml` ファイルを作成します:
+
+        ```yaml
+        receivers:
+          file_log:
+            include:
+              - /host/var/log/**/*.log        # Linux logs from host
+              - /host/var/log/syslog
+              - /host/var/log/messages
+            start_at: beginning
+            resource:
+              service.name: "system-logs"
+
+          host_metrics:
+            root_path: ${env:HOST_METRICS_ROOT_PATH}
+            collection_interval: 1s
+            scrapers:
+              cpu:
+                metrics:
+                  system.cpu.time:
+                    enabled: true
+                  system.cpu.utilization:
+                    enabled: true
+              memory:
+                metrics:
+                  system.memory.usage:
+                    enabled: true
+                  system.memory.utilization:
+                    enabled: true
+              filesystem:
+                metrics:
+                  system.filesystem.usage:
+                    enabled: true
+                  system.filesystem.utilization:
+                    enabled: true
+              paging:
+                metrics:
+                  system.paging.usage:
+                    enabled: true
+                  system.paging.utilization:
+                    enabled: true
+                  system.paging.faults:
+                    enabled: true
+              disk:
+              load:
+              network:
+              processes:
+
+        service:
+          pipelines:
+            logs/local:
+              receivers: [file_log]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+            metrics/hostmetrics:
+              receivers: [host_metrics]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+        ```
+
+        この設定は、macOS および Linux システムのシステムログとメトリクスを収集し、その結果をサービスに送信します。この設定では、新しいレシーバーとパイプラインを追加して ClickStack コレクターを拡張します。その際、ベースとなる ClickStack コレクターですでに設定済みの `clickhouse` エクスポーターおよびプロセッサ (`memory_limiter`、`batch`) を参照します。
+
+        <Info>
+          **インジェスト時のタイムスタンプ**
+
+          この設定では取り込み時にタイムスタンプを調整し、各イベントに更新後の時刻値を割り当てます。正確なイベント時刻を保持するには、ログファイル内のタイムスタンプを OTel のプロセッサまたはオペレーターで[前処理またはパース](/ja/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured)することを推奨します。
+
+          この例のセットアップでは、receiver またはファイルプロセッサーがファイルの先頭から読み込むように設定されている場合、既存のログエントリにはすべて同じ調整済みタイムスタンプ、つまり元のイベント時刻ではなく処理時刻が割り当てられます。ファイルに新たに追記されたイベントには、実際の生成時刻に近いタイムスタンプが付与されます。
+
+          この動作を避けるには、receiver の設定で開始位置を `end` に設定します。これにより、新しいエントリのみが取り込まれ、実際の到着時刻に近いタイムスタンプが付与されます。
+        </Info>
+
+        OpenTelemetry (OTel) の設定構造の詳細については、[公式ガイド](https://opentelemetry.io/docs/collector/configuration/)を参照してください。
+      </Step>
+
+      <Step title="OpenTelemetry Collectorを起動する" id="start-the-otel-collector-self-configured">
+        エクスポート済みの `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` の値を使用して、スタンドアロンの collector を実行します。
+
+        <Tabs>
+          <Tab title="Linux">
+            collector がホストのメトリクスとログファイルを読み取れるよう、ホストのファイルシステムを読み取り専用でマウントします。
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+              -e CLICKHOUSE_ENDPOINT \
+              -e CLICKHOUSE_USER \
+              -e CLICKHOUSE_PASSWORD \
+              -e HOST_METRICS_ROOT_PATH=/hostfs \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+              -v /:/hostfs:ro \
+              -v /var/log:/host/var/log:ro \
+              clickhouse/clickstack-otel-collector:latest
+            ```
+          </Tab>
+
+          <Tab title="macOS (Docker Desktop)">
+            macOS のログディレクトリを読み取り専用でマウントします。なお、取得されるメトリクスは macOS ホストのものではなく、Docker Desktop の Linux 仮想マシンのものです。
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+              -e CLICKHOUSE_ENDPOINT \
+              -e CLICKHOUSE_USER \
+              -e CLICKHOUSE_PASSWORD \
+              -e HOST_METRICS_ROOT_PATH=/ \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+              -v /private/var/log:/host/var/log:ro \
+              clickhouse/clickstack-otel-collector:latest
+            ```
+
+            Docker Desktop に `/private/var/log` を共有するアクセス許可が付与されている必要があります。
+          </Tab>
+        </Tabs>
+
+        collector が設定エラーやエクスポートエラーを出さずに起動することを確認します。
+
+        ```shell
+        docker logs local-otel-collector
+        ```
+
+        collector は、ローカルのシステムログとメトリクスの収集をただちに開始します。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## データを探索する {#explore-your-data}
+
+データを探索している間は、collector を実行したままにしておいてください。スクリーンショットに示されている検索および Chart Explorer のインターフェイスは、どちらのデプロイモードでも共通です。
+
+<Steps>
+  <Step title="システムログを探索する" id="explore-system-logs">
+    ClickHouse Cloud コンソールでサービスを選択し、ClickHouse オブザーバビリティを開きます。
+
+    [検索](/ja/clickstack/observability/features/search)を開き、**ログ** ログソースを選択します。collector が実行されていた期間を含む時間範囲を選択し、**ServiceName** を `system-logs` でフィルタします。
+
+    イベントを展開して属性を確認します。スクリーンショットはサンプルデータのため、実際のログメッセージやホスト属性は異なります。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse オブザーバビリティでのローカルのサンプルログ。ログファイル名とホスト属性が表示されている](/images/clickstack/observability-local-logs.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="システムメトリクスを探索する" id="explore-system-metrics">
+    **Chart Explorer** を開き、**Time Series** と **メトリクス** ログソースを選択します。集約として **Maximum** を選び、`system.memory.utilization` を選択します。**Delta** はオフのままにしておきます。
+
+    **Where** フィールドに `Attributes.state:"used"` と入力して、使用中のメモリを表示します。複数のホストからメトリクスを収集している場合は、データに含まれるホスト属性でもフィルタしてください。
+
+    collector が実行されていた期間を含む時間範囲を選択し、**Run** を選択します。スクリーンショットは、単一のホストに絞り込んだサンプルデータです。このメトリクスは 0 から 1 までの比率で、値 `0.62` は使用率 62% を表します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse オブザーバビリティで、サンプルホストの使用中メモリに絞り込んだメモリ使用率](/images/clickstack/observability-local-memory-utilization.png)
+      </Frame>
+    </div>
+
+    使用率をパーセンテージで表示するには、**表示設定** を開き、**出力フォーマット** から **Percentage** を選択します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![出力フォーマットとして Percentage が選択された Chart Explorer の表示設定](/images/clickstack/observability-local-memory-display-settings.png)
+      </Frame>
+    </div>
+
+    **Apply** を選択してチャートを更新します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![サンプルホストのメモリ使用率をパーセンテージで表示した例](/images/clickstack/observability-local-memory-percentage.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 収集の停止 {#stop-collection}
+
+作業が完了したら、収集を停止してコンテナを削除します。
+
+```shell
+docker stop local-otel-collector
+docker rm local-otel-collector
+```

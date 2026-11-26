@@ -37,14 +37,6 @@ namespace FailPoints
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
-
-    /// The streams of these columns are known only after reading the serialization prefixes:
-    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
-    bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
-    {
-        return column.getTypeInStorage()->hasDynamicStructure()
-            || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
-    }
 }
 
 namespace ErrorCodes
@@ -937,6 +929,11 @@ void MergeTreeReaderWide::accumulateRowsForColumnsCache(
         if (!accumulated)
         {
             accumulated = column->cloneEmpty();
+            /// The copy must own its data: otherwise `insertRangeFrom` lets a `ColumnAggregateFunction`
+            /// (also nested in a `Tuple`, `Array`, ...) share the states of the column being read by
+            /// keeping a reference to it, which keeps the whole column alive in the cache and makes it
+            /// shared while the following granules are read into it.
+            accumulated->ensureOwnership();
             /// The rows this read is going to append to the copy - the rest of the run, up to the
             /// end of the stripe - not the whole stripe: after `PREWHERE` filtered granules out, a
             /// run is often a single granule, and reserving a stripe for each of them would
@@ -1627,6 +1624,12 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+}
+
+bool MergeTreeReaderWide::streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
+{
+    return column.getTypeInStorage()->hasDynamicStructure()
+        || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
 }
 
 std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()

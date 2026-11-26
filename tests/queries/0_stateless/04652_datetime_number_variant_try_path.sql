@@ -1,7 +1,6 @@
 -- Test the try-deserialization path (Variant column) for an unquoted DateTime/DateTime64 number,
 -- for both the default (seconds) reading and the compatibility raw-value (ticks) reading.
 SET session_timezone = 'UTC';
-SET allow_experimental_variant_type = 1;
 SET input_format_read_datetime_number_as_raw_value = 0;
 
 SELECT '-- default: Variant try-path reads an unquoted number as a Unix timestamp in seconds';

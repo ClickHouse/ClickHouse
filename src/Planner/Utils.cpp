@@ -950,16 +950,21 @@ bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated)
         if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
         {
             const auto & params = aggregation->getParams();
+            bool keyless_one_row = params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set;
             /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
-            bool has_set_without_keys = params.keys_size == 0
-                || std::ranges::any_of(
-                    aggregation->getGroupingSetsParamsList(),
-                    [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); });
-            if (has_set_without_keys && !params.empty_result_for_aggregation_by_empty_set)
+            bool always_one_row = keyless_one_row
+                || (!params.empty_result_for_aggregation_by_empty_set
+                    && std::ranges::any_of(
+                        aggregation->getGroupingSetsParamsList(),
+                        [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); }));
+            /// Decorrelation loses the row of an empty input of a keyless aggregate and applies `max_rows_to_group_by`
+            /// to all outer rows at once, so for a correlated subquery the steps above such an aggregate are ignored.
+            if (is_correlated && (keyless_one_row || params.max_rows_to_group_by != 0))
+                changes_number_of_rows = nullptr;
+            if (always_one_row)
             {
-                /// Subquery will always produce at least one row. Decorrelation loses the row of an empty input
-                /// of an aggregate without keys, so for a correlated subquery the steps above it are ignored.
-                if (!changes_number_of_rows || (is_correlated && params.keys_size == 0))
+                /// Subquery will always produce at least one row.
+                if (!changes_number_of_rows)
                     return true;
                 break;
             }
