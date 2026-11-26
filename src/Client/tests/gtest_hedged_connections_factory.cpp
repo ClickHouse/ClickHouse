@@ -93,7 +93,7 @@ public:
         ::close(listen_fd);
     }
 
-    UInt16 getPort() const { return port; }
+    [[nodiscard]] UInt16 getPort() const { return port; }
 
 private:
     void acceptLoop()
