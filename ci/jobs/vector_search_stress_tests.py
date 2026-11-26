@@ -1232,9 +1232,9 @@ def install_clickhouse():
     results = []
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/134613/0382e89acba727738ee023c5a305a9921d55326e/pr/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/134613/0382e89acba727738ee023c5a305a9921d55326e/pr/build_amd_release/clickhouse"
     else:
         assert False, "Unknown processor architecture"
 
