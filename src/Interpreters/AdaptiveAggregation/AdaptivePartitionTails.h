@@ -60,8 +60,10 @@ public:
         };
         /// The rank of the record's row under a row selection (see `fillRowSelectionRanks`).
         Int64 rank = 0;
-        /// The size of the record of a written tail, which its rollback gives back.
+        /// The size of the record of a written tail and of the key it stores, which its rollback gives back to
+        /// the buffer and to the accounting of the staged bytes (see `AdaptiveStagedBytes`).
         UInt32 bytes = 0;
+        UInt32 key_bytes = 0;
     };
 
     explicit AdaptivePartitionTails(size_t num_partitions_)
@@ -147,6 +149,7 @@ public:
                     tail.counter = layout->multiplicityPosition(record);
             }
             tail.bytes = static_cast<UInt32>(format.bytes(record));
+            tail.key_bytes = static_cast<UInt32>(format.key(record).second);
             states[partition] = State::written;
         }
     }

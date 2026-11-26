@@ -216,7 +216,7 @@ private:
             if (multiplicity > max_rows - rows)
                 return false;
             adaptive.partitions->rollback(partition, tail.bytes);
-            misses.addReplaced({.key_bytes = keyBytes(key), .record_bytes = tail.bytes});
+            misses.addReplaced({.key_bytes = tail.key_bytes, .record_bytes = tail.bytes});
             addDescriptor(partition, row, hash, key, multiplicity + rows);
             pending = true;
             return true;
@@ -275,15 +275,6 @@ private:
         else
             misses.add<RecordKey>(row, hash, key, keep_key_bytes);
         tails.setPending(partition, descriptor, hash, key, kind == AdaptiveMissCombine::selection ? ranks[row] : 0);
-    }
-
-    /// The key bytes that the writer counts for a record of `key` (see `AdaptiveStagedBytes`).
-    static size_t keyBytes(const RecordKey & key)
-    {
-        if constexpr (adaptive_key_stages_bytes<RecordKey>)
-            return static_cast<std::string_view>(key).size();
-        else
-            return sizeof(RecordKey);
     }
 
     AdaptiveAggregationProducer & adaptive;
