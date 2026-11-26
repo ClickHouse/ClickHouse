@@ -212,28 +212,48 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
     return shifted_value;
 }
 
-/// A gap of a wide integer column can take more steps than `doLongJump` makes, so its distance is divided by the step exactly.
+/// `doLongJump` makes a bounded number of jumps and multiplies the step with wraparound, so integer distances are divided exactly.
 template <typename T>
-static bool wideIntegerStepsReach(const Field & from, const Field & to, const Field & step, int direction)
+static bool integerStepsReach(T from, T to, T step, int direction)
 {
     using U = make_unsigned_t<T>;
-    const U distance = direction > 0 ? U(to.safeGet<T>()) - U(from.safeGet<T>()) : U(from.safeGet<T>()) - U(to.safeGet<T>());
-    const U step_length = direction > 0 ? U(step.safeGet<T>()) : U(0) - U(step.safeGet<T>());
-    return distance % step_length == 0;
+    const U distance = direction > 0 ? U(to) - U(from) : U(from) - U(to);
+    const U step_length = direction > 0 ? U(step) : U(0) - U(step);
+    /// A numeric step truncated to zero ticks of `DateTime64` does not advance.
+    return step_length != 0 && distance % step_length == 0;
+}
+
+template <typename T>
+static bool integerStepsReach(const Field & from, const Field & to, const Field & step, int direction)
+{
+    return integerStepsReach<T>(from.safeGet<T>(), to.safeGet<T>(), step.safeGet<T>(), direction);
+}
+
+static Int64 decimal64Ticks(const Field & field)
+{
+    return field.safeGet<DecimalField<Decimal64>>().getValue().value;
 }
 
 bool FillingRow::stepsReach(size_t pos, const Field & value)
 {
     const auto & descr = getFillDescription(pos);
     const int direction = getDirection(pos);
-    switch (descr.fill_step.getType())
+    /// The step of an INTERVAL is a number of time units, not a distance between values.
+    if (!descr.step_kind)
     {
-        case Field::Types::Int128: return wideIntegerStepsReach<Int128>(row[pos], value, descr.fill_step, direction);
-        case Field::Types::UInt128: return wideIntegerStepsReach<UInt128>(row[pos], value, descr.fill_step, direction);
-        case Field::Types::Int256: return wideIntegerStepsReach<Int256>(row[pos], value, descr.fill_step, direction);
-        case Field::Types::UInt256: return wideIntegerStepsReach<UInt256>(row[pos], value, descr.fill_step, direction);
-        default: return equals(doLongJump(descr, pos, value), value);
+        switch (descr.fill_step.getType())
+        {
+            case Field::Types::Int64: return integerStepsReach<Int64>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::Decimal64:
+                return integerStepsReach<Int64>(decimal64Ticks(row[pos]), decimal64Ticks(value), decimal64Ticks(descr.fill_step), direction);
+            case Field::Types::Int128: return integerStepsReach<Int128>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::UInt128: return integerStepsReach<UInt128>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::Int256: return integerStepsReach<Int256>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::UInt256: return integerStepsReach<UInt256>(row[pos], value, descr.fill_step, direction);
+            default: break;
+        }
     }
+    return equals(doLongJump(descr, pos, value), value);
 }
 
 bool FillingRow::hasSomeConstraints(size_t pos) const
