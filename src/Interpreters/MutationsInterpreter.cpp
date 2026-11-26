@@ -1248,11 +1248,15 @@ void MutationsInterpreter::prepare(bool dry_run)
     all_affected_materialized.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
     all_affected_materialized.insert(type_changed_affected_materialized.begin(), type_changed_affected_materialized.end());
 
+    /// Columns this mutation writes besides the targets of its stages, e.g. those a column TTL resets.
+    NameSet columns_written_for_indices;
+
     /// getColumnDependencies matches index inputs by raw name, so it misses an index over a subcolumn (`t.a`)
     /// of a changed column and does not read the index's other inputs (`y` in `t.a + y`). Read all inputs of
     /// every index one of @changed_columns is stored in.
     auto add_index_dependencies_of_changed_columns = [&](const NameSet & changed_columns)
     {
+        columns_written_for_indices.insert(changed_columns.begin(), changed_columns.end());
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
         {
             if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
@@ -1263,24 +1267,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                 for (const auto & col : index_storage_columns)
                     dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
         }
-
-        /// A subcolumn read from the source part would be stale next to its updated column, and the index
-        /// recalculation takes a subcolumn present in the block as is, so read the column it is stored in.
-        ColumnDependencies normalized_dependencies;
-        for (const auto & dependency : dependencies)
-        {
-            if (dependency.kind == ColumnDependency::SKIP_INDEX)
-            {
-                auto column = columns_for_analysis.tryGetColumnOrSubcolumn(GetColumnsOptions::All, dependency.column_name);
-                if (column && column->isSubcolumn())
-                {
-                    normalized_dependencies.emplace(column->getNameInStorage(), dependency.kind);
-                    continue;
-                }
-            }
-            normalized_dependencies.insert(dependency);
-        }
-        dependencies = std::move(normalized_dependencies);
     };
 
     if (settings.recalculate_dependencies_of_updated_columns)
@@ -1961,6 +1947,36 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         for (const auto & name : getColumnsRequiredToRecalculateTTL(*metadata_snapshot))
             dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
+    }
+
+    /// An index input that is a subcolumn of a column this mutation writes would be read stale from the source
+    /// part, and the index recalculation takes a subcolumn present in the block as is, so read the column it is
+    /// stored in instead. After all commands, as MATERIALIZE INDEX adds the raw inputs of its index.
+    {
+        NameSet written_columns = columns_written_for_indices;
+        written_columns.insert(clear_column_names.begin(), clear_column_names.end());
+        for (const auto & stage : stages)
+            for (const auto & [column_name, _] : stage.column_to_updated)
+                written_columns.insert(column_name);
+        for (const auto & dependency : dependencies)
+            if (!dependency.isReadOnly())
+                written_columns.insert(dependency.column_name);
+
+        ColumnDependencies normalized_dependencies;
+        for (const auto & dependency : dependencies)
+        {
+            if (dependency.kind == ColumnDependency::SKIP_INDEX)
+            {
+                auto column = columns_for_analysis.tryGetColumnOrSubcolumn(GetColumnsOptions::All, dependency.column_name);
+                if (column && column->isSubcolumn() && written_columns.contains(column->getNameInStorage()))
+                {
+                    normalized_dependencies.emplace(column->getNameInStorage(), dependency.kind);
+                    continue;
+                }
+            }
+            normalized_dependencies.insert(dependency);
+        }
+        dependencies = std::move(normalized_dependencies);
     }
 
     /// We care about affected indices and projections because we also need to rewrite them

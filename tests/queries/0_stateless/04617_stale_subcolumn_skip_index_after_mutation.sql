@@ -235,3 +235,35 @@ FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_subcolum
 SELECT count() FROM t_ttl_subcolumn_key;
 
 DROP TABLE t_ttl_subcolumn_key;
+
+-- Case 13: MATERIALIZE INDEX in the same mutation that writes the column of an index input builds the index from
+-- the new value of the column, not from the subcolumn of the source part.
+DROP TABLE IF EXISTS t_materialize_index_update;
+CREATE TABLE t_materialize_index_update (id UInt64, t Tuple(a Int32), y Int32, payload String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_materialize_index_update SELECT number, tuple(toInt32(0)), 0, 'p' FROM numbers(16);
+ALTER TABLE t_materialize_index_update ADD INDEX idx (t.a + y) TYPE minmax GRANULARITY 1;
+ALTER TABLE t_materialize_index_update UPDATE t = tuple(100), y = 1 WHERE 1, MATERIALIZE INDEX idx SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_materialize_index_update WHERE t.a + y > 50;
+SELECT count() FROM t_materialize_index_update WHERE t.a + y > 50 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_materialize_index_update;
+
+-- The same when the column is a MATERIALIZED column recalculated by the mutation.
+DROP TABLE IF EXISTS t_materialize_index_column;
+CREATE TABLE t_materialize_index_column (id UInt64, x Int32, m Tuple(a Int32) MATERIALIZED tuple(x), payload String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_materialize_index_column (id, x, payload) SELECT number, 0, 'p' FROM numbers(16);
+ALTER TABLE t_materialize_index_column MODIFY COLUMN m Tuple(a Int32) MATERIALIZED tuple(x + 100);
+ALTER TABLE t_materialize_index_column ADD INDEX idx (m.a) TYPE minmax GRANULARITY 1;
+ALTER TABLE t_materialize_index_column MATERIALIZE COLUMN m, MATERIALIZE INDEX idx SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_materialize_index_column WHERE m.a > 50;
+SELECT count() FROM t_materialize_index_column WHERE m.a > 50 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_materialize_index_column;
