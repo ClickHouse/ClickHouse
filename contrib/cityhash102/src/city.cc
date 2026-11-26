@@ -202,7 +202,7 @@ static uint64 HashLen33to64(const char *s, size_t len) {
   return ShiftMix(r * k0 + vs) * k2;
 }
 
-uint64 CityHash64Over16(const char *s, size_t len) {
+uint64 CityHash64OutOfLine(const char *s, size_t len) {
   if (len <= 32) {
     if (len <= 16) {
       return HashLen0to16(s, len);

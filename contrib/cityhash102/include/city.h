@@ -81,9 +81,9 @@ struct uint128
 inline uint64 Uint128Low64(const uint128 & x) { return x.low64; }
 inline uint64 Uint128High64(const uint128 & x) { return x.high64; }
 
-// Hash function for a byte array, defined below: inputs of up to 16 bytes are hashed inline.
-// CityHash64Over16 is the out-of-line implementation for longer inputs.
-uint64 CityHash64Over16(const char *buf, size_t len);
+// Hash function for a byte array, defined below: an input whose length is a compile-time constant of up to
+// 16 bytes is hashed inline. CityHash64OutOfLine is the implementation for all lengths.
+uint64 CityHash64OutOfLine(const char *buf, size_t len);
 
 // Hash function for a byte array.  For convenience, a 64-bit seed is also
 // hashed into the result.
@@ -115,7 +115,7 @@ inline uint64 Hash128to64(const uint128& x) {
 }
 
 // The same as HashLen0to16 in city.cc. Inline because hashing up to 16 bytes costs less than calling a function
-// for every value (UUIDs, short strings), more so when the call goes through a linker thunk, an indirect branch.
+// for every value (UUIDs, numbers), more so when the call goes through a linker thunk, an indirect branch.
 inline uint64 CityHash64UpTo16(const char *s, size_t len) {
 #if defined(__s390x__) && defined(__BIG_ENDIAN__)  // WORDS_BIGENDIAN in config.h
   auto fetch64 = [](const char *p) { uint64 r; memcpy(&r, p, sizeof(r)); return __builtin_bswap64(r); };
@@ -149,10 +149,13 @@ inline uint64 CityHash64UpTo16(const char *s, size_t len) {
   return k2;
 }
 
+// Only for a length known at compile time: with a length known at run time, the caller would get both the inline
+// code and a call to the long path, and would need a stack frame (and with pointer authentication, a signed return
+// address) for every value, which costs more than the call to a leaf function.
 inline uint64 CityHash64(const char *s, size_t len) {
-  if (len <= 16)
+  if (__builtin_constant_p(len) && len <= 16)
     return CityHash64UpTo16(s, len);
-  return CityHash64Over16(s, len);
+  return CityHash64OutOfLine(s, len);
 }
 
 }
