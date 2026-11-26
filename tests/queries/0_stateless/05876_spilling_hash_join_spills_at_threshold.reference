@@ -29,3 +29,4 @@ full_mixed_cond_fits	0	0
 full_mixed_cond_spills	1	1
 duplicate_keys_spills	1	1
 serial_spills	1
+grace_spills	1

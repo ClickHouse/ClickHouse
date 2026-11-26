@@ -107,3 +107,8 @@ ORDER BY event_time_microseconds;
 SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 76000000 AS switched_early
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'spill_at_threshold_serial_spills';
+
+-- The same for `grace_hash`, which splits a bucket instead of inserting a block that would take it over the threshold.
+SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 80000000 AS split_early
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'spill_at_threshold_grace_spills';
