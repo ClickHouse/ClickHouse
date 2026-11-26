@@ -30,7 +30,7 @@ bool parsePolyglotNativeStatement(IParser::Pos & pos, ASTPtr & node, Expected & 
 class ParserPolyglotNativeStatement final : public IParserBase
 {
 public:
-    const char * getName() const override { return "Polyglot native ClickHouse statement"; }
+    [[nodiscard]] const char * getName() const override { return "Polyglot native ClickHouse statement"; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
