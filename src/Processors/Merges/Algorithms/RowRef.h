@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
-#include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
 #include <Processors/Chunk.h>
 
@@ -31,10 +30,8 @@ struct SharedChunk : Chunk
 
     /// Used in ReplacingSortedAlgorithm when using skipping final
     MutableColumnPtr replace_final_selection;
-
-    /// The chunk's row filter, resolved from its infos when the chunk is taken from the
-    /// allocator, or nullptr when it carries none. Owned by the chunk's infos.
-    const IColumnFilter * row_filter_mask = nullptr;
+    /// The number of rows the merge had selected when the first row of `replace_final_selection` was selected.
+    size_t replace_final_selection_start = 0;
 
     using Chunk::Chunk;
     using Chunk::operator=;
@@ -103,7 +100,7 @@ struct RowRef
 
     UInt64 source_stream_index = 0;
 
-    bool empty() const { return sort_columns == nullptr; }
+    [[nodiscard]] bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
     void set(SortCursor & cursor);
@@ -112,12 +109,12 @@ struct RowRef
 
     static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row);
 
-    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
+    [[nodiscard]] size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
     {
         return checkEqualsFirstNonEqual(num_columns, offset, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 
-    bool hasEqualSortColumnsWith(const RowRef & other) const
+    [[nodiscard]] bool hasEqualSortColumnsWith(const RowRef & other) const
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
@@ -149,7 +146,7 @@ struct RowRefWithOwnedChunk
         std::swap(source_stream_index, other.source_stream_index);
     }
 
-    bool empty() const { return owned_chunk == nullptr; }
+    [[nodiscard]] bool empty() const { return owned_chunk == nullptr; }
 
     void clear()
     {
@@ -164,12 +161,12 @@ struct RowRefWithOwnedChunk
     void set(SortCursor & cursor, SharedChunkPtr chunk);
 
 
-    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
+    [[nodiscard]] size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
     }
 
-    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
+    [[nodiscard]] bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);

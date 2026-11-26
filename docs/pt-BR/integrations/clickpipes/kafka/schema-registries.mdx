@@ -1,18 +1,18 @@
 ---
-sidebarTitle: 'Integrar com um registro de schema'
-description: 'Como integrar o ClickPipes a um registro de schema para o gerenciamento de schemas.'
+sidebarTitle: 'Integrar com um registro de esquemas'
+description: 'Como integrar o ClickPipes a um registro de esquemas para o gerenciamento de schemas.'
 slug: /integrations/clickpipes/kafka/schema-registries
-title: 'Registros de schema para o ClickPipe do Kafka'
+title: 'Registros de esquemas para o ClickPipe do Kafka'
 doc_type: 'guide'
-keywords: ['registros de schema', 'kafka', 'clickpipes', 'avro', 'confluent', 'aws glue', 'msk']
+keywords: ['registros de esquemas', 'kafka', 'clickpipes', 'avro', 'confluent', 'aws glue', 'msk']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
 ---
 
-O ClickPipes oferece suporte à integração com um registro de schema para decodificar valores de registros codificados em Avro e em Protobuf. Os ClickPipes do Kafka também oferecem suporte a [chaves estruturadas do Kafka](/pt-BR/integrations/clickpipes/kafka/reference#structured-message-keys).
+O ClickPipes oferece suporte à integração com um registro de esquemas para decodificar valores de registros codificados em Avro e em Protobuf. Os ClickPipes do Kafka também oferecem suporte a [chaves estruturadas do Kafka](/pt-BR/integrations/clickpipes/kafka/reference#structured-message-keys).
 
-Para valores de registros em Protobuf, você também pode [enviar um schema diretamente](/pt-BR/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) sem configurar um registro de schema.
+Para valores de registros em Protobuf, você também pode [enviar um schema diretamente](/pt-BR/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) sem configurar um registro de esquemas.
 
 ## Registros compatíveis com ClickPipes de streaming {#supported-schema-registries}
 
@@ -71,26 +71,22 @@ A configuração do AWS Glue Schema Registry está disponível no ClickHouse Clo
 
 ### Configuração {#glue-configuration}
 
-No assistente de criação de ClickPipe, habilite o **Registro de schemas** na etapa de conexão do Kafka ou do Kinesis e defina o **Tipo de registro** como **AWS Glue**:
+No assistente de criação de ClickPipe, habilite o **Registro de esquemas** na etapa de conexão do Kafka ou do Kinesis e defina o **Tipo de registro** como **AWS Glue**:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Painel de registro de esquemas com AWS Glue selecionado](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
-
-</Frame>
-
+  <Frame>
+    ![Painel de registro de esquemas com AWS Glue selecionado](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
+  </Frame>
 </div>
 
-| Campo             | Obrigatório | Descrição                                                                                                                                                                         | Exemplo                                                    |
-| ----------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Tipo de registro  | Sim         | Selecione **AWS Glue**                                                                                                                                                            | `AWS Glue`                                                 |
-| Região da AWS     | Sim         | Região em que o registro do Glue está localizado. Deve corresponder exatamente à região do registro.                                                                              | `us-east-1`                                                |
-| Nome do registro  | Sim         | Nome do registro do Glue. Schemas associados a um registro diferente são rejeitados; assim, erros de digitação são detectados quando o ClickPipes resolve uma versão de schema. | `my-glue-registry`                                         |
-| ARN da função IAM | Condicional | Uma função dedicada para acesso ao registro. Opcional quando seu broker usa autenticação IAM; obrigatória caso contrário.                                                         | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
+| Campo             | Obrigatório | Descrição                                                                                                                                                                       | Exemplo                                                    |
+| ----------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Tipo de registro  | Sim         | Selecione **AWS Glue**                                                                                                                                                          | `AWS Glue`                                                 |
+| Região da AWS     | Sim         | Região em que o registro do Glue está localizado. Deve corresponder exatamente à região do registro.                                                                            | `us-east-1`                                                |
+| Nome do registro  | Sim         | Nome do registro do Glue. Schemas associados a um registro diferente são rejeitados; assim, erros de digitação são detectados quando o ClickPipes resolve uma versão do esquema. | `my-glue-registry`                                         |
+| ARN da função IAM | Condicional | Uma função dedicada para acesso ao registro. Opcional quando seu broker usa autenticação IAM; obrigatória caso contrário.                                                       | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
-Não há URL de registro para configurar. Cada registro produzido pelo Glue SerDe contém o ID da própria versão de schema, que o ClickPipes resolve usando `glue:GetSchemaVersion` e armazena em cache, com uma chamada de API por versão de schema distinta. A evolução de schema é tratada automaticamente: quando os registros passam a usar uma nova versão de schema no meio do fluxo, ela é resolvida na primeira ocorrência. Para o Kinesis, configure os mesmos campos por meio da [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) ou do [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform).
+Não há URL de registro para configurar. Cada registro produzido pelo Glue SerDe contém o ID da própria versão do esquema, que o ClickPipes resolve usando `glue:GetSchemaVersion` e armazena em cache, com uma chamada de API por versão do esquema distinta. A evolução de schema é tratada automaticamente: quando os registros passam a usar uma nova versão do esquema no meio do fluxo, ela é resolvida na primeira ocorrência. Para o Kinesis, configure os mesmos campos por meio da [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) ou do [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform).
 
 ### Configuração do IAM {#glue-iam-setup}
 
@@ -132,13 +128,9 @@ Use esta opção quando o broker não autenticar com IAM (SASL/SCRAM, SASL/PLAIN
     Abra o serviço, selecione a aba **Settings**, role até a seção **Network security information** e copie o valor de **Service role ID (IAM)**, um ARN no formato `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. Esse valor é referido abaixo como `{ClickHouse_IAM_ARN}`. Cada serviço ClickHouse implantado na AWS tem sua própria função; portanto, esse valor é diferente para cada serviço.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ID da função de serviço (IAM)](/images/cloud/security/secures3_arn.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ID da função de serviço (IAM)](/images/cloud/security/secures3_arn.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -187,7 +179,7 @@ Use esta opção quando o broker não autenticar com IAM (SASL/SCRAM, SASL/PLAIN
 </Steps>
 
 <Note>
-  **Escopo dos recursos do IAM.** Estes exemplos seguem a [política da AWS documentada para desserializadores](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html) e a [política gerenciada `AWSGlueSchemaRegistryReadonlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html), ambas concedendo `glue:GetSchemaVersion` em `"*"`. O ClickPipes verifica de forma independente cada esquema resolvido em relação ao **Nome do registro** configurado e rejeita versões de qualquer outro registro.
+  **Escopo dos recursos do IAM.** Estes exemplos seguem a [política da AWS documentada para desserializadores](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html) e a [política gerenciada `AWSGlueSchemaRegistryReadonlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html), ambas concedendo `glue:GetSchemaVersion` em `"*"`. O ClickPipes verifica de forma independente cada schema resolvido em relação ao **Nome do registro** configurado e rejeita versões de qualquer outro registro.
 </Note>
 
 ### Solução de problemas {#glue-troubleshooting}
