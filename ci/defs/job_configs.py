@@ -395,6 +395,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libcxx_external_threading_job.py",
+                "./ci/jobs/fast_test.py",
                 "./base/libcxx-external-threading",
                 "./contrib/llvm-project",
                 "./contrib/libcxx-cmake",

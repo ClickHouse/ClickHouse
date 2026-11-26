@@ -1,6 +1,7 @@
 import sys
 
 from ci.defs.defs import ToolSet
+from ci.jobs.fast_test import clone_submodules
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
@@ -14,14 +15,24 @@ def main():
     stop_watch = Utils.Stopwatch()
     results = [
         Result.from_commands_run(
-            name="Cmake configuration",
-            command=f"cmake -S {repo_path} -B {build_dir} -G Ninja"
-            f" -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP}"
-            " -DCOMPILER_CACHE=disabled -DENABLE_LIBRARIES=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0"
-            " -DENABLE_THINLTO=0 -DENABLE_RUST=0 -DENABLE_LIBURING=1 -DENABLE_SILK=1"
-            f" -DENABLE_LIBCXX_EXTERNAL_THREADING_TESTS=1 -DSANITIZE={sanitizer}",
+            name="Checkout Submodules",
+            command=[
+                clone_submodules,
+                "git submodule update --init --depth 1 --single-branch -- contrib/silk contrib/librseq",
+            ],
         )
     ]
+    if results[-1].is_ok():
+        results.append(
+            Result.from_commands_run(
+                name="Cmake configuration",
+                command=f"cmake -S {repo_path} -B {build_dir} -G Ninja"
+                f" -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP}"
+                " -DCOMPILER_CACHE=disabled -DENABLE_LIBRARIES=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0"
+                " -DENABLE_THINLTO=0 -DENABLE_RUST=0 -DENABLE_LIBURING=1 -DENABLE_SILK=1"
+                f" -DENABLE_LIBCXX_EXTERNAL_THREADING_TESTS=1 -DSANITIZE={sanitizer}",
+            )
+        )
     if results[-1].is_ok():
         results.append(
             Result.from_commands_run(
