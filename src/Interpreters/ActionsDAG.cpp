@@ -5400,7 +5400,11 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
     for (size_t node_id = 0; node_id < reordered_nodes.size(); ++node_id)
     {
         const auto & node = *reordered_nodes[node_id];
-        writeIntBinary(static_cast<UInt8>(node.type), out);
+        /// `__getScalar` reads the sender's query scalars, which a receiver may not have, so ship its value.
+        const bool write_as_column = !registry.for_cache_key && node.type == ActionType::FUNCTION && node.column
+            && node.function_base->getName() == "__getScalar";
+        const ActionType type = write_as_column ? ActionType::COLUMN : node.type;
+        writeIntBinary(static_cast<UInt8>(type), out);
         /// A cache key must not depend on branch-local column names, and must still tell two same-typed
         /// inputs apart - see `Node::updateHash`, which this mirrors.
         if (registry.for_cache_key)
@@ -5414,12 +5418,17 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
             writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);
 
-        writeVarUInt(node.children.size(), out);
-        for (const auto * child : node.children)
+        if (write_as_column)
+            writeVarUInt(0, out);
+        else
         {
-            auto child_id = node_to_id.at(child);
-            chassert(child_id < node_id, fmt::format("Node {} references child node {} that has not been serialized yet", node_id, child_id));
-            writeVarUInt(child_id, out);
+            writeVarUInt(node.children.size(), out);
+            for (const auto * child : node.children)
+            {
+                auto child_id = node_to_id.at(child);
+                chassert(child_id < node_id, fmt::format("Node {} references child node {} that has not been serialized yet", node_id, child_id));
+                writeVarUInt(child_id, out);
+            }
         }
 
         /// Serialize column if it is present.
@@ -5463,19 +5472,19 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
                 serializeConstant(*node.result_type, *node.column, out, registry, input_header);
         }
 
-        if (node.type == ActionType::INPUT)
+        if (type == ActionType::INPUT)
         {
             /// nothing to serialize
         }
-        else if (node.type == ActionType::COLUMN)
+        else if (type == ActionType::COLUMN)
         {
             /// nothing to serialize, column is already serialized
         }
-        else if (node.type == ActionType::ALIAS)
+        else if (type == ActionType::ALIAS)
         {
             /// nothing to serialize
         }
-        else if (node.type == ActionType::FUNCTION)
+        else if (type == ActionType::FUNCTION)
         {
             writeStringBinary(node.function_base->getName(), out);
             /// A cache key has to tell apart two functions of one name that captured different settings
@@ -5493,13 +5502,13 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
                 function_capture->getAcionsDAG().serialize(out, registry, input_header);
             }
         }
-        else if (node.type == ActionType::ARRAY_JOIN)
+        else if (type == ActionType::ARRAY_JOIN)
         {
             /// nothing to serialize
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown node type {}", static_cast<size_t>(node.type));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown node type {}", static_cast<size_t>(type));
         }
     }
 
