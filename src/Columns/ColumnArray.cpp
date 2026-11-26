@@ -94,9 +94,37 @@ ColumnPtr gatherArrayRows(const IColumn & data, const ColumnArray::Offsets & off
     }
     const size_t current_offset = total_size;
 
-    if (current_offset > limit * max_average_array_size_to_gather)
+    /// Writes the positions of the elements of the result rows [begin, end) to `out`.
+    auto fill_nested_indexes = [&](size_t begin, size_t end, UInt64 * out)
+    {
+        for (size_t i = begin; i < end; ++i)
+        {
+            const size_t row = source_row(i);
+            const size_t offset = offset_at(row);
+            const size_t size = size_at(row);
+            for (size_t j = 0; j < size; ++j)
+                out[j] = offset + j;
+            out += size;
+        }
+    };
+
+    /// An element that takes more memory than its index makes the index smaller than the result, and one `index`
+    /// sizes the nested result exactly, while appending rows or chunks grows it.
+    if (data.byteSize() > data.size() * sizeof(UInt64))
+    {
+        if (current_offset == 0)
+            return ColumnArray::create(data.cloneEmpty(), std::move(res_offsets_column));
+
+        auto nested_indexes_column = ColumnUInt64::create(current_offset);
+        fill_nested_indexes(0, limit, nested_indexes_column->getData().data());
+        return ColumnArray::create(data.index(*nested_indexes_column, current_offset), std::move(res_offsets_column));
+    }
+
+    /// Long rows of fixed-size elements are copied row by row into the exactly reserved result.
+    if (current_offset > limit * max_average_array_size_to_gather && data.isFixedAndContiguous())
     {
         auto res_data = data.cloneEmpty();
+        res_data->reserve(current_offset);
         for (size_t i = 0; i < limit; ++i)
         {
             const size_t row = source_row(i);
@@ -139,16 +167,7 @@ ColumnPtr gatherArrayRows(const IColumn & data, const ColumnArray::Offsets & off
         const size_t chunk_size = res_offsets[end - 1] - chunk_start;
         if (chunk_size != 0)
         {
-            UInt64 * out = nested_indexes;
-            for (size_t i = begin; i < end; ++i)
-            {
-                const size_t row = source_row(i);
-                const size_t offset = offset_at(row);
-                const size_t size = size_at(row);
-                for (size_t j = 0; j < size; ++j)
-                    out[j] = offset + j;
-                out += size;
-            }
+            fill_nested_indexes(begin, end, nested_indexes);
             append(data.index(*nested_indexes_column, chunk_size));
         }
         begin = end;

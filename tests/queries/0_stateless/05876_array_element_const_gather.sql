@@ -77,3 +77,11 @@ SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LAR
 -- Replication gathers the rows without an index of every replicated row.
 SELECT sum(length(a)) FROM (SELECT materialize([[]::Array(UInt8)]) AS a FROM numbers(2000000))
 SETTINGS max_threads = 1, max_block_size = 2000000, max_memory_usage = 70000000;
+
+-- Long rows of wide elements are gathered with one index, which sizes the nested result exactly.
+DROP TABLE IF EXISTS t_array_gather_wide;
+CREATE TABLE t_array_gather_wide (n UInt64, a Array(String)) ENGINE = Memory;
+INSERT INTO t_array_gather_wide SELECT number, arrayWithConstant(20, repeat('a', 20000 + number % 10)) FROM numbers(260);
+SELECT sum(length(a[1])) FROM (SELECT a FROM t_array_gather_wide ORDER BY n DESC)
+SETTINGS max_threads = 1, query_plan_remove_redundant_sorting = 0, max_memory_usage = 150000000;
+DROP TABLE t_array_gather_wide;
