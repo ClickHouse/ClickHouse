@@ -2,3 +2,4 @@ uniform	1	1
 runs	1	1
 runs after sparse matches	1	1
 wide prewhere column	1	1
+huge max column quota	1	1

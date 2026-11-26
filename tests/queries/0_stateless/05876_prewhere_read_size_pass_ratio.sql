@@ -8,6 +8,7 @@ SET max_threads = 1, max_block_size = 65409, preferred_block_size_bytes = 100000
 DROP TABLE IF EXISTS t_pass_ratio_uniform;
 DROP TABLE IF EXISTS t_pass_ratio_runs;
 DROP TABLE IF EXISTS t_pass_ratio_wide;
+DROP TABLE IF EXISTS t_pass_ratio_gap;
 
 -- One row in 8 passes, and the rows that pass are spread evenly: a read takes several granules.
 CREATE TABLE t_pass_ratio_uniform (u UInt64, s String) ENGINE = MergeTree ORDER BY tuple()
@@ -56,6 +57,20 @@ SELECT 'wide prewhere column', round(sum(1 / bs)) >= 110,
     sum(k) = (SELECT sum(k) FROM t_pass_ratio_wide WHERE substring(w, 1, 1) = 'a' SETTINGS optimize_move_to_prewhere = 0)
 FROM (SELECT blockSize() AS bs, k FROM t_pass_ratio_wide PREWHERE substring(w, 1, 1) = 'a');
 
+CREATE TABLE t_pass_ratio_gap (u UInt64, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    ratio_of_defaults_for_sparse_serialization = 1, use_const_adaptive_granularity = 0, enable_block_number_column = 0,
+    enable_block_offset_column = 0, string_serialization_version = 'single_stream';
+INSERT INTO t_pass_ratio_gap SELECT number, if(number >= 114688, repeat('x', 16), '') FROM numbers(131072);
+OPTIMIZE TABLE t_pass_ratio_gap FINAL;
+
+-- After 14 granules in which no row passes, a quota far beyond any column must not limit the read.
+SELECT 'huge max column quota', round(sum(1 / bs)) < 100,
+    sum(h) = (SELECT sum(cityHash64(s, u)) FROM t_pass_ratio_gap WHERE s != '' SETTINGS optimize_move_to_prewhere = 0)
+FROM (SELECT blockSize() AS bs, cityHash64(s, u) AS h FROM t_pass_ratio_gap PREWHERE s != '')
+SETTINGS preferred_max_column_in_block_size_bytes = 10000000000000000000;
+
 DROP TABLE t_pass_ratio_uniform;
 DROP TABLE t_pass_ratio_runs;
 DROP TABLE t_pass_ratio_wide;
+DROP TABLE t_pass_ratio_gap;
