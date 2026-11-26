@@ -46,7 +46,6 @@ struct EntropyData
 
     Map map;
 
-    /// The weight is the number of occurrences of a value, so a sum that does not fit `Weight` cannot be represented.
     static Weight addWeights(Weight lhs, Weight rhs)
     {
         Weight sum = 0;
