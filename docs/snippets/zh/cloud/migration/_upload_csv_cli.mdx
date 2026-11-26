@@ -2,34 +2,37 @@
 title: 通过 命令行客户端 上传 CSV
 ---
 
-本页介绍如何使用 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 从命令行将本地文件 (例如 CSV) 上传到 ClickHouse Cloud 服务中的表。整个流程与控制台的文件上传向导一致：先查看文件的 schema，再创建目标表，然后通过 Query API 以 HTTP 方式插入文件——无需 `clickhouse` binary，也无需服务密码。
+本页介绍如何使用 [ClickHouse 命令行客户端](/zh/concepts/features/interfaces/cli) (`clickhousectl`) 从命令行将本地文件 (例如 CSV) 上传到 ClickHouse Cloud 服务中的表。整个流程与控制台的文件上传向导一致：先查看文件的 schema，再创建目标表，然后通过 查询 API 以 HTTP 方式插入文件——无需 `clickhouse` binary，也无需服务密码。
 
 ## 前置条件 {#cli-prerequisites}
 
 安装 ClickHouse 命令行客户端：
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-你还需要 `jq`。
+该脚本会安装 `~/.local/bin/clickhousectl`，并创建 `chctl` 别名。请确保 `~/.local/bin` 已添加到 `PATH` 中。
 
-写操作需要 [API key 身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅具有只读权限：
+此外，还需要安装 `jq`。
+
+执行写操作需要使用 [API key](/zh/products/cloud/features/admin-features/api/openapi)，且该 key 所属的角色必须具备管理查询 API 端点的权限；通过浏览器登录 (`clickhousectl cloud auth login`) 仅具有只读权限。运行 `clickhousectl cloud service query --help` 可查看所需的权限。请使用该 key 登录；使用 `--interactive` 时，系统会提示您输入 key 和 secret，从而避免 secret 被记录到 shell 历史记录中：
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-使用 `clickhousectl cloud auth status` 进行验证；应当看到一条 scope 为 `read/write` 的记录。
+或者，也可以传入 `--api-key` 和 `--api-secret`，或设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量；编码 agent 或脚本应使用环境变量方式。登录时会验证该密钥并输出其对应的身份；可随时运行 `clickhousectl cloud auth whoami` 查看当前生效的凭证。如果您属于多个组织，请在本指南中的每条 `cloud service` 命令中添加 `--org-id <org-id>` (或 `--org-name <name>`) 。
 
 ## 选择一个 服务 {#pick-a-service}
 
-本指南假设你已有一个正在运行的 服务。如果还没有，请参阅 [Cloud 快速入门](/zh/get-started/setup/cloud)，了解如何通过命令行客户端创建。按名称查找 服务 的 ID：
+本指南假设你已有一个 服务。如果还没有，请参阅 [Cloud 快速入门](/zh/get-started/setup/cloud)，了解如何通过命令行客户端创建。按名称查找 服务 的 ID：
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="my-service") | .id')
+CH_ID=$(clickhousectl cloud service get --name my-service --json | jq -r .id)
 ```
+
+空闲的服务会在收到第一个查询时自动唤醒，但已停止的服务不会：需要先运行 `clickhousectl cloud service start "$CH_ID"` 启动服务，然后等待 `clickhousectl cloud service get "$CH_ID" --json | jq -r .state` 返回 `running`。
 
 ## 准备文件 {#prepare-the-file}
 
@@ -49,14 +52,14 @@ user_id,url,visited_at,duration_ms
 控制台向导会显示每个 source 字段的推断类型 (inferred type) ，而在命令行客户端中，与之等价的做法是对 [`format`](/zh/reference/functions/table-functions/format) table function 执行 `DESCRIBE`，并内联传入文件的一个样本：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
 ```
 
-首次调用 `query` 时，系统会自动为该 服务 预配一个 Query API endpoint 和一个 服务 范围的 API key：
+首次调用 `query` 时，clickhousectl 会将你的 API key 添加到该服务的查询 API 端点 (如有需要，会先创建该端点) ，而不会创建新的 key。如果希望此时直接报错，请传入 `--no-auto-enable`。当命令行客户端更改该端点时，会将下面的第一行输出到 stderr：
 
 ```text
-Provisioning Query API endpoint + key for service 'my-service'...
+Binding the authenticated API key to the Query API endpoint for service 'my-service'...
    ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
 2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
@@ -72,7 +75,7 @@ Provisioning Query API endpoint + key for service 'my-service'...
 向导「Configure table」步骤中提供的一切功能——调整推断类型、可空性、默认值、排除字段、表引擎，以及排序、分区和主键表达式——在这里都只是一条普通的 [`CREATE TABLE`](/zh/reference/statements/create/table)。例如，收紧推断类型并指定排序键：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE TABLE default.website_visits (
     user_id UInt32,
     url String,
@@ -82,7 +85,7 @@ clickhousectl cloud service query --id "$CH_ID" \
   ORDER BY (user_id, visited_at)"
 ```
 
-该命令会输出 `OK`。若要改为加载到已有表中，请跳过此步骤。
+该命令会在 stderr 中输出 `OK`。若要改为加载到已有表中，请跳过此步骤。
 
 ## 上传文件 {#upload-the-file}
 
@@ -90,7 +93,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 该命令会输出 `OK`。
@@ -110,7 +113,7 @@ printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.c
 验证行已成功写入：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT count() FROM default.website_visits"
 ```
 
@@ -119,7 +122,7 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 ```
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "SELECT * FROM default.website_visits ORDER BY visited_at"
 ```
 
@@ -133,13 +136,28 @@ clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
    └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
 ```
 
+## 上传大文件 {#upload-large-files}
+
+查询 API 在大约 30 秒后便会停止等待。超时的 `INSERT` 仍可能已经执行，因此重试前请先检查行数。对于大文件，请改用 [`clickhouse client`](/zh/concepts/features/interfaces/client) 通过原生协议插入数据，它会从 stdin 读取数据。`clickhousectl local use latest` 会安装最新版本的 ClickHouse，并在 `~/.local/bin/clickhouse` 创建指向它的符号链接。将 `CH_PASSWORD` 设置为 `default` 用户的密码 (如果密码丢失，可运行 `clickhousectl cloud service reset-password "$CH_ID"` 生成新密码) ，查出 `nativesecure` 主机，然后插入数据：
+
+```bash
+clickhousectl local use latest
+CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+  | jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host')
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query 'INSERT INTO default.website_visits FORMAT CSVWithNames' < data.csv
+```
+
+直接连接必须符合该服务的 IP 访问列表限制。
+
 ## 其他文件格式 {#other-file-formats}
 
 同样的方式适用于 ClickHouse 支持的任何[输入格式](/zh/reference/formats/index)——包括控制台上传向导所接受的全部格式，例如 `CSV`、`JSONEachRow` 和 `TabSeparatedWithNames`。若要改用其他格式，请在 `DESCRIBE format(...)` schema 推断步骤和 `INSERT ... FORMAT` 语句中同步修改格式名称，并使用与该格式相匹配的样本文件 (`TabSeparatedWithNames` 对应 TSV 样本，`JSONEachRow` 对应 JSON lines 样本，依此类推) 。例如，TSV 文件的上传步骤如下：
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 ## 清理 {#cleanup}
@@ -147,6 +165,6 @@ printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat
 如果这只是一次试运行，可以删除该表以清除导入的数据：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "DROP TABLE default.website_visits"
 ```

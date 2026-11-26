@@ -1,7 +1,12 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <Core/Settings.h>
 #include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -10,10 +15,18 @@
 #include <optional>
 #include <string>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsBool use_primary_key;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
-/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key.
+/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key or skip data by statistics.
 /// Limited to `Expression`/`Filter` chains, see `isTransparentForPropagation`
 
 /// Defined in partialJoinFilterPushDown.cpp
@@ -22,12 +35,12 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
 namespace
 {
 
-using SubstitutionMap = std::unordered_map<std::string, ColumnWithTypeAndName>;
+using SubstitutionMap = UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName>;
 
 /// Equi-key pairs, left first. Differing types are skipped: the JOIN casts them itself
-std::vector<std::pair<JoinActionRef, JoinActionRef>> getEquiJoinKeyPairs(const JoinOperator & join_operator)
+VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> getEquiJoinKeyPairs(const JoinOperator & join_operator)
 {
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> pairs;
+    VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> pairs;
     for (const auto & predicate : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
@@ -80,23 +93,43 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Primary key of the MergeTree the target reads from, empty when there is none
-NameSet getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
+/// Columns the target's read can prune by: a MergeTree primary key, or join keys the source skips data by
+NameSet getTargetPrunableColumns(const QueryPlan::Node * target_root, const SubstitutionMap & substitution)
 {
     const auto * read = walkDown(target_root, [](const auto * n)
     {
-        return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
+        return dynamic_cast<const SourceStepWithFilterBase *>(n->step.get()) != nullptr;
     });
     if (!read)
         return {};
-    const auto & primary_key = typeid_cast<const ReadFromMergeTree &>(*read->step).getStorageMetadata()->getPrimaryKey();
-    return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
+
+    if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(read->step.get()))
+    {
+        /// Without `use_primary_key` the copy would just be a full scan filter
+        if (!merge_tree->getContext()->getSettingsRef()[Setting::use_primary_key])
+            return {};
+        const auto & primary_key = merge_tree->getStorageMetadata()->getPrimaryKey();
+        return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
+    }
+
+    const auto & source = dynamic_cast<const SourceStepWithFilterBase &>(*read->step);
+    const auto & header = *source.getOutputHeader();
+    NameSet result;
+    for (const auto & [_, target_column] : substitution)
+    {
+        const auto name = resolveDown(target_root, target_column.name, /*stop_at_filter=*/false);
+        if (!name || result.contains(*name))
+            continue;
+        if (const auto * column = header.findByName(*name); column && source.canSkipDataByFilterOn(*column))
+            result.insert(*name);
+    }
+    return result;
 }
 
-/// Worth copying only when every substituted key is in the target's primary key
-bool atomCanUseTargetPrimaryKey(
+/// Worth copying only when every substituted key is a prunable column of the target
+bool atomCanPruneTarget(
     const QueryPlan::Node * target_root,
-    const NameSet & primary_key_columns,
+    const NameSet & prunable_columns,
     const ActionsDAG::Node * atom,
     const SubstitutionMap & substitution)
 {
@@ -108,16 +141,16 @@ bool atomCanUseTargetPrimaryKey(
         if (it == substitution.end())
             return false;
         const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
-        if (!target_column || !primary_key_columns.contains(*target_column))
+        if (!target_column || !prunable_columns.contains(*target_column))
             return false;
     }
     return true;
 }
 
 /// result_names of atoms the target filter already has, for dedup
-std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * target_root)
+UnorderedSetWithMemoryTracking<std::string> collectTargetAtoms(const QueryPlan::Node * target_root)
 {
-    std::unordered_set<std::string> result;
+    UnorderedSetWithMemoryTracking<std::string> result;
     const auto * target_filter = findFilterBelow(target_root);
     if (!target_filter)
         return result;
@@ -220,9 +253,8 @@ size_t tryPropagateToSide(
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    /// Only helps when the target feeds a MergeTree primary key
-    const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
-    if (primary_key_columns.empty())
+    const auto prunable_columns = getTargetPrunableColumns(target_root, substitution);
+    if (prunable_columns.empty())
         return 0;
 
     SubstitutionMap filter_level_sub;
@@ -241,7 +273,7 @@ size_t tryPropagateToSide(
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
         if (atomSafelySubstitutable(atom, filter_level_sub)
-            && atomCanUseTargetPrimaryKey(target_root, primary_key_columns, atom, filter_level_sub))
+            && atomCanPruneTarget(target_root, prunable_columns, atom, filter_level_sub))
             propagatable.push_back(atom);
     }
     if (propagatable.empty())
@@ -302,10 +334,7 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
     if (equi_pairs.empty())
         return 0;
 
-    /// join_use_nulls makes the JOIN-side type nullable, which would not match the target input
-    const bool changes_left  = join->typeChangingSides().contains(JoinTableSide::Left);
-    const bool changes_right = join->typeChangingSides().contains(JoinTableSide::Right);
-
+    /// Both the source and the target filters are below the join, so `join_use_nulls`, which changes only the join output, does not matter
     SubstitutionMap l_to_r;
     SubstitutionMap r_to_l;
     /// The substituted column must be in the child's header; for `ON l.k = r.k + 1` it is not
@@ -313,9 +342,9 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
     const auto & right_header = *parent_node->children[1]->step->getOutputHeader();
     for (const auto & [lhs, rhs] : equi_pairs)
     {
-        if (!changes_right && right_header.has(rhs.getColumn().name))
+        if (right_header.has(rhs.getColumn().name))
             l_to_r[lhs.getColumnName()] = rhs.getColumn();
-        if (!changes_left && left_header.has(lhs.getColumn().name))
+        if (left_header.has(lhs.getColumn().name))
             r_to_l[rhs.getColumnName()] = lhs.getColumn();
     }
 
