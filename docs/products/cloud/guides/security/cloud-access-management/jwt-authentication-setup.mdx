@@ -2,9 +2,9 @@
 sidebarTitle: 'JWT authentication setup'
 slug: /cloud/security/jwt-authentication-setup
 title: 'JWT authentication setup'
-description: 'How to configure per-service JWT (JWKS) authentication providers for a ClickHouse Cloud service from the console'
+description: 'How to configure JWT (JWKS) authentication providers for a ClickHouse Cloud service from the console, or for a ClickHouse Private cluster in the server configuration'
 doc_type: 'guide'
-keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'authentication', 'identity provider', 'RS256']
+keywords: ['ClickHouse Cloud', 'ClickHouse Private', 'JWT', 'JWKS', 'authentication', 'identity provider', 'RS256']
 ---
 
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
@@ -12,21 +12,30 @@ import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanF
 import { VersionBadge } from "/snippets/components/VersionBadge/VersionBadge.jsx";
 
 <VersionBadge minVersion="26.4" />
-<EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider"/>
 
-<Tip>
-This guide covers configuring JWKS providers in the Cloud console. To learn how to generate a JWT and what its structure looks like — its required claims, the roles and grants claims, and how ephemeral users work — see the [JWT Authentication](/concepts/features/security/external-authenticators/jwt) reference.
-</Tip>
+You can authenticate connections to ClickHouse with JSON Web Tokens (JWTs) instead of database passwords. Your identity provider issues short-lived tokens. ClickHouse checks each token against the public keys in a JSON Web Key Set (JWKS) document, at a URL that you configure.
 
-ClickHouse Cloud lets you authenticate connections to a service with JSON Web Tokens (JWTs) validated against your own JSON Web Key Set (JWKS) endpoints. Instead of managing database credentials, your identity provider issues short-lived tokens that ClickHouse verifies against the public keys published at a JWKS URL you configure.
-
-You configure these JWKS providers yourself, per service, from **Settings → Security** in the ClickHouse Cloud console.
+This guide covers ClickHouse Cloud and ClickHouse Private. Select **Cloud** or **Private** to show the steps for your deployment. For the structure of a JWT, its required claims, the roles and grants claims, and ephemeral users, see the [JWT Authentication](/concepts/features/security/external-authenticators/jwt) reference.
 
 <Tip>
 **Using Microsoft Entra ID?**
 
-Follow [JWT authentication with Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) for the Entra ID configuration, the provider values to enter, and how to map Entra ID app roles to ClickHouse roles.
+Follow [JWT authentication with Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id). It covers the Entra ID setup, the ClickHouse configuration, and how to map Entra ID app roles to ClickHouse roles.
 </Tip>
+
+## How it works {#how-it-works}
+
+Your identity provider or application creates a JWT and signs it with its **private key**. The token must use the [token format](/concepts/features/security/external-authenticators/jwt#token-claims) that ClickHouse expects. ClickHouse then checks the token against the **public** keys at your JWKS URL:
+
+1. ClickHouse reads the `kid` (key ID) header of the token and finds the key with that ID in the JWKS document.
+2. ClickHouse checks the token signature with that key. It then compares the `iss` (issuer) and `aud` (audience) claims with the values that you configured.
+3. If all checks pass, the connection runs as an ephemeral user. The `clickhouse:grants` and `clickhouse:roles` claims of the token set the access rights of this user. The ephemeral user never gets more privileges than the permission limit. In ClickHouse Cloud, the permission limit is the `default` user. On ClickHouse Private, you set it with `permission_limit`. For details, see [Access rights](/concepts/features/security/external-authenticators/jwt#access-rights).
+
+<View title="Cloud">
+
+<EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider"/>
+
+In ClickHouse Cloud, you configure JWKS providers yourself, per service, from **Settings → Security** in the Cloud console.
 
 ## Before you begin {#before-you-begin}
 
@@ -40,16 +49,6 @@ To configure JWT providers for a service, you need:
 <Note>
 JWKS-based providers accept **RSA** keys and, from version 26.8, **EC** keys on the P-256, P-384, and P-521 curves. A JWKS document may contain other key types, but at least one usable key must be present.
 </Note>
-
-## How it works {#how-it-works}
-
-The client (your identity provider or application) generates a JWT and signs it with its **private key**. The token must follow the expected [token format](/concepts/features/security/external-authenticators/jwt#token-claims). ClickHouse then verifies it against the **public** keys published at your JWKS URL:
-
-1. ClickHouse reads the token's `kid` (key ID) header and selects the matching key from your JWKS document.
-2. It verifies the token signature against that public key and checks the `iss` (issuer) and `aud` (audience) claims against your provider configuration.
-3. On success, the connection runs as an ephemeral user whose access rights come from the token's `clickhouse:grants` and `clickhouse:roles` claims, capped by the permission limit (the `default` user). See [Access rights](/concepts/features/security/external-authenticators/jwt#access-rights) for details.
-
-ClickHouse validates and fetches the JWKS URL when you add or update a provider, so a misconfigured or unreachable URL is rejected up front.
 
 ## Add a JWT provider {#add-a-jwt-provider}
 
@@ -84,6 +83,8 @@ Complete the provider form and select **Save**.
 | **JWKS URL** | The public HTTPS URL that publishes the public keys used to verify token signatures. |
 | **Roles claim** (optional) | The token claim to read ClickHouse roles from. Leave blank to use the default claim name `clickhouse:roles`. Roles named in the token must already exist on the service. |
 
+ClickHouse validates and fetches the JWKS URL when you add or update a provider, so a misconfigured or unreachable URL is rejected up front.
+
 </Step>
 <Step title="Add more providers if needed" id="add-more-providers">
 
@@ -100,6 +101,77 @@ Deleting a JWT provider immediately stops accepting tokens issued for it, and an
 - A maximum of **five** JWT providers per service.
 - JWKS providers accept **RSA** keys (`RS256`) and, from version 26.8, **EC** keys (`ES256`, `ES384`, `ES512`).
 - The JWKS URL must be a public HTTPS endpoint. Private, internal, or link-local addresses are rejected.
+
+</View>
+
+<View title="Private">
+
+On ClickHouse Private, you configure JWT authentication in the server configuration of the cluster, in the `ClickHouseCluster` resource or in the Helm values.
+
+## Before you begin {#before-you-begin}
+
+To configure JWT authentication for a cluster, you need:
+
+- A ClickHouse Private cluster that runs **ClickHouse 26.4 or later**.
+- Permission to change the server configuration of the cluster, in the `ClickHouseCluster` resource or in the values of the Helm release.
+- An **HTTPS** JWKS URL that the cluster can reach that publishes at least one **RSA** key (`RS256`) or, for services on version 26.8 or later, an **EC** key (`ES256`, `ES384`, `ES512`).
+
+## Configure the JWT authenticator {#configure-jwt-authenticator}
+
+Add a `jwt` entry to `user_directories` in the server configuration of the cluster. The entry has these settings:
+
+| Setting | Description |
+|---|---|
+| `aud` | The value that the `aud` claim of each token must have. |
+| `iss` | The value that the `iss` claim of each token must have. |
+| `jwks.url` | The HTTPS URL of the JWKS document. ClickHouse uses the public keys in this document to check token signatures. |
+| `jwks.update_interval_ms` | The interval, in milliseconds, at which ClickHouse fetches the keys again. The examples use `300000` (5 minutes). |
+| `permission_limit.user` | The user whose privileges are the upper limit for JWT users, for example `default`. This guide calls it the `permission_limit` user. |
+| `remap_claims.roles` (optional) | The token claim that contains the ClickHouse role names. If you don't set it, ClickHouse uses the `clickhouse:roles` claim. Each role in the token must already exist on the cluster. |
+
+<Tabs>
+<Tab title="ClickHouseCluster resource" id="clickhousecluster-resource">
+
+Put the configuration under `spec.extraConfig.server` in the `ClickHouseCluster` resource:
+
+```yaml
+spec:
+  extraConfig:
+    server:
+      user_directories:
+        jwt:
+          aud: "<AUDIENCE>"
+          iss: "<ISSUER>"
+          jwks:
+            url: "<JWKS_URL>"
+            update_interval_ms: 300000
+          permission_limit:
+            user: default
+```
+
+</Tab>
+<Tab title="Helm values" id="helm-values">
+
+Put the configuration under `server.config` in the values of the Helm release:
+
+```yaml
+server:
+  config:
+    user_directories:
+      jwt:
+        aud: "<AUDIENCE>"
+        iss: "<ISSUER>"
+        jwks:
+          url: "<JWKS_URL>"
+          update_interval_ms: "300000"
+        permission_limit:
+          user: default
+```
+
+</Tab>
+</Tabs>
+
+</View>
 
 ## Related {#related}
 
