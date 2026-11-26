@@ -1502,6 +1502,30 @@ UInt64 densifiedDefaultValueSize(const IDataType & type)
     return type.createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst()->byteSize();
 }
 
+/// `MergeTreeDataPartWriterWide::addStreams` rounds the compress block size of a stream, and the initial size of
+/// an adaptive one, to whole values of the substream type (`roundCompressBlockSizeToWholeValues`). The rounding
+/// only raises a size when one value is larger than it - a `FixedString` wider than the block - and then the
+/// stream's compressor block and file buffer are one value big. Returns the largest such value among the
+/// substreams of the default serialization of `type`, or zero when no substream has values of a fixed size.
+UInt64 largestFixedSizeSubstreamValue(const IDataType & type)
+{
+    UInt64 result = 0;
+    const auto account = [&](const IDataType & substream_type)
+    {
+        if (substream_type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            result = std::max<UInt64>(result, substream_type.getSizeOfValueInMemory());
+    };
+    account(type);
+    type.getDefaultSerialization()->enumerateStreams(
+        [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (const auto & substream_type = substream_path.back().data.type)
+                account(*substream_type);
+        },
+        type.getPtr());
+    return result;
+}
+
 /// A compressed reader keeps a copy of a compressed block in `CompressedReadBufferBase::own_compressed_buffer`
 /// whenever the whole framed block is not available in its file buffer - a block larger than the file buffer,
 /// or simply one that straddles the end of the buffer. The copy stays allocated next to the file buffer and the
@@ -2063,7 +2087,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 }
             }
             range.min = std::min(range.min, column_block_size);
-            range.max = std::max(range.max, column_block_size);
+            /// The writer rounds the size of a stream up to one value of its type (see
+            /// largestFixedSizeSubstreamValue), after clamping it. Only the largest size follows the rounding:
+            /// the other streams of the column keep the configured one.
+            range.max = std::max(range.max, std::max(column_block_size, largestFixedSizeSubstreamValue(*column.type)));
         }
         return range;
     };
@@ -2107,6 +2134,18 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         input_decompressed_block_size,
         retainedCompressedBlockCapacity(
             input_decompressed_block_size, collectStreamCodecs(input_columns, *metadata_snapshot, part_codec, settings)));
+    /// The data-volume bound of the allocations `streams` reader streams keep at once over `compressed` bytes of
+    /// files holding `uncompressed` bytes of data. A file buffer is no larger than its file and a decompressed
+    /// block no larger than the data of its stream, but the retained copy of a compressed block is a `PODArray`
+    /// whose capacity is rounded up to a power of two (see retainedCompressedBlockCapacity): less than twice the
+    /// framed block with its padding. So the copies take up to twice the compressed volume on top of the file
+    /// buffers, plus the doubled padding of every stream.
+    const auto reader_volume_bound = [](size_t streams, UInt64 compressed, UInt64 uncompressed)
+    {
+        return saturatingAdd(
+            saturatingAdd(saturatingStreamsTimesBuffer(3, compressed), uncompressed),
+            saturatingStreamsTimesBuffer(streams, 2 * PADDING_FOR_SIMD));
+    };
     /// The reader buffers of the base parts when the merge reads `read_columns` (in the source-part view)
     /// from all of them at once. The vertical pricing below reuses it for the reader sets of its stages.
     const auto base_reader_memory = [&](const NamesAndTypesList & read_columns)
@@ -2121,7 +2160,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_block_buffers);
             const ColumnSize read_bytes = partReadBytes(*part, read_columns, parts_index);
             memory = saturatingAdd(memory, std::min<UInt64>(
-                saturatingStreamsTimesBuffer(streams, read_buffer_size), read_bytes.data_compressed + read_bytes.data_uncompressed));
+                saturatingStreamsTimesBuffer(streams, read_buffer_size),
+                reader_volume_bound(streams, read_bytes.data_compressed, read_bytes.data_uncompressed)));
         }
         return memory;
     };
@@ -2135,7 +2175,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             ? countPartStreams(*part, settings, parts_index)
             : 1;
         const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_block_buffers);
-        const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
+        const UInt64 part_bytes = reader_volume_bound(streams, part->getBytesOnDisk(), part->getBytesUncompressedOnDisk());
         patch_input_memory += std::min<UInt64>(saturatingStreamsTimesBuffer(streams, read_buffer_size), part_bytes);
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
@@ -2541,8 +2581,22 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     {
         return eager_stream_buffers(compress_block_size) + marks_eager_buffers(/*adaptive_stream=*/ false);
     };
+    /// The data chain of an adaptive stream starts at adaptive_write_buffer_initial_size rounded up to one value
+    /// of the stream's type (see largestFixedSizeSubstreamValue). The adaptive sizes are not per-writer, so
+    /// take the largest value any writer of this merge can meet: the output columns and the columns of every
+    /// projection. It differs from the setting only for a table with a value wider than the initial size.
+    const UInt64 adaptive_data_initial_size = [&]
+    {
+        UInt64 result = settings[MergeTreeSetting::adaptive_write_buffer_initial_size];
+        for (const auto & column : output_columns)
+            result = std::max(result, largestFixedSizeSubstreamValue(*column.type));
+        for (const auto & projection : metadata_snapshot->getProjections())
+            for (const auto & column : projection.metadata->getColumns().getAllPhysical())
+                result = std::max(result, largestFixedSizeSubstreamValue(*column.type));
+        return result;
+    }();
     const UInt64 adaptive_eager_buffers_per_stream
-        = eager_stream_buffers(settings[MergeTreeSetting::adaptive_write_buffer_initial_size]) + marks_eager_buffers(/*adaptive_stream=*/ true);
+        = eager_stream_buffers(adaptive_data_initial_size) + marks_eager_buffers(/*adaptive_stream=*/ true);
     /// The count-based rule of MergeTreeDataPartWriterWide::addStreams compares the number of DISTINCT
     /// streams the writer opens in the part (streams_to_open_in_part) with
     /// min_columns_to_activate_adaptive_write_buffer - not the number of columns in its list: a single wide
@@ -2618,7 +2672,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// compressor block size (the buf_size MergeTreeWriterStream opens it with) and its marks file from
     /// MARKS_FILE_BUFFER_SIZE. Replay each stream from its real start when the destination disk is known;
     /// the pre-disk-selection guess keeps its worst case (`guessed_size`).
-    const UInt64 adaptive_initial_size = settings[MergeTreeSetting::adaptive_write_buffer_initial_size];
+    const UInt64 adaptive_initial_size = adaptive_data_initial_size;
     const auto stream_remote_write_buffer_size = [&](UInt64 buf_size, bool adaptive_stream, UInt64 written_bytes, UInt64 guessed_size) -> UInt64
     {
         if (remote_write_buffer_memories.empty())
@@ -2818,18 +2872,20 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// actually alive at once: the merging columns (fully concurrent in the horizontal stage), the single
     /// widest gathering column, and the delayed remnants.
     ///
+    /// The mirror is deliberately stricter than chooseMergeAlgorithm, which no longer forces Horizontal for
+    /// a cleanup merge, and whose canVerticalTTLDelete accepts a lightweight delete and every mode that
+    /// supports a vertical merge: such merges may run vertically and are still priced horizontally here.
+    ///
     /// A TTL merge is not horizontal by itself: chooseMergeAlgorithm forces Horizontal for
     /// need_remove_expired_values only when MergeTask::canVerticalTTLDelete is false, so an Ordinary
     /// rows-TTL (or rows-WHERE-TTL) merge under vertical_merge_optimize_ttl_delete still gathers its
     /// columns one at a time and must not be priced at the full horizontal footprint - that is the same
     /// starvation pattern as above, and a rows-TTL merge of a big wide table on object storage is exactly
     /// where it hurts. Mirror canVerticalTTLDelete conservatively: everything it rejects (a GROUP BY TTL,
-    /// a column TTL, a lightweight delete, a non-Ordinary mode, a rows TTL that reads an expired column -
-    /// only `TTLTransform`, after the merge, fills the columns no source part stores) keeps the horizontal
-    /// pricing, and so does a `TTLDrop` merge of a table with a rows TTL, which chooseMergeAlgorithm forces
-    /// to Horizontal. The lightweight-delete term is the broader source_and_patch_parts one, which can only
-    /// reject more merges from the vertical pricing than the merge itself does - again the over-reserving
-    /// direction.
+    /// a column TTL, a rows TTL that reads an expired column - only `TTLTransform`, after the merge, fills
+    /// the columns no source part stores) keeps the horizontal pricing, and so do a lightweight delete and
+    /// a non-Ordinary mode, which it accepts, and a `TTLDrop` merge of a table with a rows TTL, which
+    /// chooseMergeAlgorithm forces to Horizontal - again the over-reserving direction.
     const auto ttl_reads_expired_column = [&](const TTLDescription & ttl_description)
     {
         const auto is_expired = [&](const NameAndTypePair & column)
@@ -3614,14 +3670,17 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// The read-back readers: past the first level the nested merge reads parts that are
                 /// themselves read-back results, so price the reader sets at the widest format a read-back
                 /// input can have (the final format when it is wider than the temporary parts') - capped by
-                /// twice the rebuilt volume. MergeTreeReaderStream can retain both a compressed file buffer
-                /// and its decompressed block, and each side is bounded by the input volume. The readers of
-                /// one nested merge see no more than the whole rebuilt volume.
+                /// the volume bound of the readers (see reader_volume_bound), with the compressed volume
+                /// taken as the rebuilt one: MergeTreeReaderStream can retain a compressed file buffer, its
+                /// decompressed block and a copy of a compressed block, and each is bounded by the input
+                /// volume. The readers of one nested merge see no more than the whole rebuilt volume.
                 /// Each read-back reader stream also keeps its decompressed block, at most the projection's own
                 /// max_compress_block_size the temporary parts were written with, and can retain a copy of a
                 /// compressed block (see retainedCompressedBlockCapacity).
+                const size_t read_back_reader_streams
+                    = MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams;
                 const UInt64 read_back_reader_worst_case = saturatingStreamsTimesBuffer(
-                    MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
+                    read_back_reader_streams,
                     saturatingAdd(
                         saturatingAdd(projection_read_buffer_size, projection_max_compress_block_size),
                         retainedCompressedBlockCapacity(
@@ -3675,7 +3734,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     saturatingAdd(
                         std::min(projection_worst_case, projection_data_bound),
                         saturatingAdd(
-                            std::min(read_back_reader_worst_case, saturatingStreamsTimesBuffer(2, projection_uncompressed_bytes)),
+                            std::min(
+                                read_back_reader_worst_case,
+                                reader_volume_bound(
+                                    read_back_reader_streams, projection_uncompressed_bytes, projection_uncompressed_bytes)),
                             saturatingAdd(
                                 saturatingAdd(projection_skip_index_eager_buffers, projection_packed_archive_bytes),
                                 primary_index_eager_buffers(projection.metadata, projection_settings)))));
