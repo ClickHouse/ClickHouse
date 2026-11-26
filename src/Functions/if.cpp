@@ -705,7 +705,8 @@ private:
             temporary_columns[1] = {col1_contents[i], type1.getElements()[i], {}};
             temporary_columns[2] = {col2_contents[i], type2.getElements()[i], {}};
 
-            tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count);
+            /// The result for one element can be constant (for example NULL in both branches), a tuple element cannot.
+            tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count)->convertToFullColumnIfConst();
         }
 
         return ColumnTuple::create(tuple_columns);
