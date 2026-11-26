@@ -1247,3 +1247,60 @@ def test_coordinated_refresh_is_spread_across_replicas(module_setup_tables):
 
     node.query("DROP TABLE jitter_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE jitter_tgt ON CLUSTER default SYNC")
+
+
+def _wait_settled_last_success_time(n, view):
+    """last_success_time once the view is idle with its next refresh in the future.
+
+    That is the state a view ends up in whether or not it refreshed at startup, so reading
+    last_success_time there tells the two apart without waiting for a fixed amount of time.
+    """
+    query = (
+        "SELECT toString(last_success_time) FROM system.view_refreshes "
+        f"WHERE view = '{view}' AND status = 'Scheduled' AND next_refresh_time > now() "
+        "AND last_success_time IS NOT NULL"
+    )
+    value = n.query_with_retry(
+        query,
+        check_callback=lambda r: r.strip() != "",
+        retry_count=200,
+        sleep_time=0.3,
+    ).strip()
+    assert value != "", f"{view} did not settle on {n.name}"
+    return value
+
+
+def test_all_replicas_append_view_keeps_its_schedule_across_restart(module_setup_tables):
+    """`APPEND` with `all_replicas = 1` in a Replicated database is not coordinated through Keeper:
+    every replica refreshes on its own schedule, which it has to keep locally. The replicas share the
+    view's UUID, so each one must reload its own schedule after a restart rather than refresh again
+    and append a second copy of its rows."""
+    view = "all_replicas_rmv"
+    node.query(f"DROP TABLE IF EXISTS {view} ON CLUSTER default SYNC")
+    # hostName keeps the rows of the two replicas apart, so that the replicated target does not
+    # deduplicate them as the same block.
+    node.query(
+        f"CREATE MATERIALIZED VIEW {view} ON CLUSTER default "
+        "REFRESH AFTER 1 DAY SETTINGS all_replicas = 1 APPEND (a DateTime, host String) "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() AS SELECT now() AS a, hostName() AS host"
+    )
+
+    def rows_per_host(n):
+        n.query(f"SYSTEM SYNC REPLICA {view}")
+        return n.query(f"SELECT host, count() FROM {view} GROUP BY host ORDER BY host")
+
+    try:
+        before = {n.name: _wait_settled_last_success_time(n, view) for n in nodes}
+        expected_rows = "".join(f"{name}\t1\n" for name in sorted(n.name for n in nodes))
+        for n in nodes:
+            assert rows_per_host(n) == expected_rows
+
+        for n in nodes:
+            n.restart_clickhouse()
+
+        after = {n.name: _wait_settled_last_success_time(n, view) for n in nodes}
+        assert after == before, "a replica refreshed at startup instead of reloading its schedule"
+        for n in nodes:
+            assert rows_per_host(n) == expected_rows
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {view} ON CLUSTER default SYNC")
