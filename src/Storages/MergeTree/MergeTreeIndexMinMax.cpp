@@ -65,58 +65,98 @@ BoolBoundsKind getBoolBoundsKind(const DataTypePtr & type)
     return NO_BOOL_BOUNDS;
 }
 
-/// Whether `field`, a value of `type` read with `read_bool_field_as_int`, has a `Bool` stored as a byte other than 0 and 1.
-bool hasNonCanonicalBool(const Field & field, const IDataType & type)
+/// Whether a row between the bounds `min` and `max` of a granule can be below `min` once its `Bool` bytes other than
+/// 0 and 1 are converted to 1. The bounds are values of `type` read with `read_bool_field_as_int`.
+///
+/// Values are compared lexicographically, element by element. Take a row with such a byte in the `Bool` at position
+/// `p`. It is not below `min`, and the conversion only lowers it at `p`, so it gets below `min` only when it equals
+/// `min` before `p` and the `Bool` of `min` at `p` is not 0. The row is not above `max` either. So either `max`
+/// already differs from `min` before `p`, or `max` has a byte other than 0 and 1 at `p` too.
+///
+/// `max` is null once the upper bound differs from the lower bound before the current position.
+bool convertedBoolMayBeBelowMin(const Field & min, const Field * & max, const IDataType & type)
 {
-    if (field.isNull())
-        return false;
-
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
-        return hasNonCanonicalBool(field, *nullable_type->getNestedType());
-
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
-        return hasNonCanonicalBool(field, *low_cardinality_type->getDictionaryType());
-
-    if (isBoolOrSimpleAggregateFunctionOfBool(type))
-        return field.getType() == Field::Types::UInt64 && field.safeGet<UInt64>() > 1;
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
     {
-        if (field.getType() != Field::Types::Tuple)
-            return false;
-
-        const auto & tuple = field.safeGet<Tuple>();
+        if (!min.isNull())
+            return convertedBoolMayBeBelowMin(min, max, *nullable_type->getNestedType());
+    }
+    else if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+    {
+        return convertedBoolMayBeBelowMin(min, max, *low_cardinality_type->getDictionaryType());
+    }
+    else if (isBoolOrSimpleAggregateFunctionOfBool(type))
+    {
+        if (min.getType() == Field::Types::UInt64 && min.safeGet<UInt64>() != 0)
+        {
+            if (min.safeGet<UInt64>() > 1 || !max || max->getType() != Field::Types::UInt64 || max->safeGet<UInt64>() > 1)
+                return true;
+        }
+    }
+    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type); tuple_type && min.getType() == Field::Types::Tuple)
+    {
+        const auto & min_tuple = min.safeGet<Tuple>();
         const auto & element_types = tuple_type->getElements();
-        for (size_t i = 0; i < tuple.size() && i < element_types.size(); ++i)
-            if (hasNonCanonicalBool(tuple[i], *element_types[i]))
+        const Tuple * max_tuple = max && max->getType() == Field::Types::Tuple ? &max->safeGet<Tuple>() : nullptr;
+        if (min_tuple.size() != element_types.size() || (max_tuple && max_tuple->size() != min_tuple.size()))
+            return true;
+
+        for (size_t i = 0; i < min_tuple.size(); ++i)
+        {
+            const Field * max_element = max_tuple && max ? &(*max_tuple)[i] : nullptr;
+            if (convertedBoolMayBeBelowMin(min_tuple[i], max_element, *element_types[i]))
                 return true;
+            if (!max_element)
+                max = nullptr;
+        }
         return false;
     }
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    else if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type); array_type && min.getType() == Field::Types::Array)
     {
-        if (field.getType() != Field::Types::Array)
-            return false;
+        const auto & min_array = min.safeGet<Array>();
+        const Array * max_array = max && max->getType() == Field::Types::Array ? &max->safeGet<Array>() : nullptr;
+        if (!max_array)
+            max = nullptr;
 
-        for (const auto & element : field.safeGet<Array>())
-            if (hasNonCanonicalBool(element, *array_type->getNestedType()))
+        for (size_t i = 0; i < min_array.size(); ++i)
+        {
+            const Field * max_element = max && i < max_array->size() ? &(*max_array)[i] : nullptr;
+            if (convertedBoolMayBeBelowMin(min_array[i], max_element, *array_type->getNestedType()))
                 return true;
+            if (!max_element)
+                max = nullptr;
+        }
+
+        if (max && max_array->size() != min_array.size())
+            max = nullptr;
         return false;
     }
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
+    else if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type); map_type && min.getType() == Field::Types::Map)
     {
-        if (field.getType() != Field::Types::Map)
-            return false;
-
         /// Each element of a `Map` field is a `Tuple` of the key and the value.
         const auto & key_value_type = *assert_cast<const DataTypeArray &>(*map_type->getNestedType()).getNestedType();
-        for (const auto & element : field.safeGet<Map>())
-            if (hasNonCanonicalBool(element, key_value_type))
+        const auto & min_map = min.safeGet<Map>();
+        const Map * max_map = max && max->getType() == Field::Types::Map ? &max->safeGet<Map>() : nullptr;
+        if (!max_map)
+            max = nullptr;
+
+        for (size_t i = 0; i < min_map.size(); ++i)
+        {
+            const Field * max_element = max && i < max_map->size() ? &(*max_map)[i] : nullptr;
+            if (convertedBoolMayBeBelowMin(min_map[i], max_element, key_value_type))
                 return true;
+            if (!max_element)
+                max = nullptr;
+        }
+
+        if (max && max_map->size() != min_map.size())
+            max = nullptr;
         return false;
     }
 
+    /// A value with no `Bool` inside, a `NULL`, or a `Bool` that cannot lower a row below `min`.
+    if (max && *max != min)
+        max = nullptr;
     return false;
 }
 
@@ -252,8 +292,16 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
         /// values are ordered lexicographically, so replacing the byte in place would not give a lower bound for
         /// the elements after it (`(3, 0)` is above `(2, 5)`, but `(1, 0)` is below `(1, 5)`). The lower bound is
         /// dropped instead; the upper bound already covers the converted values, which are never greater.
-        if (bool_columns[i] == NESTED_BOOL_BOUNDS && hasNonCanonicalBool(min_ref, *datatypes[i]))
-            min_ref = NEGATIVE_INFINITY;
+        ///
+        /// The row with the byte need not be the lower bound: a granule of several marks with `(1, 5)` and `(2, 0)`
+        /// has the bounds `[(1, 5), (2, 0)]`, and `(2, 0)` converted is `(1, 0)`. So the upper bound is checked as
+        /// well. A granule of only 0 and 1 between equal prefixes, e.g. `[(1, 0), (1, 5)]`, keeps its lower bound.
+        if (bool_columns[i] == NESTED_BOOL_BOUNDS)
+        {
+            const Field * max_bound = &max_ref;
+            if (convertedBoolMayBeBelowMin(min_ref, max_bound, *datatypes[i]))
+                min_ref = NEGATIVE_INFINITY;
+        }
 
         if (update_in_place)
         {
