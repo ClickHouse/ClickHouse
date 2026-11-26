@@ -189,7 +189,7 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerStateIsNotChargedToQuery)
         auto pool = makeSingleThreadPool();
 
         auto group = std::make_shared<ThreadGroup>(context, 0);
-        constexpr size_t num_tasks = 50000;
+        constexpr size_t num_tasks = 100000;
 
         CurrentThread::attachToGroupIfDetached(group);
         auto runner = threadPoolCallbackRunnerUnsafe<void>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
@@ -200,7 +200,7 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerStateIsNotChargedToQuery)
         CurrentThread::detachFromGroupIfNotDetached();
 
         const Int64 charged = group->memory_tracker.get();
-        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+        EXPECT_LT(std::abs(charged), 1 << 17) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
     });
     t.join();
 }
@@ -214,7 +214,7 @@ TEST(ThreadPoolCallbackRunner, LocalRunnerStateIsNotChargedToQuery)
         auto pool = makeSingleThreadPool();
 
         auto group = std::make_shared<ThreadGroup>(context, 0);
-        constexpr size_t num_tasks = 50000;
+        constexpr size_t num_tasks = 100000;
 
         CurrentThread::attachToGroupIfDetached(group);
         {
@@ -229,7 +229,7 @@ TEST(ThreadPoolCallbackRunner, LocalRunnerStateIsNotChargedToQuery)
         CurrentThread::detachFromGroupIfNotDetached();
 
         const Int64 charged = group->memory_tracker.get();
-        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+        EXPECT_LT(std::abs(charged), 1 << 17) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
     });
     t.join();
 }

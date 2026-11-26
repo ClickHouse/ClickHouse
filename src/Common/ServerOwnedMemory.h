@@ -3,6 +3,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <new>
 #include <utility>
@@ -77,6 +78,15 @@ template <typename T, typename... Args>
 std::shared_ptr<T> makeServerOwned(Args &&... args)
 {
     return std::allocate_shared<T>(ServerOwnedObjectAllocator<T>{}, std::forward<Args>(args)...);
+}
+
+/// `std::function` keeps a callable that is not trivially copyable on the heap, and a pool frees its job on a worker that is
+/// not attached to the query. For a callable whose move allocates nothing, like one that holds only a `shared_ptr`.
+template <typename F>
+std::function<void()> makeServerOwnedJob(F && f)
+{
+    ServerOwnedMemoryScope scope;
+    return std::function<void()>(std::forward<F>(f));
 }
 
 }

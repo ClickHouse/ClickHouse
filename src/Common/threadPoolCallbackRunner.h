@@ -157,7 +157,7 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
 
         /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
         /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-        my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ my_task->run(); }, priority);
+        my_pool->scheduleOrThrowOnError(makeServerOwnedJob([my_task = std::move(task)]{ my_task->run(); }), priority);
 
         return future;
     };
@@ -213,7 +213,7 @@ private:
         "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool "
         "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
 
-    /// What a job needs, in one block, so that the job fits in the buffer of `std::function` instead of an allocation.
+    /// What a job needs, in one server-owned block.
     struct JobState
     {
         std::shared_ptr<Task> task;
@@ -357,7 +357,7 @@ public:
         auto state = std::allocate_shared<JobState>(ServerOwnedAllocator<JobState>{}, task, getCurrentThreadGroup(), std::move(callback), thread_name);
         task->future = state->promise.get_future();
 
-        auto task_func = [state]
+        auto task_func = makeServerOwnedJob([state]
         {
             auto & task_state = state->task->state;
             TaskState expected = SCHEDULED;
@@ -377,9 +377,7 @@ public:
             });
 
             executeCallback(state->promise, std::move(state->callback), std::move(state->thread_group), state->thread_name);
-        };
-        /// With the vtable pointer, it fits in the buffer of `std::function` in libc++.
-        static_assert(sizeof(task_func) <= 2 * sizeof(void *));
+        });
 
         try
         {

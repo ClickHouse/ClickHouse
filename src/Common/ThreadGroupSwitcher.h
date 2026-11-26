@@ -57,8 +57,7 @@ private:
 /// A pool job that runs `f` attached to the thread group of the scheduling thread, like
 ///   pool->scheduleOrThrow(attachedJob(ThreadName::X, [captures] { ... }));
 /// `f` is destroyed attached as well, so what it captured is released by the query it belongs to, also when the job is
-/// dropped without running. The job holds one pointer to a server-owned block, so it fits in the buffer of `std::function`
-/// and costs no query memory itself.
+/// dropped without running. The job and its state are the server's, so they cost no query memory themselves.
 template <typename F>
 auto attachedJob(ThreadName thread_name, F && f)
 {
@@ -79,13 +78,13 @@ auto attachedJob(ThreadName thread_name, F && f)
         }
     };
     auto job_state = std::allocate_shared<State>(ServerOwnedAllocator<State>{}, getCurrentThreadGroup(), std::forward<F>(f), thread_name);
-    return [state = std::move(job_state)]
+    return makeServerOwnedJob([state = std::move(job_state)]
     {
         ThreadGroupSwitcher switcher(std::move(state->thread_group), state->thread_name);
         auto local = std::move(*state->f);
         state->f.reset();
         local();
-    };
+    });
 }
 
 }
