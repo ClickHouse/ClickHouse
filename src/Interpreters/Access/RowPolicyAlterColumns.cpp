@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -38,20 +39,35 @@ bool removesColumn(const AlterCommand & command)
     return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
 }
 
-/// every identifier of the filter, subqueries and SQL UDF bodies included
-void collectIdentifiers(const ASTPtr & ast, NameSet & names, NameSet & visited_udfs)
+/// every identifier of the filter, subqueries and SQL UDF bodies included, lambda parameters excluded
+void collectIdentifiers(const ASTPtr & ast, NameSet & names, NameSet & visited_udfs, NameSet bound = {})
 {
     /// a UDF is also called by a bare name passed as a lambda, `arrayExists(udf, arr)`
     String name;
     if (const auto * identifier = ast->as<ASTIdentifier>())
-        names.insert(name = identifier->name());
+    {
+        name = identifier->name();
+        if (std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
+            return;
+        names.insert(name);
+    }
     else if (const auto * function = ast->as<ASTFunction>())
+    {
         name = function->name;
+        /// x -> body is lambda(tuple(x), body), x is local to the body
+        if (name == "lambda")
+        {
+            for (const auto & parameter : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+                bound.insert(parameter);
+            collectIdentifiers(function->arguments->children[1], names, visited_udfs, bound);
+            return;
+        }
+    }
     if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); body && visited_udfs.insert(name).second)
         collectIdentifiers(body, names, visited_udfs);
 
     for (const auto & child : ast->children)
-        collectIdentifiers(child, names, visited_udfs);
+        collectIdentifiers(child, names, visited_udfs, bound);
 }
 
 /// tenant, t.tenant, db.t.tenant, tenant.sub and n.x for a nested n all mention the column,
