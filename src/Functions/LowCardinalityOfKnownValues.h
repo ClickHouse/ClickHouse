@@ -92,7 +92,7 @@ ColumnPtr createLowCardinalityOfReferencedValues(
     for (auto & number : numbers)
     {
         typename HashMap<IndexType, IndexType>::LookupResult it;
-        bool inserted;
+        bool inserted = false;
         compact_number_of_value.emplace(number, it, inserted);
         if (inserted)
         {
