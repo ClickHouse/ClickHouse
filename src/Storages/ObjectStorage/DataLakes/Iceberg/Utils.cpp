@@ -1769,6 +1769,14 @@ static void mapIcebergTransformFunctionNames(IAST & ast)
         mapIcebergTransformFunctionNames(*child);
 }
 
+/// Type-checks with the Iceberg transforms the names stand for, e.g. `hour` as `icebergHour`, which takes only timestamps.
+static KeyDescription analyzeIcebergTransforms(const ASTPtr & ast, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto ast_for_analysis = ast->clone();
+    mapIcebergTransformFunctionNames(*ast_for_analysis);
+    return KeyDescription::getKeyFromAST(ast_for_analysis, columns, {}, context);
+}
+
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
@@ -1842,6 +1850,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 "only primitive types can",
                 partition_field->getValue<String>(Iceberg::f_name));
     }
+    if (partition_by)
+        analyzeIcebergTransforms(partition_by, columns, context);
     partition_specs->add(part_spec);
     new_metadata_file_content->set(Iceberg::f_partition_specs, partition_specs);
     new_metadata_file_content->set(Iceberg::f_last_partition_id, last_partition_id);
@@ -1860,10 +1870,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
     if (order_by)
     {
-        /// Type-check with the Iceberg transforms the names stand for, e.g. `hour` as `icebergHour`, which takes only timestamps.
-        auto order_by_for_analysis = order_by->clone();
-        mapIcebergTransformFunctionNames(*order_by_for_analysis);
-        auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by_for_analysis, columns, {}, context);
+        auto sort_columns_key_description = analyzeIcebergTransforms(order_by, columns, context);
 
         SortDescription sort_description;
         Names sort_columns = sort_columns_key_description.column_names;

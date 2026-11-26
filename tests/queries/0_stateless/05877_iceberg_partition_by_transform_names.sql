@@ -16,6 +16,7 @@ SELECT
     concat(base, 'part/') AS part,
     concat(base, 'sort/') AS sort,
     concat(base, 'sort_hour_date/') AS sort_hour_date,
+    concat(base, 'part_hour_date/') AS part_hour_date,
     concat(base, 'day_of_month/') AS day_of_month,
     concat(base, 'day_of_month_alias/') AS day_of_month_alias
 FROM system.server_settings WHERE name = 'user_files_path';
@@ -49,6 +50,14 @@ ORDER BY (hour(b)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 CREATE TABLE t_sort_hour_date (k Int64, b Date)
 ENGINE = IcebergLocal((SELECT sort_hour_date FROM iceberg_path), 'Parquet')
 ORDER BY (b);
+CREATE TABLE t_part_hour_date (k Int64, b Date)
+ENGINE = IcebergLocal((SELECT part_hour_date FROM iceberg_path), 'Parquet')
+PARTITION BY (hour(b)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+CREATE TABLE t_part_hour_date (k Int64, b Date)
+ENGINE = IcebergLocal((SELECT part_hour_date FROM iceberg_path), 'Parquet')
+PARTITION BY (day(b));
+INSERT INTO t_part_hour_date VALUES (1, '2026-01-01');
+SELECT 'part hour date', count() FROM t_part_hour_date;
 
 -- The ClickHouse functions keep their own meaning: day of month is not an Iceberg transform.
 CREATE TABLE t_day_of_month (k Int64, a DateTime('UTC'))
@@ -65,4 +74,5 @@ SELECT 'merge tree', partition_key FROM system.tables WHERE database = currentDa
 DROP TABLE t_part;
 DROP TABLE t_sort;
 DROP TABLE t_sort_hour_date;
+DROP TABLE t_part_hour_date;
 DROP TABLE t_mt;
