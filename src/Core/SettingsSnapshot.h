@@ -87,7 +87,7 @@ struct SettingsSnapshotAllocator
     }
 
 private:
-    std::optional<MemoryTrackerBlockerInThread> blockServerMemory(bool block = true) const
+    [[nodiscard]] std::optional<MemoryTrackerBlockerInThread> blockServerMemory(bool block = true) const
     {
         if (server_owned && block)
             return std::make_optional<MemoryTrackerBlockerInThread>();
@@ -245,9 +245,9 @@ class SettingsSnapshot
     boost::shared_ptr<State> state = defaultState();
 
 public:
-    bool sharesStorageWith(const SettingsSnapshot & other) const { return state == other.state; }
+    [[nodiscard]] bool sharesStorageWith(const SettingsSnapshot & other) const { return state == other.state; }
 
-    bool hasServerOwnedStorage() const
+    [[nodiscard]] bool hasServerOwnedStorage() const
     {
         if (!state->server_owned)
             return false;
@@ -257,7 +257,7 @@ public:
         return true;
     }
 
-    const void * getSettingPointer(size_t offset) const { return state->values[offset / chunk_size].get() + offset % chunk_size; }
+    [[nodiscard]] const void * getSettingPointer(size_t offset) const { return state->values[offset / chunk_size].get() + offset % chunk_size; }
 
     void * getSettingPointer(size_t offset)
     {

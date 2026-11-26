@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <gtest/gtest.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
@@ -42,10 +43,10 @@ using namespace DB;
 
 static_assert(std::is_const_v<std::remove_reference_t<decltype(std::declval<Settings &>()[Setting::log_comment])>>);
 
-String serialize(const Settings & settings, SettingsWriteFormat format)
+String serialize(const Settings & settings)
 {
     WriteBufferFromOwnString output;
-    settings.write(output, format);
+    settings.write(output);
     return output.str();
 }
 }
@@ -156,25 +157,22 @@ GTEST_TEST(SettingsSnapshot, CompatibilityAndSerializationRemainIsolated)
     parent.set("compatibility", "22.8");
     parent.set(Setting::max_threads, UInt64(8));
     parent.set(Setting::log_comment, String(256, 'p'));
-    const auto expected = serialize(parent, SettingsWriteFormat::DEFAULT);
+    const auto expected = serialize(parent);
     Settings child(parent);
     child.markSettingsChangedByCompatibilityAsUnchanged();
     child.set("compatibility", "");
     child.set(Setting::log_comment, "child");
-    EXPECT_EQ(serialize(parent, SettingsWriteFormat::DEFAULT), expected);
+    EXPECT_EQ(serialize(parent), expected);
     EXPECT_TRUE(parent.hasSettingsChangedByCompatibility());
     EXPECT_FALSE(child.hasSettingsChangedByCompatibility());
 
-    for (const auto format : {SettingsWriteFormat::BINARY, SettingsWriteFormat::STRINGS_WITH_FLAGS})
-    {
-        const auto bytes = serialize(parent, format);
-        Settings decoded;
-        ReadBufferFromString input(bytes);
-        decoded.read(input, format);
-        EXPECT_EQ(serialize(decoded, format), bytes);
-        decoded.set(Setting::log_comment, "decoded");
-        EXPECT_EQ(serialize(parent, SettingsWriteFormat::DEFAULT), expected);
-    }
+    const auto bytes = serialize(parent);
+    Settings decoded;
+    ReadBufferFromString input(bytes);
+    decoded.read(input);
+    EXPECT_EQ(serialize(decoded), bytes);
+    decoded.set(Setting::log_comment, "decoded");
+    EXPECT_EQ(serialize(parent), expected);
 }
 
 GTEST_TEST(SettingsSnapshot, IndependentConcurrentDescendants)
@@ -183,7 +181,7 @@ GTEST_TEST(SettingsSnapshot, IndependentConcurrentDescendants)
     parent.set("compatibility", "22.8");
     parent.set(Setting::max_threads, UInt64(8));
     parent.set(Setting::log_comment, String(256, 'p'));
-    const auto expected = serialize(parent, SettingsWriteFormat::DEFAULT);
+    const auto expected = serialize(parent);
     std::atomic<size_t> failures = 0;
     std::vector<std::thread> workers;
     for (size_t worker = 0; worker < 8; ++worker)
@@ -207,7 +205,7 @@ GTEST_TEST(SettingsSnapshot, IndependentConcurrentDescendants)
     for (auto & worker : workers)
         worker.join();
     EXPECT_EQ(failures.load(), 0);
-    EXPECT_EQ(serialize(parent, SettingsWriteFormat::DEFAULT), expected);
+    EXPECT_EQ(serialize(parent), expected);
 }
 
 GTEST_TEST(SettingsSnapshot, WorkerLifecycleWithConcurrentSessionSettings)

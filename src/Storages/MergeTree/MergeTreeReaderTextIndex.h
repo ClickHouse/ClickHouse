@@ -45,12 +45,13 @@ public:
 
     /// The virtual columns are resolved from per-mark posting lists addressed
     /// by absolute row number, so a read may start or stop inside a mark.
-    bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
+    [[nodiscard]] bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
-    /// Looks up its own index name in the map.
+    /// Looks up its own index name in the map. A read task also calls it for a reader that it took over from
+    /// the previous task: the granule that the reader already holds leaves the state of the reader as it is.
     void setPrecomputedGranule(const IndexGranulesMap & granules);
 
 private:
@@ -58,7 +59,7 @@ private:
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
     /// Opens the postings stream of one token, with the buffer sized to the token's largest segment.
-    std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
+    [[nodiscard]] std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
     /// The postings stream of a token, opened on first use and kept in `postings_streams`.
     MergeTreeReaderStream & getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info);
 
@@ -75,8 +76,8 @@ private:
     /// Drops all cached cursors, keeping the per-column sizing.
     void resetCursors();
 
-    std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
-    MergeTreeDataPartPtr getDataPart() const;
+    [[nodiscard]] std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
+    [[nodiscard]] MergeTreeDataPartPtr getDataPart() const;
 
     void readGranule();
     /// Sets per-column flags from the analyzer's verdict.
@@ -84,7 +85,7 @@ private:
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     /// Returns the postings folded by the index analysis for the query of the column, if they answer it
     /// completely (no postings of the query are read per mark) and lazy mode is off, and nullptr otherwise.
-    const PostingList * getFoldedPostings(size_t column_idx) const;
+    [[nodiscard]] const PostingList * getFoldedPostings(size_t column_idx) const;
     /// Fills rows [row_offset, row_offset + num_rows) from `postings` of the whole part.
     void fillColumnFromPostings(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows);
