@@ -2465,8 +2465,9 @@ with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
 `catalog_name.namespace.table` is shorthand for the quoted form
 `` catalog_name.`namespace.table` `` and needs the setting in a query that reads from it; without the
 setting such a query is rejected and the quoted form has to be used. Statements that name their target
-table (`INSERT`, `CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) and stored definitions accept the
-path regardless of the setting.
+table (`INSERT`, `CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the
+setting. A stored definition, such as the query of a view or a materialized view, is checked like a
+query each time it is analysed, starting with the `CREATE` statement; see below.
 </Note>
 
 Data lake catalogs organize tables into namespaces, which can be nested to
@@ -2499,10 +2500,18 @@ You can also spell out every part with dots:
   server) always reads `a.b` as database `a`, table `b`; the query argument of
   table functions `view`, `viewIfPermitted`, `eval`, `obfuscate` and `explain`
   keeps the two-part rule. In a stored definition, reference a catalog table as
-  ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` in a table expression is stored as
-  the quoted name. As the right operand of `IN` (`x IN catalog_name.ns.t`) and as a column qualifier
-  (`catalog_name.ns.t.x`) it is stored as written and needs the setting whenever the definition is
-  used. A dictionary `QUERY` is kept as text, runs in the dictionary's own context and needs the
+  ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` needs
+  `allow_experimental_table_namespaces` each time the definition is analysed, with the settings in
+  effect there: those of the user who creates the view, reads it, or inserts into the source table
+  of a materialized view. A table `TTL` is analysed with the server settings, and a refreshable
+  materialized view is not refreshed with the settings of the session that created it, so a session
+  setting does not apply to them. To make a definition independent of these settings, use the quoted
+  name or add `SETTINGS allow_experimental_table_namespaces = 1` to the query inside it; the clause
+  is ignored for a user with `readonly = 1`, the quoted name works for everyone. A definition is
+  written to disk with the quoted name, so after a restart or `ATTACH` a path in a table expression
+  of it no longer needs the setting, while a path as the right operand of `IN`
+  (`x IN catalog_name.ns.t`) and as a column qualifier (`catalog_name.ns.t.x`) is stored as written
+  and still needs it. A dictionary `QUERY` is kept as text, runs in the dictionary's own context and needs the
   setting in the query's own `SETTINGS` clause. In view bodies and column expressions, `` `ns.t` ``
   also works when the catalog is the current database at creation: it is qualified
   then and stored as ``catalog_name.`ns.t` ``.
