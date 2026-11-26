@@ -19,7 +19,7 @@ namespace Poco {
 namespace XML {
 
 
-[[clang::no_destroy]] const XMLString DocumentFragment::NODE_NAME = toXMLString("#document-fragment");
+const XMLString DocumentFragment::NODE_NAME = toXMLString("#document-fragment");
 
 
 DocumentFragment::DocumentFragment(Document* pOwnerDocument): 

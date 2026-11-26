@@ -2,5 +2,3 @@
 _instances*
 # Ignore pytest reports in the current directory
 /*.jsonl
-# Ignore the data file that test_prometheus_protocols/test_compliance.py generates on every run
-/test_prometheus_protocols/compliance_data.om

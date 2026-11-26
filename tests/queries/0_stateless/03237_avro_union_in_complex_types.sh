@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_DIR=$CUR_DIR/data_avro
 
-CH_CLIENT="$CLICKHOUSE_CLIENT"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1"
 
 file_name="$CLICKHOUSE_DATABASE"_union_in_complex_types.avro
 cp $DATA_DIR/union_in_complex_types.avro $CLICKHOUSE_USER_FILES/$file_name
@@ -82,7 +82,7 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
   double_or_null_or_string_or_long Variant(Float32, String, Int64),
   double_or_long_or_string_in_array Array(Variant(Float32, String, Int64)),
   double_or_string_or_long_or_null_in_map Map(String, Variant(Float32, Int64, String))
-') SETTINGS input_format_parallel_parsing = 0;" 2>&1 | grep -c 'DB::Exception: Destination Variant(Float32, String) and Avro Union containing Float64 are not compatible.'
+');" 2>&1 | grep -c 'DB::Exception: Destination Variant(Float32, String) and Avro Union containing Float64 are not compatible.'
 echo
 
 echo "== SELECT * WITH CustomSchema more types than expected =="
@@ -99,7 +99,7 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
   double_or_null_or_string_or_long Variant(Float64, String, Int64, Int64),
   double_or_long_or_string_in_array Array(Variant(Float64, String, Int64)),
   double_or_string_or_long_or_null_in_map Map(String, Variant(Float64, Int64, String))
-') SETTINGS input_format_parallel_parsing = 0;" 2>&1 | grep -c 'DB::Exception: The number of distinct (non-null) union types in Avro record (2) does not match the number of types in destination Variant type (3).'
+');" 2>&1 | grep -c 'DB::Exception: The number of (non-null) union types in Avro record (2) does not match the number of types in destination Variant type (3).'
 echo
 
 echo "== SELECT * WITH CustomSchema less types than expected =="
@@ -116,16 +116,10 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
   double_or_null_or_string_or_long Variant(Float64, String, Int64),
   double_or_long_or_string_in_array Array(Variant(Float64, String, Int64)),
   double_or_string_or_long_or_null_in_map Map(String, Variant(Float64, Int64))
-') SETTINGS input_format_parallel_parsing = 0;" 2>&1 | grep -c 'DB::Exception: Destination Variant(Float64, Int64) and Avro Union containing String are not compatible.'
+');" 2>&1 | grep -c 'DB::Exception: Destination Variant(Float64, Int64) and Avro Union containing String are not compatible.'
 echo
 
 echo "== CREATE TABLE avro_union_test_03237 =="
-# Pin `map_serialization_version` to `basic` so the test output is deterministic.
-# With the `with_buckets` format (which the CI runner randomizes) keys inside a
-# Map column can be reordered across the bucketing round-trip — see the comment
-# in `src/DataTypes/Serializations/SerializationMap.cpp::collectMapFromBuckets`.
-# That is valid Map behaviour but makes this reference-based test flaky; the
-# bucketing path has dedicated tests elsewhere.
 $CH_CLIENT -q "CREATE TABLE avro_union_test_03237 (
   string_only String,
   string_or_null Nullable(String),
@@ -139,8 +133,7 @@ $CH_CLIENT -q "CREATE TABLE avro_union_test_03237 (
   double_or_null_or_string_or_long Variant(Float64, String, Int64),
   double_or_long_or_string_in_array Array(Variant(Float64, String, Int64)),
   double_or_string_or_long_or_null_in_map Map(String, Variant(Float64, Int64, String))
-) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'"
+) ENGINE = MergeTree ORDER BY tuple()"
 echo
 
 echo "== SELECT * FORMAT Avro | INSERT INTO avro_union_test_03237 FORMAT Avro =="

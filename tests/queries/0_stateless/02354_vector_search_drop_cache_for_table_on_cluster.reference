@@ -1,7 +1,0 @@
--- Cache hits and misses (left is hits, right is misses)
-empty cache: current database	0	1
-empty cache: default	0	1
-after bare name: current database	0	1
-after bare name: default	1	0
-after default.tab_02354_drop_cache_on_cluster: current database	1	0
-after default.tab_02354_drop_cache_on_cluster: default	0	1

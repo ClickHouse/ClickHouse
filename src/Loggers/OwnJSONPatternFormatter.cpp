@@ -1,5 +1,4 @@
 #include <Loggers/OwnJSONPatternFormatter.h>
-#include <Formats/FormatSettings.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -192,13 +191,7 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
         writeJSONString(source_file, wb, settings);
         DB::writeChar(':', wb);
-        std::string source_file_value = msg.getSourceFile();
-        if (*msg.getSourceFunction() != '\0')
-        {
-            source_file_value += "; ";
-            source_file_value += msg.getSourceFunction();
-        }
-        writeJSONString(source_file_value, wb, settings);
+        writeJSONString(msg.getSourceFile(), wb, settings);
     }
 
     if (!source_line.empty())

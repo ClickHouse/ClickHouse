@@ -1,8 +1,0 @@
-rename_drop_add_pending
-1	100	999
-rename_drop_add_materialized
-1	100	999
-drop_add_pending
-1	100	999
-drop_add_materialized
-1	100	999

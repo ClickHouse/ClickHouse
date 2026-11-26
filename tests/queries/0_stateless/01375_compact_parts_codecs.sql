@@ -6,8 +6,7 @@ CREATE TABLE codecs (id UInt32, val UInt32, s String)
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_rows_for_wide_part = 10000, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'basic';
 INSERT INTO codecs SELECT number, number, toString(number) FROM numbers(1000);
--- The compressed size is not checked here: it depends on the default codec and on the version of its library.
-SELECT sum(data_uncompressed_bytes)
+SELECT sum(data_compressed_bytes), sum(data_uncompressed_bytes)
     FROM system.parts
     WHERE table = 'codecs' AND database = currentDatabase();
 
@@ -41,9 +40,7 @@ CREATE TABLE codecs (id UInt32, val UInt32 CODEC(Delta, ZSTD), s String CODEC(ZS
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_rows_for_wide_part = 10000, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'basic';
 INSERT INTO codecs SELECT number, number, toString(number) FROM numbers(1000);
--- The codecs of the columns are applied: the part is noticeably smaller than its data.
--- The exact compressed size is not checked, because it depends on the version of the compression library.
-SELECT sum(data_compressed_bytes) < 0.75 * sum(data_uncompressed_bytes), sum(data_uncompressed_bytes)
+SELECT sum(data_compressed_bytes), sum(data_uncompressed_bytes)
     FROM system.parts
     WHERE table = 'codecs' AND database = currentDatabase();
 

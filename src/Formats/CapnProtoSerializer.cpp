@@ -932,7 +932,7 @@ namespace
             if (!checkIfStructIsNamedUnion(struct_schema))
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
                     "Given CapnProto struct is not a named union: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -941,7 +941,7 @@ namespace
             if (union_fields.size() != 2)
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
                     "Given CapnProto union have more than 2 fields: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -968,7 +968,7 @@ namespace
             else
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
                     "Given CapnProto union doesn't have field with type Void: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -1037,7 +1037,7 @@ namespace
 
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size{};
+        capnp::_::StructSize struct_size;
         UInt32 discriminant_offset;
         UInt16 null_discriminant;
         UInt16 nested_discriminant;
@@ -1095,7 +1095,7 @@ namespace
             const auto * array_column = assert_cast<const ColumnArray *>(column.get());
             const auto & nested_column = array_column->getDataPtr();
             const auto & offsets = array_column->getOffsets();
-            auto offset = offsets[static_cast<ssize_t>(row_num) - 1];
+            auto offset = offsets[row_num - 1];
             UInt32 size = static_cast<UInt32>(offsets[row_num] - offset);
 
             if (!field_builder)
@@ -1152,7 +1152,7 @@ namespace
         capnp::ListSchema list_schema;
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::ElementSize element_size;
-        capnp::_::StructSize element_struct_size{};
+        capnp::_::StructSize element_struct_size;
         bool element_is_struct = false;
 
     };
@@ -1275,7 +1275,7 @@ namespace
 
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size{};
+        capnp::_::StructSize struct_size;
         UInt32 entries_slot_offset;
     };
 
@@ -1438,8 +1438,8 @@ namespace
         }
 
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size{};
-        size_t fields_count{};
+        capnp::_::StructSize struct_size;
+        size_t fields_count;
         /// True if the struct is mapped to a `Tuple` column, one field per tuple element.
         /// Otherwise the serializer is the root one or an adapter for a flattened column name (`a.b`)
         /// with a single field, which gets the whole column, even if the column itself is a `Tuple`.

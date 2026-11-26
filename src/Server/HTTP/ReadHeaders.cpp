@@ -16,7 +16,7 @@ void readHeaders(
     size_t max_value_length,
     size_t max_total_size)
 {
-    char ch = 0;
+    char ch = 0;  // silence uninitialized warning from gcc-*
     std::string name;
     std::string value;
 

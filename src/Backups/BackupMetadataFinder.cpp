@@ -19,7 +19,6 @@
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
-#include <IO/ReadHelpers.h>
 
 namespace fs = std::filesystem;
 
@@ -38,10 +37,12 @@ BackupMetadataFinder::BackupMetadataFinder(
     const RestoreSettings & restore_settings_,
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
+    const ContextPtr & query_context_,
     ThreadPool & thread_pool_)
     : restore_settings(restore_settings_)
     , backup(backup_)
     , context(context_)
+    , query_context(query_context_)
     , process_list_element(context->getProcessListElement())
     , log(getLogger("BackupMetadataFinder"))
     , tables_dependencies("BackupMetadataFinder")
@@ -297,23 +298,6 @@ void BackupMetadataFinder::findTableInBackupImpl(
             tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false),
             backQuoteIfNeed(create.as_table));
 
-    /// `BACKUP` never writes `ATTACH ... FROM` either. It would take a directory in `user_files` as the data of the table.
-    if (create_table_query->as<const ASTCreateQuery &>().has_attach_from_path)
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "The definition of {} in the backup uses ATTACH ... FROM, which BACKUP never writes",
-            tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false));
-
-    /// The rights of a restore are checked for the table of the backup entry, so its definition must be of that table.
-    if (const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        create.getTable() != table_name_in_backup.table || create.isTemporary() != is_temporary_table
-        || (!is_temporary_table && create.getDatabase() != table_name_in_backup.database))
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "The definition of {} in the backup is of another object: {}",
-            tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false),
-            create_table_query->formatForErrorMessage());
-
     applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
     String create_table_query_str = create_table_query->formatWithSecretsOneLine();
@@ -408,15 +392,6 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
         ParserCreateQuery create_parser;
         ASTPtr create_database_query
             = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        /// The same for the definition of a database.
-        if (const auto & create = create_database_query->as<const ASTCreateQuery &>();
-            create.table || create.getDatabase() != database_name_in_backup)
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_DATABASE,
-                "The definition of database {} in the backup is of another object: {}",
-                backQuoteIfNeed(database_name_in_backup),
-                create_database_query->formatForErrorMessage());
-
         renameDatabaseAndTableNameInCreateQuery(create_database_query, renaming_map, context->getGlobalContext());
         String create_database_query_str = create_database_query->formatWithSecretsOneLine();
 

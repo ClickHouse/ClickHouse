@@ -15,7 +15,6 @@ static const auto MAX_BUFFERED = 131072;
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_STATE;
 }
@@ -35,7 +34,7 @@ void INATSProducer::finishImpl()
     {
         if (connection)
         {
-            if (!shutdown_called && connection->isConnected())
+            if (connection->isConnected())
                 natsConnection_Flush(connection->getConnection());
 
             connection->disconnect();
@@ -45,9 +44,6 @@ void INATSProducer::finishImpl()
     {
         tryLogCurrentException(log);
     }
-
-    if (shutdown_called)
-        throw Exception(ErrorCodes::ABORTED, "Table is detached");
 }
 
 void INATSProducer::cancel() noexcept
@@ -65,18 +61,14 @@ void INATSProducer::cancel() noexcept
 void INATSProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
     if (!payloads.push(message))
-    {
-        /// The producing task has stopped on table shutdown and closed the queue: `finish` throws its error.
-        finish();
         throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
-    }
 }
 
 void INATSProducer::publish()
 {
     String payload;
 
-    natsStatus status = {};
+    natsStatus status;
     while (!payloads.empty())
     {
         if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
@@ -90,7 +82,7 @@ void INATSProducer::publish()
         if (status != NATS_OK)
         {
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
-                      natsStatus_GetText(status), getNATSLastError());
+                      natsStatus_GetText(status), nats_GetLastError(nullptr));
             if (!payloads.pushFront(payload))
                 throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
             break;
@@ -109,19 +101,12 @@ void INATSProducer::startProducingTaskLoop()
 
     try
     {
-        while (!payloads.isFinishedAndEmpty() && !shutdown_called)
+        while (!payloads.isFinishedAndEmpty())
         {
             if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
             else
                 publish();
-        }
-
-        if (shutdown_called)
-        {
-            /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
-            payloads.finish();
-            return;
         }
 
         while (!connection->isConnected() && !shutdown_called)
