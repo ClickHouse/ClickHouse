@@ -12,17 +12,17 @@ renvoie le rang relatif (c.-à-d. le percentile) des lignes au sein d’une part
 
 **Syntaxe**
 
-Alias : `percentRank` (sensible à la casse)
+Alias : `percentRank` (sensible à la casse)
 
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-La définition du cadre de fenêtre, utilisée par défaut et requise, est `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+La fonction lit toujours l’intégralité de la partition ; un cadre de fenêtre, s’il est spécifié, est ignoré.
 
 Pour plus de détails sur la syntaxe des fonctions de fenêtre, consultez : [Fonctions de fenêtre - Syntaxe](/fr/reference/functions/window-functions/index#syntax).
 

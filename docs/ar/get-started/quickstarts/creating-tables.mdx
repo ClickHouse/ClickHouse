@@ -38,15 +38,15 @@ CREATE DATABASE IF NOT EXISTS helloworld
 يُنشأ الجدول التالي المسمى `my_first_table` في قاعدة البيانات `helloworld`:
 
 ```sql
-  CREATE TABLE helloworld.my_first_table
-  (
-      user_id UInt32,
-      message String,
-      timestamp DateTime,
-      metric Float32
-  )
-  ENGINE = MergeTree()
-  PRIMARY KEY (user_id, timestamp)
+CREATE TABLE helloworld.my_first_table
+(
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+)
+ENGINE = MergeTree()
+PRIMARY KEY (user_id, timestamp)
 ```
 
 في المثال أعلاه، `my_first_table` هو جدول `MergeTree` يحتوي على أربعة أعمدة:
@@ -67,14 +67,14 @@ CREATE DATABASE IF NOT EXISTS helloworld
 </Note>
 
 <div id="a-brief-intro-to-primary-keys">
-  ## مقدمة موجزة عن المفاتيح الأساسية
+  ## مقدمة موجزة عن المفاتيح الأساسية {#a-brief-intro-to-primary-keys}
 </div>
 
 قبل المتابعة، من المهم فهم كيفية عمل المفاتيح الأساسية في ClickHouse (فطريقة تنفيذها قد تبدو غير متوقعة!):
 
 * المفاتيح الأساسية في ClickHouse ***ليست فريدة*** لكل صف في الجدول
 
-يحدِّد المفتاح الأساسي في جدول ClickHouse كيفية ترتيب البيانات عند كتابتها إلى القرص. فكل 8,192 صفًا أو 10 ميغابايت من
+يحدِّد المفتاح الأساسي في جدول ClickHouse كيفية ترتيب البيانات عند كتابتها إلى القرص. فكل 8,192 صفًا أو 10 ميغابايت من
 البيانات (ويُشار إلى ذلك باسم **index granularity**) يُنشئ إدخالًا في ملف فهرس المفتاح الأساسي. وينتج عن مفهوم الحبيبية هذا
 **فهرسًا متناثرًا** يمكن أن يتسع في الذاكرة بسهولة، كما تمثل الـ granules مقطعًا يضم أصغر قدر من
 بيانات الأعمدة التي تُعالَج أثناء استعلامات `SELECT`.
@@ -86,7 +86,7 @@ CREATE DATABASE IF NOT EXISTS helloworld
 ملف عمود مرتبة حسب `user_id` ثم `timestamp`.
 
 <Tip>
-  لمزيد من التفاصيل، اطّلع على [وحدة التدريب Modeling Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) في ClickHouse Academy.
+  لمزيد من التفاصيل، اطّلع على [وحدة التدريب Modeling Data](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440) في ClickHouse Academy.
 </Tip>
 
 <div className="mt-8">

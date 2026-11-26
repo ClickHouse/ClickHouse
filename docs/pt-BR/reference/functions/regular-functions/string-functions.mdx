@@ -1094,6 +1094,82 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+Introduzido em: v26.11.0
+
+Calcula a similaridade normalizada baseada na [distância de edição](https://en.wikipedia.org/wiki/Edit_distance) entre duas strings de bytes:
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+Retorna um valor entre `0` (quando a distância de edição é igual ao comprimento da string mais longa, como em `'ab'` e `'ba'`) e `1` (strings iguais). Duas strings vazias são consideradas iguais.
+
+**Sintaxe**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**aliases**: `levenshteinRatio`
+
+**Argumentos**
+
+* `s1` — Primeira string de entrada. [`String`](/pt-BR/reference/data-types/string)
+* `s2` — Segunda string de entrada. [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna a similaridade entre as duas strings, calculada a partir da distância de edição normalizada. [`Float64`](/pt-BR/reference/data-types/float)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+Introduzido em: v26.11.0
+
+Semelhante a [`editDistanceRatio`](#editDistanceRatio), mas para strings codificadas em UTF-8: a distância de edição e os comprimentos são medidos em pontos de código.
+
+**Sintaxe**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**aliases**: `levenshteinRatioUTF8`
+
+**Argumentos**
+
+* `s1` — Primeira string de entrada em UTF-8. [`String`](/pt-BR/reference/data-types/string)
+* `s2` — Segunda string de entrada em UTF-8. [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna a similaridade baseada na distância de edição normalizada entre as duas strings UTF-8. [`Float64`](/pt-BR/reference/data-types/float)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 Introduzido em: v24.6.0
@@ -1322,7 +1398,7 @@ Extrai conteúdo textual de HTML ou XHTML.
 Esta função remove tags HTML, comentários e elementos `script`/`style`, deixando apenas o conteúdo textual. Ela faz o seguinte:
 
 * Remove todas as tags HTML/XML
-* Remove comentários (`{/* */}`)
+* Remove comentários (`<!-- -->`)
 * Remove elementos `script` e `style` com seu conteúdo
 * Processa seções CDATA (copiadas literalmente)
 * Trata e normaliza adequadamente os espaços em branco
@@ -3164,6 +3240,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+Introduzido em: v26.11.0
+
+Calcula a similaridade indel normalizada entre duas strings de bytes, o mesmo valor retornado por `Levenshtein.ratio` do Python:
+`2 * LCS / (length(s1) + length(s2))`, em que `LCS` é o comprimento da [maior subsequência comum](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+De forma equivalente, `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+Retorna um valor entre `0` (nada em comum) e `1` (strings iguais). Duas strings vazias são consideradas iguais.
+
+**Sintaxe**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**Argumentos**
+
+* `s1` — Primeira string de entrada. [`String`](/pt-BR/reference/data-types/string)
+* `s2` — Segunda string de entrada. [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna a similaridade indel normalizada entre as duas strings. [`Float64`](/pt-BR/reference/data-types/float)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**Correspondência aproximada de nomes**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+Introduzido em: v26.11.0
+
+Semelhante a [`stringSimilarityRatio`](#stringSimilarityRatio), mas para strings codificadas em UTF-8: os comprimentos são medidos em pontos de código.
+
+**Sintaxe**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**Argumentos**
+
+* `s1` — Primeira string UTF-8 de entrada. [`String`](/pt-BR/reference/data-types/string)
+* `s2` — Segunda string UTF-8 de entrada. [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna a similaridade indel normalizada entre as duas strings UTF-8. [`Float64`](/pt-BR/reference/data-types/float)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## substring {#substring}

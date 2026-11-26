@@ -6,10 +6,8 @@ description: 'ClickHouse Government の提供内容の概要'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="overview">
-  ## 概要
+  ## 概要 {#overview}
 </div>
 
 ClickHouse Government は、ClickHouse Cloud で稼働しているものと同じプロプライエタリ版の ClickHouse と ClickHouse Operator で構成されるセルフデプロイ型パッケージです。コンピュートとストレージの分離に対応するよう構成されており、政府機関や公共部門の組織に求められる厳格な要件を満たせるよう強化されています。
@@ -21,7 +19,7 @@ ClickHouse Government は、ClickHouse Cloud で稼働しているものと同�
 </Info>
 
 <div id="benefits-over-os">
-  ## オープンソース版に対する利点
+  ## オープンソース版に対する利点 {#benefits-over-os}
 </div>
 
 以下の機能により、ClickHouse Government はセルフマネージドのオープンソースデプロイメントとの差別化を図っています。
@@ -32,20 +30,22 @@ ClickHouse Government は、ClickHouse Cloud で稼働しているものと同�
 * 運用認可 (ATO) の取得を迅速化するための [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) ドキュメント
 * バックアップやスケーリングなどの運用をプログラムで実行するための API
 
-<div id="architecture">
-  ## アーキテクチャ
-</div>
+## アーキテクチャ {#architecture}
 
 ClickHouse Government はお客様のデプロイ環境内で完全に自己完結しており、当社のクラウドネイティブなコンピュートとストレージの分離アーキテクチャを提供します。
 
 <br />
 
-<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Government アーキテクチャ" background="black" />
+<div className="ch-image-md ch-image-background-black">
+  <Frame>
+    ![ClickHouse Government アーキテクチャ](/images/cloud/reference/private-gov-architecture.webp)
+  </Frame>
+</div>
 
 <br />
 
 <div id="supported-configurations">
-  ## サポートされている構成
+  ## サポートされている構成 {#supported-configurations}
 </div>
 
 ClickHouse Government は現在、以下の構成でサポートされています。
@@ -56,7 +56,7 @@ ClickHouse Government は現在、以下の構成でサポートされていま�
 | GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | プレビュー |
 
 <div id="onboarding-process">
-  ## オンボーディングプロセス
+  ## オンボーディングプロセス {#onboarding-process}
 </div>
 
 お客様は、[お問い合わせ](https://clickhouse.com/company/contact?loc=nav)から、ご利用のユースケースに ClickHouse Government が適しているかを確認するための打ち合わせを依頼できます。最小規模要件を満たし、サポート対象の構成にデプロイされるユースケースが審査対象となります。オンボーディングには制限があります。インストールプロセスでは、AWS ECR からダウンロードしたイメージと Helm チャートを使用して ClickHouse をデプロイする対象環境向けのインストールガイドに従います。

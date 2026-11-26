@@ -2,7 +2,7 @@
 sidebarTitle: 'ربط Streamkap بـ ClickHouse'
 keywords: ['ClickHouse', 'Streamkap', 'CDC', 'ربط', 'تكامل', 'etl', 'تكامل البيانات', 'التقاط تغييرات البيانات']
 slug: /integrations/sttreamkap
-description: 'إدخال البيانات المتدفقة إلى ClickHouse باستخدام خطوط بيانات Airbyte'
+description: 'إدخال البيانات المتدفقة إلى ClickHouse باستخدام مسارات تنفيذ الاستعلام في Airbyte'
 
 title: 'ربط Streamkap بـ ClickHouse'
 doc_type: 'guide'
@@ -12,19 +12,18 @@ integration:
   - website: 'https://streamkap.com/'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
-تُعد <a href="https://streamkap.com/" target="_blank">Streamkap</a> منصة لتكامل البيانات في الوقت الفعلي، متخصصة في بث CDC (التقاط بيانات التغيير) ومعالجة التدفقات. وهي مبنية على مكدس عالي الإنتاجية وقابل للتوسع باستخدام Apache Kafka وApache Flink وDebezium، وتُقدَّم كخدمة مُدارة بالكامل ضمن نماذج نشر SaaS أو BYOC (Bring your own Cloud).
+تُعد <a href="https://streamkap.com/" target="_blank">Streamkap</a> منصة لتكامل البيانات في الوقت الفعلي، متخصصة في بث CDC (التقاط تغييرات البيانات) ومعالجة التدفقات. وهي مبنية على مكدس عالي الإنتاجية وقابل للتوسع باستخدام Apache Kafka وApache Flink وDebezium، وتُقدَّم كخدمة مُدارة بالكامل ضمن نماذج نشر SaaS أو BYOC (Bring your own Cloud).
 
 تتيح لك Streamkap بث كل عمليات الإدراج والتحديث والحذف من قواعد البيانات المصدر مثل PostgreSQL وMySQL وSQL Server وMongoDB و<a href="https://streamkap.com/connectors" target="_blank">المزيد</a> مباشرةً إلى ClickHouse بزمن استجابة في حدود المللي ثانية.
 
 وهذا يجعلها مثالية لتشغيل لوحات معلومات تحليلية في الوقت الفعلي، والتحليلات التشغيلية، وتغذية نماذج التعلّم الآلي بالبيانات الحية.
 
 <div id="key-features">
-  ## الميزات الرئيسية
+  ## الميزات الرئيسية {#key-features}
 </div>
 
 * **CDC للبث في الوقت الفعلي:** تلتقط Streamkap التغييرات مباشرةً من سجلات قاعدة بياناتك، مما يضمن أن تكون البيانات في ClickHouse نسخة مطابقة للمصدر في الوقت الفعلي.
@@ -39,13 +38,13 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 * **تسليم موثوق:** توفّر المنصة ضمان التسليم مرة واحدة على الأقل، مما يضمن اتساق البيانات بين مصدرك وClickHouse. وبالنسبة إلى عمليات upsert، فإنها تنفّذ إزالة التكرار استنادًا إلى المفتاح الأساسي.
 
 <div id="started">
-  ## البدء
+  ## البدء {#started}
 </div>
 
 يقدّم هذا الدليل نظرة عامة موجزة على إعداد مسار بيانات في Streamkap لتحميل البيانات إلى ClickHouse.
 
 <div id="prerequisites">
-  ### المتطلبات الأساسية
+  ### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * <a href="https://app.streamkap.com/account/sign-up" target="_blank">حساب Streamkap</a>.
@@ -91,13 +90,13 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 </Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## آلية العمل مع ClickHouse
+  ## آلية العمل مع ClickHouse {#how-it-works-with-clickhouse}
 </div>
 
 صُمِّم تكامل Streamkap لإدارة بيانات CDC بكفاءة داخل ClickHouse.
 
 <div id="table-engine-data-handling">
-  ### محرك الجدول ومعالجة البيانات
+  ### محرك الجدول ومعالجة البيانات {#table-engine-data-handling}
 </div>
 
 بشكل افتراضي، يستخدم Streamkap وضع إدخال `upsert`. وعند إنشاء جدول في ClickHouse، يستخدم المحرك ReplacingMergeTree. ويُعد هذا المحرك مثاليًا للتعامل مع أحداث CDC:
@@ -110,7 +109,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
   * ويمكن اختياريًا الاحتفاظ بالسجلات المحذوفة في ClickHouse لأغراض التحليلات
 
 <div id="metadata-columns">
-  ### أعمدة البيانات الوصفية
+  ### أعمدة البيانات الوصفية {#metadata-columns}
 </div>
 
 تضيف Streamkap عدة أعمدة بيانات وصفية إلى كل جدول لإدارة حالة البيانات:
@@ -123,7 +122,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 | `_STREAMKAP_OFFSET`       | قيمة الإزاحة من السجلات الداخلية لـ Streamkap، وهي مفيدة للترتيب وتصحيح الأخطاء. |
 
 <div id="query-latest-data">
-  ### الاستعلام عن أحدث البيانات
+  ### الاستعلام عن أحدث البيانات {#query-latest-data}
 </div>
 
 لأن ReplacingMergeTree يعالج التحديثات وعمليات الحذف في الخلفية، فقد يُظهر استعلام SELECT * بسيط صفوفًا تاريخية أو صفوفًا محذوفة قبل اكتمال عملية الدمج. وللحصول على أحدث حالة لبياناتك، يجب تصفية السجلات المحذوفة واختيار أحدث إصدار فقط من كل صف.
@@ -153,7 +152,7 @@ GROUP BY key;
 في حالات الاستخدام في بيئات الإنتاج، ومع استعلامات المستخدمين النهائيين المتكررة والمتزامنة، يمكن استخدام العروض المادية لنمذجة البيانات بما يلائم على نحو أفضل أنماط الوصول اللاحقة.
 
 <div id="further-reading">
-  ## لمزيد من القراءة
+  ## لمزيد من القراءة {#further-reading}
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">موقع Streamkap</a>
