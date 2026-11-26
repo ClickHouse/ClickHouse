@@ -30,10 +30,12 @@ trap cleanup EXIT
 rm -f "$FIFO"
 mkfifo "$FIFO"
 
-# Keep both ends of the pipe open: descriptor 3 is what the client gets as its stdout, descriptor 4
-# is the read end that is drained only later.
-exec 3<>"$FIFO"
-exec 4<"$FIFO"
+# Keep both ends of the pipe open: `PIPE_WRITE_FD` is what the client gets as its stdout,
+# `PIPE_READ_FD` is the read end that is drained only later. The descriptors are allocated by bash
+# instead of being hardcoded: `shell_config.sh` uses descriptor 3 for `BASH_XTRACEFD`, and a trace
+# redirected into the full pipe would block the script itself.
+exec {PIPE_WRITE_FD}<>"$FIFO"
+exec {PIPE_READ_FD}<"$FIFO"
 
 # Fill the pipe completely, so that the very first byte the client writes has to wait for the reader.
 # The non-blocking mode is set on a separate open file description, not on the one the client inherits.
@@ -42,16 +44,16 @@ yes filler | dd of="$FIFO" oflag=nonblock bs=4096 2>/dev/null
 # The delay is longer than the query, so every event is deferred to the post-query flush.
 $CLICKHOUSE_LOCAL --server_logs_file=- \
     --print-profile-events --profile-events-delay-ms=600000 \
-    --query "SELECT 42 FORMAT Null" >&3 2> "$CLIENT_ERR" &
+    --query "SELECT 42 FORMAT Null" >&"$PIPE_WRITE_FD" 2> "$CLIENT_ERR" &
 CLIENT=$!
 
 # The client is now the only writer, so the reader below gets EOF as soon as the client exits.
-exec 3>&-
+exec {PIPE_WRITE_FD}>&-
 
 # The reader stays paused for longer than the best-effort budget (one second) and then resumes.
 sleep 5
-timeout 120 cat <&4 > "$READER_OUT"
-exec 4<&-
+timeout 120 cat <&"$PIPE_READ_FD" > "$READER_OUT"
+exec {PIPE_READ_FD}<&-
 
 wait "$CLIENT"
 EXIT_CODE=$?
