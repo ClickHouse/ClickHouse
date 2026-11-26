@@ -1,6 +1,5 @@
 <test>
     <settings>
-        <enable_alp_codec>1</enable_alp_codec>
         <max_threads>1</max_threads>
         <use_uncompressed_cache>0</use_uncompressed_cache>
     </settings>

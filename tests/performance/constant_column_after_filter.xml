@@ -29,7 +29,7 @@
         WHERE k1 = 42 AND k2 = 43 AND k3 = 44 AND k4 = 45 AND k5 = 46 AND k6 = 47 AND k7 = 48 AND k8 = 49
         GROUP BY k1, k2, k3, k4, k5, k6, k7, k8
         FORMAT Null
-        SETTINGS max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, query_plan_optimize_lazy_materialization = 0
+        SETTINGS max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0
     ]]></query>
 
     <query tag="expressions_on_const_columns_after_filter"><![CDATA[
@@ -45,7 +45,7 @@
         FROM constant_column_after_filter
         WHERE k1 = 42 AND k2 = 43 AND k3 = 44 AND k4 = 45 AND k5 = 46 AND k6 = 47 AND k7 = 48 AND k8 = 49
         FORMAT Null
-        SETTINGS max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, query_plan_optimize_lazy_materialization = 0
+        SETTINGS max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0
     ]]></query>
 
     <drop_query>DROP TABLE IF EXISTS constant_column_after_filter</drop_query>
