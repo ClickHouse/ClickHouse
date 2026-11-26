@@ -86,6 +86,34 @@ refused "ALTER TABLE tu DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tu RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tu RENAME COLUMN other TO other2"
 
+echo "-- so is a SQL function passed by name as a lambda"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tf (id UInt32, tenant UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY pf ON $DB.tf FOR SELECT USING arrayExists($UDF, [1]) TO CURRENT_USER;
+"
+refused "ALTER TABLE tf DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tf RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
+
+echo "-- a name that starts with the table name can also be a column of that name"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tt (id UInt32, tt Tuple(x UInt8)) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY ptt ON $DB.tt FOR SELECT USING tt.x = 1 TO CURRENT_USER;
+CREATE TABLE tl (id UInt32, \`tl.x\` UInt8) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY ptl ON $DB.tl FOR SELECT USING tl.x = 1 TO CURRENT_USER;
+"
+refused "ALTER TABLE tt DROP COLUMN tt" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tl RENAME COLUMN \`tl.x\` TO \`tl.y\`" ALTER_OF_COLUMN_IS_FORBIDDEN
+
+echo "-- a read through an Alias applies the policies of the alias and of its target"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal (id UInt32, tenant UInt32, note String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE al ENGINE = Alias(tal);
+CREATE ROW POLICY ptal ON $DB.tal FOR SELECT USING tenant = 1 TO CURRENT_USER;
+CREATE ROW POLICY pal ON $DB.al FOR SELECT USING length(al.note) > 0 TO CURRENT_USER;
+"
+refused "ALTER TABLE al DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tal RENAME COLUMN note TO comment" ALTER_OF_COLUMN_IS_FORBIDDEN
+
 echo "-- the policy pins an ALIAS column, the alias pins its base column"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE ta (id UInt32, tenant UInt32, tenant_alias UInt32 ALIAS tenant) ENGINE = MergeTree ORDER BY id;
@@ -110,6 +138,11 @@ DROP ROW POLICY pj ON $DB.tj;
 DROP ROW POLICY pn ON $DB.tn;
 DROP ROW POLICY pu ON $DB.tu;
 DROP ROW POLICY pa ON $DB.ta;
+DROP ROW POLICY pf ON $DB.tf;
+DROP ROW POLICY ptt ON $DB.tt;
+DROP ROW POLICY ptl ON $DB.tl;
+DROP ROW POLICY ptal ON $DB.tal;
+DROP ROW POLICY pal ON $DB.al;
 DROP FUNCTION $UDF;
 DROP TABLE t;
 DROP TABLE t2;
@@ -119,4 +152,9 @@ DROP TABLE tj;
 DROP TABLE tn;
 DROP TABLE tu;
 DROP TABLE ta;
+DROP TABLE tf;
+DROP TABLE tt;
+DROP TABLE tl;
+DROP TABLE al;
+DROP TABLE tal;
 "

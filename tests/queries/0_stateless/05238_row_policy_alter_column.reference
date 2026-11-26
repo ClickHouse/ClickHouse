@@ -24,6 +24,15 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a column mentioned inside a SQL function body
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
+-- so is a SQL function passed by name as a lambda
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a name that starts with the table name can also be a column of that name
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a read through an Alias applies the policies of the alias and of its target
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
 -- the policy pins an ALIAS column, the alias pins its base column
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ILLEGAL_COLUMN
