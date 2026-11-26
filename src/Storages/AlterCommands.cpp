@@ -1193,6 +1193,11 @@ void AlterCommand::apply(
                 metadata.dropImplicitIndicesForColumn(dependent);
         }
 
+        /// A lossy codec makes the implicit index of the column, and of the expression aliases that read it,
+        /// describe values the parts written from now on do not return.
+        if (codec)
+            metadata.dropImplicitIndicesOverLossyColumns();
+
     }
     else if (type == MODIFY_ORDER_BY)
     {

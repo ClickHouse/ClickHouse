@@ -776,6 +776,8 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         else
             new_metadata.addImplicitIndicesForColumn(column, context);
     }
+    /// An index kept above may read a column whose codec has become lossy.
+    new_metadata.dropImplicitIndicesOverLossyColumns();
     new_metadata.addImplicitIndicesForVirtualColumns(context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)

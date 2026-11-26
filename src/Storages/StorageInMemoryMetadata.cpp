@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 
@@ -1042,6 +1043,28 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
     return names;
 }
 
+namespace
+{
+
+/// Whether the index reads a column that is compressed with a lossy codec.
+bool readsLossyColumn(const IndexDescription & index, const ColumnsDescription & columns)
+{
+    if (!index.expression)
+        return false;
+
+    for (const auto & name : index.expression->getRequiredColumns())
+    {
+        /// The expression may read a subcolumn, whose streams are a part of the streams of its column.
+        const auto column_or_subcolumn = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name);
+        const auto * column = column_or_subcolumn ? columns.tryGet(column_or_subcolumn->getNameInStorage()) : nullptr;
+        if (column && hasLossyCodec(*column))
+            return true;
+    }
+    return false;
+}
+
+}
+
 void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
 {
     // Ephemeral columns are excluded from implicit indices because they are not persisted;
@@ -1089,7 +1112,9 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
                 KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
-                secondary_indices.push_back(std::move(index));
+                /// The index would hold the values before compression, which a lossy codec does not preserve.
+                if (!readsLossyColumn(index, columns))
+                    secondary_indices.push_back(std::move(index));
             }
             catch (const Exception & e)
             {
@@ -1114,6 +1139,20 @@ void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column
         /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
         /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
         if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesOverLossyColumns()
+{
+    static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        /// Only the indices of the columns of the table: a virtual column has no codec.
+        if (index_it->isImplicitlyCreated() && index_it->name.starts_with(implicit_index_prefix)
+            && columns.has(index_it->name.substr(implicit_index_prefix.size())) && readsLossyColumn(*index_it, columns))
             index_it = secondary_indices.erase(index_it);
         else
             ++index_it;

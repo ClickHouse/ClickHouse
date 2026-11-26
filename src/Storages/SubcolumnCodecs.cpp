@@ -234,4 +234,23 @@ ASTPtr getSubstreamCodecDescription(const ISerialization::SubstreamPath & substr
     return nullptr;
 }
 
+bool hasLossyCodec(const ColumnDescription & column)
+{
+    if ((!column.codec && column.subcolumn_codecs.empty()) || !column.type)
+        return false;
+
+    /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
+    /// so lossiness is resolved per substream the way the part writer resolves it.
+    bool is_lossy = false;
+    ISerialization::StreamCallback callback = [&](const auto & substream_path)
+    {
+        if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+            return;
+        auto codec = getSubstreamCodecDescription(substream_path, column);
+        is_lossy = codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
+    };
+    column.type->getDefaultSerialization()->enumerateStreams(callback, column.type);
+    return is_lossy;
+}
+
 }

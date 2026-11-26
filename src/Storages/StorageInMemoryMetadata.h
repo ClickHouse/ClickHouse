@@ -353,6 +353,13 @@ struct StorageInMemoryMetadata
     void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
     void dropImplicitIndicesForColumn(const String & column_name);
 
+    /// An index is calculated from the values before compression, so over a column with a lossy codec
+    /// (e.g. `SZ3`) it describes values that the part does not return, and it would prune rows that match.
+    /// A column gets no implicit index if it, or a column its `ALIAS` expression reads, has such a codec
+    /// (see `addImplicitIndicesForColumn`). This drops the implicit indices that became such after
+    /// a change of a codec.
+    void dropImplicitIndicesOverLossyColumns();
+
     /// Columns that are `ALIAS` over an expression (not a plain column reference) whose expression
     /// references any of `redefined_columns`, directly or through other aliases. The implicit index of
     /// such a column is built over the expanded alias expression, so a metadata-only redefinition of a
