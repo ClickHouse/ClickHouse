@@ -176,6 +176,32 @@ void collectRowPreservingTableExpressions(const QueryTreeNodePtr & node, std::un
     }
 }
 
+/// Collect the function nodes of an expression, not inside subqueries: the nodes whose arguments a rewrite can replace.
+void collectFunctionNodes(const QueryTreeNodePtr & node, std::unordered_set<const IQueryTreeNode *> & result)
+{
+    if (!node || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return;
+
+    if (node->as<FunctionNode>())
+        result.insert(node.get());
+
+    for (const auto & child : node->getChildren())
+        collectFunctionNodes(child, result);
+}
+
+/// An expression with an alias is one node shared by every section of the query that uses the alias, e.g. by `WHERE`
+/// and `HAVING` in `WITH name = 'x' AS c ... WHERE c ... HAVING c`. A rewrite of the node in one section changes it in all.
+/// A section is identified by its place among the children of the query, as the same node can be the whole of two sections.
+bool isSharedWithOtherSections(const QueryNode & query_node, const QueryTreeNodePtr * section)
+{
+    std::unordered_set<const IQueryTreeNode *> section_nodes;
+    std::unordered_set<const IQueryTreeNode *> other_nodes;
+    for (const auto & child : query_node.getChildren())
+        collectFunctionNodes(child, &child == section ? section_nodes : other_nodes);
+
+    return std::ranges::any_of(section_nodes, [&](const IQueryTreeNode * function_node) { return other_nodes.contains(function_node); });
+}
+
 /// A view's inner query is resolved for inspection only (`QueryAnalyzer` with `only_analyze`), separately
 /// from the analysis done when the view is read. The definition is usable only if both agree on which
 /// dictionary and attribute every `dictGet` reads, and this is decided by the definition itself, before
@@ -905,7 +931,10 @@ public:
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         if (!query_scopes.empty() && parent.get() == query_scopes.back().query_node)
-            query_scopes.back().current_section = child.get();
+        {
+            query_scopes.back().current_section = &child;
+            query_scopes.back().current_section_is_shared.reset();
+        }
         return true;
     }
 
@@ -1496,8 +1525,11 @@ private:
     struct QueryScope
     {
         const IQueryTreeNode * query_node = nullptr;
-        /// The child of `query_node` that is being visited, e.g. its `WHERE` or projection.
-        const IQueryTreeNode * current_section = nullptr;
+        /// The child of `query_node` that is being visited, e.g. its `WHERE` or projection: its place among the children,
+        /// because the same node can be the whole of two sections (`WHERE c ... HAVING c`).
+        const QueryTreeNodePtr * current_section = nullptr;
+        /// Whether `current_section` shares a node with another section, see `isSharedWithOtherSections`. Computed when needed.
+        std::optional<bool> current_section_is_shared = std::nullopt;
     };
 
     /// A comparison with a column of a view or a subquery is rewritten into a comparison with the key
@@ -1506,7 +1538,7 @@ private:
     /// and `PREWHERE` of the query that reads the source: after aggregation the key column is not
     /// available, and on the side of an outer join extended with defaults the source column holds the
     /// default value. A direct `dictGet` call is not restricted: its key expression is evaluated in place.
-    [[nodiscard]] bool canLookThroughColumn(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool canLookThroughColumn(const QueryTreeNodePtr & node)
     {
         const auto * column_node = node->as<ColumnNode>();
         if (!column_node)
@@ -1515,19 +1547,30 @@ private:
         if (query_scopes.empty())
             return false;
 
-        const auto & scope = query_scopes.back();
+        auto & scope = query_scopes.back();
         const auto & query_node = scope.query_node->as<const QueryNode &>();
-        if (!scope.current_section
-            || (scope.current_section != query_node.getWhere().get() && scope.current_section != query_node.getPrewhere().get()))
+        if (!scope.current_section || (scope.current_section != &query_node.getWhere() && scope.current_section != &query_node.getPrewhere()))
             return false;
 
         auto column_source = column_node->getColumnSourceOrNull();
         if (!column_source)
             return false;
 
+        /// Only a column of a subquery or a view is looked through, see `tryResolveColumnDefinition`.
+        const auto * table_node = column_source->as<TableNode>();
+        if (!column_source->as<QueryNode>() && !(table_node && typeid_cast<const StorageView *>(table_node->getStorage().get())))
+            return false;
+
         std::unordered_set<const IQueryTreeNode *> row_preserving_table_expressions;
         collectRowPreservingTableExpressions(query_node.getJoinTreeNode(), row_preserving_table_expressions);
-        return row_preserving_table_expressions.contains(column_source.get());
+        if (!row_preserving_table_expressions.contains(column_source.get()))
+            return false;
+
+        /// The rewrite replaces a node of the section in place. If the node is shared with another section,
+        /// the rewrite applies there too, where it is not valid: after aggregation the key column is not available.
+        if (!scope.current_section_is_shared)
+            scope.current_section_is_shared = isSharedWithOtherSections(query_node, scope.current_section);
+        return !*scope.current_section_is_shared;
     }
 
     std::vector<QueryScope> query_scopes;
