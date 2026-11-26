@@ -29,6 +29,8 @@ enum class IvfMetric : uint8_t
 struct IvfParams
 {
     size_t lists = 0;
+    /// Built and searched on the GPU, or else on the CPU, in the same format.
+    bool on_gpu = true;
 };
 
 class TemporaryDataBuffer;
@@ -42,7 +44,7 @@ struct IvfListBucket
 
 struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleIvf(const String & index_name_, IvfMetric metric_, size_t dimensions_);
+    MergeTreeIndexGranuleIvf(const String & index_name_, IvfMetric metric_, size_t dimensions_, bool on_gpu_);
     ~MergeTreeIndexGranuleIvf() override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -60,6 +62,7 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     const String index_name;
     const IvfMetric metric;
     size_t dimensions;
+    const bool on_gpu;
     size_t rows = 0;
     size_t lists = 0;
     /// The lists are the leaves of the tree.

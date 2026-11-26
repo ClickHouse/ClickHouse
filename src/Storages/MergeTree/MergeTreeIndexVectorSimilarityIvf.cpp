@@ -34,6 +34,7 @@
 #include <mutex>
 #include <numeric>
 #include <optional>
+#include <queue>
 #include <random>
 #include <string_view>
 
@@ -184,10 +185,167 @@ void normalizeIvfVector(float * vector, size_t dimensions)
         vector[i] *= inverse;
 }
 
-MergeTreeIndexGranuleIvf::MergeTreeIndexGranuleIvf(const String & index_name_, IvfMetric metric_, size_t dimensions_)
+namespace
+{
+
+/// Eight independent sums, so that the compiler vectorizes the loop without reordering a single sum.
+float dotOf(const float * a, const float * b, size_t dimensions)
+{
+    float sums[8] = {};
+    size_t i = 0;
+    for (; i + 8 <= dimensions; i += 8)
+        for (size_t j = 0; j < 8; ++j)
+            sums[j] += a[i + j] * b[i + j];
+    for (; i < dimensions; ++i)
+        sums[0] += a[i] * b[i];
+    return ((sums[0] + sums[1]) + (sums[2] + sums[3])) + ((sums[4] + sums[5]) + (sums[6] + sums[7]));
+}
+
+void rotateRow(const std::vector<float> & rotation, const float * x, size_t dimensions, float * out)
+{
+    for (size_t i = 0; i < dimensions; ++i)
+        out[i] = dotOf(rotation.data() + i * dimensions, x, dimensions);
+}
+
+/// The records of `n` rows, as `GPU::IvfTreeRouter::assignAndEncode` makes them on the device.
+void assignAndEncodeOnCpu(const IvfTree & tree, const std::vector<float> & rotation, const std::vector<float> & rotated_centroids,
+    const float * vectors, size_t n, size_t dimensions, size_t beam, UInt32 first_row, char * records)
+{
+    const size_t code_bytes = GPU::IvfQuantization::codeBytes(dimensions);
+    const size_t record_bytes = 2 * sizeof(UInt32) + sizeof(GPU::IvfQuantization::CodeParams) + code_bytes;
+    constexpr size_t rows_per_task = 2048;
+    runIvfTasks((n + rows_per_task - 1) / rows_per_task, [&](size_t task)
+    {
+        IvfTree::Scratch scratch;
+        std::vector<UInt32> nearest;
+        std::vector<float> residual(dimensions);
+        for (size_t i = task * rows_per_task; i < std::min(n, (task + 1) * rows_per_task); ++i)
+        {
+            const float * x = vectors + i * dimensions;
+            tree.route(x, beam, 1, nearest, scratch);
+            const UInt32 list = nearest.front();
+            rotateRow(rotation, x, dimensions, residual.data());
+            for (size_t k = 0; k < dimensions; ++k)
+                residual[k] -= rotated_centroids[size_t(list) * dimensions + k];
+            char * record = records + i * record_bytes;
+            const auto code_params = GPU::IvfQuantization::encode(residual.data(), dimensions,
+                reinterpret_cast<uint8_t *>(record + 2 * sizeof(UInt32) + sizeof(GPU::IvfQuantization::CodeParams)));
+            const UInt32 row = first_row + static_cast<UInt32>(i);
+            memcpy(record, &list, sizeof(list));
+            memcpy(record + sizeof(list), &row, sizeof(row));
+            memcpy(record + 2 * sizeof(UInt32), &code_params, sizeof(code_params));
+        }
+    });
+}
+
+/// The scan of lists of `IvfQuantization` codes on the CPU, as `GPU::IvfListScan` does it on the device: the `select` rows
+/// nearest to the query by their codes.
+class CpuListScan
+{
+public:
+    CpuListScan(const float * query, size_t dimensions_, size_t select_, const std::vector<float> & rotation)
+        : dimensions(dimensions_)
+        , words(GPU::IvfQuantization::codeWords(dimensions_))
+        , select(select_)
+        , rotated_query(dimensions_)
+        , u(words * 32, 0.0f)
+    {
+        rotateRow(rotation, query, dimensions, rotated_query.data());
+    }
+
+    void scan(const char * chunk, const UInt64 * list_begins, const UInt32 * list_sizes, size_t num_lists, const float * rotated_centroids)
+    {
+        const size_t params_bytes = sizeof(GPU::IvfQuantization::CodeParams);
+        const size_t code_bytes = GPU::IvfQuantization::codeBytes(dimensions);
+        for (size_t l = 0; l < num_lists; ++l)
+        {
+            /// u = R q - R c, and its squared length and sum.
+            float squared_length = 0;
+            float sum = 0;
+            for (size_t i = 0; i < dimensions; ++i)
+            {
+                u[i] = rotated_query[i] - rotated_centroids[l * dimensions + i];
+                squared_length += u[i] * u[i];
+                sum += u[i];
+            }
+
+            const size_t size = list_sizes[l];
+            const char * rows = chunk + list_begins[l];
+            const char * params = rows + size * sizeof(UInt32);
+            const char * codes = params + size * params_bytes;
+            for (size_t r = 0; r < size; ++r)
+            {
+                GPU::IvfQuantization::CodeParams code_params;
+                memcpy(&code_params, params + r * params_bytes, params_bytes);
+                const float dot = dotWithCodes(codes + r * code_bytes);
+                const float distance = squared_length - 2.0f * (code_params.lo * sum + code_params.step * dot) + code_params.squared_length;
+                if (best.size() < select)
+                {
+                    UInt32 row;
+                    memcpy(&row, rows + r * sizeof(UInt32), sizeof(row));
+                    best.emplace(distance, row);
+                }
+                else if (distance < best.top().first)
+                {
+                    UInt32 row;
+                    memcpy(&row, rows + r * sizeof(UInt32), sizeof(row));
+                    best.pop();
+                    best.emplace(distance, row);
+                }
+            }
+        }
+    }
+
+    /// Nearest first; `invalid_neighbour` and an infinite distance where there are fewer than `select` rows.
+    void result(UInt32 * found_rows, float * found_distances)
+    {
+        for (size_t i = 0; i < select; ++i)
+        {
+            found_rows[i] = invalid_neighbour;
+            found_distances[i] = std::numeric_limits<float>::infinity();
+        }
+        for (size_t i = best.size(); i > 0; --i)
+        {
+            found_rows[i - 1] = best.top().second;
+            found_distances[i - 1] = best.top().first;
+            best.pop();
+        }
+    }
+
+private:
+    /// dot(u, code) of a row, see `IvfQuantization::codeByte`.
+    float dotWithCodes(const char * code) const
+    {
+        float dot = 0;
+        for (size_t w = 0; w < words; ++w)
+            for (size_t part = 0; part < 4; ++part)
+            {
+                UInt32 bits;
+                memcpy(&bits, code + w * 16 + part * 4, sizeof(bits));
+                const float * at = u.data() + w * 32 + part * 8;
+                for (size_t nibble = 0; nibble < 8; ++nibble)
+                    dot += at[nibble] * static_cast<float>((bits >> (4 * nibble)) & 15u);
+            }
+        return dot;
+    }
+
+    const size_t dimensions;
+    const size_t words;
+    const size_t select;
+    std::vector<float> rotated_query;
+    /// Of the list being scanned, padded with zeros to the components of the codes.
+    std::vector<float> u;
+    /// A max-heap of the best rows so far.
+    std::priority_queue<std::pair<float, UInt32>> best;
+};
+
+}
+
+MergeTreeIndexGranuleIvf::MergeTreeIndexGranuleIvf(const String & index_name_, IvfMetric metric_, size_t dimensions_, bool on_gpu_)
     : index_name(index_name_)
     , metric(metric_)
     , dimensions(dimensions_)
+    , on_gpu(on_gpu_)
 {
 }
 
@@ -393,7 +551,12 @@ NearestNeighbours MergeTreeIndexGranuleIvf::search(const std::vector<float> & qu
         lists_file->readStrict(to, size);
     };
 
-    GPU::IvfListScan scan(query.data(), 1, dimensions, select, rotation.data());
+    std::optional<GPU::IvfListScan> scan;
+    std::optional<CpuListScan> cpu_scan;
+    if (on_gpu)
+        scan.emplace(query.data(), 1, dimensions, select, rotation.data());
+    else
+        cpu_scan.emplace(query.data(), dimensions, select, rotation);
 
     const size_t entry_bytes = entryBytes();
     auto list_begin = [&](UInt32 list) { return list_offsets[list] * entry_bytes; };
@@ -484,7 +647,10 @@ NearestNeighbours MergeTreeIndexGranuleIvf::search(const std::vector<float> & qu
         std::iota(query_lists.begin(), query_lists.end(), 0);
         const std::array<UInt32, 2> query_list_offsets = {0, static_cast<UInt32>(query_lists.size())};
         Stopwatch scan_watch;
-        scan.scan(chunk.bytes.data(), chunk.bytes.size(), chunk.begins.data(), chunk.sizes.data(), chunk.begins.size(),
+        if (cpu_scan)
+            cpu_scan->scan(chunk.bytes.data(), chunk.begins.data(), chunk.sizes.data(), chunk.begins.size(), chunk.rotated_centroids.data());
+        else
+            scan->scan(chunk.bytes.data(), chunk.bytes.size(), chunk.begins.data(), chunk.sizes.data(), chunk.begins.size(),
             chunk.rotated_centroids.data(), query_list_offsets.data(), query_lists.data());
         ProfileEvents::increment(ProfileEvents::IvfIndexListScanMicroseconds, scan_watch.elapsedMicroseconds());
         first_range = last_range;
@@ -492,7 +658,10 @@ NearestNeighbours MergeTreeIndexGranuleIvf::search(const std::vector<float> & qu
 
     std::vector<UInt32> found_rows(select);
     std::vector<float> found_distances(select);
-    scan.result(found_rows.data(), found_distances.data());
+    if (cpu_scan)
+        cpu_scan->result(found_rows.data(), found_distances.data());
+    else
+        scan->result(found_rows.data(), found_distances.data());
 
     /// The codes give |q - x|^2, which for normalized vectors is 2 (1 - cos).
     const float distance_scale = metric == IvfMetric::Cosine ? 0.5f : 1.0f;
@@ -542,11 +711,12 @@ void MergeTreeIndexAggregatorIvf::add(const float * vector)
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleIvf>(index_name, metric, dimensions);
+    auto granule = std::make_shared<MergeTreeIndexGranuleIvf>(index_name, metric, dimensions, params.on_gpu);
     if (rows == 0)
         return granule;
 
-    checkCanUseDevice();
+    if (params.on_gpu)
+        checkCanUseDevice();
     Stopwatch watch;
     SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::IvfIndexBuildMicroseconds, watch.elapsedMicroseconds()); });
     const size_t sample_rows = sample.size() / dimensions;
@@ -599,8 +769,10 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
             level_centroids[l] = tree.centroidsOf(l).data();
             level_child_offsets[l] = tree.childOffsetsOf(l).data();
         }
-        const GPU::IvfTreeRouter router(dimensions, tree.depth(), level_nodes.data(), level_centroids.data(), level_child_offsets.data(),
-            granule->rotation.data(), granule->rotated_centroids.data());
+        std::optional<GPU::IvfTreeRouter> router;
+        if (params.on_gpu)
+            router.emplace(dimensions, tree.depth(), level_nodes.data(), level_centroids.data(), level_child_offsets.data(),
+                granule->rotation.data(), granule->rotated_centroids.data());
 
         std::vector<float> block(block_rows * dimensions);
         for (size_t first = 0; first < rows; first += block_rows)
@@ -612,7 +784,11 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
 
             Stopwatch assign_watch;
             records.resize(n * record_bytes);
-            router.assignAndEncode(block.data(), n, beam, static_cast<UInt32>(first), records.data());
+            if (router)
+                router->assignAndEncode(block.data(), n, beam, static_cast<UInt32>(first), records.data());
+            else
+                assignAndEncodeOnCpu(tree, granule->rotation, granule->rotated_centroids, block.data(), n, dimensions, beam,
+                    static_cast<UInt32>(first), records.data());
             assign_seconds += assign_watch.elapsedSeconds();
             ProfileEvents::increment(ProfileEvents::IvfIndexAssignMicroseconds, assign_watch.elapsedMicroseconds());
 
@@ -793,7 +969,7 @@ MergeTreeIndexIvf::MergeTreeIndexIvf(
 
 MergeTreeIndexGranulePtr MergeTreeIndexIvf::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleIvf>(index.name, metric, dimensions);
+    return std::make_shared<MergeTreeIndexGranuleIvf>(index.name, metric, dimensions, params.on_gpu);
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexIvf::getSubstreams() const
@@ -846,6 +1022,8 @@ IvfParams parseParams(const FieldVector & args)
     IvfParams params;
     if (args.size() >= 4)
         params.lists = args[3].safeGet<UInt64>();
+    if (args.size() >= 5)
+        params.on_gpu = args[4].safeGet<String>() == "gpu";
     return params;
 }
 
@@ -859,9 +1037,9 @@ MergeTreeIndexPtr ivfIndexCreator(StorageMetadataPtr metadata_snapshot, const In
 
 void ivfIndexValidator(const IndexDescription & index, const FieldVector & args)
 {
-    if (args.size() < 3 || args.size() > 4)
+    if (args.size() < 3 || args.size() > 5)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Vector similarity index with method 'ivf' must have three or four arguments: method, distance function, dimensions[, lists]");
+            "Vector similarity index with method 'ivf' must have three to five arguments: method, distance function, dimensions[, lists[, device]]");
     if (args[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
     if (args[2].getType() != Field::Types::UInt64)
@@ -872,6 +1050,8 @@ void ivfIndexValidator(const IndexDescription & index, const FieldVector & args)
     if (args.size() >= 4 && (args[3].getType() != Field::Types::UInt64 || args[3].safeGet<UInt64>() > (1ULL << 24)))
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Fourth argument of vector similarity index with method 'ivf' (lists) must be a UInt64 of at most 2^24, 0 for one list per 1024 rows");
+    if (args.size() >= 5 && (args[4].getType() != Field::Types::String || (args[4].safeGet<String>() != "gpu" && args[4].safeGet<String>() != "cpu")))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Fifth argument of vector similarity index with method 'ivf' (device) must be 'gpu' or 'cpu'");
 
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must be created on a single column");
