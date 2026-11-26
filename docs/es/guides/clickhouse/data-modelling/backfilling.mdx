@@ -1,21 +1,19 @@
 ---
 slug: /data-modeling/backfilling
-title: 'Carga histórica de datos'
-description: 'Cómo hacer carga histórica de grandes conjuntos de datos en ClickHouse'
-keywords: ['vistas materializadas', 'carga histórica', 'inserción de datos', 'carga de datos resiliente']
+title: 'Carga de datos históricos'
+description: 'Cómo hacer carga de datos históricos de grandes conjuntos de datos en ClickHouse'
+keywords: ['vistas materializadas', 'carga de datos históricos', 'inserción de datos', 'carga de datos resiliente']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
-Tanto si está empezando con ClickHouse como si es responsable de una implementación existente, inevitablemente tendrá que rellenar tablas con datos históricos. En algunos casos, esto es relativamente sencillo, pero puede complicarse cuando también es necesario poblar vistas materializadas. Esta guía documenta algunos procesos para esta tarea que puede aplicar a su caso de uso.
+Tanto si está empezando con ClickHouse como si es responsable de una implementación existente, inevitablemente tendrá que realizar una carga de datos históricos en tablas. En algunos casos, esto es relativamente sencillo, pero puede complicarse cuando también es necesario poblar vistas materializadas. Esta guía documenta algunos procesos para esta tarea que puede aplicar a su caso de uso.
 
 <Note>
   Esta guía asume que los usuarios ya están familiarizados con el concepto de [vistas materializadas incrementales](/es/concepts/features/materialized-views/incremental-materialized-view) y la [carga de datos mediante funciones de tabla como s3 y gcs](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse). También recomendamos leer nuestra guía sobre [cómo optimizar el rendimiento de inserción desde el almacenamiento de objetos](/es/integrations/connectors/data-ingestion/AWS/performance), cuyos consejos pueden aplicarse a las inserciones a lo largo de toda esta guía.
 </Note>
 
 <div id="example-dataset">
-  ## Conjunto de datos de ejemplo
+  ## Conjunto de datos de ejemplo {#example-dataset}
 </div>
 
 A lo largo de esta guía, usamos un conjunto de datos de PyPI. Cada fila de este conjunto de datos representa la descarga de un paquete de Python con una herramienta como `pip`.
@@ -72,7 +70,7 @@ SETTINGS describe_compact_output = 1
 </Note>
 
 <div id="backfilling-scenarios">
-  ## Escenarios de carga histórica
+  ## Escenarios de carga histórica {#backfilling-scenarios}
 </div>
 
 La carga histórica suele ser necesaria cuando se consume un flujo de datos a partir de un momento determinado. Estos datos se insertan en tablas de ClickHouse con [vistas materializadas incrementales](/es/concepts/features/materialized-views/incremental-materialized-view), que se disparan sobre los bloques a medida que se insertan. Estas vistas pueden transformar los datos antes de insertarlos o calcular agregados y enviar los resultados a tablas de destino para su uso posterior en otras aplicaciones.
@@ -87,7 +85,7 @@ Asumimos que los datos se cargarán de forma histórica desde almacenamiento de 
 Recomendamos cargar los datos históricos desde almacenamiento de objetos. Siempre que sea posible, los datos deben exportarse a Parquet para obtener un rendimiento de lectura y una compresión óptimos (menos transferencia por red). Normalmente se prefiere un tamaño de archivo de alrededor de 150 MB, pero ClickHouse admite más de [70 formatos de archivo](/es/reference/formats/index) y puede gestionar archivos de cualquier tamaño.
 
 <div id="using-duplicate-tables-and-views">
-  ## Uso de tablas duplicadas y vistas
+  ## Uso de tablas duplicadas y vistas {#using-duplicate-tables-and-views}
 </div>
 
 En todos los escenarios, nos apoyamos en el concepto de &quot;tablas y vistas duplicadas&quot;. Estas tablas y vistas son copias de las utilizadas para los datos de streaming en vivo y permiten realizar la carga histórica de forma aislada, con un mecanismo sencillo de recuperación ante posibles fallos. Por ejemplo, disponemos de la siguiente tabla principal `pypi` y vista materializada, que calcula el número de descargas por proyecto de Python:
@@ -301,7 +299,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
-  ## Escenario 1: Carga histórica de datos con ingestión de datos existente
+  ## Escenario 1: Carga histórica de datos con ingestión de datos existente {#scenario-1-backfilling-data-with-existing-data-ingestion}
 </div>
 
 En este escenario, asumimos que los datos para la carga histórica no están en un bucket aislado y que, por lo tanto, es necesario aplicar un filtro. Los datos ya se están insertando y se puede identificar una marca de tiempo o una columna monotónicamente creciente a partir de la cual es necesario recuperar los datos históricos.
@@ -372,7 +370,7 @@ Si los datos históricos están en un bucket aislado, no se necesita el filtro d
 </Info>
 
 <div id="scenario-2-adding-materialized-views-to-existing-tables">
-  ## Escenario 2: Añadir vistas materializadas a tablas existentes
+  ## Escenario 2: Añadir vistas materializadas a tablas existentes {#scenario-2-adding-materialized-views-to-existing-tables}
 </div>
 
 No es raro tener que añadir nuevas vistas materializadas a una configuración en la que ya se ha cargado un volumen considerable de datos y se siguen insertando datos. En este caso, resulta útil disponer de una columna de marca de tiempo o de una columna monótonamente creciente que permita identificar un punto del flujo y evitar pausas en la ingestión de datos. En los ejemplos siguientes, asumimos ambos casos y priorizamos enfoques que eviten pausas en la ingestión.
@@ -384,7 +382,7 @@ No es raro tener que añadir nuevas vistas materializadas a una configuración e
 </Info>
 
 <div id="timestamp-or-monotonically-increasing-column-available">
-  ### Timestamp o columna monotónicamente creciente disponible
+  ### Timestamp o columna monotónicamente creciente disponible {#timestamp-or-monotonically-increasing-column-available}
 </div>
 
 En este caso, recomendamos que la nueva vista materializada incluya un filtro que restrinja las filas a aquellas posteriores a una fecha arbitraria en el futuro. Posteriormente, la vista materializada puede rellenarse a partir de esa fecha con datos históricos de la tabla principal. El enfoque de carga histórica depende del volumen de datos y de la complejidad de la consulta asociada.
@@ -470,15 +468,17 @@ En este caso, los usuarios tienen varias opciones:
 
 A continuación, profundizamos en (2).
 
-<div id="using-a-null-table-engine-for-filling-materialized-views">
-  #### Uso de un motor de tabla Null para rellenar vistas materializadas
-</div>
+#### Uso de un motor de tabla Null para rellenar vistas materializadas {#using-a-null-table-engine-for-filling-materialized-views}
 
 El [motor de tabla Null](/es/reference/engines/table-engines/special/null) proporciona un motor de almacenamiento que no persiste los datos (piensa en él como el `/dev/null` del mundo de los motores de tabla). Aunque pueda parecer contradictorio, las vistas materializadas siguen ejecutándose sobre los datos insertados en este motor de tabla. Esto permite construir vistas materializadas sin persistir los datos originales, evitando la E/S y el almacenamiento asociado.
 
 Es importante destacar que cualquier vista materializada adjunta al motor de tabla sigue ejecutándose sobre bloques de datos a medida que se insertan, enviando los resultados a una tabla de destino. Estos bloques tienen un tamaño configurable. Aunque los bloques más grandes pueden ser más eficientes (y procesarse más rápido), consumen más recursos (principalmente memoria). El uso de este motor de tabla significa que podemos crear nuestra vista materializada de forma incremental, es decir, un bloque cada vez, evitando así tener que mantener toda la agregación en memoria.
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="Desnormalización en ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Desnormalización en ClickHouse](/images/data-modeling/null_table_mv.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -523,7 +523,7 @@ Peak memory usage: 639.47 MiB.
 Observe que el uso de memoria aquí es de `639.47 MiB`.
 
 <div id="tuning-performance--resources">
-  ##### Ajuste de rendimiento &amp; recursos
+  ##### Ajuste de rendimiento &amp; recursos {#tuning-performance--resources}
 </div>
 
 Varios factores determinarán el rendimiento y los recursos utilizados en el escenario anterior. Antes de intentar ajustar la configuración, recomendamos que los lectores comprendan los mecanismos de inserción documentados en detalle en la sección [Using Threads for Reads](/es/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) de la [guía Optimizing for S3 Insert and Read Performance](/es/integrations/connectors/data-ingestion/AWS/performance). En resumen:
@@ -595,7 +595,7 @@ Peak memory usage: 218.64 MiB.
 Por último, ten en cuenta que reducir el tamaño de los bloques genera más partes y aumenta la presión sobre las operaciones de merge. Como se explica [aquí](/es/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges), estos ajustes deben modificarse con cautela.
 
 <div id="no-timestamp-or-monotonically-increasing-column">
-  ### Sin columna de marca de tiempo ni columna monotónicamente creciente
+  ### Sin columna de marca de tiempo ni columna monotónicamente creciente {#no-timestamp-or-monotonically-increasing-column}
 </div>
 
 Los procesos anteriores dependen de que el usuario tenga una columna de marca de tiempo o una columna monotónicamente creciente. En algunos casos, esto sencillamente no está disponible. En ese caso, recomendamos el siguiente proceso, que aprovecha muchos de los pasos descritos anteriormente, pero requiere que los usuarios pausen la ingesta.

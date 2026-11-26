@@ -10,18 +10,15 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
-  ## サポートされているPostgresのバージョン
+  ## サポートされているPostgresのバージョン {#supported-postgres-versions}
 </div>
 
 ClickPipes は Postgres 12 以降をサポートしています。
 
-<div id="enable-logical-replication">
-  ## 論理レプリケーションを有効にする
-</div>
+## 論理レプリケーションを有効にする {#enable-logical-replication}
 
 RDSインスタンスで以下の設定がすでに有効になっている場合は、このセクションはスキップできます。
 
@@ -42,21 +39,35 @@ postgres=> SHOW rds.logical_replication ;
 1. 必要な設定を含む、使用中の Postgres バージョン用の新しいパラメータグループを作成します。
    * `rds.logical_replication` を 1 に設定します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="RDS でパラメータグループを確認する場所" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![RDS でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+  </Frame>
+</div>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="rds.logical_replication の変更" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![rds.logical_replication の変更](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+  </Frame>
+</div>
 
 2. 新しいパラメータグループを RDS Postgres データベースに適用します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="新しいパラメータグループを使用して RDS Postgres を変更" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![新しいパラメータグループを使用して RDS Postgres を変更](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+  </Frame>
+</div>
 
 3. 変更を反映するため、RDS インスタンスを再起動します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="RDS Postgres の再起動" size="lg" border />
-
-<div id="configure-database-user">
-  ## データベースユーザーを設定する
+<div className="ch-image-lg">
+  <Frame>
+    ![RDS Postgres を再起動](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+  </Frame>
 </div>
+
+## データベースユーザーを設定する {#configure-database-user}
 
 管理者ユーザーとして RDS Postgres インスタンスに接続し、次のコマンドを実行します。
 
@@ -92,16 +103,16 @@ postgres=> SHOW rds.logical_replication ;
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
+* 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケートする意図がある場合を除き、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
 <div id="iam-authentication">
-  ### IAM認証を使用する (任意)
+  ### IAM認証を使用する (任意) {#iam-authentication}
 </div>
 
 <IAMAuthentication engine="postgres" service="rds">
@@ -111,27 +122,33 @@ postgres=> SHOW rds.logical_replication ;
 </IAMAuthentication>
 
 <div id="configure-network-access">
-  ## ネットワークアクセスを設定する
+  ## ネットワークアクセスを設定する {#configure-network-access}
 </div>
 
-<div id="ip-based-access-control">
-  ### IP ベースのアクセス制御
-</div>
+### IP ベースのアクセス制御 {#ip-based-access-control}
 
 RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="RDS Postgres でセキュリティグループはどこにありますか？" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![RDS Postgres のセキュリティグループの確認場所](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+  </Frame>
+</div>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="上記のセキュリティグループの Inbound rules を編集" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![上記のセキュリティグループのインバウンドルールを編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+  </Frame>
+</div>
 
 <div id="private-access-via-aws-privatelink">
-  ### AWS PrivateLink を介したプライベートアクセス
+  ### AWS PrivateLink を介したプライベートアクセス {#private-access-via-aws-privatelink}
 </div>
 
 プライベートネットワーク経由で RDS インスタンスに接続するには、AWS PrivateLink を使用できます。接続を設定するには、[ClickPipes 向け AWS PrivateLink セットアップガイド](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)を参照してください。
 
 <div id="workarounds-for-rds-proxy">
-  ### RDS Proxy の回避策
+  ### RDS Proxy の回避策 {#workarounds-for-rds-proxy}
 </div>
 
 RDS Proxy は論理レプリケーション接続をサポートしていません。RDS で動的 IP アドレスを使用していて、DNS 名または Lambda を使えない場合は、次の代替手段があります。
@@ -142,7 +159,7 @@ RDS Proxy は論理レプリケーション接続をサポートしていませ�
 4. Terraform や CloudFormation などのツールを使用して、IP アドレス管理を自動化します。
 
 <div id="whats-next">
-  ## 次のステップ
+  ## 次のステップ {#whats-next}
 </div>
 
 これで、[ClickPipe を作成](/ja/integrations/clickpipes/postgres/index)して、Postgres インスタンスから ClickHouse Cloud へのデータの取り込みを開始できます。

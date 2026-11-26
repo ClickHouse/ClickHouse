@@ -609,7 +609,7 @@ String LogInfoCommand::run()
         writeText('\n', ret);
     };
     append("first_log_idx", log_info.first_log_idx);
-    append("first_log_term", log_info.first_log_idx);
+    append("first_log_term", log_info.first_log_term);
     append("last_log_idx", log_info.last_log_idx);
     append("last_log_term", log_info.last_log_term);
     append("last_committed_log_idx", log_info.last_committed_log_idx);

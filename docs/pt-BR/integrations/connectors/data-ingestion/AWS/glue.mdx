@@ -10,17 +10,13 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 [Amazon Glue](https://aws.amazon.com/glue/) é um serviço de integração de dados totalmente gerenciado e sem servidor fornecido pela Amazon Web Services (AWS). Ele simplifica o processo de descoberta, preparação e transformação de dados para análise, aprendizado de máquina e desenvolvimento de aplicações.
 
-<div id="installation">
-  ## Instalação
-</div>
+## Instalação {#installation}
 
 Para integrar seu código do Glue ao ClickHouse, você pode usar nosso Spark conector oficial no Glue de uma das seguintes formas:
 
@@ -41,13 +37,21 @@ Para integrar seu código do Glue ao ClickHouse, você pode usar nosso Spark con
       <Step title="Ativar o conector e criar uma conexão" id="activate-the-connector">
         Após assinar, selecione a versão do Glue que corresponde aos requisitos do seu job. Na seção **Additional details**, em **Usage instructions**, clique no link para **Open Glue Studio - Add ClickHouse connector**. Isso abre a página de criação de conexão do Glue com os principais campos já preenchidos. Dê um nome à conexão e clique em Create (não é necessário informar os detalhes de conexão do ClickHouse nesta etapa).
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size="md" alt="Instruções de uso do AWS Marketplace para o ClickHouse Glue conector" />
+        <div className="ch-image-md">
+          <Frame>
+            ![Instruções de uso do AWS Marketplace para o ClickHouse Glue conector](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+          </Frame>
+        </div>
       </Step>
 
       <Step title="Usar no job do Glue" id="use-in-glue-job">
-        No seu job do Glue, selecione a aba `Job details` e expanda a seção `Advanced properties`. Na seção `Connections`, selecione a conexão que você acabou de criar. O conector injeta automaticamente os JARs necessários no ambiente de execução do job.
+        No seu job do Glue, selecione a aba `Job details` e expanda a seção `Advanced properties`. Na seção `Connections`, selecione a conexão que você acabou de criar. O conector injeta automaticamente os JARs necessários no tempo de execução do job.
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Configuração de conexões do notebook do Glue" force="true" />
+        <div className="ch-image-md">
+          <Frame>
+            ![Configuração de conexões do notebook do Glue](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+          </Frame>
+        </div>
 
         <Note>
           Certifique-se de selecionar a versão do conector que corresponde à configuração do seu job do Glue:
@@ -74,20 +78,24 @@ Para integrar seu código do Glue ao ClickHouse, você pode usar nosso Spark con
       <Step title="Configurar o caminho do JAR dependente">
         Na aba `Job details`, role para baixo, expanda o menu suspenso `Advanced properties` e preencha o caminho dos JARs em `Dependent JARs path`:
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Opções de caminho de JAR do notebook do Glue" force="true" />
+        <div className="ch-image-md">
+          <Frame>
+            ![Opções de caminho de JAR do notebook do Glue](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+          </Frame>
+        </div>
       </Step>
     </Steps>
   </Tab>
 </Tabs>
 
 <div id="secrets-manager">
-  ## Usando o AWS Secrets Manager para credenciais
+  ## Usando o AWS Secrets Manager para credenciais {#secrets-manager}
 </div>
 
 Em vez de definir manualmente o usuário e a senha do ClickHouse no job, armazene-os no [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/) e faça referência ao segredo na conexão do Glue ou no script do job. Em tempo de execução, o Glue busca o segredo e mescla seus pares chave-valor às opções de conexão do conector.
 
 <div id="create-secret">
-  ### Criar o segredo
+  ### Criar o segredo {#create-secret}
 </div>
 
 No AWS Secrets Manager, crie um segredo do tipo **Outro tipo de segredo** com pares chave-valor cujas chaves correspondam aos nomes das opções do conector:
@@ -100,7 +108,7 @@ No AWS Secrets Manager, crie um segredo do tipo **Outro tipo de segredo** com pa
 Qualquer chave que você incluir no segredo será encaminhada ao conector, então você também pode armazenar `host`, `database` ou qualquer outra opção nele, caso queira mantê-los fora do código.
 
 <div id="reference-secret">
-  ### Faça referência ao segredo
+  ### Faça referência ao segredo {#reference-secret}
 </div>
 
 Há duas maneiras de vincular o segredo a um job.
@@ -143,9 +151,7 @@ Há duas maneiras de vincular o segredo a um job.
 
 As chaves `user` e `password` do segredo são mescladas às opções do conector em tempo de execução, portanto você nunca precisará lê-las no seu script.
 
-<div id="example">
-  ## Exemplos
-</div>
+## Exemplos {#example}
 
 Os exemplos abaixo usam `marketplace.spark` e fazem referência ao conector por `connectionName`. Se você instalou o conector manualmente (aba Instalação manual), use `connection_type="custom.spark"` e passe `className`, `host`, `http_port`, `user` e `password` diretamente nas opções.
 
@@ -155,7 +161,11 @@ Se você associou um segredo da AWS à própria conexão (Opção 1 em [Usando o
   <Tab title="Editor visual">
     Você pode usar o conector do ClickHouse como origem ou destino no editor visual do Glue Studio. Basta arrastar o componente ClickHouse Spark conector para a área de trabalho e conectá-lo ao pipeline de dados.
 
-    <Image img="/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png" size="md" alt="Editor visual do Glue Studio com o conector do ClickHouse" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Editor visual do Glue Studio com o conector do ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+      </Frame>
+    </div>
   </Tab>
 
   <Tab title="Scala">

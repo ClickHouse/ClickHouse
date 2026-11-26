@@ -7,13 +7,11 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'BigQuery']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
-Template BigQuery to ClickHouse — это батч-конвейер, предназначенный для приёма данных из таблицы BigQuery в таблицу ClickHouse.
+Template Из BigQuery в ClickHouse — это батч-конвейер, предназначенный для приёма данных из таблицы BigQuery в таблицу ClickHouse.
 Template может читать всю таблицу или фильтровать определённые записи с помощью указанного SQL-запроса.
 
 <div id="pipeline-requirements">
-  ## Требования к конвейеру
+  ## Требования к конвейеру {#pipeline-requirements}
 </div>
 
 * Исходная таблица BigQuery должна существовать.
@@ -21,7 +19,7 @@ Template может читать всю таблицу или фильтрова
 * Хост ClickHouse должен быть доступен с машин-воркеров Dataflow.
 
 <div id="template-parameters">
-  ## Параметры Template
+  ## Параметры Template {#template-parameters}
 </div>
 
 <br />
@@ -52,7 +50,7 @@ Template может читать всю таблицу или фильтрова
 </Note>
 
 <div id="source-and-target-tables-schema">
-  ## Схема исходной и целевой таблиц
+  ## Схема исходной и целевой таблиц {#source-and-target-tables-schema}
 </div>
 
 Чтобы эффективно загрузить набор данных BigQuery в ClickHouse, конвейер выполняет процесс сопоставления столбцов в следующие этапы:
@@ -67,7 +65,7 @@ Template может читать всю таблицу или фильтрова
 </Warning>
 
 <div id="data-types-mapping">
-  ## Сопоставление типов данных
+  ## Сопоставление типов данных {#data-types-mapping}
 </div>
 
 Типы BigQuery преобразуются на основе определения таблицы ClickHouse. Поэтому в таблице выше приведено
@@ -83,11 +81,9 @@ Template может читать всю таблицу или фильтрова
 | [**Numeric — целочисленные типы**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)      | [**Целочисленные типы**](/ru/reference/data-types/int-uint)   | В BigQuery все типы Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) являются псевдонимами `INT64`. Мы рекомендуем выбирать в ClickHouse подходящий размер целочисленного типа, так как шаблон будет преобразовывать столбец на основе заданного типа столбца (`Int8`, `Int16`, `Int32`, `Int64`). Шаблон также будет преобразовывать беззнаковые типы Int, если они используются в таблице ClickHouse (`UInt8`, `UInt16`, `UInt32`, `UInt64`). |
 | [**Numeric — типы с плавающей точкой**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**Типы с плавающей точкой**](/ru/reference/data-types/float) | Поддерживаемые типы ClickHouse: `Float32` и `Float64`                                                                                                                                                                                                                                                                                                                                                                                                             |
 
-<div id="running-the-template">
-  ## Запуск Template
-</div>
+## Запуск Template {#running-the-template}
 
-Template BigQuery to ClickHouse можно запустить через Google Cloud CLI.
+Template Из BigQuery в ClickHouse можно запустить через Google Cloud CLI.
 
 <Note>
   Обязательно ознакомьтесь с этим документом, особенно с приведёнными выше разделами, чтобы полностью понять требования к конфигурации Template
@@ -99,11 +95,26 @@ Template BigQuery to ClickHouse можно запустить через Google 
     Войдите в Google Cloud Console и найдите DataFlow.
 
     1. Нажмите кнопку `CREATE JOB FROM TEMPLATE`
-       <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="консоль DataFlow" />
+
+       <div className="ch-image-lg">
+         <Frame>
+           ![консоль DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+         </Frame>
+       </div>
     2. Когда откроется форма Template, введите имя задачи и выберите нужный регион.
-       <Image img="/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp" border alt="начальная форма Template DataFlow" />
-    3. В поле `DataFlow Template` введите `ClickHouse` или `BigQuery`, затем выберите Template `BigQuery to ClickHouse`
-       <Image img="/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp" border alt="выбор Template BigQuery to ClickHouse" />
+
+       <div className="ch-image-lg">
+         <Frame>
+           ![начальная форма Template DataFlow](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+         </Frame>
+       </div>
+    3. В поле `DataFlow Template` введите `ClickHouse` или  `BigQuery`, затем выберите Template `BigQuery to ClickHouse`
+
+       <div className="ch-image-lg">
+         <Frame>
+           ![выбор Template Из BigQuery в ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+         </Frame>
+       </div>
     4. После выбора форма развернётся, и вы сможете указать дополнительные сведения:
        * JDBC URL сервера ClickHouse в следующем формате: `jdbc:clickhouse://host:port/schema`.
        * Имя пользователя ClickHouse.
@@ -116,21 +127,25 @@ Template BigQuery to ClickHouse можно запустить через Google 
       Чтобы добавить его, прокрутите страницу вниз до параметра `Password for ClickHouse Endpoint`.
     </Note>
 
-    <Image img="/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp" border alt="расширенная форма Template BigQuery to ClickHouse" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![расширенная форма Template Из BigQuery в ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+      </Frame>
+    </div>
 
     5. Настройте и добавьте все конфигурации, относящиеся к BigQuery/ClickHouseIO, как подробно описано в
        разделе [Параметры Template](#template-parameters)
   </Tab>
 
   <Tab title="Google Cloud CLI">
-    ### Установка и настройка `gcloud` CLI
+### Установка и настройка `gcloud` CLI {#install--configure-gcloud-cli}
 
     * Если `gcloud` CLI ещё не установлен, установите его по [инструкции](https://cloud.google.com/sdk/docs/install).
     * Следуйте разделу `Before you begin`
       в [этом руководстве](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin), чтобы настроить
       необходимые конфигурации, параметры и разрешения для запуска Template DataFlow.
 
-    ### Запуск команды
+### Запуск команды {#run-command}
 
     Используйте команду [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run),
     чтобы запустить задачу Dataflow, использующую Flex Template.
@@ -143,14 +158,14 @@ Template BigQuery to ClickHouse можно запустить через Google 
      --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
     ```
 
-    ### Разбор команды
+### Разбор команды {#command-breakdown}
 
     * **Имя задачи:** Текст после ключевого слова `run` — это уникальное имя задачи.
     * **Файл Template:** JSON‑файл, указанный в `--template-file-gcs-location`, определяет структуру Template и
       сведения о принимаемых параметрах. Указанный путь к файлу является общедоступным и готов к использованию.
     * **Параметры:** Параметры разделяются запятыми. Для строковых параметров заключайте значения в двойные кавычки.
 
-    ### Ожидаемый ответ
+### Ожидаемый ответ {#expected-response}
 
     После запуска команды вы должны увидеть ответ, похожий на следующий:
 
@@ -167,21 +182,23 @@ Template BigQuery to ClickHouse можно запустить через Google 
   </Tab>
 </Tabs>
 
-<div id="monitor-the-job">
-  ### Отслеживание задачи
-</div>
+### Отслеживание задачи {#monitor-the-job}
 
 Перейдите на [вкладку Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) в Google Cloud Console, чтобы
 отслеживать состояние задачи. Там вы увидите сведения о задаче, включая ход выполнения и возможные ошибки:
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp" size="lg" border alt="Консоль Dataflow с выполняющейся задачей BigQuery в ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Консоль DataFlow с выполняющейся задачей шаблона «Из BigQuery в ClickHouse»](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+  </Frame>
+</div>
 
 <div id="troubleshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubleshooting}
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### Ошибка превышения общего лимита памяти (код 241)
+  ### Ошибка превышения общего лимита памяти (код 241) {#code-241-dbexception-memory-limit-total-exceeded}
 </div>
 
 Эта ошибка возникает, когда у ClickHouse заканчивается память при обработке больших батчей данных. Чтобы устранить проблему:
@@ -190,7 +207,7 @@ Template BigQuery to ClickHouse можно запустить через Google 
 * Уменьшите размер батча: настройте размер батча в конфигурации задачи Dataflow так, чтобы в ClickHouse отправлялись меньшие фрагменты данных и снижалось потребление памяти на каждый батч. Эти изменения помогут сбалансировать использование ресурсов во время ингестии данных.
 
 <div id="template-source-code">
-  ## Исходный код Template
+  ## Исходный код Template {#template-source-code}
 </div>
 
 Исходный код Template доступен в следующих репозиториях:

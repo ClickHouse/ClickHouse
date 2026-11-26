@@ -6,9 +6,7 @@ tags: ['Инструменты и утилиты']
 keywords: ['Windows']
 ---
 
-<div id="example">
-  ## Пример
-</div>
+## Пример {#example}
 
 В этом примере показано, как пользователям AD, входящим в разные группы безопасности AD, можно предоставить ролевой доступ в ClickHouse. Также показано, как пользователя можно добавить в несколько групп пользователей AD, чтобы он получил доступ, предоставляемый несколькими ролями.
 
@@ -35,15 +33,27 @@ keywords: ['Windows']
 
 * Пример среды AD и структуры UO:
 
-<Image img={ad_env} size="md" alt="Пример среды AD и структуры UO" />
+<div className="ch-image-md">
+  <Frame>
+    ![Пример среды AD и структуры UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+  </Frame>
+</div>
 
 * Пример конфигурации группы безопасности AD:
 
-<Image img={ad_group} size="md" alt="Пример конфигурации группы безопасности AD" />
+<div className="ch-image-md">
+  <Frame>
+    ![Пример конфигурации группы безопасности AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+  </Frame>
+</div>
 
 * Пример конфигурации пользователя AD:
 
-<Image img={ad_user} size="md" alt="Пример конфигурации пользователя AD" />
+<div className="ch-image-md">
+  <Frame>
+    ![Пример конфигурации пользователя AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+  </Frame>
+</div>
 
 1. В Windows AD Users and Groups добавьте каждого пользователя в соответствующую группу или группы — они будут сопоставлены с ролями ClickHouse (пример на следующем шаге).
 
@@ -56,7 +66,11 @@ keywords: ['Windows']
 
 * Пример членства пользователя в группах:
 
-<Image img={ad_user_group} size="md" alt="Пример членства пользователя в группах" />
+<div className="ch-image-md">
+  <Frame>
+    ![Пример членства пользователя в группах](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+  </Frame>
+</div>
 
 2. В `config.xml` ClickHouse добавьте конфигурацию `ldap_servers` на каждый узел ClickHouse.
 
@@ -84,12 +98,12 @@ keywords: ['Windows']
 | bind&#95;dn               | Пользователь, который будет использоваться для bind к AD; это может быть выделенная учетная запись, если обычным пользователям bind запрещен | `{user_name}@marsnet2.local`                        |
 | user&#95;dn&#95;detection | Настройки, определяющие, как ClickHouse будет находить пользователей AD                                                                      | NA                                                  |
 | base&#95;dn               | Путь к OU в AD, с которого будет начинаться поиск пользователей                                                                              | OU=Users,OU=ClickHouse,DC=marsnet2,DC=local         |
-| search&#95;filter         | LDAP search filter для поиска пользователя AD                                                                                                | `(&(objectClass=user)(sAMAccountName={user_name}))` |
+| search&#95;filter         | Фильтр поиска LDAP для поиска пользователя AD                                                                                                | `(&(objectClass=user)(sAMAccountName={user_name}))` |
 
 Полный набор параметров см. в документации:
 [https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
 
-3. В `config.xml` ClickHouse добавьте конфигурацию `<user_directories>` с записями `<ldap>` на каждом узле ClickHouse.
+3. В файле `config.xml` ClickHouse на каждом узле ClickHouse добавьте конфигурацию `<user_directories>` с записями `<ldap>`.
 
 ```
 <user_directories>
@@ -119,7 +133,7 @@ keywords: ['Windows']
 | server               | Тег, определённый в разделе `<ldap_servers>`                                                            | marsnet2&#95;ad                              |
 | role&#95;mapping     | Определяет, как аутентифицированные пользователи будут сопоставляться с группами AD и ролями ClickHouse | NA                                           |
 | base&#95;dn          | Путь AD, с которого система начнёт поиск групп AD                                                       | OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local |
-| search&#95;filter    | LDAP-фильтр поиска для поиска групп AD                                                                  | `(&(objectClass=group)(member={user_dn}))`   |
+| search&#95;filter    | Фильтр поиска LDAP для поиска групп AD                                                                  | `(&(objectClass=group)(member={user_dn}))`   |
 | attribute            | Какой атрибут AD следует использовать для идентификации пользователя                                    | CN                                           |
 | scope                | На каких уровнях base DN система должна искать группы                                                   | subtree                                      |
 | prefix               | Префикс имён групп в AD; он будет удалён при поиске ролей в ClickHouse                                  | clickhouse&#95;                              |

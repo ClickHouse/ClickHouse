@@ -7,8 +7,6 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Neste guia, você aprenderá a explorar, em um notebook do Marimo, um conjunto de dados do ClickHouse Cloud com a ajuda do [chDB](/pt-BR/chdb/index) — um mecanismo SQL OLAP rápido executado no próprio processo, baseado em ClickHouse.
 
 **Pré-requisitos:**
@@ -25,7 +23,7 @@ Neste guia, você aprenderá a explorar, em um notebook do Marimo, um conjunto d
 **O que você aprenderá:**
 
 * Conectar-se ao ClickHouse Cloud a partir de notebooks do Marimo usando chDB
-* Consultar conjuntos de dados remotos e converter os resultados em DataFrames do Pandas
+* Consultar conjuntos de dados remotos e converter os resultados em DataFrames do pandas
 * Visualizar dados usando Plotly no Marimo
 * Aproveitar o modelo de execução reativa do Marimo para explorar dados de forma interativa
 
@@ -33,26 +31,36 @@ Usaremos o conjunto de dados UK Property Price, disponível no ClickHouse Cloud 
 Ele contém dados sobre os preços pelos quais casas foram vendidas no Reino Unido de 1995 a 2024.
 
 <div id="setup">
-  ## Configuração
+  ## Configuração {#setup}
 </div>
 
-<div id="loading-the-dataset">
-  ### Carregamento do conjunto de dados
-</div>
+### Carregamento do conjunto de dados {#loading-the-dataset}
 
 Para adicionar este conjunto de dados a um serviço existente do ClickHouse Cloud, faça login em [console.clickhouse.cloud](https://console.clickhouse.cloud/) com os dados da sua conta.
 
 No menu à esquerda, clique em `Data sources`. Em seguida, clique em `Predefined sample data`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Adicionar conjunto de dados de exemplo" />
+<div className="ch-image-md">
+  <Frame>
+    ![Adicionar conjunto de dados de exemplo](/images/use-cases/AI_ML/jupyter/1.webp)
+  </Frame>
+</div>
 
-Selecione `Get started` no cartão de dados de preços pagos de imóveis do Reino Unido (4GB):
+Selecione `Get started` no cartão de dados UK price paid de imóveis (4GB):
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Selecionar conjunto de dados de preços pagos do Reino Unido" />
+<div className="ch-image-md">
+  <Frame>
+    ![Selecionar conjunto de dados UK price paid](/images/use-cases/AI_ML/jupyter/2.webp)
+  </Frame>
+</div>
 
 Em seguida, clique em `Import dataset`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Importar conjunto de dados de preços pagos do Reino Unido" />
+<div className="ch-image-md">
+  <Frame>
+    ![Importar conjunto de dados UK price paid](/images/use-cases/AI_ML/jupyter/3.webp)
+  </Frame>
+</div>
 
 O ClickHouse criará automaticamente a tabela `pp_complete` no banco de dados `default` e a preencherá com 28,92 milhões de linhas de dados de preços.
 
@@ -60,7 +68,7 @@ Para reduzir a probabilidade de expor suas credenciais, recomendamos que você a
 Em um terminal, execute o comando a seguir para adicionar seu nome de usuário e senha como variáveis de ambiente:
 
 <div id="setting-up-credentials">
-  ### Configurando as credenciais
+  ### Configurando as credenciais {#setting-up-credentials}
 </div>
 
 ```bash
@@ -74,9 +82,7 @@ export CLICKHOUSE_CLOUD_PASSWORD=your_actual_password
   Para defini-las permanentemente, adicione-as ao arquivo de configuração do shell.
 </Note>
 
-<div id="installing-marimo">
-  ### Instalando o Marimo
-</div>
+### Instalando o Marimo {#installing-marimo}
 
 Agora, ative o ambiente virtual.
 No ambiente virtual, instale os seguintes pacotes que serão usados neste guia:
@@ -93,13 +99,15 @@ marimo edit clickhouse_exploration.py
 
 Uma nova janela do navegador deve abrir com a interface do Marimo em localhost:2718:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="interface do Marimo" />
+<div className="ch-image-md">
+  <Frame>
+    ![interface do Marimo](/images/use-cases/AI_ML/Marimo/4.webp)
+  </Frame>
+</div>
 
 Os notebooks do Marimo são armazenados como arquivos Python puros, o que facilita o controle de versão e o compartilhamento com outras pessoas.
 
-<div id="installing-dependencies">
-  ## Instalação de dependências
-</div>
+## Instalação de dependências {#installing-dependencies}
 
 Em uma nova célula, importe os pacotes necessários:
 
@@ -124,10 +132,14 @@ result
 
 Você deve ver o resultado exibido abaixo da célula que você acabou de executar:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+<div className="ch-image-md">
+  <Frame>
+    ![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
+  </Frame>
+</div>
 
 <div id="exploring-the-data">
-  ## Explorando os dados
+  ## Explorando os dados {#exploring-the-data}
 </div>
 
 Com o conjunto de dados UK price paid configurado e o chDB em execução em um notebook do Marimo, agora já podemos começar a explorar os dados.
@@ -136,7 +148,7 @@ A função [`remoteSecure`](/pt-BR/reference/functions/table-functions/remote) d
 Você pode instruir o chDB a retornar esses dados em processo como um DataFrame do Pandas, que é uma forma prática e familiar de trabalhar com dados.
 
 <div id="querying-clickhouse-cloud-data">
-  ### Consultando dados do ClickHouse Cloud
+  ### Consultando dados do ClickHouse Cloud {#querying-clickhouse-cloud-data}
 </div>
 
 Crie uma nova célula com a consulta a seguir para obter os dados de preços pagos do Reino Unido no seu serviço do ClickHouse Cloud e convertê-los em um `pandas.DataFrame`:
@@ -181,9 +193,7 @@ Dependendo do volume dos seus dados, isso pode levar alguns segundos.
 Neste caso, retornamos o preço médio por ano e filtramos por `town='LONDON'`.
 O resultado é então armazenado como um DataFrame em uma variável chamada `df`.
 
-<div id="visualizing-the-data">
-  ### Visualizando os dados
-</div>
+### Visualizando os dados {#visualizing-the-data}
 
 Com os dados agora disponíveis em um formato familiar, vamos explorar como os preços dos imóveis em Londres mudaram ao longo do tempo.
 
@@ -206,13 +216,15 @@ fig
 
 Talvez não seja surpresa que os preços dos imóveis em Londres tenham aumentado substancialmente ao longo do tempo.
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Visualização de dados do Marimo" />
+<div className="ch-image-md">
+  <Frame>
+    ![Visualização de dados do Marimo](/images/use-cases/AI_ML/Marimo/6.webp)
+  </Frame>
+</div>
 
 Um dos pontos fortes do Marimo é seu modelo de execução reativa. Vamos criar um widget interativo para selecionar diferentes cidades dinamicamente.
 
-<div id="interactive-town-selection">
-  ### Seleção interativa de cidades
-</div>
+### Seleção interativa de cidades {#interactive-town-selection}
 
 Em uma nova célula, crie uma lista suspensa para selecionar diferentes cidades:
 
@@ -267,15 +279,17 @@ fig_reactive
 
 Agora, ao selecionar uma cidade na lista suspensa, o gráfico é atualizado dinamicamente:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Gráfico dinâmico do Marimo" />
-
-<div id="exploring-price-distributions">
-  ### Explorando distribuições de preços com box plots interativos
+<div className="ch-image-md">
+  <Frame>
+    ![Gráfico dinâmico no Marimo](/images/use-cases/AI_ML/Marimo/7.webp)
+  </Frame>
 </div>
+
+### Explorando distribuições de preços com box plots interativos {#exploring-price-distributions}
 
 Vamos nos aprofundar nos dados examinando a distribuição dos preços dos imóveis em Londres ao longo de diferentes anos.
 Um box plot mostrará a mediana, os quartis e os valores atípicos, oferecendo uma compreensão muito melhor do que apenas o preço médio.
-Primeiro, vamos criar um seletor de ano que nos permitirá explorar diferentes anos de forma interativa:
+Primeiro, vamos criar um controle deslizante de ano que nos permitirá explorar diferentes anos de forma interativa:
 
 Em uma nova célula, adicione o seguinte:
 
@@ -343,10 +357,14 @@ Se você selecionar o botão de opções no canto superior direito da célula, p
 o código.
 Ao mover o controle deslizante, o gráfico será atualizado automaticamente graças à execução reativa do Marimo:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Gráfico dinâmico do Marimo" />
+<div className="ch-image-md">
+  <Frame>
+    ![Gráfico dinâmico do Marimo](/images/use-cases/AI_ML/Marimo/8.webp)
+  </Frame>
+</div>
 
 <div id="summary">
-  ## Resumo
+  ## Resumo {#summary}
 </div>
 
 Este guia demonstrou como usar o chDB para explorar seus dados no ClickHouse Cloud com notebooks do Marimo.

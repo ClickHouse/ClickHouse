@@ -1,11 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string_view>
 #include <vector>
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/CacheLine.h>
 
 namespace DB
 {
@@ -14,15 +16,18 @@ namespace DB
 /// `finishAppending`, consumers may read and release distinct partitions concurrently. The caller chooses
 /// the record format and partition for each append.
 ///
-/// A partition's chunks double in size from a first chunk, which the caller chooses, up to a cap: most partitions of
-/// a producer stay small, and the first chunks of all partitions form the minimum allocation for their records,
-/// while doubling keeps the unused end of a large partition's last chunk proportional to its records.
+/// A partition's chunks double in size from a first chunk up to a cap, both of which the caller chooses: most
+/// partitions of a producer stay small, and the first chunks of all partitions form the minimum allocation for their
+/// records, while doubling keeps the unused end of a large partition's last chunk proportional to its records.
 ///
 /// The chunks are carved from blocks rather than allocated one by one: chunks past the allocator's small size
 /// classes would each take its arena path, whose locks and extent bookkeeping cost more than the records the chunk
 /// holds, while a block is one allocation for many chunks. Consecutive partitions share blocks in groups of
 /// `partitions_per_group`, chosen by the caller to match the consumption order. A block is freed once all its
-/// chunks are released, allowing consumers to reclaim memory without waiting for unrelated groups.
+/// chunks are released, allowing consumers to reclaim memory without waiting for unrelated groups. A record of more
+/// than half the chunk cap is the exception: it gets a chunk of its own size, allocated apart from the blocks, since
+/// a capped chunk would hold that record alone and leave up to half of itself unused, which for a partition of such
+/// records doubles their memory.
 ///
 /// A group's blocks grow too. Its first block takes the first chunks of its partitions, so those stay the
 /// minimum allocation, and each later block is as large as the group's earlier blocks together, up to a cap.
@@ -39,11 +44,16 @@ public:
     /// Padding after the last record permits bounded reads and writes past a record
     /// by vectorized comparison and copy routines.
     static constexpr size_t tail_padding_bytes = 64;
+    /// The cap that the chunks of a partition double up to, unless the caller chooses another.
+    static constexpr size_t default_max_chunk_bytes = 8 << 10;
 
     /// Both counts must be positive. A final allocation group may contain fewer partitions. The first chunk is
-    /// between `min_first_chunk_bytes` and `max_first_chunk_bytes`.
+    /// between `min_first_chunk_bytes` and `max_first_chunk_bytes`, and the chunk cap is at least the first chunk.
     PartitionedRecordBuffer(
-        size_t num_partitions_, size_t partitions_per_group_, size_t first_chunk_bytes_ = max_first_chunk_bytes);
+        size_t num_partitions_,
+        size_t partitions_per_group_,
+        size_t first_chunk_bytes_ = max_first_chunk_bytes,
+        size_t max_chunk_bytes_ = default_max_chunk_bytes);
     ~PartitionedRecordBuffer();
 
     PartitionedRecordBuffer(const PartitionedRecordBuffer &) = delete;
@@ -83,22 +93,43 @@ public:
     template <typename Callback>
     void forEachChunk(size_t partition, Callback && callback) const;
 
-    UInt64 recordsOf(size_t partition) const { return chains[partition].closed_chunk_records + cursors[partition].records; }
+    [[nodiscard]] UInt64 recordsOf(size_t partition) const { return chains[partition].closed_chunk_records + cursors[partition].records; }
 
     /// Releases the partition's chunks and resets its cursor. Consumers may release distinct partitions
     /// concurrently, after `finishAppending`.
-    void releasePartition(size_t partition);
+    void releasePartition(size_t partition) { releasePartitions(partition, 1); }
+
+    /// Releases the chunks of the `count` consecutive partitions from `first_partition` on, and resets their cursors.
+    /// The chunks of consecutive partitions often share blocks, and the chunks of one block give their references back
+    /// with one decrement of its counter. Consumers may release distinct partitions concurrently, after
+    /// `finishAppending`.
+    void releasePartitions(size_t first_partition, size_t count);
+
+    /// Prefetches what `releasePartitions` reads first for the same partitions, for a caller that releases the same
+    /// partitions of many buffers in a row.
+    ALWAYS_INLINE void prefetchRelease(size_t first_partition, size_t count) const
+    {
+        const char * chain = reinterpret_cast<const char *>(&chains[first_partition]);
+        for (size_t offset = 0; offset < count * sizeof(Chain); offset += CH_CACHE_LINE_SIZE)
+            __builtin_prefetch(chain + offset, /*rw=*/1);
+        const char * cursor = reinterpret_cast<const char *>(&cursors[first_partition]);
+        for (size_t offset = 0; offset < count * sizeof(Cursor); offset += CH_CACHE_LINE_SIZE)
+            __builtin_prefetch(cursor + offset, /*rw=*/1);
+    }
 
     /// The total capacity of chunks allocated since construction or `clear`. This counts chunk headers and
     /// padding, excludes unused block capacity, and is not reduced by concurrent partition releases.
-    size_t allocatedChunkBytes() const { return allocated_chunk_bytes; }
+    [[nodiscard]] size_t allocatedChunkBytes() const { return allocated_chunk_bytes; }
 
     /// Releases all records and blocks and resets allocation accounting. Requires exclusive access.
     void clear();
 
 private:
-    static constexpr size_t max_chunk_bytes = 32 << 10;
     static constexpr size_t max_block_bytes = 256 << 10;
+    /// The blocks whose counters `releasePartitions` prefetches before it decrements them.
+    static constexpr size_t release_batch_blocks = 16;
+    /// How many partitions ahead `releasePartitions` prefetches the header of a partition's first chunk.
+    static constexpr size_t release_prefetch_partitions = 8;
 
     struct Block;
     struct ChunkHeader;
@@ -133,21 +164,31 @@ private:
     /// The cold path of `append`: closes the partition's current chunk and starts one that holds `bytes`.
     NO_INLINE void startChunk(size_t partition, size_t bytes);
 
+    /// Gives back `references` references to `block`: that of its carver, or those of chunks carved from it. The block
+    /// is freed with its last reference, and then leaves `live_allocations`.
+    void releaseBlock(Block * block, UInt32 references = 1);
+
     /// Ends the claims on the blocks being carved, so each block is freed with its last chunk. The groups
     /// keep their totals: appends resumed after `finishAppending` continue the growth of their blocks.
     void releaseCurrentBlocks();
 
     /// The size of the group's next block: the first takes the first chunks of the group's partitions, and
     /// each later one is as large as the group's blocks together, up to the cap.
-    size_t nextBlockBytes(size_t group) const;
+    [[nodiscard]] size_t nextBlockBytes(size_t group) const;
 
     const size_t num_partitions;
     const size_t partitions_per_group;
     const size_t first_chunk_bytes;
+    const size_t max_chunk_bytes;
     std::unique_ptr<Cursor[]> cursors;
     std::unique_ptr<Chain[]> chains;
     std::vector<Carver> carvers;
     size_t allocated_chunk_bytes = 0;
+    /// The blocks and the chunks allocated on their own that are not freed yet. The appending thread counts each one
+    /// where it allocates it, and whoever frees one counts it out: a consumer does for a block when it releases the
+    /// last chunk of the block, which happens once per block rather than once per partition. `clear` skips its walk
+    /// over the partitions when none is left.
+    std::atomic<size_t> live_allocations{0};
 };
 
 /// The head of every chunk: the next chunk of the partition, the block it was carved from (null for a chunk
@@ -160,7 +201,7 @@ struct PartitionedRecordBuffer::ChunkHeader
     UInt32 capacity;
 
     char * records() { return reinterpret_cast<char *>(this) + sizeof(ChunkHeader); }
-    const char * records() const { return reinterpret_cast<const char *>(this) + sizeof(ChunkHeader); }
+    [[nodiscard]] const char * records() const { return reinterpret_cast<const char *>(this) + sizeof(ChunkHeader); }
 };
 
 inline void PartitionedRecordBuffer::rollback(size_t partition, size_t bytes)
