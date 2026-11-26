@@ -9,6 +9,7 @@ from .external_paths_utils import (
     ALL_ROWS,
     _create_iceberg_s3_table,
     _distribute_table_components,
+    _external_delete_files_in_another_bucket,
     _download_table_for_relocation,
     _rewrite_manifests_and_reupload,
     _rewrite_paths_to_local_uri,
@@ -187,6 +188,45 @@ def test_mutation_format_check_requires_external_data_grant(started_cluster_iceb
     instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{external_prefix}/.*') TO {user}")
     error = instance.query_and_get_error(mutation, user=user, settings=settings)
     assert "has format `ORC`" in error, error
+
+    instance.query(f"DROP USER {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_compaction_format_check_requires_external_delete_grant(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_compaction_format_grant_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+
+    base_path, other_bucket, _ = _external_delete_files_in_another_bucket(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    # Mark the files as `ORC`, so the compaction rejects the external position delete by its format.
+    temp_dir, host_path, _ = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    for manifest in find_files(os.path.join(host_path, "metadata"), ".avro"):
+        if os.path.basename(manifest).startswith("snap-"):
+            continue
+        modify_avro_file(manifest, ["data_file", "file_format"], lambda _: "ORC")
+        started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(
+            manifest, f"{base_path}/{os.path.relpath(manifest, host_path)}")
+    shutil.rmtree(temp_dir)
+
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT OPTIMIZE ON {TABLE_NAME} TO {user}")
+
+    optimize = f"OPTIMIZE TABLE {TABLE_NAME}"
+    settings = {"allow_experimental_iceberg_compaction": 1}
+
+    error = instance.query_and_get_error(optimize, user=user, settings=settings)
+    assert "ACCESS_DENIED" in error, error
+    assert "format ORC" not in error, error
+
+    instance.query(f"GRANT READ ON S3('s3a://{other_bucket}/{base_path}/.*') TO {user}")
+    error = instance.query_and_get_error(optimize, user=user, settings=settings)
+    assert "got a data file of format ORC" in error, error
 
     instance.query(f"DROP USER {user}")
     instance.query(f"DROP TABLE {TABLE_NAME}")

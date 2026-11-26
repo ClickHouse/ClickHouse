@@ -335,6 +335,46 @@ static Plan getPlan(
         }
     }
 
+    plan.history = std::move(snapshots_info);
+    plan.need_optimize = !all_positional_delete_files.empty();
+
+    /// Without position deletes nothing is rewritten or deleted, so the files are neither opened nor checked for being external.
+    if (!plan.need_optimize)
+        return plan;
+
+    for (const auto & [data_file_path, data_file] : plan.path_to_data_file)
+    {
+        auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
+            persistent_table_components.table_location,
+            data_file_path.serialize(),
+            object_storage,
+            external_storages,
+            context,
+            persistent_table_components.path_resolver);
+
+        if (!isObjectInTableDirectory(
+                resolved_storage, resolved_key, object_storage, persistent_table_components.table_path))
+            plan.external_files.push_back(data_file_path);
+
+        data_file->data_object_info->setResolvedStorage(std::move(resolved_storage));
+        data_file->data_object_info->relative_path_with_metadata.relative_path = std::move(resolved_key);
+    }
+
+    for (const auto & raw_path : referenced_file_paths)
+    {
+        auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
+            persistent_table_components.table_location,
+            raw_path.serialize(),
+            object_storage,
+            external_storages,
+            context,
+            persistent_table_components.path_resolver);
+
+        if (!isObjectInTableDirectory(
+                storage_to_use, key_in_storage, object_storage, persistent_table_components.table_path))
+            plan.external_files.push_back(raw_path);
+    }
+
     for (const auto & delete_file : all_positional_delete_files)
     {
         auto partition_index = plan.partition_encoder.encodePartition(delete_file->normalized_partition_key_value);
@@ -381,46 +421,6 @@ static Plan getPlan(
             data_file->data_object_info->addPositionDeleteFile(
                 delete_file, delete_file->parsed_entry->file_path_key.serialize());
         }
-    }
-
-    plan.history = std::move(snapshots_info);
-    plan.need_optimize = !all_positional_delete_files.empty();
-
-    /// Without position deletes nothing is rewritten or deleted, so the files are neither opened nor checked for being external.
-    if (!plan.need_optimize)
-        return plan;
-
-    for (const auto & [data_file_path, data_file] : plan.path_to_data_file)
-    {
-        auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
-            persistent_table_components.table_location,
-            data_file_path.serialize(),
-            object_storage,
-            external_storages,
-            context,
-            persistent_table_components.path_resolver);
-
-        if (!isObjectInTableDirectory(
-                resolved_storage, resolved_key, object_storage, persistent_table_components.table_path))
-            plan.external_files.push_back(data_file_path);
-
-        data_file->data_object_info->setResolvedStorage(std::move(resolved_storage));
-        data_file->data_object_info->relative_path_with_metadata.relative_path = std::move(resolved_key);
-    }
-
-    for (const auto & raw_path : referenced_file_paths)
-    {
-        auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
-            persistent_table_components.table_location,
-            raw_path.serialize(),
-            object_storage,
-            external_storages,
-            context,
-            persistent_table_components.path_resolver);
-
-        if (!isObjectInTableDirectory(
-                storage_to_use, key_in_storage, object_storage, persistent_table_components.table_path))
-            plan.external_files.push_back(raw_path);
     }
 
     return plan;
