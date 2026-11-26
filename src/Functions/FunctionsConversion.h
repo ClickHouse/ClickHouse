@@ -204,6 +204,7 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(base.check_conversion_from_numbers_to_enum)
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(
               base.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
+        , allow_named_tuple_conversion_with_extra_source_fields(base.allow_named_tuple_conversion_with_extra_source_fields)
         , cast_keep_nullable(cast_keep_nullable_)
         , json_use_optimized_type_conversion(base.json_use_optimized_type_conversion)
         , cast_string_to_date_time_mode(cast_string_to_date_time_mode_)
