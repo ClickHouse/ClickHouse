@@ -32,7 +32,7 @@ Todas as funções compartilham uma infraestrutura comum que fornece:
 
 ## Configuração {#configuration}
 
-As funções de IA usam uma **coleção nomeada** que armazena as credenciais do provedor e a configuração. É possível criar e usar diferentes coleções nomeadas para funções distintas ou chamadas de função específicas. Por exemplo, talvez você queira definir uma coleção nomeada diferente para usar com as funções de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) em vez das funções de embedding (`aiEmbed`, `aiSimilarity`), que requerem endpoints diferentes e geralmente usam modelos diferentes.
+As funções de IA exigem a concessão `AI FUNCTIONS` (consulte [Controle de acesso](#access-control)) e usam uma **coleção nomeada** que armazena as credenciais do provedor e a configuração. É possível criar e usar diferentes coleções nomeadas para funções distintas ou chamadas de função específicas. Por exemplo, talvez você queira definir uma coleção nomeada diferente para usar com as funções de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) em vez das funções de embedding (`aiEmbed`, `aiSimilarity`), que requerem endpoints diferentes e geralmente usam modelos diferentes.
 
 Exemplo de instrução para criar uma coleção nomeada com credenciais do provedor: uma com endpoint de chat e outra com endpoint de embedding:
 
@@ -50,6 +50,41 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Controle de acesso {#access-control}
+
+Para chamar uma função de IA, são necessários dois privilégios:
+
+* o privilégio da função: o privilégio per-function (por exemplo, `aiGenerate`) ou o grupo `AI FUNCTIONS`; consulte [`GRANT`](/pt-BR/reference/statements/grant#ai-functions);
+* o privilégio `NAMED COLLECTION` sobre as credenciais selecionadas.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+A configuração [`allow_ai_functions`](/pt-BR/reference/settings/session-settings/allow#allow_ai_functions) (habilitada por padrão) desabilita as funções de IA quando definida como `0`, por exemplo, em um perfil de configurações ou por meio de uma restrição. Com `CONST`, os usuários do perfil não podem habilitá-las:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
+As funções de IA são executadas apenas em consultas executadas por um usuário. Elas são rejeitadas em mutações (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) e nas chaves, no TTL, nos índices de salto e nas projeções de uma tabela, que são executados em segundo plano, e as operações de persistência de `Buffer` lançam uma exceção quando avaliam uma função de IA. As colunas `DEFAULT` e `MATERIALIZED` são avaliadas pelo insert; quando uma dessas colunas é adicionada com `ALTER TABLE`, as partes existentes a calculam em segundo plano, onde as funções de IA não são executadas.
+
+Para preencher uma coluna em linhas existentes, use um [`UPDATE`](/pt-BR/reference/statements/update) leve, que é executado pela consulta e grava apenas a coluna atualizada:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+Para tabelas que não atendem aos [requisitos de atualização leve](/pt-BR/reference/statements/update#lightweight-update-requirements), use `INSERT ... SELECT`, por exemplo, uma partição por vez:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Parâmetros da coleção nomeada {#named-collection-parameters}
@@ -196,31 +231,56 @@ O padrão é `8`. Um valor acima de `1` afrouxa duas garantias:
 
 ## Observabilidade {#observability}
 
-A atividade da função de IA é rastreada pelos [ProfileEvents](/pt-BR/reference/system-tables/query_log) do ClickHouse:
+A atividade das funções de IA é rastreada por meio dos [ProfileEvents](/pt-BR/reference/system-tables/query_log) do ClickHouse:
 
-| ProfileEvent      | Description                                                                              |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| `AIAPICalls`      | Número de solicitações HTTP feitas ao provedor de IA.                                    |
-| `AIInputTokens`   | Total de tokens de entrada consumidos.                                                   |
-| `AIOutputTokens`  | Total de tokens de saída consumidos.                                                     |
-| `AIRowsProcessed` | Número de linhas que receberam um resultado.                                             |
-| `AIRowsSkipped`   | Número de linhas ignoradas (cota excedida ou erro com `ai_function_throw_on_error = 0`). |
+| ProfileEvent                 | Descrição                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AIAPICalls`                 | Número de requisições HTTP feitas ao provedor de IA.                                                                                                                                             |
+| `AIInputTokens`              | Total de tokens de entrada consumidos, incluindo leituras e gravações em cache.                                                                                                                  |
+| `AIOutputTokens`             | Total de tokens de saída consumidos.                                                                                                                                                             |
+| `AICacheReadTokens`          | Tokens de entrada lidos do cache de prompt do provedor.                                                                                                                                          |
+| `AICacheWriteTokens`         | Tokens de entrada gravados no cache de prompt do provedor.                                                                                                                                       |
+| `AIRequestMicroseconds`      | Tempo total gasto em chamadas ao provedor de IA (serialização da requisição, ida e volta HTTP, parsing da resposta), incluindo tentativas que falharam e excluindo o backoff entre retentativas. |
+| `AIRetryBackoffMicroseconds` | Tempo total de espera antes de retentativas de chamadas ao provedor de IA que falharam.                                                                                                      |
+| `AIRowsProcessed`            | Número de linhas que receberam um resultado.                                                                                                                                                     |
+| `AIRowsSkipped`              | Número de linhas ignoradas (cota excedida ou erro com `ai_function_throw_on_error = 0`).                                                                                                         |
 
-Consulte estes eventos:
+Os tempos são somados entre execuções e threads, por isso podem ultrapassar o tempo decorrido da consulta.
+Divida `AIRequestMicroseconds` por `AIAPICalls` para obter a latência média por requisição, incluindo tentativas que falharam.
+Esses contadores são por consulta e não fornecem informações de latência por requisição.
+Se uma consulta chamar várias funções de IA, as contagens de todas elas são somadas.
+
+Os contadores de cache são subconjuntos de `AIInputTokens`, e não tokens adicionais. Eles informam as leituras/gravações em cache reportadas pelo provedor, e não o armazenamento em cache interno do ClickHouse. Um provedor que não informa o uso de cache contribui com
+zero tokens de cache.
+
+Consulte esses eventos:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+`log_queries` e `log_profile_events` vêm habilitados por padrão para registrar esses eventos em `system.query_log`.
+Os totais de todo o servidor também estão disponíveis em `system.events`.
+
 {/*
-  O conteúdo interno das tags abaixo é substituído, no momento da compilação da estrutura de documentação, por
+  O conteúdo das tags abaixo é substituído, durante a compilação do framework de documentação, pela
   documentação gerada a partir de system.functions. Não modifique nem remova as tags.
   Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}

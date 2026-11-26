@@ -1,0 +1,202 @@
+---
+slug: /clickstack/observability/integration-partners/bindplane
+title: 'Envio de dados do OpenTelemetry para o ClickHouse Observability com o Bindplane'
+sidebarTitle: 'Bindplane'
+description: 'Roteie telemetria para o ClickHouse Observability usando o Bindplane, com gerenciamento centralizado de coletores'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', 'gerenciamento de coletores']
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **Resumo**
+
+  Este guia mostra como rotear telemetria para o ClickHouse Observability usando o destino nativo **ClickStack** do Bindplane. Você aprenderá a:
+
+  * Configurar o ClickHouse Observability como destino no Bindplane
+  * Criar uma configuração para processar e rotear telemetria
+  * Implantar configurações remotamente em OTel collectors e começar a coletar dados
+  * Visualizar a telemetria no ClickHouse Observability
+
+  O Bindplane gerencia os coletores do seu ambiente e encaminha a telemetria deles para o ClickHouse Observability.
+
+  Tempo estimado: 10-15 minutos
+</Info>
+
+## O que é o Bindplane? {#what-is-bindplane}
+
+O Bindplane é um pipeline de telemetria nativo do OpenTelemetry que oferece gerenciamento centralizado de Coletores OpenTelemetry. Ele simplifica a operação de grandes frotas de coletores com edição visual de configurações, rollouts seguros e inteligência de pipeline.
+
+## Por que Bindplane + ClickHouse Observability? {#why-bindplane-clickstack}
+
+O ClickHouse Observability oferece armazenamento de telemetria, além de ferramentas de busca e investigação. O Bindplane gerencia os Coletores OpenTelemetry que coletam e encaminham dados do seu ambiente.
+
+O Bindplane resolve isso oferecendo:
+
+* Gerenciamento centralizado de Coletores OpenTelemetry, de milhares a mais de um milhão
+* Edição visual de configurações com rollouts seguros em um clique
+* Detecção automática de recursos e enriquecimento aplicados de forma consistente antes que os dados cheguem ao ClickHouse Observability
+* Roteamento fan-out, para que os mesmos fluxos de telemetria possam ser enviados simultaneamente ao ClickHouse Observability e a outros destinos
+* Visibilidade completa do pipeline, incluindo integridade do coletor, vazão e desempenho de ponta a ponta
+
+<Tip>
+  **Principais pontos**
+
+  * **O ClickHouse Observability armazena a telemetria e dá suporte à investigação**
+  * **O Bindplane gerencia o pipeline de ingestão e a complexidade operacional de manter frotas de coletores em execução**
+</Tip>
+
+## Pré-requisitos {#prerequisites}
+
+* Um [serviço ClickHouse Observability totalmente gerenciado](/pt-BR/clickstack/observability/getting-started) ou uma [implantação autogerenciada](/pt-BR/clickstack/self-configured/getting-started/managed)
+* Uma conta Bindplane ([crie uma conta](https://app.bindplane.com))
+* Um Bindplane OTel Collector instalado (consulte [Install your first collector](https://docs.bindplane.com/readme/install-your-first-collector))
+* **Totalmente gerenciado**: seu endpoint OTLP HTTP e sua API key de ingestão, disponíveis em **Team Settings → Dados → Telemetria Gerenciada**
+* **Autogerenciado**: um [coletor independente](/pt-BR/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) em execução, o endpoint OTLP dele e o [`OTLP_AUTH_TOKEN`](/pt-BR/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) configurado nele
+* Conectividade de rede entre os coletores Bindplane e o seu endpoint OTLP
+
+## Integre o ClickHouse Observability ao Bindplane {#integrate-bindplane-clickstack}
+
+<Steps>
+  <Step title="Configure o ClickHouse Observability como destino" id="configure-destination">
+    No Bindplane, abra **Library → Add Destination** e selecione **ClickStack**. Esse é o nome do destino do Bindplane para enviar telemetria ao ClickHouse Observability via OTLP.
+
+    <Tabs>
+      <Tab title="Totalmente gerenciado">
+        <BetaBadge label="Oferta em versão beta" />
+
+        Envie telemetria para o seu endpoint OTLP gerenciado. O ClickHouse cuida da ingestão, dos esquemas, do armazenamento e do escalonamento.
+
+        1. Defina **Protocol** como **HTTP**.
+        2. Defina **Hostname** como o hostname do seu endpoint OTLP gerenciado, sem `https://` nem a porta. Para um endpoint como `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`, informe `<service-id>.otel.<region>.aws.clickhouse.com`.
+        3. Defina **Port** como `4318`.
+        4. Defina **API Ingestion Key** como `Bearer <YOUR_INGESTION_API_KEY>`, incluindo o prefixo `Bearer`. Esse campo preenche o cabeçalho `authorization`.
+        5. Ative **Enable TLS** e deixe **Skip TLS Certificate Verification** desativado.
+
+        Use o endpoint OTLP gerenciado, e não o endpoint do seu banco de dados ClickHouse na porta `8443`.
+      </Tab>
+
+      <Tab title="Autogerenciado">
+        Envie telemetria para o coletor independente conectado ao seu Serviço do ClickHouse Cloud. Esse coletor já deve estar em execução e [configurado para autenticar requisições](/pt-BR/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+
+        1. Defina **Protocol** como **HTTP** ou **gRPC**.
+        2. Defina **Hostname** como o hostname ou endereço IP do seu coletor independente, sem esquema de URL nem porta.
+        3. Defina **Port** como `4318` para HTTP ou `4317` para gRPC, a menos que você tenha configurado outra porta.
+        4. Defina **API Ingestion Key** como o valor de `OTLP_AUTH_TOKEN` do coletor, sem o prefixo `Bearer`.
+        5. Configure **Enable TLS** de acordo com o endpoint do seu coletor. Para endpoints com TLS, mantenha a verificação de certificados habilitada.
+      </Tab>
+    </Tabs>
+
+    Dê um nome ao destino, como **Observability production**, e clique em **Save**. Mantenha a compressão gzip padrão, a menos que você tenha confirmado que o seu endpoint oferece suporte a outro algoritmo.
+  </Step>
+
+  <Step title="Criar uma configuração" id="create-configuration">
+    Depois que o destino estiver configurado, crie uma configuração para processar e rotear a telemetria:
+
+    1. Acesse **Configurations** → **Create Configuration**
+    2. Dê um nome à configuração (por exemplo, &quot;Observability pipeline&quot;)
+    3. Selecione o **Collector Type** e a **Platform** da sua implantação
+    4. Adicione fontes de dados:
+       * Clique em **Add Source** para escolher entre mais de 80 fontes de dados disponíveis
+       * Para testes, você pode adicionar uma fonte de dados geradora de telemetria para simular tráfego
+       * Em produção, adicione fontes de dados para a sua telemetria real (logs, métricas, rastros)
+    5. Adicione o seu destino:
+       * Clique em **Add Destination**
+       * Selecione o destino que você criou na etapa anterior
+       * Escolha quais tipos de telemetria enviar (Logs, Metrics, Traces ou todos)
+
+    <Tip>
+      **Principais pontos**
+
+      Você pode adicionar processadores de filtragem, amostragem, mascaramento, enriquecimento, agrupamento em lote e muito mais para dar estrutura à telemetria antes que ela chegue ao ClickHouse Observability. Assim, você garante que dados consistentes e estruturados cheguem ao ClickHouse.
+    </Tip>
+  </Step>
+
+  <Step title="Adicione processadores (opcional)" id="add-processors">
+    O Bindplane oferece inteligência de pipeline e recomendações de processadores. Você pode adicionar processadores para:
+
+    * **Filtrar**: reduzir o volume de dados excluindo telemetria desnecessária
+    * **Amostrar**: aplicar estratégias de amostragem a rastros de alto volume
+    * **Enriquecer**: adicionar atributos de recurso, labels ou metadados
+    * **Transformar**: modificar a estrutura ou o conteúdo da telemetria
+    * **Agrupar em lotes**: otimizar o tamanho dos lotes para uma transmissão eficiente
+
+    Esses processadores são aplicados de forma consistente em toda a sua frota de coletores antes que os dados cheguem ao ClickHouse Observability.
+  </Step>
+
+  <Step title="Implante os coletores e inicie a implantação gradual" id="deploy-collectors">
+    1. Adicione um coletor (BDOT Collector) à sua configuração:
+       * Acesse **Collectors** no Bindplane
+       * Instale o coletor do Bindplane nos seus sistemas de destino [seguindo as instruções de instalação do Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
+       * O coletor aparecerá na sua lista de coletores assim que estiver conectado
+
+    2. Atribua a configuração aos seus coletores:
+       * Selecione os coletores que deseja usar
+       * Atribua sua configuração a eles
+
+    3. Inicie uma implantação gradual:
+       * Clique em **Start Rollout** para implantar a configuração
+       * O Bindplane validará a configuração antes de implantá-la
+       * Acompanhe o status da implantação gradual na UI do Bindplane
+
+    <Tip>
+      **Pontos principais**
+
+      O Bindplane oferece rollouts seguros, com validação e em um único clique. Você pode monitorar a integridade do coletor, a vazão e eventuais erros em real-time pela interface do Bindplane.
+    </Tip>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Telemetria no ClickHouse Observability via Bindplane](/images/clickstack/bindplane/bindplane-configuration.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Verifique a telemetria no ClickHouse Observability" id="verify-telemetry">
+    Assim que a configuração for implantada, a telemetria da sua frota de coletores gerenciada começará a chegar ao ClickHouse Observability:
+
+    1. Abra o ClickHouse Observability do seu serviço no console do ClickHouse Cloud
+    2. Busque seus serviços na visualização **Busca** e use o **Chart Explorer** para métricas
+    3. Confirme se a telemetria esperada dos seus coletores gerenciados pelo Bindplane chegou
+    4. Se houver dados ausentes, verifique os logs do coletor do Bindplane em busca de erros de conexão ou de autenticação
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Telemetria no ClickHouse Observability via Bindplane](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Configuração avançada {#advanced-configuration}
+
+### Roteamento fan-out {#fan-out-routing}
+
+O Bindplane oferece suporte a roteamento fan-out, o que permite enviar os mesmos fluxos de telemetria para vários destinos simultaneamente. Você pode:
+
+* Enviar logs, métricas e rastros para o ClickHouse Observability para armazenamento e análise de longo prazo
+* Rotear os mesmos dados para outras plataformas de observabilidade para alertas em real-time
+* Encaminhar telemetria específica para plataformas SIEM para análise de segurança
+
+Para isso, basta adicionar vários destinos à sua configuração do Bindplane.
+
+### Compressão e desempenho {#compression}
+
+Mantenha a compressão gzip habilitada para reduzir o consumo de largura de banda. Outros algoritmos de compressão dependem do protocolo e precisam ser compatíveis com o endpoint de destino. Para implantações totalmente gerenciadas, use gzip.
+
+## Próximas etapas {#next-steps}
+
+Agora que a telemetria está fluindo do Bindplane para o ClickHouse Observability, você pode:
+
+* **Criar dashboards**: crie visualizações no ClickHouse Observability para logs, métricas e rastros
+* **Configurar alertas**: configure alertas no ClickHouse Observability para condições críticas
+* **Escalar sua implantação**: adicione mais coletores e fontes de dados à medida que suas necessidades de observabilidade aumentarem
+* **Otimizar seu pipeline**: use a inteligência de pipeline do Bindplane para identificar oportunidades de otimização
+
+## Leia mais {#read-more}
+
+* [Destino ClickStack na documentação do Bindplane](https://docs.bindplane.com/integrations/destinations/clickstack)

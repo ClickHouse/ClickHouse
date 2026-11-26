@@ -1,14 +1,14 @@
 ---
 slug: /optimize/skipping-indexes
-sidebarTitle: '데이터 스키핑 인덱스'
+sidebarTitle: '데이터 건너뛰기 인덱스(data skipping index)'
 description: '스킵 인덱스를 사용하면 일치하는 값이 없다고 확실한 대규모 데이터 청크를 ClickHouse가 읽지 않고 건너뛸 수 있습니다.'
-title: 'ClickHouse 데이터 스키핑 인덱스 이해하기'
+title: 'ClickHouse 데이터 건너뛰기 인덱스(data skipping index) 이해하기'
 doc_type: 'guide'
-keywords: ['스킵 인덱스', '데이터 스키핑', '성능', '인덱싱', '모범 사례']
+keywords: ['스킵 인덱스', '데이터 스키핑', '성능', '인덱싱', '권장 사항']
 ---
 
 <div id="introduction">
-  ## 소개
+  ## 소개 {#introduction}
 </div>
 
 많은 요인이 ClickHouse 쿼리 성능에 영향을 미칩니다. 대부분의 경우 핵심 요소는 ClickHouse가 쿼리의 WHERE 절 조건을 평가할 때 프라이머리 키를 사용할 수 있는지 여부입니다. 따라서 가장 일반적인 쿼리 패턴에 맞는 프라이머리 키를 선택하는 것은 효과적인 테이블 설계에 매우 중요합니다.
@@ -19,23 +19,21 @@ keywords: ['스킵 인덱스', '데이터 스키핑', '성능', '인덱싱', '�
 
 대신 ClickHouse는 특정 상황에서 쿼리 속도를 크게 향상시킬 수 있는 다른 유형의 인덱스를 제공합니다. 이러한 구조는 일치하는 값이 전혀 없다고 확실한 상당한 데이터 청크를 ClickHouse가 읽지 않고 건너뛸 수 있게 해주므로 &quot;Skip&quot; 인덱스라고 부릅니다.
 
-<div id="basic-operation">
-  ## 기본 동작
-</div>
+## 기본 동작 {#basic-operation}
 
-데이터 스키핑 인덱스는 MergeTree 엔진 계열의 테이블에서만 사용할 수 있습니다. 각 데이터 스키핑 인덱스에는 4개의 주요 인수가 있습니다.
+데이터 건너뛰기 인덱스(data skipping index)는 MergeTree 엔진 계열의 테이블에서만 사용할 수 있습니다. 각 데이터 건너뛰기 인덱스(data skipping index)에는 4개의 주요 인수가 있습니다.
 
 * 인덱스 이름. 인덱스 이름은 각 파티션에 인덱스 파일을 생성하는 데 사용됩니다. 또한 인덱스를 삭제하거나 구체화할 때 매개변수로 필요합니다.
 * 인덱스 표현식. 인덱스 표현식은 인덱스에 저장될 값의 집합을 계산하는 데 사용됩니다. 컬럼, 단순 연산자, 그리고/또는 인덱스 유형에 따라 허용되는 일부 함수의 조합일 수 있습니다.
-* TYPE. 인덱스 유형은 각 인덱스 블록의 읽기 및 평가를 생략할 수 있는지를 판단하는 계산 방식을 제어합니다.
-* GRANULARITY. 각 인덱싱된 블록은 GRANULARITY개의 그래뉼로 구성됩니다. 예를 들어, 프라이머리 테이블 인덱스의 세분화 수준이 8192행이고 인덱스 세분화 수준이 4이면, 각 인덱싱된 &quot;block&quot;은 32768행이 됩니다.
+* TYPE. 인덱스 유형은 각 인덱스 블록(Block)의 읽기 및 평가를 생략할 수 있는지를 판단하는 계산 방식을 제어합니다.
+* GRANULARITY. 각 인덱싱된 블록(Block)은 GRANULARITY개의 그래뉼로 구성됩니다. 예를 들어, 프라이머리 테이블 인덱스의 세분화 수준이 8192행이고 인덱스 세분화 수준이 4이면, 각 인덱싱된 &quot;블록(Block)&quot;은 32768행이 됩니다.
 
-사용자가 데이터 스키핑 인덱스를 생성하면 테이블의 각 데이터 파트(data part) 디렉터리에 두 개의 추가 파일이 생성됩니다.
+사용자가 데이터 건너뛰기 인덱스(data skipping index)를 생성하면 테이블의 각 데이터 파트(data part) 디렉터리에 두 개의 추가 파일이 생성됩니다.
 
 * `skp_idx_{index_name}.idx`, 정렬된 표현식 값을 포함합니다
 * `skp_idx_{index_name}.mrk2`, 연결된 데이터 컬럼 파일의 해당 오프셋을 포함합니다.
 
-쿼리를 실행하면서 관련 컬럼 파일을 읽을 때 WHERE 절의 필터링 조건 일부가 스킵 인덱스 표현식과 일치하면, ClickHouse는 인덱스 파일 데이터를 사용해 관련된 각 데이터 블록을 처리해야 하는지 아니면 건너뛸 수 있는지를 판단합니다(해당 블록이 프라이머리 키 적용으로 이미 제외되지 않았다고 가정할 때). 매우 단순화한 예시로, 예측 가능한 데이터가 로드된 다음 테이블을 살펴보겠습니다.
+쿼리를 실행하면서 관련 컬럼 파일을 읽을 때 WHERE 절의 필터링 조건 일부가 스킵 인덱스 표현식과 일치하면, ClickHouse는 인덱스 파일 데이터를 사용해 관련된 각 데이터 블록(Block)을 처리해야 하는지 아니면 건너뛸 수 있는지를 판단합니다(해당 블록(Block)이 프라이머리 키 적용으로 이미 제외되지 않았다고 가정할 때). 매우 단순화한 예시로, 예측 가능한 데이터가 로드된 다음 테이블을 살펴보겠습니다.
 
 ```sql
 CREATE TABLE skip_table
@@ -103,13 +101,9 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 디스크에서 읽지 않고 어떻게 건너뛰었는지 확인할 수 있습니다:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Simple Skip](/images/guides/best-practices/simple_skip.webp)
-
-</Frame>
-
+  <Frame>
+    ![Simple Skip](/images/guides/best-practices/simple_skip.webp)
+  </Frame>
 </div>
 
 쿼리를 실행할 때 trace를 활성화하면 스킵 인덱스 사용에 대한 자세한 정보를 확인할 수 있습니다. clickhouse-client에서
@@ -127,13 +121,13 @@ SET send_logs_level='trace';
 ```
 
 <div id="skip-index-types">
-  ## 스킵 인덱스 타입
+  ## 스킵 인덱스 타입 {#skip-index-types}
 </div>
 
 {/* vale off */}
 
 <div id="minmax">
-  ### minmax
+  ### minmax {#minmax}
 </div>
 
 {/* vale on */}
@@ -146,7 +140,7 @@ SET send_logs_level='trace';
 {/* vale off */}
 
 <div id="set">
-  ### set
+  ### set {#set}
 </div>
 
 {/* vale on */}
@@ -158,7 +152,7 @@ SET send_logs_level='trace';
 {/* vale off */}
 
 <div id="text">
-  ### text
+  ### text {#text}
 </div>
 
 {/* vale on */}
@@ -169,7 +163,7 @@ SET send_logs_level='trace';
 자세한 내용은 [여기](/ko/reference/engines/table-engines/mergetree-family/textindexes)의 텍스트 인덱스 문서를 참조하십시오.
 
 <div id="bloom-filter-types">
-  ### 블룸 필터 타입
+  ### 블룸 필터 타입 {#bloom-filter-types}
 </div>
 
 *블룸 필터*는 약간의 거짓 양성(false positive) 가능성을 감수하는 대신, 값이 집합에 속하는지 여부를 공간 효율적으로 검사할 수 있게 해주는 데이터 구조입니다. 스킵 인덱스에서는 거짓 양성이 큰 문제가 되지 않습니다. 단지 불필요한 블록을 몇 개 더 읽게 되는 정도이기 때문입니다. 다만 거짓 양성 가능성이 있으므로, 인덱싱된 표현식은 `true`가 될 가능성이 있는 경우에 사용해야 합니다. 그렇지 않으면 유효한 데이터가 건너뛰어질 수 있습니다.
@@ -194,7 +188,7 @@ SET send_logs_level='trace';
 > text index는 진정한 역인덱스(inverted index)를 제공하므로, 토큰 기반 블룸 필터 인덱스보다 검색 성능이 더 뛰어나고 동작이 더 예측 가능하며 유연성과 성능도 더 우수합니다.
 
 <div id="skip-index-functions">
-  ## 스킵 인덱스 함수
+  ## 스킵 인덱스 함수 {#skip-index-functions}
 </div>
 
 데이터 스키핑 인덱스의 핵심 목적은 자주 사용되는 쿼리가 분석해야 하는 데이터 양을 줄이는 것입니다. ClickHouse 데이터의 분석 지향적 특성상, 이러한 쿼리 패턴에는 대부분 함수형 표현식이 포함됩니다. 따라서 스킵 인덱스가 효율적으로 동작하려면 일반적으로 사용되는 함수와 올바르게 상호작용해야 합니다. 이는 다음 두 경우 중 하나에서 일어날 수 있습니다.
@@ -206,7 +200,7 @@ SET send_logs_level='trace';
 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#functions-support)에서 확인할 수 있습니다. 일반적으로 Set 인덱스와 블룸 필터 기반 인덱스(또 다른 유형의 Set 인덱스)는 모두 순서가 없으므로 범위 조건에는 적합하지 않습니다. 반면 MinMax 인덱스는 범위가 서로 교차하는지 매우 빠르게 판단할 수 있으므로 범위 조건에서 특히 효과적입니다. 부분 일치 함수인 LIKE, startsWith, endsWith, hasToken의 효율성은 사용한 인덱스 유형, 인덱스 표현식, 그리고 데이터의 구체적인 형태에 따라 달라집니다.
 
 <div id="skip-index-settings">
-  ## 스킵 인덱스 설정
+  ## 스킵 인덱스 설정 {#skip-index-settings}
 </div>
 
 스킵 인덱스에 적용할 수 있는 설정은 두 가지입니다.
@@ -219,22 +213,16 @@ SET send_logs_level='trace';
   이름과 함께 이 설정을 사용하면 나열된 인덱스를 사용하지 않는 모든 쿼리에 대해 예외가 반환됩니다.  이렇게 하면 잘못 작성된 쿼리가
   서버 리소스를 소모하는 것을 방지할 수 있습니다.
 
-<div id="skip-best-practices">
-  ## 스킵 인덱스 모범 사례
-</div>
+## 스킵 인덱스 권장 사항 {#skip-best-practices}
 
-스킵 인덱스는 직관적으로 이해하기 어려우며, 특히 RDBMS 계열의 보조 행 기반 인덱스나 문서 저장소의 역인덱스에 익숙한 경우 더욱 그렇습니다. 실제로 효과를 얻으려면 ClickHouse 데이터 스키핑 인덱스를 적용할 때 인덱스 계산 비용을 상쇄할 만큼 충분한 그래뉼(granule) 읽기를 줄여야 합니다. 특히 인덱싱된 블록(block)에 값이 단 한 번이라도 나타나면 해당 블록 전체를 메모리로 읽어 평가해야 하므로, 인덱스 비용만 불필요하게 발생하게 됩니다.
+스킵 인덱스는 직관적으로 이해하기 어려우며, 특히 RDBMS 계열의 보조 행 기반 인덱스나 문서 저장소의 역인덱스에 익숙한 경우 더욱 그렇습니다. 실제로 효과를 얻으려면 ClickHouse 데이터 건너뛰기 인덱스(data skipping index)를 적용할 때 인덱스 계산 비용을 상쇄할 만큼 충분한 그래뉼(granule) 읽기를 줄여야 합니다. 특히 인덱싱된 블록(Block)에 값이 단 한 번이라도 나타나면 해당 블록(Block) 전체를 메모리로 읽어 평가해야 하므로, 인덱스 비용만 불필요하게 발생하게 됩니다.
 
 다음과 같은 데이터 분포를 살펴보겠습니다:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![잘못된 스킵](/images/guides/best-practices/bad_skip.webp)
-
-</Frame>
-
+  <Frame>
+    ![잘못된 스킵](/images/guides/best-practices/bad_skip.webp)
+  </Frame>
 </div>
 
 프라이머리/ORDER BY 키가 `timestamp`이고, `visitor_id`에 인덱스가 있다고 가정하겠습니다. 다음 쿼리를 살펴보겠습니다:
@@ -245,40 +233,38 @@ SELECT timestamp, url FROM table WHERE visitor_id = 1001`
 
 이러한 데이터 분포에서는 전통적인 보조 인덱스가 매우 유리합니다. 요청된 visitor&#95;id를 가진 5개의 행을 찾기 위해 32768개 행을 모두 읽는 대신,
 보조 인덱스에는 단 5개의 행 위치만 포함되므로, 디스크에서는 그 5개 행만
-읽으면 됩니다. 그러나 ClickHouse의 데이터 스키핑 인덱스는 정확히 그 반대로 동작합니다. `visitor_id` 컬럼의 32768개 값은 모두 검사되며,
+읽으면 됩니다. 그러나 ClickHouse의 데이터 건너뛰기 인덱스(data skipping index)는 정확히 그 반대로 동작합니다. `visitor_id` 컬럼의 32768개 값은 모두 검사되며,
 스킵 인덱스의 유형과 관계없이 동일합니다.
 
 따라서 ClickHouse 쿼리 속도를 높이기 위해 키
-컬럼에 인덱스를 단순히 추가하려는 자연스러운 생각은 대개 올바르지 않습니다. 이 고급 기능은 프라이머리 키 수정([How to Pick a Primary Key](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes) 참조), 프로젝션 사용, 또는 materialized view 사용과 같은 다른 대안을 먼저 검토한 뒤에만 사용해야 합니다. 데이터 스키핑 인덱스가 적합한 경우에도, 인덱스와 테이블 모두에 대해
+컬럼에 인덱스를 단순히 추가하려는 자연스러운 생각은 대개 올바르지 않습니다. 이 고급 기능은 프라이머리 키 수정([How to Pick a Primary Key](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes) 참조), 프로젝션 사용, 또는 materialized view 사용과 같은 다른 대안을 먼저 검토한 뒤에만 사용해야 합니다. 데이터 건너뛰기 인덱스(data skipping index)가 적합한 경우에도, 인덱스와 테이블 모두에 대해
 세심한 튜닝이 필요한 경우가 많습니다.
 
 대부분의 경우 유용한 스킵 인덱스를 사용하려면 프라이머리 키와 대상 비프라이머리 컬럼/표현식 사이에 강한 상관관계가 있어야 합니다.
 상관관계가 없다면(위 그림과 같이), 수천 개 값으로 이루어진
-블록 안의 행 중 적어도 하나가 필터링 조건을 만족할 가능성이 높아 스킵되는 블록은 거의 없습니다. 반대로 프라이머리 키의 값 범위(예: 시간대)가
+블록(Block) 안의 행 중 적어도 하나가 필터링 조건을 만족할 가능성이 높아 스킵되는 블록(Block)은 거의 없습니다. 반대로 프라이머리 키의 값 범위(예: 시간대)가
 잠재적인 인덱스 컬럼의 값(예: 텔레비전 시청자 연령)과 강하게 연관되어 있다면, minmax 유형의 인덱스가
 유용할 가능성이 큽니다. 또한 데이터를 삽입할 때 이 상관관계를 높일 수 있다는 점에도 유의하십시오. 예를 들어 정렬/ORDER BY 키에
 추가 컬럼을 포함하거나, 프라이머리 키와 연관된 값이 삽입 시 그룹화되도록 배칭 삽입할 수 있습니다. 예를
 들어 프라이머리 키가 많은 수의 사이트 이벤트를 포함하는 타임스탬프라 하더라도, 특정 site&#95;id에 대한 모든 이벤트를
 수집 프로세스에서 함께 그룹화해 삽입할 수 있습니다. 그러면 소수의 site ids만 포함하는 그래뉼이 많이 생성되므로,
 특정 site&#95;id 값으로 검색할 때 많은
-블록을 스킵할 수 있습니다.
+블록(Block)을 스킵할 수 있습니다.
 
 스킵 인덱스의 또 다른 좋은 후보는 높은 카디널리티를 가지며 개별 값이 데이터에서 비교적 희소한 표현식입니다. 한 가지 예로,
 API 요청의 오류 코드를 추적하는 관측성 플랫폼을 들 수 있습니다. 특정 오류 코드는 데이터에서는 드물지만, 검색에서는 특히
-중요할 수 있습니다. error&#95;code 컬럼에 set 스킵 인덱스를 사용하면 오류를 포함하지 않는 대다수의 블록을
+중요할 수 있습니다. error&#95;code 컬럼에 set 스킵 인덱스를 사용하면 오류를 포함하지 않는 대다수의 블록(Block)을
 건너뛸 수 있으므로 오류 중심 쿼리의 성능을 크게 향상할 수 있습니다.
 
-마지막으로, 가장 중요한 모범 사례는 테스트, 또 테스트, 그리고 다시 테스트하는 것입니다. 다시 말해, 문서 검색을 위한 b-tree 보조 인덱스나 역인덱스와는 달리,
-데이터 스키핑 인덱스의 동작은 쉽게 예측되지 않습니다. 이를 테이블에 추가하면 데이터 수집과,
+마지막으로, 가장 중요한 권장 사항은 테스트, 또 테스트, 그리고 다시 테스트하는 것입니다. 다시 말해, 문서 검색을 위한 b-tree 보조 인덱스나 역인덱스와는 달리,
+데이터 건너뛰기 인덱스(data skipping index)의 동작은 쉽게 예측되지 않습니다. 이를 테이블에 추가하면 데이터 수집과,
 여러 이유로 인덱스의 이점을 얻지 못하는 쿼리 모두에 의미 있는 비용이 발생합니다. 따라서 항상 실제 환경과 유사한 데이터로 테스트해야 하며,
 테스트에는 유형, 세분화 수준 크기 및 기타 매개변수의 변형도 포함되어야 합니다. 실제로 테스트해 보면 단순한
 사고 실험만으로는 분명히 드러나지 않는 패턴과 함정을 발견하는 경우가 많습니다.
 
-<div id="related-docs">
-  ## 관련 문서
-</div>
+## 관련 문서 {#related-docs}
 
-* [모범 사례 가이드](/ko/concepts/best-practices/using-data-skipping-indices)
-* [데이터 스키핑 인덱스 예시](/ko/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [데이터 스키핑 인덱스 관리](/ko/reference/statements/alter/skipping-index)
+* [권장 사항 가이드](/ko/concepts/best-practices/using-data-skipping-indices)
+* [데이터 건너뛰기 인덱스(data skipping index) 예시](/ko/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [데이터 건너뛰기 인덱스 관리](/ko/reference/statements/alter/skipping-index)
 * [시스템 테이블 정보](/ko/reference/system-tables/data_skipping_indices)
