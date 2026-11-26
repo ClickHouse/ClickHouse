@@ -54,6 +54,7 @@ public:
     }
 
     bool isExpired() const override { return false; }
+    silk::FiberEvent & getExpiredEvent() override { unsupported(); }
     std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
     String getConnectedHostPort() const override { return "GetCallbackKeeper:0000"; }
     int64_t getConnectionXid() const override { return 0; }
@@ -327,6 +328,20 @@ TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
     auto request = ZooKeeperRequestFactory::instance().get(OpNum::Multi);
     ReadBufferFromString in(out.str());
     EXPECT_THROW(request->readImpl(in), Coordination::Exception);
+}
+
+TEST(ZooKeeperTest, SetWatchesRequestWithoutDataWatchesGetPath)
+{
+    ZooKeeperSetWatchesRequest set_watches;
+    set_watches.child_watches = {"/child"};
+    EXPECT_EQ(set_watches.getPath(), "");
+
+    ZooKeeperSetWatches2Request set_watches2;
+    set_watches2.persistent_watches = {"/persistent"};
+    EXPECT_EQ(set_watches2.getPath(), "");
+
+    set_watches2.data_watches = {"/data"};
+    EXPECT_EQ(set_watches2.getPath(), "/data");
 }
 
 TEST(ZooKeeperTest, WaitForDisappearWithLateGetResponses)
