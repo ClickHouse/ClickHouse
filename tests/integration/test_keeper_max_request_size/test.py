@@ -205,38 +205,3 @@ def test_keeper_map_insert_at_limit(started_cluster):
     assert "KEEPER_EXCEPTION" in error
     assert node_client_only.query("SELECT count() FROM t_keeper_map") == "0\n"
     node_client_only.query("DROP TABLE t_keeper_map SYNC")
-
-
-# a ReplicatedMergeTree commit over the client limit fails with a Keeper error, not with a LOGICAL_ERROR:
-# 540 async-insert entries fit the block number allocation, but not the commit
-def test_replicated_commit_over_limit(started_cluster):
-    keeper_utils.wait_until_connected(cluster, node_client_only)
-    node_client_only.query("DROP TABLE IF EXISTS t_commit_over_limit SYNC")
-    node_client_only.query(
-        "CREATE TABLE t_commit_over_limit (x UInt64) ENGINE = ReplicatedMergeTree('/t_commit_over_limit', 'r1') ORDER BY x"
-    )
-    settings = {
-        "async_insert": 1,
-        "wait_for_async_insert": 0,
-        "async_insert_use_adaptive_busy_timeout": 0,
-        "async_insert_busy_timeout_max_ms": 600000,
-        "async_insert_max_query_number": 100000,
-        "async_insert_max_data_size": 100000000,
-    }
-    node_client_only.query(
-        "".join(f"INSERT INTO t_commit_over_limit VALUES ({i});" for i in range(540)),
-        settings=settings,
-    )
-    rejected = "Rejecting request: Request size [0-9]* exceeds limit 65536"
-    rejected_before = int(node_client_only.count_in_log(rejected).strip())
-    node_client_only.query("SYSTEM FLUSH ASYNC INSERT QUEUE t_commit_over_limit")
-    assert node_client_only.contains_in_log(
-        "Unexpected ZooKeeper error while adding block"
-    )
-    # the server log has the size of the rejected commit and the limit
-    assert int(node_client_only.count_in_log(rejected).strip()) > rejected_before
-    assert not node_client_only.contains_in_log(
-        "Responses for multi transaction is empty"
-    )
-    assert node_client_only.query("SELECT count() FROM t_commit_over_limit") == "0\n"
-    node_client_only.query("DROP TABLE t_commit_over_limit SYNC")

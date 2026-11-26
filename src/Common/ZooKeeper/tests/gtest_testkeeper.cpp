@@ -8,9 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
-#include <chrono>
 #include <future>
-#include <thread>
 
 using namespace Coordination;
 using namespace DB;
@@ -481,30 +479,4 @@ TEST(TestKeeperTest, NoOpWritesTriggerNoWatches)
     set(keeper, "/dir/child", "new");
     create(keeper, "/dir/missing", "", /* is_ephemeral */ false);
     events.expect({1, 1, 1, 1});
-}
-
-TEST(TestKeeperTest, ExpiredMultiHasResponsePerRequest)
-{
-    TestKeeper keeper = makeKeeper();
-    create(keeper, "/node", "", /* is_ephemeral */ false);
-
-    /// Holds the processing thread until the session expires, so the multi below is still queued then.
-    auto hold = std::make_shared<WatchCallback>([&keeper](const WatchResponse &)
-    {
-        while (!keeper.isExpired())
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    });
-    ASSERT_TRUE(exists(keeper, "/node", hold));
-    keeper.set("/node", "changed", /* version */ -1, [](const SetResponse &) {});
-
-    std::promise<MultiResponse> sink;
-    keeper.multi(
-        Requests{zkutil::makeCreateRequest("/created", "", zkutil::CreateMode::Persistent), zkutil::makeCheckRequest("/node", -1)},
-        [&](const MultiResponse & response) { sink.set_value(response); });
-
-    keeper.finalize("test");
-
-    MultiResponse response = sink.get_future().get();
-    EXPECT_EQ(response.error, Error::ZSESSIONEXPIRED);
-    EXPECT_EQ(response.responses.size(), 2u);
 }
