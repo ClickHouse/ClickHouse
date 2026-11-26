@@ -388,6 +388,14 @@ private:
       */
     std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> named_window_snapshots;
 
+    /** The results of the `APPLY` and `REPLACE` transformers of a matcher, resolved as the arguments of an aggregate function,
+      * where the GROUP BY keys keep their types under `group_by_use_nulls`. The key is the result resolved in the usual way,
+      * with the Nullable GROUP BY keys. In `SELECT * APPLY toInt64 APPLY (x -> tuple(sum(x), x))` the argument of `sum` is
+      * `toInt64(number)` with the original `number`, and the second element of the tuple is `toInt64(number)` with the Nullable one.
+      * See `resolveMatcher` and `resolveExpressionNode`.
+      */
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> transformer_results_before_aggregation;
+
     /** The `REPLACE` transformer mappings of the matchers resolved between the first and the second expansion of
       * the projection matchers under `group_by_use_nulls` (in `WHERE`, `GROUP BY`, etc.), which rewrote the `WINDOW` clause.
       * The clause is restored to its state before the first expansion, so they are replayed on it, see `resolveQuery`.

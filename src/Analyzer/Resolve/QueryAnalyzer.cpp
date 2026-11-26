@@ -397,6 +397,11 @@ void hideLambdaArgumentsShadowingAliasExpression(
 /** Replaces the matchers qualified by `name`, as `x.*` in `tuple(x.*, COLUMNS('c'))`, with the identifier `name`.
   * Used for the body of a deferred `APPLY` lambda whose argument is not known yet: the other matchers of the body
   * are expanded, and the ones that depend on the argument are not.
+  *
+  * The expressions of the `APPLY` and `REPLACE` transformers of such a matcher may contain matchers that do not depend
+  * on the argument, as `COLUMNS('c')` in `x.* APPLY (y -> max(COLUMNS('c') REPLACE (1 AS c)))`. These expressions are kept
+  * next to the identifier, as the arguments of a function, so that their matchers are expanded as well. The function is
+  * never resolved: the body is a copy to discard.
   */
 void replaceMatchersQualifiedByIdentifier(QueryTreeNodePtr & node, const std::string & name)
 {
@@ -404,7 +409,54 @@ void replaceMatchersQualifiedByIdentifier(QueryTreeNodePtr & node, const std::st
     {
         if (!matcher_node->isUnqualified() && matcher_node->getQualifiedIdentifier().front() == name)
         {
-            node = std::make_shared<IdentifierNode>(Identifier(name));
+            QueryTreeNodes transformer_expressions;
+
+            for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
+            {
+                if (const auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
+                {
+                    auto expression = apply_transformer->getExpressionNode()->clone();
+                    auto * lambda_node = expression->as<LambdaNode>();
+                    if (!lambda_node)
+                    {
+                        replaceMatchersQualifiedByIdentifier(expression, name);
+                        transformer_expressions.push_back(std::move(expression));
+                        continue;
+                    }
+
+                    /// The argument of this lambda is a column of the postponed matcher, so it is not known either.
+                    auto & lambda_body = lambda_node->getExpression();
+                    const auto & lambda_argument_names = lambda_node->getArguments().getNames();
+                    const bool shadows_name = std::ranges::find(lambda_argument_names, name) != lambda_argument_names.end();
+                    for (const auto & lambda_argument_name : lambda_argument_names)
+                        replaceMatchersQualifiedByIdentifier(lambda_body, lambda_argument_name);
+                    if (!shadows_name)
+                        replaceMatchersQualifiedByIdentifier(lambda_body, name);
+                    transformer_expressions.push_back(lambda_body);
+                }
+                else if (const auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+                {
+                    for (const auto & replacement : replace_transformer->getReplacements().getNodes())
+                    {
+                        auto expression = replacement->clone();
+                        replaceMatchersQualifiedByIdentifier(expression, name);
+                        transformer_expressions.push_back(std::move(expression));
+                    }
+                }
+            }
+
+            QueryTreeNodePtr identifier_node = std::make_shared<IdentifierNode>(Identifier(name));
+            if (transformer_expressions.empty())
+            {
+                node = std::move(identifier_node);
+                return;
+            }
+
+            auto function_node = std::make_shared<FunctionNode>("tuple");
+            auto & arguments = function_node->getArguments().getNodes();
+            arguments.push_back(std::move(identifier_node));
+            arguments.insert(arguments.end(), transformer_expressions.begin(), transformer_expressions.end());
+            node = std::move(function_node);
             return;
         }
     }
@@ -3212,6 +3264,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     };
 
     bool has_aggregate_apply_transformer = false;
+    /// The last `APPLY` transformer with an aggregate function. The results of the preceding transformers may be its arguments.
+    const IQueryTreeNode * last_aggregate_apply_transformer = nullptr;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
         if (auto * apply = transformer->as<ApplyColumnTransformerNode>())
@@ -3229,7 +3283,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             if (expr_to_check && has_aggregate_function_in_tree(expr_to_check))
             {
                 has_aggregate_apply_transformer = true;
-                break;
+                last_aggregate_apply_transformer = transformer.get();
             }
         }
     }
@@ -3277,12 +3331,30 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     const bool defer_transformer_expressions = query_with_deferred_transformer_expressions
         && nearest_query_scope && nearest_query_scope->scope_node.get() == query_with_deferred_transformer_expressions;
 
+    /** The result of a transformer followed by an `APPLY` transformer with an aggregate function can be used both inside
+      * and outside of that aggregate function, as in `* APPLY toInt64 APPLY (x -> tuple(sum(x), x))`. With `group_by_use_nulls`,
+      * the GROUP BY keys inside it are Nullable in the second case and keep their types in the first one, so such a transformer
+      * is resolved twice, see `transformer_results_before_aggregation`.
+      */
+    const bool keep_transformer_results_before_aggregation
+        = group_by_keys_scope && last_aggregate_apply_transformer && !isInAggregateOrGroupingFunctionScope(scope);
+
+    auto is_aggregate_or_grouping_function = [&](const FunctionNode & function_node)
+    {
+        const auto & function_name = function_node.getFunctionName();
+        return (AggregateFunctionFactory::instance().isAggregateFunctionName(function_name) || function_name == "grouping")
+            && !function_node.isWindowCall() && !isLambdaCall(function_node, scope);
+    };
+
     ListNodePtr list = std::make_shared<ListNode>();
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
 
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
+        /// The input of the next transformer, resolved as an argument of an aggregate function.
+        QueryTreeNodePtr node_before_aggregation = node;
+        bool is_before_last_aggregate_apply_transformer = keep_transformer_results_before_aggregation;
         bool apply_transformer_was_used = false;
         bool replace_transformer_was_used = false;
         bool execute_apply_transformer = false;
@@ -3312,6 +3384,21 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             /// changes belongs to this chain alone and may not be published on a shared node.
             const String projection_name_before_transformer = result_projection_names.back();
             const bool is_last_transformer = transformer.get() == column_transformers.back().get();
+
+            if (transformer.get() == last_aggregate_apply_transformer)
+                is_before_last_aggregate_apply_transformer = false;
+
+            /// The result of this transformer, resolved as an argument of an aggregate function.
+            QueryTreeNodePtr result_before_aggregation;
+            auto resolve_before_aggregation = [&](auto && resolve)
+            {
+                if (!is_before_last_aggregate_apply_transformer)
+                    return;
+
+                scope.expressions_in_resolve_process_stack.enterAggregateFunctionArguments();
+                SCOPE_EXIT({ scope.expressions_in_resolve_process_stack.leaveAggregateFunctionArguments(); });
+                result_before_aggregation = resolve();
+            };
 
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
@@ -3384,6 +3471,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// A lambda body can only learn a matched column's name from this map; the FUNCTION branch below also reads its alias.
                     node_to_projection_name.emplace(node, result_projection_names.back());
 
+                    resolve_before_aggregation([&]
+                    {
+                        auto lambda_expression_before_aggregation = expression_node->clone();
+                        auto & lambda_scope_before_aggregation = createIdentifierResolveScope(lambda_expression_before_aggregation, /*parent_scope=*/&scope);
+                        resolveLambda(expression_node, lambda_expression_before_aggregation, {node_before_aggregation}, lambda_scope_before_aggregation);
+                        return lambda_expression_before_aggregation->as<LambdaNode &>().getExpression();
+                    });
+
                     auto lambda_expression_to_resolve = expression_node->clone();
                     auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
@@ -3392,9 +3487,21 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 }
                 else if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
                 {
+                    resolve_before_aggregation([&]
+                    {
+                        auto function_before_aggregation = expression_node->clone();
+                        function_before_aggregation->as<FunctionNode &>().getArguments().getNodes().push_back(node_before_aggregation);
+                        scope.pushExpressionNode(function_before_aggregation);
+                        SCOPE_EXIT({ scope.popExpressionNode(); });
+                        resolveFunction(function_before_aggregation, scope);
+                        return function_before_aggregation;
+                    });
+
                     auto function_to_resolve_untyped = expression_node->clone();
                     auto & function_to_resolve_typed = function_to_resolve_untyped->as<FunctionNode &>();
-                    function_to_resolve_typed.getArguments().getNodes().push_back(node);
+                    /// An aggregate function gets the result of the preceding transformers with the GROUP BY keys in their original types.
+                    function_to_resolve_typed.getArguments().getNodes().push_back(
+                        is_aggregate_or_grouping_function(function_to_resolve_typed) ? node_before_aggregation : node);
                     /// Push the function onto the resolve stack so that argument resolution
                     /// sees this scope as being inside the function. This matters for aggregate
                     /// functions: without it, matched columns appended as arguments would be
@@ -3475,6 +3582,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     transformer_input_is_deferred = true;
                     continue;
                 }
+
+                resolve_before_aggregation([&]
+                {
+                    auto replace_expression_before_aggregation = replace_expression->clone();
+                    resolveExpressionNode(replace_expression_before_aggregation, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                    return replace_expression_before_aggregation;
+                });
 
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -3611,6 +3725,18 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     node_to_projection_name.emplace(node, natural_projection_name);
                 }
                 node_projection_names.clear();
+
+                /// A list is not a valid input of a following transformer, see above.
+                if (result_before_aggregation)
+                {
+                    if (const auto * list_before_aggregation = result_before_aggregation->as<ListNode>())
+                        result_before_aggregation = list_before_aggregation->getNodes().size() == 1 ? list_before_aggregation->getNodes().front() : nullptr;
+                }
+
+                if (result_before_aggregation && result_before_aggregation != node)
+                    transformer_results_before_aggregation[node] = result_before_aggregation;
+
+                node_before_aggregation = result_before_aggregation ? result_before_aggregation : node;
             }
         }
 
@@ -5065,6 +5191,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         /// Check parent scopes until find current query scope.
         if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
             break;
+    }
+
+    /// The result of a transformer of a matcher, used inside an aggregate function of a following transformer.
+    if (in_aggregate_or_grouping_function_scope && !transformer_results_before_aggregation.empty())
+    {
+        auto result_before_aggregation_it = transformer_results_before_aggregation.find(node);
+        if (result_before_aggregation_it != transformer_results_before_aggregation.end())
+            node = result_before_aggregation_it->second;
     }
 
     /// For correlated column references, the relevant `nullable_group_by_keys`
@@ -9316,6 +9450,90 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                         copyNamedWindowSnapshots(projection_node, nodes_with_duplicated_aliases[index]);
             }
         }
+
+        /** The alias of a projection item may be defined first by a different expression of another clause, which is equal
+          * to the item only after it is resolved, as in `WITH count(t.c) OVER w AS cnt SELECT count(t.*) OVER w AS cnt`.
+          * The following clauses resolve the alias from that definition, and it has to resolve its named windows
+          * as the projection item does. Such expressions cannot be compared node by node, so the definitions of the alias
+          * take the snapshots by the names of the windows, unless the projection item refers to a window with different snapshots.
+          */
+        std::unordered_set<std::string> duplicated_alias_names;
+        for (const auto & node_with_duplicated_alias : nodes_with_duplicated_aliases)
+            if (node_with_duplicated_alias->hasAlias())
+                duplicated_alias_names.insert(node_with_duplicated_alias->getAlias());
+
+        using NamedWindowSnapshotsByName = std::unordered_map<std::string, QueryTreeNodePtr>;
+
+        /// Calls `callback` with the window node and the name of the named window for every window function referring to one.
+        std::function<void(const QueryTreeNodePtr &, const std::function<void(const QueryTreeNodePtr &, const String &)> &)> for_each_named_window_reference
+            = [&](const QueryTreeNodePtr & node, const std::function<void(const QueryTreeNodePtr &, const String &)> & callback)
+        {
+            /// The named windows of a subquery are its own.
+            auto node_type = node->getNodeType();
+            if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                return;
+
+            if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->hasWindow())
+            {
+                const auto & window_node = function_node->getWindowNode();
+                String window_name;
+                if (const auto * identifier_node = window_node->as<IdentifierNode>())
+                    window_name = identifier_node->getIdentifier().getFullName();
+                else if (const auto * window_node_typed = window_node->as<WindowNode>())
+                    window_name = window_node_typed->getParentWindowName();
+
+                if (!window_name.empty())
+                    callback(window_node, window_name);
+            }
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    for_each_named_window_reference(child, callback);
+        };
+
+        std::unordered_set<std::string> aliases_with_copied_snapshots;
+        for_each_aliased_projection_node([&](const QueryTreeNodePtr & node)
+        {
+            const auto & alias = node->getAlias();
+            if (projection_alias_definitions.contains(alias) || !duplicated_alias_names.contains(alias) || aliases_with_copied_snapshots.contains(alias))
+                return;
+
+            /// An empty snapshot marks a window with different snapshots.
+            NamedWindowSnapshotsByName snapshots;
+            for_each_named_window_reference(node, [&](const QueryTreeNodePtr & window_node, const String & window_name)
+            {
+                auto snapshot_it = named_window_snapshots.find(window_node);
+                if (snapshot_it == named_window_snapshots.end())
+                    return;
+
+                auto [it, inserted] = snapshots.emplace(window_name, snapshot_it->second);
+                if (!inserted && it->second && !it->second->isEqual(*snapshot_it->second))
+                    it->second = nullptr;
+            });
+
+            if (snapshots.empty())
+                return;
+
+            aliases_with_copied_snapshots.insert(alias);
+
+            auto take_snapshots = [&](const QueryTreeNodePtr & alias_definition)
+            {
+                for_each_named_window_reference(alias_definition, [&](const QueryTreeNodePtr & window_node, const String & window_name)
+                {
+                    auto it = snapshots.find(window_name);
+                    if (it != snapshots.end() && it->second && !named_window_snapshots.contains(window_node))
+                        named_window_snapshots[window_node] = it->second->clone();
+                });
+            };
+
+            auto definition_it = scope.aliases.alias_name_to_expression_node.find(alias);
+            if (definition_it != scope.aliases.alias_name_to_expression_node.end())
+                take_snapshots(definition_it->second);
+
+            for (size_t i = 0; i < nodes_with_duplicated_aliases.size(); ++i)
+                if (!replaced_duplicated_aliases[i] && nodes_with_duplicated_aliases[i]->getAlias() == alias)
+                    take_snapshots(nodes_with_duplicated_aliases[i]);
+        });
     }
 
     if (query_node_typed.hasHaving())
