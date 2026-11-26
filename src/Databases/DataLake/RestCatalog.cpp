@@ -2239,12 +2239,12 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     const size_t max_tries = std::max(size_t{1}, http_settings.max_tries);
     size_t backoff_ms = http_settings.retry_initial_backoff_ms;
     bool uncertain = false;
-    for (size_t attempt = 0;; ++attempt)
+    String error;
+    for (size_t attempt = 0; attempt < max_tries; ++attempt)
     {
         bool retry = false;
         bool conflict = false;
         bool rejected = false;
-        String error;
         try
         {
             if (attempt)
@@ -2258,7 +2258,6 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
                     sleepForMilliseconds(slice_ms);
                     remaining_ms -= slice_ms;
                 }
-                backoff_ms = std::min(backoff_ms * 2, http_settings.retry_max_backoff_ms);
             }
             /// Retry here so a later rejection cannot hide an earlier ambiguous attempt.
             sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ false);
@@ -2318,13 +2317,16 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         /// A missing snapshot or a failed refresh cannot prove that the commit did not land.
         uncertain = true;
         if (!retry || attempt + 1 == max_tries)
-            throw DB::Exception(
-                DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
-                "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
-                namespace_name, table_name, error);
+            break;
 
         LOG_DEBUG(log, "Retrying Iceberg commit for {}.{} after attempt {}/{}: {}", namespace_name, table_name, attempt + 1, max_tries, error);
+        if (attempt)
+            backoff_ms = std::min(backoff_ms * 2, http_settings.retry_max_backoff_ms);
     }
+    throw DB::Exception(
+        DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+        "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
+        namespace_name, table_name, error);
 }
 
 Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
