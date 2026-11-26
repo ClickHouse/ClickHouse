@@ -47,7 +47,6 @@
 #include <IO/VarInt.h>
 #include <array>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>

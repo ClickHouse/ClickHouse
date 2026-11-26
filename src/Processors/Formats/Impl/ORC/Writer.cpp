@@ -800,7 +800,7 @@ protected:
 
 private:
     /// A time of day has to be in the range [00:00:00, 24:00:00).
-    Int64 toTimeOfDayMicroseconds(const IColumn & column, size_t row, Int64 value) const
+    [[nodiscard]] Int64 toTimeOfDayMicroseconds(const IColumn & column, size_t row, Int64 value) const
     {
         static constexpr Int64 microseconds_per_day = 24LL * 60 * 60 * 1'000'000;
         Int64 microseconds = 0;

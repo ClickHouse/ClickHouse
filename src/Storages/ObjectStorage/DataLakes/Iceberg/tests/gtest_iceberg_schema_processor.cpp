@@ -143,7 +143,6 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeUnknownThrows)
 
 #if USE_AVRO
 
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <Poco/JSON/Stringifier.h>

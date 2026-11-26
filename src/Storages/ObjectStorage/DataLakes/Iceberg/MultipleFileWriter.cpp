@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 
 namespace DB
