@@ -88,8 +88,9 @@ struct BaseSettingsHelpers
         /// See `hasChangesAffectingClient`. Currently only used in S3RequestSettings.
         AFFECTS_CLIENT = 0x20,
         /// Flag indicating that a setting of a table can also be set for a database, which applies it to all its tables.
-        /// See `isDatabaseLevel`. Currently only used in DataLakeStorageSettings, for the tables of a `DataLakeCatalog` database.
-        DATABASE_LEVEL = 0x40,
+        /// See `isDatabaseAndTableSetting`. Currently only used in DataLakeStorageSettings, for the tables of a
+        /// `DataLakeCatalog` database.
+        DATABASE_AND_TABLE_SETTING = 0x40,
         /// Flag indicating that changes from config can be picked up without server restart.
         /// Currently only works in CoordinationSettings.
         HOT_RELOAD = 0x80,
@@ -1459,7 +1460,10 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             bool isHotReload(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::HOT_RELOAD; } \
             bool affectsClient(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::AFFECTS_CLIENT; } \
-            bool isDatabaseLevel(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::DATABASE_LEVEL; } \
+            bool isDatabaseAndTableSetting(size_t index) const \
+            { \
+                return field_infos[index].flags & BaseSettingsHelpers::Flags::DATABASE_AND_TABLE_SETTING; \
+            } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
             /* Value conversion utilities — use type-level ops (no Data instance needed) */ \
@@ -1752,7 +1756,7 @@ struct SettingFieldInfoInit
         { \
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             [[maybe_unused]] constexpr int AFFECTS_CLIENT = 0x20; \
-            [[maybe_unused]] constexpr int DATABASE_LEVEL = 0x40; \
+            [[maybe_unused]] constexpr int DATABASE_AND_TABLE_SETTING = 0x40; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \
             _Pragma("clang diagnostic push") \

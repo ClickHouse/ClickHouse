@@ -1911,7 +1911,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     for (const auto & change : settings_changes)
     {
         DatabaseDataLakeSettings::checkCanBeSetForDatabase(change.name);
-        if (DatabaseDataLakeSettings::isIcebergTableSetting(change.name))
+        if (DatabaseDataLakeSettings::isDatabaseAndTableSetting(change.name))
             table_settings_changed = true;
         else
             catalog_settings_changes.push_back(change);

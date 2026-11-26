@@ -126,27 +126,27 @@ bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
     return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
 }
 
-bool DatabaseDataLakeSettings::isIcebergTableSetting(std::string_view name)
+bool DatabaseDataLakeSettings::isDatabaseAndTableSetting(std::string_view name)
 {
     const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
     const size_t index = accessor.find(DatabaseDataLakeSettingsTraits::resolveName(name));
-    return index != static_cast<size_t>(-1) && accessor.isDatabaseLevel(index);
+    return index != static_cast<size_t>(-1) && accessor.isDatabaseAndTableSetting(index);
 }
 
 void DatabaseDataLakeSettings::checkCanBeSetForDatabase(std::string_view name)
 {
     /// The `iceberg_` prefix is a deprecated way to tell whether a setting can be set for the database: it is kept only
     /// so that the other settings, which the database accepted before, are still accepted. Do not use the name of a setting
-    /// for such decisions, mark the setting with `DATABASE_LEVEL` in its declaration instead. An unknown name is reported
-    /// by `applyChanges`.
-    if (!name.starts_with("iceberg_") || !hasBuiltin(name) || isIcebergTableSetting(name))
+    /// for such decisions, mark the setting with `DATABASE_AND_TABLE_SETTING` in its declaration instead. An unknown name
+    /// is reported by `applyChanges`.
+    if (!name.starts_with("iceberg_") || !hasBuiltin(name) || isDatabaseAndTableSetting(name))
         return;
 
     const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
     Strings table_settings;
     for (size_t i = 0; i < accessor.size(); ++i)
     {
-        if (accessor.isDatabaseLevel(i))
+        if (accessor.isDatabaseAndTableSetting(i))
             table_settings.push_back(accessor.getName(i));
     }
     throw Exception(
