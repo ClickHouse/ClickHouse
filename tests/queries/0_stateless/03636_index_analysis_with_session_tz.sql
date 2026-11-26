@@ -70,6 +70,7 @@ SETTINGS session_timezone = 'EST';
 
 DROP TABLE 03636_data_partitions;
 
+-- Text is parsed in `session_timezone`, which the session sets to another value than the table, so the key is not used.
 CREATE TABLE 03636_data_parsed (ts String) ENGINE = MergeTree ORDER BY toStartOfDay(toDateTime(ts))
 AS
 SELECT '2025-09-02 19:00:00';
