@@ -936,20 +936,24 @@ def test_custom_headers_authenticate_gateway(
 
 
 @pytest.mark.parametrize(
-    "provider,path,embedding,secret,status",
+    "provider,path,embedding,header",
     [
-        ("openai", "/v1/error_marker", False, "fixture-credential-marker", 400),
-        ("anthropic", "/v1/raw_error_marker", False, "fixture-credential-marker", 400),
-        ("openai", "/v1/raw_error_marker", True, "fixture-credential-marker", 400),
+        ("openai", "/v1/error_marker", False, "X-Tenant"),
+        ("anthropic", "/v1/raw_error_marker", False, "X-Tenant"),
+        ("openai", "/v1/raw_error_marker", True, None),
+        ("openai", "/v1/error_marker", False, "Authorization"),
+        ("openai", "/v1/raw_error_marker", False, "Authorization"),
     ],
 )
 def test_provider_error_hides_configured_values(
-    header_collection, provider, path, embedding, secret, status
+    header_collection, provider, path, embedding, header
 ):
+    secret = "fixture-credential-marker"
+    header_value = f"Bearer {secret}" if header == "Authorization" else secret
     collection = header_collection(
         provider,
         f"http://localhost:{MOCK_PORT}{path}",
-        [] if embedding else [("X-Tenant", secret)],
+        [(header, header_value)] if header else [],
         api_key=secret if embedding else None,
         model=not embedding,
     )
@@ -964,7 +968,7 @@ def test_provider_error_hides_configured_values(
         "AND type = 'ExceptionWhileProcessing'"
     )
     for message in (error, logged):
-        assert f"HTTP {status}" in message
+        assert "HTTP 400" in message
         assert "[REDACTED]" in message
         assert secret not in message
 
