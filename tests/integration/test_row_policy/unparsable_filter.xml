@@ -1,0 +1,14 @@
+<clickhouse>
+    <users>
+        <default>
+            <!-- A filter which cannot be parsed, holding a secret -->
+            <databases>
+                <mydb>
+                    <filtered_table1>
+                        <filter>a = 'unparsable_filter_secret' AND</filter>
+                    </filtered_table1>
+                </mydb>
+            </databases>
+        </default>
+    </users>
+</clickhouse>

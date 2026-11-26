@@ -1,0 +1,6 @@
+0
+0
+table_policy_05875	(x = 1) OR (queryID() = hex(HMAC(\'sha256\', toString(x), \'[HIDDEN]\')))
+database_policy_05875	1
+table_policy_05875	(x = 1) OR (queryID() = hex(HMAC(\'sha256\', toString(x), \'[HIDDEN]\')))
+0

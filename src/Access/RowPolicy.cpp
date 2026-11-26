@@ -1,9 +1,12 @@
 #include <Access/RowPolicy.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Core/Defines.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST.h>
+#include <Parsers/parseQuery.h>
 #include <boost/range/algorithm/equal.hpp>
 
 
@@ -31,6 +34,21 @@ void checkRowPolicyFilterExpression(const ASTPtr & expression)
                 "Column matcher {} is not allowed in a row policy filter expression; list the columns explicitly. In filter {}",
                 matcher->formatForErrorMessage(),
                 expression->formatForErrorMessage());
+    }
+}
+
+ASTPtr parseRowPolicyFilter(const String & policy_name, RowPolicyFilterType filter_type, const String & filter)
+{
+    try
+    {
+        /// An exception is recorded into `system.errors` when it is constructed, so keep the one quoting the filter out of it.
+        Exception::SuppressErrorCodesScope suppress_error_codes;
+        ParserExpression parser;
+        return parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(e.code(), "Cannot parse {} of row policy {}", RowPolicyFilterTypeInfo::get(filter_type).name, backQuote(policy_name));
     }
 }
 

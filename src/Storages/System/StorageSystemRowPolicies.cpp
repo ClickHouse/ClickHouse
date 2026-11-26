@@ -2,6 +2,7 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Access/RowPolicy.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
@@ -15,7 +16,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/IAST.h>
 #include <base/range.h>
 #include <base/insertAtEnd.h>
 
@@ -69,6 +72,9 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
     if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
         context->checkAccess(AccessType::SHOW_ROW_POLICIES);
 
+    const auto access = context->getAccess();
+    const bool check_access_for_policies = !access->isGranted(AccessType::SHOW_ROW_POLICIES);
+
     std::vector<UUID> ids = access_control.findAll<RowPolicy>();
 
     size_t column_index = 0;
@@ -121,7 +127,10 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
             }
             else
             {
-                column_filter[filter_type_i]->insertData(filter.data(), filter.length());
+                /// Formatted as by SHOW CREATE ROW POLICY, which hides the secrets.
+                ASTPtr expr = parseRowPolicyFilter(name, filter_type, filter);
+                const String shown_filter = expr->hasSecretParts() ? format({context, *expr}) : filter;
+                column_filter[filter_type_i]->insertData(shown_filter.data(), shown_filter.length());
                 column_filter_null_map[filter_type_i]->push_back(false);
             }
         }
@@ -146,6 +155,10 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
     {
         auto policy = access_control.tryRead<RowPolicy>(id);
         if (!policy)
+            continue;
+        const auto & full_name = policy->getFullName();
+        if (check_access_for_policies
+            && !access->isGranted(AccessRightsElement{AccessType::SHOW_ROW_POLICIES, full_name.database, full_name.table_name}))
             continue;
         auto storage = access_control.findStorage(id);
         if (!storage)
