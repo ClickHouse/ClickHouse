@@ -38,6 +38,7 @@ void FairAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_b
         .setAttached(child.get())
         .setIncrease(child->increase)
         .setDecrease(child->decrease));
+    child->updateAdmissionQueueing(admission_queueing);
 }
 
 void FairAllocation::removeChild(ISchedulerNode * child_base)
@@ -52,6 +53,7 @@ void FairAllocation::removeChild(ISchedulerNode * child_base)
         child->setUsageKey(-1, 0); // do not leave garbage
         child->setParentNode(nullptr);
         child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
+        child->updateAdmissionQueueing(false);
         children.erase(iter);
     }
 }
@@ -286,6 +288,13 @@ void FairAllocation::updateMinMaxAllocated(ResourceCost new_value)
     min_max_allocated = new_value;
     for (auto & [name, child] : children)
         child->updateMinMaxAllocated(min_max_allocated);
+}
+
+void FairAllocation::updateAdmissionQueueing(bool new_value)
+{
+    admission_queueing = new_value;
+    for (auto & [name, child] : children)
+        child->updateAdmissionQueueing(admission_queueing);
 }
 
 }

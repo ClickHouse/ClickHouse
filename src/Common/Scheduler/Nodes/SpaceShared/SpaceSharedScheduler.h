@@ -74,6 +74,7 @@ public:
             .setAttached(child.get())
             .setIncrease(child->increase)
             .setDecrease(child->decrease));
+        child->updateAdmissionQueueing(admission_queueing);
     }
 
     void removeChild(ISchedulerNode * child_) override
@@ -86,6 +87,7 @@ public:
             .setDecrease(nullptr));
         child->setParentNode(nullptr);
         child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
+        child->updateAdmissionQueueing(false);
         child.reset();
     }
 
@@ -142,6 +144,13 @@ public:
         min_max_allocated = new_value;
         if (child)
             child->updateMinMaxAllocated(min_max_allocated);
+    }
+
+    void updateAdmissionQueueing(bool new_value) override
+    {
+        admission_queueing = new_value;
+        if (child)
+            child->updateAdmissionQueueing(admission_queueing);
     }
 
 private:

@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <utility>
 #include <gtest/gtest.h>
 
@@ -73,6 +74,7 @@ namespace DB::ErrorCodes
     extern const int SERVER_OVERLOADED;
     extern const int RESOURCE_LIMIT_EXCEEDED;
     extern const int INVALID_SCHEDULER_NODE;
+    extern const int MEMORY_RESERVATION_ACQUISITION_TIMEOUT;
 }
 
 using namespace DB;
@@ -4429,6 +4431,38 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsAdmissionThreshold)
+{
+    auto parse = [](std::initializer_list<std::pair<String, Field>> settings)
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        for (const auto & [name, value] : settings)
+            changes.emplace_back(name, value, "");
+        ws.initFromChanges(changes);
+        return ws;
+    };
+
+    EXPECT_EQ(parse({}).max_memory_before_queue, WorkloadSettings::unlimited);
+    EXPECT_FALSE(parse({}).hasAllocationLimit(CostUnit::MemoryByte));
+
+    // The threshold alone needs an `AllocationLimit` node
+    auto exact = parse({{"max_memory_before_queue", Field(Int64(300))}});
+    EXPECT_EQ(exact.max_memory_before_queue, 300);
+    EXPECT_TRUE(exact.hasAllocationLimit(CostUnit::MemoryByte));
+    EXPECT_EQ(exact.getAdmissionAllocationLimit(CostUnit::MemoryByte), 300);
+
+    // The ratio is a fraction of `max_memory` and the smaller value wins
+    EXPECT_EQ(parse({{"max_memory", Field(Int64(1000))}, {"max_memory_to_queue_ratio", Field(Float64(0.4))}}).max_memory_before_queue, 400);
+    EXPECT_EQ(parse({{"max_memory", Field(Int64(1000))}, {"max_memory_before_queue", Field(Int64(300))},
+        {"max_memory_to_queue_ratio", Field(Float64(0.4))}}).max_memory_before_queue, 300);
+
+    // Without `max_memory` the ratio has no base
+    EXPECT_EQ(parse({{"max_memory_to_queue_ratio", Field(Float64(0.4))}}).max_memory_before_queue, WorkloadSettings::unlimited);
+
+    EXPECT_THROW(parse({{"max_memory_to_queue_ratio", Field(Float64(1.5))}}), DB::Exception);
+}
+
 TEST(SchedulerWorkloadResourceManager, WorkloadSettingsPerResourceScheduler)
 {
     // `scheduler` can be chosen per resource via the `FOR <resource>` clause (e.g. a different
@@ -5092,4 +5126,213 @@ TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
         << "The notification never reached the handlers after the blocker, so the assertion below is vacuous";
     EXPECT_EQ(probe->unsubscribed_handler_calls.load(), 0)
         << "A handler was called after its subscription guard had already been destroyed";
+}
+
+namespace
+{
+
+/// Waits until `count` allocations are pending in the queue behind `link`.
+void waitPendingAllocations(ResourceLink link, UInt64 count)
+{
+    auto & queue = static_cast<AllocationQueue &>(*link.allocation_queue);
+    while (queue.getPending() != count)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+}
+
+/// Runs a zero-size memory reservation (a query with `reserve_memory = 0`) in a separate thread.
+struct WaitingQuery
+{
+    std::atomic<bool> admitted{false};
+    std::atomic<bool> failed{false};
+    std::promise<void> release;
+    std::thread thread;
+
+    WaitingQuery(ResourceLink link, const String & name)
+        : thread([this, link, name, released = release.get_future()]
+        {
+            try
+            {
+                MemoryReservation reservation(link, name, 0, 1);
+                admitted = true;
+                released.wait();
+            }
+            catch (...)
+            {
+                failed = true;
+            }
+        })
+    {}
+
+    ~WaitingQuery()
+    {
+        release.set_value();
+        thread.join();
+    }
+
+    void waitAdmitted() const
+    {
+        while (!admitted && !failed)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        EXPECT_FALSE(failed);
+    }
+};
+
+std::chrono::steady_clock::time_point deadlineIn(std::chrono::milliseconds timeout)
+{
+    return std::chrono::steady_clock::now() + timeout;
+}
+
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationAdmissionThreshold)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_queue = 500");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "a", 400);
+    a.waitSync();
+
+    // Not above the threshold: a new query is admitted right away
+    {
+        MemoryReservation below(link, "below", 0, 1, deadlineIn(std::chrono::seconds(60)));
+    }
+
+    // The threshold does not limit the growth of a running query
+    a.setSize(600);
+    a.waitSync();
+
+    // Above the threshold: a new query waits, even with zero reservation
+    WaitingQuery waiting(link, "waiting");
+    waitPendingAllocations(link, 1);
+    EXPECT_FALSE(waiting.admitted);
+
+    // A running query keeps growing while a new query waits
+    a.setSize(700);
+    a.waitSync();
+    EXPECT_FALSE(waiting.admitted);
+
+    // Releasing memory down to the threshold admits the waiting query
+    a.setSize(500);
+    a.waitSync();
+    waiting.waitAdmitted();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationAdmissionThresholdTimeoutAndQueueLimit)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_queue = 500, max_waiting_queries = 1");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "a", 600);
+    a.waitSync();
+
+    try
+    {
+        MemoryReservation late(link, "late", 0, 1, deadlineIn(std::chrono::milliseconds(50)));
+        FAIL() << "Expected the admission to time out";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::MEMORY_RESERVATION_ACQUISITION_TIMEOUT);
+    }
+
+    WaitingQuery waiting(link, "waiting");
+    waitPendingAllocations(link, 1);
+    try
+    {
+        MemoryReservation rejected(link, "rejected", 0, 1);
+        FAIL() << "Expected `max_waiting_queries` to reject the query";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::SERVER_OVERLOADED);
+    }
+
+    a.setSize(0);
+    a.waitSync();
+    waiting.waitAdmitted();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationAdmissionThresholdSmallerSettingWins)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Effective threshold = min(max_memory_before_queue = 700, 0.5 * max_memory = 500) = 500.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_queue = 700, max_memory_to_queue_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "a", 550);
+    a.waitSync();
+    EXPECT_THROW(MemoryReservation(link, "late", 0, 1, deadlineIn(std::chrono::milliseconds(50))), DB::Exception);
+
+    a.setSize(450);
+    a.waitSync();
+    MemoryReservation admitted(link, "admitted", 0, 1, deadlineIn(std::chrono::seconds(60)));
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationAdmissionThresholdDoesNotBlockLowerPrecedence)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_queue = 500");
+    t.query("CREATE WORKLOAD high IN all SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD low IN all SETTINGS precedence = 2");
+
+    ClassifierPtr high = t.manager->acquire("high");
+    ClassifierPtr low = t.manager->acquire("low");
+    ResourceLink high_link = high->get("memory");
+    ResourceLink low_link = low->get("memory");
+
+    TestAllocation a(low_link, "a", 600);
+    a.waitSync();
+
+    // The high-precedence query waits for memory that only the low-precedence one can release,
+    // so it must not block the low-precedence growth.
+    WaitingQuery waiting(high_link, "waiting");
+    waitPendingAllocations(high_link, 1);
+    a.setSize(700);
+    a.waitSync();
+    EXPECT_FALSE(waiting.admitted);
+
+    a.setSize(0);
+    a.waitSync();
+    waiting.waitAdmitted();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationAdmissionThresholdRemoved)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory_before_queue = 500");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "a", 600);
+    a.waitSync();
+
+    WaitingQuery waiting(link, "waiting");
+    waitPendingAllocations(link, 1);
+
+    // Raising the threshold above the allocated memory admits the waiting query
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory_before_queue = 1000");
+    waiting.waitAdmitted();
+
+    // Without a threshold a zero-size reservation does not wait at all, so an expired deadline does not fail it
+    t.query("CREATE OR REPLACE WORKLOAD all");
+    MemoryReservation fast(link, "fast", 0, 1, std::chrono::steady_clock::now());
 }

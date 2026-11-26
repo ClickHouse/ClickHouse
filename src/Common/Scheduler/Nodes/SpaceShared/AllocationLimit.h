@@ -13,7 +13,7 @@ class AllocationLimit final : public ISpaceSharedNode
     static constexpr ResourceCost default_max_allocated = std::numeric_limits<ResourceCost>::max();
 public:
     AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_,
-        ResourceCost soft_limit_ = default_max_allocated);
+        ResourceCost soft_limit_ = default_max_allocated, ResourceCost admission_limit_ = default_max_allocated);
     ~AllocationLimit() override;
     void updateLimit(UInt64 new_max_allocated);
     [[nodiscard]] ResourceCost getLimit() const;
@@ -21,6 +21,10 @@ public:
     /// Must run on the scheduler thread. A value >= `max_allocated` disables spilling (the default).
     void updateSoftLimit(ResourceCost new_soft_limit);
     [[nodiscard]] ResourceCost getSoftLimit() const;
+    /// Sets the admission threshold — while `allocated` is above it, new allocations wait (nothing is killed).
+    /// Must run on the scheduler thread. `default_max_allocated` disables it (the default).
+    void updateAdmissionLimit(ResourceCost new_admission_limit);
+    [[nodiscard]] ResourceCost getAdmissionLimit() const;
 
     // ISchedulerNode
     [[nodiscard]] std::string_view getTypeName() const override;
@@ -35,6 +39,7 @@ public:
     void approveDecrease() override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
     void updateMinMaxAllocated(ResourceCost new_value) override;
+    void updateAdmissionQueueing(bool new_value) override;
 
 private:
     bool setIncrease(IncreaseRequest * new_increase, bool reapply_constraint);
@@ -43,8 +48,12 @@ private:
     /// Must run without a queue mutex held. Pending decreases defer evaluation until their approval.
     void checkSoftLimit();
 
+    /// Children queue new allocations if this node or a parent has an admission threshold.
+    [[nodiscard]] bool childAdmissionQueueing() const { return admission_queueing || admission_limit != default_max_allocated; }
+
     ResourceCost max_allocated = default_max_allocated;
     ResourceCost soft_limit = default_max_allocated; /// Spill threshold; `>= max_allocated` means disabled.
+    ResourceCost admission_limit = default_max_allocated; /// Admission threshold; `default_max_allocated` means disabled.
     bool checking_soft_limit = false; /// Synchronous spill registration can reenter this limit.
 
     /// Allocation that is being killed (if any)

@@ -155,6 +155,10 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
             "For `allocation_limit` nodes only. The effective soft memory limit above which reclaimable allocations are asked to spill "
             "(the smaller of `max_memory_before_spill` and `max_memory_to_spill_ratio * max_memory`). Values not below the hard limit mean spilling is disabled."
         },
+        {"admission_limit", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
+            "For `allocation_limit` nodes only. The effective admission threshold: while more memory is allocated, new queries wait in the queue "
+            "(the smaller of `max_memory_before_queue` and `max_memory_to_queue_ratio * max_memory`). NULL if there is no threshold."
+        },
         // AllocationQueue
         {"rejects", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For `allocation_queue` nodes only. The total number of resource allocations rejected from this node."
@@ -215,6 +219,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field victims;
         Field spills;
         Field soft_limit;
+        Field admission_limit;
         Field rejects;
         Field pending;
 
@@ -275,7 +280,11 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             spills = ptr->spills;
         }
         if (auto * ptr = dynamic_cast<AllocationLimit *>(node))
+        {
             soft_limit = ptr->getSoftLimit();
+            if (ptr->getAdmissionLimit() != std::numeric_limits<ResourceCost>::max())
+                admission_limit = ptr->getAdmissionLimit();
+        }
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
         {
             rejects = ptr->getRejects();
@@ -319,6 +328,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(victims);
         res_columns[i++]->insert(spills);
         res_columns[i++]->insert(soft_limit);
+        res_columns[i++]->insert(admission_limit);
         res_columns[i++]->insert(rejects);
         res_columns[i++]->insert(pending);
     });

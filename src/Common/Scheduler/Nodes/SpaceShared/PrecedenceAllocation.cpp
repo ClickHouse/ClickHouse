@@ -37,6 +37,7 @@ void PrecedenceAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & c
         .setAttached(child.get())
         .setIncrease(child->increase)
         .setDecrease(child->decrease));
+    child->updateAdmissionQueueing(admission_queueing);
 }
 
 void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)
@@ -50,6 +51,7 @@ void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)
             .setDecrease(nullptr));
         child->setParentNode(nullptr);
         child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
+        child->updateAdmissionQueueing(false);
         children.erase(iter);
     }
 }
@@ -174,9 +176,26 @@ bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRe
     else if (new_increase && !detach_child)
         increasing_children.insert(from_child);
 
-    // Update current increase request
+    return selectIncrease();
+}
+
+bool PrecedenceAllocation::selectIncrease()
+{
     IncreaseRequest * old_increase = increase;
     increase_child = increasing_children.empty() ? nullptr : &*increasing_children.begin();
+    if (admission_queueing)
+    {
+        // A new allocation may wait for memory that only running allocations can release.
+        // Their increases go first, regardless of precedence, so they can finish.
+        for (auto & child : increasing_children)
+        {
+            if (child.increase->kind != IncreaseRequest::Kind::Pending)
+            {
+                increase_child = &child;
+                break;
+            }
+        }
+    }
     increase = increase_child ? increase_child->increase : nullptr;
     return old_increase != increase;
 }
@@ -222,6 +241,15 @@ void PrecedenceAllocation::updateMinMaxAllocated(ResourceCost new_value)
     min_max_allocated = new_value;
     for (auto & [name, child] : children)
         child->updateMinMaxAllocated(min_max_allocated);
+}
+
+void PrecedenceAllocation::updateAdmissionQueueing(bool new_value)
+{
+    admission_queueing = new_value;
+    for (auto & [name, child] : children)
+        child->updateAdmissionQueueing(admission_queueing);
+    if (selectIncrease() && parent)
+        propagate(Update().setIncrease(increase));
 }
 
 }

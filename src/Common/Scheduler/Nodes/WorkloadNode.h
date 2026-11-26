@@ -227,7 +227,8 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
             event_queue_,
             SchedulerNodeInfo{},
             settings_.getAllocationLimit(unit),
-            settings_.getSoftAllocationLimit(unit));
+            settings_.getSoftAllocationLimit(unit),
+            settings_.getAdmissionAllocationLimit(unit));
         result->basename = "limit";
         result->workload = workload;
         return result;
@@ -237,6 +238,7 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     {
         static_cast<AllocationLimit &>(*node).updateLimit(settings_.getAllocationLimit(unit));
         static_cast<AllocationLimit &>(*node).updateSoftLimit(settings_.getSoftAllocationLimit(unit));
+        static_cast<AllocationLimit &>(*node).updateAdmissionLimit(settings_.getAdmissionAllocationLimit(unit));
     }
 
     static bool hasThrottler(const WorkloadSettings &, CostUnit)
@@ -921,6 +923,7 @@ private:
             .setAttached(child.get())
             .setIncrease(child->increase)
             .setDecrease(child->decrease));
+        child->updateAdmissionQueueing(admission_queueing);
     }
 
     /// Removes an immediate child (used through `reparent()`)
@@ -934,6 +937,7 @@ private:
             .setDecrease(nullptr));
         child->setParentNode(nullptr);
         child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
+        child->updateAdmissionQueueing(false);
         child.reset();
     }
 
@@ -1007,6 +1011,13 @@ private:
         min_max_allocated = new_value;
         if (child)
             child->updateMinMaxAllocated(min_max_allocated);
+    }
+
+    void updateAdmissionQueueing(bool new_value) override
+    {
+        admission_queueing = new_value;
+        if (child)
+            child->updateAdmissionQueueing(admission_queueing);
     }
 
     SpaceSharedNodePtr child; // An immediate child (actually the root of the whole subtree)
