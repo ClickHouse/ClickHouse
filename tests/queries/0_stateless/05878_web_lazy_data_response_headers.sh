@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings
+# Tags: no-fasttest, no-random-settings, no-parallel
 # no-fasttest: requires a Parquet-enabled build and a local HTTP server.
 # no-random-settings: the cache, prefetch and physical-column settings are the regression.
+# no-parallel: the test clears the process-wide Parquet metadata cache.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
