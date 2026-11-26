@@ -12,6 +12,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <utility>
+#include <base/arithmeticOverflow.h>
 
 namespace DB::ErrorCodes
 {
@@ -31,6 +32,12 @@ namespace ProfileEvents
 
 namespace DB::Parquet
 {
+
+/// Whether `to - from >= gap`, without wrapping around for large `gap` (it comes from unrestricted settings).
+static bool gapAtLeast(size_t from, size_t to, size_t gap)
+{
+    return to >= from && to - from >= gap;
+}
 
 void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatParserSharedResourcesPtr parser_shared_resources_)
 {
@@ -211,7 +218,7 @@ void Prefetcher::finalizeRanges()
         {
             if (range.request->state.load(std::memory_order_relaxed) != RequestState::State::HasRange)
                 continue;
-            if (run && range.start < run->second + local_min_bytes_for_seek)
+            if (run && !gapAtLeast(run->second, range.start, local_min_bytes_for_seek))
             {
                 run->second = std::max(run->second, range.end);
                 continue;
@@ -296,7 +303,7 @@ std::optional<size_t> Prefetcher::startPrefetchWithinLimit(
         for (size_t i = 0; i < ranges_to_read.size();)
         {
             auto [start, end] = ranges_to_read[i];
-            for (++i; i < ranges_to_read.size() && ranges_to_read[i].first < end + min_bytes_for_seek; ++i)
+            for (++i; i < ranges_to_read.size() && !gapAtLeast(end, ranges_to_read[i].first, min_bytes_for_seek); ++i)
                 end = std::max(end, ranges_to_read[i].second);
             bound += end - start;
         }
@@ -525,8 +532,8 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
     for (size_t idx = range_idx; idx > 0; --idx)
     {
         const RangeState & r = ranges[idx - 1];
-        if (r.end + min_bytes_for_seek <= start_offset || // short gap
-            r.start + bytes_per_read_task <= initial_offset || // task not too big
+        if (gapAtLeast(r.end, start_offset, min_bytes_for_seek) || // short gap
+            gapAtLeast(r.start, initial_offset, bytes_per_read_task) || // task not too big
             !may_coalesce(r.request)) // range wants to be coalesced
             break;
 
@@ -559,9 +566,10 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
     initial_offset = end_offset;
     for (size_t idx = range_idx + 1; idx < ranges.size(); ++idx)
     {
-        const RangeState & r = ranges[end_idx];
-        if (end_offset + min_bytes_for_seek <= r.start ||
-            initial_offset + bytes_per_read_task <= r.end ||
+        /// `end_idx` only advances past accepted ranges, so it would stay on a cancelled one.
+        const RangeState & r = ranges[idx];
+        if (gapAtLeast(end_offset, r.start, min_bytes_for_seek) ||
+            gapAtLeast(initial_offset, r.end, bytes_per_read_task) ||
             !may_coalesce(r.request))
             break;
 
@@ -604,7 +612,11 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
         if (req->state.load(std::memory_order_relaxed) == RequestState::State::Cancelled)
             continue;
         req->task = &task;
-        req->task_offset = range.start - task.offset;
+        /// `task.offset` is the minimum over the ranges in state `HasRange`; a cancelled range in
+        /// this span took no part in that minimum and can start before the task. Its `task_offset`
+        /// is never read - the compare-exchange below fails for it - so keep the value and drop the
+        /// wraparound.
+        req->task_offset = common::subIgnoreOverflow(range.start, task.offset);
 
         RequestState::State s = RequestState::State::HasRange;
         if (req->state.compare_exchange_strong(s, RequestState::State::HasTask))

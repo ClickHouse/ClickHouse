@@ -1,20 +1,20 @@
 ---
 title: 'ClickHouse Cloud 控制台中的监控'
 slug: /cloud/monitoring/cloud-console
-description: 'ClickHouse Cloud 控制台中的内置监控仪表板'
-keywords: ['云', '监控', '仪表板', '服务健康', '资源利用率', '高级仪表板']
+description: 'ClickHouse Cloud 控制台中的内置监控仪表盘'
+keywords: ['云', '监控', '仪表盘', '服务健康状况', '资源利用率', '高级仪表盘']
 sidebarTitle: 'Cloud 控制台'
 doc_type: 'guide'
 ---
 
-ClickHouse Cloud 中的服务开箱即用，内置监控组件，可为用户提供仪表板和通知。默认情况下，Cloud 控制台中的所有用户都可以访问这些仪表板。
+ClickHouse Cloud 中的服务开箱即用，内置监控组件，可为用户提供仪表盘和通知。默认情况下，Cloud 控制台中的所有用户都可以访问这些仪表盘。
 
 <div id="dashboards">
-  ## 仪表盘
+  ## 仪表盘 {#dashboards}
 </div>
 
 <div id="service-health">
-  ### 服务健康
+  ### 服务健康 {#service-health}
 </div>
 
 “服务健康”仪表板可用于监控服务的整体健康状态。ClickHouse Cloud 会从系统表中抓取并存储该仪表板显示的指标，以便在服务进入休眠状态时仍可查看。
@@ -22,13 +22,13 @@ ClickHouse Cloud 中的服务开箱即用，内置监控组件，可为用户提
 {/* TODO: 添加 Service Health 仪表板截图 */}
 
 <div id="resource-utilization">
-  ### 资源利用率
+  ### 资源利用率 {#resource-utilization}
 </div>
 
 Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。ClickHouse Cloud 会从系统表中抓取并存储此仪表板显示的指标，因此即使服务处于休眠状态，也可以查看这些指标。
 
 <div id="memory-and-cpu">
-  #### 内存和 CPU
+  #### 内存和 CPU {#memory-and-cpu}
 </div>
 
 **Allocated CPU** 和 **Allocated Memory** 图表显示了服务中每个副本可用的总计算资源。这些资源配额可通过 ClickHouse Cloud 的[扩缩容功能](/zh/products/cloud/features/autoscaling/overview)进行调整。
@@ -55,32 +55,26 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 | 已使用 CPU | 系统 CPU 指标           | 最大值 | 通过 Prometheus 端点获取的 `ClickHouseServer_UsageCores` |
 
 <div id="data-transfer">
-  #### 数据传输
+  #### 数据传输 {#data-transfer}
 </div>
 
 图表显示与 ClickHouse Cloud 之间的数据传入和传出情况。有关更多信息，请参阅[网络数据传输](/zh/products/cloud/reference/billing/network-data-transfer)。
 
-<div id="advanced-dashboard">
-  ### 高级仪表板
-</div>
+### 高级仪表盘 {#advanced-dashboard}
 
-此仪表板基于[内置高级可观测性仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard)修改而来，其中每个序列表示各个副本的指标。它可用于监控和排查 ClickHouse 特有的问题。
+此仪表盘基于[内置高级可观测性仪表盘](/zh/products/cloud/features/monitoring/advanced-dashboard)修改而来，其中每个序列表示各个副本的指标。它可用于监控和排查 ClickHouse 特有的问题。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Cloud 中的高级仪表板](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud 中的高级仪表盘](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
 </div>
 
 <Note>
-  ClickHouse Cloud 会从系统表中抓取并存储此仪表板显示的指标，因此即使服务处于休眠状态，也仍然可以查看这些指标。访问这些指标不会向底层服务发起查询，也不会唤醒休眠中的服务。
+  ClickHouse Cloud 会从系统表中抓取并存储此仪表盘显示的指标，因此即使服务处于休眠状态，也仍然可以查看这些指标。访问这些指标不会向底层服务发起查询，也不会唤醒休眠中的服务。
 </Note>
 
-下表列出了高级仪表板中各个图表对应的 ClickHouse 指标、系统表来源和聚合类型：
+下表列出了高级仪表盘中各个图表对应的 ClickHouse 指标、系统表来源和聚合类型：
 
 | 图表                         | 对应的 ClickHouse 指标名称                                                                                                                                                     | 系统表                       | 聚合类型                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
@@ -111,93 +105,63 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 | 并发 MySQL 连接数               | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
 | 并发 HTTP 连接数                | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
 
-如需了解各项可视化的详细信息以及如何用它们进行故障排查，请参阅[高级仪表板文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
+如需了解各项可视化的详细信息以及如何用它们进行故障排查，请参阅[高级仪表盘文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
 
-<div id="query-insights">
-  ## Query insights
-</div>
+## 查询洞察 {#query-insights}
 
-**Query Insights** 功能借助各种可视化和表格，让 ClickHouse 内置的查询日志更易使用。ClickHouse 的 `system.query_log` 表是用于查询优化、调试以及监控整体集群健康状态和性能的关键信息来源。
+**查询洞察** 功能借助各种可视化和表格，让 ClickHouse 内置的查询日志更易使用。ClickHouse 的 `system.query_log` 表是用于查询优化、调试以及监控整体集群健康状态和性能的关键信息来源。
 
-选择某个服务后，左侧边栏中的 **Monitoring** 导航项会展开，并显示 **Query insights** 子项：
+选择某个服务后，左侧边栏中的 **监控** 导航项会展开，并显示 **查询洞察** 子项：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Query Insights UI 概览](/images/cloud/sqlconsole/insights_overview.webp)
-
-</Frame>
-
+  <Frame>
+    ![查询洞察 UI 概览](/images/cloud/sqlconsole/insights_overview.webp)
+  </Frame>
 </div>
 
-<div id="top-level-metrics">
-  ### 顶层指标
-</div>
+### 顶层指标 {#top-level-metrics}
 
 顶部的统计卡片显示的是所选时间范围内的基础查询指标。下方的时间序列图表则按查询类型 (select、insert、other) 分类展示查询量、延迟和错误率。延迟图表可切换为显示 p50、p90 和 p99 延迟：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Query Insights 延迟图表](/images/cloud/sqlconsole/insights_latency.webp)
-
-</Frame>
-
+  <Frame>
+    ![查询洞察延迟图表](/images/cloud/sqlconsole/insights_latency.webp)
+  </Frame>
 </div>
 
-<div id="recent-queries">
-  ### 最近查询
-</div>
+### 最近查询 {#recent-queries}
 
 表格会显示所选时间窗口内按归一化查询哈希和用户分组的查询日志条目。最近查询可按任何可用字段进行过滤和排序，还可将表格配置为显示或隐藏其他字段，例如表、p90 和 p99 延迟：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Query Insights 最近查询表](/images/cloud/sqlconsole/insights_recent.webp)
-
-</Frame>
-
+  <Frame>
+    ![查询洞察 最近查询表格](/images/cloud/sqlconsole/insights_recent.webp)
+  </Frame>
 </div>
 
-<div id="query-drill-down">
-  ### 查询下钻
-</div>
+### 查询下钻 {#query-drill-down}
 
 在 最近查询 表中选择某个查询后，会打开一个弹出面板，其中包含该查询的相关指标和信息：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Query Insights UI 查询下钻](/images/cloud/sqlconsole/insights_drilldown.webp)
-
-</Frame>
-
+  <Frame>
+    ![查询洞察 UI 查询下钻](/images/cloud/sqlconsole/insights_drilldown.webp)
+  </Frame>
 </div>
 
 **Query info** 选项卡中的所有指标都是聚合后的指标；如果选择 **Query history** 选项卡，还可以查看每次单独运行的指标：
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Query Insights UI 查询信息](/images/cloud/sqlconsole/insights_query_info.webp)
-
-</Frame>
-
+  <Frame>
+    ![查询洞察 UI 查询信息](/images/cloud/sqlconsole/insights_query_info.webp)
+  </Frame>
 </div>
 
 在此面板中，可以展开每次查询运行对应的 `Settings` 和 `Profile Events` 项，以查看更多信息。
 
-<div id="related">
-  ## 相关页面
-</div>
+## 相关页面 {#related}
 
-* [通知](/zh/products/cloud/features/monitoring/notifications) — 为扩缩容事件、错误和计费配置告警
-* [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) — 各仪表板可视化的详细参考
-* [查询系统表](/zh/products/cloud/features/monitoring/system-tables) — 对系统表运行自定义 SQL 查询，以深入了解内部信息
+* [通知](/zh/products/cloud/features/monitoring/notifications) — 配置扩缩容事件、错误和计费相关告警
+* [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) — 各仪表板可视化项的详细参考
+* [查询系统表](/zh/products/cloud/features/monitoring/system-tables) — 对系统表运行自定义 SQL 查询，深入查看内部信息
 * [Prometheus 端点](/zh/products/cloud/features/monitoring/prometheus) — 将指标导出到 Grafana、Datadog 或其他兼容 Prometheus 的工具

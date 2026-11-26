@@ -27,11 +27,9 @@ FROM table2
 
 条件可以是根据你的需求设定的任意表达式。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
-下面是一个简单示例，将 1 到 10 的数字与 3 到 8 的数字求交集：
+下面是一个简单示例，将 1 到 10 的数字与 3 到 10 的数字求交集：
 
 ```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
@@ -45,10 +43,12 @@ SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 │      6 │
 │      7 │
 │      8 │
+│      9 │
+│     10 │
 └────────┘
 ```
 
-如果你有两个表共享某个共同的列 (或多列) ，`INTERSECT` 就很有用。只要两个查询的结果包含相同的列，就可以对其结果执行交集运算。例如，假设我们有数百万行历史加密货币数据，其中包含交易价格和交易量：
+如果你有两个表共享某个共同的列 (或多列) ，`INTERSECT` 就很有用。只要两个查询的结果包含相同的列，就可以对其结果求交集。例如，假设我们有数百万行历史加密货币数据，其中包含交易价格和交易量：
 
 ```sql title="Query"
 CREATE TABLE crypto_prices
@@ -67,6 +67,7 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
+    NOSIGN,
     'CSVWithNames'
 );
 
@@ -107,7 +108,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10);
+   ('DOGEFI', 10),
    ('Bitcoin Diamond', 5000);
 ```
 
@@ -131,9 +132,7 @@ WHERE price > 100
 
 这意味着，在某个时间点，比特币和以太坊的交易价格都曾超过 100 美元，而 DOGEFI 和 Bitcoin Diamond 的交易价格则从未超过 100 美元 (至少根据本示例中的数据来看是如此) 。
 
-<div id="intersect-distinct">
-  ## INTERSECT DISTINCT
-</div>
+## INTERSECT DISTINCT {#intersect-distinct}
 
 请注意，在前面的查询中，有多条交易价格高于 100 美元的比特币和以太坊持仓记录。去掉重复行会更合适 (因为它们只是重复了我们已经知道的信息) 。你可以在 `INTERSECT` 后添加 `DISTINCT`，以消除结果中的重复行：
 
