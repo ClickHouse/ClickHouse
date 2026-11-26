@@ -655,11 +655,6 @@ public:
         {
             const auto sort_description = sorting_step->getSortDescription();
             const UInt64 limit = sorting_step->getLimit();
-            /// With `exact_rows_before_limit` the bound must not be shipped: a `LimitStep` in the fragment
-            /// would truncate a replica's stream before `rows_before_limit_at_least` is counted.
-            /// FIXME(#114723): the count is still inexact (as in classic parallel replicas) because the cloned
-            /// sort keeps its limit on the local half; rebuilding it unbounded fixes the count but hangs the
-            /// merge, which reaches its own limit and then never completes its `always_read_till_end` drain.
             const bool read_till_end = mustReadTillEnd();
 
             /// Per-replica sort. Still a full sort here: read-in-order runs later, separately on each side.
@@ -672,11 +667,14 @@ public:
 
             /// `SortingStep::serialize` drops the limit and `deserialize` rebuilds an unbounded sort, so a
             /// top-N has to be restated as a step to survive the wire. The offset is deliberately not shipped:
-            /// it applies once, globally, above the merge.
-            if (const UInt64 local_limit = read_till_end ? 0 : limit)
+            /// it applies once, globally, above the merge. As a shard limit, it lets `rows_before_limit_at_least`
+            /// count the rows of the local replica, all of them with `exact_rows_before_limit`.
+            if (limit)
             {
                 auto & limit_node = nodes.emplace_back();
-                limit_node.step = std::make_unique<LimitStep>(partial_sorting_node.step->getOutputHeader(), local_limit, 0);
+                auto limit_step = std::make_unique<LimitStep>(partial_sorting_node.step->getOutputHeader(), limit, 0, read_till_end);
+                limit_step->markAsShardLimit();
+                limit_node.step = std::move(limit_step);
                 limit_node.step->setStepDescription("local top-N");
                 limit_node.children = {&partial_sorting_node};
                 fragment_root = &limit_node;

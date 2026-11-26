@@ -103,7 +103,7 @@
 --- explain: local top-N shipped, exact_rows_before_limit = 0 ---
 1
 --- explain: local top-N shipped, exact_rows_before_limit = 1 ---
-0
+1
 --- exact_rows_before_limit = 1, ORDER BY a, local ---
 0
 1
