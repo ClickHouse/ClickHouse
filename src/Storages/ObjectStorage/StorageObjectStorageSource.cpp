@@ -1770,6 +1770,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     std::shared_ptr<NamesAndTypesList> initial_schema;
     bool reads_file_under_own_names = false;
+    bool object_read_authorized = false;
 
     while (true)
     {
@@ -1777,6 +1778,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!object_info || object_info->getPath().empty())
             return {};
+        object_read_authorized = false;
         if (!object_info->getObjectMetadata())
         {
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
@@ -1802,16 +1804,29 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     return {};
 
                 object_info->setObjectMetadata(metadata.value());
+                object_read_authorized = true;
             }
             else
             {
                 object_info->setObjectMetadata(getObjectMetadataForRead(*object_storage, metadata_object, with_tags));
+                object_read_authorized = true;
             }
         }
 
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0
             && object_info->getObjectMetadata()->is_size_known)
             continue;
+
+        /// Before the shortcuts below that answer from a cache without reading the object (the query condition cache,
+        /// the row-count cache), see `authorizeObjectRead`.
+        if (!object_read_authorized)
+        {
+            auto metadata_object = object_info->relative_path_with_metadata;
+            metadata_object.relative_path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
+            if (!authorizeObjectRead(*object_storage, metadata_object, /* must_exist */ !query_settings.ignore_non_existent_file))
+                continue;
+            object_read_authorized = true;
+        }
 
         /// A file the iterator has split into buckets is read in parts, and an entry describes a whole file.
         /// The key is final once the iterator has returned an object (see `ObjectStorageTopKQueryConditionCacheKey`).
@@ -1945,20 +1960,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
-            /// A cached row count is served without reading the object, and the cache key has no identity of the
-            /// credentials. For native GCS, a listing needs only `storage.objects.list`, so on a cache hit the metadata
-            /// of the object is requested with the reader's own credentials, as a cached read of its data is.
-            if (object_storage->getType() == ObjectStorageType::GCS)
-            {
-                auto metadata_object = object_info->relative_path_with_metadata;
-                metadata_object.relative_path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-                auto meta = tryGetObjectMetadataForRead(*object_storage, metadata_object, /*with_tags=*/ false);
-                if (!meta)
-                    return std::nullopt;
-                if (const auto previous = object_info->getObjectMetadata())
-                    meta->tags = previous->tags;
-                object_info->setObjectMetadata(*meta);
-            }
             const auto metadata = object_info->getObjectMetadata();
             /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
             /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
@@ -2038,7 +2039,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
-                read_settings, !headers_requested);
+                read_settings, !headers_requested, object_read_authorized);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -2646,13 +2647,26 @@ std::optional<ObjectMetadata> tryGetObjectMetadataForRead(
     return object_storage.tryGetObjectMetadata(object, with_tags);
 }
 
+bool authorizeObjectRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool must_exist)
+{
+    if (object_storage.getType() != ObjectStorageType::GCS)
+        return true;
+    if (must_exist)
+    {
+        (void)getObjectMetadataForRead(object_storage, object, /*with_tags=*/ false);
+        return true;
+    }
+    return tryGetObjectMetadataForRead(object_storage, object, /*with_tags=*/ false).has_value();
+}
+
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings,
-    bool allow_page_cache)
+    bool allow_page_cache,
+    bool read_is_authorized)
 {
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
@@ -2770,16 +2784,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         }
     }
 
-    /// A native GCS read is authorized the same way whatever serves it. A listing needs only `storage.objects.list`, and the
-    /// size and generation it returns do not prove that this reader may read the object, while the caches keyed by the
-    /// content without an identity of the credentials (the filesystem cache, and the caches of the input formats such as
-    /// the Parquet footer and columns caches) can serve data that another identity has read, without a request of this one.
-    if (object_storage->getType() == ObjectStorageType::GCS && !metadata_is_fetched_by_this_read)
-    {
-        ObjectAttributes tags = std::move(object_info.metadata->tags);
-        object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
-        object_info.metadata->tags = std::move(tags);
-    }
+    /// Whatever serves the data: the filesystem cache and the caches of the input formats (such as the Parquet footer and
+    /// columns caches) can answer without a request of this reader. See `authorizeObjectRead`.
+    if (!read_is_authorized && !metadata_is_fetched_by_this_read)
+        authorizeObjectRead(*object_storage, object_info, /* must_exist */ true);
 
     if (use_page_cache && !object_info.metadata->getContentCacheToken())
     {

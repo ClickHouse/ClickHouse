@@ -1047,6 +1047,12 @@ def test_parquet_cache_hits_are_authorized(started_cluster):
     for query, expected in [
         (f"SELECT count() FROM gcs('{glob}', NOSIGN, 'Parquet', 'a UInt64') {settings}", "1000"),
         (f"SELECT sum(a) FROM gcs('{glob}', NOSIGN, 'Parquet', 'a UInt64') {settings}", str(sum(range(1000)))),
+        # The query condition cache drops every row group of the file, so the object is not opened.
+        (
+            f"SELECT count() FROM gcs('{glob}', NOSIGN, 'Parquet', 'a UInt64') WHERE a > 1000000 "
+            f"{settings}, use_query_condition_cache = 1",
+            "0",
+        ),
     ]:
         assert node.query(query).strip() == expected  # warms the caches
         query_id = f"gcs_parquet_cache_auth_{uuid.uuid4()}"

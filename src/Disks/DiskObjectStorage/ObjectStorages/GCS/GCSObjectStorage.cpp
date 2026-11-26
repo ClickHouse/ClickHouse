@@ -46,6 +46,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace
@@ -299,19 +300,34 @@ SmallObjectDataWithMetadata GCSObjectStorage::readSmallObjectAndGetObjectMetadat
     /// `IfGenerationMatch`: a concurrent overwrite in between fails the read instead of returning an
     /// inconsistent pair. That costs one extra `GetObjectMetadata` request, which is what the two-request
     /// shape of the S3 path costs too, and this is a small hint file on a write path.
-    auto metadata = getObjectMetadata(object.remote_path, /* with_tags */ false);
+    ///
+    /// A writer that replaces the object between the two requests is ordinary contention, not an error of this read
+    /// (the caller would report a committed write as failed), so the pair is retried a few times.
+    static constexpr size_t max_attempts = 3;
+    for (size_t attempt = 1;; ++attempt)
+    {
+        try
+        {
+            auto metadata = getObjectMetadata(object.remote_path, /* with_tags */ false);
 
-    StoredObject pinned = object;
-    pinned.etag = metadata.etag;
-    pinned.bytes_size = metadata.size_bytes;
+            StoredObject pinned = object;
+            pinned.etag = metadata.etag;
+            pinned.bytes_size = metadata.size_bytes;
 
-    auto buffer = readObject(pinned, read_settings, read_hint);
-    SmallObjectDataWithMetadata result;
-    WriteBufferFromString out(result.data);
-    copyDataMaxBytes(*buffer, out, max_size_bytes);
-    out.finalize();
-    result.metadata = std::move(metadata);
-    return result;
+            auto buffer = readObject(pinned, read_settings, read_hint);
+            SmallObjectDataWithMetadata result;
+            WriteBufferFromString out(result.data);
+            copyDataMaxBytes(*buffer, out, max_size_bytes);
+            out.finalize();
+            result.metadata = std::move(metadata);
+            return result;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::S3_OBJECT_CHANGED_DURING_READ || attempt == max_attempts)
+                throw;
+        }
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLINT

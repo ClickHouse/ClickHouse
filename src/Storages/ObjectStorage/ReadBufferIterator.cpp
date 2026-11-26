@@ -75,10 +75,9 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
     for (auto it = begin; it < end; ++it)
     {
         const auto & object_info = (*it);
-        /// A cached schema is served without reading the object, and the cache key has no identity of the credentials.
-        /// For native GCS, a listing needs only `storage.objects.list`, so on a cache hit the metadata of the object is
-        /// requested with the reader's own credentials (once per object), as a cached read of its data is.
-        bool needs_read_authorization = object_storage->getType() == ObjectStorageType::GCS;
+        /// A cached schema is served without reading the object, so a hit is authorized first (once per object, as the
+        /// callback runs only on a hit), see `authorizeObjectRead`.
+        bool needs_read_authorization = true;
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
@@ -87,11 +86,8 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
                 needs_read_authorization = false;
                 auto metadata_object = object_info->relative_path_with_metadata;
                 metadata_object.relative_path = path;
-                auto meta = tryGetObjectMetadataForRead(*object_storage, metadata_object, /*with_tags=*/ false);
-                if (!meta)
+                if (!authorizeObjectRead(*object_storage, metadata_object, /* must_exist */ false))
                     return std::nullopt;
-                meta->tags = object_info->getObjectMetadata()->tags;
-                object_info->setObjectMetadata(*meta);
             }
             else if (!object_info->getObjectMetadata())
             {
