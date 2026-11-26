@@ -440,22 +440,26 @@ void sortBlockAndLimitGroupRows(
     }
 
     /// Keep the first `group_limit` positions of each equal range. The write position never passes the read
-    /// position, so retained entries can be compacted in the existing permutation.
-    size_t read_pos = 0;
-    size_t write_pos = 0;
-    for (const auto & range : equal_ranges)
+    /// position, so retained entries can be compacted in the existing permutation. Without a range longer
+    /// than `group_limit`, every row stays, and only the order may change.
+    auto is_longer_than_limit = [group_limit](const EqualRange & range) { return range.size() > group_limit; };
+    if (std::ranges::any_of(equal_ranges, is_longer_than_limit))
     {
-        const size_t kept_end = range.from + std::min<size_t>(range.to - range.from, group_limit);
-        while (read_pos < kept_end)
+        size_t read_pos = 0;
+        size_t write_pos = 0;
+        for (const auto & range : equal_ranges)
+        {
+            const size_t kept_end = range.from + std::min(range.size(), group_limit);
+            while (read_pos < kept_end)
+                permutation[write_pos++] = permutation[read_pos++];
+            read_pos = range.to;
+        }
+        while (read_pos < permutation.size())
             permutation[write_pos++] = permutation[read_pos++];
-        read_pos = range.to;
+        permutation.resize(write_pos);
     }
-    while (read_pos < permutation.size())
-        permutation[write_pos++] = permutation[read_pos++];
-
-    if (write_pos == permutation.size() && isIdentityPermutation(permutation, /*limit=*/ 0))
+    else if (isIdentityPermutation(permutation, /*limit=*/ 0))
         return;
-    permutation.resize(write_pos);
 
     transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(permutation, permutation.size()); });
     block.setColumns(columns);
