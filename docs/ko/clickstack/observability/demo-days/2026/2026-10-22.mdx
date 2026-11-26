@@ -1,0 +1,139 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-22
+title: '데모 데이 - 2026-10-22'
+sidebarTitle: '2026-10-22'
+description: '2026-10-22 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-22"
+---
+
+## 애드혹 대시보드 필터로 테이블과 시계열 차트에서 클릭하여 필터링하기 {#click-to-filter-tables-time-charts}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 애드혹 대시보드 필터에서 테이블 타일과 시계열 차트에 대한 클릭하여 필터링(click-to-filter) 기능을 지원합니다. 이전에는 검색 타일에서만 이 기능을 사용할 수 있었습니다. 이제는 쿼리가 빌더, 원시 SQL(Raw SQL), PromQL 중 무엇을 사용하든 테이블, 선 차트, Stacked Bar, 누적 선 차트에서 값을 클릭하여 필터 조건(Filter Conditions)을 추가할 수 있습니다.
+
+테이블에서는 검색 테이블에서와 마찬가지로 필터링 가능한 셀에 마우스를 올린 후 포함(include) 또는 제외(exclude)를 선택하면 됩니다. group-by 컬럼은 필터링할 수 있지만, 집계된 컬럼은 다른 타일에서 동일한 집계를 사용할 가능성이 낮으므로 필터링할 수 없습니다. 또한 조건은 별칭이 아닌 원래 표현식을 사용하므로 여러 타일에 걸쳐 적용할 수 있습니다.
+
+group-by 컬럼을 식별하는 방식은 쿼리 유형에 따라 다릅니다.
+
+* 빌더 테이블은 결과 메타데이터에서 각 컬럼의 위치를 사용합니다. ClickHouse가 별칭이 없는 표현식을 정규화하기 때문입니다.
+* 원시 SQL(Raw SQL) 쿼리는 매크로와 변수를 치환한 후 `node-sql-parser`로 파싱합니다. `GROUP BY`가 별칭, 이름, 정규화된 표현식 또는 `GROUP BY 2`와 같은 위치로 컬럼을 참조하면 해당 컬럼을 필터링할 수 있습니다.
+* PromQL 테이블은 시간 컬럼을 제외하고 숫자가 아닌 컬럼을 레이블로 취급합니다.
+
+클릭하여 필터링 기능은 아직 `DateTime`, `Map`, `Array` 컬럼을 지원하지 않습니다. 이러한 컬럼에는 별도의 로직이 필요합니다.
+
+원시 SQL(Raw SQL) 차트에는 아직 몇 가지 미흡한 부분이 있습니다. `node-sql-parser`는 파라메트릭 함수, `ARRAY JOIN`, 일부 조인 구문 등 ClickHouse 방언 전체를 지원하지는 않습니다. 파싱에 실패하거나, 쿼리에 `GROUP BY`가 없거나, `GROUP BY ALL`을 사용하거나, `SELECT *`를 포함하면 대체 방식으로 `String` 컬럼을 필터링 가능한 것으로 처리합니다.
+
+이 대체 방식은 완벽하지 않습니다. 일부 컬럼은 클릭할 수 없고, 일부 컬럼은 다른 타일에 존재하지 않는 필터 키를 추가할 수 있습니다. CTE에서 가져온 컬럼도 다른 타일에서는 정의되지 않았을 수 있으므로 같은 문제가 발생할 수 있습니다. 이런 경우 해당 조건을 제거하면 됩니다. 이를 개선하기 위해 완전한 ClickHouse SQL 파서를 추가할 계획입니다.
+
+시계열 차트에서는 이제 시계열 도구 설명에서 한 번의 클릭으로 해당 시계열의 모든 레이블로 필터링할 수 있습니다. 예를 들어 차트가 서비스 이름과 심각도로 그룹화되어 있으면 시계열을 클릭할 때 두 조건이 모두 추가됩니다. **Exclude**는 레이블이 하나뿐일 때만 사용할 수 있습니다. 예를 들어 `service = 'checkout'`과 `severity = 'error'`를 각각 제외하면 checkout 오류만 숨겨지는 것이 아니라 checkout 로그 전체와 모든 서비스의 오류가 숨겨집니다. PromQL 선 차트는 `__name__`을 제외하고 Prometheus가 반환한 레이블을 사용합니다.
+
+**관련 풀 리퀘스트:** [#3389](https://github.com/hyperdxio/hyperdx/pull/3389) 테이블 차트에 클릭하여 애드혹 필터링 기능 추가, [#3405](https://github.com/hyperdxio/hyperdx/pull/3405) 시계열 차트의 시계열을 애드혹 대시보드 필터로 필터링
+
+## 선 보간 표시 설정 {#line-interpolation-display-setting}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=149" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 표시 설정의 **Smooth**, **Linear**, **Step** 보간 옵션으로 선 차트에서 점을 연결하는 방식을 선택할 수 있습니다. 이전에는 일반 선 차트는 항상 부드러운 곡선으로, 누적 선 차트는 직선 세그먼트로 표시되었습니다. 이 방식은 기본값으로 그대로 유지되지만, 이제 데이터 특성에 맞게 변경하거나 차트 간 표시 방식을 통일할 수 있습니다.
+
+이 설정은 차트 편집기, 외부 API, MCP에서 사용할 수 있습니다. 또한 편집기에서 Stacked Bar 차트나 누적 선 차트로 전환해도 저장된 타일의 표시 유형이 업데이트되지 않던 버그를 수정했습니다.
+
+**관련 풀 리퀘스트:** [#3393](https://github.com/hyperdxio/hyperdx/pull/3393) 선 보간 표시 설정 추가(smooth, linear, step)
+
+## 검색 페이지 히스토그램의 그룹화(Group By) {#search-page-histogram-group-by}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=194" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 검색 히스토그램을 원하는 필드로 그룹화할 수 있습니다. 이전에는 소스에 따라 항상 심각도 또는 상태 코드 기준으로 분할되었습니다. [@elizabetdev](https://github.com/elizabetdev)의 디자인을 바탕으로 추가된 새 **Group by** 컨트롤에서는 필터 사이드바와 동일한 목록에서 여러 필드와 맵 키를 선택할 수 있습니다.
+
+필드를 선택하고 적용하면 히스토그램이 다시 그룹화되고, 각 그룹을 나타내는 범례가 함께 표시됩니다. 소스의 기본값으로 초기화하거나 그룹화를 해제하여 단순 이벤트 발생 횟수를 확인할 수도 있습니다. 원하는 필드가 목록에 없거나 계산된 값으로 그룹화하려면 SQL을 직접 입력하면 됩니다.
+
+소스를 전환해도 호환되는 group-by는 선택된 상태로 유지됩니다. 예를 들어, 두 소스에서 모두 사용할 수 있는 `ServiceName` 필드나 맵 키는 그대로 유지됩니다. 호환되지 않으면 히스토그램이 새 소스의 기본값으로 초기화되며, 이때 소스 전환 시 호환되는 필터를 유지하는 것과 동일한 로직이 적용됩니다.
+
+이후 [@elizabetdev](https://github.com/elizabetdev)의 후속 작업을 통해 이 컨트롤은 레이블과 선택된 값이 나란히 표시되는 공용 분할 버튼으로 변경되었습니다.
+
+**관련 풀 리퀘스트:** [#3407](https://github.com/hyperdxio/hyperdx/pull/3407) 검색 페이지 히스토그램에 group-by 추가, [#3430](https://github.com/hyperdxio/hyperdx/pull/3430) Group by 분할 버튼 공용화
+
+## 대시보드 타일 설명 {#descriptions-on-dashboard-tiles}
+
+*데모 진행자: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=318" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 대시보드 타일에 설명을 추가할 수 있습니다. 차트가 무엇을 보여 주는지, 또는 차트를 어떻게 해석해야 하는지 설명할 때 유용합니다. 타일 이름 옆의 정보 아이콘에 마우스를 올리면 설명이 표시됩니다. 설명이 없는 타일은 이전과 동일하게 표시됩니다.
+
+외부 대시보드 API에 설명 지원을 추가해 주신 [@felipe-carvalho12](https://github.com/felipe-carvalho12)님께 감사드립니다. 덕분에 대시보드를 코드로 관리할 때도 설명을 설정할 수 있습니다. 또한 타일 편집기의 **Chart Name** 옆에 **Description** 입력란을 추가했습니다. 설명은 최대 1,024자까지 입력할 수 있습니다.
+
+후속 작업에서는 설명을 `name`과 함께 타일의 차트 구성으로 옮겨, 편집기가 설명을 나머지 구성과 함께 저장하도록 했습니다. 또한 외부 API를 통해 `series`와 함께 제출된 타일에서 설명이 사라지는 버그도 수정했습니다.
+
+**관련 풀 리퀘스트:** [#3352](https://github.com/hyperdxio/hyperdx/pull/3352) 선택 사항인 타일 설명을 도구 설명으로 표시, [#3403](https://github.com/hyperdxio/hyperdx/pull/3403) 타일 편집기에 설명 필드 추가
+
+## 사용자 환경설정에서 시간대 선택 {#time-zone-selection}
+
+*데모 진행자: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=358" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 ClickStack에서 시간대를 직접 선택할 수 있습니다. 이전에는 사용자 환경설정의 **Use UTC time** 스위치로 UTC와 브라우저의 로컬 시간대 중 하나만 선택할 수 있었습니다. 이제 이 설정은 검색 가능한 셀렉터로 바뀌었으며, 상단에는 **Local**과 **UTC**가 고정되고 그 아래에 브라우저가 지원하는 모든 시간대가 표시됩니다. 각 시간대에는 현재 오프셋이 함께 표시되며 검색도 가능합니다. 예를 들어 &#39;los angeles&#39;를 입력하면 `America/Los_Angeles`를 찾을 수 있습니다.
+
+선택한 시간대는 검색 페이지와 대시보드에 적용됩니다. 사이드바 배지와 타임스탬프 열 머리글에는 `PDT`와 같은 약칭이 표시되며, 미국식 약어가 없는 시간대는 `UTC+9`와 같은 UTC 오프셋으로 표시됩니다. ClickStack은 IANA 이름을 저장하며, 브라우저가 해당 이름을 인식하지 못하면 로컬 시간으로 폴백합니다.
+
+다만 한 번의 조사에만 필요한 경우 환경설정에서 시간대를 바꾸는 것은 여전히 다소 번거롭습니다. 이번 변경은 검색별·대시보드별 재정의의 기반이 되며, 향후에는 기본 설정을 로컬 또는 UTC로 유지하면서 고객 데이터를 해당 고객의 시간대로 확인할 수 있게 됩니다. 이러한 재정의 기능은 아직 구현되지 않았습니다.
+
+**관련 풀 리퀘스트:** [#3445](https://github.com/hyperdxio/hyperdx/pull/3445) 표시 시간대 기준으로 시간 선택기 범위 읽기, [#3447](https://github.com/hyperdxio/hyperdx/pull/3447) 시간 표시 설정을 시간대로 저장, [#3449](https://github.com/hyperdxio/hyperdx/pull/3449) 사용자 환경설정에 시간대 셀렉터 추가
+
+## MCP 서비스 상태 도구 {#mcp-service-health-tool}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=463" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 MCP 서버에 `clickstack_service_health` 도구가 추가되었습니다. 에이전트가 작성하는 원시 SQL(Raw SQL) 중 상당 부분이 서비스 상태 검사용이라는 점에 착안하여 이 작업 전용 도구를 구축했습니다. 이전에는 에이전트가 `clickstack_table` 및 `clickstack_timeseries`를 여러 차례 호출해 얻은 결과를 조합한 다음, 어떤 변화에 주의가 필요한지 직접 판단해야 했습니다.
+
+이 도구는 트레이스 소스의 모든 서비스에 대해 처리량, 오류율, p50/p95/p99 지연 시간, 상위 오류 그룹을 이전 윈도우와 비교하여 반환합니다. 기본 비교 대상은 전날의 같은 시간대이지만, 에이전트가 직전 15분이나 지난주의 같은 시간대 등 다른 윈도우를 선택할 수도 있습니다. 가장 주의가 필요한 서비스가 맨 위에 표시되며, `critical`, `degraded`, `healthy` 상태와 함께 `error_rate_up`, `latency_up`, `traffic_drop` 등 그 원인을 설명하는 플래그가 표시됩니다. 고정된 임계값을 사용하므로 일상적인 변동은 회귀 오류로 표시되지 않습니다.
+
+새로 발생했거나 증가하는 오류 그룹이 먼저 표시되며, 최초 및 최종 발생 시간이 함께 제공되므로 현재 진행 중인 이슈와 이미 멈춘 일시적 급증을 구분할 수 있습니다. 비교 윈도우에 트래픽이 없었던 연산(Operations)은 롤아웃일 가능성이 높은 것으로 표시되며, 해당 연산의 오류는 새 오류로 집계되지 않습니다. 이 도구는 기본적으로 서버 스팬만 집계하며, `spanKind: "all"`을 지정하면 모든 스팬이 포함됩니다. 보존 기간을 벗어나는 등의 이유로 비교 윈도우에 데이터가 없으면 그 이전 주기를 시도하고, 그래도 데이터가 없으면 비교 없이 보고하는 방식으로 폴백합니다.
+
+**관련 풀 리퀘스트:** [#3411](https://github.com/hyperdxio/hyperdx/pull/3411) clickstack&#95;service&#95;health 도구 추가
+
+## MCP 품질 점수 개선 {#mcp-quality-score-improvements}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=537" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack MCP 서버를 점검하는 데 [Manufact](https://manufact.com)의 MCP Quality Score를 사용해 왔으며, MCP 서버를 운영 중이라면 한번 사용해 보시기를 권장합니다. 세 가지 변경 사항으로 점수가 80점에서 94점으로 올랐습니다.
+
+이제 서버는 `serverInfo`에 기존의 `name` 및 `version`과 함께 제목, 설명, 웹사이트 URL, 아이콘을 포함합니다. 아이콘에는 앱의 로고 SVG를 사용합니다. 아이콘 URL은 절대 경로여야 하므로 `FRONTEND_URL`이 설정되지 않으면 아이콘이 생략됩니다.
+
+이제 모든 도구가 `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`의 네 가지 동작 힌트를 모두 선언합니다. 이전에는 도구마다 하나만 선언했습니다. 읽기 전용 도구, 업서트 도구, 그리고 `delete_*`, `patch_dashboard` 같은 멱등적인 파괴적 도구용으로 세 가지 사전 설정을 사용합니다. 업서트 도구는 `id` 없이 호출하면 매번 새 객체를 생성하므로 멱등적이지 않습니다. 도구는 팀 자체의 메타데이터와 ClickHouse 데이터에만 액세스하므로 `openWorldHint`는 모든 도구에서 `false`입니다. 이제 등록 타입에서 네 가지 힌트를 모두 필수로 요구하므로, 하나라도 누락되면 컴파일 오류가 발생합니다.
+
+도구 설명도 정리했습니다. 이제 모든 입력에 설명이 있으며, Claude Code의 2048바이트 잘림 제한을 초과하던 도구 설명 4개를 줄였습니다. 예를 들어 `clickstack_event_deltas`는 3318바이트에서 1796바이트로 줄었습니다. 스키마(schema) 제약 조건을 그대로 반복하던 텍스트를 제거하고, ID 필드에는 해당 ID를 제공하는 도구를 명시했으며, 저장 도구의 부수 효과를 문서화했습니다. 예컨대 새 구성이 타일의 알림을 지원할 수 없으면 `patch_dashboard`가 해당 알림을 삭제한다는 점도 명시했습니다.
+
+남은 6점은 `outputSchema` 항목입니다. 현재 도구는 `structuredContent` 대신 JSON을 텍스트로 반환하므로, 이 부분은 추후 과제로 남겨 두었습니다.
+
+**관련 풀 리퀘스트:** [#3394](https://github.com/hyperdxio/hyperdx/pull/3394) 서버 제목, 설명, 웹사이트, 아이콘 제공, [#3395](https://github.com/hyperdxio/hyperdx/pull/3395) 모든 도구에 네 가지 동작 힌트 선언, [#3396](https://github.com/hyperdxio/hyperdx/pull/3396) 도구 및 입력 설명 정비
+
+## MCP 서버의 배치 SQL 쿼리 {#mcp-batch-sql-queries}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=588" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+에이전트가 원시 SQL(Raw SQL)을 사용해야 할 때, 이제 `clickstack_sql`은 쿼리마다 별도로 왕복 요청을 보내지 않고 한 번의 호출로 여러 쿼리를 실행할 수 있습니다. 기존처럼 단일 `sql` 쿼리를 전달하거나, 최대 10개의 엔트리로 구성된 `queries` 배열을 전달하면 됩니다. 각 엔트리에는 고유한 `sql`과 선택 사항인 `id`, `connectionId`, `sourceId`가 포함됩니다. 모든 쿼리는 `startTime`과 `endTime`을 공유합니다.
+
+쿼리는 한 번에 5개씩 실행되며, 배치 전체에 60초의 제한 시간이 적용됩니다. 시간이 초과될 때까지 큐에 남아 있던 쿼리는 ClickHouse로 전송되지 않습니다. 결과는 입력 순서대로 `ok`, `error` 또는 `timeout` 상태와 함께 반환되므로, 쿼리 하나가 실패하더라도 배치 전체가 실패하지는 않습니다. `isError`는 모든 쿼리가 실패한 경우에만 설정됩니다. 배치 전체의 응답 한도는 100k자이며, 기존 단일 쿼리 제한과 동일하게 쿼리당 최대 50k자로 제한됩니다.
+
+호출에는 `sql`과 `queries` 중 하나만 포함해야 하며, 둘 다 포함할 수는 없습니다. 이제 `sql`이 항상 필수는 아니므로, 이 조건은 도구의 필수 항목 목록이 아닌 핸들러에서 검사합니다.
+
+MCP 작업(tasks)도 검토했으나 당분간 보류하기로 했습니다. SDK API가 아직 Experimental 상태이고, `2026-07-28` 명세에서 작업이 별도의 확장 기능으로 분리되었지만 서버 SDK에는 아직 구현되지 않았기 때문입니다. 이 변경 사항은 아직 머지되지 않았습니다.
+
+**관련 풀 리퀘스트:** [#3421](https://github.com/hyperdxio/hyperdx/pull/3421) 여러 clickstack&#95;sql 쿼리를 병렬로 실행 (open)

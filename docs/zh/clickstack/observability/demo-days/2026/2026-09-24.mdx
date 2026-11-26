@@ -1,0 +1,87 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-09-24
+title: '演示日 - 2026-09-24'
+sidebarTitle: '2026-09-24'
+description: 'ClickStack 演示日：2026-09-24'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-09-24"
+---
+
+## 图表坐标轴渲染与自动粒度改进 {#chart-axis-rendering-and-auto-granularity-improvements}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+本次包含一批图表易用性改进，由 [@arj22](https://github.com/arj22) 贡献。感谢这些修复！
+
+此前，耗时标签可能因宽度超出坐标轴的可用空间而被裁剪。现在，图表采用与热力图相同的紧凑耗时格式说明符，`7.38min` 会显示为 `7.4m`，能够完整放入可用空间。命令行客户端的 `hdx chart` 命令也采用相同的格式化方式。
+
+坐标轴标签现在还会保留更高的精度。此前，`1050` 和 `1450` 等值可能都显示为 `1k`，相近的值难以区分。现在，格式说明符会在空间允许的范围内采用尽可能高的精度 (最多两位小数) ，并去除末尾的零。上述值现在分别显示为 `1.05k` 和 `1.45k`，且标签宽度不会增加。
+
+在高度较小的图表上，Y 轴刻度现在也能保持均匀分布。此前，Recharts 可能会为避免标签重叠而丢弃个别刻度，导致出现 `0, 300, 1k` 这样间隔不均的序列。现在，图表会在刻度数量不变的前提下，提供均匀分布的刻度候选结果。
+
+此外，指标数据源新增了 **Minimum Auto Granularity** (最小自动粒度) 设置，位于 **团队设置 → 数据源** 下。此前，自动粒度仅根据所选时间范围确定桶大小。对于每分钟抓取一次的指标，较短的时间范围可能产生 30 秒的桶，导致值与空缺交替出现，使原本平稳的指标看起来像波浪一样起伏。
+
+将该最小值设为抓取时间间隔，即可避免这些空缺。其作用类似于 Grafana 中按数据源配置的最小时间间隔，且仅在粒度设为 **Auto** 时生效。已设置显式粒度的卡片将保持原有行为。
+
+目前，该最小值仅对仪表盘和卡片生效。告警、外部 API、命令行客户端以及 MCP 查询工具暂不支持此设置。
+
+**相关 PRs：** [#3148](https://github.com/hyperdxio/hyperdx/pull/3148) 通过紧凑格式说明符处理耗时坐标轴刻度，[#3158](https://github.com/hyperdxio/hyperdx/pull/3158) 在终端图表中保持耗时坐标轴刻度紧凑，[#3162](https://github.com/hyperdxio/hyperdx/pull/3162) 不再丢弃大数值图表坐标轴刻度的小数部分，[#3172](https://github.com/hyperdxio/hyperdx/pull/3172) 在 Recharts 为避免重叠而精简刻度时保持 Y 轴刻度均匀分布，[#3149](https://github.com/hyperdxio/hyperdx/pull/3149) 为自动粒度添加按数据源配置的下限
+
+## 带有选项卡、排序和标签筛选条件的仪表盘列表 {#dashboards-list-with-tabs-sort-and-tag-filters}
+
+*演示者 [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=108" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表盘列表经过了重新设计。此前，预设仪表盘和收藏项以多行卡片的形式显示在表格上方，把列表挤到了页面下方。现在，收藏项拥有独立的选项卡，与 **All** 和 **My dashboards** 并列，而 **Import** 和 **New dashboard** 则移至页面标题栏。
+
+现在，无论一个仪表盘带有多少个标签，都只会在列表中出现一次。此前，仪表盘会在其每个标签下重复出现，未加标签的仪表盘则统一归在底部。现在，标签改为多选筛选条件，可通过一个带计数徽章的定宽 标签 按钮使用。选择两个标签时，仅显示同时带有这两个标签的仪表盘。
+
+列表默认按最近更新时间排序，也可按名称或最近创建时间排序。由于目前不记录最近查看的时间戳，因此暂不支持按最近查看时间排序。
+
+筛选条件、所选选项卡和排序顺序都会保存在 URL 中，因此您可以重新加载或共享筛选后的视图。当前用户没有电子邮件时 (包括本地模式下) ，**My dashboards** 选项卡会被隐藏。
+
+**相关 PRs：** [#3199](https://github.com/hyperdxio/hyperdx/pull/3199) 重新设计仪表盘列表，新增选项卡、排序和标签筛选条件
+
+## 搜索结果表的布局与列设置 {#search-results-table-layout-and-column-settings}
+
+*演示者：[@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=232" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**这是一项探索性工作，不承诺最终发布。**
+
+我们正在为搜索结果表设计新的布局，以解决多位客户反馈的问题。目前，表格操作与最后一个查询字段挤在同一行，当 `SELECT` 包含大量列时，这些操作就会被压缩。这个本地原型将这些操作单独放到了一行。
+
+如何添加列是用户问得最多的问题。目前，用户必须编辑 `SELECT`，但很多人并不知道这一点。该原型新增了 **列** 控件，无需编辑查询即可选择并应用列。
+
+新增的设置面板将各项显示选项集中到了一处。目前，即使复选框仅在悬停时出现，行选择功能仍会在每一行左侧为其预留空间；选中行后，表格中还会出现更多操作。在该原型中，您可以选择让复选框始终显示、悬停时显示或完全隐藏。换行也有了更清晰的控件，并为未来的选项预留了空间，例如更紧凑的布局，以便在屏幕上显示更多行。
+
+这项工作仍在进行中，尚未提交 PR。欢迎就其使用体验提供反馈。
+
+**相关 PRs：** 暂无，这是一项探索，而非已发布的功能。它所改进的行选择功能已在 [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) (搜索结果行多选，用于下载和复制) 和 [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) (悬停时显示复选框) 中发布。
+
+## 多行查询字段与聚焦展开覆盖层 {#multi-line-query-fields-and-an-expand-on-focus-overlay}
+
+*演示者：[@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=367" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**这是一项探索性工作，不承诺最终发布。**
+
+搜索栏中的多行查询一直饱受诟病。此前，字段失去焦点后查询会折叠为单行，必须重新点击字段才能看到完整查询。
+
+这一问题最近已修复。SQL、Lucene 和 PromQL 字段在失去焦点后仍会完整显示，并随内容增多撑开页面布局。时间选择器和**运行**按钮始终与第一行对齐。多余的 `WHERE` 标签和 `/` 按键提示也已移除，不过仍可按 `/` 和 `s` 聚焦输入框。
+
+但增加的高度也带来了一些问题。`SELECT` 和 `ORDER BY` 字段同样会变高；在客户常用的屏幕上，即使很短的 `ORDER BY` 也可能折成两行。在 Chart Explorer 中，若有多个数据系列，可能会有许多字段同时展开，导致编辑器占据大量纵向空间。
+
+该草案尝试在字段空闲时将其保持为单行。聚焦字段时，完整查询会显示在覆盖层中，浮于下方内容之上，工具栏和结果位置不变。字段失去焦点时覆盖层随之关闭，除非通过 **Keep expanded** 将其固定。这样即可一边查看结果，一边阅读较长的查询。语言选择器会随覆盖层一同扩展；向折叠状态的字段粘贴内容时，第一行和各控件仍保持可见。
+
+目前倾向于不合并此草案。随输入或鼠标移动而展开的字段可能令人困惑。仅在点击字段时才打开覆盖层能缓解这一问题，但随内容增高的文本区域已经发布，且效果良好。另一种方案是将列和 `ORDER BY` 控件移出搜索栏，这样只有 `WHERE` 字段会变高，现有行为便已足够。
+
+其他位置 (包括 Chart Explorer) 如何处理大段输入，目前仍未确定。欢迎就此行为提供反馈。
+
+**相关 PRs：** [#3150](https://github.com/hyperdxio/hyperdx/pull/3150) 失去焦点时保持多行查询字段可见，[#3151](https://github.com/hyperdxio/hyperdx/pull/3151) 工具栏与不断增高的查询字段顶部对齐，[#3168](https://github.com/hyperdxio/hyperdx/pull/3168) 移除搜索栏的 WHERE 标签和 / 按键提示，[#3175](https://github.com/hyperdxio/hyperdx/pull/3175) 聚焦时以覆盖层显示多行查询字段 (进行中) 。#3175 即演示中展示的草案；三个已合并的 PR 实现了已发布的“始终可见”行为，也正是该草案拟替换的部分。

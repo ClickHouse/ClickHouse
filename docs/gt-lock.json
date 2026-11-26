@@ -7,44 +7,44 @@
       "versionId": "62b5cc6dd5c2a83b9d1c3a0b913cf70ed9e42e8bfb940c180bf45390ed9e0dc1",
       "translations": {
         "ja": {
-          "updatedAt": "2026-11-26T03:39:11.486Z",
+          "updatedAt": "2026-11-26T03:43:40.915Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-26T03:39:11.637Z",
+          "updatedAt": "2026-11-26T03:43:41.057Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "fr": {
-          "updatedAt": "2026-11-26T03:39:11.903Z",
+          "updatedAt": "2026-11-26T03:43:41.339Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "zh": {
-          "updatedAt": "2026-11-26T03:39:11.770Z",
+          "updatedAt": "2026-11-26T03:43:41.197Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ar": {
-          "updatedAt": "2026-11-26T03:39:11.837Z",
+          "updatedAt": "2026-11-26T03:43:41.268Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ko": {
-          "updatedAt": "2026-11-26T03:39:11.567Z",
+          "updatedAt": "2026-11-26T03:43:40.985Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "es": {
-          "updatedAt": "2026-11-26T03:39:11.406Z",
+          "updatedAt": "2026-11-26T03:43:40.839Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ru": {
-          "updatedAt": "2026-11-26T03:39:11.704Z",
+          "updatedAt": "2026-11-26T03:43:41.126Z",
           "fileName": "docs.json",
-          "postProcessHash": "cc5e499d73ef521104b73771d6d004a04cf8a48df662b18a0adb41023200742c"
+          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         }
       },
       "fileName": "docs.json"
@@ -153192,6 +153192,288 @@
         }
       },
       "fileName": "products/cloud/features/monitoring/recommendations.mdx"
+    },
+    {
+      "fileId": "e10f5c5a3ed05b893f8252350ca2ed34fe57ce70ccc8f690b74eaf567f6fc14e",
+      "versionId": "9d2cb6a15854daa9d6d4fc7e4a2341d9d88b30577117fd8bfeb82538d937b914",
+      "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-11-26T03:43:43.115Z",
+          "fileName": "pt-BR/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "12dfcd9997f8414b29937390c5e0a72d95ef2e45e589455a0ba6f341eb70a17f"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T03:43:43.126Z",
+          "fileName": "ar/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "a11d2508ec95aa92731073386e2dec83eca08177cd5d5f0fce7d056c2961c119"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T03:43:43.127Z",
+          "fileName": "fr/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "821f68f589379922fd8c672c61e3d43e59602e7b08187c468ecb7fe7b8df4a31"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T03:43:43.127Z",
+          "fileName": "es/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "f49b39530aceaccb7f4f064249fd7102f57a34dc6d1bcd204ae41efa0fe689c7"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T03:43:43.128Z",
+          "fileName": "zh/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "2c27565c9b5102fa1513a9e51a7d6d33cca76678f18e180e4ce5bb5636b7aea5"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T03:43:43.130Z",
+          "fileName": "ko/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "9b42e7fd8699d30da5dde940ecf16cd1defd8db6a4108887cde2595d1110d3b9"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T03:43:43.130Z",
+          "fileName": "ja/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "6e43476b1004706a2e86af94ef4061a5c1d44dcd01a1c9cea513b153c436fdf6"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T03:43:43.131Z",
+          "fileName": "ru/clickstack/observability/demo-days/2026/2026-10-01.mdx",
+          "postProcessHash": "a7b34d268d7c70510bf2c937e793c5ad84925cd2dc395723408a3cab18d2909d"
+        }
+      },
+      "fileName": "clickstack/observability/demo-days/2026/2026-10-01.mdx"
+    },
+    {
+      "fileId": "8e34ac5d248e07e0d74e9ce96e170160c5d7bd9be5567c1186a7b5078a571419",
+      "versionId": "93ac17f75f554349e945bb15d2c4bc59e2ca4f1d412d7e2ab353a4d759a327ab",
+      "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-11-26T03:43:43.115Z",
+          "fileName": "pt-BR/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "6ea924d36d5f8f5709be79ab52fb29ced6a46d815f961763c959df8e83ef6ba6"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T03:43:43.120Z",
+          "fileName": "zh/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "4a1de4b6a970eb389d9e4fc08323bcb6301a2554cbf49c90e304d3e6d786ecb4"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T03:43:43.121Z",
+          "fileName": "ru/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "8b4c870acd148c2520db35497f33408cbb251539db90003e9ec130b7c8ec177b"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T03:43:43.122Z",
+          "fileName": "fr/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "810ea126624107862baa82ea7e936f72e31b8d6991a1c07b129d68f4ecd55e8f"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T03:43:43.127Z",
+          "fileName": "ar/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "953aeeca2cca4a3f0830bfd24c950271a38d903555fa380bae0977c598435d3a"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T03:43:43.128Z",
+          "fileName": "es/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "99a12b86217d22b3a4a8762bdce2a639452a2dde64a623633d2b01a240229769"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T03:43:43.130Z",
+          "fileName": "ja/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "0d2ea6f1f587580e4681a903c9a919c643c60812d10f43b9e518718b42952ac4"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T03:43:43.130Z",
+          "fileName": "ko/clickstack/observability/demo-days/2026/2026-10-22.mdx",
+          "postProcessHash": "6ddf56677daabcd1aa7571f7914ec9ada1676b29f32e49bcfd456ddaaa03beb0"
+        }
+      },
+      "fileName": "clickstack/observability/demo-days/2026/2026-10-22.mdx"
+    },
+    {
+      "fileId": "5ce0a5146c0e4b7836463edb50f839e5e15b2895f47379b5baf4c74f6d9738c8",
+      "versionId": "e48cc4929798e6311e900918256aad05ace42fa652d766a4a3ef910d6d34c6d3",
+      "translations": {
+        "zh": {
+          "updatedAt": "2026-11-26T03:43:43.118Z",
+          "fileName": "zh/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "e17efab48d037f37a4e611bb73bbcc1d49518f66051aa69d7dfb4c54fedf8a43"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T03:43:43.121Z",
+          "fileName": "pt-BR/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "2bdf12e40350cd5d2efb03d133affe753e4075cc2c6d8a77a0b961da5402cc29"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T03:43:43.121Z",
+          "fileName": "fr/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "9631c961121edb093eb6292c59f1630bd2de1c7f2c6be405ad41d39566ede0f2"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T03:43:43.123Z",
+          "fileName": "ko/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "96986d1c5bb27aed0ef029b0d6ae8673fb1763d688389e2c79408e8140eeebdf"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T03:43:43.124Z",
+          "fileName": "es/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "cb7fa4bc0ba8788e8333fdc8aa633e95c5bf70591f86b448561c81093e1b3fed"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T03:43:43.125Z",
+          "fileName": "ar/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "72e10b96b2349bad9db18c4c69e6cca37ae9d3c369631d07a76f555279ca4421"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T03:43:43.125Z",
+          "fileName": "ru/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "19db906941d51922e5a2a67e29b614d535545d527a2159279dbc84c287c0b238"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T03:43:43.126Z",
+          "fileName": "ja/clickstack/observability/demo-days/2026/2026-11-12.mdx",
+          "postProcessHash": "dc32d039b738af4b319acdb2e03c528a93d9d7bf6c1bc02fd4940281c8ff8dd1"
+        }
+      },
+      "fileName": "clickstack/observability/demo-days/2026/2026-11-12.mdx"
+    },
+    {
+      "fileId": "a2bb71c0388cc01478d1cb99326d9ccfec7c7168876d896b432b833f810defc1",
+      "versionId": "b4b9cf9be0fe5b518f86030afc8762f5f709d6765beb05516d24df9a8126a739",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-11-26T03:43:43.119Z",
+          "fileName": "ko/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "926d462d1072507c9098a653320e918358efb5500390d83e3402c98ca49df25b"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T03:43:43.119Z",
+          "fileName": "zh/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "487087e84d37cd8e504b97afb406d38e6d8fd08af59415b3b6da9aaa9d3fb0cc"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T03:43:43.120Z",
+          "fileName": "fr/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "fcb73dd7e5943c4350230e56dc1429838f50971b8c3e5f5e1b93b683276052e3"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T03:43:43.123Z",
+          "fileName": "pt-BR/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "b20b3f820e4898fea43bb0b984bd9870bf6a90737f588c5e843944fbb103cc0a"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T03:43:43.124Z",
+          "fileName": "ar/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "4c764361acaaf3b925f1ad66943febf2c0075c4a26a5447931a3677aaec80a87"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T03:43:43.128Z",
+          "fileName": "ja/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "50733fac42a6d338a0200ad813b4c4b363903b90775d1c059f49ca5d7b08439c"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T03:43:43.129Z",
+          "fileName": "ru/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "d48653aa53c458102a26a3afc89c6c75a69a63ff6db282e9ca991727ab09a895"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T03:43:43.129Z",
+          "fileName": "es/clickstack/observability/demo-days/2026/2026-09-24.mdx",
+          "postProcessHash": "34c3a705371f278e84e1b3a98a2aef9f7332e39b0203c54ab00a8b16772b584d"
+        }
+      },
+      "fileName": "clickstack/observability/demo-days/2026/2026-09-24.mdx"
+    },
+    {
+      "fileId": "61c2120484807af963775293fe4c188a398d93cc983a6ac3519f47053887b8ad",
+      "versionId": "137c94eed56eeb8b080d7754a2353890275287abf8c9c7936f88096577a8870c",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-11-26T03:43:43.123Z",
+          "fileName": "ko/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "e69ae3e9480df5694db1146cdb6ccc9d7d3d713ea8c6a0339a314ad3f3450db2"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T03:43:43.124Z",
+          "fileName": "pt-BR/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "935d6077f078698f96ae78c49ef733c927c01527c7d6a42602a054eec09f8084"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T03:43:43.125Z",
+          "fileName": "ar/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "aba3153ae1a224664624a3b5843ee6c0005d8557cb1cadffe66971f73d458982"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T03:43:43.127Z",
+          "fileName": "zh/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "4f3bd3a9f0250a9940241c8bde4d7ef147d430b531740a494348578504bd2a33"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T03:43:43.128Z",
+          "fileName": "ru/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "9905df6b6d92eaf26091910ecabfd5210da8b898e04e065dfb0018feb9747b62"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T03:43:43.129Z",
+          "fileName": "fr/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "b538d405941b78ec999ad63aa1a6d2fef33aaf03f6866842faadc13f657dc956"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T03:43:43.131Z",
+          "fileName": "es/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "7ef0fd330ba56dd2d1065f98f6346c1ef5e83083a22e1b96c12733f89f64d752"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T03:43:43.132Z",
+          "fileName": "ja/clickstack/observability/demo-days/2026/2026-10-15.mdx",
+          "postProcessHash": "a91f9e2eb382c15b05ec481e1b72a6eeae54d78263a759d97ef7e5267d79942f"
+        }
+      },
+      "fileName": "clickstack/observability/demo-days/2026/2026-10-15.mdx"
+    },
+    {
+      "fileId": "6c8e714ddb5f5304a78354fd2589f732c1c2ab41c3be63670fb8b2c053414a79",
+      "versionId": "79511a7e4d1be23c90039b2328d2e5a2cdbaf334a011598c8e709803704ce5e9",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-11-26T03:43:43.128Z",
+          "fileName": "es/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "d3274da54c1e3805159f725b385259ec4f2621b596208a8639616a87849d728e"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T03:43:43.128Z",
+          "fileName": "fr/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "eaa2eb4f7e64da0aa1e880c5eb58f935bfb8bf0663a896677e023af0887e9f98"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T03:43:43.129Z",
+          "fileName": "ar/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "62acdcad5f46b4b848ca89ec6d01dddfe03d73a924fcacf3940d0604ece70f23"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T03:43:43.129Z",
+          "fileName": "ko/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "3bed18cf23c395de7349c31d6b55ba750d3c87fbdb68ba1dd3ed8640b34b26c7"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T03:43:43.130Z",
+          "fileName": "zh/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "2006f47ebe11f1e5677bd2f3aa286f2c939b4a415b763fdc756c4ed2326096ea"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T03:43:43.131Z",
+          "fileName": "pt-BR/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "44233113d1713fd8b9f3924b18ddc548525313a2dab6ac0fcc5d3bbf32240dce"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T03:43:43.131Z",
+          "fileName": "ru/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "8532e1bc9259f94ae0c55ada5de2ba8723d57669b332f76c2c00db841346e5ac"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T03:43:43.131Z",
+          "fileName": "ja/clickstack/observability/demo-days/2026/2026-10-08.mdx",
+          "postProcessHash": "a0b5d219d96005c3c29ce381608648f1e816a7d41bff94596d5ad5d71474c986"
+        }
+      },
+      "fileName": "clickstack/observability/demo-days/2026/2026-10-08.mdx"
     }
   ]
 }

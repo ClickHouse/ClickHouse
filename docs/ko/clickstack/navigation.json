@@ -65,22 +65,22 @@
                     {
                       "group": "November",
                       "pages": [
-                        "ko/clickstack/demo-days/2026/2026-11-12"
+                        "ko/clickstack/observability/demo-days/2026/2026-11-12"
                       ]
                     },
                     {
                       "group": "October",
                       "pages": [
-                        "ko/clickstack/demo-days/2026/2026-10-22",
-                        "ko/clickstack/demo-days/2026/2026-10-15",
-                        "ko/clickstack/demo-days/2026/2026-10-08",
-                        "ko/clickstack/demo-days/2026/2026-10-01"
+                        "ko/clickstack/observability/demo-days/2026/2026-10-22",
+                        "ko/clickstack/observability/demo-days/2026/2026-10-15",
+                        "ko/clickstack/observability/demo-days/2026/2026-10-08",
+                        "ko/clickstack/observability/demo-days/2026/2026-10-01"
                       ]
                     },
                     {
                       "group": "September",
                       "pages": [
-                        "ko/clickstack/demo-days/2026/2026-09-24",
+                        "ko/clickstack/observability/demo-days/2026/2026-09-24",
                         "ko/clickstack/observability/demo-days/2026/2026-09-17",
                         "ko/clickstack/observability/demo-days/2026/2026-09-10",
                         "ko/clickstack/observability/demo-days/2026/2026-09-04"

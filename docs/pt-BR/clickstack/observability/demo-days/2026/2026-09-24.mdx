@@ -1,0 +1,87 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-09-24
+title: 'Demo days - 2026-09-24'
+sidebarTitle: '2026-09-24'
+description: 'ClickStack dias de demonstração de 2026-09-24'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-09-24"
+---
+
+## Melhorias na renderização dos eixos de gráficos e na granularidade automática {#chart-axis-rendering-and-auto-granularity-improvements}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Um conjunto de melhorias de usabilidade nos gráficos, com contribuição de [@arj22](https://github.com/arj22). Obrigado pelas correções!
+
+Antes, os rótulos de duração podiam ficar cortados por serem mais largos do que o espaço disponível no eixo. Agora, os gráficos usam o mesmo especificador de formato compacto de duração dos mapas de calor, de modo que `7.38min` passa a ser `7.4m` e cabe no espaço disponível. O comando `hdx chart` da CLI usa a mesma formatação.
+
+Os rótulos dos eixos também preservam mais precisão. Antes, valores como `1050` e `1450` podiam aparecer ambos como `1k`, o que dificultava distinguir valores próximos. Agora, o especificador de formato usa a maior precisão que couber, com até duas casas decimais, e remove os zeros à direita. Esses valores passam a aparecer como `1.05k` e `1.45k`, sem deixar os rótulos mais largos.
+
+Os ticks do eixo Y agora permanecem uniformemente espaçados em gráficos mais baixos. Antes, o Recharts podia descartar ticks individuais para evitar a sobreposição de rótulos, gerando uma sequência irregular como `0, 300, 1k`. Agora, os gráficos fornecem candidatos a ticks uniformemente espaçados, mantendo o mesmo número de ticks.
+
+Há também uma nova configuração **Minimum Auto Granularity** (granularidade automática mínima) para fontes de dados de métricas, disponível em **Team Settings → Sources**. Antes, a granularidade automática escolhia o tamanho do bucket com base apenas no intervalo de tempo selecionado. Para uma métrica coletada uma vez por minuto, um intervalo de tempo curto podia gerar buckets de 30 segundos, alternando entre valores e lacunas e fazendo uma métrica constante parecer uma onda.
+
+Definir o valor mínimo como o intervalo de scrape evita essas lacunas. A configuração funciona como o intervalo mínimo por fonte de dados do Grafana e só se aplica quando a granularidade está definida como **Auto**. Blocos com granularidade explícita mantêm o comportamento atual.
+
+No momento, o valor mínimo se aplica apenas a dashboards e blocos. Alertas, a API externa, a CLI e as ferramentas de consulta MCP ainda não usam essa configuração.
+
+**PRs relacionados:** [#3148](https://github.com/hyperdxio/hyperdx/pull/3148) Encaminha os ticks do eixo de duração pelo especificador de formato compacto, [#3158](https://github.com/hyperdxio/hyperdx/pull/3158) Mantém compactos os ticks do eixo de duração em gráficos no terminal, [#3162](https://github.com/hyperdxio/hyperdx/pull/3162) Deixa de descartar decimais dos ticks dos eixos de gráficos para números grandes, [#3172](https://github.com/hyperdxio/hyperdx/pull/3172) Mantém os ticks do eixo Y uniformemente espaçados quando o Recharts os reduz por sobreposição, [#3149](https://github.com/hyperdxio/hyperdx/pull/3149) Adiciona um limite mínimo por fonte de dados para a granularidade automática
+
+## Lista de dashboards com abas, ordenação e filtros por rótulo {#dashboards-list-with-tabs-sort-and-tag-filters}
+
+*Demonstração por [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=108" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+A lista de dashboards foi reformulada. Antes, os dashboards predefinidos e os favoritos apareciam como fileiras de cards acima da tabela, empurrando a lista para baixo na página. Agora, os favoritos têm uma aba própria, ao lado de **All** e **My dashboards**, enquanto **Import** e **New dashboard** ficam no cabeçalho da página.
+
+Agora, cada dashboard é listado uma única vez, independentemente de quantos rótulos tenha. Antes, os dashboards apareciam sob cada um de seus rótulos, e os dashboards sem rótulo ficavam agrupados no final. Os rótulos agora funcionam como um filtro de seleção múltipla, acessado por um botão Rótulos de largura fixa com um contador. Ao selecionar dois rótulos, são exibidos apenas os dashboards que possuem ambos.
+
+Por padrão, a lista é ordenada pela última atualização, e também é possível ordenar por nome ou pelos criados mais recentemente. A ordenação por último acesso não está disponível porque esse timestamp não é registrado atualmente.
+
+Os filtros, a aba selecionada e a ordenação ficam salvos na URL, então é possível recarregar ou compartilhar uma visualização filtrada. A aba **My dashboards** fica oculta quando não há e-mail do usuário atual, inclusive no modo local.
+
+**PRs relacionados:** [#3199](https://github.com/hyperdxio/hyperdx/pull/3199) Reformulação da lista de dashboards com abas, ordenação e filtros por rótulo
+
+## Layout da tabela de resultados de busca e configurações de coluna {#search-results-table-layout-and-column-settings}
+
+*Demonstração por [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=232" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Este é um trabalho exploratório, sem compromisso de lançamento.**
+
+Estamos trabalhando em um novo layout para a tabela de resultados de busca, para resolver problemas relatados por diversos clientes. Atualmente, as ações da tabela dividem a mesma linha com o último campo da consulta e ficam espremidas quando o `SELECT` contém muitas colunas. Este protótipo local coloca as ações em uma linha própria.
+
+Como adicionar colunas é a dúvida mais comum. Hoje, os usuários precisam editar o `SELECT`, mas muitos não percebem isso. O protótipo adiciona um controle **Colunas**, no qual você pode escolher e aplicar colunas sem editar a consulta.
+
+Um painel de configurações reúne as opções de exibição. Atualmente, a seleção de linhas reserva espaço para caixas de seleção à esquerda de cada linha, mesmo quando elas só aparecem ao passar o mouse. Além disso, selecionar linhas adiciona ainda mais ações à tabela. O protótipo permite escolher se as caixas de seleção ficam sempre visíveis, aparecem ao passar o mouse ou ficam totalmente ocultas. A quebra de linha ganha um controle mais claro, e há espaço para opções futuras, como um layout mais denso para exibir mais linhas na tela.
+
+Este trabalho ainda está em andamento e ainda não tem PR. Adoraríamos receber feedback sobre o funcionamento.
+
+**PRs relacionados:** nenhum ainda; trata-se de uma exploração, e não de uma funcionalidade lançada. A seleção de linhas que o protótipo reformula foi lançada em [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) (seleção múltipla de linhas na busca para download e cópia) e [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) (exibição das caixas de seleção ao passar o mouse).
+
+## Campos de consulta multilinha e um overlay que se expande ao receber foco {#multi-line-query-fields-and-an-expand-on-focus-overlay}
+
+*Demonstração por [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=367" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Este é um trabalho exploratório, sem compromisso de lançamento.**
+
+Consultas multilinha na barra de busca são uma reclamação antiga. Antes, a consulta era recolhida para uma única linha quando o campo perdia o foco, e era preciso clicar nele novamente para ler a consulta completa.
+
+Isso foi corrigido recentemente. Os campos de SQL, Lucene e PromQL agora permanecem totalmente visíveis mesmo sem foco, expandindo o layout da página à medida que crescem. O seletor de tempo e o botão **Executar** continuam alinhados com a primeira linha. O rótulo `WHERE` redundante e a tecla `/` também foram removidos, embora `/` e `s` ainda coloquem o foco no campo de entrada.
+
+A altura adicional traz alguns problemas. Os campos `SELECT` e `ORDER BY` também crescem e, em uma tela típica de cliente, até um `ORDER BY` curto pode quebrar em duas linhas. No Chart Explorer, várias séries podem fazer com que muitos campos se expandam ao mesmo tempo, e o editor acaba ocupando muito espaço vertical.
+
+O rascunho explora manter os campos em uma única linha quando inativos. Ao focar um campo, a consulta completa é aberta em um overlay sobre o conteúdo abaixo, mantendo a barra de ferramentas e os resultados no lugar. O overlay é fechado quando o campo perde o foco, a menos que você o fixe com **Keep expanded**. Assim, é possível ler uma consulta longa ao lado dos resultados. O seletor de linguagem cresce junto com o overlay, e colar conteúdo em um campo recolhido mantém a primeira linha e os controles visíveis.
+
+A tendência atual é não mesclar este rascunho. Campos que se expandem enquanto você digita ou move o mouse podem ser confusos. Abrir um overlay apenas quando você clica em um campo ajuda, mas a área de texto que cresce com o conteúdo já foi lançada e funciona. Outra opção é tirar os controles de colunas e de `ORDER BY` da barra de busca. Assim, apenas o campo `WHERE` cresceria, e o comportamento atual seria suficiente.
+
+Como lidar com entradas grandes em outros lugares, incluindo o Chart Explorer, ainda está em aberto. Adoraríamos receber feedback sobre esse comportamento.
+
+**PRs relacionados:** [#3150](https://github.com/hyperdxio/hyperdx/pull/3150) Manter campos de consulta multilinha visíveis quando sem foco, [#3151](https://github.com/hyperdxio/hyperdx/pull/3151) Alinhar barras de ferramentas ao topo ao lado de campos de consulta que crescem, [#3168](https://github.com/hyperdxio/hyperdx/pull/3168) Remover o rótulo WHERE e a tecla / da barra de busca, [#3175](https://github.com/hyperdxio/hyperdx/pull/3175) Exibir campos de consulta multilinha em overlay ao receber foco (aberto). O #3175 é o rascunho mostrado na demonstração; os três PRs mesclados correspondem ao comportamento sempre visível, já lançado, que ele substituiria.

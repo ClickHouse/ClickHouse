@@ -1,0 +1,139 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-22
+title: 'Demo days - 2026-10-22'
+sidebarTitle: '2026-10-22'
+description: 'ClickStack dias de demonstração de 2026-10-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-22"
+---
+
+## Clique para filtrar em tabelas e gráficos temporais com filtros ad hoc de dashboard {#click-to-filter-tables-time-charts}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Os filtros ad hoc de dashboard agora oferecem suporte ao clique para filtrar em blocos de tabela e gráficos temporais. Antes, isso só era possível a partir de blocos de busca. Agora você pode clicar em valores de tabelas, gráficos de linhas, barras empilhadas e linhas empilhadas para adicionar condições de filtragem, seja a consulta criada com o construtor, com SQL bruto ou com PromQL.
+
+Em uma tabela, passe o cursor sobre uma célula filtrável e escolha incluir ou excluir, assim como faria na tabela de busca. As colunas de agrupamento são filtráveis; as colunas agregadas não, pois é improvável que outros blocos usem a mesma agregação. Além disso, as condições usam a expressão subjacente em vez do seu alias, para que possam ser aplicadas em vários blocos.
+
+A forma como identificamos as colunas de agrupamento depende da consulta:
+
+* Tabelas do construtor usam a posição de cada coluna nos metadados do resultado, porque o ClickHouse normaliza expressões sem alias.
+* Em consultas em SQL bruto, as macros e variáveis são substituídas antes de a consulta ser interpretada com `node-sql-parser`. Uma coluna é filtrável se o `GROUP BY` a referenciar por alias, nome, expressão normalizada ou posição, como em `GROUP BY 2`.
+* Tabelas PromQL tratam colunas não numéricas como labels, exceto a coluna de tempo.
+
+Observe que o clique para filtrar ainda não é compatível com colunas `DateTime`, `Map` ou `Array` — elas exigirão uma lógica personalizada.
+
+Ainda há algumas arestas a aparar nos gráficos de SQL bruto. O `node-sql-parser` não oferece suporte ao dialeto completo do ClickHouse, incluindo funções paramétricas, `ARRAY JOIN` e parte da sintaxe de junção. Se a interpretação falhar, ou se a consulta não tiver `GROUP BY`, usar `GROUP BY ALL` ou contiver `SELECT *`, recorremos a tratar as colunas `String` como filtráveis.
+
+Esse fallback não é perfeito. Algumas colunas podem não ser clicáveis, e outras podem adicionar uma chave de filtro que não existe em outros blocos. Colunas provenientes de CTEs podem ter o mesmo problema, já que outros blocos talvez não as definam. Se isso acontecer, basta remover a condição. Pretendemos adicionar um analisador sintático completo de SQL do ClickHouse para melhorar esse comportamento.
+
+Nos gráficos temporais, a dica de ferramenta da série agora permite filtrar por todos os labels de uma série com um único clique. Se um gráfico estiver agrupado por nome do serviço e severidade, clicar em uma série adiciona as duas condições. **Excluir** só está disponível quando há um único label. Por exemplo, excluir `service = 'checkout'` e `severity = 'error'` separadamente ocultaria todos os logs de checkout e todos os erros de todos os serviços, e não apenas os erros de checkout. Gráficos de linhas PromQL usam os labels retornados pelo Prometheus, exceto `__name__`.
+
+**PRs relacionados:** [#3389](https://github.com/hyperdxio/hyperdx/pull/3389) Adiciona filtro ad hoc por clique a gráficos de tabela, [#3405](https://github.com/hyperdxio/hyperdx/pull/3405) Filtra séries de gráficos temporais em filtros ad hoc de dashboard
+
+## Configuração de exibição de interpolação de linhas {#line-interpolation-display-setting}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=149" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Agora você pode escolher como os gráficos de linhas conectam seus pontos, com as opções de interpolação **Smooth**, **Linear** e **Step** nas configurações de exibição. Antes, os gráficos de linhas comuns sempre usavam curvas suaves, e os gráficos de linhas empilhadas usavam segmentos retos. Esses continuam sendo os valores padrão, mas agora você pode alterá-los para adequá-los aos seus dados ou manter a consistência entre os gráficos.
+
+A configuração está disponível no editor de gráficos, na API externa e no MCP. Também corrigimos um bug em que mudar para barras empilhadas ou linha empilhada no editor não atualizava o tipo de exibição do bloco salvo.
+
+**PRs relacionados:** [#3393](https://github.com/hyperdxio/hyperdx/pull/3393) Adiciona uma configuração de exibição de interpolação de linhas (smooth, linear, step)
+
+## Agrupar por no histograma da página de busca {#search-page-histogram-group-by}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=194" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+O histograma de busca agora pode ser agrupado por qualquer campo. Antes, ele era sempre dividido por severidade ou código de status, dependendo da fonte de dados. Seguindo o design de [@elizabetdev](https://github.com/elizabetdev), o novo controle **Agrupar por** permite selecionar vários campos e chaves de map na mesma lista usada pela barra lateral de filtros.
+
+Escolha os campos e aplique-os para reagrupar o histograma, com uma legenda identificando cada grupo. É possível voltar ao padrão da fonte de dados ou remover o agrupamento para ver apenas as contagens de eventos. Se um campo não estiver na lista, ou se você quiser agrupar por um valor calculado, basta inserir SQL diretamente.
+
+Ao trocar de fonte de dados, os group-bys compatíveis continuam selecionados. Por exemplo, um campo ou chave de map `ServiceName` disponível nas duas fontes de dados é mantido. Caso contrário, o histograma volta ao padrão da nova fonte de dados, seguindo a mesma lógica que preserva os filtros compatíveis na troca de fonte de dados.
+
+Uma melhoria posterior de [@elizabetdev](https://github.com/elizabetdev) transfere o controle para um botão dividido compartilhado, com o rótulo e o valor selecionado lado a lado.
+
+**PRs relacionados:** [#3407](https://github.com/hyperdxio/hyperdx/pull/3407) Adiciona agrupamento ao histograma da página de busca, [#3430](https://github.com/hyperdxio/hyperdx/pull/3430) Compartilha o botão dividido Agrupar por
+
+## Descrições nos blocos do dashboard {#descriptions-on-dashboard-tiles}
+
+*Demonstração por [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=318" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Os blocos do dashboard agora podem ter uma descrição, útil para explicar o que um gráfico mostra ou como interpretá-lo. Para vê-la, passe o cursor sobre o ícone de informações ao lado do nome do bloco. Blocos sem descrição continuam com a mesma aparência de antes.
+
+Agradecemos a [@felipe-carvalho12](https://github.com/felipe-carvalho12) por adicionar suporte a descrições na API externa de dashboards, o que permite defini-las ao gerenciar dashboards como código. Também adicionamos um campo **Description** ao lado de **Chart Name** no editor de blocos. As descrições têm limite de 1,024 caracteres.
+
+Uma alteração posterior moveu a descrição para a configuração do gráfico do bloco, junto com `name`, de modo que o editor a salva com o restante da configuração. Essa alteração também corrigiu um bug em que blocos enviados pela API externa com `series` perdiam a descrição.
+
+**PRs relacionados:** [#3352](https://github.com/hyperdxio/hyperdx/pull/3352) Exibir uma descrição opcional do bloco como dica de ferramenta, [#3403](https://github.com/hyperdxio/hyperdx/pull/3403) Adicionar um campo de descrição ao editor de blocos
+
+## Seleção de fuso horário nas preferências do usuário {#time-zone-selection}
+
+*Demonstração por [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=358" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Agora o ClickStack permite escolher o seu fuso horário. Antes, o interruptor **Use UTC time** nas preferências do usuário limitava a escolha ao UTC ou ao fuso local do navegador. Agora ele é um seletor pesquisável, com **Local** e **UTC** fixados no topo e todos os fusos compatíveis com o navegador logo abaixo. Cada fuso exibe seu deslocamento atual, e é possível pesquisá-los: por exemplo, digite &#39;los angeles&#39; para encontrar `America/Los_Angeles`.
+
+A seleção vale para a página de busca e para os dashboards. O indicador na barra lateral e os cabeçalhos de coluna de timestamp exibem um nome curto, como `PDT`, ou um deslocamento em relação ao UTC, como `UTC+9`, no caso de fusos sem abreviação nos EUA. O ClickStack armazena o nome IANA e recorre ao horário local como alternativa caso o navegador não o reconheça.
+
+Trocar de fuso pelas preferências ainda é um pouco trabalhoso quando você só precisa disso para uma única investigação. Esta mudança prepara o terreno para substituições por busca e por dashboard, o que permitirá inspecionar os dados de um cliente no fuso horário dele sem alterar o seu padrão (local ou UTC). Essas substituições ainda não foram implementadas.
+
+**PRs relacionados:** [#3445](https://github.com/hyperdxio/hyperdx/pull/3445) Ler os intervalos do seletor de tempo no fuso horário de exibição, [#3447](https://github.com/hyperdxio/hyperdx/pull/3447) Armazenar a configuração de exibição de tempo como um fuso horário, [#3449](https://github.com/hyperdxio/hyperdx/pull/3449) Adicionar um seletor de fuso horário às preferências do usuário
+
+## Ferramenta MCP de saúde do serviço {#mcp-service-health-tool}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=463" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+O servidor MCP agora conta com a ferramenta `clickstack_service_health`. Percebemos que boa parte do SQL bruto escrito pelos agentes se destinava a verificações de saúde de serviços, então criamos uma ferramenta específica para essa tarefa. Antes, os agentes precisavam combinar resultados de várias chamadas a `clickstack_table` e `clickstack_timeseries` e, depois, descobrir quais mudanças exigiam atenção.
+
+Para cada serviço em uma fonte de traces, a ferramenta retorna a vazão, a taxa de erros, a latência p50/p95/p99 e os principais grupos de erros, em comparação com uma janela anterior. Por padrão, essa janela é o mesmo período do dia anterior, mas os agentes podem escolher outra, como os 15 minutos anteriores ou o mesmo período da semana passada. Os serviços que exigem mais atenção aparecem primeiro, com o status `critical`, `degraded` ou `healthy` e flags que explicam o motivo, como `error_rate_up`, `latency_up` ou `traffic_drop`. Limiares fixos evitam que flutuações rotineiras sejam sinalizadas como regressões.
+
+Grupos de erros novos ou em crescimento aparecem primeiro, com os horários da primeira e da última ocorrência, o que ajuda a distinguir um problema em andamento de um pico que já passou. Operações sem tráfego na janela de comparação são marcadas como prováveis rollouts, e seus erros não são contabilizados como novos. Por padrão, a ferramenta contabiliza spans de servidor; `spanKind: "all"` inclui todos os spans. Se a janela de comparação não tiver dados, por exemplo, por estar fora do período de retenção, a ferramenta tenta o período anterior e, se ainda assim não houver dados, recorre a uma alternativa: gerar o relatório sem comparação.
+
+**PRs relacionados:** [#3411](https://github.com/hyperdxio/hyperdx/pull/3411) Adiciona a ferramenta clickstack&#95;service&#95;health
+
+## Melhorias na pontuação de qualidade do MCP {#mcp-quality-score-improvements}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=537" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Temos usado o MCP Quality Score da [Manufact](https://manufact.com) para avaliar o servidor MCP do ClickStack e recomendamos experimentá-lo se você mantém um. Três mudanças elevaram nossa pontuação de 80 para 94.
+
+O servidor agora inclui título, descrição, URL do site e ícone em `serverInfo`, além dos já existentes `name` e `version`. O ícone usa o SVG do logotipo do aplicativo e é omitido quando `FRONTEND_URL` não está definido, pois as URLs de ícone precisam ser absolutas.
+
+Todas as ferramentas agora declaram as quatro indicações de comportamento: `readOnlyHint`, `destructiveHint`, `idempotentHint` e `openWorldHint`. Antes, cada uma declarava apenas uma. Usamos três predefinições: uma para ferramentas read-only, outra para ferramentas de upsert e outra para ferramentas destrutivas idempotentes, como `delete_*` e `patch_dashboard`. Upserts não são idempotentes porque, quando chamados sem um `id`, criam um novo objeto a cada vez. `openWorldHint` é `false` em todos os casos, já que as ferramentas acessam apenas os metadados da própria equipe e os dados do ClickHouse. As quatro indicações agora são obrigatórias no tipo de registro, então a ausência de qualquer uma delas causa um erro de compilação.
+
+Também revisamos as descrições das ferramentas. Todas as entradas agora têm descrição, e encurtamos quatro descrições de ferramentas que ultrapassavam o limite de truncamento de 2048 bytes do Claude Code. Por exemplo, `clickstack_event_deltas` passou de 3318 para 1796 bytes. Removemos textos que apenas repetiam as restrições do schema, fizemos os campos de ID indicarem qual ferramenta fornece o ID e documentamos os efeitos colaterais das ferramentas de salvamento. Isso inclui o fato de `patch_dashboard` excluir os alertas de um bloco quando a nova configuração não oferece suporte a eles.
+
+Os seis pontos restantes dizem respeito a `outputSchema`. Atualmente, nossas ferramentas retornam JSON como texto em vez de `structuredContent`, então deixamos isso para depois.
+
+**PRs relacionados:** [#3394](https://github.com/hyperdxio/hyperdx/pull/3394) Anunciar título, descrição, site e ícone do servidor, [#3395](https://github.com/hyperdxio/hyperdx/pull/3395) Declarar as quatro indicações de comportamento em todas as ferramentas, [#3396](https://github.com/hyperdxio/hyperdx/pull/3396) Aprimorar as descrições de ferramentas e entradas
+
+## Consultas SQL em lote no servidor MCP {#mcp-batch-sql-queries}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=588" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Quando um agente precisa de SQL bruto, `clickstack_sql` agora pode executar várias consultas em uma única chamada, em vez de fazer uma ida e volta separada para cada uma. Passe uma única consulta `sql`, como antes, ou um array `queries` com até 10 entradas. Cada entrada tem seu próprio `sql` e, opcionalmente, `id`, `connectionId` e `sourceId`. Todas as consultas compartilham `startTime` e `endTime`.
+
+As consultas são executadas cinco por vez, com um prazo de 60 segundos para o lote inteiro. Qualquer consulta que ainda esteja na fila quando o tempo acabar nunca é enviada ao ClickHouse. Os resultados são retornados na ordem de entrada, com status `ok`, `error` ou `timeout`, para que uma consulta com problema não derrube o lote inteiro. `isError` só é definido se todas as consultas falharem. O lote compartilha um limite de 100 mil caracteres de resposta, com no máximo 50 mil por consulta, igual ao limite já existente para consultas individuais.
+
+As chamadas devem incluir `sql` ou `queries`, mas não ambos. Como `sql` deixou de ser sempre obrigatório, essa verificação é feita pelo handler, e não pela lista de campos obrigatórios da ferramenta.
+
+Avaliamos usar tarefas do MCP, mas decidimos esperar por enquanto. A API do SDK é experimental, e a especificação `2026-07-28` moveu as tarefas para uma extensão separada que o SDK do servidor ainda não implementa. Esta alteração ainda não foi mesclada.
+
+**PRs relacionados:** [#3421](https://github.com/hyperdxio/hyperdx/pull/3421) Executar várias consultas clickstack&#95;sql em paralelo (aberto)

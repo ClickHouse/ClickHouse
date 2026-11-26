@@ -1,0 +1,151 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-01
+title: 'Demo days - 2026-10-01'
+sidebarTitle: '2026-10-01'
+description: 'ClickStack demo days del 2026-10-01'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-01"
+---
+
+## Indicadores de carga en paneles de control y rangos de live tail {#dashboard-loading-indicators-and-live-tail-ranges}
+
+*Demostración a cargo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Ambos cambios son contribuciones open source: los indicadores de carga son obra de [@Harshul1484](https://github.com/Harshul1484) y los cambios de live tail, de [@krishs01](https://github.com/krishs01). Los dos surgieron de issues abiertas en el repositorio durante las últimas semanas.
+
+Hasta ahora, no siempre quedaba claro qué ocurría al actualizar un panel de control. Algunos bloques desaparecían tras un indicador giratorio, mientras que otros seguían mostrando los datos anteriores sin indicar que había una consulta en ejecución. Con una conexión lenta o una consulta pesada, no había forma de saber si se estaban viendo los resultados más recientes. Los gráficos temporales de líneas y de barras apiladas ya parpadeaban al volver a recuperar los datos, pero los bloques de número, barras, sectores y tabla solo comprobaban `isLoading`, que permanece en `false` mientras react-query muestra datos de marcador de posición.
+
+Ahora esos bloques mantienen los datos anteriores en pantalla y parpadean hasta que termina la nueva recuperación. El cambio se incorporó en varios PR pequeños: primero los bloques de número, barras y sectores, y después las tablas, los mapas de calor y los gráficos de lista de barras y de histograma del panel de control de Services. Las tablas requirieron una corrección adicional porque `useOffsetPaginatedQuery` solo conservaba las filas anteriores en modo live, de modo que el bloque entero desaparecía durante una actualización. Los bloques de búsqueda y de patrones de eventos, así como las tablas de Pods, Nodes y Namespaces del Panel de Kubernetes, mantienen todavía el comportamiento anterior. Los PR correspondientes siguen abiertos.
+
+En cuanto a live tail, el selector de tiempo atenuaba todos los preajustes superiores a una hora sin explicar el motivo. Además, el interruptor que controlaba esos preajustes se llamaba &quot;Relative Time&quot;, aunque en el resto de la aplicación se denomina live tail.
+
+Los preajustes de 3h y 6h ya están disponibles, y el interruptor ahora se llama **Live tail ranges**. Los preajustes que siguen deshabilitados muestran el tooltip &quot;Not available for Live Tail&quot; al pasar el cursor por encima. Los rangos de 12h o más siguen deshabilitados porque cada actualización vuelve a consultar la ventana de tiempo completa. Con un intervalo de actualización predeterminado de 10 segundos, esto supondría escanear entre 12 y 24 horas de datos cada 10 segundos.
+
+**PR relacionados:** [#3211](https://github.com/hyperdxio/hyperdx/pull/3211) Hacer parpadear los bloques de número, barras y sectores mientras se actualiza un panel de control, [#3212](https://github.com/hyperdxio/hyperdx/pull/3212) Mantener en pantalla las filas de los mosaicos de tabla mientras se actualiza un panel de control, [#3221](https://github.com/hyperdxio/hyperdx/pull/3221) Mantener en pantalla los bloques de mapa de calor mientras se actualiza un panel de control, [#3229](https://github.com/hyperdxio/hyperdx/pull/3229) Hacer parpadear los gráficos de lista de barras y de histograma mientras se actualizan, [#3224](https://github.com/hyperdxio/hyperdx/pull/3224) Mantener en pantalla los bloques de búsqueda y de patrones mientras se actualiza un panel de control (abierto), [#3228](https://github.com/hyperdxio/hyperdx/pull/3228) Mantener en pantalla las tablas del Panel de Kubernetes mientras se actualiza la página (abierto), [#3219](https://github.com/hyperdxio/hyperdx/pull/3219) Habilitar live tail para 3h y 6h, renombrar el interruptor y añadir un tooltip para las opciones deshabilitadas
+
+## Plantillas de issues y el flujo Needs Feedback {#issue-templates-and-the-needs-feedback-flow}
+
+*Demostración a cargo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=118" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Este cambio afecta al repositorio, no al producto. Antes, cualquiera podía abrir un issue en el repositorio de la UI de ClickStack con un cuerpo de formato libre. Ahora, los nuevos issues parten de una plantilla de informe de error o de solicitud de funcionalidad, y los issues en blanco están deshabilitados. Podemos añadir más plantillas a medida que las necesitemos.
+
+La plantilla de informe de error pide la información de depuración desde el principio. La aplicación ya cuenta con la acción **Help → Copy debug info**, que copia las versiones del frontend y del backend, el modo de despliegue, el navegador y el ID de sesión, y omite las claves de API y los parámetros de consulta. Pegar esa información en el issue debería ahorrar una ronda de preguntas. En los issues del recolector y de la CLI, ese campo se marca como `N/A`.
+
+Además, los nuevos issues reciben automáticamente la etiqueta `Needs Feedback`, que indica que el issue sigue en discusión y aún no está listo para un PR. Una vez acordado el alcance, un responsable cambia la etiqueta a `Accepting PR` y el issue queda disponible para que alguien se encargue de él.
+
+Este flujo está documentado en `CONTRIBUTING.md`. Por ahora es solo una convención y no hay ningún mecanismo que la haga cumplir en los PR. El objetivo es evitar que alguien dedique tiempo a correcciones antes de que hayamos acordado el issue y el enfoque. Probablemente lo iremos ajustando a medida que veamos cómo funciona.
+
+**PR relacionados:** [#3239](https://github.com/hyperdxio/hyperdx/pull/3239) Add debug-info ask and Needs Feedback issue flow
+
+## Varias expresiones PromQL en un mismo gráfico {#multiple-promql-expressions-on-one-chart}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=191" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Hasta ahora, PromQL solo era compatible con los gráficos de series temporales, con una expresión por bloque. Ahora puede añadir varias expresiones PromQL al mismo gráfico de series temporales, cada una con su propio alias. En la demostración, lo usamos para representar juntas las latencias p50, p95 y p99.
+
+La vista previa de la consulta, situada debajo del editor, muestra ahora el PromQL generado para cada expresión, con las variables ya sustituidas. Antes solo mostraba la primera expresión. Así puede comprobar cómo se resuelve cada consulta antes de guardar.
+
+El primer PR de la lista es la refactorización que lo hizo posible: extrae el editor de PromQL y los controles de series del creador de gráficos a componentes compartidos, de modo que podamos reutilizarlos para cada expresión.
+
+**PRs relacionados:** [#3145](https://github.com/hyperdxio/hyperdx/pull/3145) Extract PromQL functions, PromqlExpressionEditor, and ChartSeriesControls, [#3146](https://github.com/hyperdxio/hyperdx/pull/3146) Plot several PromQL expressions on one chart
+
+## Gráficos numéricos, circulares y de tabla con PromQL {#promql-number-pie-and-table-charts}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=241" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+*El audio de este clip es de baja calidad; disculpe las molestias. La descripción siguiente recoge todo lo que se mostró.*
+
+PromQL ahora funciona con gráficos numéricos, circulares, de barras y de tabla, además de con series temporales. El cambio más importante afecta a los gráficos numéricos. Antes, todas las consultas PromQL eran consultas de rango, evaluadas en cada paso a lo largo del intervalo de tiempo seleccionado, y el gráfico mostraba el primer resultado ordenado por tiempo y nombre de serie. Ahora puede elegir entre una consulta instantánea, evaluada una sola vez al final del rango, y una consulta de rango. Es el mismo funcionamiento que el de los paneles stat de Grafana.
+
+En una consulta de rango, también se elige un reductor: last, min, max, avg, sum o count. Este se ejecuta client-side y reduce las muestras de cada serie a un único valor. Si sigue habiendo más de un valor, ya sea por haber varias series o muestras sin reducir, el gráfico muestra una advertencia que indica que un tile numérico muestra un único valor y que la expresión debe realizar una agregación.
+
+Los gráficos numéricos también admiten minigráficos en las consultas de rango, que utilizan los mismos resultados recuperados para el número. Estas consultas ahora respetan el intervalo de tiempo y la granularidad del panel de control, igual que las consultas de series temporales, lo que permite que el número y el minigráfico compartan los resultados.
+
+Los gráficos circulares y de barras ofrecen las mismas opciones de consulta instantánea y de rango con reductor, y admiten la plantilla de leyenda. Los reductores también funcionan con consultas instantáneas que devuelven varias muestras por serie. Por ejemplo, `up[5m]` devuelve una matriz, que se reduce a lo largo del tiempo a un vector instantáneo antes de mostrarse como sectores o barras. La misma reducción se aplica a los gráficos numéricos.
+
+Las tablas muestran los resultados de la consulta sin procesar. Cada muestra se convierte en una fila, con una columna por cada etiqueta. `__name__` y Timestamp aparecen como primeras columnas cuando están presentes. En las consultas de rango, esto supone una fila por cada muestra en cada paso, con su marca de tiempo. Todos estos tipos de gráficos admiten el formateo de números.
+
+**PR relacionados:** [#3169](https://github.com/hyperdxio/hyperdx/pull/3169) Compatibilidad con tiles numéricos PromQL instantáneos y basados en rango, [#3178](https://github.com/hyperdxio/hyperdx/pull/3178) Compatibilidad con minigráficos en gráficos numéricos PromQL, [#3238](https://github.com/hyperdxio/hyperdx/pull/3238) Compatibilidad con gráficos de tabla PromQL, [#3253](https://github.com/hyperdxio/hyperdx/pull/3253) Compatibilidad con gráficos circulares y de barras PromQL
+
+## Variables del panel de control en paneles de Markdown {#dashboard-variables-in-markdown-tiles}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=345" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Hasta ahora, las variables del panel de control funcionaban en las consultas, pero no en los paneles de Markdown. Ahora puede hacer referencia a ellas en Markdown, incluso dentro de enlaces. Al cambiar un valor en el selector de variables, se actualizan tanto el texto como el destino del enlace. En la demostración, lo usamos para pasar el valor seleccionado a otra página.
+
+De forma predeterminada, los valores usan el nuevo formato `markdown`, que escapa los caracteres de Markdown. Además, los paneles de Markdown bloquean los scripts y el HTML sin procesar. Si necesita un valor sin escapar, por ejemplo dentro de un bloque de código, puede usar otro formato, como `${var:csv}`.
+
+El editor señala las referencias a variables no válidas, y la validación de paneles de control de MCP y los prompts se han actualizado en consecuencia.
+
+**PRs relacionados:** [#3246](https://github.com/hyperdxio/hyperdx/pull/3246) Sustitución de variables en paneles de Markdown
+
+## Macros de PromQL {#promql-macros}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=376" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+PromQL ahora admite tres macros compatibles con Grafana basadas en el intervalo de tiempo y la granularidad del panel de control. `$__interval` devuelve la granularidad del gráfico o del panel de control, y `$__range` devuelve la duración del rango de fechas del gráfico en segundos. `$__rate_interval` equivale a `max(4 × 15s, $__interval)`, de modo que los cálculos de rate disponen de una ventana que abarca varios intervalos de recopilación de métricas. Por ahora, se asume un intervalo de recopilación de métricas de 15 segundos.
+
+Las macros se sustituyen junto con las variables, por lo que puede ver sus valores resueltos en la vista previa del PromQL generado. Además, el autocompletado del editor las sugiere. Internamente, se reutiliza la mayor parte del mecanismo de macros SQL ya existente.
+
+**PRs relacionadas:** [#3244](https://github.com/hyperdxio/hyperdx/pull/3244) Support PromQL macros
+
+## Selección de filas en la página de búsqueda {#selecting-rows-on-the-search-page}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=398" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Se trata de una pequeña funcionalidad surgida de una solicitud de un usuario. Ahora puede seleccionar filas individuales en los resultados de búsqueda mediante una casilla de verificación, o hacer Shift+clic para seleccionar un rango. Una vez seleccionadas algunas filas, dispone de las acciones **Download CSV**, **Copy CSV** y **Copy JSON**, además de una opción para borrar la selección. Estas acciones incluyen todas las columnas que se muestran actualmente en la tabla, de modo que puede extraer unas cuantas filas de ClickStack sin exportar todo el conjunto de resultados.
+
+Las casillas de verificación aparecen al pasar el cursor, una mejora posterior de [@MikeShi42](https://github.com/MikeShi42). Están ocultas de forma predeterminada y aparecen gradualmente al pasar el cursor sobre una fila. También se muestran cuando reciben el foco del teclado, para que no acabe llegando con Tab a un control invisible. En cuanto se selecciona alguna fila, todas las casillas permanecen visibles para que pueda ver dónde hacer Shift+clic. En dispositivos táctiles, siempre están visibles.
+
+La columna de casillas de verificación conserva su ancho al pasar el cursor, por lo que la tabla no se desplaza. Además, se ha estrechado de 24px a 18px, y la casilla incluye un tooltip que explica cómo seleccionar un rango con Shift+clic.
+
+**PRs relacionados:** [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) Support search row multi-select download and copy, [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) Reveal search row-selection checkboxes on hover
+
+## Columnas materializadas y alias en el panel de detalles de la fila {#materialized-and-alias-columns-in-the-row-details-panel}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=435" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Esta es una contribución open source de [@BilalAtique](https://github.com/BilalAtique), a raíz de una issue que solicitaba mostrar columnas calculadas en el panel de detalles de la fila. El panel recupera cada fila con `SELECT *`, lo que excluye las columnas `MATERIALIZED` y `ALIAS` a menos que `asterisk_include_materialized_columns` y `asterisk_include_alias_columns` estén habilitados. Por ello, las columnas materializadas que hubiera añadido a su tabla de log, así como los alias estándar `*AttributeItems` de `otel_logs`, no aparecían.
+
+Ahora el menú del engranaje de la vista Column Values incluye la opción **Show materialized and alias columns**. Está desactivada de forma predeterminada y se guarda en el almacenamiento local junto con las demás preferencias del panel. Al activarla, se añaden ambos ajustes a las consultas de fila que usan `*`. Las fuentes con una Known Columns List no se ven afectadas.
+
+Además, las búsquedas de filas ahora aplican los ajustes de consulta propios de la fuente, que tienen precedencia sobre el toggle. Si ambos ajustes están habilitados en la fuente, las columnas aparecen aunque la opción esté desactivada. Si la fuente tiene `asterisk_include_alias_columns = 0`, las columnas alias siguen ocultas aunque la opción esté activada.
+
+Conviene tener en cuenta un par de aspectos. La consulta de fila fallará si el usuario de la conexión no puede modificar estos ajustes, por ejemplo con `readonly = 1` o con un perfil de configuración que los marque como `CONST`. También fallará si no se puede evaluar un alias para esa fila. En ese caso, el panel muestra el error de ClickHouse y una acción **Hide materialized and alias columns** para volver a desactivar la opción.
+
+Las columnas `__hdx_materialized_*` también se recuperan, pero siguen ocultas en el visor. Este cambio no incluye un toggle para ellas.
+
+**PR relacionados:** [#3234](https://github.com/hyperdxio/hyperdx/pull/3234) Aplicar los ajustes de consulta de la fuente a la búsqueda de filas del panel lateral de la fila, [#3231](https://github.com/hyperdxio/hyperdx/pull/3231) Añadir una opción para mostrar las columnas MATERIALIZED y ALIAS en el panel de detalles de la fila
+
+## Columnas de atributos Map etiquetadas por su clave {#map-attribute-columns-labelled-by-their-key}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=495" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Otra contribución open source, esta vez de [@DevShoaib78](https://github.com/DevShoaib78). Hasta ahora, al añadir un atributo de mapa como `host.arch` como columna desde la barra lateral de filtros o desde el panel lateral de una fila, la columna aparecía en la tabla de resultados con el nombre derivado que le asigna ClickHouse, por ejemplo, `arrayElement(ResourceAttributes, 'host.arch')`.
+
+Ahora ambas acciones siguen la misma lógica en la página de búsqueda: añaden la expresión al `SELECT` con un alias: `ResourceAttributes['host.arch'] AS "host.arch"`. De este modo, el encabezado de columna muestra `host.arch`. Puede ver y editar el alias en el campo `SELECT`. El SQL que escriba manualmente nunca se reescribe, por lo que las búsquedas guardadas, las alertas y los paneles de control existentes no se ven afectados.
+
+El alias se omite cuando podría alterar el significado de la consulta. Esto incluye las claves que coinciden con una columna de la tabla, ya que ClickHouse resuelve los alias antes que las columnas en `WHERE` y `ORDER BY`, así como los nombres que ya se usan en el `SELECT`, por ejemplo, la misma clave procedente de dos mapas distintos. También se omite si la clave contiene `"` o `\`.
+
+El panel lateral, la barra lateral de filtros y los grupos de filtros anidados ahora reconocen una expresión con o sin su alias al comprobar si una columna ya se muestra. Así, ya no ofrecen añadir una columna que ya está en la tabla.
+
+**PR relacionados:** [#3163](https://github.com/hyperdxio/hyperdx/pull/3163) Etiquetar las columnas de atributos Map por su clave en lugar de arrayElement(...)

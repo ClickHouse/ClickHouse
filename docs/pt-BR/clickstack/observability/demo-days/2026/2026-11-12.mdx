@@ -1,0 +1,77 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-11-12
+title: 'Demo days - 2026-11-12'
+sidebarTitle: '2026-11-12'
+description: 'ClickStack dias de demonstração de 2026-11-12'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-11-12"
+---
+
+## Tamanho de bloco do índice de texto e consultas de filtro mais rápidas {#text-index-block-size-and-faster-filter-lookups}
+
+*Demonstração por [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+O painel de filtros do ClickStack podia demorar para carregar e deixar campos vazios mesmo quando havia valores correspondentes. Na demonstração relatada, uma tabela com 537M linhas de log levava cerca de 30 segundos para retornar sugestões para apenas 22 de 100 chaves. Com essas mudanças, o mesmo painel passou a retornar sugestões para todas as 100 chaves e a carregar mais rápido.
+
+O painel usa índices de texto para descobrir chaves de Map e seus valores. Por exemplo, ele pode encontrar a chave `service` e sugerir valores como `checkout` e `billing`. Isso evita varrer os logs brutos, mas abrir os índices ainda era custoso.
+
+Cada índice de texto possui um dicionário ordenado de tokens, dividido em blocos. Um cabeçalho registra onde cada bloco começa, permitindo que o ClickHouse salte direto para o bloco relevante. Blocos maiores significam menos entradas nesse cabeçalho e menos informação a carregar antes que uma consulta possa começar. Aaron explica isso visualmente no vídeo.
+
+O schema agora define `text_index_dictionary_block_size = 8192`, em vez do padrão anterior de 512, em `otel_logs`, `otel_traces` e `hyperdx_sessions`. Em um benchmark local, isso reduziu o cabeçalho de 17.7 KB para 1.3 KB por parte. A migração se aplica ao ClickHouse 26.6 e versões posteriores, inclusive em instalações existentes, e preserva configurações de tabela definidas explicitamente. Novas partes usam os blocos maiores; as partes existentes mantêm seu layout até passarem por merge.
+
+Com o cabeçalho menor, torna-se viável consultar cada chave separadamente. Antes, todas as chaves compartilhavam uma única consulta com limite padrão de 3 milhões de registros de índice. Uma chave com milhões de valores distintos, como um ID de requisição, podia esgotar esse limite e deixar as chaves seguintes sem sugestões. Além disso, esse resultado incompleto podia acabar armazenado em cache.
+
+Para índices configurados com blocos maiores, cada chave agora tem seu próprio limite de 20,000 registros de índice. As consultas são executadas em lotes paralelos de 10 chaves, de modo que uma chave com muitos valores não consegue consumir a cota de outra. `topKWeighted` seleciona aproximadamente os valores mais comuns entre os registros lidos, em vez dos primeiros valores em ordem alfabética, como antes. Índices configurados com blocos menores mantêm a abordagem de consulta anterior dentro de cada lote.
+
+As consultas iniciais de chaves e valores também leem menos partes. Por padrão, elas inspecionam até 20 partes do meio do ranking de tamanho. **Map key index parts** controla a quantidade, e **Map key index part size** seleciona partes de tamanho médio, as menores ou as maiores. Isso reduz as leituras de índice, especialmente quando é preciso buscar dados no armazenamento de objetos. A contrapartida é que as sugestões podem deixar de fora chaves ou valores fora das partes selecionadas, e as estimativas de frequência refletem apenas os registros inspecionados. A opção de carregar mais para uma chave específica lê todas as partes relevantes.
+
+Uma correção separada faz com que chamadores concorrentes equivalentes compartilhem uma única consulta `getMapKeys` em execução. Antes, abrir a página de busca podia executar as mesmas leituras duas vezes. Na tabela de exemplo, essas consultas duplicadas somavam cerca de 47 GiB de memória de consulta. Agora cada leitura é executada uma única vez.
+
+Os blocos maiores também melhoraram o desempenho de busca no índice de texto nos benchmarks relatados, com algumas consultas cerca de 60% mais rápidas com a mesma quantidade de partes. Outra mudança, ainda em aberto, usa `topKWeighted` para descobrir chaves de Map comuns sem agrupar todas as chaves distintas. Em uma tabela com cerca de 5.5M chaves distintas por parte, o benchmark relatado reduziu o tempo de consulta de 9.1 segundos para 2.6 segundos e o uso de memória de 14 GiB para 78 MiB.
+
+**PRs relacionados:** [#3611](https://github.com/ClickHouse/clickstack/pull/3611) Compartilhar uma única leitura de chaves de Map entre chamadores concorrentes, [#3635](https://github.com/ClickHouse/clickstack/pull/3635) Ler um conjunto configurável de partes nas consultas de chaves e valores do índice de texto, [#3617](https://github.com/ClickHouse/clickstack/pull/3617) Exibir os valores mais frequentes do índice de texto, em lotes de 10 chaves, [#3614](https://github.com/ClickHouse/clickstack/pull/3614) Encontrar as chaves de Map mais frequentes com topKWeighted (em aberto)
+
+## Conexões com o servidor MCP sem cabeçalhos personalizados {#mcp-server-connections-without-custom-headers}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=396" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, conectar um agente ao servidor MCP do ClickStack no ClickHouse Cloud exigia passar o ID do serviço em um cabeçalho HTTP personalizado. A maioria dos clientes MCP não facilita a definição de cabeçalhos personalizados, e alguns nem sequer os permitem; com isso, cada agente precisava de uma configuração própria, editada manualmente.
+
+Agora, o ID do serviço é passado por padrão como parâmetro de consulta na URL do MCP, abordagem que a equipe de IA do ClickHouse já usava para contornar a mesma limitação. Nos clientes compatíveis, configurar um agente passou a exigir apenas um comando (no Codex, por exemplo, antes era preciso colar um bloco na configuração TOML), e qualquer cliente que não consiga executar o comando aceita a URL sem alterações.
+
+Logo após essa mudança ser mesclada, o Claude Code removeu o suporte a cabeçalhos personalizados em sua configuração MCP, e a configuração baseada em cabeçalho deixou de funcionar em produção. As conexões que usavam o parâmetro de consulta não foram afetadas.
+
+Isso se aplica ao endpoint MCP na nuvem. O servidor MCP de código aberto se autentica com um token bearer e não tem ID de serviço a ser passado. Nesse caso, `npx @hyperdx/cli mcp install` solicita uma chave de API pessoal ou da organização com entrada oculta, valida a chave e grava o servidor automaticamente nas configurações do Claude Code, Codex, Cursor e VS Code.
+
+## Configuração do agente Datadog nos Primeiros Passos {#datadog-agent-setup-in-getting-started}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=469" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+O fluxo de Primeiros Passos agora exibe o agente Datadog ao lado dos demais SDKs e coletores, para que você possa direcionar seus agentes Datadog existentes para o ClickStack sem sair da página de configuração inicial.
+
+O endpoint de ingestão do Datadog exibido nessa página vem do plano de dados do ClickHouse Cloud, que agora repassa essa URL ao front-end junto com os demais endpoints. As instruções de configuração são obtidas da documentação pública, assim como as de todos os outros SDKs, o que mantém a página sincronizada com o [guia de migração do Datadog](https://clickhouse.com/docs/clickstack/migration/datadog).
+
+O próprio receptor converte as cargas úteis de logs, traces e métricas do Datadog para o modelo de dados do OpenTelemetry dentro do Coletor do ClickStack, de modo que os agentes e SDKs existentes continuam funcionando sem nenhuma alteração. No ClickStack de código aberto, ele escuta na porta 8126 e é habilitado com `ENABLE_DATADOG_RECEIVER=true`.
+
+## Chaves de API da organização {#organization-api-keys}
+
+*Demonstração por [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=497" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Até agora, a única credencial bearer para a API externa e o servidor MCP era uma chave de acesso pessoal. Essa chave deixa de funcionar quando o proprietário é removido da equipe, o que quebrava o Terraform, o CI e outras automações configuradas com ela, e as equipes recorriam a usuários bot para contornar o problema.
+
+Agora você pode criar chaves de API pertencentes à equipe em **Team Settings** &gt; **API &amp; Agents**. Cada chave recebe uma descrição e um prazo de expiração de 30 dias, um ano ou sem expiração. A chave completa é exibida uma única vez, no momento da criação, e armazenada como um hash SHA-256. A lista mostra quem criou cada chave, quando ela foi usada pela última vez e quando expira, para que você possa identificar chaves pouco usadas ou prestes a expirar e revogá-las ali mesmo. A revogação ou a expiração de uma chave passa a valer a partir da próxima requisição.
+
+Cada chave funciona como uma service account própria, com as mesmas permissões de qualquer outro usuário. Tudo o que for criado com ela (alertas, dashboards, buscas salvas) é atribuído à service account, nunca à pessoa que criou a chave, e as chaves criadas por alguém que já foi removido aparecem como &quot;Deleted user&quot; e continuam funcionando. As service accounts não podem fazer login e não aparecem em **Membros**. As chaves não podem convidar pessoas nem criar ou revogar outras chaves.
+
+As chaves da organização funcionam em qualquer lugar em que uma chave pessoal funciona: na API externa v2, no servidor MCP e em `npx @hyperdx/cli mcp install`. Com o Provedor Terraform, basta passar a chave junto com o ID da sua equipe. O recurso é voltado para implantações auto-hospedadas e não conta com RBAC: o ClickStack de código aberto não tem funções, portanto qualquer membro da equipe pode gerenciar as chaves da organização, e uma chave pode fazer tudo o que um usuário pode.
+
+**PRs relacionados:** [#3435](https://github.com/ClickHouse/clickstack/pull/3435) Chaves de API pertencentes à equipe
