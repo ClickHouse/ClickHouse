@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="database_replicated_allow_explicit_uuid">
-  ## database_replicated_allow_explicit_uuid
-</div>
+## database_replicated_allow_explicit_uuid {#database_replicated_allow_explicit_uuid}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 0 - Replicated データベースのテーブルで UUID を明示的に指定することを許可しません。1 - 許可します。2 - 許可しますが、指定された UUID は無視され、代わりにランダムな UUID が生成されます。
 
-<div id="database_replicated_allow_heavy_create">
-  ## database_replicated_allow_heavy_create
-</div>
+## database_replicated_allow_heavy_create {#database_replicated_allow_heavy_create}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,19 +29,29 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 Replicated データベースエンジンで、長時間実行されるDDLクエリ (CREATE AS SELECT と POPULATE) を許可します。DDL queue が長時間ブロックされる可能性がある点に注意してください。
 
-<div id="database_replicated_allow_only_replicated_engine">
-  ## database_replicated_allow_only_replicated_engine
-</div>
+## database_replicated_allow_only_replicated_engine {#database_replicated_allow_only_replicated_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Replicated エンジンのデータベースでは、レプリケートテーブルのみ作成を許可します
+`Replicated` エンジンを使用するデータベースでは、ディスク上に保存する自身のデータを複製するテーブル、
+またはディスク上に自身のデータを保存しないテーブルのみ作成を許可します。
+
+この制限が適用されるのは、リモートディスク上のデータを含め、テーブル自身が所有する on-disk データのみです。
+インメモリデータや外部システムによって管理されるデータの耐久性は保証されません。
+
+例えば、`ReplicatedMergeTree`、`Memory` や `Buffer` などのインメモリエンジン、`Merge` や `Alias` などの metadata-only エンジン、
+`S3` や `AzureBlobStorage` などの外部ストレージエンジンやデータレイクエンジンは
+許可されます。一方、`MergeTree`、`Log`、`File`、`Set` など、テーブルデータをディスク上に保存する非レプリケーションエンジンは、
+書き込み可能なストレージポリシーがリモートディスクを使用している場合であっても拒否されます。ただし、`SETTINGS persistent = 0` を指定して作成された `Set` テーブルおよび `Join` テーブルは、
+データをメモリ上にのみ保持するため許可されます。
+
+`Distributed`、`Remote`、`RemoteSecure` テーブルは許可されます。これらのテーブルが任意で持つローカルのバックグラウンド `INSERT` キューは
+一時的な送信バッファであり、テーブル自体のデータではありません。このキューはレプリケーションされませんが、
+`distributed_foreground_insert = 1` を設定すればキューを使用せずに済みます。
 
 Cloud でのデフォルト値: `1`。
 
-<div id="database_replicated_allow_replicated_engine_arguments">
-  ## database_replicated_allow_replicated_engine_arguments
-</div>
+## database_replicated_allow_replicated_engine_arguments {#database_replicated_allow_replicated_engine_arguments}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,25 +59,19 @@ Cloud でのデフォルト値: `1`。
 
 0 - Replicated データベース内の *MergeTree テーブルで、ZooKeeper パスおよびレプリカ名を明示的に指定することを許可しません。1 - 許可します。2 - 許可しますが、指定されたパスは無視して、代わりにデフォルトのパスを使用します。3 - 許可し、警告も記録しません。
 
-<div id="database_replicated_always_detach_permanently">
-  ## database_replicated_always_detach_permanently
-</div>
+## database_replicated_always_detach_permanently {#database_replicated_always_detach_permanently}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 データベースエンジンが Replicated の場合、DETACH TABLE は DETACH TABLE PERMANENTLY として実行されます
 
-<div id="database_replicated_enforce_synchronous_settings">
-  ## database_replicated_enforce_synchronous_settings
-</div>
+## database_replicated_enforce_synchronous_settings {#database_replicated_enforce_synchronous_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 一部のクエリで同期的な待機を強制します (関連項目: database&#95;atomic&#95;wait&#95;for&#95;drop&#95;and&#95;detach&#95;synchronously、mutations&#95;sync、alter&#95;sync) 。これらの設定を有効にすることは推奨されません。
 
-<div id="database_replicated_initial_query_timeout_sec">
-  ## database_replicated_initial_query_timeout_sec
-</div>
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 

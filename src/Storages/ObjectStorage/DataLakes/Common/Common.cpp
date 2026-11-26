@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -27,27 +28,45 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-PrefixListing listPrefix(
-    const IObjectStorage & object_storage,
-    const String & path,
-    const String & prefix, const String & suffix)
+namespace
 {
-    return listPrefix(
-        object_storage,
-        path,
-        prefix,
-        [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
+
+/// Whether `key`, returned by listing `directory`, is an object directly inside it. A storage may return the keys
+/// without leading separators and with the directory in normal form (HDFS canonicalizes it).
+bool isDirectlyInside(std::string_view key, const String & directory)
+{
+    while (key.starts_with('/'))
+        key.remove_prefix(1);
+    for (const String & spelling : {directory, std::filesystem::path(directory).lexically_normal().string()})
+    {
+        std::string_view dir = spelling;
+        while (dir.starts_with('/'))
+            dir.remove_prefix(1);
+        while (dir.ends_with('/'))
+            dir.remove_suffix(1);
+        std::string_view rest = key;
+        if (!dir.empty())
+        {
+            if (!rest.starts_with(dir) || rest.size() == dir.size() || rest[dir.size()] != '/')
+                continue;
+            rest.remove_prefix(dir.size() + 1);
+        }
+        return !rest.empty() && !rest.contains('/');
+    }
+    return false;
 }
 
-
-PrefixListing listPrefix(
+/// Objects at any depth inside the directory `path`/`prefix` whose names inside it start with `name_prefix`.
+PrefixListing listPrefixImpl(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix,
+    const String & name_prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
     PrefixListing listing;
-    listing.listed_prefix = std::filesystem::path(path) / prefix;
+    /// Without the trailing separator the key also matches sibling directories such as `metadata_old/`.
+    listing.listed_prefix = (std::filesystem::path(path) / prefix / "").string() + name_prefix;
     object_storage.listObjects(listing.listed_prefix, listing.entries, 0);
     for (const auto & file_with_metadata : listing.entries)
     {
@@ -61,6 +80,60 @@ PrefixListing listPrefix(
         listing.entries.size(),
         fmt::join(listing.matched, ", "));
     return listing;
+}
+
+std::function<bool(const RelativePathWithMetadata &)> endsWith(const String & suffix)
+{
+    return [suffix](const RelativePathWithMetadata & file_with_metadata) { return file_with_metadata.relative_path.ends_with(suffix); };
+}
+
+}
+
+PrefixListing listPrefix(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix, const String & suffix)
+{
+    return listPrefixImpl(object_storage, path, prefix, "", endsWith(suffix));
+}
+
+PrefixListing listPrefix(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
+{
+    return listPrefixImpl(object_storage, path, prefix, "", check_need);
+}
+
+PrefixListing listPrefixNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
+{
+    auto directory = (std::filesystem::path(path) / prefix / "").string();
+    /// The local storage lists a relative directory under its root, the same way it resolves any other key.
+    if (object_storage.getType() == ObjectStorageType::Local)
+        directory = resolvePathRelativelyToBase(directory, object_storage.getCommonKeyPrefix());
+    return listPrefixImpl(
+        object_storage,
+        path,
+        prefix,
+        name_prefix,
+        [&](const RelativePathWithMetadata & file_with_metadata)
+        { return check_need(file_with_metadata) && isDirectlyInside(file_with_metadata.relative_path, directory); });
+}
+
+PrefixListing listPrefixNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const String & suffix)
+{
+    return listPrefixNonRecursive(object_storage, path, prefix, name_prefix, endsWith(suffix));
 }
 
 std::vector<String> listFiles(
@@ -79,6 +152,33 @@ std::vector<String> listFiles(
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
     return listPrefix(object_storage, path, prefix, check_need).matched;
+}
+
+std::vector<String> listFilesNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix, const String & suffix)
+{
+    return listPrefixNonRecursive(object_storage, path, prefix, "", suffix).matched;
+}
+
+std::vector<String> listFilesNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const String & suffix)
+{
+    return listPrefixNonRecursive(object_storage, path, prefix, name_prefix, suffix).matched;
+}
+
+std::vector<String> listFilesNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
+{
+    return listPrefixNonRecursive(object_storage, path, prefix, "", check_need).matched;
 }
 
 namespace

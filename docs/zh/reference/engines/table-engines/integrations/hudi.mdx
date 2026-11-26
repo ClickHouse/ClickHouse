@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 该引擎提供对亚马逊 S3 中现有 Apache [Hudi](https://hudi.apache.org/) 表的只读集成。
 
-<div id="create-table">
-  ## 创建表
-</div>
+## 创建表 {#create-table}
 
 请注意，S3 中必须已存在 Hudi 表；此命令不接受用于创建新表的 DDL 参数。
 
@@ -53,9 +51,11 @@ CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/click
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 限制 {#limitations}
+
+目前尚未实现 Merge-on-Read：不会读取 Merge-on-Read 表的日志文件。因此，如果某个表最新的文件切片中包含日志文件 (即最近一次合并整理之后写入的变更) ，读取该表时会抛出 `NOT_IMPLEMENTED`，而不会返回这些变更之前的值。对此类表执行 schema 推断同样会抛出异常。Copy-on-Write 表以及不含此类日志文件的 Merge-on-Read 表 (例如在 Hudi 中刚完成合并整理之后) 可以正常读取。
+
+## 另请参阅 {#see-also}
 
 * [Hudi 表函数](/zh/reference/functions/table-functions/hudi)
 

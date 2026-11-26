@@ -18,27 +18,27 @@ public:
     /// The transformation is only applied in the range [start_row, start_row + n_rows)
     /// If the expression is empty this functions is just a no-op.
     /// Returns a pair with the result column and the starting position where results were written.
-    std::pair<ColumnPtr, size_t> processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const;
+    [[nodiscard]] std::pair<ColumnPtr, size_t> processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const;
 
     /// Applies the preprocessor expression to a constant string.
-    String processConstant(const String & input) const;
+    [[nodiscard]] String processConstant(const String & input) const;
 
-    bool hasActions() const { return !original_actions.getActions().empty(); }
-    const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
+    [[nodiscard]] bool hasActions() const { return !original_actions.getActions().empty(); }
+    [[nodiscard]] const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
     /// The preprocessor expression as an AST reading from an identifier named `col_name`, to splice into a larger expression.
-    ASTPtr getExpressionAST(const String & col_name) const;
+    [[nodiscard]] ASTPtr getExpressionAST(const String & col_name) const;
 
     /// The preprocessor expression over an input column `col_name` of type `col_type`, to merge into a larger DAG.
-    ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
+    [[nodiscard]] ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
 
     /// The preprocessor of one element of an `Array` index column, e.g. a map value of `mapValues(m)`, reading from `col_name`.
-    ASTPtr getElementExpressionAST(const String & col_name) const;
-    ActionsDAG getActionsDAGForElement(const String & col_name, const DataTypePtr & col_type) const;
+    [[nodiscard]] ASTPtr getElementExpressionAST(const String & col_name) const;
+    [[nodiscard]] ActionsDAG getActionsDAGForElement(const String & col_name, const DataTypePtr & col_type) const;
     /// The type `arrayMap` passes such an element to the preprocessor as, for an element read as `col_type`.
-    DataTypePtr getElementType(const DataTypePtr & col_type) const;
+    [[nodiscard]] DataTypePtr getElementType(const DataTypePtr & col_type) const;
 
-    bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
+    [[nodiscard]] bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
 private:
     /// True only when the preprocessor is exactly lower/upper applied directly to the index column
