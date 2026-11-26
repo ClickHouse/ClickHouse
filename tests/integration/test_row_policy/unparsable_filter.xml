@@ -5,7 +5,7 @@
             <databases>
                 <mydb>
                     <filtered_table1>
-                        <filter>a = 'unparsable_filter_secret' AND</filter>
+                        <filter>a = = 'unparsable_filter_secret'</filter>
                     </filtered_table1>
                 </mydb>
             </databases>

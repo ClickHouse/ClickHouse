@@ -65,7 +65,7 @@ ColumnsDescription StorageSystemRowPolicies::getColumnsDescription()
 }
 
 
-void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
@@ -77,29 +77,36 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
 
     std::vector<UUID> ids = access_control.findAll<RowPolicy>();
 
+    /// Every column is filled and only the queried ones are returned, so a filter is parsed only if its column is queried.
+    MutableColumns all_columns;
+    for (const auto & column : getColumnsDescription())
+        all_columns.push_back(column.type->createColumn());
+
     size_t column_index = 0;
-    auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_short_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_database = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_table = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
-    auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_name = assert_cast<ColumnString &>(*all_columns[column_index++]);
+    auto & column_short_name = assert_cast<ColumnString &>(*all_columns[column_index++]);
+    auto & column_database = assert_cast<ColumnString &>(*all_columns[column_index++]);
+    auto & column_table = assert_cast<ColumnString &>(*all_columns[column_index++]);
+    auto & column_id = assert_cast<ColumnUUID &>(*all_columns[column_index++]).getData();
+    auto & column_storage = assert_cast<ColumnString &>(*all_columns[column_index++]);
 
     ColumnString * column_filter[static_cast<size_t>(RowPolicyFilterType::MAX)];
     NullMap * column_filter_null_map[static_cast<size_t>(RowPolicyFilterType::MAX)];
+    bool is_filter_queried[static_cast<size_t>(RowPolicyFilterType::MAX)];
     for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
     {
         auto filter_type_i = static_cast<size_t>(filter_type);
-        column_filter[filter_type_i] = &assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
-        column_filter_null_map[filter_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
+        is_filter_queried[filter_type_i] = columns_mask[column_index];
+        column_filter[filter_type_i] = &assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*all_columns[column_index]).getNestedColumn());
+        column_filter_null_map[filter_type_i] = &assert_cast<ColumnNullable &>(*all_columns[column_index++]).getNullMapData();
     }
 
-    auto & column_is_restrictive = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
-    auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
-    auto & column_apply_to_list = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
-    auto & column_apply_to_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
-    auto & column_apply_to_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
-    auto & column_apply_to_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_is_restrictive = assert_cast<ColumnUInt8 &>(*all_columns[column_index++]).getData();
+    auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*all_columns[column_index++]).getData();
+    auto & column_apply_to_list = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*all_columns[column_index]).getData());
+    auto & column_apply_to_list_offsets = assert_cast<ColumnArray &>(*all_columns[column_index++]).getOffsets();
+    auto & column_apply_to_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*all_columns[column_index]).getData());
+    auto & column_apply_to_except_offsets = assert_cast<ColumnArray &>(*all_columns[column_index++]).getOffsets();
 
     auto add_row = [&](const String & name,
                        const RowPolicyName & full_name,
@@ -120,7 +127,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         {
             auto filter_type_i = static_cast<size_t>(filter_type);
             const String & filter = filters[filter_type_i];
-            if (filter.empty())
+            if (filter.empty() || !is_filter_queried[filter_type_i])
             {
                 column_filter[filter_type_i]->insertDefault();
                 column_filter_null_map[filter_type_i]->push_back(true);
@@ -166,6 +173,11 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
 
         add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->isRestrictive(), policy->to_roles);
     }
+
+    size_t res_index = 0;
+    for (size_t i = 0; i < all_columns.size(); ++i)
+        if (columns_mask[i])
+            res_columns[res_index++] = std::move(all_columns[i]);
 }
 
 void StorageSystemRowPolicies::backupData(

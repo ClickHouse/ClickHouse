@@ -946,8 +946,13 @@ def test_row_policy_filter_with_subquery():
     node.query("DROP TABLE table_2")
 
 
-def test_unparsable_filter_is_not_quoted_in_errors():
+def test_unparsable_filter():
     copy_policy_xml("unparsable_filter.xml")
+
+    # the policy still applies, so it allows no rows rather than all of them
+    assert node.query("SELECT * FROM mydb.filtered_table1") == ""
+    # listing the policies does not parse their filters
+    assert node.query("SHOW POLICIES ON mydb.filtered_table1") == "default\n"
 
     for query in [
         "SELECT select_filter FROM system.row_policies",
@@ -959,3 +964,5 @@ def test_unparsable_filter_is_not_quoted_in_errors():
             in error
         )
         assert "unparsable_filter_secret" not in error
+
+    assert not node.contains_in_log("unparsable_filter_secret")
