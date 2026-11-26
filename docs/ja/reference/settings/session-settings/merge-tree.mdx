@@ -138,7 +138,9 @@ ClickHouse が 1 回のクエリで `merge_tree_max_rows_to_use_cache` 行を超
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "値は `filesystem_prefetch_min_bytes_for_single_read_task` に統一されました"}]}]} />
 
-タスクごとに読み取る最小バイト数。
+リモートディスク (例: S3) に保存された `MergeTree` テーブルのデータパートから、1つの読み取りタスクが読み取る圧縮済みデータの最小量 (バイト単位) です。タスクを大きくするとストレージへのリクエスト数が減り、小さくするとスレッド間で作業をより均等に分散できます。
+
+タスクサイズは、すべての読み取りスレッドが少なくとも2つのタスクを受け取れるサイズを上限とし、それを超えて大きくなることはありません。この設定は、並列レプリカを自動的に使用するかどうかを判断する際の読み取りスレッド数の見積もりにも使用されます。
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 

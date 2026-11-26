@@ -138,7 +138,9 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "El valor se ha unificado con `filesystem_prefetch_min_bytes_for_single_read_task`"}]}]} />
 
-Número mínimo de bytes que se deben leer por tarea.
+Cantidad mínima de datos comprimidos, en bytes, que una sola tarea de lectura lee de una parte de una tabla `MergeTree` almacenada en un disco remoto (por ejemplo, S3). Las tareas más grandes implican menos solicitudes al almacenamiento, mientras que las más pequeñas permiten repartir el trabajo entre los threads de forma más equilibrada.
+
+El tamaño de la tarea no aumenta más allá del punto en el que cada hilo de lectura recibe al menos dos tareas. Este parámetro de configuración también se utiliza para estimar el número de hilos de lectura al decidir si se usan réplicas paralelas automáticamente.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 

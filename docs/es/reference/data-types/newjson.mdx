@@ -869,8 +869,11 @@ Actualmente, hay 4 serializaciones distintas de la estructura de datos compartid
 
 La versión de serialización se controla mediante los ajustes de MergeTree
 [object&#95;shared&#95;data&#95;serialization&#95;version](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-y [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(la parte de nivel cero es la que se crea al insertar datos en la tabla; durante las fusiones, las partes tienen un nivel superior).
+y [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+El segundo se utiliza para las partes pequeñas: las partes creadas durante las inserciones (a menos que
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/es/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+esté deshabilitado) y las partes cuyo tamaño es inferior al mínimo definido en
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/es/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version).
 
 Nota: cambiar la serialización de la estructura de datos compartida solo se admite
 para la [versión de serialización de objetos](/es/reference/settings/merge-tree-settings/other#object_serialization_version) `v3`

@@ -20,11 +20,11 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "実際に実行されたクエリプランを、ステップごとのランタイム統計とともに収集するための新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "実際に実行されたクエリプランを、処理ステップごとのランタイム統計とともに収集するための新しい設定。"}]}]} />
 
-実行されたクエリプランを、ステップごとのランタイム統計とともに [`system.query_log`](/ja/reference/system-tables/query_log) の `query_plan` カラムに書き込みます。このカラムは `JSON` 型であるため、統計は数値として保存され、読み取るだけでなくクエリで集計することもできます。
+実行されたクエリプランを、処理ステップごとのランタイム統計とともに [`system.query_log`](/ja/reference/system-tables/query_log) の `query_plan` カラムに書き込みます。このカラムは `JSON` 型であるため、統計は数値として保存され、読み取るだけでなくクエリで集計することもできます。
 
-このプランには、[`EXPLAIN ANALYZE`](/ja/reference/statements/explain#explain-analyze) で表示されるものと同じ情報、すなわちステップのツリー、各ステップの処理内容、およびステップごとの行数、バイト数、ローカル時刻、並列度が含まれます。
+このプランには、[`EXPLAIN ANALYZE`](/ja/reference/statements/explain#explain-analyze) で表示されるものと同じ情報、すなわち処理ステップのツリー、各処理ステップの処理内容、および処理ステップごとの行数、バイト数、ローカル時刻、並列度が含まれます。
 
 収集対象となるのは、アナライザ (`enable_analyzer = 1`、デフォルト) で実行された `SELECT` クエリのみで、さらにその行自体が書き込まれる場合に限られます。そのため、[`log_queries`](/ja/reference/settings/session-settings/log-queries#log_queries) も有効にする必要があります。実行中に失敗したクエリは、実行中だったプランとともに収集されますが、統計は含まれません。`QueryStart` 行では、書き込み時点でまだプランが存在しないため、このカラムは空になります。
 
@@ -34,12 +34,26 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 このコストはクエリの実行前に決定されるため、収集対象のクエリは、その行が後から [`log_queries_min_type`](/ja/reference/settings/session-settings/log-queries#log_queries_min_type) や [`log_queries_min_query_duration_ms`](/ja/reference/settings/session-settings/log-queries#log_queries_min_query_duration_ms) によって破棄される場合でもコストが発生します。これらの条件は、その時点ではまだ判断できないためです。[query cache](/ja/concepts/features/performance/caches/query-cache) から結果が返されたクエリはプランを実行しないため、保存するプランもありません。
 
-また、プランの最適化によって生成されたステップの説明 (たとえば統合された式) が破棄されずに保持されるようになり、`system.processors_profile_log.plan_step_description` でも確認できるようになります。
+また、プランの最適化によって生成された処理ステップの説明 (たとえば統合された式) が破棄されずに保持されるようになり、`system.processors_profile_log.plan_step_description` でも確認できるようになります。
 
 関連項目:
 
 * [`system.query_log`](/ja/reference/system-tables/query_log)
 * [`EXPLAIN PLAN`](/ja/reference/statements/explain#explain-plan)
+* [`log_query_plans_time`](/ja/reference/settings/session-settings/log-query#log_query_plans_time)
+* [`log_query_plans_join_matches`](/ja/reference/settings/session-settings/log-query#log_query_plans_join_matches)
+
+## log_query_plans_join_matches {#log_query_plans_join_matches}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "`system.query_log` に書き込まれるクエリプランについて、結合の正確な一致行数メトリクスを収集するための新しい設定。"}]}]} />
+
+[`log_query_plans`](/ja/reference/settings/session-settings/log-query#log_query_plans) によってクエリが記録される際、一致行数メトリクスを結合の出力から導出できない場合に限り、そのメトリクスの算出に必要な追加の集計処理を結合で実行します。これは [`EXPLAIN ANALYZE`](/ja/reference/statements/explain#explain-analyze-join-steps) の `matches` 設定と同じ動作です。メトリクスを導出できる場合は、この設定を有効にしなくても保存されます。
+
+`log_query_plans` が有効で、かつクエリが記録対象となっている場合にのみ効果があります。
 
 ## log_query_plans_max_size {#log_query_plans_max_size}
 
@@ -78,6 +92,20 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 * 0 — クエリプランを収集しません。
 * 範囲 [0..1] の正の floating-point 数値。例えば、設定値が `0.1` の場合、およそ 10 件に 1 件のクエリのプランが収集されます。
 * 1 — すべてのクエリのプランを収集します。
+
+## log_query_plans_time {#log_query_plans_time}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "`system.query_log` に書き込まれるクエリプランについて、処理ステップごとのローカル時刻と同時実行数を収集する新しい設定です。"}]}]} />
+
+[`log_query_plans`](/ja/reference/settings/session-settings/log-query#log_query_plans) がクエリを収集する際に、そのプロセッサーの作業インターバルもあわせて収集します。これは [`EXPLAIN ANALYZE`](/ja/reference/statements/explain#explain-analyze-concurrency) の `time` 設定と同じ動作です。これにより、`system.query_log.query_plan` に保存されるプランでは、各処理ステップに `Time` グループと `Concurrency` グループが追加され、各処理ステップおよびそのブランチのローカル時刻と同時実行数が記録されます。さらに、プランのルートには `ExecutionTimeBreakdown` が追加されます。これは実行時間を、プランの処理ステップ内で費やされた時間、処理ステップ外で費やされた時間、およびどのスレッドも何も実行していなかった時間に分割したものです。
+
+これらの収集では、クエリが実行するプロセッサータスクの数に比例してメモリと CPU を消費するため、クエリが長くなるほどコストも増大します。また、クエリ終了後にこれらを処理する分だけ、クエリの所要時間も長くなります。
+
+この設定は、`log_query_plans` が有効で、かつクエリが収集される場合にのみ効果があります。
 
 ## log_query_settings {#log_query_settings}
 

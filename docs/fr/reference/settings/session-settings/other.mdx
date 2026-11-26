@@ -47,7 +47,9 @@ Taille de mémoire à partir de laquelle l’agrégateur adaptatif gèle la tabl
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Écrit un en-tête CORS HTTP supplémentaire.
+Ajoute l’en-tête `Access-Control-Allow-Origin: *` aux réponses de l’interface HTTP, afin que les applications web servies depuis une autre origine puissent lire les résultats de la requête dans un navigateur.
+
+L’en-tête n’est ajouté que si la requête contient l’en-tête `Origin` et que le paramètre de configuration du serveur `http_options_response` n’est pas défini. Ce paramètre étant lu dans les paramètres de l’utilisateur authentifié, l’en-tête n’est pas ajouté aux réponses des requêtes dont l’authentification échoue.
 
 ## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
 

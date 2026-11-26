@@ -40,6 +40,20 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 * [`system.query_log`](/ru/reference/system-tables/query_log)
 * [`EXPLAIN PLAN`](/ru/reference/statements/explain#explain-plan)
+* [`log_query_plans_time`](/ru/reference/settings/session-settings/log-query#log_query_plans_time)
+* [`log_query_plans_join_matches`](/ru/reference/settings/session-settings/log-query#log_query_plans_join_matches)
+
+## log_query_plans_join_matches {#log_query_plans_join_matches}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Новая настройка для сбора точных метрик сопоставленных строк соединений в плане запроса, записываемом в `system.query_log`."}]}]} />
+
+Если [`log_query_plans`](/ru/reference/settings/session-settings/log-query#log_query_plans) фиксирует запрос, соединения в нём выполняют дополнительный учёт, необходимый для метрик сопоставленных строк, в тех случаях, когда эти метрики нельзя получить из того, что JOIN формирует и так, — аналогично настройке `matches` в [`EXPLAIN ANALYZE`](/ru/reference/statements/explain#explain-analyze-join-steps). Если метрики можно получить без этого, они сохраняются и без данной настройки.
+
+Не действует, если `log_query_plans` не включена или запрос не зафиксирован.
 
 ## log_query_plans_max_size {#log_query_plans_max_size}
 
@@ -78,6 +92,20 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 — планы запросов не сохраняются.
 * Положительное число с плавающей точкой в диапазоне [0..1]. Например, если значение настройки равно `0.1`, сохраняются планы примерно одного из десяти запросов.
 * 1 — сохраняется план каждого запроса.
+
+## log_query_plans_time {#log_query_plans_time}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Новая настройка для сбора реального времени и уровней параллелизма по каждому шагу плана запроса, записываемого в `system.query_log`."}]}]} />
+
+Когда [`log_query_plans`](/ru/reference/settings/session-settings/log-query#log_query_plans) фиксирует запрос, дополнительно собираются интервалы работы его процессоров — так же, как это делает параметр `time` в [`EXPLAIN ANALYZE`](/ru/reference/statements/explain#explain-analyze-concurrency). В этом случае план, сохранённый в `system.query_log.query_plan`, содержит у своих шагов группы `Time` и `Concurrency` с реальным временем и уровнем параллелизма каждого шага и его ветки, а в корне — `ExecutionTimeBreakdown`, который разбивает время выполнения на время, проведённое в шагах плана, вне их и в простое, когда ни один поток ничего не выполнял.
+
+Сбор этих данных требует памяти и CPU пропорционально количеству задач процессоров, выполняемых запросом, поэтому затраты растут с длительностью запроса, а обработка данных после его завершения увеличивает общее время выполнения.
+
+Не действует, если `log_query_plans` не включена или запрос не зафиксирован.
 
 ## log_query_settings {#log_query_settings}
 

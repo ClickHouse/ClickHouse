@@ -369,7 +369,9 @@ JOIN 재정렬 최적화 중 표현식을 JOIN 단계에 머지하도록 허용�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "쿼리 계획에서 필터를 머지할 수 있도록 허용합니다"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "쿼리 계획에서 필터를 머지할 수 있도록 허용합니다. 분석기와 함께 filter-push-down을 올바르게 지원하려면 이 설정이 필요합니다."}]}]} />
 
-쿼리 계획에서 필터를 머지할 수 있도록 허용합니다.
+쿼리 계획의 연속된 필터 단계를 하나로 머지할 수 있도록 허용합니다. 머지된 조건의 단락 평가를 유지하기 위해 `AND` 연쇄에 대한 필터는 조건마다 하나씩, 여러 개의 연속된 필터로 실행됩니다.
+
+분석기에서 filter push-down이 올바르게 동작하려면 이 설정이 필요합니다. 머지는 `query_plan_enable_optimizations`가 활성화된 경우에만 적용됩니다.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -466,7 +468,9 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "지연 머티리얼라이즈 최적화에 쿼리 계획을 사용하도록 하는 새로운 설정이 추가되었습니다"}]}]} />
 
-지연 머티리얼라이즈 최적화에 쿼리 계획을 사용합니다.
+`ORDER BY ... LIMIT n` 쿼리에 대해 지연 구체화 최적화(lazy materialization optimization)를 활성화합니다. 정렬(sorting) 및 필터링에 필요하지 않은 컬럼은 읽어 들인 모든 행이 아니라 `LIMIT` 적용 후 남은 `n`개의 행에 대해서만 읽습니다. 이를 통해 와이드 테이블(wide tables)을 대상으로 하는 top-N 쿼리에서 읽는 데이터 양을 줄일 수 있습니다.
+
+`n`이 `query_plan_max_limit_for_lazy_materialization`보다 크거나 `LIMIT ... WITH TIES`를 사용하면 이 최적화가 적용되지 않습니다.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -608,6 +612,14 @@ JOIN 연산에서 왼쪽 테이블(left table)을 순서대로 읽는 방식을 
 
 * 0 - 비활성화
 * 1 - 활성화
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "반대쪽을 읽지 않으며 보존되는 쪽의 모든 행을 정확히 한 번씩 출력하는 `LEFT` 또는 `RIGHT` `JOIN`을 제거하는 새로운 설정입니다."}]}]} />
+
+반대쪽의 컬럼을 하나도 읽지 않으며 보존되는 쪽의 모든 행을 정확히 한 번씩 출력하는 `LEFT` 또는 `RIGHT` `JOIN`을 제거합니다. 이러한 조인으로는 `ANY` 조인과, 반대쪽이 조인 키 기준으로 중복 없는 행만 갖는 조인이 있습니다. 후자의 예로는 조인 키에 `GROUP BY` 또는 `DISTINCT`를 적용한 서브쿼리나, 파티션 키(partition key)가 없고 조인 키가 `UNIQUE KEY`를 모두 포함하는 테이블이 있습니다. 이때 반대쪽은 전혀 읽지 않습니다.
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

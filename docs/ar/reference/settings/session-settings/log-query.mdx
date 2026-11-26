@@ -40,6 +40,20 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 * [`system.query_log`](/ar/reference/system-tables/query_log)
 * [`EXPLAIN PLAN`](/ar/reference/statements/explain#explain-plan)
+* [`log_query_plans_time`](/ar/reference/settings/session-settings/log-query#log_query_plans_time)
+* [`log_query_plans_join_matches`](/ar/reference/settings/session-settings/log-query#log_query_plans_join_matches)
+
+## log_query_plans_join_matches {#log_query_plans_join_matches}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "إعداد جديد لجمع مقاييس دقيقة للصفوف المتطابقة في عمليات الربط ضمن خطة تنفيذ الاستعلام المكتوبة إلى `system.query_log`."}]}]} />
+
+عندما يلتقط [`log_query_plans`](/ar/reference/settings/session-settings/log-query#log_query_plans) استعلامًا، يجعل هذا الإعداد عمليات الربط فيه تُجري العمليات الحسابية الإضافية اللازمة لمقاييس الصفوف المتطابقة، وذلك في الحالات التي يتعذّر فيها اشتقاق هذه المقاييس مما تُنتجه عملية الربط أصلًا، على غرار الإعداد `matches` في [`EXPLAIN ANALYZE`](/ar/reference/statements/explain#explain-analyze-join-steps). أما في الحالات التي يمكن فيها اشتقاق المقاييس، فإنها تُخزَّن دون الحاجة إلى هذا الإعداد.
+
+لا يكون لهذا الإعداد أي تأثير ما لم يكن `log_query_plans` مفعّلًا وما لم يُلتقط الاستعلام.
 
 ## log_query_plans_max_size {#log_query_plans_max_size}
 
@@ -78,6 +92,20 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 — لا تُلتقط أي خطط استعلام.
 * عدد موجب بالفاصلة العائمة ضمن النطاق [0..1]. فمثلًا، إذا كانت قيمة الإعداد `0.1`، تُلتقط خطط استعلام واحد تقريبًا من كل عشرة استعلامات.
 * 1 — تُلتقط خطة كل استعلام.
+
+## log_query_plans_time {#log_query_plans_time}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "إعداد جديد لجمع زمن الساعة الفعلي ومستويات التزامن لكل خطوة في خطة تنفيذ الاستعلام المكتوبة في `system.query_log`."}]}]} />
+
+عندما يلتقط [`log_query_plans`](/ar/reference/settings/session-settings/log-query#log_query_plans) استعلامًا، تُجمع أيضًا الفترات الزمنية لعمل معالجاته، على غرار إعداد `time` في [`EXPLAIN ANALYZE`](/ar/reference/statements/explain#explain-analyze-concurrency). وعندئذٍ تتضمن الخطة المخزَّنة في `system.query_log.query_plan` مجموعتَي `Time` و`Concurrency` في خطواتها، وفيهما زمن الساعة الفعلي ومستوى التزامن لكل خطوة ولفرعها، إضافةً إلى `ExecutionTimeBreakdown` في جذرها، الذي يقسّم وقت التنفيذ إلى الوقت المستغرق داخل خطوات الخطة، والوقت المستغرق خارجها، والوقت الذي لا يعمل فيه أي خيط تنفيذ.
+
+يستهلك جمع هذه البيانات الذاكرة وCPU بما يتناسب مع عدد مهام المعالجات التي ينفّذها الاستعلام، ومن ثَمّ تزداد هذه التكلفة بازدياد طول الاستعلام، كما أن معالجتها بعد انتهاء الاستعلام تطيل مدته.
+
+لا يكون لهذا الإعداد أي أثر ما لم يكن `log_query_plans` مفعّلًا ويُلتقط الاستعلام.
 
 ## log_query_settings {#log_query_settings}
 

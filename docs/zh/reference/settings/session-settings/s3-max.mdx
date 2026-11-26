@@ -37,7 +37,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "S3 上传分片的最大分片编号"}]}]} />
 
-S3 上传分片的最大分片编号。
+向 S3 进行分段上传或分段复制时的最大分片数。默认值与 AWS S3 的限制一致。
+
+复制时，会增大分片大小，确保分片数不超过此值。写入时，如果数据需要更多分片，则会抛出异常；此时请增大 `s3_max_upload_part_size` 或 `s3_upload_part_size_multiply_factor`。如果所用的兼容 S3 的存储组件支持的分片数较少，请调低此值。
 
 ## s3_max_put_burst {#s3_max_put_burst}
 

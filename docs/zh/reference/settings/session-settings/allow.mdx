@@ -225,7 +225,9 @@ Cloud 默认值: `1`。
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-允许以列式方式执行 multiIf 函数
+允许 `multiIf` 函数一次性对整列计算结果，而不是逐行计算，从而提升执行速度。
+
+仅当结果类型为数值、`Decimal`、日期或日期时间类型、`Enum`、`IPv4` 或 `IPv6`，且该函数的分支数不超过 255 个时，才会使用列式执行。其他情况下，无论此设置的值如何，均使用逐行执行。
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

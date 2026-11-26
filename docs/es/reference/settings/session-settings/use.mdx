@@ -172,9 +172,9 @@ predicado determinista para el lado de destino.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para descartar archivos de datos de Iceberg, así como grupos de filas y páginas de Parquet, mediante filtros de JOIN en tiempo de ejecución."}]}]} />
 
-Omite los archivos de datos de Iceberg (y, en los archivos que sí se leen, los grupos de filas y las páginas de Parquet) que no pueden contener ninguna clave de un filtro en tiempo de ejecución de JOIN (consulte [enable&#95;join&#95;runtime&#95;filters](/es/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Cuando termina el lado de construcción de la unión, las claves del filtro (o su rango mín./máx., si el conjunto es demasiado grande) se comparan con los límites de las columnas en los archivos de manifiesto, con las estadísticas de los grupos de filas y con el índice de páginas. Los archivos de datos solicitados antes de ese momento se leen por completo.
+Omite los grupos de filas y las páginas de Parquet de cualquier lectura desde almacenamiento de objetos (`s3`, `azureBlobStorage`, `hdfs` y sus motores de tablas, `Iceberg`, `DeltaLake`, `Hudi`), así como archivos de datos completos de una tabla Iceberg, que no pueden contener ninguna clave de un filtro en tiempo de ejecución de JOIN (consulte [enable&#95;join&#95;runtime&#95;filters](/es/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Cuando termina el lado de construcción de la unión, las claves del filtro (o su rango mín./máx., si el conjunto es demasiado grande) se comparan con los límites de las columnas en los archivos de manifiesto de Iceberg, con las estadísticas de los grupos de filas y con el índice de páginas. Los archivos solicitados antes de ese momento se leen por completo. Los grupos de filas y las páginas solo se descartan mediante una clave que el archivo almacena con el nombre propio de la columna; por tanto, no se descartan mediante una columna de partición de Hive, una columna virtual, una columna de Delta Lake almacenada con otro nombre ni una columna con una expresión predeterminada.
 
-Requiere [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/es/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) y [use&#95;iceberg&#95;partition&#95;pruning](/es/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Para los grupos de filas también se requiere [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/es/reference/settings/formats/input-format#input_format_parquet_filter_push_down), y para las páginas, tanto este como [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/es/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
+Requiere [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/es/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis). Para omitir archivos de datos de Iceberg también se requiere [use&#95;iceberg&#95;partition&#95;pruning](/es/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Para los grupos de filas también se requiere [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/es/reference/settings/formats/input-format#input_format_parquet_filter_push_down), y para las páginas, tanto este como [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/es/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -259,7 +259,9 @@ Experimental. Enruta las lecturas a través del nuevo pipeline `ReaderExecutor` 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
-Usa un bitmap roaring para las eliminaciones posicionales de Iceberg.
+Determina cómo se aplican los archivos de eliminación por posición de las tablas Iceberg. Si está habilitado, las posiciones de las filas eliminadas de un archivo de datos se cargan en un mapa de bits roaring, que luego se utiliza para filtrar las filas. Si está deshabilitado, los archivos de borrado se leen en modo streaming junto con el archivo de datos, sin cargar previamente en memoria todas las posiciones eliminadas.
+
+Los vectores de eliminación siempre se aplican como mapas de bits, independientemente de este parámetro de configuración.
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

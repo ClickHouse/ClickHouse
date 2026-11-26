@@ -373,9 +373,11 @@ Permet d’intégrer le filtre à la condition `JOIN` et de convertir `CROSS JOI
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Permet de fusionner les filtres dans le plan de requête"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Permet de fusionner les filtres dans le plan de requête. Ceci est nécessaire pour prendre correctement en charge le push-down des filtres avec l’analyseur."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Permet de fusionner les filters dans le plan de requête"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Permet de fusionner les filters dans le plan de requête. Ceci est nécessaire pour prendre correctement en charge le push-down des filters avec l’analyseur."}]}]} />
 
-Permet de fusionner les filtres dans le plan de requête.
+Permet de fusionner en une seule étape les étapes de filtrage consécutives du plan de requête. Afin de préserver l’évaluation en court-circuit de la condition fusionnée, un filter portant sur une chaîne `AND` est alors exécuté sous la forme de plusieurs filters consécutifs, un par condition.
+
+Ce paramètre est nécessaire au bon fonctionnement du push-down des filters avec l’analyseur. La fusion ne prend effet que si `query_plan_enable_optimizations` est activé.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -472,7 +474,9 @@ Optimise la lecture avec FINAL à partir de ReplacingMergeTree en construisant u
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Ajout d’un nouveau paramètre pour utiliser le plan de requête pour l’optimisation par matérialisation différée"}]}]} />
 
-Utiliser le plan de requête pour l’optimisation par matérialisation différée.
+Active l’optimisation par matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` : les colonnes qui ne sont pas nécessaires au tri et au filtrage ne sont lues que pour les `n` lignes restantes après `LIMIT`, et non pour l’ensemble des lignes lues. Cela réduit la quantité de données lues pour les requêtes top-N sur des tables larges.
+
+L’optimisation n’est pas utilisée si `n` est supérieur à `query_plan_max_limit_for_lazy_materialization`, ni avec `LIMIT ... WITH TIES`.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -622,6 +626,14 @@ Valeurs possibles :
 
 * 0 - Désactiver
 * 1 - Activer
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nouveau paramètre permettant de supprimer un `LEFT` ou `RIGHT` `JOIN` dont l'autre côté n'est pas lu et qui renvoie chaque ligne du côté préservé exactement une fois."}]}]} />
+
+Supprime un `LEFT` ou `RIGHT` `JOIN` si aucune colonne de son autre côté n&#39;est lue et s&#39;il renvoie chaque ligne du côté préservé exactement une fois : c&#39;est le cas d&#39;une jointure `ANY`, ou d&#39;une jointure dont l&#39;autre côté est unique selon les clés de jointure, par exemple une sous-requête avec `GROUP BY` ou `DISTINCT` sur ces clés, ou une table sans clé de partition dont la `UNIQUE KEY` est couverte par ces clés. L&#39;autre côté n&#39;est alors pas lu du tout.
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

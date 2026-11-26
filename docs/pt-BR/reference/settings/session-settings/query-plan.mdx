@@ -373,9 +373,11 @@ Permite incorporar o filtro à condição de `JOIN` e converter `CROSS JOIN` em 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Permite mesclar filtros no plano de consulta"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Permite mesclar filtros no plano de consulta. Isso é necessário para oferecer suporte adequado a filter-push-down com o analyzer."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Permite mesclar filtros no plano de consulta"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Permite mesclar filtros no plano de consulta. Isso é necessário para oferecer suporte adequado a filter-push-down com o analisador."}]}]} />
 
-Permite mesclar filtros no plano de consulta.
+Permite mesclar etapas de filtro consecutivas do plano de consulta em uma só. Para preservar a avaliação de curto-circuito da condição mesclada, um filtro sobre uma cadeia `AND` passa a ser executado como vários filtros consecutivos, um por condição.
+
+Isso é necessário para que o filter push-down funcione corretamente com o analisador. A mesclagem só tem efeito se `query_plan_enable_optimizations` estiver habilitado.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -472,7 +474,9 @@ Otimiza a leitura com FINAL no ReplacingMergeTree criando um conjunto de chaves 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Adicionada nova configuração para usar o plano de consulta na otimização de materialização lazy"}]}]} />
 
-Usar o plano de consulta na otimização de materialização lazy.
+Habilita a otimização de materialização tardia para consultas `ORDER BY ... LIMIT n`: as colunas que não são necessárias para ordenação e filtragem são lidas apenas para as `n` linhas que restam após o `LIMIT`, e não para todas as linhas lidas. Isso reduz a quantidade de dados lidos em consultas top-N sobre tabelas largas.
+
+A otimização não é usada se `n` for maior que `query_plan_max_limit_for_lazy_materialization` nem com `LIMIT ... WITH TIES`.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -622,6 +626,14 @@ Valores possíveis:
 
 * 0 - Desabilitar
 * 1 - Habilitar
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nova configuração para remover um `LEFT` ou `RIGHT` `JOIN` cujo outro lado não é lido e que retorna cada linha do lado preservado exatamente uma vez."}]}]} />
+
+Remove um `LEFT` ou `RIGHT` `JOIN` quando nenhuma coluna do outro lado é lida e ele retorna cada linha do lado preservado exatamente uma vez: uma junção `ANY` ou uma junção cujo outro lado é único em relação às chaves de junção, como uma subconsulta com `GROUP BY` ou `DISTINCT` sobre essas chaves, ou uma tabela sem chave de particionamento cuja `UNIQUE KEY` seja coberta por elas. Nesse caso, o outro lado não chega a ser lido.
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

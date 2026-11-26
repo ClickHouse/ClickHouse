@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않은 채
-  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)를 사용하면 생성된 데이터를
-  // 해당 평가 스코프 내에 유지하면서 마운트당 한 번만 생성합니다.
+  // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않고
+  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)는 생성된 데이터를
+  // 해당 평가 스코프에 유지하면서 마운트당 한 번만 생성합니다.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -706,10 +706,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_index_analysis_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "distributed_index_analysis", path: "/distributed-index-analysis#distributed_index_analysis", default: "0" },
         { name: "distributed_index_analysis_for_non_shared_merge_tree", path: "/distributed-index-analysis#distributed_index_analysis_for_non_shared_merge_tree", default: "0" },
+        { name: "distributed_index_analysis_on_stateless_workers", path: "/distributed-index-analysis#distributed_index_analysis_on_stateless_workers", default: "0" },
         { name: "distributed_index_analysis_only_on_coordinator", path: "/distributed-index-analysis#distributed_index_analysis_only_on_coordinator", default: "0" }
       ],
       children: []
@@ -1450,11 +1451,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "log_query_*",
-      count: 6,
+      count: 8,
       settings: [
         { name: "log_query_plans", path: "/log-query#log_query_plans", default: "0" },
+        { name: "log_query_plans_join_matches", path: "/log-query#log_query_plans_join_matches", default: "0" },
         { name: "log_query_plans_max_size", path: "/log-query#log_query_plans_max_size", default: "1048576" },
         { name: "log_query_plans_probability", path: "/log-query#log_query_plans_probability", default: "1" },
+        { name: "log_query_plans_time", path: "/log-query#log_query_plans_time", default: "0" },
         { name: "log_query_settings", path: "/log-query#log_query_settings", default: "1" },
         { name: "log_query_threads", path: "/log-query#log_query_threads", default: "0" },
         { name: "log_query_views", path: "/log-query#log_query_views", default: "1" }
@@ -2424,7 +2427,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 59,
+      count: 60,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2476,6 +2479,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_remove_redundant_distinct", path: "/query-plan#query_plan_remove_redundant_distinct", default: "1" },
         { name: "query_plan_remove_redundant_sorting", path: "/query-plan#query_plan_remove_redundant_sorting", default: "1" },
         { name: "query_plan_remove_unused_columns", path: "/query-plan#query_plan_remove_unused_columns", default: "1" },
+        { name: "query_plan_remove_unused_joins", path: "/query-plan#query_plan_remove_unused_joins", default: "1" },
         { name: "query_plan_replace_always_true_filter", path: "/query-plan#query_plan_replace_always_true_filter", default: "1" },
         { name: "query_plan_reuse_storage_ordering_for_window_functions", path: "/query-plan#query_plan_reuse_storage_ordering_for_window_functions", default: "1" },
         { name: "query_plan_short_circuit_constant_false_join", path: "/query-plan#query_plan_short_circuit_constant_false_join", default: "1" },
@@ -2613,10 +2617,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "rewrite_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "rewrite_count_distinct_if_with_count_distinct_implementation", path: "/rewrite#rewrite_count_distinct_if_with_count_distinct_implementation", default: "0" },
-        { name: "rewrite_in_to_join", path: "/rewrite#rewrite_in_to_join", default: "0" }
+        { name: "rewrite_in_to_join", path: "/rewrite#rewrite_in_to_join", default: "0" },
+        { name: "rewrite_intersect_except_distinct_to_join", path: "/rewrite#rewrite_intersect_except_distinct_to_join", default: "1" }
       ],
       children: []
     },
@@ -3489,7 +3494,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `설정 ${entry.count}개`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "개 설정" : "개 설정"}`
 
     return (
       <div key={key} className="min-w-max">

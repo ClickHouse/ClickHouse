@@ -302,7 +302,7 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
-암호화 headers 캐시를 지웁니다. 이 캐시는 암호화된 파일 앞부분에서 읽은 암호화 headers를 저장하며, 실험적 `use_reader_executor` 읽기 경로에서 이를 다시 읽지 않도록 사용됩니다. 크기는 `encryption_header_cache_size` server setting으로 설정됩니다.
+암호화 headers 캐시를 지웁니다. 이 캐시는 암호화된 파일 앞부분에서 읽은 암호화 headers를 다시 읽지 않도록 저장합니다. 크기는 `encryption_header_cache_size` 서버 설정으로 설정됩니다.
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 

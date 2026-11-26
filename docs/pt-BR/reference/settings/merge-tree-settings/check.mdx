@@ -32,6 +32,10 @@ Partes em armazenamento empacotado (consulte `min_bytes_for_full_part_storage`) 
 continuam sendo lidas por meio do cache de páginas.
 Se o sistema de arquivos não suportar E/S direta, os arquivos serão lidos por meio do cache de páginas.
 
+Desative esta configuração quando as leituras diretas forem mais lentas do que as leituras por meio do cache de páginas.
+As leituras diretas sempre acessam o dispositivo de armazenamento, mesmo que os dados já estejam armazenados em cache.
+Por exemplo, em um volume Amazon EBS, a verificação de uma tabela que cabe no cache de páginas pode ser várias vezes mais lenta.
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

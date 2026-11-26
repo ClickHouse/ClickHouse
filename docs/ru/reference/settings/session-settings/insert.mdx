@@ -17,7 +17,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Если параметр включен, разрешается вставка в материализованные столбцы.
+Если параметр включен, столбцы `MATERIALIZED` можно указывать в списке столбцов запроса `INSERT`; при этом вставленные значения сохраняются, а не вычисляются из выражений столбцов. Для таблиц `Distributed` значения столбцов `MATERIALIZED` в этом случае также отправляются на шарды.
+
+Если параметр отключен, указание столбца `MATERIALIZED` в запросе `INSERT` приводит к генерации исключения, а значения таких столбцов всегда вычисляются из их выражений.
 
 ## insert_deduplicate {#insert_deduplicate}
 

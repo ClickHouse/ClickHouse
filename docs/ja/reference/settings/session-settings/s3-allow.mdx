@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
-S3 でのマルチパートコピーを有効にします。
+オブジェクトのサイズが `s3_max_single_operation_copy_size` を超える場合に、S3 内でのオブジェクトのコピー (S3 へのバックアップ作成時や S3ディスク間でのデータ移動時など) をマルチパートコピー (`UploadPartCopy`) で行えるようにします。
+
+無効にした場合、オブジェクトはサイズにかかわらず単一の `CopyObject` リクエストでコピーされ、それができない場合はデータを読み込んで再度アップロードします。`UploadPartCopy` をサポートしていない S3 互換ストレージでは、この設定を無効化してください。
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 

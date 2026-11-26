@@ -245,15 +245,40 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
 **发送到服务器的块中的 kind。** 所有非默认 kind 都具有方向性：它们只会出现在服务器发送的结果块中。
 发送到服务器的块 (包括插入数据、`input` 表函数的数据、外部表数据和标量，无论来自客户端还是其他服务器) 只携带 `DEFAULT` 栈：发送方会在发送前将列转换为完整列；若此类块中出现任何其他 kind，服务器都会以 `INCORRECT_DATA` 拒绝。
 
-### Block 变体 {#block-variants}
+### 数据块变体 {#block-variants}
 
-所有 Data 家族的数据包都使用相同的 Block 传输格式。各变体之间的区别仅在于列数和行数：
+所有 Data 家族的数据包都使用相同的数据块传输格式。各变体之间的区别仅在于列数和行数：
 
-| 变体  | num&#95;columns | num&#95;rows | 用途                           |
-| --- | --------------- | ------------ | ---------------------------- |
-| 头部块 | N &gt; 0        | 0            | 声明结果 schema (列名 + 类型) 。      |
-| 结果块 | N &gt; 0        | M &gt; 0     | 实际的结果行。                      |
-| 空块  | 0               | 0            | 哨兵标记：在客户端表示输入结束，在服务器端用作边界标记。 |
+| 变体   | num&#95;columns | num&#95;rows | 用途                                                                                             |
+| ---- | --------------- | ------------ | ---------------------------------------------------------------------------------------------- |
+| 头部数据块  | N &gt; 0        | 0            | 声明结果的 schema (列名 + 类型) 。                                                                       |
+| 结果数据块  | N &gt; 0        | M &gt; 0     | 实际的结果行。                                                                                        |
+| 空数据块   | 0               | 0            | 哨兵标记：在客户端表示输入结束；在服务端作为边界标记。                                                                    |
+| 无列行数据块 | 0               | M &gt; 0     | 不携带任何值的行：结果仅为行的数量。在修订版本 `54498` 及以上写入 (`DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`) 。 |
+
+`num_rows` 的写入独立于 `num_columns`，因此一个数据块可以声明行数，却完全不携带任何
+列。这并不矛盾：查询可以只向服务器请求行数，而不请求其他任何内容
+(例如 `SELECT count() OVER () FROM distributed_table WHERE x > 0` 中由各分片计算的部分，
+其中窗口函数在发起服务器上求值，且不接受任何参数) ，此时结果中的每一行
+都不包含任何值。读取器必须从 `num_rows` 获取此类数据块的行数：由于没有可供计数的列，
+行数没有其他来源，也无法从 (空的) 载荷中恢复。既然
+行数就是全部内容，`num_rows > 0` 的无列数据块便不携带任何列条目，这与
+其他 `num_columns = 0` 的变体完全一致。
+
+此类行只存在于中间结果中：到了 `Complete` 阶段，结果总是包含列。因此，
+该变体仅在以 `Complete` 之前的阶段发送的查询结果中有效。在其他任何位置，
+即 `Complete` 查询的结果、客户端发送给服务器的数据，以及 `Log` 和
+`ProfileEvents` 数据包中，读取器在任何修订版本下都会将其视为格式错误的数据 (`INCORRECT_DATA`) ，因此
+普通结果的消费者绝不会收到有行无列的数据块。
+
+低于修订版本 `54498` 的读取器会拒绝该变体 (`INCORRECT_DATA`) ，因此写入器只有在
+协商确定的修订版本不低于该值时才会发出它。低于该版本时，写入器会报错
+(`NOT_IMPLEMENTED`) 并拒绝此类数据块，而不会写入一个丢失行信息的空数据块；期望得到无列结果的发起服务器
+也会以同样方式拒绝修订版本低于该值的对端。写入器的错误会先于任何数据到达，因此以
+`skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing'` 运行的旧版发起服务器会像对待其他
+在处理前失败的分片一样处理它：按该模式的要求跳过该分片，并记录错误。这同样确保了
+以修订版本 `0` 写入的 `Native` 文件中不会出现该变体；在这类文件中，声明了行数却没有
+列，依然意味着数据流已截断或已损坏。
 
 ### 字节级示例 {#byte-level-examples}
 
@@ -326,13 +351,14 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
 | 线上传输中的 `LowCardinality`                    | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405` | 特殊情况——**不**遵循简单的“低于阈值即生效”规则。仅当修订版本*非零*且低于 `54405`，或另行强制剥离时，`LowCardinality(T)` 才会被剥离为基本类型 `T`。修订版本为 `0` 时会保留该类型。参见下方说明。                                                                                                                                                                                                                                                                                                                         |
 | V2 `Dynamic` / `JSON` 序列化                  | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473` | `Dynamic` 和 `JSON`/`Object` 使用 V1 序列化 (带 `max_dynamic_*` 参数) ，而非 V2。                                                                                                                                                                                                                                                                                                                                                                            |
 | 偏移量 `String` 序列化                           | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION`     | `54492` | 低于阈值时，`String` 列数据使用逐值布局 (每行一个 `VarUInt` 长度前缀 + 原始字节) ，而非[偏移量布局](#string-type) (先是以 `UInt64` 表示的累计字节偏移量，然后是拼接在一起的全部数据) 。该控制完全取决于修订版本，没有逐列的线上传输标记。达到或高于阈值时，偏移量布局同样适用于嵌套在复合类型 (`Array`、`Nullable`、`Map`、`Tuple`、`Variant`、`Dynamic`、`JSON`) 中的 `String`，但**不**适用于 `LowCardinality` 列的字典：`LowCardinality` 字典始终以默认嵌套序列化写入，因此其 `String` 值仍采用逐值布局 (包括 `LowCardinality(String)` 和 `LowCardinality(Nullable(String))`) 。`Buffers` 格式不属于协议的一部分，始终使用逐值布局。 |
+| 无列数据块的行数                                   | `DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`               | `54498` | 不含任何列的块始终声明 `num_rows = 0`，因此无法发送不携带任何值的行 (参见[块变体](#block-variants)) 。当修订版本低于该阈值时，若读取器未获得 header，会将 `num_columns = 0` 且 `num_rows > 0` 的情况视为数据损坏，并引发 `INCORRECT_DATA`。                                                                                                                                                                                                                                                                          |
 | 聚合函数版本控制                                   | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452` | 写入 `AggregateFunction` 状态时不内嵌版本号。                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `quantileDeterministic` 状态中的 `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491` | `AggregateFunction(quantileDeterministic, ...)` 状态 (以及同一函数的 `quantiles`/`median` 写法) 以状态版本 `0` 写入，不含末尾的 `UInt8 skip_degree`。参见[类型别名](#type-aliases)下的说明。                                                                                                                                                                                                                                                                                        |
 | `uniq` 状态中的 64 位哈希样本                       | `DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1`                      | `54493` | `AggregateFunction(uniq, ...)` 状态以状态版本 `0` 写入：既没有开头的标志字节，也没有末尾的 64 位哈希样本。参见[类型别名](#type-aliases)下的说明。                                                                                                                                                                                                                                                                                                                                           |
 | 版本化的 `-Merge` 状态                           | `DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION`            | `54494` | `-Merge` 函数自身的状态 (而非其所合并的状态) 以版本 `0` 写入；当其类型中未写明版本时，也按版本 `0` 读取。例如，对于分布式的 `quantileDeterministicMerge(state)`，分片发送的是 `AggregateFunction(quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`：载荷遵循外层 `AggregateFunction` 的版本 (此处为 `0`) ，因此不含末尾的 `skip_degree`。其中的 `1` 属于参数类型，不适用于该载荷。参见[类型别名](#type-aliases)下的说明。                                                                                           |
 | `BlockInfo` 中的 `out_of_order_buckets`      | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480` | 不写入 `BlockInfo` 字段 ID `3` (参见 [BlockInfo](#blockinfo)) 。                                                                                                                                                                                                                                                                                                                                                                                        |
 | 并行块封送 (`DETACHED`)                         | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478` | 列不会被包装在 `ColumnBLOB` 中；也不会出现 `DETACHED` / `DETACHED_OVER_SPARSE` 类别 (参见 [kind&#95;stack](#kind-stack-and-sparse-encoding)) 。                                                                                                                                                                                                                                                                                                                    |
-| `DateTime(tz)` 类型参数                        | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | 时区参数会从 `type` 字符串中去除——`DateTime('UTC')` 仅声明为 `DateTime`。                                                                                                                                                                                                                                                                                                                                                                                        |
+| `DateTime(tz)` 类型参数                        | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | 时区参数会从 `type` 字符串中删除——`DateTime('UTC')` 会被声明为不带参数的 `DateTime`。                                                                                                                                                                                                                                                                                                                                                                                  |
 
 因此，对几乎所有内容而言，修订版本 `0` 都是最保守的编码方式：流中没有 `BlockInfo`，没有 `has_custom_serialization` 字节，`Dynamic`/`JSON` 使用 V1，没有聚合函数版本，`DateTime` 以裸类型出现且去掉了时区参数。聚合函数*状态*版本是修订版本 `0` 下的例外：此时没有可据以推导版本的对端——流由其生成方自行写入并读回 (例如 `StripeLog` 数据文件、`Set`/`Join` 备份、`Native` 格式文件) ——因此写入器会保留类型上固定的版本 (并照常在类型字符串中写明) ，而不会将状态降级到版本 `0`；只有未固定版本的类型才会以版本 `0` 写入。
 

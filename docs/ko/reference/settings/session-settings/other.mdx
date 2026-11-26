@@ -47,7 +47,9 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-HTTP CORS 헤더를 추가합니다.
+HTTP 인터페이스의 응답에 `Access-Control-Allow-Origin: *` 헤더를 추가하여, 다른 출처(origin)에서 제공되는 웹 애플리케이션이 브라우저에서 쿼리 결과(query results)를 읽을 수 있도록 합니다.
+
+이 헤더는 요청에 `Origin` 헤더가 포함되어 있고 `http_options_response` 서버 구성이 설정되어 있지 않은 경우에만 추가됩니다. 이 설정 값은 인증된 사용자의 설정에서 읽어 오므로, 인증에 실패한 요청의 응답에는 헤더가 추가되지 않습니다.
 
 ## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
 

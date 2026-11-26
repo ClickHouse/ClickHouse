@@ -220,7 +220,7 @@ true に設定すると、テキスト索引を使用できます。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_funnel_functions` の別名を追加しました。"}]}]} />
 
-ファネル分析用の関数を有効にします。
+ファネル分析に使用する実験的な集約関数 `sequenceNextNode` を有効にします。無効の場合、`sequenceNextNode` を使用すると例外がスローされます。
 
 ## enable_gdeflate_codec {#enable_gdeflate_codec}
 
@@ -462,7 +462,9 @@ _time:1h error | stats by (host) count()
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-集約に対するメモリ制約付きのマージ戦略を有効にします。
+分散クエリおよび並列レプリカを使用するクエリにおいて、部分的な集約結果をマージする際のメモリ制約付き戦略を有効にします。
+
+リモートサーバーでの集約が `GROUP BY` キーの順序で実行される場合 (`optimize_aggregation_in_order` を参照) 、リモートサーバーはこれらのキーでソート済みの部分結果を送信し、イニシエーターはそれらを順序通りにマージします。これにより、イニシエーターが一度にメモリ上に保持する集約状態はごく一部に抑えられます。
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 

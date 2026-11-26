@@ -171,9 +171,9 @@ JOIN 조건에서 OR로 연결된 부분을 해당 입력 측으로 pushdown하�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "JOIN 런타임 필터로 Iceberg 데이터 파일, Parquet 행 그룹(row groups) 및 페이지를 프루닝하는 새로운 설정입니다."}]}]} />
 
-JOIN 런타임 필터의 키를 포함할 수 없는 Iceberg 데이터 파일을 건너뛰고, 읽어 들이는 파일에서도 해당 키를 포함할 수 없는 Parquet 행 그룹(row groups)과 페이지를 건너뜁니다([enable&#95;join&#95;runtime&#95;filters](/ko/reference/settings/session-settings/enable-join#enable_join_runtime_filters) 참조). 조인의 빌드 측(build side) 처리가 완료되면 필터의 키(집합(set)이 너무 큰 경우에는 키의 최솟값/최댓값 범위)를 매니페스트 파일의 컬럼 최솟값과 최댓값, row group 통계, 페이지 인덱스와 대조합니다. 그 전에 이미 요청된 데이터 파일은 전체를 읽습니다.
+객체 스토리지(`s3`, `azureBlobStorage`, `hdfs` 및 해당 테이블 엔진, `Iceberg`, `DeltaLake`, `Hudi`)에서 읽는 모든 파일의 Parquet 행 그룹(row groups)과 페이지, 그리고 Iceberg 테이블(Iceberg table)의 데이터 파일 전체 가운데 JOIN 런타임 필터의 키를 포함할 수 없는 것을 건너뜁니다([enable&#95;join&#95;runtime&#95;filters](/ko/reference/settings/session-settings/enable-join#enable_join_runtime_filters) 참조). 조인의 빌드 측(build side) 처리가 완료되면 필터의 키(집합(set)이 너무 큰 경우에는 키의 최솟값/최댓값 범위)를 Iceberg 매니페스트 파일의 컬럼 최솟값과 최댓값, 행 그룹(row groups) 통계, 페이지 인덱스와 대조합니다. 그 전에 이미 요청된 파일은 전체를 읽습니다. 행 그룹(row groups)과 페이지는 파일에 해당 컬럼 자체의 이름으로 저장된 키로만 프루닝됩니다. 따라서 Hive 파티션 열(partition column), 가상 컬럼, 다른 이름으로 저장된 Delta Lake 컬럼, 기본 표현식이 지정된 컬럼으로는 프루닝되지 않습니다.
 
-이 설정을 사용하려면 [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ko/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis)와 [use&#95;iceberg&#95;partition&#95;pruning](/ko/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)이 필요합니다. 행 그룹(row groups)에 적용하려면 [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ko/reference/settings/formats/input-format#input_format_parquet_filter_push_down)도 필요하며, 페이지에 적용하려면 이 설정과 함께 [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ko/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down)도 필요합니다.
+이 설정을 사용하려면 [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ko/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis)가 필요합니다. Iceberg 데이터 파일을 건너뛰려면 [use&#95;iceberg&#95;partition&#95;pruning](/ko/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)도 필요합니다. 행 그룹(row groups)에 적용하려면 [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ko/reference/settings/formats/input-format#input_format_parquet_filter_push_down)도 필요하며, 페이지에 적용하려면 이 설정과 함께 [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ko/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down)도 필요합니다.
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -256,7 +256,9 @@ MergeTree 테이블의 쿼리 실행 중 그래뉼을 프루닝할 때 프라이
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-Iceberg 위치 기반 삭제에 Roaring 비트맵을 사용합니다.
+Iceberg 테이블(Iceberg tables)의 포지션 삭제 파일을 적용하는 방식을 선택합니다. 활성화하면 데이터 파일에서 삭제된 행의 위치를 Roaring 비트맵으로 로드한 뒤, 이 비트맵을 사용해 행을 필터링합니다. 비활성화하면 삭제된 위치를 모두 메모리에 먼저 로드하지 않고, 삭제 파일을 데이터 파일과 함께 스트리밍 방식으로 읽습니다.
+
+삭제 벡터(deletion vectors)는 이 설정과 관계없이 항상 비트맵으로 적용됩니다.
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

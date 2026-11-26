@@ -28,9 +28,9 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 | `schema`      | 기본 스키마가 아닌 테이블 스키마입니다. 선택 사항입니다.                                                 |
 | `on_conflict` | 충돌 해결 전략입니다. 예시: `ON CONFLICT DO NOTHING`. 선택 사항입니다.                             |
 
-인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `host`와 `port`는 별도로 지정해야 합니다. 프로덕션 환경에서는 이 방식을 권장합니다.
+인수는 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `host`와 `port`는 별도로 지정해야 합니다. 프로덕션 환경에서는 이 방식을 권장합니다.
 
-TLS/SSL 매개변수는 `libpq`에 전달되며, 이름이 지정된 컬렉션 키 또는 뒤에 오는 키-값 인수로 제공할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca` 또는 `verify-full`, 설정하지 않으면 `libpq`의 기본값인 `prefer`가 적용됨)와 인증서 및 키는 두 가지 형식 중 하나로 제공할 수 있습니다. `sslrootcert`(CA 인증서 또는 특수 값 `system`), `sslcert`(클라이언트 인증서) 및 `sslkey`(클라이언트 개인 키)는 서버 로컬 파일의 경로이며 서버 구성 파일에 정의된 이름이 지정된 컬렉션에서만 지정할 수 있습니다. 대신 `sslrootcert_pem`, `sslcert_pem` 및 `sslkey_pem`은 해당 파일의 리터럴 콘텐츠를 허용합니다. 예: `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`. 이 값들은 비밀번호처럼 로그와 `SHOW` 쿼리에서 마스킹됩니다.
+TLS/SSL 매개변수는 `libpq`에 전달되며, 명명된 컬렉션 키 또는 뒤에 오는 키-값 인수로 제공할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca` 또는 `verify-full`, 설정하지 않으면 `libpq`의 기본값인 `prefer`가 적용됨)와 인증서 및 키는 두 가지 형식 중 하나로 제공할 수 있습니다. `sslrootcert`(CA 인증서 또는 특수 값 `system`), `sslcert`(클라이언트 인증서) 및 `sslkey`(클라이언트 개인 키)는 서버 로컬 파일의 경로이며 서버 구성 파일에 정의된 명명된 컬렉션에서만 지정할 수 있습니다. 대신 `sslrootcert_pem`, `sslcert_pem` 및 `sslkey_pem`은 해당 파일의 리터럴 콘텐츠를 허용합니다. 예: `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`. 이 값들은 비밀번호처럼 로그와 `SHOW` 쿼리에서 마스킹됩니다. 클라이언트 인증서(`sslcert` 또는 `sslcert_pem`)와 클라이언트 키(`sslkey` 또는 `sslkey_pem`)가 둘 다 구성된 경우가 아니면 ClickHouse는 `sslcertmode=disable`을 전송합니다. 따라서 `libpq`는 서비스 계정 환경에 있는 기본 인증서나 키(`~/.postgresql/postgresql.{crt,key}`)로 인증하지 않습니다. 엔드포인트와 사용자를 SQL에서 지정하는 연결이 서비스 계정의 기본 인증 정보를 재사용해서는 안 되기 때문입니다.
 
 ## 반환 값 {#returned-value}
 

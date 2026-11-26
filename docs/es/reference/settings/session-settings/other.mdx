@@ -47,7 +47,9 @@ El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Escribe el encabezado HTTP CORS adicional.
+Añade el encabezado `Access-Control-Allow-Origin: *` a las respuestas de la interfaz HTTP, de modo que las aplicaciones web servidas desde otro origen puedan leer los resultados de la consulta en un navegador.
+
+El encabezado solo se añade si la solicitud incluye el encabezado `Origin` y la configuración del servidor `http_options_response` no está definida. Como el parámetro de configuración se lee de los ajustes del usuario autenticado, el encabezado no se añade a las respuestas de las solicitudes que no superan la autenticación.
 
 ## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
 

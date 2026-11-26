@@ -40,6 +40,20 @@ Voir aussi :
 
 * [`system.query_log`](/fr/reference/system-tables/query_log)
 * [`EXPLAIN PLAN`](/fr/reference/statements/explain#explain-plan)
+* [`log_query_plans_time`](/fr/reference/settings/session-settings/log-query#log_query_plans_time)
+* [`log_query_plans_join_matches`](/fr/reference/settings/session-settings/log-query#log_query_plans_join_matches)
+
+## log_query_plans_join_matches {#log_query_plans_join_matches}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre permettant de collecter les métriques exactes de lignes correspondantes des jointures pour le plan de requête écrit dans `system.query_log`."}]}]} />
+
+Lorsque [`log_query_plans`](/fr/reference/settings/session-settings/log-query#log_query_plans) capture une requête, ce paramètre force ses jointures à effectuer la comptabilisation supplémentaire nécessaire aux métriques de lignes correspondantes, dans les cas où celles-ci ne peuvent pas être déduites de ce que la jointure produit de toute façon, à l&#39;instar du paramètre `matches` de [`EXPLAIN ANALYZE`](/fr/reference/statements/explain#explain-analyze-join-steps). Lorsque les métriques peuvent être déduites, elles sont stockées même sans ce paramètre.
+
+Sans effet tant que `log_query_plans` n&#39;est pas activé et que la requête n&#39;est pas capturée.
 
 ## log_query_plans_max_size {#log_query_plans_max_size}
 
@@ -78,6 +92,20 @@ Valeurs possibles :
 * 0 — Aucun plan de requête n’est capturé.
 * Nombre positif à virgule flottante dans la plage [0..1]. Par exemple, si la valeur du paramètre est `0.1`, le plan d’environ une requête sur dix est capturé.
 * 1 — Le plan de chaque requête est capturé.
+
+## log_query_plans_time {#log_query_plans_time}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre permettant de collecter, pour chaque étape, le temps d’horloge et les niveaux de concurrence du plan de requête écrit dans `system.query_log`."}]}]} />
+
+Lorsque [`log_query_plans`](/fr/reference/settings/session-settings/log-query#log_query_plans) capture une requête, collecte également les intervalles de travail de ses processeurs, à l’instar du paramètre `time` de [`EXPLAIN ANALYZE`](/fr/reference/statements/explain#explain-analyze-concurrency). Le plan stocké dans `system.query_log.query_plan` comporte alors des groupes `Time` et `Concurrency` au niveau de ses étapes, qui indiquent le temps d’horloge et le niveau de concurrence de chaque étape et de sa branche, ainsi qu’un `ExecutionTimeBreakdown` à sa racine, qui répartit le temps d’exécution entre le temps passé dans les étapes du plan, le temps passé en dehors de celles-ci et le temps pendant lequel aucun fil d’exécution n’exécute quoi que ce soit.
+
+Leur collecte consomme de la mémoire et du CPU proportionnellement au nombre de tâches de processeur exécutées par la requête ; ces coûts augmentent donc avec la durée de la requête, et leur traitement une fois la requête terminée allonge sa durée.
+
+N’a d’effet que si `log_query_plans` est activé et que la requête est capturée.
 
 <div id="log_query_settings">
   ## log_query_settings {#log_query_settings}

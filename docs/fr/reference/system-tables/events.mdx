@@ -1674,6 +1674,10 @@ Nombre de transformations `DISTINCT` préliminaires ayant libéré leur table de
 
 Événement du tampon de lecture de Distributed Cache. Nombre de fois où une erreur de lecture récupérable n’a pas pu être résolue avant d’atteindre la limite de tentatives de requête de lecture
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Événement client de Distributed Cache. Nombre de tampons de lecture des disques de stockage objet qui ont sollicité le Distributed Cache, mais ont été créés sans lui, car le registre du Distributed Cache n’était pas prêt (par exemple, aucun serveur de cache n’était enregistré)
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 Octets transitant par le limiteur de débit &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39;.
@@ -2137,6 +2141,18 @@ Temps total consacré à l’analyse distribuée des index
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 Nombre de parts manquantes au cours de l’analyse distribuée des index qui seront résolues localement
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+Nombre de parts analysées par un worker sans état lors de l’analyse d’index
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+Nombre de parts envoyées aux workers sans état pour l’analyse d’index (sur le coordinateur)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+Nombre de tasks envoyées aux workers sans état pour l’analyse d’index (sur le coordinateur)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3434,6 +3450,14 @@ Nombre de fois où un lecteur de lecture anticipée du changelog Keeper n&#39;a 
 
 Nombre de fois où une request de service en lecture anticipée du changelog Keeper a dépassé le timeout en attendant la task de remplissage et s&#39;est rabattue sur une lecture directe du tail restant
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Nombre d&#39;entrées ajoutées au stockage des journaux de Keeper
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Temps passé à ajouter des entrées à la fin du stockage des journaux de Keeper, y compris l&#39;attente du verrou du journal des modifications (l&#39;entrée est écrite puis synchronisée via fsync par le processus d&#39;écriture en arrière-plan du journal des modifications ; voir KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Octets sérialisés des entries ajoutées à la memtable committed du LSMT de Keeper
@@ -3710,6 +3734,10 @@ Nombre de requêtes « set »
 
 Nombre de requêtes pour définir des watches
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+Temps passé à appliquer un snapshot Keeper à la machine à états de Keeper
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 Nombre d’applications de snapshots
@@ -3733,6 +3761,10 @@ Temps passé dans `fsync` pour les fichiers de snapshot de Keeper
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 Nombre d’erreurs de lecture à distance dans RemoteSnapshotLoader lors de la transmission d’un snapshot à un nœud suiveur
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Temps passé à écrire un fichier d’instantané Keeper (sérialisation, compression et synchronisation)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4865,6 +4897,10 @@ Nombre de fichiers Parquet qu&#39;une lecture a ignorés sans les ouvrir, parce 
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 Temps total passé à lire et à désérialiser les footers des fichiers Parquet (lorsqu&#39;ils ne sont pas servis par le cache de métadonnées Parquet).
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+Nombre de blocs de colonne Parquet dont l&#39;index de colonne a été récupéré dans le cache de métadonnées Parquet au lieu d&#39;être lu depuis le fichier.
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 

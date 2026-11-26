@@ -219,13 +219,13 @@ Quando ativados, os ramos inativos qualificados de subconsultas escalares são a
 
 <ExperimentalBadge />
 
-**Aliases**: `allow_experimental_funnel_functions`
+**aliases**: `allow_experimental_funnel_functions`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Adicionado um alias para a configuração `allow_experimental_funnel_functions`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_funnel_functions`."}]}]} />
 
-Habilita funções para análise de funil.
+Habilita a função de agregação experimental `sequenceNextNode`, usada para análise de funil. Se esta configuração estiver desabilitada, o uso de `sequenceNextNode` lança uma exceção.
 
 ## enable_gdeflate_codec {#enable_gdeflate_codec}
 
@@ -470,7 +470,9 @@ Permite o uso do motor de tabela `MaterializedPostgreSQL`.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Habilita a estratégia de mesclagem com limite de memória para agregação.
+Habilita a estratégia de mesclagem com limite de memória para resultados parciais de agregação em consultas distribuídas e em consultas com réplicas paralelas.
+
+Se a agregação nos servidores remotos for feita na ordem das chaves de `GROUP BY` (consulte `optimize_aggregation_in_order`), os servidores remotos enviam os resultados parciais ordenados por essas chaves, e o iniciador os mescla em ordem, mantendo na memória apenas uma pequena parte do estado de agregação por vez.
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 

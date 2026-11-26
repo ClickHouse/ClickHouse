@@ -47,7 +47,9 @@ O tamanho de memória em que o agregador adaptativo congela a tabela hash local 
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Grava o cabeçalho HTTP CORS.
+Adiciona o cabeçalho `Access-Control-Allow-Origin: *` às respostas da interface HTTP, permitindo que aplicações web servidas a partir de outra origem leiam os resultados da consulta no navegador.
+
+O cabeçalho só é adicionado se a requisição contiver o cabeçalho `Origin` e a configuração do servidor `http_options_response` não estiver definida. Como a configuração é lida das configurações do usuário autenticado, o cabeçalho não é adicionado às respostas de requisições cuja autenticação falhar.
 
 ## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
 

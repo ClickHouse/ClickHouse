@@ -302,7 +302,7 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
-暗号化ヘッダー cache をクリアします。この cache には暗号化ファイルの先頭から読み取った暗号化ヘッダーが保持されており、それらを再度読み込まずに済むよう、実験的な `use_reader_executor` 読み取りパスで使用されます。サイズは `encryption_header_cache_size` サーバー設定で構成されます。
+暗号化ヘッダー cache をクリアします。この cache には暗号化ファイルの先頭から読み取った暗号化ヘッダーが保持されており、それらを再度読み込まずに済むよう使用されます。サイズは `encryption_header_cache_size` サーバー設定で構成されます。
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 

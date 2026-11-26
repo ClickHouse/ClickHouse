@@ -332,7 +332,9 @@ true로 설정하면 WHERE/GROUP BY/ORDER BY에서 별칭을 반영하므로, �
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-입력 스트림의 정렬 속성을 기준으로 정렬을 최적화합니다
+`ORDER BY`에 입력되는 데이터가 이미 정렬 키의 접두사 기준으로 정렬되어 있으면(예: `ORDER BY`가 포함된 서브쿼리 또는 정렬 병합 조인(sort-merge JOIN) 이후), 전체 데이터를 정렬하지 않고 해당 접두사 값이 같은 행끼리만 정렬합니다. 또한 정렬 병합 조인 결과(result)의 순서는 이후 조인을 위한 정렬에서도 재사용됩니다.
+
+`query_plan_enable_optimizations`가 활성화된 경우에만 적용됩니다.
 
 ## optimize_substitute_columns {#optimize_substitute_columns}
 

@@ -59,11 +59,12 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`GROUP BY` やフィルタを伴わない `sum`、`avg`、`sumCount`、`count(column)` の集計を、パーツごとのカラム STATISTICS から求めるための新しい設定です。previous_value=false のため、26.11 より前のバージョンを指定した `compatibility` では最適化は無効のままとなり、従来の実行計画に戻ります。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`GROUP BY` やフィルタを伴わない `sum`、`avg`、`sumCount`、`count(column)` の集計を、パーツごとのカラム STATISTICS から求めるための新しい設定です。previous_value=false のため、26.11 より前のバージョンを指定した `compatibility` では最適化は無効のままとなり、従来の実行計画を復元します。"}]}]} />
 
-`Nullable` でも `LowCardinality` でもない整数カラムおよび `Decimal` カラムに対する、`GROUP BY` やフィルタを伴わない `sum`、`avg`、`sumCount` の集計について、パーツごとのカラム STATISTICS (`basic` 統計種別。
-`MergeTree` 設定 `auto_statistics_types` を参照) がマテリアライズされているデータパーツではその統計から結果を求め、残りの
-パーツのみを読み取ります。この場合、`Nullable` でも `LowCardinality` でもないカラムに対する `count(column)` は行数から求められます。
+`LowCardinality` ではない整数カラムおよび `Decimal` カラムに対する、`GROUP BY` やフィルタを伴わない `sum`、`avg`、`sumCount` の集計について、パーツごとのカラム STATISTICS (`basic` STATISTICS種別。
+`MergeTree` 設定 `auto_statistics_types` を参照) がマテリアライズされているデータパーツではそのSTATISTICSから結果を求め、残りの
+パーツのみを読み取ります。この場合、`LowCardinality` ではないカラムに対する `count(column)` は行数から求められます。
+`Nullable` カラムの場合、STATISTICSには非 NULL 値の合計と NULL の個数が保持されており、集約関数は NULL をスキップします。
 結果は、データを読み取った場合とまったく同じです。
 
 設定可能な値:

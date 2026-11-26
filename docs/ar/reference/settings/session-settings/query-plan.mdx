@@ -373,9 +373,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "السماح بدمج عوامل التصفية في خطة الاستعلام"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "السماح بدمج عوامل التصفية في خطة الاستعلام. وهذا مطلوب لدعم دفع عوامل التصفية إلى الأسفل بشكل صحيح باستخدام المُحلِّل."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "السماح بدمج عوامل التصفية في خطة تنفيذ الاستعلام"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "السماح بدمج عوامل التصفية في خطة تنفيذ الاستعلام. وهذا مطلوب لدعم دفع عوامل التصفية إلى الأسفل بشكل صحيح باستخدام المُحلِّل."}]}]} />
 
-السماح بدمج عوامل التصفية في خطة الاستعلام.
+يتيح دمج خطوات التصفية المتتالية في خطة تنفيذ الاستعلام في خطوة واحدة. وللحفاظ على التقييم المختصر للشرط المدمج، يُنفَّذ عامل التصفية المطبَّق على سلسلة `AND` عندئذٍ على هيئة عدة عوامل تصفية متتالية، عامل لكل شرط.
+
+وهذا مطلوب لكي يعمل دفع عوامل التصفية إلى الأسفل بشكل صحيح مع المُحلِّل. ولا يسري الدمج إلا إذا كان `query_plan_enable_optimizations` مفعّلًا.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -470,9 +472,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "أُضيف إعداد جديد لاستخدام خطة الاستعلام لتحسين التجسيد الكسول"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "أُضيف إعداد جديد لاستخدام خطة تنفيذ الاستعلام لتحسين التجسيد الكسول"}]}]} />
 
-استخدم خطة الاستعلام لتحسين التجسيد الكسول.
+يفعّل تحسين التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n`: إذ لا تُقرأ الأعمدة غير اللازمة للفرز والتصفية إلا لعدد `n` من الصفوف المتبقية بعد `LIMIT`، بدلًا من قراءتها لجميع الصفوف المقروءة. ويقلّل ذلك كمية البيانات المقروءة في استعلامات جلب أعلى N نتيجة (top-N) على الجداول العريضة.
+
+لا يُستخدم هذا التحسين إذا كانت قيمة `n` أكبر من `query_plan_max_limit_for_lazy_materialization`، أو عند استخدام `LIMIT ... WITH TIES`.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -622,6 +626,14 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 * 0 - تعطيل
 * 1 - تمكين
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "إعداد جديد لإزالة عملية `LEFT` أو `RIGHT` `JOIN` التي لا يُقرأ جانبها الآخر وتُخرج كل صف من الجانب المحفوظ مرة واحدة فقط."}]}]} />
+
+يزيل عملية `LEFT` أو `RIGHT` `JOIN` إذا لم يُقرأ أي عمود من جانبها الآخر، وكانت تُخرج كل صف من الجانب المحفوظ مرة واحدة فقط، أي: عملية ربط من نوع `ANY`، أو عملية ربط يكون جانبها الآخر مميزًا وفق مفاتيح الربط، كاستعلام فرعي يطبّق `GROUP BY` أو `DISTINCT` على هذه المفاتيح، أو جدول بلا مفتاح تقسيم تغطي هذه المفاتيحُ مفتاحَه `UNIQUE KEY`. وعندئذٍ لا يُقرأ الجانب الآخر إطلاقًا.
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

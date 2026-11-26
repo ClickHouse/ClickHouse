@@ -336,7 +336,9 @@ true に設定すると、WHERE/GROUP BY/ORDER BY で別名が考慮されるよ
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-入力ストリームのソート特性に基づいてソートを最適化します
+`ORDER BY` に入力されるデータが sorting key のプレフィックスですでにソート済みの場合 (例：`ORDER BY` を含むサブクエリやソートマージ結合の後) 、データ全体をソートせず、そのプレフィックスの値が等しい行同士のみをソートします。また、ソートマージ結合の結果の順序は、後続の結合で行われるソートにも再利用されます。
+
+`query_plan_enable_optimizations` が有効な場合にのみ適用されます。
 
 ## optimize_substitute_columns {#optimize_substitute_columns}
 

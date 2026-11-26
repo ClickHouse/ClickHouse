@@ -17,7 +17,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-如果启用此设置，则允许在 INSERT 中插入 materialized 列。
+启用后，可以在 `INSERT` 查询的列列表中列出 `MATERIALIZED` 列，插入的值将被直接存储，而不是根据列表达式计算得出。对于分布式表，`MATERIALIZED` 列的值随后也会被发送到各个分片。
+
+禁用后，在 `INSERT` 查询中列出 `MATERIALIZED` 列会抛出异常，此类列的值始终根据其表达式计算得出。
 
 ## insert_deduplicate {#insert_deduplicate}
 

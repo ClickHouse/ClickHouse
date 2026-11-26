@@ -19,7 +19,9 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "A configuração deixou de ser experimental. O valor padrão não foi alterado."}]}]} />
 
-Número inicial de buckets para o grace hash join
+Número de buckets com que o algoritmo de junção `grace_hash` inicia. As linhas de ambas as tabelas são distribuídas entre os buckets de acordo com o hash das chaves de junção. Apenas um bucket é mantido em memória, e os demais são gravados em disco e processados na junção posteriormente. Quando o bucket em memória excede os limites de memória, o número de buckets é dobrado, até o máximo definido por `grace_hash_join_max_buckets`.
+
+O valor é arredondado para cima até a próxima potência de dois. Um valor maior evita a redistribuição de linhas quando já se sabe que a right table é grande, com o custo de gerar mais arquivos temporários.
 
 ## grace_hash_join_max_buckets {#grace_hash_join_max_buckets}
 

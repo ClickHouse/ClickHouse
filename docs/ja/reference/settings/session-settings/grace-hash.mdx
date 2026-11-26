@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "この設定は実験的機能ではなくなりました。デフォルト値に変更はありません。"}]}]} />
 
-Grace Hash Join の初期バケット数
+`grace_hash` 結合アルゴリズムが開始時に使用するバケット数です。両テーブルの行は、結合キーのハッシュに基づいて各バケットに振り分けられます。メモリ上に保持されるのは 1 つのバケットのみで、残りはディスクに書き込まれ、後で結合されます。メモリ上のバケットがメモリ制限を超えると、バケット数は `grace_hash_join_max_buckets` を上限として 2 倍に増やされます。
+
+値は 2 のべき乗に切り上げられます。右テーブルが大きいことがあらかじめ分かっている場合は、大きな値を指定することで行の再分配を回避できますが、その分一時ファイルが増えます。
 
 ## grace_hash_join_max_buckets {#grace_hash_join_max_buckets}
 

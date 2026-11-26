@@ -50,13 +50,15 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 프로브 측의 프라이머리 키 컬럼이거나, `minmax`, `set` 또는 `bloom_filter` 스킵 인덱스가 적용되었거나, 전역 행 인덱스 `_part_starting_offset + _part_offset`인 조인 키만 프루닝할 수 있습니다. 서브쿼리에서 찾은 행을 가져오기 위해 전역 행 인덱스로 셀프 조인하면 해당 행이 속한 그래뉼만 읽습니다. 전역 행 인덱스는 하나의 쿼리 안에서만 행을 식별하므로, 조인의 양쪽 모두 같은 쿼리에서 테이블을 읽어야 합니다.
 런타임 필터가 정확한 키 값을 유지한 경우 프루닝 프레디케이트는 해당 값들로 이루어진 `IN` 집합이 되고, 그렇지 않으면 키의 최솟값/최댓값 범위가 사용됩니다(이 경우 프루닝 효과가 더 낮습니다).
 
-Iceberg 테이블(Iceberg table)에서는 이 설정으로 데이터 파일 전체를 건너뛸 수 있으며, 읽는 파일 내의 Parquet 행 그룹(row groups)과 페이지도 건너뛸 수 있습니다. [use&#95;join&#95;runtime&#95;filters&#95;for&#95;iceberg&#95;pruning](/ko/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning)을 참조하십시오. 이 동작은 `use_skip_indexes_on_data_read` 값과 관계없이 적용됩니다.
+객체 스토리지에서 읽는 경우 이 설정으로 읽는 파일 내의 Parquet 행 그룹(row groups)과 페이지를 건너뛸 수 있으며, Iceberg 테이블(Iceberg table)의 데이터 파일 전체도 건너뛸 수 있습니다. [use&#95;join&#95;runtime&#95;filters&#95;for&#95;iceberg&#95;pruning](/ko/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning)을 참조하십시오. 이 동작은 `use_skip_indexes_on_data_read` 값과 관계없이 적용됩니다.
 
 병렬 레플리카(`enable_parallel_replicas = 1`)에서도 동작합니다. 각 레플리카는 직접 구성한 필터로 자신이 읽는 그래뉼을 프루닝합니다. 이 필터는 일부만 포함할 수 있습니다. `RIGHT` 조인에서는 빌드 측이 레플리카 간에 분할되므로, 각 레플리카의 필터에는 자신이 담당하는 부분만 포함됩니다. 하지만 조인의 어느 한쪽만 분할되고, 일치하는 모든 행 쌍은 정확히 하나의 레플리카에서 만나며, 각 레플리카는 결과 중 서로 겹치지 않는 부분을 출력하므로 결과는 여전히 올바릅니다.
 
 분산 쿼리 계획(`make_distributed_plan = 1`)을 사용하면 그래뉼 프루닝이 수행되지 않습니다. 이 경우 이 설정은 아무런 효과가 없습니다. 쿼리는 동일한 결과를 반환하고 JOIN 런타임 필터 자체도 이 설정을 비활성화했을 때와 똑같이 동작하며, 그래뉼 프루닝만 적용되지 않을 뿐입니다.
 
-`FINAL`로 읽는 프로브 측(`FINAL` 읽기에는 프루닝이 구현되어 있지 않으며, `optimizeLazyFinal`은 이러한 읽기를 디스크립터 없이 재구성합니다)과 대기 중인 데이터, `ALTER` 뮤테이션 또는 패치 파트가 있는 테이블에서도 그래뉼 프루닝은 수행되지 않습니다. 이러한 경우에도 마찬가지로 이 설정은 아무런 효과가 없습니다.
+프로브 측에 `FINAL`이 사용된 경우, 테이블의 정렬 키 컬럼인 조인 키로만 그래뉼이 프루닝됩니다. 이때 스킵 인덱스는 `use_skip_indexes_if_final = 1`인 경우에만 사용됩니다.
+
+대기 중인 데이터, `ALTER` 뮤테이션 또는 패치 파트가 있는 테이블에서도 그래뉼 프루닝은 수행되지 않습니다. 이 경우에도 마찬가지로 이 설정은 아무런 효과가 없습니다.
 
 ## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
 

@@ -132,13 +132,15 @@ Valeurs possibles :
 
 ## merge_tree_min_bytes_per_task_for_remote_reading {#merge_tree_min_bytes_per_task_for_remote_reading}
 
-**Alias** : `filesystem_prefetch_min_bytes_for_single_read_task`
+**Alias** : `filesystem_prefetch_min_bytes_for_single_read_task`
 
 <SettingsInfoBlock type="UInt64" default_value="2097152" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "La valeur est harmonisée avec `filesystem_prefetch_min_bytes_for_single_read_task`"}]}]} />
 
-Nombre minimal d’octets à lire par tâche.
+Quantité minimale de données compressées, en octets, qu’une tâche de lecture lit à partir d’une partie de données d’une table `MergeTree` stockée sur un disque distant (par exemple, S3). Des tâches plus volumineuses réduisent le nombre de requêtes vers le stockage, tandis que des tâches plus petites permettent de répartir le travail plus équitablement entre les fils d’exécution.
+
+La taille de tâche n’est pas augmentée au-delà du seuil à partir duquel chaque fil d’exécution de lecture reçoit au moins deux tâches. Ce paramètre sert également à estimer le nombre de fils d’exécution de lecture pour décider s’il faut utiliser automatiquement les répliques parallèles.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 

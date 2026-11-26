@@ -29,7 +29,9 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "병렬 레플리카에서 materialized view 사용 허용"}]}]} />
 
-병렬 레플리카에서 materialized view를 사용할 수 있도록 허용합니다
+materialized view에서 데이터를 읽는 쿼리가 병렬 레플리카를 사용할 수 있도록 허용합니다. 이때 쿼리는 materialized view의 target table에서 실행됩니다.
+
+갱신 가능 구체화 뷰는 이 설정과 관계없이 병렬 레플리카를 사용하지 않습니다.
 
 ## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
 
@@ -171,7 +173,9 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "병렬 레플리카 쿼리에서 로컬 레플리카에 로컬 계획을 사용합니다"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "병렬 레플리카 쿼리에서 로컬 레플리카에 로컬 계획을 사용합니다"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "1"},{"label": "병렬 레플리카 쿼리에서 로컬 레플리카에 로컬 계획을 사용합니다"}]}]} />
 
-로컬 레플리카용 로컬 계획을 생성합니다
+병렬 레플리카를 사용하는 쿼리에서 initiator는 네트워크를 통해 자기 자신에게 쿼리를 보내는 대신, 로컬에서 구축한 쿼리 실행 계획(query plan)으로 읽기 작업 중 자신이 맡은 부분을 실행합니다. 이를 통해 네트워크 왕복에 따른 오버헤드를 피할 수 있습니다. `parallel_replicas_prefer_local_replica`가 활성화된 경우에만 사용됩니다.
+
+병렬 레플리카 사용 여부에 대한 자동 결정(`automatic_parallel_replicas_mode` 참조)은 이 설정이 활성화된 경우에만 이루어집니다.
 
 ## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 

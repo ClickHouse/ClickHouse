@@ -232,7 +232,7 @@ PostgreSQL の `date` および `timestamp`/`timestamptz` 型を、これらの 
 
 ## TLS/SSL {#tls-ssl}
 
-TLS/SSLパラメータは`libpq`に渡され、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)またはエンジンの末尾に指定するキー・バリュー引数として指定できます。指定できるのは、`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は`libpq`のデフォルトである`prefer`が適用されます) と、証明書および秘密鍵です。証明書と秘密鍵は、次の2つの形式のいずれかで指定できます。`sslrootcert` (CA証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された名前付きコレクションからのみ指定できます。一方、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem`には対応するファイルの内容をリテラルとして指定でき、SQLから設定可能です。また、パスワードと同様に、ログおよび`SHOW`クエリではマスクされます。
+TLS/SSLパラメータは`libpq`に渡され、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)またはエンジンの末尾に指定するキー・バリュー引数として指定できます。指定できるのは、`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は`libpq`のデフォルトである`prefer`が適用されます) と、証明書および秘密鍵です。証明書と秘密鍵は、次の2つの形式のいずれかで指定できます。`sslrootcert` (CA証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された名前付きコレクションからのみ指定できます。一方、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem`には対応するファイルの内容をリテラルとして指定でき、SQLから設定可能です。また、パスワードと同様に、ログおよび`SHOW`クエリではマスクされます。クライアント証明書 (`sslcert`または`sslcert_pem`) とクライアント秘密鍵 (`sslkey`または`sslkey_pem`) の両方が設定されていない場合、ClickHouseは`sslcertmode=disable`を送信します。そのため、`libpq`がservice accountの実行環境由来のデフォルト証明書や秘密鍵 (`~/.postgresql/postgresql.{crt,key}`) を使って認証することはありません。
 
 TLSを必須とするPostgreSQLサーバーに接続し、サーバー証明書を検証する例:
 

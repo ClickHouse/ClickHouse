@@ -1673,6 +1673,10 @@ Distributed Cache 읽기 버퍼 이벤트입니다. 재시도 가능한 오류 �
 
 Distributed Cache 읽기 버퍼 이벤트. 재시도 가능한 읽기 오류가 읽기 요청 재시도 한도 내에서도 성공하지 못한 횟수
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Distributed Cache 클라이언트 이벤트입니다. Distributed Cache 사용을 요청했지만 Distributed Cache 레지스트리가 준비되지 않아(예: 등록된 캐시 서버가 없는 경우) Distributed Cache 없이 생성된 객체 스토리지 디스크의 읽기 버퍼(read buffer) 수입니다.
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39; 스로틀러를 통과한 바이트 수입니다.
@@ -2136,6 +2140,18 @@ Distributed Cache 쓰기 버퍼 이벤트. 재시도 가능한 쓰기 오류가 
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 분산 인덱스 분석 중 로컬에서 처리될 누락된 파트 수
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+상태 비저장 worker가 인덱스 분석(Index Analysis) 과정에서 분석한 파트 수
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+인덱스 분석(Index Analysis)을 위해 상태 비저장 worker로 전송된 파트 수(코디네이터 기준)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+인덱스 분석(Index Analysis)을 위해 상태 비저장 worker로 전송된 작업 수(코디네이터 기준)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3433,6 +3449,14 @@ Keeper 사전 읽기 fill이 changelog 파일을 다시 열거나 seek한 횟수
 
 Keeper changelog 사전 읽기 제공 요청이 fill 작업을 기다리다가 타임아웃되어 남은 tail을 직접 읽기로 폴백한 횟수
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Keeper 로그 저장소 끝에 추가된 엔트리 수
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Keeper 로그 저장소에 엔트리를 추가하는 데 소요된 시간이며, 변경 로그 잠금 대기 시간을 포함합니다(엔트리의 기록 및 fsync는 백그라운드 변경 로그 writer가 수행합니다. KeeperChangelogFileSyncMicroseconds 참조).
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Keeper LSMT 커밋된 memtable에 추가된 항목의 직렬화된 바이트 수
@@ -3709,6 +3733,10 @@ Set 요청 수
 
 watch 설정 요청 수
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+Keeper 스냅샷을 Keeper 상태 머신에 적용하는 데 소요된 시간
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 스냅샷 적용 횟수
@@ -3732,6 +3760,10 @@ Keeper 스냅샷 파일의 fsync에 소요된 시간
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 팔로워에게 스냅샷을 제공하는 동안 RemoteSnapshotLoader에서 발생한 원격 읽기 오류 수
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Keeper 스냅샷 파일을 쓰는 데(직렬화, 압축, 동기화) 소요된 시간
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4864,6 +4896,10 @@ Parquet 리더가 압축 해제한 Parquet 페이지(데이터 페이지 및 딕
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 Parquet 파일 푸터(footer)를 읽고 역직렬화하는 데 소요된 총 시간입니다(parquet 메타데이터 캐시에서 가져오지 않은 경우에 한함).
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+컬럼 인덱스를 파일에서 읽는 대신 parquet 메타데이터 캐시에서 가져온 Parquet 컬럼 청크(column chunks)의 수입니다.
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 

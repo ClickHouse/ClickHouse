@@ -302,7 +302,7 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
-清除加密头缓存。该缓存保存从加密文件开头读取的加密头，供 Experimental `use_reader_executor` 读取路径使用，以避免重复读取；其大小由服务器级设置 `encryption_header_cache_size` 配置。
+清除加密头缓存。该缓存保存从加密文件开头读取的加密头，以避免重复读取；其大小由服务器设置 `encryption_header_cache_size` 配置。
 
 ## SYSTEM CLEAR|DROP 查询缓存 {#drop-query-cache}
 

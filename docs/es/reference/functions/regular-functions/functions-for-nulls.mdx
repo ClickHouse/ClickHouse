@@ -443,7 +443,7 @@ nullIf(x, y)
 
 **Valor devuelto**
 
-Devuelve `NULL` si ambos argumentos son iguales; en caso contrario, devuelve el primer argumento. [`NULL`](/es/reference/syntax#null) o [`Nullable(x)`](/es/reference/data-types/nullable)
+Devuelve `NULL` si ambos argumentos son iguales; en caso contrario, devuelve el primer argumento. Para `Variant` y `Dynamic`, que almacenan `NULL` internamente, el resultado conserva el tipo de entrada. [`NULL`](/es/reference/syntax#null) o [`Nullable(x)`](/es/reference/data-types/nullable) o [`Variant`](/es/reference/data-types/variant) o [`Dynamic`](/es/reference/data-types/dynamic)
 
 **Ejemplos**
 

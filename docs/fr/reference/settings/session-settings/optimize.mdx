@@ -335,7 +335,9 @@ Si ce paramètre est défini sur true, les alias seront pris en compte dans WHER
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Optimise le tri à l’aide des propriétés de tri du flux d’entrée
+Si les données reçues par un `ORDER BY` sont déjà triées selon un préfixe de la clé de tri (par exemple, après une sous-requête avec `ORDER BY` ou une jointure par tri-fusion), seules les lignes partageant les mêmes valeurs pour ce préfixe sont triées, plutôt que l’ensemble des données. L’ordre de l’ensemble de résultats d’une jointure par tri-fusion est également réutilisé lors du tri d’une jointure ultérieure.
+
+Ne s’applique que si `query_plan_enable_optimizations` est activé.
 
 ## optimize_substitute_columns {#optimize_substitute_columns}
 

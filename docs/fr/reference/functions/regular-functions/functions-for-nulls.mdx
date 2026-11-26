@@ -426,7 +426,7 @@ SELECT x FROM t_null WHERE isZeroOrNull(y);
 
 ## nullIf {#nullIf}
 
-Introduite dans : v1.1.0
+Introduite dans : v1.1.0
 
 Renvoie `NULL` si les deux arguments sont égaux.
 
@@ -443,7 +443,7 @@ nullIf(x, y)
 
 **Valeur renvoyée**
 
-Renvoie `NULL` si les deux arguments sont égaux ; sinon, renvoie le premier argument. [`NULL`](/fr/reference/syntax#null) ou [`Nullable(x)`](/fr/reference/data-types/nullable)
+Renvoie `NULL` si les deux arguments sont égaux ; sinon, renvoie le premier argument. Pour `Variant` et `Dynamic`, qui stockent `NULL` en interne, le résultat conserve le type d’entrée. [`NULL`](/fr/reference/syntax#null) ou [`Nullable(x)`](/fr/reference/data-types/nullable) ou [`Variant`](/fr/reference/data-types/variant) ou [`Dynamic`](/fr/reference/data-types/dynamic)
 
 **Exemples**
 

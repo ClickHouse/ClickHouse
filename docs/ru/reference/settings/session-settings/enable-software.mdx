@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически создаются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## enable_software_prefetch_in_aggregation
+## enable_software_prefetch_in_aggregation {#enable_software_prefetch_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Включает программную предварительную выборку при агрегации
+Включает программную предварительную выборку ячеек хеш-таблицы при выполнении `GROUP BY`. Предварительная выборка скрывает задержку доступа к памяти, когда хеш-таблица агрегации не помещается в кэш CPU, поэтому она применяется только после того, как хеш-таблица превысит размер кэша L2.
 
-## enable_software_prefetch_in_join
+## enable_software_prefetch_in_join {#enable_software_prefetch_in_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

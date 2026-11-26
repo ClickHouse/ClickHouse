@@ -2065,23 +2065,29 @@ münchen
 
 引入版本：v26.3.0
 
-该函数用于自然排序。
+返回一个用于自然排序的键：按这些键排序后，字符串将呈现自然顺序，即连续的数字位会作为一个数值进行比较，因此 `a2` 排在 `a10` 之前。
+
+可选参数 `mode` 用于指定非数字字符的比较方式：
+
+* `0` (默认) ：逐个将字符与另一个字符串中相同位置上的字符或数值进行比较。因此 `host-1` 排在 `host2` 之前，因为 `-` 是与数值 `2` 进行比较的。
+* `1`：将连续的非数字字符作为一个整体，与另一个字符串中相同位置上的字符序列进行比较；仅当数值之前的字符序列相等时，才会比较该数值。因此 `host2` 排在 `host-1` 之前，因为 `host` 是与 `host-` 进行比较的。该顺序与 PromQL 函数 `sort_by_label` 的排序顺序一致。
 
 **语法**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
-**别名**: `NATURAL_SORT_KEY`
+**别名**：`NATURAL_SORT_KEY`
 
 **参数**
 
 * `s` — 要转换为自然排序键的字符串。[`String`](/zh/reference/data-types/string)
+* `mode` — 可选。非数字字符的比较方式：`0` (默认) 或 `1`。[`const UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-返回由 `s` 转换得到的自然排序键字符串。[`String`](/zh/reference/data-types/string)
+返回由 `s` 生成的自然排序键字符串。[`String`](/zh/reference/data-types/string)
 
 **示例**
 
@@ -2099,6 +2105,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**两种模式**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}

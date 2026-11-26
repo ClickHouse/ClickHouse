@@ -375,7 +375,9 @@ JOIN 順序の最適化時に、式を JOIN ステップにマージできるよ
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "クエリプラン内のフィルタをマージできるようにします"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "クエリプラン内のフィルタをマージできるようにします。これは、アナライザで filter-push-down を適切にサポートするために必要です。"}]}]} />
 
-クエリプラン内のフィルタをマージできるようにします。
+クエリプラン内で連続するフィルタの処理ステップを 1 つにマージできるようにします。マージ済みの条件に対して短絡評価を維持するため、`AND` チェーンに対するフィルタは、条件ごとに 1 つずつの連続したフィルタとして実行されます。
+
+これは、アナライザで filter push-down を正しく機能させるために必要です。マージは、`query_plan_enable_optimizations` が有効な場合にのみ適用されます。
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -471,7 +473,9 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "遅延マテリアライゼーションの最適化でクエリプランを使用するための新しい設定を追加"}]}]} />
 
-遅延マテリアライゼーションの最適化でクエリプランを使用します。
+`ORDER BY ... LIMIT n` クエリに対して遅延マテリアライゼーションの最適化を有効にします。ソートやフィルタリングに不要なカラムは、読み取ったすべての行ではなく、`LIMIT` 適用後に残る `n` 行についてのみ読み取られます。これにより、列数の多いテーブルに対する上位 N 件クエリで読み取るデータ量を削減できます。
+
+`n` が `query_plan_max_limit_for_lazy_materialization` より大きい場合、または `LIMIT ... WITH TIES` を使用する場合、この最適化は適用されません。
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -613,6 +617,14 @@ JOIN演算において左テーブルからの順序に従った読み取りを�
 
 * 0 - 無効
 * 1 - 有効
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "相手側が読み取られず、保持される側の各行を厳密に1回出力する `LEFT` または `RIGHT` `JOIN` を削除するための新しい設定。"}]}]} />
+
+相手側のカラムが一切読み取られず、かつ保持される側の各行を厳密に1回出力する場合に、`LEFT` または `RIGHT` `JOIN` を削除します。対象となるのは、`ANY` 結合、または相手側が結合キーについて重複のない結合です。後者の例としては、結合キーに対して `GROUP BY` または `DISTINCT` を適用したサブクエリや、パーティションキーを持たず、その `UNIQUE KEY` が結合キーに包含されるテーブルが挙げられます。この場合、相手側は一切読み取られません。
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

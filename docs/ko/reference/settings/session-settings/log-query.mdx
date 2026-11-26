@@ -40,6 +40,20 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 * [`system.query_log`](/ko/reference/system-tables/query_log)
 * [`EXPLAIN PLAN`](/ko/reference/statements/explain#explain-plan)
+* [`log_query_plans_time`](/ko/reference/settings/session-settings/log-query#log_query_plans_time)
+* [`log_query_plans_join_matches`](/ko/reference/settings/session-settings/log-query#log_query_plans_join_matches)
+
+## log_query_plans_join_matches {#log_query_plans_join_matches}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "`system.query_log`에 기록되는 쿼리 실행 계획(query plan)에 대해 조인의 정확한 일치 행 메트릭을 수집하는 새로운 설정입니다."}]}]} />
+
+[`log_query_plans`](/ko/reference/settings/session-settings/log-query#log_query_plans)가 쿼리를 캡처(capture)하면, 조인이 어차피 생성하는 결과로부터 일치 행 메트릭을 도출할 수 없는 경우 조인이 해당 메트릭에 필요한 추가 집계 작업을 수행하도록 합니다. 이는 [`EXPLAIN ANALYZE`](/ko/reference/statements/explain#explain-analyze-join-steps)의 `matches` 설정과 동일하게 동작합니다. 메트릭을 도출할 수 있는 경우에는 이 설정을 사용하지 않아도 메트릭이 저장됩니다.
+
+`log_query_plans`가 활성화되어 있고 쿼리가 캡처(capture)된 경우에만 적용됩니다.
 
 ## log_query_plans_max_size {#log_query_plans_max_size}
 
@@ -78,6 +92,20 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 * 0 — 쿼리 계획을 캡처(capture)하지 않습니다.
 * [0..1] 범위의 양의 floating-point 숫자. 예를 들어 설정 값이 `0.1`이면 쿼리 약 10개 중 1개의 계획이 캡처(capture)됩니다.
 * 1 — 모든 쿼리의 계획을 캡처(capture)합니다.
+
+## log_query_plans_time {#log_query_plans_time}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "`system.query_log`에 기록되는 쿼리 실행 계획(query plan)의 단계별 실제 경과 시간과 동시 실행 수준을 수집하는 새로운 설정입니다."}]}]} />
+
+[`log_query_plans`](/ko/reference/settings/session-settings/log-query#log_query_plans)가 쿼리를 수집(capture)할 때 [`EXPLAIN ANALYZE`](/ko/reference/statements/explain#explain-analyze-concurrency)의 `time` 설정과 마찬가지로 해당 쿼리 프로세서의 작업 인터벌도 함께 수집합니다. 그러면 `system.query_log.query_plan`에 저장된 계획의 각 단계에 `Time` 및 `Concurrency` 그룹이 추가되어 각 단계와 해당 브랜치의 실제 경과 시간 및 동시 실행 수준이 표시되고, 계획의 루트에는 `ExecutionTimeBreakdown`이 추가됩니다. `ExecutionTimeBreakdown`은 실행 시간을 계획의 단계 안에서 소비된 시간, 단계 밖에서 소비된 시간, 그리고 어떤 스레드도 실행 중이지 않은 시간으로 나누어 보여 줍니다.
+
+이 정보를 수집하는 데에는 쿼리가 실행하는 프로세서 작업 수에 비례하여 메모리와 CPU가 소모되므로 쿼리가 길어질수록 비용도 커지며, 쿼리가 완료된 후 이 정보를 처리하는 시간만큼 쿼리의 소요 시간도 늘어납니다.
+
+`log_query_plans`가 활성화되어 있고 해당 쿼리가 수집(capture)되는 경우에만 적용됩니다.
 
 ## log_query_settings {#log_query_settings}
 

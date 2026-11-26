@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-## object_shared_data_buckets_for_compact_part
+## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 用于 compact parts 中 JSON 共享数据序列化的桶数量。与 `map_with_buckets`、`advanced` 和 `advanced_chunked` 共享数据序列化配合使用。
 允许的最大值为 256。
 
-## object_shared_data_buckets_for_wide_part
+## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -31,7 +31,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 用于 wide parts 中 JSON 共享数据序列化的桶数量。与 `map_with_buckets`、`advanced` 和 `advanced_chunked` 共享数据序列化配合使用。
 允许的最大值为 256。
 
-## object_shared_data_serialization_version
+## object_shared_data_serialization_version {#object_shared_data_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -50,17 +50,25 @@ JSON 数据类型内共享数据的序列化版本。
 `map_with_buckets`、`advanced` 和 `advanced_chunked` 序列化的桶数量由以下设置决定：
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part)。
 
-## object_shared_data_serialization_version_for_zero_level_parts
+## object_shared_data_serialization_version_for_small_parts {#object_shared_data_serialization_version_for_small_parts}
+
+**别名**：`object_shared_data_serialization_version_for_zero_level_parts`
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "新增一个设置，用于控制零级 parts 的 JSON 序列化版本"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "默认对零级 parts 启用 map_with_buckets 共享数据序列化版本"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "map_with_buckets"},{"label": "由 object_shared_data_serialization_version_for_zero_level_parts 重命名而来，适用于新插入的数据分片以及大小低于最小阈值的数据分片"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "map"},{"label": "新增一个设置，用于控制零级数据分片的 JSON 序列化版本"}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "默认对零级数据分片启用 map_with_buckets 共享数据序列化版本"}]}]} />
 
-此设置允许为插入期间创建的零级 parts 中，JSON 类型内部的共享数据指定不同的序列化版本。
-建议不要对零级 parts 使用 `advanced` 或 `advanced_chunked` 共享数据序列化，因为它可能会显著增加
-插入时间。
+小数据片段中 JSON 类型内共享数据所使用的序列化版本。
+满足以下任一条件的数据分片即视为小数据片段：由插入操作创建且
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/zh/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+已启用；或其未压缩大小低于
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version)。
+其他数据分片则使用 [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version) 中指定的主版本。
 
-## object_shared_data_target_chunk_rows
+小数据片段很快会再次被合并，因此不建议对其使用 `advanced` 或 `advanced_chunked` 共享数据序列化，
+否则会显著拖慢插入操作和合并的速度。
+
+## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 

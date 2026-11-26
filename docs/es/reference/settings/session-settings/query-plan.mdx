@@ -375,7 +375,9 @@ Permite fusionar el filtro con la condición de `JOIN` y convertir `CROSS JOIN` 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Permite fusionar filtros en el plan de consulta"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Permite fusionar filtros en el plan de consulta. Esto es necesario para admitir correctamente el push-down de filtros con el analizador."}]}]} />
 
-Permite fusionar filtros en el plan de consulta.
+Permite fusionar en uno solo los pasos de filtro consecutivos del plan de consulta. Para conservar la evaluación en cortocircuito de la condición fusionada, un filtro sobre una cadena `AND` se ejecuta entonces como varios filtros consecutivos, uno por cada condición.
+
+Esto es necesario para que el push-down de filtros funcione correctamente con el analizador. La fusión solo surte efecto si `query_plan_enable_optimizations` está habilitado.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -472,7 +474,9 @@ Optimiza la lectura con FINAL en ReplacingMergeTree creando un conjunto de clave
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Se añadió una nueva configuración para usar el plan de consulta para la optimización de materialización diferida"}]}]} />
 
-Usar el plan de consulta para la optimización de materialización diferida.
+Habilita la optimización de materialización diferida para consultas `ORDER BY ... LIMIT n`: las columnas que no se necesitan para la ordenación ni para el filtrado se leen solo para las `n` filas que quedan después de `LIMIT`, en lugar de leerse para todas las filas leídas. Esto reduce la cantidad de datos leídos en las consultas top-N sobre tablas anchas.
+
+La optimización no se utiliza si `n` es mayor que `query_plan_max_limit_for_lazy_materialization`, ni con `LIMIT ... WITH TIES`.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -622,6 +626,14 @@ Valores posibles:
 
 * 0 - Deshabilitar
 * 1 - Habilitar
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nueva configuración para eliminar un `LEFT` o `RIGHT` `JOIN` cuyo otro lado no se lee y que devuelve cada fila del lado preservado exactamente una vez."}]}]} />
+
+Elimina un `LEFT` o `RIGHT` `JOIN` si no se lee ninguna columna de su otro lado y devuelve cada fila del lado preservado exactamente una vez: una unión `ANY`, o una unión cuyo otro lado es único según las claves de unión, como una subconsulta con `GROUP BY` o `DISTINCT` sobre ellas, o una tabla sin clave de partición cuya `UNIQUE KEY` esté cubierta por dichas claves. En ese caso, el otro lado no llega a leerse.
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

@@ -37,7 +37,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "s3 업로드 파트의 최대 파트 번호"}]}]} />
 
-s3 업로드 파트의 최대 파트 번호입니다.
+S3에 대한 멀티파트 업로드 또는 멀티파트 복사에서 사용할 수 있는 최대 파트 수입니다. 기본값은 AWS S3의 제한과 일치합니다.
+
+복사 시에는 파트 수가 이 값을 초과하지 않도록 파트 크기를 늘립니다. 쓰기 시 데이터에 이보다 많은 파트가 필요하면 예외가 발생합니다. 이 경우 `s3_max_upload_part_size` 또는 `s3_upload_part_size_multiply_factor`를 늘리십시오. 지원하는 파트 수가 더 적은 S3 호환 저장소에서는 이 값을 낮추십시오.
 
 ## s3_max_put_burst {#s3_max_put_burst}
 

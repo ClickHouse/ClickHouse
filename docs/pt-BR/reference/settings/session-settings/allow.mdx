@@ -225,7 +225,9 @@ Desativar essa configuração recusa apenas as leituras: criar, anexar, remover 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Permite executar a função multiIf de forma colunar
+Permite que a função `multiIf` calcule seu resultado para uma coluna inteira de uma só vez, em vez de linha por linha, o que é mais rápido.
+
+A execução colunar é usada somente se o tipo de resultado for um número, `Decimal`, um tipo de data ou data e hora, `Enum`, `IPv4` ou `IPv6`, e se a função tiver no máximo 255 ramificações. Nos demais casos, a execução row-by-row é usada independentemente desta configuração.
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

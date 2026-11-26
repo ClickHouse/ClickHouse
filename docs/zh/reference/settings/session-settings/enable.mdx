@@ -219,7 +219,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_funnel_functions` 添加了别名。"}]}]} />
 
-启用漏斗 (funnel) 分析相关函数。
+启用用于漏斗分析的实验性聚合函数 `sequenceNextNode`。禁用此设置时，使用 `sequenceNextNode` 将抛出异常。
 
 ## enable_gdeflate_codec {#enable_gdeflate_codec}
 
@@ -459,7 +459,9 @@ _time:1h error | stats by (host) count()
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-启用用于聚合的内存受限合并策略。
+在分布式查询和使用并行副本的查询中，启用内存受限的策略来合并部分聚合结果。
+
+如果远程服务器上的聚合是按照 `GROUP BY` 键的顺序执行的 (参见 `optimize_aggregation_in_order`) ，远程服务器会发送已按这些键排序的部分结果，发起服务器则按顺序合并这些结果，因此每次只需在内存中保留一小部分聚合状态。
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 

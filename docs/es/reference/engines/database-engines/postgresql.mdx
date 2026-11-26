@@ -14,9 +14,7 @@ Proporciona acceso en tiempo real a la lista y a la estructura de las tablas del
 
 Admite modificaciones en la estructura de la tabla (`ALTER TABLE ... ADD|DROP COLUMN`). Si el parámetro `use_table_cache` (consulte Parámetros del motor más abajo) está configurado en `1`, la estructura de la tabla se almacena en caché y no se comprueba si se ha modificado, pero puede actualizarse con las consultas `DETACH` y `ATTACH`.
 
-<div id="creating-a-database">
-  ## Crear una base de datos
-</div>
+## Crear una base de datos {#creating-a-database}
 
 ```sql
 CREATE DATABASE test_database
@@ -32,13 +30,11 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `schema` — Esquema de PostgreSQL.
 * `use_table_cache` —  Indica si la estructura de la tabla de la base de datos se almacena en caché. Opcional. Valor predeterminado: `0`.
 
-Los parámetros TLS/SSL se redirigen a `libpq` y pueden proporcionarse mediante una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) o como argumentos clave-valor adicionales: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` o `verify-full`), y los certificados y la clave, en una de dos formas. `sslrootcert` (certificado de CA), `sslcert` (certificado de cliente) y `sslkey` (clave privada de cliente) son rutas a archivos locales del servidor y solo se aceptan desde una colección con nombre definida en el archivo de configuración del servidor. En cambio, `sslrootcert_pem`, `sslcert_pem` y `sslkey_pem` aceptan el contenido literal del archivo correspondiente, se pueden especificar desde SQL (por ejemplo, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`) y se ocultan en los registros y las consultas `SHOW`, igual que una contraseña. Cuando no se especifican, se aplican los valores predeterminados de `libpq` (`sslmode=prefer`).
+Los parámetros TLS/SSL se redirigen a `libpq` y pueden proporcionarse mediante una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) o como argumentos clave-valor adicionales: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` o `verify-full`), y los certificados y la clave, en una de dos formas. `sslrootcert` (certificado de CA), `sslcert` (certificado de cliente) y `sslkey` (clave privada de cliente) son rutas a archivos locales del servidor y solo se aceptan desde una colección con nombre definida en el archivo de configuración del servidor. En cambio, `sslrootcert_pem`, `sslcert_pem` y `sslkey_pem` aceptan el contenido literal del archivo correspondiente, se pueden especificar desde SQL (por ejemplo, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`) y se ocultan en los registros y las consultas `SHOW`, igual que una contraseña. Cuando no se especifican, se aplican los valores predeterminados de `libpq` (`sslmode=prefer`). Salvo que se configuren tanto un certificado de cliente (`sslcert` o `sslcert_pem`) como una clave de client (`sslkey` o `sslkey_pem`), ClickHouse envía `sslcertmode=disable`, para que `libpq` no se autentique con el certificado o la clave predeterminados que la cuenta de servicio obtiene del entorno (`~/.postgresql/postgresql.{crt,key}`).
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Compatibilidad con tipos de datos
-</div>
+## Compatibilidad con tipos de datos {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                            |
 | ---------------- | --------------------------------------------------------------------- |
@@ -60,9 +56,7 @@ Los parámetros TLS/SSL se redirigen a `libpq` y pueden proporcionarse mediante 
   PostgreSQL `numeric(p, 0)` con una precisión `p` superior a 76 (el máximo admitido por `Decimal256`) —por ejemplo, `numeric(78, 0)`, usado habitualmente para almacenar enteros de 256 bits— se asigna a [`Int256`](/es/reference/data-types/int-uint) en lugar de `Decimal`. Los valores que no caben en el rango de `Int256` se rechazan con un error.
 </Note>
 
-<div id="examples-of-use">
-  ## Ejemplos de uso
-</div>
+## Ejemplos de uso {#examples-of-use}
 
 Base de datos en ClickHouse que intercambia datos con el servidor PostgreSQL:
 
@@ -154,9 +148,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [ClickHouse y PostgreSQL: la combinación perfecta para los datos - parte 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * Blog: [ClickHouse y PostgreSQL: la combinación perfecta para los datos - parte 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

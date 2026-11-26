@@ -1674,6 +1674,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие буфера чтения распределённого кэша. Количество случаев, когда ошибка чтения, допускающая повторную попытку, не была устранена в пределах лимита повторных попыток запроса чтения
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Событие клиента распределённого кэша. Количество буферов чтения дисков объектного хранилища, которые запросили distributed cache, но были созданы без него, так как registry distributed cache ещё не был готов (например, не был зарегистрирован ни один сервер кэша)
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 Количество байтов, прошедших через ограничитель &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39;.
@@ -2137,6 +2141,18 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 Количество отсутствующих частей при распределённом анализе индексов, которые будут обработаны локально
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+Количество частей, проанализированных воркером без сохранения состояния в ходе анализа индексов
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+Количество частей, отправленных воркерам без сохранения состояния для анализа индексов (на координаторе)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+Количество задач, отправленных воркерам без сохранения состояния для анализа индексов (на координаторе)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3434,6 +3450,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество случаев, когда запрос на обслуживание упреждающего чтения журнала изменений в Keeper завершился по тайм-ауту в ожидании задачи заполнения и переключился на прямое чтение оставшегося хвоста
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Количество записей, дописанных в хранилище журналов Keeper
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Время, затраченное на добавление записей в конец хранилища журналов Keeper, включая ожидание блокировки журнала изменений (запись сохраняется на диск и синхронизируется через fsync фоновым процессом записи журнала изменений, см. KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Объём сериализованных записей (в байтах), добавленных в закоммиченную memtable LSMT в Keeper
@@ -3710,6 +3734,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество запросов на установку наблюдений
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+Время, затраченное на применение снимка Keeper к конечному автомату Keeper
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 Число применений снимка
@@ -3733,6 +3761,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 Количество ошибок удалённого чтения в RemoteSnapshotLoader при передаче снимка ведомому узлу
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Время, затраченное на запись файла снимка состояния Keeper (сериализация, сжатие и синхронизация)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4865,6 +4897,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 Общее время, затраченное на чтение и десериализацию футеров файлов Parquet (без учёта футеров, полученных из кэша метаданных Parquet).
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+Количество блоков столбцов Parquet, индекс столбца которых был получен из кэша метаданных Parquet, а не прочитан из файла.
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 

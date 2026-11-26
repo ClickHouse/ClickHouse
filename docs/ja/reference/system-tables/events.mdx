@@ -1673,6 +1673,10 @@ Distributed Cache イベント。最終的な受信確認の前に接続が切�
 
 分散キャッシュの読み取りバッファに関するイベント。再試行可能な読み取りエラーが、読み取りリクエストの再試行上限に達しても成功しなかった回数
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+分散キャッシュのクライアントイベント。分散キャッシュの利用を要求したものの、分散キャッシュのレジストリの準備ができていなかった (例: キャッシュサーバーが1台も登録されていなかった) ため、分散キャッシュを使用せずに作成されたオブジェクトストレージディスクの読み取りバッファの数
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39; スロットラーを通過したバイト数です。
@@ -2136,6 +2140,18 @@ Distributed Cache 接続イベント。分散キャッシュサーバーが、�
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 分散索引解析で不足し、ローカルで解決されるパーツ数
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+ステートレスワーカーが索引解析の対象として解析したパーツの数
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+索引解析のためにステートレスワーカーへ送信されたパーツの数 (マージコーディネーター側)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+索引解析のためにステートレスワーカーへ送信されたタスク数 (マージコーディネーター側で計測)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3433,6 +3449,14 @@ read-ahead thread poolのqueueが満杯のため、Keeperのchangelog read-ahead
 
 Keeper の changelog read-ahead 配信リクエストが補完タスクの完了を待つ間にタイムアウトし、残りの末尾部分の direct read にフォールバックした回数
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Keeperログストアに追記されたエントリ数
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Keeperログストアへのエントリの追記に要した時間 (変更ログのロック待機時間を含む) 。エントリの書き込みと fsync は、バックグラウンドの変更ログライターが行います (KeeperChangelogFileSyncMicroseconds を参照) 。
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Keeper の LSMT コミット済み memtable に追加されたエントリのシリアル化後のバイト数
@@ -3709,6 +3733,10 @@ set リクエスト数
 
 ウォッチ設定リクエスト数
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+KeeperスナップショットをKeeperステートマシンに適用するのに要した時間
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 適用中のスナップショット数
@@ -3732,6 +3760,10 @@ Keeper スナップショットファイルの `fsync` にかかった時間
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 フォロワーにスナップショットを提供する際に、RemoteSnapshotLoader で発生したリモート読み取りエラー数
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Keeper のスナップショットファイルの書き込み (シリアライゼーション、圧縮、同期) に要した時間
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4864,6 +4896,10 @@ Parquet リーダーが伸長した Parquet ページ(データページおよ�
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 Parquet ファイルのフッターの読み取りおよびデシリアライズに費やされた合計時間 (Parquet メタデータキャッシュから取得された分は含みません) 。
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+カラム索引をファイルから読み込まずに Parquet メタデータキャッシュから取得した Parquet カラムチャンクの数。
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 

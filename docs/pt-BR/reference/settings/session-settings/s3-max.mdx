@@ -37,7 +37,9 @@ O número máximo de partes carregadas simultaneamente em uma solicitação de u
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "Número máximo da parte no upload em partes para o S3"}]}]} />
 
-Número máximo da parte no upload em partes para o S3.
+O número máximo de partes em um upload em múltiplas partes ou em uma cópia em múltiplas partes para o S3. O valor padrão corresponde ao limite do AWS S3.
+
+Na cópia, o tamanho da parte é aumentado para que o número de partes não exceda esse valor. Na gravação, uma exceção é lançada se os dados precisarem de mais partes; nesse caso, aumente `s3_max_upload_part_size` ou `s3_upload_part_size_multiply_factor`. Reduza esse valor para armazenamentos compatíveis com S3 que suportem menos partes.
 
 ## s3_max_put_burst {#s3_max_put_burst}
 

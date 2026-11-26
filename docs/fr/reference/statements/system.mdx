@@ -302,7 +302,7 @@ Vide le cache des conditions de requête.
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
-Efface le cache des en-têtes de chiffrement. Ce cache stocke les en-têtes de chiffrement lus au début des fichiers chiffrés et est utilisé par le chemin de lecture expérimental `use_reader_executor` afin d’éviter de les relire ; sa taille est configurée par le paramètre serveur `encryption_header_cache_size`.
+Efface le cache des en-têtes de chiffrement. Ce cache stocke les en-têtes de chiffrement lus au début des fichiers chiffrés afin d’éviter de les relire ; sa taille est configurée par le paramètre du serveur `encryption_header_cache_size`.
 
 ## SYSTEM CLEAR|DROP CACHE DE REQUÊTES {#drop-query-cache}
 

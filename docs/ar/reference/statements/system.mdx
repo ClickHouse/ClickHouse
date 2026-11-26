@@ -302,7 +302,7 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
-يمسح ذاكرة التخزين المؤقت لرؤوس التشفير. تحتفظ هذه الذاكرة برؤوس التشفير المقروءة من بداية الملفات المشفّرة، ويستخدمها مسار القراءة التجريبي `use_reader_executor` لتجنّب إعادة قراءتها؛ ويُضبط حجمها من خلال إعداد الخادم `encryption_header_cache_size`.
+يمسح ذاكرة التخزين المؤقت لترويسات التشفير. تحتفظ هذه الذاكرة بترويسات التشفير المقروءة من بداية الملفات المشفّرة لتجنّب إعادة قراءتها؛ ويُضبط حجمها من خلال إعداد الخادم `encryption_header_cache_size`.
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 

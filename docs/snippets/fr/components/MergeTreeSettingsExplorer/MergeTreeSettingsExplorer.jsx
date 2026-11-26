@@ -542,10 +542,11 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_bytes_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "min_bytes_for_compact_part", path: "/min-bytes#min_bytes_for_compact_part", default: "0" },
         { name: "min_bytes_for_full_part_storage", path: "/min-bytes#min_bytes_for_full_part_storage", default: "0" },
+        { name: "min_bytes_for_object_shared_data_main_serialization_version", path: "/min-bytes#min_bytes_for_object_shared_data_main_serialization_version", default: "0" },
         { name: "min_bytes_for_wide_part", path: "/min-bytes#min_bytes_for_wide_part", default: "10485760" },
         { name: "min_bytes_to_prewarm_caches", path: "/min-bytes#min_bytes_to_prewarm_caches", default: "0" },
         { name: "min_bytes_to_rebalance_partition_over_jbod", path: "/min-bytes#min_bytes_to_rebalance_partition_over_jbod", default: "0" }
@@ -629,7 +630,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "object_shared_data_buckets_for_compact_part", path: "/object-shared#object_shared_data_buckets_for_compact_part", default: "8" },
         { name: "object_shared_data_buckets_for_wide_part", path: "/object-shared#object_shared_data_buckets_for_wide_part", default: "32" },
         { name: "object_shared_data_serialization_version", path: "/object-shared#object_shared_data_serialization_version", default: "advanced" },
-        { name: "object_shared_data_serialization_version_for_zero_level_parts", path: "/object-shared#object_shared_data_serialization_version_for_zero_level_parts", default: "map_with_buckets" },
+        { name: "object_shared_data_serialization_version_for_small_parts", path: "/object-shared#object_shared_data_serialization_version_for_small_parts", default: "map_with_buckets" },
         { name: "object_shared_data_target_chunk_rows", path: "/object-shared#object_shared_data_target_chunk_rows", default: "8192" }
       ],
       children: []
@@ -856,13 +857,14 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_*",
-      count: 6,
+      count: 7,
       settings: [
         { name: "use_adaptive_write_buffer_for_dynamic_subcolumns", path: "/use#use_adaptive_write_buffer_for_dynamic_subcolumns", default: "1" },
         { name: "use_async_block_ids_cache", path: "/use#use_async_block_ids_cache", default: "1" },
         { name: "use_compact_variant_discriminators_serialization", path: "/use#use_compact_variant_discriminators_serialization", default: "1" },
         { name: "use_const_adaptive_granularity", path: "/use#use_const_adaptive_granularity", default: "0" },
         { name: "use_metadata_cache", path: "/use#use_metadata_cache", default: "0" },
+        { name: "use_object_shared_data_serialization_version_for_small_parts_on_insert", path: "/use#use_object_shared_data_serialization_version_for_small_parts_on_insert", default: "1" },
         { name: "use_primary_key_cache", path: "/use#use_primary_key_cache", default: "0" }
       ],
       children: []
@@ -989,6 +991,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     }
   ])
+  const [settingAliases] = useState(() => ({
+    enable_block_number_column: ["allow_experimental_block_number_column"],
+    object_shared_data_serialization_version_for_small_parts: ["object_shared_data_serialization_version_for_zero_level_parts"]
+  }))
   const [allGroupKeys] = useState(() => {
     const collectGroupKeys = (items, path = []) =>
       items.flatMap((entry) => {
@@ -1037,7 +1043,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
+    const settings = entry.settings.filter((setting) => matchesSearch([setting.name, ...(settingAliases[setting.name] || [])].join(" ")))
     const children = entry.children.map(filterEntry).filter(Boolean)
     const count = settings.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null

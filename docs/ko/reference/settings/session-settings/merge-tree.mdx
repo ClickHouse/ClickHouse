@@ -138,7 +138,9 @@ ClickHouse가 하나의 쿼리에서 `merge_tree_max_rows_to_use_cache`보다 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "값이 `filesystem_prefetch_min_bytes_for_single_read_task`와 통일되었습니다"}]}]} />
 
-작업당 읽을 최소 바이트 수입니다.
+원격 디스크(예: S3)에 저장된 `MergeTree` 테이블의 데이터 파트(part)에서 단일 읽기 작업이 읽는 압축된 데이터의 최소 크기(바이트 단위)입니다. 작업이 클수록 저장소에 보내는 요청 수가 줄어들고, 작업이 작을수록 스레드 간에 작업을 더 고르게 분배할 수 있습니다.
+
+작업 크기는 모든 읽기 스레드가 최소 2개의 작업을 할당받을 수 있는 크기를 넘어서까지 커지지 않습니다. 이 설정은 병렬 레플리카를 자동으로 사용할지 결정할 때 읽기 스레드 수를 추정하는 데에도 사용됩니다.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 

@@ -2066,23 +2066,29 @@ münchen
 
 導入バージョン: v26.3.0
 
-この関数は、自然順でソートするために使用されます。
+自然順ソート用のキーを返します。このキーで並べ替えた文字列は自然順になります。自然順では連続する桁が数値として比較されるため、`a2` は `a10` より前に並びます。
+
+任意の引数 `mode` で、桁以外の文字の比較方法を選択します。
+
+* `0` (デフォルト): 文字を1つずつ、もう一方の文字列の同じ位置にある文字または数値と比較します。たとえば `-` が数値 `2` と比較されるため、`host-1` は `host2` より前に並びます。
+* `1`: 連続する非数字の文字を、もう一方の文字列の同じ位置にある文字の並びとまとめて比較します。数値は、その前にある文字の並びが等しい場合にのみ比較されます。たとえば `host` が `host-` と比較されるため、`host2` は `host-1` より前に並びます。これは PromQL の関数 `sort_by_label` と同じ順序です。
 
 **構文**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
 **別名**: `NATURAL_SORT_KEY`
 
 **引数**
 
-* `s` — ナチュラルソートキーに変換する文字列。[`String`](/ja/reference/data-types/string)
+* `s` — 自然順ソートキーに変換する文字列。[`String`](/ja/reference/data-types/string)
+* `mode` — 任意。数字以外の文字の比較方法を指定します。`0` (デフォルト) または `1`。[`const UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-`s` から生成されたナチュラルソートキー文字列を返します。[`String`](/ja/reference/data-types/string)
+`s` から生成した自然順ソートキーの文字列を返します。[`String`](/ja/reference/data-types/string)
 
 **例**
 
@@ -2100,6 +2106,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**2 つのモード**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}

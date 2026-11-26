@@ -13,35 +13,39 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="min_bytes_for_compact_part">
-  ## min_bytes_for_compact_part
-</div>
+## min_bytes_for_compact_part {#min_bytes_for_compact_part}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 该设置已废弃，不起任何作用。
 
-<div id="min_bytes_for_full_part_storage">
-  ## min_bytes_for_full_part_storage
-</div>
+## min_bytes_for_full_part_storage {#min_bytes_for_full_part_storage}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 以字节为单位的最小未压缩大小，
 用于让数据分区片段使用 Full 存储格式，而不是 packed
 
-<div id="min_bytes_for_wide_part">
-  ## min_bytes_for_wide_part
-</div>
+## min_bytes_for_object_shared_data_main_serialization_version {#min_bytes_for_object_shared_data_main_serialization_version}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+parts的最小未压缩大小 (字节) 。达到该大小的parts，会按照
+[object&#95;shared&#95;data&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version) 指定的主版本写入 JSON 类型中的共享数据。
+较小的parts则使用 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts)。
+对于已合并的parts，其大小为参与合并的各parts的总大小；对于已变更的parts，其大小为源parts的大小。
+设为 `0` 时禁用大小检查。
+
+## min_bytes_for_wide_part {#min_bytes_for_wide_part}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 可按 `Wide`
 格式存储的数据分区片段的最小字节数/行数。你可以只设置其中一个，也可以两个都设置，或者两个都不设置。
 
-<div id="min_bytes_to_prewarm_caches">
-  ## min_bytes_to_prewarm_caches
-</div>
+## min_bytes_to_prewarm_caches {#min_bytes_to_prewarm_caches}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -50,9 +54,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 对新 parts 的标记缓存和主索引缓存进行预热所需的最小大小
 (按未压缩字节数计)
 
-<div id="min_bytes_to_rebalance_partition_over_jbod">
-  ## min_bytes_to_rebalance_partition_over_jbod
-</div>
+## min_bytes_to_rebalance_partition_over_jbod {#min_bytes_to_rebalance_partition_over_jbod}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -335,7 +335,9 @@ Si se establece en true, respetará los alias en WHERE/GROUP BY/ORDER BY, lo que
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Optimiza la ordenación en función de las propiedades de ordenación del flujo de entrada
+Si los datos que llegan a un `ORDER BY` ya están ordenados por un prefijo de la clave de ordenación (por ejemplo, tras una subconsulta con `ORDER BY` o un JOIN por ordenación y mezcla), solo se ordenan las filas que tienen los mismos valores en ese prefijo, en lugar de ordenar todos los datos. El orden del resultado de un JOIN por ordenación y mezcla también se reutiliza en la ordenación de una unión posterior.
+
+Solo surte efecto si `query_plan_enable_optimizations` está habilitado.
 
 ## optimize_substitute_columns {#optimize_substitute_columns}
 

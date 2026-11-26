@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Новая настройка"}]}]} />
 
-Разрешает многокомпонентное копирование в S3.
+Разрешает многокомпонентное копирование (`UploadPartCopy`) объектов внутри S3 (например, при создании резервной копии в S3 или перемещении данных между S3-дисками), если размер объекта превышает `s3_max_single_operation_copy_size`.
+
+Если настройка отключена, объекты копируются одним запросом `CopyObject` независимо от их размера, а если это невозможно, данные считываются и загружаются заново. Отключите эту настройку для S3-совместимых хранилищ, которые не поддерживают `UploadPartCopy`.
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 

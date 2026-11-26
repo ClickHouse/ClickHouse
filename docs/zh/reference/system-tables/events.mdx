@@ -1673,6 +1673,10 @@ Distributed Cache 事件。在收到最终确认前连接即已断开的读取�
 
 分布式缓存读取缓冲区事件。可重试的读取错误在读取请求重试次数上限内仍未成功的次数
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Distributed Cache 客户端事件。对象存储磁盘的读取缓冲区请求使用分布式缓存，但由于分布式缓存 registry 尚未就绪 (例如尚未注册任何缓存服务器) ，最终在未使用分布式缓存的情况下创建，此类读取缓冲区的数量
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 通过 `max_distributed_cache_read_bandwidth_for_server` 限流器传输的字节数。
@@ -2136,6 +2140,18 @@ Distributed Cache 客户端事件。写请求期间发生的可重试分布式�
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 分布式索引分析期间缺失且将由本地处理的 parts 数量
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+无状态工作线程在索引分析中分析的 parts 数量
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+(在协调器上) 发送给无状态工作节点进行索引分析的 parts 数量
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+发送给无状态工作节点执行索引分析的任务数 (在协调器上统计)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3433,6 +3449,14 @@ Keeper 更新日志 读取 plan 因并发的 write&#95;at 截断在其生效前�
 
 Keeper 更新日志预读服务请求在等待 填充任务 时超时，转而对剩余尾部内容执行直接读取的次数
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+追加到 Keeper 日志存储的条目数
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+向 Keeper 日志存储追加条目所花费的时间，包括等待更新日志锁的时间 (条目由后台更新日志写入器负责写入并执行 fsync，参见 KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 追加到 Keeper LSMT 已提交 memtable 的条目的序列化字节数
@@ -3709,6 +3733,10 @@ Set 请求数
 
 set watches 请求数
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+将 Keeper 快照应用到 Keeper 状态机所耗费的时间
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 应用快照的次数
@@ -3732,6 +3760,10 @@ set watches 请求数
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 在向 跟随者 节点提供快照期间，RemoteSnapshotLoader 中发生的远程读取错误数
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+写入 Keeper 快照文件所耗费的时间 (包括序列化、压缩和同步)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4864,6 +4896,10 @@ Parquet 读取器解压缩的 Parquet 数据页 (包括数据页和字典页) �
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 读取并反序列化 Parquet 文件 footer 所花费的总时间 (仅统计未命中 Parquet 元数据缓存的情况) 。
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+列索引直接取自 Parquet 元数据缓存 (而非从文件中读取) 的 Parquet 列块数量。
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 

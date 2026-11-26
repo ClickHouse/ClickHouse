@@ -172,9 +172,9 @@ Cloud 默认值：`0`。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：利用 JOIN 运行时过滤器剪枝 Iceberg 数据文件、Parquet 行组和数据页。"}]}]} />
 
-跳过不可能包含 JOIN 运行时过滤器键的 Iceberg 数据文件，并在读取文件时跳过其中不可能包含此类键的 Parquet 行组和数据页 (参见 [enable&#95;join&#95;runtime&#95;filters](/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters)) 。连接的构建侧完成后，系统会将过滤器的键 (若集合过大，则改用其最小/最大值范围) 与清单文件中的列范围、行组统计信息以及页索引进行比对。在此之前已请求的数据文件仍会被完整读取。
+对于从对象存储 (`s3`、`azureBlobStorage`、`hdfs` 及其表引擎，以及 `Iceberg`、`DeltaLake`、`Hudi`) 进行的任何读取，跳过其中不可能包含 JOIN 运行时过滤器键的 Parquet 行组和数据页；对于 Iceberg 表，还会跳过不可能包含此类键的整个数据文件 (参见 [enable&#95;join&#95;runtime&#95;filters](/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters)) 。连接的构建侧完成后，系统会将过滤器的键 (若集合过大，则改用其最小/最大值范围) 与 Iceberg 清单文件中的列范围、行组统计信息以及页索引进行比对。在此之前已请求的文件仍会被完整读取。仅当文件以列自身名称存储该键时，才会对行组和数据页进行裁剪；因此 Hive 分区列、虚拟列、以其他名称存储的 Delta Lake 列以及带有默认表达式的列均不会触发裁剪。
 
-需要启用 [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) 和 [use&#95;iceberg&#95;partition&#95;pruning](/zh/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)。行组裁剪还需启用 [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/zh/reference/settings/formats/input-format#input_format_parquet_filter_push_down)；数据页裁剪则需同时启用该设置和 [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/zh/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down)。
+需要启用 [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis)。跳过 Iceberg 数据文件还需启用 [use&#95;iceberg&#95;partition&#95;pruning](/zh/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)。行组裁剪还需启用 [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/zh/reference/settings/formats/input-format#input_format_parquet_filter_push_down)；数据页裁剪则需同时启用该设置和 [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/zh/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down)。
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -259,7 +259,9 @@ Cloud 默认值：`0`。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "新增设置"}]}]} />
 
-对 Iceberg 位置删除使用 roaring bitmap。
+控制 Iceberg 表的位置删除文件的应用方式。启用时，数据文件中已删除行的位置会被加载到 roaring bitmap 中，再用它来过滤行。禁用时，删除文件会以流式方式与数据文件同时读取，无需先将所有已删除的位置加载到内存中。
+
+无论此设置如何，删除向量始终以 bitmap 形式应用。
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

@@ -14,9 +14,7 @@ doc_type: 'guide'
 
 テーブル構造の変更 (`ALTER TABLE ... ADD|DROP COLUMN`) をサポートします。`use_table_cache` パラメータ (下記のエンジンパラメータを参照) が `1` に設定されている場合、テーブル構造はキャッシュされ、変更されているかどうかは確認されませんが、`DETACH` および `ATTACH` クエリで更新できます。
 
-<div id="creating-a-database">
-  ## データベースの作成
-</div>
+## データベースの作成 {#creating-a-database}
 
 ```sql
 CREATE DATABASE test_database
@@ -32,13 +30,11 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `schema` — PostgreSQL スキーマ。
 * `use_table_cache` — データベーステーブルのテーブル構造をキャッシュするかどうかを指定します。省略可。デフォルト値: `0`。
 
-TLS/SSL パラメータは `libpq` に渡され、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を通じて、または末尾のキー・バリュー引数として指定できます。`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、または `verify-full`) と、証明書および秘密鍵は、2 つの形式のいずれかで指定できます。`sslrootcert` (CA 証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルのファイルへのパスであり、サーバー設定ファイルで定義された名前付きコレクションからのみ受け付けられます。代わりに `sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` では対応するファイルの内容を直接指定でき、SQL からも指定できます (例: `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`) 。これらの値は、パスワードと同様にログおよび `SHOW` クエリでマスクされます。未設定の場合は、`libpq` のデフォルトが適用されます (`sslmode=prefer`) 。
+TLS/SSL パラメータは `libpq` に渡され、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を通じて、または末尾のキー・バリュー引数として指定できます。`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、または `verify-full`) と、証明書および秘密鍵は、2 つの形式のいずれかで指定できます。`sslrootcert` (CA 証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルのファイルへのパスであり、サーバー設定ファイルで定義された名前付きコレクションからのみ受け付けられます。代わりに `sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` では対応するファイルの内容を直接指定でき、SQL からも指定できます (例: `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`) 。これらの値は、パスワードと同様にログおよび `SHOW` クエリでマスクされます。未設定の場合は、`libpq` のデフォルトが適用されます (`sslmode=prefer`) 。クライアント証明書 (`sslcert` または `sslcert_pem`) とクライアント秘密鍵 (`sslkey` または `sslkey_pem`) の両方が設定されていない限り、ClickHouse は `sslcertmode=disable` を送信します。そのため、`libpq` が service account の実行環境由来のデフォルト証明書や秘密鍵 (`~/.postgresql/postgresql.{crt,key}`) で認証を行うことはありません。
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## データ型の対応
-</div>
+## データ型の対応 {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                         |
 | ---------------- | -------------------------------------------------- |
@@ -60,9 +56,7 @@ TLS/SSL パラメータは `libpq` に渡され、[名前付きコレクショ�
   精度 `p` が 76 (`Decimal256` でサポートされる最大値) を超える PostgreSQL の `numeric(p, 0)` — たとえば、256 ビット整数の保存によく使われる `numeric(78, 0)` — は、`Decimal` ではなく [`Int256`](/ja/reference/data-types/int-uint) にマッピングされます。`Int256` の範囲に収まらない値はエラーとして拒否されます。
 </Note>
 
-<div id="examples-of-use">
-  ## 使用例
-</div>
+## 使用例 {#examples-of-use}
 
 PostgreSQL サーバーとデータをやり取りする ClickHouse のデータベース：
 
@@ -154,9 +148,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouse と PostgreSQL - データの世界で最高の組み合わせ - 第1部](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * ブログ: [ClickHouse と PostgreSQL - データの世界で最高の組み合わせ - 第2部](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

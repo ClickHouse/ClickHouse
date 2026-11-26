@@ -706,10 +706,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_index_analysis_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "distributed_index_analysis", path: "/distributed-index-analysis#distributed_index_analysis", default: "0" },
         { name: "distributed_index_analysis_for_non_shared_merge_tree", path: "/distributed-index-analysis#distributed_index_analysis_for_non_shared_merge_tree", default: "0" },
+        { name: "distributed_index_analysis_on_stateless_workers", path: "/distributed-index-analysis#distributed_index_analysis_on_stateless_workers", default: "0" },
         { name: "distributed_index_analysis_only_on_coordinator", path: "/distributed-index-analysis#distributed_index_analysis_only_on_coordinator", default: "0" }
       ],
       children: []
@@ -1450,11 +1451,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "log_query_*",
-      count: 6,
+      count: 8,
       settings: [
         { name: "log_query_plans", path: "/log-query#log_query_plans", default: "0" },
+        { name: "log_query_plans_join_matches", path: "/log-query#log_query_plans_join_matches", default: "0" },
         { name: "log_query_plans_max_size", path: "/log-query#log_query_plans_max_size", default: "1048576" },
         { name: "log_query_plans_probability", path: "/log-query#log_query_plans_probability", default: "1" },
+        { name: "log_query_plans_time", path: "/log-query#log_query_plans_time", default: "0" },
         { name: "log_query_settings", path: "/log-query#log_query_settings", default: "1" },
         { name: "log_query_threads", path: "/log-query#log_query_threads", default: "0" },
         { name: "log_query_views", path: "/log-query#log_query_views", default: "1" }
@@ -2424,7 +2427,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 59,
+      count: 60,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2476,6 +2479,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_remove_redundant_distinct", path: "/query-plan#query_plan_remove_redundant_distinct", default: "1" },
         { name: "query_plan_remove_redundant_sorting", path: "/query-plan#query_plan_remove_redundant_sorting", default: "1" },
         { name: "query_plan_remove_unused_columns", path: "/query-plan#query_plan_remove_unused_columns", default: "1" },
+        { name: "query_plan_remove_unused_joins", path: "/query-plan#query_plan_remove_unused_joins", default: "1" },
         { name: "query_plan_replace_always_true_filter", path: "/query-plan#query_plan_replace_always_true_filter", default: "1" },
         { name: "query_plan_reuse_storage_ordering_for_window_functions", path: "/query-plan#query_plan_reuse_storage_ordering_for_window_functions", default: "1" },
         { name: "query_plan_short_circuit_constant_false_join", path: "/query-plan#query_plan_short_circuit_constant_false_join", default: "1" },
@@ -2613,10 +2617,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "rewrite_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "rewrite_count_distinct_if_with_count_distinct_implementation", path: "/rewrite#rewrite_count_distinct_if_with_count_distinct_implementation", default: "0" },
-        { name: "rewrite_in_to_join", path: "/rewrite#rewrite_in_to_join", default: "0" }
+        { name: "rewrite_in_to_join", path: "/rewrite#rewrite_in_to_join", default: "0" },
+        { name: "rewrite_intersect_except_distinct_to_join", path: "/rewrite#rewrite_intersect_except_distinct_to_join", default: "1" }
       ],
       children: []
     },
@@ -3541,7 +3546,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
                 </span>
                 {item.value.default !== undefined && (
                   <span title="デフォルト値" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
-                    （デフォルト: {item.value.default}）
+                    (デフォルト: {item.value.default})
                   </span>
                 )}
               </div>
@@ -3580,7 +3585,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount === 1 ? "一致する設定" : "一致する設定"}: {matchingCount} 件
+            一致する設定: {matchingCount} 件
           </span>
         </div>
       )}

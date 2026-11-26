@@ -14,7 +14,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스에서 자동 생성됩니다.
 
 <div id="min_bytes_for_compact_part">
-  ## min_bytes_for_compact_part
+  ## min_bytes_for_compact_part {#min_bytes_for_compact_part}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 더 이상 사용되지 않는 설정으로, 아무런 동작도 하지 않습니다.
 
 <div id="min_bytes_for_full_part_storage">
-  ## min_bytes_for_full_part_storage
+  ## min_bytes_for_full_part_storage {#min_bytes_for_full_part_storage}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -30,8 +30,19 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 패킹 대신 데이터 파트(data part)에
 full 타입의 저장소를 사용하기 위한 최소 압축되지 않은 크기(바이트)입니다.
 
+## min_bytes_for_object_shared_data_main_serialization_version {#min_bytes_for_object_shared_data_main_serialization_version}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+JSON 타입 내부의 공유 데이터를 [object&#95;shared&#95;data&#95;serialization&#95;version](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)에 지정된 기본(main) 버전으로 기록하기 위한 파트의 최소 압축되지 않은 크기(바이트)입니다.
+이보다 작은 파트는 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts)를 사용합니다.
+병합된 파트는 머지 대상 파트들의 전체 크기를, 변경이 적용된 파트는 원본 파트(source part)의 크기를 기준으로 합니다.
+`0`으로 설정하면 크기 검사를 비활성화합니다.
+
 <div id="min_bytes_for_wide_part">
-  ## min_bytes_for_wide_part
+  ## min_bytes_for_wide_part {#min_bytes_for_wide_part}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
@@ -39,7 +50,7 @@ full 타입의 저장소를 사용하기 위한 최소 압축되지 않은 크�
 `Wide` 포맷으로 저장할 수 있는 데이터 파트의 최소 바이트 수/행 수입니다. 이 설정은 하나만 지정하거나, 둘 다 지정하거나, 아무것도 지정하지 않을 수 있습니다.
 
 <div id="min_bytes_to_prewarm_caches">
-  ## min_bytes_to_prewarm_caches
+  ## min_bytes_to_prewarm_caches {#min_bytes_to_prewarm_caches}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -50,7 +61,7 @@ full 타입의 저장소를 사용하기 위한 최소 압축되지 않은 크�
 최소 크기(비압축 바이트 수)
 
 <div id="min_bytes_to_rebalance_partition_over_jbod">
-  ## min_bytes_to_rebalance_partition_over_jbod
+  ## min_bytes_to_rebalance_partition_over_jbod {#min_bytes_to_rebalance_partition_over_jbod}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

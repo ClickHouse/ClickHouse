@@ -81,6 +81,8 @@ TLS/SSL 参数会传递给 `libpq`，可将其设为命名集合的键或尾随�
 * `sslrootcert` (CA 证书或特殊值 `system`) 、`sslcert` (客户端证书) 和 `sslkey` (客户端私钥) 是服务器本地文件的路径。它们只能在服务器配置文件中定义的命名集合中指定，不能在查询中覆盖：服务器会使用自身的特权打开这些文件。
 * `sslrootcert_pem`、`sslcert_pem` 和 `sslkey_pem` 接受相应文件的原始内容，而非路径。它们可在任何位置指定——查询中、通过 SQL 创建的命名集合中，或作为对命名集合的覆盖——并且会像密码一样在日志和 `SHOW` 查询中被掩码处理。
 
+除非同时配置了客户端证书 (`sslcert` 或 `sslcert_pem`) 和客户端密钥 (`sslkey` 或 `sslkey_pem`) ，否则 ClickHouse 会发送 `sslcertmode=disable`，以防止 `libpq` 使用服务账号由运行环境提供的默认证书或密钥 (`~/.postgresql/postgresql.{crt,key}`) 进行身份验证：对于端点和用户均由 SQL 指定的连接，不得复用服务账号的默认凭证。
+
 例如，要强制使用加密连接并验证服务器证书：
 
 ```xml

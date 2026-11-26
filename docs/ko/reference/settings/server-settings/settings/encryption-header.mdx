@@ -14,13 +14,13 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ReaderExecutor 읽기 경로에서 사용하는 암호화 헤더 캐시의 eviction 정책입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`. 캐시 용량은 [`encryption_header_cache_size`](/ko/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size)를, SLRU 정책의 보호 큐 크기는 [`encryption_header_cache_size_ratio`](/ko/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio)를 참조하십시오.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />암호화 헤더 캐시의 eviction 정책입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`. 캐시 용량은 [`encryption_header_cache_size`](/ko/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size)를, SLRU 정책의 보호 큐 크기는 [`encryption_header_cache_size_ratio`](/ko/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio)를 참조하십시오.
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
-암호화된 파일에서 읽은 암호화 헤더 캐시의 최대 크기입니다. 실험적 ReaderExecutor 읽기 경로에서만 사용됩니다.
+`s3` 디스크처럼 무작위 블롭 경로를 사용하는 디스크에 있는 암호화된 파일에서 읽은 암호화 헤더 캐시의 최대 크기입니다. 이 캐시를 사용하면 객체 스토리지에서 파일 헤더를 다시 읽지 않아도 됩니다.
 
 <Note>
   이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.

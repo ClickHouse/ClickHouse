@@ -225,7 +225,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_funnel_functions`."}]}]} />
 
-تمكين الدوال الخاصة بتحليل مسار التحويل.
+يفعّل الدالة التجميعية التجريبية `sequenceNextNode` المستخدمة في تحليل مسار التحويل. إذا كان هذا الإعداد معطّلًا، فإن استخدام `sequenceNextNode` يُطلق استثناءً.
 
 ## enable_gdeflate_codec {#enable_gdeflate_codec}
 
@@ -469,7 +469,9 @@ _time:1h error | stats by (host) count()
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-فعّل استراتيجية الدمج المقيّدة بالذاكرة لنتائج التجميع.
+يفعّل استراتيجية الدمج المقيّدة بالذاكرة لنتائج التجميع الجزئية في الاستعلامات الموزّعة والاستعلامات التي تستخدم النسخ المتماثلة المتوازية.
+
+إذا جرى التجميع على الخوادم البعيدة بترتيب مفاتيح `GROUP BY` (راجع `optimize_aggregation_in_order`)، فإن الخوادم البعيدة ترسل النتائج الجزئية مرتّبة حسب هذه المفاتيح، ويدمجها المُبادِر بالترتيب، فلا يحتفظ في الذاكرة إلا بجزء صغير من حالة التجميع في كل مرة.
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 

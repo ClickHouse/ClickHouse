@@ -225,7 +225,9 @@ JOIN キーで Dynamic 型を使用できるようにします。互換性のた
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-multiIf 関数の列指向実行を許可する
+`multiIf` 関数が、行ごとではなくカラム全体に対して一括で結果を計算できるようにします。これにより処理が高速になります。
+
+列指向実行が使用されるのは、結果の型が数値、`Decimal`、日付型または日時型、`Enum`、`IPv4`、`IPv6` のいずれかで、かつ関数の分岐が 255 個以下の場合に限られます。それ以外の場合は、この設定に関係なく行ごとの実行が使用されます。
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

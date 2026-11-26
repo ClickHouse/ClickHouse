@@ -32,6 +32,10 @@ Las partes en almacenamiento empaquetado (consulte `min_bytes_for_full_part_stor
 se siguen leyendo a través de la caché de páginas.
 Si el sistema de archivos no admite E/S directa, los archivos se leen a través de la caché de páginas.
 
+Desactive este parámetro de configuración cuando las lecturas directas sean más lentas que las realizadas a través de la caché de páginas.
+Las lecturas directas siempre acceden al dispositivo de almacenamiento, aunque los datos ya estén almacenados en caché.
+Por ejemplo, en un volumen de Amazon EBS, comprobar una tabla que cabe en la caché de páginas puede ser varias veces más lento.
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -19,7 +19,9 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "El parámetro de configuración ya no es experimental. El valor predeterminado se mantiene sin cambios."}]}]} />
 
-Número inicial de buckets del grace hash join
+Número de buckets con el que comienza el algoritmo de join `grace_hash`. Las filas de ambas tablas se distribuyen entre los buckets según el hash de las claves de join; solo se mantiene un bucket en memoria, mientras que los demás se escriben en disco y se unen más adelante. Cuando el bucket en memoria supera los límites de memoria, el número de buckets se duplica, hasta un máximo de `grace_hash_join_max_buckets`.
+
+El valor se redondea hacia arriba a una potencia de dos. Un valor mayor evita tener que redistribuir las filas cuando se sabe de antemano que la tabla derecha es grande, a costa de generar más archivos temporales.
 
 ## grace_hash_join_max_buckets {#grace_hash_join_max_buckets}
 

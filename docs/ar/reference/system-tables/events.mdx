@@ -1674,6 +1674,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 حدث مخزن القراءة المؤقت لـ Distributed Cache. عدد المرات التي لم ينجح فيها خطأ قراءة قابل لإعادة المحاولة ضمن الحد الأقصى لإعادات محاولة طلب القراءة
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+حدث صادر عن عميل Distributed Cache. عدد مخازن القراءة المؤقتة الخاصة بأقراص تخزين الكائنات التي طلبت استخدام distributed cache، لكنها أُنشئت من دونه لأن سجل distributed cache لم يكن جاهزًا (مثلًا، لم يُسجَّل أي خادم لذاكرة التخزين المؤقت)
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 عدد البايتات التي مرّت عبر مُقيِّد المعدّل `max_distributed_cache_read_bandwidth_for_server`.
@@ -2137,6 +2141,18 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 عدد الأجزاء المفقودة أثناء تحليل الفهرس الموزع التي سيجري التعامل معها محليًا
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+عدد أجزاء البيانات التي حلّلها stateless worker ضمن عملية تحليل الفهرس
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+عدد أجزاء البيانات المُرسَلة إلى stateless worker لتحليل الفهرس (على المنسّق)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+عدد المهام المُرسَلة إلى stateless worker لإجراء تحليل الفهرس (على المنسّق)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3434,6 +3450,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المرات التي انتهت فيها مهلة طلب خدمة القراءة المسبقة لسجل التغييرات الخاص بـ Keeper أثناء انتظار مهمة الـ fill، فلجأ إلى قراءة مباشرة لبقية الذيل (tail)
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+عدد الإدخالات التي تُضاف إلى مخزن سجلات Keeper
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+الوقت المستغرق في إلحاق الإدخالات بمخزن سجلات Keeper، بما في ذلك وقت انتظار قفل سجل التغييرات (إذ يتولى كاتب سجل التغييرات العامل في الخلفية كتابة الإدخال ومزامنته عبر fsync، راجع KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 عدد البايتات المُسلسَلة للمدخلات المُضافة إلى جدول الذاكرة (memtable) المُثبَّت الخاص بـ LSMT في Keeper
@@ -3710,6 +3734,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد طلبات تعيين الـ مراقبة
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+الوقت المستغرق في تطبيق لقطة Keeper على آلة الحالة الخاصة بـ Keeper
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 عدد مرات تطبيق اللقطات
@@ -3733,6 +3761,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 عدد أخطاء القراءة عن بُعد في RemoteSnapshotLoader أثناء إرسال لقطة إلى عقدة تابعة
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+الوقت المستغرق في كتابة ملف لقطة Keeper (التسلسل والضغط والمزامنة)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4865,6 +4897,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 إجمالي الوقت المستغرق في قراءة تذييلات ملفات Parquet وإلغاء تسلسلها (أي التذييلات التي لم تُجلب من ذاكرة التخزين المؤقت للبيانات الوصفية لملفات Parquet).
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+عدد مقاطع الأعمدة في Parquet التي جُلب فهرس العمود الخاص بها من ذاكرة تخزين مؤقت للبيانات الوصفية لملفات Parquet بدلاً من قراءته من الملف.
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 

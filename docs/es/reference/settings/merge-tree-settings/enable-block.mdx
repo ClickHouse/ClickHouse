@@ -13,15 +13,17 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 Estas opciones de configuración están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
 <div id="enable_block_number_column">
-  ## enable_block_number_column
+  ## enable&#95;block&#95;number&#95;column {#enable_block_number_column}
 </div>
+
+**Alias**: `allow_experimental_block_number_column`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Activa el almacenamiento de la columna &#95;block&#95;number para cada fila.
+Activa la opción de persistir la columna &#95;block&#95;number para cada fila.
 
 <div id="enable_block_offset_column">
-  ## enable_block_offset_column
+  ## enable_block_offset_column {#enable_block_offset_column}
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />

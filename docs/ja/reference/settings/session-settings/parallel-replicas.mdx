@@ -29,7 +29,9 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "並列レプリカでのmaterialized viewの使用を許可する"}]}]} />
 
-並列レプリカでのmaterialized viewの使用を許可します
+materialized view から読み取るクエリで並列レプリカを使用できるようにします。この場合、クエリは materialized view のターゲットテーブルに対して実行されます。
+
+リフレッシュ可能なマテリアライズドビューは、この設定にかかわらず並列レプリカを使用しません。
 
 ## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
 
@@ -171,7 +173,9 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "並列レプリカを使用するクエリで、ローカルレプリカに対してローカルプランを使用する"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "並列レプリカを使用するクエリで、ローカルレプリカに対してローカルプランを使用する"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "1"},{"label": "並列レプリカを使用するクエリで、ローカルレプリカに対してローカルプランを使用する"}]}]} />
 
-ローカルレプリカ向けにローカルプランを構築します
+並列レプリカを使用するクエリでは、イニシエーターはネットワーク経由で自分自身にクエリを送信する代わりに、ローカルで構築したクエリプランを用いて、自身が担当する読み取り処理を実行します。これにより、ネットワークの往復によるオーバーヘッドを回避できます。`parallel_replicas_prefer_local_replica` が有効な場合にのみ使用されます。
+
+並列レプリカを使用するかどうかの自動判定 (`automatic_parallel_replicas_mode` を参照) は、この設定が有効な場合にのみ行われます。
 
 ## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 

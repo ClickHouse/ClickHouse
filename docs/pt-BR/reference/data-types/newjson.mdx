@@ -867,10 +867,13 @@ Em tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/m
 Atualmente, existem 4 serializações diferentes da estrutura de dados compartilhada em partes de dados do MergeTree: `map`, `map_with_buckets`,
 `advanced` e `advanced_chunked`.
 
-A versão da serialização é controlada pelas
+A versão de serialização é controlada pelas
 configurações do MergeTree [object&#95;shared&#95;data&#95;serialization&#95;version](/pt-BR/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-e [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/pt-BR/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(a parte de nível zero é a parte criada durante a inserção de dados na tabela; durante operações de mesclagem, as partes têm nível mais alto).
+e [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/pt-BR/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+A segunda é usada para partes pequenas: partes criadas durante operações de insert (a menos que
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/pt-BR/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+esteja desabilitada) e partes abaixo do tamanho mínimo definido em
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/pt-BR/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version).
 
 Observação: alterar a serialização da estrutura de dados compartilhada é compatível apenas
 com a `v3` [versão de serialização de objeto](/pt-BR/reference/settings/merge-tree-settings/other#object_serialization_version)

@@ -32,6 +32,10 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 계속 페이지 캐시를 통해 읽습니다.
 파일 시스템이 direct I/O를 지원하지 않으면 페이지 캐시를 통해 파일을 읽습니다.
 
+직접 읽기가 페이지 캐시를 통한 읽기보다 느린 환경에서는 이 설정을 비활성화하십시오.
+직접 읽기는 데이터가 이미 캐시되어 있더라도 항상 스토리지 장치에서 읽습니다.
+예를 들어 Amazon EBS 볼륨에서는 페이지 캐시에 모두 들어가는 크기의 테이블을 검사할 때 몇 배 더 느려질 수 있습니다.
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

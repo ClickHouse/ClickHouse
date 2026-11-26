@@ -302,7 +302,7 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
-Очищает кэш заголовков шифрования. В этом кэше хранятся заголовки шифрования, считываемые из начала зашифрованных файлов. Он используется экспериментальным путём чтения `use_reader_executor`, чтобы избежать их повторного чтения; его размер задаётся настройкой сервера `encryption_header_cache_size`.
+Очищает кэш заголовков шифрования. В этом кэше хранятся заголовки шифрования, считываемые из начала зашифрованных файлов, чтобы избежать их повторного чтения; его размер задаётся настройкой сервера `encryption_header_cache_size`.
 
 ## SYSTEM CLEAR|DROP КЭШ ЗАПРОСОВ {#drop-query-cache}
 

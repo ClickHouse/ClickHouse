@@ -32,6 +32,10 @@ Les parts en stockage regroupé (voir `min_bytes_for_full_part_storage`) et la p
 restent lues via le cache de pages.
 Si le système de fichiers ne prend pas en charge les E/S directes, les fichiers sont lus via le cache de pages.
 
+Désactivez ce paramètre lorsque les lectures directes sont plus lentes que les lectures via le cache de pages.
+Les lectures directes accèdent toujours au périphérique de stockage, même si les données sont déjà en cache.
+Par exemple, sur un volume Amazon EBS, la vérification d’une table qui tient dans le cache de pages peut être plusieurs fois plus lente.
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

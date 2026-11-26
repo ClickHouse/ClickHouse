@@ -32,6 +32,10 @@ Packed ストレージのパーツ (`min_bytes_for_full_part_storage` を参照)
 引き続きページキャッシュ経由で読み取られます。
 ファイルシステムが direct I/O をサポートしていない場合は、ページキャッシュ経由でファイルを読み取ります。
 
+direct read がページキャッシュ経由の読み取りより遅い環境では、この設定を無効化してください。
+direct read では、データがすでにキャッシュされている場合でも、常にストレージデバイスへのアクセスが発生します。
+たとえば Amazon EBS ボリュームでは、ページキャッシュに収まるサイズのテーブルでも、チェックが数倍遅くなることがあります。
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

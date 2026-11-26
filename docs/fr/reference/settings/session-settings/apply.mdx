@@ -108,10 +108,6 @@ Pour cette raison, l’égalité avec une chaîne constante n’est pas déplac�
 Pris en charge pour la lecture depuis les tables `MergeTree` et depuis le format `Parquet`. Dans `Parquet`, le filtre s’applique aux pages utilisant
 les encodages `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY` et `DELTA_BYTE_ARRAY`, ainsi que l’encodage par dictionnaire.
 
-Notez que l’estimation des octets en entrée, collectée pour la décision automatique concernant les répliques parallèles
-(`RuntimeDataflowStatisticsInputBytes`), repose sur la taille en mémoire des blocs lus ; elle sous-estime donc
-la quantité de données lues sur le disque lorsque les valeurs sont remplacées par des chaînes vides.
-
 Valeurs possibles :
 
 * 0 — Désactivé.

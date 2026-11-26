@@ -14,9 +14,7 @@ doc_type: 'guide'
 
 ويدعم تعديل بنية الجدول (`ALTER TABLE ... ADD|DROP COLUMN`). إذا جرى تعيين المَعلمة `use_table_cache` (انظر معلمات المحرك أدناه) إلى `1`، فستُخزَّن بنية الجدول مؤقتًا ولن يُتحقق من حدوث أي تعديل عليها، ولكن يمكن تحديثها باستخدام استعلامَي `DETACH` و`ATTACH`.
 
-<div id="creating-a-database">
-  ## إنشاء قاعدة بيانات
-</div>
+## إنشاء قاعدة بيانات {#creating-a-database}
 
 ```sql
 CREATE DATABASE test_database
@@ -32,13 +30,11 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `schema` — مخطط PostgreSQL.
 * `use_table_cache` — يحدّد ما إذا كانت بنية جدول قاعدة البيانات مخزنة مؤقتًا أم لا. اختياري. القيمة الافتراضية: `0`.
 
-تُمرَّر معلمات TLS/SSL إلى `libpq` ويمكن توفيرها عبر [مجموعة مسماة](/ar/concepts/features/configuration/server-config/named-collections) أو كوسيطات مفتاح-قيمة لاحقة: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`)، والشهادات والمفتاح بأحد شكلين. تمثل `sslrootcert` (شهادة CA)، و`sslcert` (شهادة العميل)، و`sslkey` (المفتاح الخاص للعميل) مسارات إلى ملفات محلية على الخادم، ولا تُقبل إلا من مجموعة مسماة معرّفة في ملف تكوين الخادم. تقبل `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` المحتويات الحرفية للملف المقابل بدلًا من ذلك، ويمكن تحديدها من SQL (على سبيل المثال، `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`)، وتُخفى في السجلات واستعلامات `SHOW` مثل كلمة المرور. عند عدم تعيينها، تُطبَّق القيم الافتراضية لـ `libpq` (`sslmode=prefer`).
+تُمرَّر معلمات TLS/SSL إلى `libpq` ويمكن توفيرها عبر [مجموعة مسماة](/ar/concepts/features/configuration/server-config/named-collections) أو كوسيطات مفتاح-قيمة لاحقة: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`)، والشهادات والمفتاح بأحد شكلين. تمثل `sslrootcert` (شهادة CA)، و`sslcert` (شهادة العميل)، و`sslkey` (المفتاح الخاص للعميل) مسارات إلى ملفات محلية على الخادم، ولا تُقبل إلا من مجموعة مسماة معرّفة في ملف تكوين الخادم. تقبل `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` المحتويات الحرفية للملف المقابل بدلًا من ذلك، ويمكن تحديدها من SQL (على سبيل المثال، `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`)، وتُخفى في السجلات واستعلامات `SHOW` مثل كلمة المرور. عند عدم تعيينها، تُطبَّق القيم الافتراضية لـ `libpq` (`sslmode=prefer`). ما لم تتم تهيئة كلٍّ من شهادة العميل (`sslcert` أو `sslcert_pem`) ومفتاح العميل (`sslkey` أو `sslkey_pem`)، يرسل ClickHouse القيمة `sslcertmode=disable`، كي لا يستخدم `libpq` للتحقق من الهوية الشهادةَ أو المفتاحَ الافتراضيين لحساب الخدمة المتاحين من البيئة (`~/.postgresql/postgresql.{crt,key}`).
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## دعم أنواع البيانات
-</div>
+## دعم أنواع البيانات {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                     |
 | ---------------- | -------------------------------------------------------------- |
@@ -60,9 +56,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
   يُحوَّل `numeric(p, 0)` في PostgreSQL عندما تكون الدقة `p` أكبر من 76 (وهو الحد الأقصى الذي يدعمه `Decimal256`) — على سبيل المثال `numeric(78, 0)`، وهو يُستخدم عادةً لتخزين أعداد صحيحة بعرض 256 بت — إلى [`Int256`](/ar/reference/data-types/int-uint) بدلًا من `Decimal`. وتُرفض القيم التي لا تقع ضمن نطاق `Int256` مع ظهور error.
 </Note>
 
-<div id="examples-of-use">
-  ## أمثلة على الاستخدام
-</div>
+## أمثلة على الاستخدام {#examples-of-use}
 
 قاعدة بيانات في ClickHouse تتبادل البيانات مع خادم PostgreSQL:
 
@@ -154,9 +148,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-<div id="related-content">
-  ## محتوى ذي صلة
-</div>
+## محتوى ذي صلة {#related-content}
 
 * مدونة: [ClickHouse و PostgreSQL - توافق مثالي في عالم البيانات - الجزء 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * مدونة: [ClickHouse و PostgreSQL - توافق مثالي في عالم البيانات - الجزء 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

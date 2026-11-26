@@ -59,12 +59,13 @@ Valores posibles:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para resolver las agregaciones `sum`, `avg`, `sumCount` y `count(column)` sin `GROUP BY` ni filtros a partir de las estadísticas de columna de cada parte. previous_value=false, de modo que `compatibility` con versiones anteriores a 26.11 mantiene la optimización deshabilitada y restaura el plan anterior."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para resolver las agregaciones `sum`, `avg`, `sumCount` y `count(column)` sin `GROUP BY` ni filtros a partir de las estadísticas de columnas por parte. previous_value=false, de modo que `compatibility` con versiones anteriores a 26.11 mantiene la optimización deshabilitada y restaura el plan anterior."}]}]} />
 
-Resuelve las agregaciones `sum`, `avg` y `sumCount` sobre columnas integer y `Decimal` que no sean `Nullable` ni
-`LowCardinality`, sin `GROUP BY` ni filtros, a partir de las estadísticas de columna de cada parte (el tipo de estadísticas `basic`; consulte el
+Resuelve las agregaciones `sum`, `avg` y `sumCount` sobre columnas integer y `Decimal` que no sean `LowCardinality`,
+sin `GROUP BY` ni filtros, a partir de las estadísticas de columnas por parte (el tipo de estadísticas `basic`; consulte el
 ajuste `auto_statistics_types` de `MergeTree`) en las partes de datos que las tengan materializadas, y solo lee las partes
-restantes. En ese caso, `count(column)` de una columna que no sea `Nullable` ni `LowCardinality` se resuelve a partir del número de filas.
+restantes. En ese caso, `count(column)` de una columna que no sea `LowCardinality` se resuelve a partir del número de filas. En una
+columna `Nullable`, las estadísticas almacenan la suma de los valores non-NULL y el recuento de valores NULL, que las funciones de agregación omiten.
 El resultado es exactamente el mismo que si se leyeran los datos.
 
 Valores posibles:

@@ -43,20 +43,22 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "結合ランタイムフィルタがProduction tierの機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析による結合時のフィルタリングを有効にする新しい設定"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "ビルド側（右側）で収集したランタイムフィルタを使い、結合のプローブ側（左側）のグラニュールを除外します。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOINランタイムフィルタがProduction tierの機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析による結合時のフィルタリングを有効にする新しい設定"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "ビルド側（右側）で収集したランタイムフィルタを使い、結合のプローブ側（左側）のグラニュールを除外します。"}]}]} />
 
 ビルド側で収集したランタイムフィルタを使い、結合のプローブ側のグラニュールを除外します。`enable_join_runtime_filters`を参照してください。
 `use_skip_indexes_on_data_read = 1`の場合にのみ効果があります。
 除外の対象となるのは、プローブ側の主キー列であるか、`minmax`、`set`、`bloom_filter`のいずれかのスキップ索引でカバーされているか、またはグローバル行インデックス`_part_starting_offset + _part_offset`である結合キーのみです。サブクエリで見つかった行を取得するためにグローバル行インデックスで自己結合を行う場合、それらの行を含むグラニュールだけが読み取られます。グローバル行インデックスは1つのクエリ内でしか行を識別できないため、結合の両側が同じクエリ内でテーブルを読み取る必要があります。
 ランタイムフィルタがキーの正確な値を保持している場合、それらの値を含む`IN`集合を除外述語に使用します。それ以外の場合はキーの最小値から最大値までの範囲を使用しますが、除外効果は低くなります。
 
-Icebergテーブルの場合、この設定により、データファイル全体のほか、読み取るファイル内のParquetの行グループやページもスキップできます。[use&#95;join&#95;runtime&#95;filters&#95;for&#95;iceberg&#95;pruning](/ja/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning)を参照してください。この動作は`use_skip_indexes_on_data_read`には依存しません。
+オブジェクトストレージから読み取る場合、この設定により、読み取るファイル内のParquetの行グループやページ、およびIcebergテーブルのデータファイル全体もスキップできます。[use&#95;join&#95;runtime&#95;filters&#95;for&#95;iceberg&#95;pruning](/ja/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning)を参照してください。この動作は`use_skip_indexes_on_data_read`には依存しません。
 
 並列レプリカ (`enable_parallel_replicas = 1`) でも動作します。各レプリカは、自身が構築したフィルタを使って、自身が読み取るグラニュールを除外します。このフィルタは部分的なものになる場合があります。`RIGHT`結合ではビルド側がレプリカ間で分割されるため、各レプリカのフィルタはその担当分しかカバーしません。それでも結果は正しく保たれます。結合のいずれか一方の側のみが分割され、一致する行のペアはそれぞれ必ずただ1つのレプリカ上で突き合わされ、各レプリカは結果の互いに重複しない部分を出力するためです。
 
-分散クエリプラン (`make_distributed_plan = 1`) では、グラニュールの除外は行われません。この場合、この設定は効果を持ちません。クエリの結果は変わらず、結合ランタイムフィルタ自体もこの設定を無効にした場合とまったく同じように動作します。行われなくなるのはグラニュールの除外だけです。
+分散クエリプラン (`make_distributed_plan = 1`) では、グラニュールの除外は行われません。この場合、この設定は効果を持ちません。クエリの結果は変わらず、JOINランタイムフィルタ自体もこの設定を無効にした場合とまったく同じように動作します。行われなくなるのはグラニュールの除外だけです。
 
-プローブ側を`FINAL`で読み取る場合も、グラニュールの除外は行われません (`FINAL`を使用した読み取りでは除外が実装されておらず、`optimizeLazyFinal`はディスクリプタなしで読み取りを再構築します) 。処理待ちのデータ、`ALTER`ミューテーション、またはパッチパートがあるテーブルでも同様です。これらの場合も、この設定は効果を持ちません。
+プローブ側で`FINAL`を使用する場合、グラニュールの除外は、テーブルのsorting keyの列である結合キーによってのみ行われます。その際にスキップ索引が使用されるのは、`use_skip_indexes_if_final = 1`の場合のみです。
+
+処理待ちのデータ、`ALTER`ミューテーション、またはパッチパートがあるテーブルでも、グラニュールの除外は行われません。この場合も、この設定は効果を持ちません。
 
 ## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
 

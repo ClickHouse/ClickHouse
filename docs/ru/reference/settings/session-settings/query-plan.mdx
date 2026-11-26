@@ -375,7 +375,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Позволяет объединять фильтры в плане запроса"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Позволяет объединять фильтры в плане запроса. Это необходимо для корректной поддержки проталкивания фильтров при использовании анализатора."}]}]} />
 
-Позволяет объединять фильтры в плане запроса.
+Позволяет объединять последовательные шаги фильтрации плана запроса в один. Чтобы сохранить укороченное вычисление объединённого условия, фильтр по цепочке `AND` при этом выполняется как несколько последовательных фильтров — по одному на каждое условие.
+
+Это необходимо для корректной работы проталкивания фильтров при использовании анализатора. Слияние применяется, только если включена настройка `query_plan_enable_optimizations`.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -472,7 +474,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Добавлена новая настройка, позволяющая использовать план запроса для оптимизации отложенной материализации"}]}]} />
 
-Использовать план запроса для оптимизации отложенной материализации.
+Включает оптимизацию с отложенной материализацией для запросов вида `ORDER BY ... LIMIT n`: столбцы, которые не нужны для сортировки и фильтрации, читаются только для `n` строк, оставшихся после `LIMIT`, а не для всех прочитанных строк. Это сокращает объём читаемых данных в запросах типа top-N к широким таблицам.
+
+Оптимизация не применяется, если `n` больше значения `query_plan_max_limit_for_lazy_materialization`, а также при использовании `LIMIT ... WITH TIES`.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -622,6 +626,14 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 * 0 - Отключено
 * 1 - Включено
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Новая настройка, позволяющая удалять `LEFT` или `RIGHT` `JOIN`, другая сторона которого не читается и который возвращает каждую строку сохраняемой стороны ровно один раз."}]}]} />
+
+Удаляет `LEFT` или `RIGHT` `JOIN`, если из его другой стороны не читается ни один столбец и он возвращает каждую строку сохраняемой стороны ровно один раз. Это `ANY` JOIN либо JOIN, другая сторона которого уникальна по ключам соединения: например, подзапрос с `GROUP BY` или `DISTINCT` по этим ключам или таблица без ключа партиционирования, `UNIQUE KEY` которой покрывается ими. В этом случае другая сторона не читается вовсе.
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

@@ -29,7 +29,9 @@ Si la valeur est true, la sous-requête de IN sera exécutée sur chaque répliq
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Autoriser l’utilisation des vues matérialisées avec les répliques parallèles"}]}]} />
 
-Autoriser l’utilisation des vues matérialisées avec les répliques parallèles
+Permet aux requêtes qui lisent des données d’une vue matérialisée d’utiliser les répliques parallèles. La requête est alors exécutée sur la target table de la vue matérialisée.
+
+Les vues matérialisées actualisables n’utilisent pas les répliques parallèles, quelle que soit la valeur de ce paramètre.
 
 ## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
 
@@ -171,7 +173,9 @@ Ce paramètre concerne l’analyse d’index qui sélectionne les plages de mark
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Utiliser un plan local pour la réplique locale dans une requête avec des répliques parallèles"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Utiliser un plan local pour la réplique locale dans une requête avec des répliques parallèles"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "1"},{"label": "Utiliser un plan local pour la réplique locale dans une requête avec des répliques parallèles"}]}]} />
 
-Construire un plan local pour la réplique locale
+Dans une requête avec des répliques parallèles, l&#39;initiateur exécute sa propre part de la lecture à l&#39;aide d&#39;un plan de requête construit localement, au lieu de s&#39;envoyer une requête à lui-même via le réseau, ce qui évite le surcoût de l&#39;aller-retour réseau. Utilisé uniquement si `parallel_replicas_prefer_local_replica` est activé.
+
+La décision automatique d&#39;utiliser ou non les répliques parallèles (voir `automatic_parallel_replicas_mode`) n&#39;est prise que si ce paramètre est activé.
 
 ## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 

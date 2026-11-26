@@ -443,7 +443,7 @@ nullIf(x, y)
 
 **戻り値**
 
-2 つの引数が等しい場合は `NULL` を返し、それ以外の場合は 1 つ目の引数を返します。[`NULL`](/ja/reference/syntax#null) または [`Nullable(x)`](/ja/reference/data-types/nullable)
+2 つの引数が等しい場合は `NULL` を返し、それ以外の場合は 1 つ目の引数を返します。内部で `NULL` を格納する `Variant` および `Dynamic` の場合、結果の型は入力型のまま変わりません。[`NULL`](/ja/reference/syntax#null) または [`Nullable(x)`](/ja/reference/data-types/nullable) または [`Variant`](/ja/reference/data-types/variant) または [`Dynamic`](/ja/reference/data-types/dynamic)
 
 **例**
 

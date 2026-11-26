@@ -32,6 +32,10 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 仍通过页缓存读取。
 如果文件系统不支持 direct I/O，则通过页缓存读取文件。
 
+如果直接读取比通过页缓存读取更慢，请禁用此设置。
+即使数据已被缓存，直接读取也始终会访问存储设备。
+例如，在 Amazon EBS 卷上，检查一个可完全放入页缓存的表，速度可能会慢上数倍。
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

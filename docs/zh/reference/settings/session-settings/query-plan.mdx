@@ -374,7 +374,9 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "允许在查询计划中合并过滤器"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "允许在查询计划中合并过滤器。这是正确支持 analyzer 的过滤器下推所必需的。"}]}]} />
 
-允许在查询计划中合并过滤器。
+允许将查询计划中连续的多个过滤步骤合并为一个。为保留合并后条件的短路求值，针对 `AND` 事件链的过滤器会被拆分为多个连续的过滤器执行，每个条件对应一个过滤器。
+
+要使过滤器下推在 analyzer 下正常工作，必须启用此设置。仅当 `query_plan_enable_optimizations` 已启用时，合并才会生效。
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -469,9 +471,11 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "新增设置：使用查询计划进行惰性物化优化"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "新增设置：使用查询计划进行延迟物化优化"}]}]} />
 
-使用查询计划进行惰性物化优化。
+为 `ORDER BY ... LIMIT n` 查询启用延迟物化优化：排序和过滤用不到的列，只针对 `LIMIT` 之后剩余的 `n` 行读取，而不是针对所有已读取的行。这样可以减少在宽表上执行 top-N 查询时读取的数据量。
+
+如果 `n` 大于 `query_plan_max_limit_for_lazy_materialization`，或使用了 `LIMIT ... WITH TIES`，则不会应用该优化。
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -617,6 +621,14 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 * 0 - 禁用
 * 1 - 启用
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "新增设置：移除另一侧未被读取、且保留侧每一行恰好输出一次的 `LEFT` 或 `RIGHT` `JOIN`。"}]}]} />
+
+如果 `LEFT` 或 `RIGHT` `JOIN` 另一侧的列均未被读取，且保留侧的每一行恰好输出一次，则移除该 `JOIN`。符合条件的连接包括：`ANY` 连接，以及另一侧按连接键唯一的连接，例如在连接键上使用 `GROUP BY` 或 `DISTINCT` 的子查询，或者没有分区键、且其 `UNIQUE KEY` 被连接键覆盖的表。此时将完全不读取另一侧。
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

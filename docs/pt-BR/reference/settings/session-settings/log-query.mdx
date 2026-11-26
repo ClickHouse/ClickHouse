@@ -40,6 +40,20 @@ Veja também:
 
 * [`system.query_log`](/pt-BR/reference/system-tables/query_log)
 * [`EXPLAIN PLAN`](/pt-BR/reference/statements/explain#explain-plan)
+* [`log_query_plans_time`](/pt-BR/reference/settings/session-settings/log-query#log_query_plans_time)
+* [`log_query_plans_join_matches`](/pt-BR/reference/settings/session-settings/log-query#log_query_plans_join_matches)
+
+## log_query_plans_join_matches {#log_query_plans_join_matches}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nova configuração para coletar as métricas exatas de linhas correspondentes das junções no plano de consulta gravado em `system.query_log`."}]}]} />
+
+Quando [`log_query_plans`](/pt-BR/reference/settings/session-settings/log-query#log_query_plans) captura uma consulta, faz com que as junções dessa consulta realizem o controle adicional necessário para as métricas de linhas correspondentes nos casos em que elas não podem ser derivadas do que a junção já produz, assim como a configuração `matches` de [`EXPLAIN ANALYZE`](/pt-BR/reference/statements/explain#explain-analyze-join-steps). Quando as métricas podem ser derivadas, elas são armazenadas mesmo sem esta configuração.
+
+Não tem efeito, a menos que `log_query_plans` esteja habilitado e a consulta seja capturada.
 
 ## log_query_plans_max_size {#log_query_plans_max_size}
 
@@ -78,6 +92,20 @@ Valores possíveis:
 * 0 — Nenhum plano de consulta é capturado.
 * Número de ponto flutuante positivo no intervalo [0..1]. Por exemplo, se o valor da configuração for `0.1`, os planos de cerca de uma em cada dez consultas serão capturados.
 * 1 — O plano de cada consulta é capturado.
+
+## log_query_plans_time {#log_query_plans_time}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nova configuração para coletar o tempo decorrido e os níveis de concorrência por etapa do plano de consulta gravado em `system.query_log`."}]}]} />
+
+Quando [`log_query_plans`](/pt-BR/reference/settings/session-settings/log-query#log_query_plans) captura uma consulta, também coleta os intervalos de trabalho de seus processadores, assim como a configuração `time` de [`EXPLAIN ANALYZE`](/pt-BR/reference/statements/explain#explain-analyze-concurrency). O plano armazenado em `system.query_log.query_plan` passa então a ter grupos `Time` e `Concurrency` em suas etapas, com o tempo decorrido e o nível de concorrência de cada etapa e de seu branch, além de um `ExecutionTimeBreakdown` na raiz, que divide o tempo de execução entre o tempo gasto nas etapas do plano, o tempo gasto fora delas e o tempo em que nenhuma thread estava executando nada.
+
+A coleta desses dados consome memória e CPU proporcionalmente ao número de tarefas de processador executadas pela consulta, portanto o custo cresce com a extensão da consulta, e o processamento desses dados após o término da consulta aumenta sua duração.
+
+Não tem efeito, a menos que `log_query_plans` esteja habilitado e a consulta seja capturada.
 
 ## log_query_settings {#log_query_settings}
 

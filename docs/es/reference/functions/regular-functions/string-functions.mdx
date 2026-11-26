@@ -2066,19 +2066,25 @@ münchen
 
 Introducido en: v26.3.0
 
-La función se utiliza para realizar una ordenación natural.
+Devuelve una clave para la ordenación natural: las cadenas ordenadas por sus claves quedan en orden natural, en el que una secuencia de dígitos se compara como un número, de modo que `a2` va antes que `a10`.
+
+El argumento opcional `mode` determina cómo se comparan los caracteres que no son dígitos:
+
+* `0` (predeterminado): los caracteres se comparan uno a uno con los caracteres o el número situados en la misma posición de la otra cadena. Así, `host-1` va antes que `host2`, porque `-` se compara con el número `2`.
+* `1`: una secuencia de caracteres que no son dígitos se compara en su conjunto con la secuencia situada en la misma posición de la otra cadena, y un número solo se compara si las secuencias que lo preceden son iguales. Así, `host2` va antes que `host-1`, porque `host` se compara con `host-`. Este es el orden que usa la función `sort_by_label` de PromQL.
 
 **Sintaxis**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
 **Alias**: `NATURAL_SORT_KEY`
 
 **Argumentos**
 
-* `s` — Una cadena para convertirla en una clave de ordenación natural. [`String`](/es/reference/data-types/string)
+* `s` — Cadena que se convertirá en una clave de ordenación natural. [`String`](/es/reference/data-types/string)
+* `mode` — Opcional. Modo de comparación de los caracteres que no son dígitos: `0` (predeterminado) o `1`. [`const UInt*`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
 
@@ -2100,6 +2106,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**Los dos modos**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}

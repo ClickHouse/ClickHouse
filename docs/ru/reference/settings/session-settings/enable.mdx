@@ -225,7 +225,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_funnel_functions`."}]}]} />
 
-Включает функции для воронкового анализа.
+Включает экспериментальную агрегатную функцию `sequenceNextNode`, которая используется для воронкового анализа. Если настройка отключена, при использовании `sequenceNextNode` генерируется исключение.
 
 ## enable_gdeflate_codec {#enable_gdeflate_codec}
 
@@ -470,7 +470,9 @@ _time:1h error | stats by (host) count()
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Включает стратегию слияния результатов агрегации с ограничением по памяти.
+Включает стратегию слияния частичных результатов агрегации с ограничением по памяти в распределённых запросах и запросах с параллельными репликами.
+
+Если агрегация на удалённых серверах выполняется в порядке ключей `GROUP BY` (см. `optimize_aggregation_in_order`), удалённые серверы отправляют частичные результаты, отсортированные по этим ключам, а initiator выполняет их слияние по порядку и поэтому в каждый момент времени хранит в памяти лишь небольшую часть состояния агрегации.
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 

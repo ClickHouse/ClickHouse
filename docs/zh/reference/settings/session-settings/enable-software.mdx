@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## enable_software_prefetch_in_aggregation
+## enable_software_prefetch_in_aggregation {#enable_software_prefetch_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-启用聚合中的软件预取
+在 `GROUP BY` 期间启用对哈希表单元的软件预取。当聚合哈希表无法放入 CPU 缓存时，预取可以掩盖内存访问延迟，因此仅在哈希表大小超过 L2 缓存后才会启用。
 
-## enable_software_prefetch_in_join
+## enable_software_prefetch_in_join {#enable_software_prefetch_in_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -2064,29 +2064,35 @@ münchen
 
 ## naturalSortKey {#naturalSortKey}
 
-Introduit dans : v26.3.0
+Introduit dans : v26.3.0
 
-Cette fonction permet d’effectuer un tri naturel.
+Renvoie une clé de tri naturel : les chaînes de caractères triées selon leurs clés suivent l&#39;ordre naturel, dans lequel une séquence de chiffres est comparée comme un nombre, de sorte que `a2` précède `a10`.
+
+L&#39;argument facultatif `mode` détermine la manière dont les caractères autres que des chiffres sont comparés :
+
+* `0` (par défaut) : les caractères sont comparés un à un avec les caractères ou le nombre situés à la même position dans l&#39;autre chaîne. Ainsi, `host-1` précède `host2`, car `-` est comparé au nombre `2`.
+* `1` : une séquence de caractères non numériques est comparée dans son ensemble avec la séquence située à la même position dans l&#39;autre chaîne, et un nombre n&#39;est comparé que si les séquences qui le précèdent sont égales. Ainsi, `host2` précède `host-1`, car `host` est comparé à `host-`. C&#39;est l&#39;ordre utilisé par la fonction PromQL `sort_by_label`.
 
 **Syntaxe**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
-**Alias** : `NATURAL_SORT_KEY`
+**alias** : `NATURAL_SORT_KEY`
 
 **Arguments**
 
-* `s` — Une chaîne à convertir en clé de tri naturel. [`String`](/fr/reference/data-types/string)
+* `s` — Chaîne à convertir en clé de tri naturel. [`String`](/fr/reference/data-types/string)
+* `mode` — Facultatif. Mode de comparaison des caractères non numériques : `0` (par défaut) ou `1`. [`const UInt*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
-Renvoie la chaîne de clé de tri naturel obtenue à partir de `s`. [`String`](/fr/reference/data-types/string)
+Renvoie une chaîne représentant la clé de tri naturel de `s`. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
-**Exemple d&#39;utilisation**
+**Exemple d’utilisation**
 
 ```sql title=Query
 CREATE TABLE t (s String) ENGINE = Memory;
@@ -2100,6 +2106,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**Les deux modes**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}

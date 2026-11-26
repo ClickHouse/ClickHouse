@@ -138,7 +138,9 @@ Valores possíveis:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "O valor foi unificado com `filesystem_prefetch_min_bytes_for_single_read_task`"}]}]} />
 
-Número mínimo de bytes lidos por tarefa.
+A quantidade mínima de dados comprimidos, em bytes, que uma única tarefa de leitura lê de uma parte de uma tabela `MergeTree` armazenada em um disco remoto (por exemplo, S3). Tarefas maiores resultam em menos requisições ao armazenamento, enquanto tarefas menores permitem distribuir o trabalho de forma mais uniforme entre as threads.
+
+O tamanho da tarefa não é aumentado além do ponto em que cada thread de leitura recebe pelo menos duas tarefas. A configuração também é usada para estimar o número de threads de leitura ao decidir se réplicas paralelas devem ser usadas automaticamente.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 

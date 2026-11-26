@@ -219,13 +219,13 @@ Lorsqu’elle est activée, les branches inaccessibles admissibles des sous-requ
 
 <ExperimentalBadge />
 
-**Aliases** : `allow_experimental_funnel_functions`
+**alias** : `allow_experimental_funnel_functions`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_funnel_functions`."}]}]} />
 
-Active les fonctions d&#39;analyse de funnel.
+Active la fonction d’agrégation expérimentale `sequenceNextNode`, utilisée pour l’analyse de funnel. Si ce paramètre est désactivé, toute utilisation de `sequenceNextNode` lève une exception.
 
 ## enable_gdeflate_codec {#enable_gdeflate_codec}
 
@@ -469,7 +469,9 @@ Permet d&#39;utiliser le table engine `MaterializedPostgreSQL`.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Active la stratégie de fusion des résultats d’agrégation limitée par la mémoire.
+Active la stratégie de fusion des résultats partiels d’agrégation limitée par la mémoire dans les requêtes distribuées et les requêtes utilisant des répliques parallèles.
+
+Si l’agrégation sur les serveurs distants est effectuée dans l’ordre des clés `GROUP BY` (voir `optimize_aggregation_in_order`), les serveurs distants envoient les résultats partiels triés selon ces clés, et l’initiateur les fusionne dans l’ordre : il ne conserve ainsi en mémoire qu’une petite partie de l’état d’agrégation à la fois.
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 

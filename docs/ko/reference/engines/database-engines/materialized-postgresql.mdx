@@ -232,7 +232,7 @@ PostgreSQL `date` 및 `timestamp`/`timestamptz` 타입을, PostgreSQL 타입보�
 
 ## TLS/SSL {#tls-ssl}
 
-TLS/SSL 매개변수는 `libpq`로 전달되며, [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 통해 제공하거나 엔진의 후행 키-값 인수로 지정할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`; 설정하지 않으면 `libpq`의 기본값인 `prefer`가 적용됨)와 인증서 및 키는 두 가지 형식 중 하나로 제공할 수 있습니다. `sslrootcert`(CA 인증서), `sslcert`(클라이언트 인증서), `sslkey`(클라이언트 개인 키)는 서버 로컬 파일의 경로이며, 서버 구성 파일에 정의된 명명된 컬렉션에서만 사용할 수 있습니다. 반면 `sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`에는 해당 파일의 리터럴 내용을 지정할 수 있으며, SQL에서 지정할 수 있고 비밀번호처럼 로그와 `SHOW` 쿼리에서 마스킹됩니다.
+TLS/SSL 매개변수는 `libpq`로 전달되며, [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 통해 제공하거나 엔진의 후행 키(Key)-값 인수로 지정할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`; 설정하지 않으면 `libpq`의 기본값인 `prefer`가 적용됨)와 인증서 및 키(Key)는 두 가지 형식 중 하나로 제공할 수 있습니다. `sslrootcert`(CA 인증서), `sslcert`(클라이언트 인증서), `sslkey`(클라이언트 개인 키(Key))는 서버 로컬 파일의 경로이며, 서버 구성 파일에 정의된 명명된 컬렉션에서만 사용할 수 있습니다. 반면 `sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`에는 해당 파일의 리터럴 내용을 지정할 수 있으며, SQL에서 지정할 수 있고 비밀번호처럼 로그와 `SHOW` 쿼리에서 마스킹됩니다. 클라이언트 인증서(`sslcert` 또는 `sslcert_pem`)와 클라이언트 키(Key)(`sslkey` 또는 `sslkey_pem`)가 둘 다 구성되어 있지 않으면 ClickHouse는 `sslcertmode=disable`을 전송하므로, `libpq`는 서비스 계정의 실행 환경에서 자동으로 제공되는 기본 인증서나 키(Key)(`~/.postgresql/postgresql.{crt,key}`)로 인증하지 않습니다.
 
 TLS를 강제하는 PostgreSQL 서버에 연결하고 서버 인증서를 검증하는 예시:
 

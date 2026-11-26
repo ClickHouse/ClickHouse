@@ -50,16 +50,23 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يُحدَّد عدد الحاويات لتسلسلات `map_with_buckets` و`advanced` و`advanced_chunked` من خلال الإعدادات
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
+## object_shared_data_serialization_version_for_small_parts {#object_shared_data_serialization_version_for_small_parts}
+
+**الأسماء البديلة**: `object_shared_data_serialization_version_for_zero_level_parts`
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "إضافة إعداد للتحكم في إصدارات التسلسل لـ JSON لأجزاء المستوى الصفري"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "تفعيل إصدار التسلسل للبيانات المشتركة map_with_buckets لأجزاء المستوى الصفري افتراضيًا"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "map_with_buckets"},{"label": "أُعيدت تسميته من object_shared_data_serialization_version_for_zero_level_parts، ويُطبَّق على الأجزاء المُدرجة والأجزاء التي يقل حجمها عن الحد الأدنى"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "map"},{"label": "إضافة إعداد للتحكم في إصدارات تسلسل JSON لأجزاء المستوى صفر"}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "تمكين إصدار تسلسل البيانات المشتركة map_with_buckets افتراضيًا لأجزاء المستوى صفر"}]}]} />
 
-يتيح هذا الإعداد تحديد إصدار تسلسل مختلف للبيانات المشتركة
-داخل نوع JSON لأجزاء المستوى الصفري التي يتم إنشاؤها أثناء عمليات الإدراج.
-يُنصح بعدم استخدام تسلسل البيانات المشتركة `advanced` أو `advanced_chunked` لأجزاء المستوى الصفري لأنه قد يزيد
-وقت الإدراج بشكل ملحوظ.
+إصدار تسلسل البيانات المشتركة داخل نوع JSON في الأجزاء الصغيرة.
+يُعدّ الجزء صغيرًا إذا أُنشئ عبر عملية إدراج وكان الإعداد
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/ar/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+مفعّلًا، أو إذا كان حجمه غير المضغوط أقل من قيمة
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version).
+أما الأجزاء الأخرى فتستخدم الإصدار الرئيسي المحدد في [object&#95;shared&#95;data&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version).
+
+نظرًا إلى أن الأجزاء الصغيرة تُدمج مجددًا بعد وقت قصير، يُوصى بعدم استخدام تسلسل البيانات المشتركة `advanced` أو `advanced_chunked`
+معها، لأنه يُبطئ عمليات الإدراج والدمج بشكل ملحوظ.
 
 ## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
 

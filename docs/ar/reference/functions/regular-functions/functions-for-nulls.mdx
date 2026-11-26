@@ -430,20 +430,20 @@ SELECT x FROM t_null WHERE isZeroOrNull(y);
 
 تُرجِع `NULL` إذا تساوى الوسيطان.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 nullIf(x, y)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `x` — القيمة الأولى. [`Any`](/ar/reference/data-types/index)
 * `y` — القيمة الثانية. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المُعادة**
 
-يعيد `NULL` إذا كان المعاملان متساويين، وإلا فيعيد المعامل الأول. [`NULL`](/ar/reference/syntax#null) أو [`Nullable(x)`](/ar/reference/data-types/nullable)
+يعيد `NULL` إذا كانت الوسيطتان متساويتين، وإلا فيعيد الوسيطة الأولى. أما بالنسبة إلى `Variant` و`Dynamic`، اللذين يخزّنان `NULL` داخليًا، فتحتفظ النتيجة بنوع الإدخال. [`NULL`](/ar/reference/syntax#null) أو [`Nullable(x)`](/ar/reference/data-types/nullable) أو [`Variant`](/ar/reference/data-types/variant) أو [`Dynamic`](/ar/reference/data-types/dynamic)
 
 **أمثلة**
 

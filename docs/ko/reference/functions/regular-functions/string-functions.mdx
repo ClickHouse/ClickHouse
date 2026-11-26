@@ -2065,23 +2065,29 @@ münchen
 
 도입 버전: v26.3.0
 
-이 함수는 자연 정렬에 사용되는 함수입니다.
+자연 정렬(natural sorting)용 키를 반환합니다. 이 키를 기준으로 정렬한 문자열은 자연 순서를 따릅니다. 자연 순서에서는 연속된 숫자를 하나의 수로 비교하므로 `a2`가 `a10`보다 앞에 옵니다.
+
+선택 사항인 인수 `mode`는 숫자가 아닌 문자의 비교 방식을 지정합니다.
+
+* `0` (기본값): 각 문자를 다른 문자열의 같은 위치에 있는 문자 또는 수와 하나씩 비교합니다. 예를 들어 `-`가 수 `2`와 비교되므로 `host-1`이 `host2`보다 앞에 옵니다.
+* `1`: 숫자가 아닌 연속된 문자들을 하나의 단위로 묶어 다른 문자열의 같은 위치에 있는 시퀀스와 비교하며, 수는 그 앞의 시퀀스가 모두 같을 때만 비교합니다. 예를 들어 `host`가 `host-`와 비교되므로 `host2`가 `host-1`보다 앞에 옵니다. 이는 PromQL 함수 `sort_by_label`의 정렬 순서와 같습니다.
 
 **구문**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
 **별칭**: `NATURAL_SORT_KEY`
 
 **인수**
 
-* `s` — 자연 정렬 키 문자열로 변환할 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `s` — 자연 정렬 키로 변환할 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `mode` — 선택 사항. 숫자가 아닌 문자의 비교 방식으로, `0`(기본값) 또는 `1`을 지정합니다. [`const UInt*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-`s`에서 생성된 자연 정렬 키 문자열을 반환합니다. [`String`](/ko/reference/data-types/string)
+`s`의 자연 정렬 키 문자열을 반환합니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -2099,6 +2105,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**두 가지 모드**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}

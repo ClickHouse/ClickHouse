@@ -14,7 +14,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 تتوفّر هذه الإعدادات في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
 <div id="min_bytes_for_compact_part">
-  ## min_bytes_for_compact_part
+  ## min_bytes_for_compact_part {#min_bytes_for_compact_part}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 إعداد متقادم، ولا يؤدي أي وظيفة.
 
 <div id="min_bytes_for_full_part_storage">
-  ## min_bytes_for_full_part_storage
+  ## min_bytes_for_full_part_storage {#min_bytes_for_full_part_storage}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -30,8 +30,20 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 الحد الأدنى للحجم غير المضغوط بالبايتات
 لاستخدام نوع التخزين الكامل لجزء البيانات بدلًا من packed
 
+## min_bytes_for_object_shared_data_main_serialization_version {#min_bytes_for_object_shared_data_main_serialization_version}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأدنى للحجم غير المضغوط لجزء البيانات، بالبايتات، الذي تُكتب عنده البيانات المشتركة داخل نوع JSON باستخدام الإصدار الرئيسي المحدد في
+[object&#95;shared&#95;data&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version).
+أما أجزاء البيانات الأصغر حجمًا فتستخدم [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+في حالة الجزء المدمج، يُحتسب الحجم على أنه إجمالي حجم أجزاء البيانات المدمجة، وفي حالة الجزء المعدَّل يُحتسب على أنه حجم جزء بيانات المصدر.
+تؤدي القيمة `0` إلى تعطيل فحص الحجم.
+
 <div id="min_bytes_for_wide_part">
-  ## min_bytes_for_wide_part
+  ## min_bytes_for_wide_part {#min_bytes_for_wide_part}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
@@ -40,7 +52,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يمكنك تعيين أحد هذين الإعدادين أو كليهما أو عدم تعيين أيٍّ منهما.
 
 <div id="min_bytes_to_prewarm_caches">
-  ## min_bytes_to_prewarm_caches
+  ## min_bytes_to_prewarm_caches {#min_bytes_to_prewarm_caches}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -51,7 +63,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 للأجزاء الجديدة
 
 <div id="min_bytes_to_rebalance_partition_over_jbod">
-  ## min_bytes_to_rebalance_partition_over_jbod
+  ## min_bytes_to_rebalance_partition_over_jbod {#min_bytes_to_rebalance_partition_over_jbod}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

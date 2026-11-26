@@ -1674,6 +1674,10 @@ Evento do buffer de leitura do Distributed Cache. Número de retentativas de sol
 
 Evento de buffer de leitura do Distributed Cache. Número de vezes em que um erro de leitura com retentativa não foi concluído com sucesso dentro do limite de retentativas da solicitação de leitura
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Evento de cliente do Distributed Cache. Número de buffers de leitura de discos de armazenamento de objetos que solicitaram o distributed cache, mas foram criados sem ele porque o registro do distributed cache não estava pronto (por exemplo, nenhum servidor de cache havia sido registrado)
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 Bytes que passaram pelo throttler &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39;.
@@ -2137,6 +2141,18 @@ Tempo total gasto durante a análise distribuída de índice
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 Número de partes ausentes durante a análise distribuída de índice que serão resolvidas localmente
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+Número de partes analisadas por um worker sem estado durante a análise de índice
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+Número de partes enviadas aos workers sem estado para análise de índice (no coordenador)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+Número de tarefas enviadas aos workers sem estado para análise de índice (no coordenador)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3434,6 +3450,14 @@ Número de vezes que não foi possível criar um leitor de read-ahead do changel
 
 Número de vezes que uma requisição de atendimento por read-ahead do changelog do Keeper excedeu o tempo limite aguardando a tarefa de preenchimento e recorreu ao fallback de leitura direta do restante da cauda (tail)
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Número de entradas anexadas ao armazenamento de logs do Keeper
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Tempo gasto acrescentando entradas ao armazenamento de logs do Keeper, incluindo a espera pelo bloqueio do registro de alterações (a entrada é gravada e sincronizada via fsync pelo gravador do registro de alterações em segundo plano; consulte KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Bytes serializados das entradas anexadas à memtable confirmada do LSMT do Keeper
@@ -3710,6 +3734,10 @@ Número de solicitações do tipo set
 
 Número de solicitações para definir watches
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+Tempo gasto na aplicação de um snapshot do Keeper à máquina de estados do Keeper
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 Número de aplicações de snapshots
@@ -3733,6 +3761,10 @@ Tempo gasto no `fsync` dos arquivos de snapshot do Keeper
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 Número de erros de leitura remota no RemoteSnapshotLoader ao fornecer um snapshot a um seguidor
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Tempo gasto na gravação de um arquivo de snapshot do Keeper (serialização, compressão e sincronização)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4865,6 +4897,10 @@ Número de arquivos Parquet que uma leitura ignorou sem abri-los, porque as esta
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 Tempo total gasto na leitura e desserialização dos rodapés de arquivos Parquet (não obtidos do cache de metadados parquet).
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+Número de fragmentos de coluna Parquet cujo índice de coluna foi obtido do cache de metadados parquet em vez de ser lido do arquivo.
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 

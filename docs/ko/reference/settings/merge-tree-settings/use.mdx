@@ -13,26 +13,20 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="use_adaptive_write_buffer_for_dynamic_subcolumns">
-  ## use_adaptive_write_buffer_for_dynamic_subcolumns
-</div>
+## use_adaptive_write_buffer_for_dynamic_subcolumns {#use_adaptive_write_buffer_for_dynamic_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 동적 서브컬럼을 쓸 때 적응형 쓰기 버퍼를 사용하여
 메모리 사용량을 줄일 수 있습니다
 
-<div id="use_async_block_ids_cache">
-  ## use_async_block_ids_cache
-</div>
+## use_async_block_ids_cache {#use_async_block_ids_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 더 이상 사용되지 않는 설정으로, 아무런 동작도 하지 않습니다.
 
-<div id="use_compact_variant_discriminators_serialization">
-  ## use_compact_variant_discriminators_serialization
-</div>
+## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -40,9 +34,7 @@ Variant 데이터 타입에서 판별자의 바이너리 직렬화에 compact �
 이 모드를 사용하면 대부분이 하나의 variant이거나 NULL 값이 많은 경우,
 파트에서 판별자를 저장하는 데 필요한 메모리를 크게 줄일 수 있습니다.
 
-<div id="use_const_adaptive_granularity">
-  ## use_const_adaptive_granularity
-</div>
+## use_const_adaptive_granularity {#use_const_adaptive_granularity}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -65,17 +57,25 @@ block에서 그래뉼당 행 수는 `index_granularity_bytes`를 해당 block의
 기존 파트에 적용하려면
 [ALTER TABLE ... REWRITE PARTS](/ko/reference/statements/alter/partition#rewrite-parts)를 사용하십시오. `Compact` 파트는 항상 적응형 세분화 수준을 사용합니다.
 
-<div id="use_metadata_cache">
-  ## use_metadata_cache
-</div>
+## use_metadata_cache {#use_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 더 이상 사용되지 않는 설정이며, 아무 작업도 수행하지 않습니다.
 
-<div id="use_primary_key_cache">
-  ## use_primary_key_cache
-</div>
+## use_object_shared_data_serialization_version_for_small_parts_on_insert {#use_object_shared_data_serialization_version_for_small_parts_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "새로운 설정"}]}]} />
+
+삽입 속도를 빠르게 유지하기 위해, 삽입으로 생성된 파트(프로젝션 포함)의 JSON 타입 내부 공유 데이터를 크기와 관계없이
+[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts)
+로 기록합니다. 비활성화하면 삽입된 파트의 버전도 병합된 파트와 마찬가지로
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ko/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version)
+에 따라 결정됩니다.
+
+## use_primary_key_cache {#use_primary_key_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

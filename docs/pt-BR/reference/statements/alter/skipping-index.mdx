@@ -11,29 +11,21 @@ doc_type: 'reference'
 
 As operações a seguir estão disponíveis:
 
-<div id="add-index">
-  ## ADD INDEX
-</div>
+## ADD INDEX {#add-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adiciona a descrição do índice aos metadados das tabelas.
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adiciona a descrição do índice aos metadados das tabelas. [`CREATE INDEX`](/pt-BR/reference/statements/create/skipping-index) adiciona um índice por meio de uma instrução independente.
 
-<div id="drop-index">
-  ## DROP INDEX
-</div>
+## DROP INDEX {#drop-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Remove a descrição do índice dos metadados da tabela e exclui os arquivos de índice do disco. Implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Remove a descrição do índice dos metadados da tabela e exclui os arquivos de índice do disco. Implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations). [`DROP INDEX ... ON`](/pt-BR/reference/statements/drop#drop-index) é a forma independente.
 
-<div id="materialize-index">
-  ## MATERIALIZE INDEX
-</div>
+## MATERIALIZE INDEX {#materialize-index}
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Reconstrói o índice secundário `name` para a `partition_name` especificada. É implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations). Se a cláusula `IN PARTITION` for omitida, o índice será reconstruído para todos os dados da tabela.
 
 [`MATERIALIZE COLUMN`](/pt-BR/reference/statements/alter/column#materialize-column) não substitui integralmente `MATERIALIZE INDEX`. Em partes que são simultaneamente **wide + full-storage**, ele pode regravar valores de colunas sem atualizar arquivos **independentes** de índices de salto (ou índices de texto). Os índices de salto comuns armazenados em `skp_idx.packed` são uma exceção: ainda podem ser recalculados à força em partes wide + full-storage (pequenos subfluxos de índices de salto abaixo do valor padrão de [`packed_skip_index_max_bytes`](/pt-BR/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes); índices de texto completo não são empacotados dessa forma). Em **qualquer parte que não seja wide + full-storage** (incluindo **compact + full**, **compact + packed** e **wide + packed**), uma regravação completa da parte pode recalcular índices já existentes — partes pequenas costumam ser compact, embora ainda usem armazenamento de parte full por padrão. Use `MATERIALIZE INDEX` como o caminho **determinístico / imediato** quando um índice for adicionado a uma tabela que já contém dados (`ADD INDEX` apenas de metadados) e após regravações de colunas em partes wide+full-storage, quando for necessário reconstruir imediatamente os arquivos de índice independentes. Índices recém-adicionados (incluindo índices de texto) em partes históricas também podem ser materializados por uma mesclagem posterior quando [`materialize_skip_indexes_on_merge`](/pt-BR/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) estiver habilitado e o índice não for excluído por [`exclude_materialize_skip_indexes_on_merge`](/pt-BR/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge); caso contrário, permanecerão não materializados até a execução explícita de `MATERIALIZE INDEX`.
 
-<div id="clear-index">
-  ## CLEAR INDEX
-</div>
+## CLEAR INDEX {#clear-index}
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Exclui do disco os arquivos de índice secundário sem remover a descrição. Implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
 
@@ -44,9 +36,7 @@ Além disso, eles são replicados, sincronizando os metadados dos índices via C
   A manipulação de índices é compatível apenas com tabelas com o motor [`*MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo variantes [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
 </Note>
 
-<div id="concurrent-alter-and-multi-clause-materialize-index">
-  ## `ALTER` simultâneo e `MATERIALIZE INDEX` com várias cláusulas
-</div>
+## `ALTER` simultâneo e `MATERIALIZE INDEX` com várias cláusulas {#concurrent-alter-and-multi-clause-materialize-index}
 
 Em tabelas replicadas, `ALTER`s separados executados rapidamente em uma mesma tabela podem gerar `CANNOT_ASSIGN_ALTER` (código 517) quando `ALTER`s anteriores ainda não tiverem sido aplicados na réplica (os metadados ainda estarão desatualizados — isso pode continuar ocorrendo mesmo depois que uma alteração anterior já tiver sido atribuída). Essa é uma condição geral de `ALTER` simultâneo de metadados / mutação (não exclusiva de mutações); serialize as operações/tente novamente, aguarde as alterações anteriores que geram mutações por meio de [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync) / `is_done` em [`system.mutations`](/pt-BR/reference/system-tables/mutations) ou combine operações de metadados independentes em um único `ALTER` com várias cláusulas quando a gramática permitir. Consulte [Sincronicidade de consultas ALTER](/pt-BR/reference/statements/alter/index#synchronicity-of-alter-queries) e [Atribuição simultânea de ALTER](/pt-BR/reference/statements/alter/index#concurrent-alter-assignment-on-one-table).
 

@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "이 설정은 더 이상 실험적 기능이 아닙니다. 기본값은 변경되지 않았습니다."}]}]} />
 
-grace hash join의 초기 버킷 수
+`grace_hash` 조인 알고리즘이 처음 시작할 때 사용하는 버킷 수입니다. 두 테이블의 행은 조인 키의 해시 값에 따라 각 버킷에 분산됩니다. 메모리에는 하나의 버킷만 유지되며, 나머지 버킷은 디스크에 기록된 후 나중에 조인됩니다. 메모리에 있는 버킷이 메모리 제한을 초과하면 버킷 수가 `grace_hash_join_max_buckets`까지 두 배씩 늘어납니다.
+
+이 값은 2의 거듭제곱으로 올림됩니다. 오른쪽 테이블(right table)이 크다는 것을 미리 알고 있다면 값을 크게 설정하여 행 재분배를 피할 수 있지만, 그만큼 임시 파일이 더 많이 생성됩니다.
 
 ## grace_hash_join_max_buckets {#grace_hash_join_max_buckets}
 

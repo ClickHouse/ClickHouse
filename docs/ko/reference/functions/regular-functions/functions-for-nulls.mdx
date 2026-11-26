@@ -443,7 +443,7 @@ nullIf(x, y)
 
 **반환 값**
 
-두 인수가 같으면 `NULL`을 반환하고, 그렇지 않으면 첫 번째 인수를 반환합니다. [`NULL`](/ko/reference/syntax#null) 또는 [`Nullable(x)`](/ko/reference/data-types/nullable)
+두 인수가 같으면 `NULL`을 반환하고, 그렇지 않으면 첫 번째 인수를 반환합니다. 내부적으로 `NULL`을 저장하는 `Variant` 및 `Dynamic`은 결과가 입력 타입을 그대로 유지합니다. [`NULL`](/ko/reference/syntax#null) 또는 [`Nullable(x)`](/ko/reference/data-types/nullable) 또는 [`Variant`](/ko/reference/data-types/variant) 또는 [`Dynamic`](/ko/reference/data-types/dynamic)
 
 **예시**
 

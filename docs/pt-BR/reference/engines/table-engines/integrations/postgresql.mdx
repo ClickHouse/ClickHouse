@@ -82,6 +82,8 @@ Os parâmetros TLS/SSL são encaminhados ao `libpq` e podem ser definidos como c
 * `sslrootcert` (certificado da CA ou o valor especial `system`), `sslcert` (certificado do cliente) e `sslkey` (chave privada do cliente) são caminhos para arquivos locais do servidor. Eles só podem ser especificados em uma coleção nomeada definida no arquivo de configuração do servidor e não podem ser substituídos em uma consulta: o servidor abre os arquivos com seus próprios privilégios.
 * `sslrootcert_pem`, `sslcert_pem` e `sslkey_pem` aceitam o conteúdo literal do arquivo correspondente em vez de um caminho. Podem ser especificados em qualquer lugar — em uma consulta, em uma coleção nomeada criada com SQL ou como substituição de uma coleção nomeada — e são mascarados nos logs e em consultas `SHOW`, como uma senha.
 
+A menos que tanto um certificado do cliente (`sslcert` ou `sslcert_pem`) quanto uma chave do cliente (`sslkey` ou `sslkey_pem`) estejam configurados, o ClickHouse envia `sslcertmode=disable`, para que o `libpq` não faça a autenticação com o certificado ou a chave padrão do ambiente da service account (`~/.postgresql/postgresql.{crt,key}`): uma conexão cujo endpoint e usuário são definidos em SQL não deve reutilizar a credencial padrão da service account.
+
 Por exemplo, para exigir uma conexão criptografada e verificar o certificado do servidor:
 
 ```xml

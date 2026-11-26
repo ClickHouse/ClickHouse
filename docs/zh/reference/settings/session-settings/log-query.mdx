@@ -40,6 +40,20 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 * [`system.query_log`](/zh/reference/system-tables/query_log)
 * [`EXPLAIN PLAN`](/zh/reference/statements/explain#explain-plan)
+* [`log_query_plans_time`](/zh/reference/settings/session-settings/log-query#log_query_plans_time)
+* [`log_query_plans_join_matches`](/zh/reference/settings/session-settings/log-query#log_query_plans_join_matches)
+
+## log_query_plans_join_matches {#log_query_plans_join_matches}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置，用于为写入 `system.query_log` 的查询计划收集连接的精确匹配行数指标。"}]}]} />
+
+当 [`log_query_plans`](/zh/reference/settings/session-settings/log-query#log_query_plans) 捕获某个查询时，如果匹配行数指标无法从连接本身的输出中推导得出，则让该查询中的连接执行额外的统计工作以收集这些指标，作用与 [`EXPLAIN ANALYZE`](/zh/reference/statements/explain#explain-analyze-join-steps) 的 `matches` 设置相同。对于可以推导得出的指标，即使不启用此设置也会存储。
+
+仅当启用了 `log_query_plans` 且该查询被捕获时，此设置才会生效。
 
 ## log_query_plans_max_size {#log_query_plans_max_size}
 
@@ -78,6 +92,20 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 — 不捕获任何查询计划。
 * 范围 [0..1] 内的正浮点数。例如，若设置值为 `0.1`，则大约每十个查询中会有一个捕获执行计划。
 * 1 — 捕获所有查询的执行计划。
+
+## log_query_plans_time {#log_query_plans_time}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置，用于为写入 `system.query_log` 的查询计划收集每个步骤的挂钟时间和并发级别。"}]}]} />
+
+当 [`log_query_plans`](/zh/reference/settings/session-settings/log-query#log_query_plans) 捕获某个查询时，还会收集其处理器的工作时间区间，作用与 [`EXPLAIN ANALYZE`](/zh/reference/statements/explain#explain-analyze-concurrency) 的 `time` 设置相同。这样，存储在 `system.query_log.query_plan` 中的执行计划会在各步骤上带有 `Time` 和 `Concurrency` 分组，记录每个步骤及其分支的挂钟时间和并发级别；并在根节点带有一个 `ExecutionTimeBreakdown`，将执行时间拆分为三部分：在计划各步骤中花费的时间、在步骤之外花费的时间，以及没有任何线程运行时的空闲时间。
+
+收集这些数据所消耗的内存和 CPU 与查询运行的处理器任务数量成正比，因此查询越长，开销越大；此外，查询结束后处理这些数据也会增加查询的耗时。
+
+仅当已启用 `log_query_plans` 且该查询被捕获时，此设置才会生效。
 
 <div id="log_query_settings">
   ## log_query_settings {#log_query_settings}

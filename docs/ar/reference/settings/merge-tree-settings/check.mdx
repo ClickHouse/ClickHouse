@@ -32,6 +32,10 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 فتظل تُقرأ عبر ذاكرة التخزين المؤقت للصفحات.
 وإذا كان نظام الملفات (filesystem) لا يدعم direct I/O، فتُقرأ الملفات عبر ذاكرة التخزين المؤقت للصفحات.
 
+عطّل هذا الإعداد في الحالات التي تكون فيها القراءة المباشرة أبطأ من القراءة عبر ذاكرة التخزين المؤقت للصفحات.
+إذ تتوجّه عمليات القراءة المباشرة دائمًا إلى جهاز التخزين، حتى لو كانت البيانات مخزّنة مؤقتًا بالفعل.
+فعلى سبيل المثال، قد يكون فحص جدول تستوعبه ذاكرة التخزين المؤقت للصفحات على وحدة تخزين Amazon EBS أبطأ بعدة مرات.
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

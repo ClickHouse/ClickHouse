@@ -1674,6 +1674,10 @@ Evento del búfer de lectura de Distributed Cache. Número de reintentos de la s
 
 Evento del búfer de lectura de Distributed Cache. Número de veces que un error de lectura reintentable no se resolvió dentro del límite de reintentos de la solicitud de lectura
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Evento del cliente de la caché distribuida. Número de búferes de lectura de discos de almacenamiento de objetos que solicitaron la Distributed Cache, pero se crearon sin ella porque el registro de la Distributed Cache no estaba listo (p. ej., no había ningún servidor de caché registrado)
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 Bytes que pasaron por el limitador de tasa &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39;.
@@ -2137,6 +2141,18 @@ Tiempo total empleado durante el análisis distribuido de índices
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 Número de partes faltantes durante el análisis distribuido de índices que se resolverán de forma local
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+Número de partes analizadas por un stateless worker durante el análisis de índices
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+Número de partes enviadas a los trabajadores sin estado para el análisis de índices (en el coordinador)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+Número de tareas enviadas a trabajadores sin estado para el análisis de índices (en el coordinador)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3434,6 +3450,14 @@ Número de veces que no se pudo crear un lector de lectura anticipada del change
 
 Número de veces que una request de servicio de lectura anticipada del changelog de Keeper superó el timeout mientras esperaba la tarea de relleno y recurrió a una lectura directa del tail restante
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Número de entradas añadidas al final del almacén de registros de Keeper
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Tiempo dedicado a añadir entradas al almacén de registros de Keeper, incluida la espera del bloqueo del registro de cambios (el escritor del registro de cambios en segundo plano escribe la entrada y la sincroniza con fsync; consulte KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Bytes serializados de las entries añadidas a la memtable committed del LSMT de Keeper
@@ -3710,6 +3734,10 @@ Número de solicitudes de tipo set
 
 Número de solicitudes para establecer watches
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+Tiempo empleado en aplicar una instantánea de Keeper a la máquina de estados de Keeper
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 Número de aplicaciones de instantáneas
@@ -3733,6 +3761,10 @@ Tiempo invertido en `fsync` de los archivos de instantánea de Keeper
 ### Errores del cargador remoto de instantáneas de Keeper {#keepersnapshotremoteloadererrors}
 
 Número de errores de lectura remota en `RemoteSnapshotLoader` al servir una instantánea a un follower
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Tiempo dedicado a la escritura de un archivo de instantánea de Keeper (serialización, compresión y sincronización)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4865,6 +4897,10 @@ Número de archivos Parquet que una lectura omitió sin abrirlos porque las esta
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
 Tiempo total empleado en leer y deserializar los pies de los archivos Parquet (que no se obtuvieron de la caché de metadatos de Parquet).
+
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+Número de fragmentos de columna de Parquet cuyo índice de columna se obtuvo de la caché de metadata de Parquet en lugar de leerse del archivo.
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
