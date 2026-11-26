@@ -1238,8 +1238,8 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet extra_columns_for_indices;
-        /// A column renamed by an earlier command of the batch is stored in the part under its old name.
-        UnorderedMapWithMemoryTracking<String, std::pair<String, size_t>> renamed_in_batch; /// name -> (stored name, its RENAME_COLUMN in `for_file_renames`)
+        /// Renamed earlier in the batch: new name -> (name stored in the part, index of its RENAME_COLUMN in `for_file_renames`).
+        UnorderedMapWithMemoryTracking<String, std::pair<String, size_t>> renamed_in_batch;
 
 
         for (const auto & command : commands)
