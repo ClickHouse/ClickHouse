@@ -8,6 +8,7 @@ UInt8
 
 0	0
 exists_limit_zero_aliased_filter	1	1
+exists_limit_zero_and	0	0
 exists_limit_zero_constant_argument	1	1
 exists_limit_zero_distributed	1	1
 exists_limit_zero_distributed_outer	1	1
@@ -17,7 +18,9 @@ exists_limit_zero_having	0	0
 exists_limit_zero_issue	0	0
 exists_limit_zero_issue_cross_join	0	0
 exists_limit_zero_join	0	0
+exists_limit_zero_limit_argument	1	1
 exists_limit_zero_no_limit_zero	1	1
+exists_limit_zero_or	0	0
 exists_limit_zero_own_limit_zero	1	1
 exists_limit_zero_parallel_replicas	1	1
 exists_limit_zero_parallel_replicas_allow_in	1	1

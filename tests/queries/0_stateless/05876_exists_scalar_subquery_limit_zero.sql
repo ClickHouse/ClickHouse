@@ -24,6 +24,12 @@ SETTINGS log_comment = 'exists_limit_zero_having';
 SELECT * FROM (SELECT c1, row_number() OVER () AS rn FROM t QUALIFY NOT exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1)))) LIMIT 0
 SETTINGS log_comment = 'exists_limit_zero_qualify';
 
+SELECT * FROM (WITH s AS (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1) SELECT k, c FROM s UNION ALL SELECT 0 AS k, 0 AS c FROM system.one WHERE dummy = 0 AND exists((SELECT 1 FROM s))) LIMIT 0
+SETTINGS log_comment = 'exists_limit_zero_and';
+
+SELECT * FROM (WITH s AS (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1) SELECT k, c FROM s UNION ALL SELECT 0 AS k, 0 AS c FROM system.one WHERE dummy = 1 OR exists((SELECT 1 FROM s))) LIMIT 0
+SETTINGS log_comment = 'exists_limit_zero_or';
+
 -- The EXISTS is executed during analysis in the cases below.
 
 SELECT count() FROM (WITH s AS (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1) SELECT k, c FROM s UNION ALL SELECT 0 AS k, 0 AS c WHERE NOT exists((SELECT 1 FROM s)))
@@ -40,6 +46,9 @@ SETTINGS log_comment = 'exists_limit_zero_constant_argument' FORMAT TSVWithNames
 
 SELECT * FROM (SELECT count() FROM t WHERE (exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1))) AS e) LIMIT e) LIMIT 0
 SETTINGS log_comment = 'exists_limit_zero_aliased_filter';
+
+SELECT * FROM (SELECT c1 FROM t LIMIT exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1)))) LIMIT 0
+SETTINGS log_comment = 'exists_limit_zero_limit_argument';
 
 WITH x -> toDecimal32(1, x) > 0 AS `not` SELECT * FROM (SELECT 1 AS a WHERE NOT exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1)))) LIMIT 0
 SETTINGS log_comment = 'exists_limit_zero_shadowed_not' FORMAT TSVWithNamesAndTypes;
