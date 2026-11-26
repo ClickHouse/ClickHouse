@@ -507,6 +507,23 @@ FormatSettings getNativeWireFormatSettings(const ContextPtr & context)
     return format_settings;
 }
 
+namespace
+{
+
+/// Not inlined, so that the checks of the unchanged settings in `getFormatSettingsHash` stay compact.
+template <typename Field>
+NO_INLINE void hashFormatSettingIfNotDefault(SipHash & hash, std::string_view name, const Field & field, const Field & default_value)
+{
+    String value = field.toString();
+    if (value != default_value.toString())
+    {
+        hash.update(name);
+        hash.update(value);
+    }
+}
+
+}
+
 UInt64 getFormatSettingsHash(const Settings & settings)
 {
     /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
@@ -520,15 +537,8 @@ UInt64 getFormatSettingsHash(const Settings & settings)
     /// hash does not depend on the order the session set them in.
     SipHash hash;
 #define HASH_FORMAT_SETTING_IF_NOT_DEFAULT(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    if (const auto & field = settings[Setting::NAME]; field.changed) \
-    { \
-        String value = field.toString(); \
-        if (value != SettingField##TYPE{DEFAULT}.toString()) \
-        { \
-            hash.update(std::string_view(#NAME)); \
-            hash.update(value); \
-        } \
-    }
+    if (const auto & field = settings[Setting::NAME]; field.changed) [[unlikely]] \
+        hashFormatSettingIfNotDefault(hash, #NAME, field, SettingField##TYPE{DEFAULT});
     /// No format setting has an alias, so the alias macro is never expanded (an alias names the same
     /// field as its setting anyway).
     FORMAT_FACTORY_SETTINGS(HASH_FORMAT_SETTING_IF_NOT_DEFAULT, HASH_FORMAT_SETTING_IF_NOT_DEFAULT)

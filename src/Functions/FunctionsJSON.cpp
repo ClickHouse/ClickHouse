@@ -856,7 +856,7 @@ public:
         hash.update(allow_simdjson);
         hash.update(format_settings.date_time_input_format);
         hash.update(format_settings.json.extract_named_tuples_as_objects);
-        hash.update(getFormatSettingsHash(context->getSettingsRef()));
+        hash.update(format_settings.source_settings_hash.value());
         settings_hash = hash.get64();
     }
 
