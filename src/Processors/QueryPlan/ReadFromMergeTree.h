@@ -727,9 +727,9 @@ public:
     /// The output positions a lazy read can read, after `removeUnusedColumns` with `unneeded_output_positions`: the
     /// storage columns that are not virtual, and that no part fills from a non-deterministic default. Some of them the
     /// main read reads as well - something below the `LIMIT` needs them, FINAL merges by them, PREWHERE or the row policy
-    /// reads them - so a lazy read reads them a second time, with the same values: those are in `read_twice` as well.
-    /// There are none of those while the read applies data mutations on the fly or masking policies, which compute columns
-    /// again in each read.
+    /// reads them - so a lazy read reads them a second time, with the same values: those are in `read_twice` as well. A read
+    /// that applies data mutations on the fly or masking policies has no lazy read (see `canReadLazily` of lazy
+    /// materialization over joins): those compute columns again in each read.
     struct LazilyReadablePositions
     {
         VectorWithMemoryTracking<size_t> positions;

@@ -139,6 +139,23 @@ SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
     SETTINGS apply_mutations_on_fly = 1, cross_to_inner_join_rewrite = 0)
 WHERE explain LIKE '%Lazily read columns%';
 
+SELECT '-- a column the main read computes only for another one, with a data mutation applied on the fly';
+DROP TABLE IF EXISTS mut2;
+CREATE TABLE mut2 (k UInt64, x UInt64, a String MATERIALIZED toString(x + rand64()), b UInt64 MATERIALIZED toUInt64(a) % 2)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
+INSERT INTO mut2 (k, x) SELECT number, number FROM numbers(1000);
+SYSTEM STOP MERGES mut2;
+ALTER TABLE mut2 UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+-- The main read computes `a` again to compute `b` for the filter: the result has the same values of `a`.
+SELECT count(), countIf(toUInt64(a) % 2 = 0) FROM (
+    SELECT mut2.k, mut2.a AS a FROM mut2 JOIN r ON mut2.k = r.k WHERE mut2.b = 0 ORDER BY mut2.k LIMIT 10)
+SETTINGS apply_mutations_on_fly = 1;
+SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
+    SELECT mut2.k, mut2.a, r.rheavy FROM mut2 JOIN r ON mut2.k = r.k WHERE mut2.b = 0 ORDER BY mut2.k LIMIT 10
+    SETTINGS apply_mutations_on_fly = 1)
+WHERE explain LIKE '%Lazily read columns%';
+DROP TABLE mut2;
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE j;

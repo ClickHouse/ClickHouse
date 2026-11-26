@@ -268,8 +268,15 @@ bool canReadLazily(const QueryPlan::Node & source, const QueryPlanOptimizationSe
 
     /// A MergeTree read is split by its pruning, which is not possible for every read: for a FINAL one that merges by
     /// every column it reads, or for `GraphiteMergeTree`.
+    ///
+    /// A data mutation applied on the fly, or a masking policy, which is applied the same way, computes again in each read
+    /// the columns it changes and the `MATERIALIZED` columns computed from them, also the ones a read only needs to compute
+    /// others. With a non-deterministic expression, a lazy read would return other values than the ones the main read
+    /// filtered or joined by, so such a source is read only once.
     if (auto * merge_tree = typeid_cast<ReadFromMergeTree *>(step))
-        return canUseLazyMaterializationForReadingStep(merge_tree) && merge_tree->canRemoveUnusedColumns();
+        return canUseLazyMaterializationForReadingStep(merge_tree) && merge_tree->canRemoveUnusedColumns()
+            && !merge_tree->getMutationsSnapshot()->hasDataMutations()
+            && !merge_tree->getMergeTreeData().hasEnabledMaskingPolicies(merge_tree->getContext());
 
     if (auto * object_storage = typeid_cast<ReadFromObjectStorageStep *>(step))
         return settings.optimize_lazy_materialization_for_object_storage && object_storage->canUseLazyMaterialization();
