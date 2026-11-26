@@ -11,7 +11,7 @@ S3 ClickPipe ofrece una forma totalmente gestionada y robusta de ingestar datos 
 Los S3 ClickPipes pueden desplegarse y gestionarse manualmente mediante la UI de ClickPipes, así como de forma programática con [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="supported-data-sources">
-  ## Fuentes de datos compatibles
+  ## Fuentes de datos compatibles {#supported-data-sources}
 </div>
 
 | Nombre                                             | Logo                                                                                            | Detalles                                                                                                                                                                                                                         |
@@ -26,7 +26,7 @@ Los S3 ClickPipes pueden desplegarse y gestionarse manualmente mediante la UI de
 </Tip>
 
 <div id="supported-formats">
-  ## Formatos compatibles
+  ## Formatos compatibles {#supported-formats}
 </div>
 
 * [JSON](/es/reference/formats/JSON/JSON)
@@ -36,23 +36,23 @@ Los S3 ClickPipes pueden desplegarse y gestionarse manualmente mediante la UI de
 * [Avro](/es/reference/formats/Avro/Avro)
 
 <div id="features">
-  ## Funciones
+  ## Funciones {#features}
 </div>
 
 <div id="one-time-ingestion">
-  ### Ingestión única
+  ### Ingestión única {#one-time-ingestion}
 </div>
 
 De forma predeterminada, el S3 ClickPipe carga todos los archivos que coinciden con un patrón del bucket especificado en la tabla de destino de ClickHouse en una sola operación por lotes. Una vez completada la tarea de ingestión, el ClickPipe se detiene automáticamente. Este modo de ingestión única ofrece semántica exactly-once, lo que garantiza que cada archivo se procese de forma fiable y sin duplicados.
 
 <div id="continuous-ingestion">
-  ### Ingestión continua
+  ### Ingestión continua {#continuous-ingestion}
 </div>
 
 Cuando la ingestión continua está habilitada, ClickPipes ingesta datos continuamente desde la ruta especificada. Para determinar el orden de ingestión, S3 ClickPipe se basa, de forma predeterminada, en el [orden lexicográfico](#continuous-ingestion-lexicographical-order) implícito de los archivos. También puede configurarse para ingestar archivos en [cualquier orden](#continuous-ingestion-any-order) mediante una cola de [Amazon SQS](https://aws.amazon.com/sqs/) conectada al bucket.
 
 <div id="continuous-ingestion-lexicographical-order">
-  #### Orden lexicográfico
+  #### Orden lexicográfico {#continuous-ingestion-lexicographical-order}
 </div>
 
 De forma predeterminada, el S3 ClickPipe asume que los archivos se añaden a un bucket en orden lexicográfico y se basa en ese orden implícito para ingestar los archivos de forma secuencial. Esto significa que cualquier archivo nuevo **debe** ser lexicográficamente mayor que el último archivo ingestado. Por ejemplo, los archivos llamados `file1`, `file2` y `file3` se ingestarán secuencialmente, pero si se añade un nuevo `file 0` al bucket, se **ignorará** porque el nombre del archivo no es lexicográficamente mayor que el del último archivo ingestado.
@@ -60,7 +60,7 @@ De forma predeterminada, el S3 ClickPipe asume que los archivos se añaden a un 
 En este modo, el S3 ClickPipe realiza una carga inicial de **todos los archivos** de la ruta especificada y luego consulta periódicamente si hay archivos nuevos en un intervalo configurable (de forma predeterminada, 30 segundos). Para iniciar la ingestión continua después de un archivo específico, configure **Start after**. ClickPipes omitirá los archivos que sean lexicográficamente menores o iguales que el valor configurado y continuará ingestando archivos más recientes a partir de ese punto.
 
 <div id="continuous-ingestion-any-order">
-  #### En cualquier orden
+  #### En cualquier orden {#continuous-ingestion-any-order}
 </div>
 
 <Tip>
@@ -86,25 +86,25 @@ Los archivos se ingieren cuando se alcanza el umbral configurado en `max insert 
 </Tip>
 
 <div id="eb-to-sqs">
-  ##### De EventBridge a SQS
+  ##### De EventBridge a SQS {#eb-to-sqs}
 </div>
 
 También es posible enviar notificaciones de eventos de S3 a SQS a través de [Amazon EventBridge](https://aws.amazon.com/eventbridge/). Este es el enfoque recomendado para la mayoría de los casos de uso, ya que EventBridge permite un filtrado de eventos más avanzado, la distribución a múltiples destinos y no está sujeto a la limitación de S3 de una sola regla de notificación por tipo de evento y prefijo. Consulta [Configuración del modo no ordenado para la ingestión continua](/es/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) para obtener instrucciones paso a paso.
 
 <div id="sns-to-sqs">
-  ##### SNS a SQS
+  ##### SNS a SQS {#sns-to-sqs}
 </div>
 
 También es posible enviar notificaciones de eventos de S3 a SQS a través de un tema de SNS. Esto puede resultar útil si te encuentras con alguna de las limitaciones de la integración directa de S3 → SQS. En este caso, tendrás que habilitar la opción de [entrega de mensajes sin formato](https://docs.aws.amazon.com/sns/latest/dg/sns-large-payload-raw-message-delivery.html).
 
 <div id="file-pattern-matching">
-  ### Coincidencia de patrones de archivos
+  ### Coincidencia de patrones de archivos {#file-pattern-matching}
 </div>
 
 Object Storage ClickPipes siguen el estándar POSIX para la coincidencia de patrones de archivos. Todos los patrones son **sensibles a mayúsculas y minúsculas** y coinciden con la **ruta completa** después del nombre del bucket. Para mejorar el rendimiento, use el patrón más específico posible (p. ej., `data-2024-*.csv` en lugar de `*.csv`).
 
 <div id="supported-patterns">
-  #### Patrones compatibles
+  #### Patrones compatibles {#supported-patterns}
 </div>
 
 | Patrón                | Descripción                                                                                               | Ejemplo             | Coincidencias                                                     |
@@ -121,7 +121,7 @@ Object Storage ClickPipes siguen el estándar POSIX para la coincidencia de patr
 * `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
 
 <div id="unsupported-patterns">
-  #### Patrones no admitidos
+  #### Patrones no admitidos {#unsupported-patterns}
 </div>
 
 | Patrón      | Descripción                 | Ejemplo                | Alternativas                                   |
@@ -136,29 +136,29 @@ Object Storage ClickPipes siguen el estándar POSIX para la coincidencia de patr
 * `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
 
 <div id="exactly-once-semantics">
-  ### Semántica de exactly-once
+  ### Semántica de exactly-once {#exactly-once-semantics}
 </div>
 
 Pueden producirse varios tipos de fallos al ingestar grandes conjuntos de datos, lo que puede dar lugar a inserciones parciales o datos duplicados. Object Storage ClickPipes es resiliente ante fallos de inserción y proporciona semántica de exactly-once. Esto se consigue mediante tablas temporales de &quot;staging&quot;. Los datos se insertan primero en las tablas de staging. Si algo sale mal durante esta inserción, la tabla de staging puede truncarse y la inserción puede reintentarse desde un estado limpio. Solo cuando una inserción se completa correctamente, las particiones de la tabla de staging se mueven a la tabla de destino. Para obtener más información sobre esta estrategia, consulta [esta entrada del blog](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
 
 <div id="virtual-columns">
-  ### Columnas virtuales
+  ### Columnas virtuales {#virtual-columns}
 </div>
 
 Para hacer un seguimiento de qué archivos se han ingerido, incluya la columna virtual `_file` en la lista de asignación de columnas. La columna virtual `_file` contiene el nombre de archivo del objeto de origen, que puede utilizarse para consultar qué archivos se han procesado.
 
 <div id="access-control">
-  ## Control de acceso
+  ## Control de acceso {#access-control}
 </div>
 
 <div id="permissions">
-  ### Permisos
+  ### Permisos {#permissions}
 </div>
 
 El S3 ClickPipe admite buckets públicos y privados. Los buckets con [Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html) **no** son compatibles.
 
 <div id="s3-bucket">
-  #### Bucket de S3
+  #### Bucket de S3 {#s3-bucket}
 </div>
 
 Los buckets deben permitir las siguientes acciones en la política del bucket:
@@ -167,7 +167,7 @@ Los buckets deben permitir las siguientes acciones en la política del bucket:
 * [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)
 
 <div id="sqs-queue">
-  #### Cola de SQS
+  #### Cola de SQS {#sqs-queue}
 </div>
 
 Al usar el [modo no ordenado](#continuous-ingestion-any-order), SQS debe permitir las siguientes acciones en la política de la cola:
@@ -178,66 +178,50 @@ Al usar el [modo no ordenado](#continuous-ingestion-any-order), SQS debe permiti
 * [`sqs:ListQueues`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ListQueues.html)
 
 <div id="authentication">
-  ### Autenticación
+  ### Autenticación {#authentication}
 </div>
 
-<div id="iam-credentials">
-  #### Credenciales de IAM
-</div>
+#### Credenciales de IAM {#iam-credentials}
 
 Para usar [claves de acceso](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) para autenticarse, selecciona `Credentials` en **Método de autenticación** al configurar tu conexión de ClickPipe. Luego, introduce el ID de la clave de acceso (por ejemplo, `AKIAIOSFODNN7EXAMPLE`) y la clave de acceso secreta (por ejemplo, `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) en `Access key` y `Secret key`, respectivamente.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Credenciales de IAM para S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
-
-</Frame>
-
+  <Frame>
+    ![Credenciales de IAM para S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
+  </Frame>
 </div>
 
-<div id="iam-role">
-  #### IAM role
-</div>
+#### IAM role {#iam-role}
 
 Para usar [acceso basado en roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) para autenticarse, selecciona `IAM role` en **Método de autenticación** al configurar tu conexión de ClickPipe.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Autenticación IAM para S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
-
-</Frame>
-
+  <Frame>
+    ![Autenticación IAM para S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
+  </Frame>
 </div>
 
-Sigue [esta guía](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para [crear un rol](/es/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role) con la política de confianza necesaria para acceder a S3. Luego, indica el ARN del rol de IAM en `IAM role ARN`.
+Sigue [esta guía](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para [crear un rol](/es/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role) con la política de confianza necesaria para acceder a S3. Después, indica el ARN del rol de IAM en `IAM role ARN`.
 
-<div id="network-access">
-  ### Acceso de red
-</div>
+### Acceso a la red {#network-access}
 
-Los ClickPipes de S3 usan dos rutas de red distintas para el descubrimiento de metadatos y la ingestión de datos: el servicio ClickPipes y el servicio ClickHouse Cloud, respectivamente. Si desea configurar una capa adicional de seguridad de red (por ejemplo, por motivos de cumplimiento normativo), el acceso de red **debe configurarse para ambas rutas**.
+Los S3 ClickPipes utilizan dos rutas de red distintas para el descubrimiento de metadata y la ingesta de datos: el servicio de ClickPipes y el servicio de ClickHouse Cloud, respectivamente. Si desea configurar una capa adicional de seguridad de red (por ejemplo, por motivos de cumplimiento normativo), el acceso a la red **debe configurarse en ambas rutas**.
 
-* Para el **control de acceso basado en IP**, la política del bucket de S3 debe permitir las IP estáticas de la región del servicio ClickPipes indicadas [aquí](/es/integrations/clickpipes/networking/static-ips), así como las [IP estáticas](/es/products/cloud/guides/data-sources/cloud-endpoints-api) del servicio ClickHouse Cloud. Para obtener las IP estáticas de su región de ClickHouse Cloud, abra una terminal y ejecute:
+* Para el **control de acceso basado en IP**, la política de bucket de S3 debe permitir las IP estáticas de la región del servicio de ClickPipes que se indican [aquí](/es/integrations/clickpipes/networking/static-ips), así como las [IP estáticas](/es/products/cloud/guides/data-sources/cloud-endpoints-api) del servicio de ClickHouse Cloud. Para obtener las IP estáticas de su región de ClickHouse Cloud, abra una terminal y ejecute:
 
   ```bash
   # Reemplace <your-region> por su región de ClickHouse Cloud
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-* Para el **control de acceso basado en endpoints de VPC**, el bucket de S3 debe estar en la misma región que el servicio ClickHouse Cloud y restringir las operaciones `GetObject` a los ID de los endpoints de VPC del servicio ClickHouse Cloud. Para obtener los endpoints de VPC de su región de ClickHouse Cloud, abra una terminal y ejecute:
+* Para el **control de acceso basado en puntos de conexión de VPC**, el bucket de S3 debe estar en la misma región que el servicio de ClickHouse Cloud y restringir las operaciones `GetObject` a los ID de los puntos de conexión de VPC del servicio de ClickHouse Cloud. Para obtener los puntos de conexión de VPC de su región de ClickHouse Cloud, abra una terminal y ejecute:
 
   ```bash
   # Reemplace <your-region> por su región de ClickHouse Cloud
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
   ```
 
-<div id="advanced-settings">
-  ## Configuración avanzada
-</div>
+## Configuración avanzada {#advanced-settings}
 
 ClickPipes ofrece valores predeterminados adecuados para cubrir los requisitos de la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más fino, puede modificar la siguiente configuración:
 
@@ -245,29 +229,25 @@ ClickPipes ofrece valores predeterminados adecuados para cubrir los requisitos d
 | ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                                                 |
 | `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                                       |
-| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings/max-threads#max_threads) para el procesamiento de archivos.                                      |
-| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings/max-insert#max_insert_threads) para el procesamiento de archivos.                   |
-| `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo, en bytes, del bloque](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) que se puede insertar en una tabla.                      |
-| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings/max-download#max_download_threads).                                                  |
+| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings/max-threads#max_threads) para el procesamiento de archivos.                                         |
+| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings/max-insert#max_insert_threads) para el procesamiento de archivos.                      |
+| `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo, en bytes, del bloque](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) que se puede insertar en una tabla.                         |
+| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings/max-download#max_download_threads).                                                     |
 | `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                                     |
 | `Start after`                        | None                 | Para la ingestión continua ordenada, omite los archivos lexicográficamente menores o iguales que el nombre de archivo o la ruta configurados.                                  |
 | `Skip initial load`                  | false                | Para la ingestión continua no ordenada, omite el análisis inicial de los archivos existentes y procesa únicamente las notificaciones de objetos de la cola de SQS configurada. |
-| `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela con select](/es/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                             |
-| `Parallel view processing`           | false                | Indica si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings/parallel#parallel_view_processing).     |
+| `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela con select](/es/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                                |
+| `Parallel view processing`           | false                | Indica si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings/parallel#parallel_view_processing).        |
 | `Use cluster function`               | true                 | Indica si los archivos se procesan en paralelo en varios nodos.                                                                                                                |
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Configuración avanzada de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
-
-</Frame>
-
+  <Frame>
+    ![Configuración avanzada de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+  </Frame>
 </div>
 
 <div id="scaling">
-  ### Escalado
+  ### Escalado {#scaling}
 </div>
 
 Object Storage ClickPipes se escalan en función del tamaño mínimo del servicio de ClickHouse determinado por la [configuración del escalado automático vertical](/es/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). El tamaño del ClickPipe se determina cuando se crea el pipe. Los cambios posteriores en la configuración del servicio de ClickHouse no afectarán al tamaño del ClickPipe.
@@ -275,23 +255,23 @@ Object Storage ClickPipes se escalan en función del tamaño mínimo del servici
 Para aumentar el rendimiento en trabajos de ingesta de gran volumen, recomendamos escalar el servicio de ClickHouse antes de crear el ClickPipe.
 
 <div id="known-limitations">
-  ## Limitaciones conocidas
+  ## Limitaciones conocidas {#known-limitations}
 </div>
 
 <div id="file-size">
-  ### Tamaño del archivo
+  ### Tamaño del archivo {#file-size}
 </div>
 
 ClickPipes solo intentará ingestar objetos de **10GB o menos**. Si un archivo supera los 10GB, se añadirá un error a la tabla de errores dedicada de ClickPipes.
 
 <div id="compatibility">
-  ### Compatibilidad
+  ### Compatibilidad {#compatibility}
 </div>
 
 Aunque son compatibles con S3, algunos servicios usan una estructura de URL distinta que S3 ClickPipe podría no ser capaz de interpretar (por ejemplo, Backblaze B2), o requieren integración con servicios de cola específicos del proveedor para una ingestión continua y sin orden. Si tiene problemas con un servicio que no aparece en [Fuentes de datos compatibles](#supported-data-sources), [póngase en contacto con nuestro equipo](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="view-support">
-  ### Compatibilidad con vistas
+  ### Compatibilidad con vistas {#view-support}
 </div>
 
 También se admiten vistas materializadas sobre la tabla de destino. ClickPipes creará tablas de staging no solo para la tabla de destino, sino también para cualquier vista materializada dependiente.

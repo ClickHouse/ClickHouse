@@ -1,0 +1,10 @@
+hash	0	2
+parallel_hash	0	2
+grace_hash	0	2
+two right rows	1
+two right rows, swapped	1
+hash	10	10
+parallel_hash	10	10
+grace_hash	10	10
+left any	2
+legacy any inner	2

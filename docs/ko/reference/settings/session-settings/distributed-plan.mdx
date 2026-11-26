@@ -20,12 +20,15 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "새 실험적 설정."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "기본적으로 읽을 행 수와 worker 수를 기준으로 읽기 작업 수를 결정합니다."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "8"},{"label": "새로운 실험적 설정."}]}]} />
 
-분산 쿼리에서 병렬 읽기에 사용되는 기본 작업 수입니다. 작업은 레플리카 간에 분산됩니다.
-규칙 기반 분산 플래너에서 사용됩니다. 비용 기반 최적화기는 추정 비용에 따라 읽기 팬아웃을 선택하며 이 설정을 사용하지 않습니다.
+분산 쿼리(Distributed Query)에서 병렬 읽기에 사용할 작업 수입니다. 작업은 여러 worker에 분배됩니다.
+
+`0`으로 설정하면 작업 수가 자동으로 결정됩니다. 읽기 대상으로 선택된 행(rows) `distributed_plan_min_rows_per_reader`개마다 작업이 1개씩 할당되며, 작업 수는 최소 1개에서 최대 worker 수까지입니다.
+
+규칙 기반 분산 플래너(rule-based distributed planner)에서 사용됩니다. 비용 기반 최적화기(Cost-Based Optimizer)는 예상 비용을 기준으로 읽기 fan-out을 결정하므로 이 설정을 사용하지 않습니다.
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -145,6 +148,17 @@ Shuffle 전략이 올바른 결과를 생성할 수 없는 경우, 예를 들어
 
 분산 쿼리 계획에서 shuffle join 대신 broadcast join을 사용하기 위한 최대 행 수입니다.
 규칙 기반 분산 플래너를 위한 휴리스틱입니다. 비용 기반 최적화기가 활성화되면 추정 비용에 따라 broadcast와 shuffle 중 하나를 선택하므로 이 설정은 적용되지 않습니다.
+
+## distributed_plan_min_rows_per_reader {#distributed_plan_min_rows_per_reader}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1000000"},{"label": "새로운 실험적 설정."}]}]} />
+
+`distributed_plan_default_reader_bucket_count`가 `0`일 때 각 읽기 작업에 할당되는 최소 행 수입니다.
+규칙 기반 분산 플래너(rule-based distributed planner)에서 사용됩니다.
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 

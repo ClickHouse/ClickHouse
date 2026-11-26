@@ -652,7 +652,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
-    getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
+    getDataPartStorage().setPreferredFileOrder(getCommonMetadataFiles());
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -1058,6 +1058,15 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
     /// storage's pointer would poison lookups if a new storage is allocated at the same address.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
+
+    /// A projection part holds the indices of its projection, not those of the table.
+    if (isProjectionPart())
+    {
+        if (!metadata_snapshot->projections.has(name))
+            return;
+        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+    }
+
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     if (secondary_indices.empty())
         return;
@@ -1100,10 +1109,10 @@ void IMergeTreeDataPart::clearCaches()
     /// Remove deserialized columns from cache
     if (mayStoreColumnsInColumnsCache())
     {
-        /// No reader can hold this part any more: clearCaches runs from the destructor of the
-        /// part and for outdated parts that are uniquely owned, while a reader owns the part
-        /// through its `data_part_info_for_read` as long as it may still write to the cache. So
-        /// there is no in-flight write to guard against, and removing the entries is enough.
+        /// From the destructor of the part and for outdated parts that are uniquely owned, no reader
+        /// can hold this part any more: a reader owns the part through its `data_part_info_for_read`
+        /// as long as it may still write to the cache, so removing the entries is enough. A part moved
+        /// to `detached` may still be held by a running read, which can write entries again after this.
         if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
             columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name));
@@ -1112,15 +1121,10 @@ void IMergeTreeDataPart::clearCaches()
 
     /// The projection parts go away with this part. Their entries are removed when they are destroyed, but a part
     /// whose caches are cleared early (an outdated part that nobody else holds) should not keep them until then.
-    /// A reader of a projection part holds its parent part, so no reader can still write them either.
-    if (auto columns_cache = storage.getContext()->getColumnsCache())
-    {
-        for (const auto & [_, projection_part] : projection_parts)
-        {
-            if (projection_part->mayStoreColumnsInColumnsCache())
-                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name));
-        }
-    }
+    /// Neither should a part about to be renamed to `detached`: the rename moves the paths their keys are built from.
+    /// A reader of a projection part holds its parent part, so only a reader of this part can still write them.
+    for (const auto & [_, projection_part] : projection_parts)
+        projection_part->clearCaches();
 }
 
 bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
@@ -1317,7 +1321,7 @@ UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
 {
     if ((*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && supportLightweightDeleteMutate() && hasLightweightDelete()
         && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
-        return bytes_on_disk * existing_rows_count.value() / rows_count;
+        return static_cast<UInt64>(UInt128(bytes_on_disk) * existing_rows_count.value() / rows_count);
     return bytes_on_disk;
 }
 
@@ -3846,6 +3850,53 @@ std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndType
     size_t i = 0;
     for (const auto & subcolumn : subcolumns)
         subcolumns_sizes_cache.add(subcolumn.name, sizes[i++]);
+    return sizes;
+}
+
+std::optional<std::vector<std::pair<String, ColumnSize>>> IMergeTreeDataPart::getColumnAndSubcolumnSizes(
+    const Names & column_names, bool with_columns, bool only_from_memory) const
+{
+    std::vector<std::pair<String, ColumnSize>> sizes;
+    sizes.reserve(column_names.size());
+    /// One reader per column: a reader reads the prefixes of all its columns as soon as one of them needs its prefix.
+    std::vector<NamesAndTypesList> subcolumns_to_calculate;
+    std::unordered_map<String, size_t> column_positions;
+    for (const auto & column_name : column_names)
+    {
+        /// Resolved before the cache lookup: a column may have the name of a subcolumn of another column.
+        auto column = tryGetColumn(column_name);
+        if (!column)
+            continue;
+
+        if (!column->isSubcolumn())
+        {
+            if (with_columns)
+                sizes.emplace_back(column_name, getColumnSize(column_name));
+            continue;
+        }
+
+        if (auto size = subcolumns_sizes_cache.get(column_name))
+        {
+            sizes.emplace_back(column_name, *size);
+            continue;
+        }
+
+        if (only_from_memory && !canCalculateSubcolumnSizeFromMemory(*column))
+            return std::nullopt;
+
+        auto [it, inserted] = column_positions.emplace(column->getNameInStorage(), subcolumns_to_calculate.size());
+        if (inserted)
+            subcolumns_to_calculate.emplace_back();
+        subcolumns_to_calculate[it->second].push_back(std::move(*column));
+    }
+
+    for (const auto & subcolumns : subcolumns_to_calculate)
+    {
+        auto calculated = getSubcolumnSizes(subcolumns);
+        size_t i = 0;
+        for (const auto & subcolumn : subcolumns)
+            sizes.emplace_back(subcolumn.name, calculated[i++]);
+    }
     return sizes;
 }
 

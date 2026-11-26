@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="what-is-standard-onboarding">
-  ## ¿Qué es el onboarding estándar?
+  ## ¿Qué es el onboarding estándar? {#what-is-standard-onboarding}
 </div>
 
 **El onboarding estándar** es el flujo de trabajo guiado predeterminado para implementar ClickHouse en tu propia cuenta en la nube mediante BYOC. En este enfoque, ClickHouse Cloud aprovisiona todos los recursos principales en la nube necesarios para tu implementación, como la VPC/VNet, las subredes, los grupos de seguridad, el clúster de Kubernetes (EKS/GKE/AKS) y los roles de IAM/cuentas de servicio/entidades de servicio necesarios, dentro de tu cuenta de AWS, proyecto de GCP o suscripción de Azure. Esto garantiza una configuración coherente y segura, y minimiza los pasos manuales que debe realizar tu equipo.
@@ -24,13 +24,13 @@ Si necesitas una configuración más personalizada (por ejemplo, implementar en 
 </Note>
 
 <div id="request-access">
-  ## Solicitar acceso
+  ## Solicitar acceso {#request-access}
 </div>
 
 Para iniciar el proceso de onboarding, [contáctenos](https://clickhouse.com/cloud/bring-your-own-cloud). Nuestro equipo le guiará a lo largo de los requisitos de BYOC, le ayudará a seleccionar las opciones de implementación más adecuadas y añadirá su cuenta a la lista de acceso autorizado.
 
 <div id="onboarding-process">
-  ## Onboarding
+  ## Onboarding {#onboarding-process}
 </div>
 
 ### Prepara una cuenta de AWS, un proyecto de GCP o una suscripción de Azure {#prepare-an-aws-account}
@@ -40,13 +40,9 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
 <Steps>
   <Step title="Elige un proveedor de servicios en la nube" id="choose-cloud-provider">
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![BYOC: elegir CSP](/images/cloud/reference/byoc-onboarding-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC: elegir CSP](/images/cloud/reference/byoc-onboarding-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -58,21 +54,16 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
     </Warning>
 
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![Inicializar cuenta de BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Inicializar cuenta de BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
+      </Frame>
     </div>
 
     <Note>
       Los buckets de almacenamiento, la VPC/VNet, el clúster de Kubernetes y los recursos de computación necesarios para ejecutar ClickHouse no se incluyen en esta configuración inicial. Se aprovisionarán en el siguiente paso.
     </Note>
 
-<a id="terraform-module-aws" />
-#### Módulo de Terraform para AWS
+#### Módulo de Terraform para AWS {#terraform-module-aws}
 
     Si prefiere usar Terraform en lugar de CloudFormation para las implementaciones de AWS, use el módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -91,8 +82,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
       Anteriormente, el módulo se distribuía como un archivo tarball en `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Esa URL sigue disponible, pero está obsoleta; utilice el módulo de GitHub anterior.
     </Note>
 
-<a id="aws-external-id" />
-#### ID externo de AWS
+#### ID externo de AWS {#aws-external-id}
 
     En AWS, el rol de IAM creado durante la configuración establece una relación de confianza con ClickHouse Cloud mediante un [ID externo](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) para protegerse contra ataques de suplantación de autoridad. La ClickHouse Cloud console genera un ID externo para su cuenta de AWS al iniciar el onboarding y lo rellena previamente en el enlace de CloudFormation; si utiliza Terraform, proporcione el mismo valor como `external_id`. Todas las infraestructuras BYOC de la misma cuenta de AWS comparten el mismo ID externo.
 
@@ -117,17 +107,12 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
     * **Zonas de disponibilidad**: Si planea usar peering de VPC, alinear las zonas de disponibilidad entre las cuentas de origen y de BYOC puede ayudar a reducir los costos de tráfico entre zonas de disponibilidad. Por ejemplo, en AWS, los sufijos de las zonas de disponibilidad (`a`, `b`, `c`) pueden representar distintos ID de zonas físicas en diferentes cuentas. Consulte la [guía de AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) para obtener más información.
 
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![Configure la infraestructura BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Configure la infraestructura BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
+      </Frame>
     </div>
 
-<a id="preflight-validation" />
-#### Validación previa
+#### Validación previa {#preflight-validation}
 
     Al hacer clic en **Set up Infrastructure**, ClickHouse Cloud ejecuta un conjunto de comprobaciones previas de **solo lectura** sobre su cuenta antes de crear ningún recurso. Si todas se superan, el aprovisionamiento continúa. Si una comprobación falla, la configuración se pausa y la consola muestra exactamente cuál es el problema, de modo que pueda corregirlo antes de que se cree ningún recurso.
 
@@ -142,13 +127,9 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
     Cuando fallan comprobaciones, cada una aparece con la acción a la que corresponde y el motivo del fallo (por ejemplo, `iam:CreateRole · explicitDeny`). Despliegue **Show passed checks** para revisar todo lo que se completó correctamente.
 
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![La validación previa de BYOC informa de comprobaciones fallidas de la configuración de la nube](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
-
-    </Frame>
-
+      <Frame>
+        ![La validación previa de BYOC informa de comprobaciones fallidas de la configuración de la nube](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+      </Frame>
     </div>
 
     Para resolver los fallos, vuelva a ejecutar la última pila de CloudFormation o de Terraform de ClickHouse —o conceda las acciones notificadas a la identidad de administración (rol de IAM / cuenta de servicio / entidad de servicio)— y, a continuación, elija una de estas opciones:
@@ -171,24 +152,19 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
   </Step>
 </Steps>
 
-<a id="create-clickhouse-service" />
-### Crea tu primer servicio de ClickHouse BYOC
+### Crea tu primer servicio de ClickHouse BYOC {#create-clickhouse-service}
 
 Una vez aprovisionada tu infraestructura BYOC, ya puedes lanzar tu primer servicio de ClickHouse. Abre la consola de ClickHouse Cloud, selecciona tu entorno BYOC y sigue las indicaciones para crear un nuevo servicio.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![BYOC crear nuevo servicio](/images/cloud/reference/byoc-new-service-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC crear nuevo servicio](/images/cloud/reference/byoc-new-service-1.webp)
+  </Frame>
 </div>
 
 Durante la creación del servicio, configurarás las siguientes opciones:
 
 * **Service name**: Introduce un nombre claro y descriptivo para tu servicio de ClickHouse.
-* **BYOC infrastructure**: Selecciona el entorno BYOC, incluida la cuenta en la nube y la región, donde se ejecutará tu servicio.
+* **infraestructura BYOC**: Selecciona el entorno BYOC, incluida la cuenta en la nube y la región, donde se ejecutará tu servicio.
 * **Resource configuration**: Elige la cantidad de CPU y memoria asignada a tus réplicas de ClickHouse.
 * **Replica count**: Establece el número de réplicas para mejorar la alta disponibilidad.

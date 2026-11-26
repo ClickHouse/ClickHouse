@@ -269,13 +269,15 @@ parser.add_argument(
     "--max-query-seconds",
     type=int,
     default=15,
-    help="For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded.",
+    help="For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded "
+    "on a tested server; an SQL query that only reads and exceeds it on the reference server only is measured on the tested servers.",
 )
 parser.add_argument(
     "--prewarm-max-query-seconds",
     type=int,
     default=180,
-    help="For how many seconds at most a prewarm (cold storage) query is allowed to run. The script finishes with error if this time is exceeded.",
+    help="For how many seconds at most a prewarm (cold storage) query is allowed to run. The script finishes with error if this time is exceeded "
+    "on a tested server; an SQL query that only reads and exceeds it on the reference server only is measured on the tested servers.",
 )
 parser.add_argument(
     "--profile-seconds",
@@ -714,10 +716,33 @@ def query_digest(connection, q_item, query_id, settings, statement_results=None)
     return result_digest(results)
 
 
+def is_timeout(e):
+    """Whether `e` is a query, or a shell script, that ran out of its time limit."""
+    return isinstance(e, subprocess.TimeoutExpired) or getattr(e, "code", None) == TIMEOUT_EXCEEDED
+
+
 def censored_elapsed(e, budget):
-    """With `--long`, a timeout's censored time (completed statements plus `budget`), else `None`."""
-    if args.long and (isinstance(e, subprocess.TimeoutExpired) or getattr(e, "code", None) == TIMEOUT_EXCEEDED):
+    """With `--long`, a timeout's censored time (the completed statements plus `budget`), else `None`."""
+    if args.long and is_timeout(e):
         return getattr(e, "elapsed_before", 0) + budget
+
+
+# The first keywords of the statements that only read.
+READ_KEYWORDS = {"SELECT", "WITH", "EXPLAIN", "SHOW", "DESCRIBE", "DESC", "EXISTS"}
+
+
+def is_read_only(q_item):
+    """Whether a query is SQL statements that only read: such a query leaves a server as it was when
+    it is cut by its time limit. A statement that starts with `WITH` can be an `INSERT`, so it
+    counts as reading only when it has no such word."""
+
+    def reads(statement):
+        keyword = first_keyword(statement)
+        if keyword == "WITH":
+            return not re.search(r"\bINSERT\b", statement, re.IGNORECASE)
+        return keyword in READ_KEYWORDS
+
+    return q_item["kind"] == "sql" and all(reads(s) for s in q_item["statements"])
 
 
 def load_settings_file(xml_root, base_dir):
@@ -849,9 +874,9 @@ if not args.long:
         if tag.text == "long":
             print("skipped\tTest is tagged as long.")
             sys.exit(0)
-else:
-    # Termination must reach the teardown, and prewarm re-raises this class.
-    signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+# Termination must reach the teardown, and prewarm re-raises this class.
+signal.signal(signal.SIGTERM, signal.default_int_handler)
 
 if args.table_engine and root.get("iceberg", "1") in ("0", "false"):
     print(f"skipped\tTest opts out of --table-engine {args.table_engine}.")
@@ -1506,6 +1531,23 @@ def fail_query(query_index, server, e):
     failed_queries.append(query_index)
 
 
+def report_reference_timeout(query_index, stage, budget):
+    """An SQL query that only reads (see `is_read_only`) and ran out of its time limit on the
+    reference server only is not an error: it is measured on the tested servers, as a `partial`
+    query. `ci/jobs/performance_tests.py` turns this line into a warning of the report. `stage` is
+    `prewarm` or `run`. A query that writes and a shell query are not treated this way: cut by
+    the time limit, they can leave the reference server in another state than the tested ones,
+    and the queries after them would compare different data, so the test stops with an error."""
+    print(f"reference-timeout\t{query_index}\t{stage}\t{budget}")
+    sys.stdout.flush()
+
+
+def print_query_rows(rows):
+    """Write the measured runs of a query, see `query_rows`."""
+    for _, row in rows:
+        print(row)
+
+
 for query_index in queries_to_run:
     q_item = test_queries[query_index]
     query_prefix = f"{test_name}.query{query_index}"
@@ -1619,6 +1661,9 @@ for query_index in queries_to_run:
     # Report all errors that occurred during prewarm and decide what to do next.
     # A failure on a tested server fails the query; a failure on the reference
     # only runs the query on the rest of them.
+    reference_timed_out = (
+        is_read_only(q_item) and reference is not None and is_timeout(prewarm_exceptions.get(reference))
+    )
     no_errors = []
     for i, e in enumerate(query_error_on_connection):
         if e:
@@ -1626,8 +1671,11 @@ for query_index in queries_to_run:
             # every query of the test and was already reported once, above. It
             # must not be repeated on this test's stderr, which the report stage
             # turns into Run Errors rows. An error the query produced itself is
-            # still reported there.
-            if setup_error_on_connection[i] is None:
+            # still reported there, except a timeout on the reference, which is
+            # a warning.
+            if i == reference and reference_timed_out:
+                report_reference_timeout(query_index, "prewarm", args.prewarm_max_query_seconds)
+            elif setup_error_on_connection[i] is None:
                 print(e, file=sys.stderr)
         else:
             no_errors.append(i)
@@ -1637,6 +1685,23 @@ for query_index in queries_to_run:
     if tested_failure is not None:
         fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
         continue
+
+    # A query that writes and was cut by its time limit on the reference leaves the reference with
+    # other data than the tested servers, so the queries after it cannot be compared: the test
+    # stops here, as it does for such a timeout in a measured run. With `--long` the query is
+    # `partial`, as any reference-only error.
+    if (
+        not args.long
+        and q_item["kind"] == "sql"
+        and not is_read_only(q_item)
+        and reference is not None
+        and is_timeout(prewarm_exceptions.get(reference))
+    ):
+        fail_query(query_index, reference, prewarm_exceptions[reference])
+        raise Exception(
+            f"Query {query_prefix} writes and ran out of its time limit on the reference server "
+            "in the prewarm run: the servers no longer hold the same data, the test is stopped."
+        )
 
     # A shell-script query is a benchmark we control end to end, so -- unlike an
     # SQL query that may legitimately use a function missing from the old server
@@ -1705,9 +1770,15 @@ for query_index in queries_to_run:
     threshold_seconds = 0.0
     run = 0
     failed_run = None
-    # With `--long`, the rows of a query that failed midway must not reach the analysis.
+    # (server, `query` row) of each measured run, written when the query ends: the runs of a
+    # reference that timed out are left out, and so are, with `--long`, all runs of a query that
+    # failed midway.
     query_rows = []
-    emit_row = query_rows.append if args.long else print
+    # The wall time of the runs on the reference, and the part of it that is not in the client time
+    # of the query, because the reference timed out and its runs were dropped.
+    reference_wall_seconds = 0.0
+    dropped_reference_seconds = 0.0
+    accept_reference_timeout = is_read_only(q_item)
 
     # Arrays of run times for each connection.
     all_server_times = []
@@ -1736,11 +1807,15 @@ for query_index in queries_to_run:
             conn_order = list(reversed(conn_order))
 
         timeouts = []
+        # Whether a query that only reads timed out on the reference in this run, without `--long`:
+        # the tested servers keep running.
+        reference_timeout = False
         for conn_index, c in conn_order:
             # conn_index addresses this_query_connections (the servers that
             # survived prewarm); map it back to the real server to pick the right
             # binary/ports for a shell query.
             server_index = no_errors[conn_index]
+            attempt_start_seconds = time.perf_counter()
             if q_item["kind"] == "shell":
                 try:
                     elapsed = run_shell_query(
@@ -1754,6 +1829,7 @@ for query_index in queries_to_run:
                         if args.long:
                             failed_run = (server_index, e)
                             break
+                        print_query_rows(query_rows)
                         raise Exception(f"{run_id}: {e}")
                     timeouts.append(server_index)
             else:
@@ -1770,16 +1846,23 @@ for query_index in queries_to_run:
                         if args.long:
                             failed_run = (server_index, e)
                             break
+                        if server_index == reference and accept_reference_timeout and is_timeout(e):
+                            reference_timeout = True
+                            reference_wall_seconds += time.perf_counter() - attempt_start_seconds
+                            continue
+                        print_query_rows(query_rows)
                         # Add query id to the exception to make debugging easier.
                         e.args = (run_id, *e.args)
                         e.message = run_id + ": " + e.message
                         raise
                     timeouts.append(server_index)
 
+            if server_index == reference:
+                reference_wall_seconds += time.perf_counter() - attempt_start_seconds
             all_server_times[conn_index].append(elapsed)
 
             server_seconds += elapsed
-            emit_row(f"query\t{query_index}\t{run_id}\t{server_index}\t{elapsed}")
+            query_rows.append((server_index, f"query\t{query_index}\t{run_id}\t{server_index}\t{elapsed}"))
 
             if elapsed > args.max_query_seconds:
                 # Do not stop processing pathologically slow queries,
@@ -1791,6 +1874,16 @@ for query_index in queries_to_run:
 
         if failed_run:
             break
+        if reference_timeout:
+            # From here on the query is `partial`: it runs on the tested servers only, and the
+            # runs the reference completed do not count.
+            dropped = no_errors.index(reference)
+            server_seconds -= sum(all_server_times[dropped])
+            dropped_reference_seconds = reference_wall_seconds
+            del no_errors[dropped], this_query_connections[dropped], all_server_times[dropped]
+            query_rows = [row for row in query_rows if row[0] != reference]
+            report_reference_timeout(query_index, "run", args.max_query_seconds)
+            print(f"partial\t{query_index}\t{no_errors}")
         if any(i != reference for i in timeouts):
             failed_run = (next(i for i in timeouts if i != reference), "timed out on the tested server")
             break
@@ -1843,10 +1936,9 @@ for query_index in queries_to_run:
     if failed_run:
         fail_query(query_index, *failed_run)
         continue
-    if query_rows:
-        print("\n".join(query_rows))
+    print_query_rows(query_rows)
 
-    client_seconds = time.perf_counter() - start_seconds - threshold_seconds
+    client_seconds = time.perf_counter() - start_seconds - threshold_seconds - dropped_reference_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
     median = [statistics.median(t) for t in all_server_times]
     print(f"median\t{query_index}\t{median[0]}")

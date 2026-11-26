@@ -11,7 +11,7 @@ integration:
 ---
 
 <div id="what-postgres-resync-do">
-  ### 重新同步会执行什么操作？
+  ### 重新同步会执行什么操作？ {#what-postgres-resync-do}
 </div>
 
 重新同步会按顺序执行以下操作：
@@ -24,7 +24,7 @@ integration:
 原始 ClickPipe 的所有设置都会保留在重新同步 ClickPipe 中。UI 中原始 ClickPipe 的统计信息会被清空。
 
 <div id="use-cases-postgres-resync">
-  ### 重新同步 ClickPipe 的使用场景
+  ### 重新同步 ClickPipe 的使用场景 {#use-cases-postgres-resync}
 </div>
 
 以下是一些场景：
@@ -38,27 +38,21 @@ integration:
   因为每次都会涉及使用并行线程进行初始加载。
 </Note>
 
-<div id="guide-postgres-resync">
-  ### 重新同步 ClickPipe 指南
-</div>
+### 重新同步 ClickPipe 指南 {#guide-postgres-resync}
 
 1. 在 **Data Sources** 选项卡中，点击要重新同步的 Postgres ClickPipe。
-2. 转到 **Settings** 选项卡。
+2. 转到 **设置** 选项卡。
 3. 点击 **重新同步** 按钮。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
+  </Frame>
 </div>
 
 4. 此时会弹出确认对话框。再次点击 **重新同步**。
 5. 转到 **Metrics** 选项卡。
 6. 大约 5 秒后 (以及刷新页面后) ，管道状态应为 **Setup** 或 **Snapshot**。
-7. 可在 **Tables** 选项卡的 **Initial Load Stats** 部分查看重新同步的初始加载进度。
+7. 可在 **表** 选项卡的 **Initial Load Stats** 部分查看重新同步的初始加载进度。
 8. 初始加载完成后，管道会以原子方式将 `_resync` 表与原始表进行交换。在交换期间，状态将为 **重新同步**。
 9. 交换完成后，管道将进入 **Running** 状态，并在启用时执行 CDC (变更数据捕获) 。
