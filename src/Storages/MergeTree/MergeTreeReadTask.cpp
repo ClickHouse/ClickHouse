@@ -526,11 +526,12 @@ UInt64 MergeTreeReadTask::estimateNumRows(bool scale_by_filtration_ratio) const
         double filtration_ratio = scale_by_filtration_ratio
             ? std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio)
             : 1.0;
-        auto rows_to_read_for_max_size_column_with_filtration
-            = static_cast<size_t>(static_cast<double>(rows_to_read_for_max_size_column) / filtration_ratio);
+        double rows_to_read_for_max_size_column_with_filtration
+            = static_cast<double>(rows_to_read_for_max_size_column) / filtration_ratio;
 
         /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than current_index_granularity.
-        rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
+        if (rows_to_read_for_max_size_column_with_filtration < static_cast<double>(rows_to_read))
+            rows_to_read = static_cast<size_t>(rows_to_read_for_max_size_column_with_filtration);
     }
 
     auto unread_rows_in_current_granule = readers_chain.numPendingRowsInCurrentGranule();
