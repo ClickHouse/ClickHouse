@@ -7,7 +7,7 @@
         "fr/resources/changelogs/cloud/index",
         "fr/resources/changelogs/cloud/2026",
         {
-          "group": "Archives",
+          "group": "Archive",
           "pages": [
             "fr/resources/changelogs/cloud/archive/2025",
             "fr/resources/changelogs/cloud/archive/2024",
@@ -17,7 +17,7 @@
         },
         "fr/resources/changelogs/cloud/release-status",
         {
-          "group": "Historique des versions de la base de données Cloud",
+          "group": "Cloud database release changelog",
           "pages": [
             "fr/resources/changelogs/cloud/release-notes-index",
             {
@@ -60,8 +60,8 @@
       "pages": [
         "fr/resources/changelogs/oss/2026",
         {
+          "group": "Archive",
           "expanded": false,
-          "group": "Archives",
           "pages": [
             "fr/resources/changelogs/oss/2025",
             "fr/resources/changelogs/oss/2024",
@@ -78,5 +78,5 @@
       ]
     }
   ],
-  "item": "Journaux des modifications"
+  "item": "Changelogs"
 }

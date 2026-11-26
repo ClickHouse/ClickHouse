@@ -2,33 +2,29 @@
 slug: /use-cases/observability/clickstack/config
 title: '구성 옵션'
 description: 'ClickStack - ClickHouse Observability Stack의 구성 옵션'
-keywords: ['ClickStack 구성', '관측성 구성', 'HyperDX 설정', 'collector 구성', '환경 변수']
-doc_type: '참고'
+keywords: ['ClickStack 구성', '관측성 구성', 'ClickStack UI 설정', '수집기 설정', '환경 변수']
+doc_type: 'reference'
 ---
 
 ClickStack의 각 구성 요소에 대해 다음 구성 옵션을 사용할 수 있습니다:
 
 <div id="modifying-settings">
-  ## 오픈 소스 배포판 설정
+  ## 오픈 소스 배포판 설정 {#modifying-settings}
 </div>
 
-<div id="docker">
-  ### Docker
-</div>
+### Docker {#docker}
 
-[All in One](/ko/clickstack/deployment/all-in-one), [HyperDX Only](/ko/clickstack/deployment/hyperdx-only) 또는 [Local Mode](/ko/clickstack/deployment/local-mode-only)를 사용하는 경우에는 예를 들어 환경 변수를 통해 원하는 설정을 전달하십시오.
+[All in One](/ko/clickstack/deployment/all-in-one), [ClickStack UI only](/ko/clickstack/deployment/hyperdx-only) 또는 [Local Mode](/ko/clickstack/deployment/local-mode-only)를 사용하는 경우에는 예를 들어 환경 변수를 통해 원하는 설정을 전달하십시오.
 
 ```shell
-docker run  -e HYPERDX_LOG_LEVEL='debug' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+docker run -e HYPERDX_APP_PORT=8081 -p 8081:8081 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
 ```
 
-<div id="docker-compose">
-  ### Docker Compose
-</div>
+### Docker Compose {#docker-compose}
 
-[Docker Compose](/ko/clickstack/deployment/docker-compose) 배포 가이드를 사용하는 경우 [`.env`](https://github.com/hyperdxio/hyperdx/blob/main/.env) 파일로 설정을 변경할 수 있습니다.
+[Docker Compose](/ko/clickstack/deployment/docker-compose) 배포 가이드를 사용하는 경우 [`.env`](https://github.com/ClickHouse/clickstack/blob/main/.env) 파일로 설정을 변경할 수 있습니다.
 
-또는 [`docker-compose.yaml`](https://github.com/hyperdxio/hyperdx/blob/main/docker-compose.yml) 파일에서 설정을 직접 덮어쓸 수 있습니다. 예를 들면 다음과 같습니다.
+또는 [`docker-compose.yml`](https://github.com/ClickHouse/clickstack/blob/main/docker-compose.yml) 파일에서 설정을 직접 덮어쓸 수 있습니다. 예를 들면 다음과 같습니다.
 
 예시:
 
@@ -38,72 +34,44 @@ services:
     environment:
       HYPERDX_API_KEY: ${HYPERDX_API_KEY}
       HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
-      # ... 기타 설정
+      # ... other settings
 ```
 
-<div id="helm">
-  ### Helm
-</div>
+### Helm {#helm}
 
-<div id="customizing-values">
-  #### values 맞춤 설정(선택 사항)
-</div>
-
-예를 들어 `--set` 플래그를 사용해 설정을 맞춤 설정할 수 있습니다.
+[Helm 배포 가이드](/ko/clickstack/deployment/helm)를 참고하여 오퍼레이터와 ClickStack 차트를 설치하십시오. 배포를 사용자 정의하기 전에 현재 차트의 설정값을 먼저 가져오십시오.
 
 ```shell
-helm install my-hyperdx hyperdx/hdx-oss-v2 \
-  --set replicaCount=2 \
-  --set resources.limits.cpu=500m \
-  --set resources.limits.memory=512Mi \
-  --set resources.requests.cpu=250m \
-  --set resources.requests.memory=256Mi \
-  --set ingress.enabled=true \
-  --set ingress.annotations."kubernetes\.io/ingress\.class"=nginx \
-  --set ingress.hosts[0].host=hyperdx.example.com \
-  --set ingress.hosts[0].paths[0].path=/ \
-  --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
-  --set env[0].name=CLICKHOUSE_USER \
-  --set env[0].value=abc
+helm show values clickstack/clickstack > values.yaml
 ```
 
-또는 `values.yaml`을 수정하세요. 기본값을 확인하려면 다음을 실행하십시오:
+차트의 설정값으로 애플리케이션 환경과 collector 환경을 각각 설정한 후 구성을 적용하십시오:
 
 ```shell
-helm show values hyperdx/hdx-oss-v2 > values.yaml
+helm upgrade --install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-구성 예시:
-
-```yaml
-replicaCount: 2
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 250m
-    memory: 256Mi
-ingress:
-  enabled: true
-  annotations:
-    kubernetes.io/ingress.class: nginx
-  hosts:
-    - host: hyperdx.example.com
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  env:
-    - name: CLICKHOUSE_USER
-      value: abc
-```
+지원되는 설정값, 인그레스, 리소스, 시크릿 구성은 [Helm 구성](/ko/clickstack/deployment/helm-configuration)을 참조하십시오. 이전 `hyperdx/hdx-oss-v2` 차트는 설정값 구조가 다릅니다.
 
 <div id="hyperdx">
-  ## ClickStack UI (HyperDX) 애플리케이션
+  ## ClickStack UI 애플리케이션 {#hyperdx}
 </div>
 
+### 연결 {#connection-settings}
+
+팀 설정에서 소스가 사용하는 데이터베이스 연결(database connection)을 구성하십시오.
+
+| 설정                         | 설명                                                                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection Name`          | 소스 설정에서 이 연결을 식별하는 데 사용하는 이름입니다.                                                                                                                           |
+| `Host`                     | 포트를 포함한 ClickHouse HTTP(S) 엔드포인트입니다. collector의 내보내기 엔드포인트와는 별개입니다.                                                                                        |
+| `Username`                 | ClickHouse 사용자 이름입니다. 기본값은 `default`입니다.                                                                                                                   |
+| `Password`                 | ClickHouse 비밀번호입니다. 기본값은 빈 값입니다.                                                                                                                           |
+| `Query Log Setting Prefix` | 현재 사용자의 이메일을 쿼리 로그(query logs)에 기록하는 사용자 정의 ClickHouse 설정의 접두사입니다(선택 사항). ClickHouse의 `custom_settings_prefixes` 구성에도 동일한 접두사를 포함해야 하며, 그렇지 않으면 쿼리가 거부됩니다. |
+| `Prometheus compatible`    | 사용 가능한 경우 Host를 PromQL 쿼리 프록시용 Prometheus 호환 API 엔드포인트로 취급합니다. 이 연결은 ClickHouse 기반 로그, 트레이스 또는 OTel 메트릭 소스에는 사용할 수 없습니다.                                  |
+
 <div id="datasource-settings">
-  ### 데이터 소스 설정
+  ### 데이터 소스 설정 {#datasource-settings}
 </div>
 
 ClickStack UI에서는 각 관측성 데이터 타입/축에 대해 사용자가 소스를 정의해야 합니다:
@@ -116,124 +84,130 @@ ClickStack UI에서는 각 관측성 데이터 타입/축에 대해 사용자가
 이 구성은 애플리케이션의 `Team Settings -> Sources`에서 수행할 수 있으며, 아래는 로그에 대한 예시입니다:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![HyperDX 소스 구성](/images/use-cases/observability/hyperdx-25.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickStack UI 소스 구성](/images/use-cases/observability/hyperdx-25.webp)
+  </Frame>
 </div>
 
-각 소스를 생성할 때는 최소 1개의 테이블을 지정해야 하며, HyperDX가 데이터를 쿼리할 수 있도록 컬럼 집합도 함께 지정해야 합니다.
+ClickStack UI가 데이터를 쿼리할 수 있도록 각 소스에는 테이블 및 컬럼 매핑이 필요합니다. 메트릭 소스는 메트릭 유형별로 별도의 테이블을 사용할 수 있습니다. `Enabled` 토글은 기존 소스를 편집할 때 표시되며, 소스 수준의 `Query Settings`에는 이름/값 쌍을 최대 10개까지 지정할 수 있습니다.
 
 ClickStack과 함께 제공되는 [기본 OpenTelemetry (OTel) 스키마](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema)를 사용하는 경우, 이러한 컬럼은 각 소스별로 자동 추론할 수 있습니다. [스키마를 수정](#clickhouse)하거나 사용자 지정 스키마를 사용하는 경우에는 이러한 매핑을 직접 지정하고 업데이트해야 합니다.
 
 <Note>
-  ClickStack과 함께 제공되는 ClickHouse의 기본 스키마는 [OTel collector용 ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)가 생성하는 스키마입니다. 이러한 컬럼 이름은 [여기](https://opentelemetry.io/docs/specs/otel/logs/data-model/)에 문서화된 OTel 공식 사양과 연관됩니다.
+  collector는 [스키마 구성](#collector-schema-and-retention)에 따라 스키마 마이그레이션(schema migration) 또는 레거시 방식인 익스포터 관리형 스키마 생성을 통해 테이블을 생성합니다. 컬럼 매핑은 [로그 데이터 모델](https://opentelemetry.io/docs/specs/otel/logs/data-model/)을 포함한 OpenTelemetry 규약을 따릅니다.
 </Note>
 
 각 소스에 대해 다음 설정을 사용할 수 있습니다:
 
 <div id="logs">
-  #### 로그
+  #### 로그 {#logs}
 </div>
 
-| 설정                        | 설명                                                                                                                                                                                                                                                                                                                            | 필수  | 기본 스키마에서 추론 | 추론된 값                                              |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ----------- | -------------------------------------------------- |
-| `이름`                      | 소스 이름.                                                                                                                                                                                                                                                                                                                        | 예   | 아니요         | –                                                  |
-| `섹션`                      | 소스 셀렉터에서 소스를 그룹화하는 데 사용하는 선택적 레이블입니다. 동일한 섹션에 속한 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다.                                                                                                                                                                                                                           | No  | No          | –                                                  |
-| `서버 연결`                   | 서버 연결 이름입니다.                                                                                                                                                                                                                                                                                                                  | Yes | No          | `기본`                                               |
-| `데이터베이스`                  | ClickHouse 데이터베이스 이름입니다.                                                                                                                                                                                                                                                                                                      | Yes | Yes         | `default`                                          |
-| `테이블`                     | 대상 테이블 이름입니다. 기본 스키마를 사용하는 경우 `otel_logs`로 설정합니다.                                                                                                                                                                                                                                                                             | Yes | No          |                                                    |
-| `쿼리 설정`                   | 쿼리 수준의 [세션 설정](/ko/reference/settings/session-settings)입니다. 각 설정은 설정 이름과 값으로 지정되며, 이 소스에 대해 실행되는 모든 쿼리에 적용됩니다.                                                                                                                                                                                                                   | No  | No          | –                                                  |
-| `활성화됨`                    | 비활성화된 소스는 유지되지만 소스 셀렉터에는 표시되지 않으며 자동으로 선택되지 않습니다.                                                                                                                                                                                                                                                                             | No  | No          | 활성화됨                                               |
-| `타임스탬프 컬럼`                | 프라이머리 키에 포함된 DateTime 컬럼 또는 표현식.                                                                                                                                                                                                                                                                                              | 예   | 예           | `TimestampTime`                                    |
-| `기본 선택 항목`                | 기본 검색 결과에 표시되는 컬럼.                                                                                                                                                                                                                                                                                                            | 예   | 예           | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
-| `서비스 이름 표현식`              | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                     | 예   | 예           | `ServiceName`                                      |
-| `서비스 버전 표현식`              | 서비스에서 실행 중인 릴리스를 식별하는 표현식 또는 컬럼입니다. 대시보드 차트에 [릴리스 마커](/ko/clickstack/features/dashboards/release-markers)를 표시하는 데 사용됩니다. 비워 두면 OpenTelemetry `service.version` 리소스 속성을 기본값으로 사용합니다.                                                                                                                                              | 아니요 | 아니요         | `ResourceAttributes['service.version']`            |
-| `로그 레벨 표현식`               | 로그 레벨에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                      | 예   | 예           | `SeverityText`                                     |
-| `본문 표현식`                  | 로그 메시지에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                     | 예   | 예           | `Body`                                             |
-| `로그 속성 표현식`               | 사용자 지정 로그 속성의 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | 예   | 예           | `LogAttributes`                                    |
-| `리소스 속성 표현식`              | 리소스 수준 속성의 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                      | 예   | 예           | `ResourceAttributes`                               |
-| `표시 타임스탬프 컬럼`             | UI 표시에 사용하는 선택적 고정밀도 타임스탬프 컬럼입니다. 지정하지 않으면 Timestamp Column을 기본값으로 사용합니다.                                                                                                                                                                                                                                                     | No  | Yes         | `Timestamp`                                        |
-| `연관된 메트릭 소스`              | 연결된 메트릭 소스(예: HyperDX 메트릭).                                                                                                                                                                                                                                                                                                   | No  | No          | –                                                  |
-| `연관된 트레이스 소스`             | 연결된 trace source(예: HyperDX traces).                                                                                                                                                                                                                                                                                          | No  | No          | –                                                  |
-| `트레이스 ID 표현식`             | 트레이스 ID 추출에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                 | 예   | 예           | `TraceId`                                          |
-| `스팬 ID 표현식`               | 스팬 ID 추출에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | 예   | 예           | `SpanId`                                           |
-| `암시적 컬럼 표현식`              | 필드를 지정하지 않은 경우 전문 검색(Lucene 스타일)에 사용하는 컬럼입니다. 일반적으로 로그 본문입니다.                                                                                                                                                                                                                                                                 | 예   | 예           | `Body`                                             |
-| `알려진 컬럼 목록`               | 대상 테이블의 컬럼 집합이 서로 다른 [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 또는 [`Merge`](/ko/reference/engines/table-engines/special/merge) 테이블의 소스에 사용합니다. 전체 행 데이터(예: 행 측면 패널)를 가져올 때 `SELECT *` 대신 사용할 수 있도록, 모든 대상 테이블에 공통으로 있는 컬럼을 쉼표로 구분해 나열합니다. 모든 컬럼을 선택하려면 비워 두십시오. 컬럼명만 지정할 수 있으며 표현식이나 별칭은 사용할 수 없습니다. | No  | No          | –                                                  |
-| `텍스트 인덱스 사용`              | Lucene 기반 검색에서 암시적 컬럼을 검색할 때 `hasAllTokens`를 사용할지 여부입니다.                                                                                                                                                                                                                                                                      | No  | No          | `자동 (스키마에서 감지)`                                    |
-| `강조 표시 속성`                | 로그 세부 정보를 열 때 표시할 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                                     | No  | No          | –                                                  |
-| `강조 표시된 추적 속성`            | 트레이스의 각 로그에서 추출되어 트레이스 워터폴 위에 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                    | No  | No          | –                                                  |
-| `Materialized Views`      | 이 소스에 등록된 사전 집계 [materialized views](/ko/clickstack/managing/materialized-views)입니다. 적합한 쿼리의 속도를 높이는 데 자동으로 사용됩니다. [Materialized views](#materialized-views-settings)를 참조하십시오.                                                                                                                                                   | No  | No          | –                                                  |
-| `메타데이터 materialized view` | 필드 디스커버리 및 값 자동 완성을 가속하는 데 사용되는 materialized view입니다. [메타데이터 materialized view](#metadata-materialized-views-settings)를 참조하십시오.                                                                                                                                                                                               | No  | Yes         | `<table>_kv_rollup_15m`                            |
-| `기본 ORDER BY`             | 검색 결과의 기본 정렬을 재정의하는 `ORDER BY` 표현식입니다. 자동으로 감지된 기본값을 사용하려면 비워 두십시오. 이후 각 검색에서 개별적으로 맞춤 설정할 수 있습니다.                                                                                                                                                                                                                            | No  | No          | –                                                  |
+| 설정                        | 설명                                                                                                                                                                                                                                                                                                                            | 필수  | 기본 스키마에서 추론    | 추론된 값                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | -------------- | -------------------------------------------------- |
+| `이름`                      | 소스 이름.                                                                                                                                                                                                                                                                                                                        | 예   | 아니요            | –                                                  |
+| `섹션`                      | 소스 셀렉터에서 소스를 그룹화하는 데 사용하는 선택적 레이블입니다. 동일한 섹션에 속한 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다.                                                                                                                                                                                                                           | No  | No             | –                                                  |
+| `서버 연결`                   | 서버 연결 이름입니다.                                                                                                                                                                                                                                                                                                                  | Yes | No             | `기본`                                               |
+| `데이터베이스`                  | ClickHouse 데이터베이스 이름입니다.                                                                                                                                                                                                                                                                                                      | Yes | Yes            | `default`                                          |
+| `테이블`                     | 대상 테이블 이름입니다. 기본 스키마를 사용하는 경우 `otel_logs`로 설정합니다.                                                                                                                                                                                                                                                                             | Yes | No             |                                                    |
+| `쿼리 설정`                   | 쿼리 수준의 [세션 설정](/ko/reference/settings/session-settings)입니다. 각 설정은 설정 이름과 값으로 지정되며, 이 소스에 대해 실행되는 모든 쿼리에 적용됩니다.                                                                                                                                                                                                                | No  | No             | –                                                  |
+| `활성화됨`                    | 비활성화된 소스는 유지되지만 소스 셀렉터에는 표시되지 않으며 자동으로 선택되지 않습니다.                                                                                                                                                                                                                                                                             | No  | No             | 활성화됨                                               |
+| `타임스탬프 컬럼`                | 프라이머리 키에 포함된 DateTime 컬럼 또는 표현식.                                                                                                                                                                                                                                                                                              | 예   | 예              | `TimestampTime`                                    |
+| `기본 선택 항목`                | 기본 검색 결과에 표시되는 컬럼.                                                                                                                                                                                                                                                                                                            | 예   | 예              | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
+| `서비스 이름 표현식`              | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                     | 아니요 | 예              | `ServiceName`                                      |
+| `서비스 버전 표현식`              | 서비스에서 실행 중인 릴리스를 식별하는 표현식 또는 컬럼입니다. 대시보드 차트에 [릴리스 마커](/ko/clickstack/features/dashboards/release-markers)를 표시하는 데 사용됩니다. 비워 두면 OpenTelemetry `service.version` 리소스 속성을 기본값으로 사용합니다.                                                                                                                                              | 아니요 | 아니요            | `ResourceAttributes['service.version']`            |
+| `로그 레벨 표현식`               | 로그 레벨에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                      | 아니요 | 예              | `SeverityText`                                     |
+| `본문 표현식`                  | 로그 메시지에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                     | 아니요 | 예              | `Body`                                             |
+| `로그 속성 표현식`               | 사용자 지정 로그 속성의 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | 아니요 | 예              | `LogAttributes`                                    |
+| `리소스 속성 표현식`              | 리소스 수준 속성의 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                      | 아니요 | 예              | `ResourceAttributes`                               |
+| `표시 타임스탬프 컬럼`             | UI 표시에 사용하는 선택적 고정밀도 타임스탬프 컬럼입니다. 지정하지 않으면 Timestamp Column을 기본값으로 사용합니다.                                                                                                                                                                                                                                                     | No  | Yes            | `Timestamp`                                        |
+| `연관된 메트릭 소스`              | 연결된 메트릭 소스(예: ClickStack UI 메트릭).                                                                                                                                                                                                                                                                                             | No  | No             | –                                                  |
+| `연관된 트레이스 소스`             | 연결된 trace source(예: ClickStack UI traces).                                                                                                                                                                                                                                                                                    | No  | No             | –                                                  |
+| `트레이스 ID 표현식`             | 트레이스 ID 추출에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                 | 아니요 | 예              | `TraceId`                                          |
+| `스팬 ID 표현식`               | 스팬 ID 추출에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | 아니요 | 예              | `SpanId`                                           |
+| `암시적 컬럼 표현식`              | 필드를 지정하지 않은 경우 전문 검색(Lucene 스타일)에 사용하는 컬럼입니다. 일반적으로 로그 본문입니다.                                                                                                                                                                                                                                                                 | 아니요 | 예              | `Body`                                             |
+| `알려진 컬럼 목록`               | 대상 테이블의 컬럼 집합이 서로 다른 [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 또는 [`Merge`](/ko/reference/engines/table-engines/special/merge) 테이블의 소스에 사용합니다. 전체 행 데이터(예: 행 측면 패널)를 가져올 때 `SELECT *` 대신 사용할 수 있도록, 모든 대상 테이블에 공통으로 있는 컬럼을 쉼표로 구분해 나열합니다. 모든 컬럼을 선택하려면 비워 두십시오. 컬럼명만 지정할 수 있으며 표현식이나 별칭은 사용할 수 없습니다. | No  | No             | –                                                  |
+| `텍스트 인덱스 사용`              | Lucene 기반 검색에서 암시적 컬럼을 검색할 때 `hasAllTokens`를 사용할지 여부입니다.                                                                                                                                                                                                                                                                      | No  | No             | `자동 (스키마에서 감지)`                                    |
+| `강조 표시 속성`                | 로그 세부 정보를 열 때 표시할 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                                     | No  | No             | –                                                  |
+| `강조 표시된 추적 속성`            | 트레이스의 각 로그에서 추출되어 트레이스 워터폴 위에 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                    | No  | No             | –                                                  |
+| `Materialized Views`      | 이 소스에 등록된 사전 집계 [materialized views](/ko/clickstack/managing/materialized-views)입니다. 적합한 쿼리의 속도를 높이는 데 자동으로 사용됩니다. [Materialized views](#materialized-views-settings)를 참조하십시오.                                                                                                                                                   | No  | No             | –                                                  |
+| `메타데이터 materialized view` | 필드 디스커버리 및 값 자동 완성을 가속하는 데 사용되는 materialized view입니다. [메타데이터 materialized view](#metadata-materialized-views-settings)를 참조하십시오.                                                                                                                                                                                               | No  | Yes            | `<table>_kv_rollup_15m`                            |
+| `기본 ORDER BY`             | 검색 결과의 기본 정렬을 재정의하는 `ORDER BY` 표현식입니다. 자동으로 감지된 기본값을 사용하려면 비워 두십시오. 이후 각 검색에서 개별적으로 맞춤 설정할 수 있습니다.                                                                                                                                                                                                                            | No  | No             | –                                                  |
+| `심각도 숫자 표현식`              | 숫자로 표현된 OpenTelemetry 심각도(1–24)입니다(테이블에 해당 값이 있는 경우).                                                                                                                                                                                                                                                                         | 아니요 | 예, 해당 값이 있는 경우 | `SeverityNumber`                                   |
+| `이벤트 이름 표현식`              | OpenTelemetry 이벤트 이름입니다(테이블에 해당 값이 있는 경우).                                                                                                                                                                                                                                                                                    | 아니요 | 예, 있는 경우       | `EventName`                                        |
 
 <div id="traces">
-  #### 트레이스
+  #### 트레이스 {#traces}
 </div>
 
-| 설정                             | 설명                                                                                                                                                                                                                                                                                                                          | 필수 여부 | 기본 스키마에서 추론 | 추론값                                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------- | ----------------------------------------------------------------------------------------------------- |
-| `Name`                         | 소스 이름입니다.                                                                                                                                                                                                                                                                                                                   | Yes   | No          | –                                                                                                     |
-| `Section`                      | 선택 사항입니다. 소스 셀렉터에서 소스를 그룹화하기 위한 레이블입니다. 동일한 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 대상으로 포함됩니다.                                                                                                                                                                                                                     | No    | No          | –                                                                                                     |
-| `Server Connection`            | 서버 연결 이름입니다.                                                                                                                                                                                                                                                                                                                | Yes   | No          | `Default`                                                                                             |
-| `Database`                     | ClickHouse 데이터베이스 이름입니다.                                                                                                                                                                                                                                                                                                    | Yes   | Yes         | `default`                                                                                             |
-| `Table`                        | 대상 테이블 이름입니다. 기본 스키마를 사용하는 경우 `otel_traces`로 설정합니다.                                                                                                                                                                                                                                                                         | Yes   | Yes         | -                                                                                                     |
-| `Query Settings`               | 이 소스에 대해 실행되는 모든 쿼리에 추가되는 쿼리 수준 [세션 설정](/ko/reference/settings/session-settings)입니다. 각 설정은 설정 이름과 값으로 지정합니다.                                                                                                                                                                                                                   | No    | No          | –                                                                                                     |
-| `Enabled`                      | 비활성화된 소스는 유지되지만 소스 셀렉터에서 숨겨지며 자동으로 선택되지 않습니다.                                                                                                                                                                                                                                                                               | No    | No          | Enabled                                                                                               |
-| `Timestamp Column`             | 프라이머리 키에 포함되는 날짜/시간 컬럼 또는 표현식입니다.                                                                                                                                                                                                                                                                                           | Yes   | Yes         | `Timestamp`                                                                                           |
-| `Default Select`               | 기본 검색 결과에 표시할 컬럼입니다.                                                                                                                                                                                                                                                                                                        | Yes   | Yes         | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
-| `Duration Expression`          | 스팬 지속 시간을 계산하는 표현식입니다.                                                                                                                                                                                                                                                                                                      | Yes   | Yes         | `Duration`                                                                                            |
-| `Duration Precision`           | 지속 시간 표현식의 정밀도입니다(예: 나노초, 마이크로초).                                                                                                                                                                                                                                                                                           | Yes   | Yes         | ns                                                                                                    |
-| `Trace Id Expression`          | 트레이스 ID에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                  | Yes   | Yes         | `TraceId`                                                                                             |
-| `Span Id Expression`           | 스팬 ID에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                    | Yes   | Yes         | `SpanId`                                                                                              |
-| `Parent Span Id Expression`    | 부모 스팬 ID에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                 | Yes   | Yes         | `ParentSpanId`                                                                                        |
-| `Span Name Expression`         | 스팬 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                    | Yes   | Yes         | `SpanName`                                                                                            |
-| `Span Kind Expression`         | 스팬 종류(예: client, server)에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                 | Yes   | Yes         | `SpanKind`                                                                                            |
-| `Correlated Log Source`        | 선택 사항입니다. 연결된 상관관계 로그 소스입니다(예: HyperDX logs).                                                                                                                                                                                                                                                                               | No    | No          | –                                                                                                     |
-| `Correlated Session Source`    | 선택 사항입니다. 연결된 상관관계 세션 소스입니다.                                                                                                                                                                                                                                                                                                | No    | No          | –                                                                                                     |
-| `Correlated Metric Source`     | 선택 사항입니다. 연결된 상관관계 메트릭 소스입니다(예: HyperDX metrics).                                                                                                                                                                                                                                                                           | No    | No          | –                                                                                                     |
-| `Status Code Expression`       | 스팬 상태 코드에 대한 표현식입니다.                                                                                                                                                                                                                                                                                                        | Yes   | Yes         | `StatusCode`                                                                                          |
-| `Status Message Expression`    | 스팬 상태 메시지에 대한 표현식입니다.                                                                                                                                                                                                                                                                                                       | Yes   | Yes         | `StatusMessage`                                                                                       |
-| `Service Name Expression`      | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | Yes   | Yes         | `ServiceName`                                                                                         |
-| `Service Version Expression`   | 서비스의 실행 중인 릴리스를 식별하는 표현식 또는 컬럼으로, 대시보드 차트에 [릴리스 마커](/ko/clickstack/features/dashboards/release-markers)를 표시하는 데 사용됩니다. 비워 두면 OpenTelemetry `service.version` 리소스 속성이 기본값으로 사용됩니다.                                                                                                                                              | No    | No          | `ResourceAttributes['service.version']`                                                               |
-| `리소스 속성 표현식`                   | 리소스 수준 속성에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                | Yes   | Yes         | `ResourceAttributes`                                                                                  |
-| `Event Attributes Expression`  | 이벤트 속성에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | Yes   | Yes         | `SpanAttributes`                                                                                      |
-| `Sample Rate Expression`       | 업스트림 샘플링 가중치(`1/N`)를 저장하는 컬럼 또는 표현식입니다. 설정하면 집계(`count`, `avg`, `sum`, `quantile`)가 샘플링을 보정합니다. 이후 백분위수에는 근삿값인 `quantileTDigestWeighted`가 사용되므로 정확한 값과 약간 다를 수 있습니다. 스팬이 샘플링되지 않은 경우 비워 둡니다.                                                                                                                                | No    | No          | –                                                                                                     |
-| `Span Events Expression`       | 스팬 이벤트를 추출하는 표현식입니다. 일반적으로 `Nested` 유형의 컬럼입니다. 이를 통해 지원되는 language SDKs에서 예외 스택 트레이스를 렌더링할 수 있습니다.                                                                                                                                                                                                                          | Yes   | Yes         | `Events`                                                                                              |
-| `Span Links Expression`        | 스팬 링크를 추출하는 표현식으로, 한 스팬에서 다른 트레이스의 스팬으로 연결되는 링크를 캡처하는 데 사용됩니다. `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))` 유형이어야 합니다.                                                                                                                                        | No    | Yes         | `Links`                                                                                               |
-| `Implicit Column Expression`   | 필드가 지정되지 않은 경우 전문 검색에 사용할 컬럼입니다(Lucene 스타일). 일반적으로 로그 본문입니다.                                                                                                                                                                                                                                                                | Yes   | Yes         | `SpanName`                                                                                            |
-| `Known Columns List`           | 대상 테이블의 컬럼 집합이 일치하지 않는 [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 또는 [`Merge`](/ko/reference/engines/table-engines/special/merge) 테이블의 소스에 사용합니다. 모든 대상 테이블에서 사용할 수 있는 컬럼을 쉼표로 구분한 목록으로, 전체 행 데이터를 가져올 때(예: 행 사이드 패널에서) `SELECT *` 대신 사용합니다. 모든 컬럼을 선택하려면 비워 둡니다. 컬럼 이름만 지정하며 표현식이나 별칭은 사용할 수 없습니다. | No    | No          | –                                                                                                     |
-| `Use Text Index`               | 암시적 컬럼을 검색할 때 Lucene 기반 검색에서 `hasAllTokens`를 생성할지 여부입니다.                                                                                                                                                                                                                                                                    | No    | No          | `Auto (detect from schema)`                                                                           |
-| `Displayed Timestamp Column`   | UI 표시에 사용할 선택적 고정밀도 타임스탬프 컬럼입니다. 지정하지 않으면 `Timestamp Column`이 기본값으로 사용됩니다.                                                                                                                                                                                                                                                  | No    | Yes         | `Timestamp`                                                                                           |
-| `Highlighted Attributes`       | 스팬 세부 정보를 열 때 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                                  | No    | No          | –                                                                                                     |
-| `Highlighted Trace Attributes` | 트레이스의 각 스팬에서 추출되어 트레이스 워터폴 위에 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                  | No    | No          | –                                                                                                     |
-| `Materialized Views`           | 이 소스에 등록된 사전 집계된 [materialized view](/ko/clickstack/managing/materialized-views)로, 적합한 쿼리의 속도를 높이기 위해 자동으로 사용됩니다. [Materialized views](#materialized-views-settings)를 참조하십시오.                                                                                                                                                  | No    | No          | –                                                                                                     |
-| `Metadata Materialized Views`  | 필드 디스커버리와 값 자동 완성의 속도를 높이는 데 사용되는 materialized view입니다. [Metadata materialized views](#metadata-materialized-views-settings)를 참조하십시오.                                                                                                                                                                                       | No    | Yes         | `<table>_kv_rollup_15m`                                                                               |
-| `Default Order By`             | 검색 결과의 기본 정렬을 재정의하는 `ORDER BY` 표현식입니다. 자동 감지된 기본값을 사용하려면 비워 두십시오. 나중에 검색별로 사용자 지정할 수 있습니다.                                                                                                                                                                                                                                  | No    | No          | –                                                                                                     |
+| 설정                               | 설명                                                                                                                                                                                                                                                                                                                          | 필수 여부 | 기본 스키마에서 추론 | 추론값                                                                                                   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `Name`                           | 소스 이름입니다.                                                                                                                                                                                                                                                                                                                   | Yes   | No          | –                                                                                                     |
+| `Section`                        | 선택 사항입니다. 소스 셀렉터에서 소스를 그룹화하기 위한 레이블입니다. 동일한 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 대상으로 포함됩니다.                                                                                                                                                                                                                     | No    | No          | –                                                                                                     |
+| `Server Connection`              | 서버 연결 이름입니다.                                                                                                                                                                                                                                                                                                                | Yes   | No          | `Default`                                                                                             |
+| `Database`                       | ClickHouse 데이터베이스 이름입니다.                                                                                                                                                                                                                                                                                                    | Yes   | Yes         | `default`                                                                                             |
+| `Table`                          | 대상 테이블 이름입니다. 기본 스키마를 사용하는 경우 `otel_traces`로 설정합니다.                                                                                                                                                                                                                                                                         | Yes   | Yes         | -                                                                                                     |
+| `Query Settings`                 | 이 소스에 대해 실행되는 모든 쿼리에 추가되는 쿼리 수준 [세션 설정](/ko/reference/settings/session-settings)입니다. 각 설정은 설정 이름과 값으로 지정합니다.                                                                                                                                                                                                                   | No    | No          | –                                                                                                     |
+| `Enabled`                        | 비활성화된 소스는 유지되지만 소스 셀렉터에서 숨겨지며 자동으로 선택되지 않습니다.                                                                                                                                                                                                                                                                               | No    | No          | Enabled                                                                                               |
+| `Timestamp Column`               | 프라이머리 키에 포함되는 날짜/시간 컬럼 또는 표현식입니다.                                                                                                                                                                                                                                                                                           | Yes   | Yes         | `Timestamp`                                                                                           |
+| `Default Select`                 | 기본 검색 결과에 표시할 컬럼입니다.                                                                                                                                                                                                                                                                                                        | Yes   | Yes         | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
+| `Duration Expression`            | 스팬 지속 시간을 계산하는 표현식입니다.                                                                                                                                                                                                                                                                                                      | Yes   | Yes         | `Duration`                                                                                            |
+| `Duration Precision`             | 지속 시간 표현식의 정밀도입니다(예: 나노초, 마이크로초).                                                                                                                                                                                                                                                                                           | Yes   | Yes         | ns                                                                                                    |
+| `Trace Id Expression`            | 트레이스 ID에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                  | Yes   | Yes         | `TraceId`                                                                                             |
+| `Span Id Expression`             | 스팬 ID에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                    | Yes   | Yes         | `SpanId`                                                                                              |
+| `Parent Span Id Expression`      | 부모 스팬 ID에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                 | Yes   | Yes         | `ParentSpanId`                                                                                        |
+| `Span Name Expression`           | 스팬 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                    | Yes   | Yes         | `SpanName`                                                                                            |
+| `Span Kind Expression`           | 스팬 종류(예: client, server)에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                 | Yes   | Yes         | `SpanKind`                                                                                            |
+| `Correlated Log Source`          | 선택 사항입니다. 연결된 상관관계 로그 소스입니다(예: ClickStack UI 로그).                                                                                                                                                                                                                                                                           | No    | No          | –                                                                                                     |
+| `Correlated Session Source`      | 선택 사항입니다. 연결된 상관관계 세션 소스입니다.                                                                                                                                                                                                                                                                                                | No    | No          | –                                                                                                     |
+| `Correlated Metric Source`       | 선택 사항입니다. 연결된 상관관계 메트릭 소스입니다(예: ClickStack UI 메트릭).                                                                                                                                                                                                                                                                         | No    | No          | –                                                                                                     |
+| `Status Code Expression`         | 스팬 상태 코드에 대한 표현식입니다.                                                                                                                                                                                                                                                                                                        | No    | Yes         | `StatusCode`                                                                                          |
+| `Status Message Expression`      | 스팬 상태 메시지에 대한 표현식입니다.                                                                                                                                                                                                                                                                                                       | No    | Yes         | `StatusMessage`                                                                                       |
+| `Service Name Expression`        | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | No    | Yes         | `ServiceName`                                                                                         |
+| `Service Version Expression`     | 서비스의 실행 중인 릴리스를 식별하는 표현식 또는 컬럼으로, 대시보드 차트에 [릴리스 마커](/ko/clickstack/features/dashboards/release-markers)를 표시하는 데 사용됩니다. 비워 두면 OpenTelemetry `service.version` 리소스 속성이 기본값으로 사용됩니다.                                                                                                                                              | No    | No          | `ResourceAttributes['service.version']`                                                               |
+| `Resource Attributes Expression` | 리소스 수준 속성에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                | No    | Yes         | `ResourceAttributes`                                                                                  |
+| `Event Attributes Expression`    | 이벤트 속성에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | No    | Yes         | `SpanAttributes`                                                                                      |
+| `Sample Rate Expression`         | 업스트림 샘플링 가중치(`1/N`)를 저장하는 컬럼 또는 표현식입니다. 설정하면 집계(`count`, `avg`, `sum`, `quantile`)가 샘플링을 보정합니다. 이후 백분위수에는 근삿값인 `quantileTDigestWeighted`가 사용되므로 정확한 값과 약간 다를 수 있습니다. 스팬이 샘플링되지 않은 경우 비워 둡니다.                                                                                                                                | No    | No          | –                                                                                                     |
+| `Span Events Expression`         | 스팬 이벤트를 추출하는 표현식입니다. 일반적으로 `Nested` 유형의 컬럼입니다. 이를 통해 지원되는 language SDKs에서 예외 스택 트레이스를 렌더링할 수 있습니다.                                                                                                                                                                                                                          | No    | Yes         | `Events`                                                                                              |
+| `Span Links Expression`          | 스팬 링크를 추출하는 표현식으로, 한 스팬에서 다른 트레이스의 스팬으로 연결되는 링크를 캡처하는 데 사용됩니다. `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))` 유형이어야 합니다.                                                                                                                                        | No    | Yes         | `Links`                                                                                               |
+| `Implicit Column Expression`     | 필드가 지정되지 않은 경우 전문 검색에 사용할 컬럼입니다(Lucene 스타일). 일반적으로 로그 본문입니다.                                                                                                                                                                                                                                                                | No    | Yes         | `SpanName`                                                                                            |
+| `Known Columns List`             | 대상 테이블의 컬럼 집합이 일치하지 않는 [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 또는 [`Merge`](/ko/reference/engines/table-engines/special/merge) 테이블의 소스에 사용합니다. 모든 대상 테이블에서 사용할 수 있는 컬럼을 쉼표로 구분한 목록으로, 전체 행 데이터를 가져올 때(예: 행 사이드 패널에서) `SELECT *` 대신 사용합니다. 모든 컬럼을 선택하려면 비워 둡니다. 컬럼 이름만 지정하며 표현식이나 별칭은 사용할 수 없습니다. | No    | No          | –                                                                                                     |
+| `Use Text Index`                 | 암시적 컬럼을 검색할 때 Lucene 기반 검색에서 `hasAllTokens`를 생성할지 여부입니다.                                                                                                                                                                                                                                                                    | No    | No          | `Auto (detect from schema)`                                                                           |
+| `Displayed Timestamp Column`     | UI 표시에 사용할 선택적 고정밀도 타임스탬프 컬럼입니다. 지정하지 않으면 `Timestamp Column`이 기본값으로 사용됩니다.                                                                                                                                                                                                                                                  | No    | Yes         | `Timestamp`                                                                                           |
+| `Highlighted Attributes`         | 스팬 세부 정보를 열 때 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                                  | No    | No          | –                                                                                                     |
+| `Highlighted Trace Attributes`   | 트레이스의 각 스팬에서 추출되어 트레이스 워터폴 위에 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                  | No    | No          | –                                                                                                     |
+| `Materialized Views`             | 이 소스에 등록된 사전 집계된 [materialized view](/ko/clickstack/managing/materialized-views)로, 적합한 쿼리의 속도를 높이기 위해 자동으로 사용됩니다. [Materialized views](#materialized-views-settings)를 참조하십시오.                                                                                                                                                  | No    | No          | –                                                                                                     |
+| `Metadata Materialized Views`    | 필드 디스커버리와 값 자동 완성의 속도를 높이는 데 사용되는 materialized view입니다. [Metadata materialized views](#metadata-materialized-views-settings)를 참조하십시오.                                                                                                                                                                                       | No    | Yes         | `<table>_kv_rollup_15m`                                                                               |
+| `Default Order By`               | 검색 결과의 기본 정렬을 재정의하는 `ORDER BY` 표현식입니다. 자동 감지된 기본값을 사용하려면 비워 두십시오. 나중에 검색별로 사용자 지정할 수 있습니다.                                                                                                                                                                                                                                  | No    | No          | –                                                                                                     |
 
 <div id="metrics">
-  #### 메트릭
+  #### 메트릭 {#metrics}
 </div>
 
-| 설정                            | 설명                                                                                                        | 필수 여부 | 기본 스키마에서 추론됨 | 추론된 값                                |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------- | ----- | ------------ | ------------------------------------ |
-| `Name`                        | 소스 이름입니다.                                                                                                 | 예     | 아니요          | –                                    |
-| `Section`                     | 소스 셀렉터에서 소스를 그룹화하기 위한 선택적 레이블입니다. 같은 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다.          | 아니요   | 아니요          | –                                    |
-| `Server Connection`           | 서버 연결 이름입니다.                                                                                              | 예     | 아니요          | `Default`                            |
-| `Database`                    | ClickHouse 데이터베이스 이름입니다.                                                                                  | 예     | 예            | `default`                            |
+| 설정                            | 설명                                                                                                           | 필수 여부 | 기본 스키마에서 추론됨 | 추론된 값                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ | ----- | ------------ | ------------------------------------ |
+| `Name`                        | 소스 이름입니다.                                                                                                    | 예     | 아니요          | –                                    |
+| `Section`                     | 소스 셀렉터에서 소스를 그룹화하기 위한 선택적 레이블입니다. 같은 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다.             | 아니요   | 아니요          | –                                    |
+| `Server Connection`           | 서버 연결 이름입니다.                                                                                                 | 예     | 아니요          | `Default`                            |
+| `Database`                    | ClickHouse 데이터베이스 이름입니다.                                                                                     | 예     | 예            | `default`                            |
 | `Query Settings`              | 이 소스에 대해 실행되는 모든 쿼리에 추가되는, 설정 이름과 값으로 지정된 최대 10개의 쿼리 수준 [세션 설정](/ko/reference/settings/session-settings)입니다. | 아니요   | 아니요          | –                                    |
-| `Enabled`                     | 소스 양식 상단의 토글입니다. 비활성화된 소스는 유지되지만 소스 셀렉터에서는 숨겨지고 자동으로 선택되지 않습니다. 기존 소스를 편집할 때만 표시됩니다.                      | 아니요   | 아니요          | 활성화됨                                 |
-| `Gauge Table`                 | Gauge 유형의 메트릭을 저장하는 테이블입니다.                                                                               | 아니요   | 예            | `otel_metrics_gauge`                 |
-| `Histogram Table`             | 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                               | 아니요   | 예            | `otel_metrics_histogram`             |
-| `Sum Table`                   | 합계 유형(Counter)의 메트릭을 저장하는 테이블입니다.                                                                         | 아니요   | 예            | `otel_metrics_sum`                   |
-| `Exponential Histogram Table` | 지수 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                            | 아니요   | 예            | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`       | 선택 사항입니다. 상관관계 로그 소스(예: HyperDX 로그)입니다.                                                                   | 아니요   | 아니요          | –                                    |
+| `Enabled`                     | 소스 양식 상단의 토글입니다. 비활성화된 소스는 유지되지만 소스 셀렉터에서는 숨겨지고 자동으로 선택되지 않습니다. 기존 소스를 편집할 때만 표시됩니다.                         | 아니요   | 아니요          | 활성화됨                                 |
+| `Gauge Table`                 | Gauge 유형의 메트릭을 저장하는 테이블입니다.                                                                                  | 아니요   | 예            | `otel_metrics_gauge`                 |
+| `Histogram Table`             | 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                                  | 아니요   | 예            | `otel_metrics_histogram`             |
+| `Sum Table`                   | 합계 유형(Counter)의 메트릭을 저장하는 테이블입니다.                                                                            | 아니요   | 예            | `otel_metrics_sum`                   |
+| `Exponential Histogram Table` | 지수 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                               | 아니요   | 예            | `otel_metrics_exponential_histogram` |
+| `Correlated Log Source`       | 선택 사항입니다. 상관관계 로그 소스(예: ClickStack UI 로그)입니다.                                                                | 아니요   | 아니요          | –                                    |
+| `Summary Table`               | Summary 유형의 메트릭을 저장하는 테이블입니다. Summary 및 지수 히스토그램 지원은 아직 완전하지 않습니다.                                           | 아니요   | 예            | `otel_metrics_summary`               |
+| `Minimum auto granularity`    | 자동으로 선택되는 차트 세분화 수준의 최소 버킷 크기입니다. 명시적으로 지정한 차트 세분화 수준은 재정의하지 않습니다.                                           | 아니요   | 아니요          | 최솟값 없음                               |
+
+메트릭 소스에는 타임스탬프 및 리소스 속성 매핑(일반적으로 `TimeUnix` 및 `ResourceAttributes`)도 저장됩니다. 통합 `series Table` 필드는 metrics-series-table 지원이 활성화된 팀에만 표시됩니다.
+
+#### PromQL {#promql-source-settings}
+
+PromQL이 활성화되어 있으면 PromQL 소스를 생성할 수 있습니다. PromQL 소스에는 공통 필드인 이름, 연결, 데이터베이스, 테이블, 쿼리 설정(query settings), 활성화됨 외에 **최소 자동 세분화 수준(Minimum auto granularity)** 필드가 있습니다. ClickHouse 연결로는 `TimeSeries` 엔진 테이블을 선택하십시오. 타임스탬프 표현식은 자동으로 설정됩니다. 최소 자동 세분화 수준은 `$__rate_interval` 계산에 사용되는 스크레이프 인터벌도 결정하며, 설정하지 않으면 스크레이프 인터벌을 15초로 가정합니다.
 
 <div id="settings">
-  #### 세션
+  #### 세션 {#settings}
 </div>
 
 | 설정                        | 설명                                                                                                           | 필수  | 기본 스키마에서 추론됨 | 추론된 값                |
@@ -250,7 +224,7 @@ ClickStack과 함께 제공되는 [기본 OpenTelemetry (OTel) 스키마](/ko/gu
 | `리소스 속성 표현식`              | 리소스 수준 메타데이터를 추출하는 표현식입니다.                                                                                   | 아니요 | 예            | `ResourceAttributes` |
 
 <div id="materialized-views-settings">
-  #### Materialized views
+  #### Materialized views {#materialized-views-settings}
 </div>
 
 Materialized view를 Log 및 Trace 데이터 소스에 등록하면, 조건에 맞는 집계 쿼리는 원본 테이블이 아닌 사전 집계된 뷰에서 결과를 가져옵니다. 뷰 생성 및 등록 방법은 [&quot;Materialized views&quot;](/ko/clickstack/managing/materialized-views)를 참조하십시오.
@@ -270,7 +244,7 @@ Materialized view를 Log 및 Trace 데이터 소스에 등록하면, 조건에 �
 이러한 설정 대부분은 대상 테이블을 선택하면 뷰의 스키마에서 자동으로 추론됩니다.
 
 <div id="metadata-materialized-views-settings">
-  #### 메타데이터 materialized view
+  #### 메타데이터 materialized view {#metadata-materialized-views-settings}
 </div>
 
 메타데이터 materialized view는 필터 및 자동 완성을 위한 필드 디스커버리를 가속합니다. Log 및 Trace 데이터 소스에 구성할 수 있습니다.
@@ -281,11 +255,9 @@ Materialized view를 Log 및 Trace 데이터 소스에 등록하면, 조건에 �
 | `KV Rollup Table`  | 원본 테이블에 있는 key/value 쌍의 롤업 테이블입니다.                 |
 | `Granularity`      | 롤업 테이블에서 사용하는 시간 버킷입니다. 예: `15 minute`.            |
 
-<div id="highlighted-attributes">
-  #### 강조 속성
-</div>
+#### 강조 속성 {#highlighted-attributes}
 
-강조 속성과 강조 트레이스 속성은 Log 및 Trace 데이터 소스에서 구성할 수 있습니다.
+강조 속성과 강조 트레이스 속성은 Log 및 트레이스 데이터 소스에서 구성할 수 있습니다.
 
 * 강조 속성은 로그 또는 스팬 세부 정보를 볼 때 각 로그 또는 스팬에 표시되는 컬럼 또는 표현식입니다.
 * 강조 트레이스 속성은 트레이스 내 각 로그 또는 스팬에서 조회되어 트레이스 워터폴 위에 표시되는 컬럼 또는 표현식입니다.
@@ -300,271 +272,225 @@ Materialized view를 Log 및 Trace 데이터 소스에 등록하면, 조건에 �
 | `Alias`             | 선택 사항입니다. SQL 표현식 대신 속성에 표시되는 레이블입니다.               |
 | `Lucene Expression` | 선택 사항입니다. 이 속성 값을 검색할 때 사용하는 SQL 표현식의 Lucene 버전입니다. |
 
-예를 들어, 이 trace 소스는 강조 속성과 강조 트레이스 속성으로 구성되어 있습니다.
+예를 들어, 이 트레이스 소스는 강조 속성과 강조 트레이스 속성으로 구성되어 있습니다.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![강조 속성 구성](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
-
-</Frame>
-
+  <Frame>
+    ![강조 속성 구성](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
+  </Frame>
 </div>
 
 이러한 속성은 로그 또는 스팬을 클릭한 뒤 사이드 패널에 표시됩니다.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![강조 속성](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
-
-</Frame>
-
+  <Frame>
+    ![강조 속성](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
+  </Frame>
 </div>
 
 속성을 클릭하면 해당 속성을 검색 값으로 사용하는 옵션이 표시됩니다. 속성 구성에 선택적 Lucene 표현식이 제공된 경우, 검색에는 SQL 표현식 대신 Lucene 표현식이 사용됩니다.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![강조 속성 검색](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
-
-</Frame>
-
+  <Frame>
+    ![강조 속성 검색](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
+  </Frame>
 </div>
 
-<div id="correlated-sources">
-  ### 상관관계 소스
-</div>
+### 상관관계 소스 {#correlated-sources}
 
-ClickStack에서 소스 간 전체 상호 연관을 사용하려면 로그, 트레이스, 메트릭, 세션에 대한 상관관계 소스를 구성해야 합니다. 그러면 HyperDX가 관련 데이터를 서로 연관시키고 이벤트를 렌더링할 때 더 풍부한 맥락을 제공할 수 있습니다.
+ClickStack에서 소스 간 전체 상호 연관을 사용하려면 로그, 트레이스, 메트릭, 세션에 대한 상관관계 소스를 구성해야 합니다. 그러면 ClickStack UI가 관련 데이터를 서로 연관시키고 이벤트를 렌더링할 때 더 풍부한 맥락을 제공할 수 있습니다.
 
 * `Logs`: 트레이스 및 메트릭과 연관시킬 수 있습니다.
 * `Traces`: 로그, 세션 및 메트릭과 연관시킬 수 있습니다.
 * `Metrics`: 로그와 연관시킬 수 있습니다.
 * `Sessions`: 트레이스와 연관시킬 수 있습니다.
 
-이러한 연관 관계를 설정하면 여러 기능을 활용할 수 있습니다. 예를 들어 HyperDX는 트레이스와 함께 관련 로그를 렌더링하거나 세션과 연결된 메트릭 이상 징후를 표시할 수 있습니다.
+이러한 연관 관계를 설정하면 여러 기능을 활용할 수 있습니다. 예를 들어 ClickStack UI는 트레이스와 함께 관련 로그를 렌더링하거나 세션과 연결된 메트릭 이상 징후를 표시할 수 있습니다.
 
 예를 들어, 아래는 상관관계 소스로 구성된 로그 소스입니다:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![상관관계 소스가 구성된 HyperDX 소스](/images/use-cases/observability/hyperdx-26.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickStack UI 소스 상관관계 구성](/images/use-cases/observability/hyperdx-26.webp)
+  </Frame>
 </div>
 
-<div id="application-configuration-settings">
-  ### 애플리케이션 구성 설정
-</div>
+### ClickHouse 클라이언트 설정 {#clickhouse-client-settings}
 
-<Info>
-  **ClickHouse Cloud의 HyperDX**
+팀 설정의 **ClickHouse 클라이언트 설정** 섹션에서는 팀의 쿼리 동작을 제어합니다.
 
-  HyperDX가 ClickHouse Cloud에서 관리되는 경우 이러한 설정은 수정할 수 없습니다.
-</Info>
+| 설정                                  | 기본값       | 설명                                                             |
+| ----------------------------------- | --------- | -------------------------------------------------------------- |
+| `Search Row Limit`                  | `200`     | 검색 페이지와 검색 대시보드 타일에서 쿼리당 반환되는 행 수입니다. 범위: 1–100,000.           |
+| `Query Timeout (seconds)`           | `60`      | 쿼리의 최대 실행 시간입니다. `0`은 무제한을 의미합니다.                              |
+| `Max Rows to Read (METADATA ONLY)`  | `3000000` | 메타데이터 쿼리에서 읽을 수 있는 최대 행 수입니다. `0`은 무제한을 의미합니다.                 |
+| `Filter Keys Fetch Limit`           | `100`     | 맵 컬럼당 가져오는 필터 키 수입니다. 범위: 1–1,000.                             |
+| `Field Metadata Queries`            | 활성화됨      | ClickHouse에서 필드 메타데이터를 가져올지 여부를 제어합니다.                         |
+| `Parallelize Queries When Possible` | Disabled  | 병렬 처리가 가능한 윈도우 쿼리를 병렬로 실행합니다. 이로 인해 데이터베이스의 최대 부하가 증가할 수 있습니다. |
 
-* `HYPERDX_API_KEY`
-  * **기본값:** None (필수)
-  * **설명:** HyperDX API의 인증 키입니다.
-  * **지침:**
-  * telemetry 및 로깅에 필요합니다
-  * 로컬 개발 환경에서는 비어 있지 않은 값이라면 아무 값이나 사용할 수 있습니다
-  * 운영 환경에서는 안전하고 고유한 키를 사용하십시오
-  * 계정 생성 후 Team Settings 페이지에서 확인할 수 있습니다
+권한 및 보안 정책에 대해서는 [역할 기반 접근 제어](/ko/clickstack/managing/rbac)를 참조하십시오. 알림 대상에 대해서는 [알림](/ko/clickstack/features/alerts)을 참조하십시오.
 
-* `HYPERDX_LOG_LEVEL`
-  * **기본값:** `info`
-  * **설명:** 로깅 상세도 수준을 설정합니다.
-  * **옵션:** `debug`, `info`, `warn`, `error`
-  * **권장 사항:**
-  * 상세한 문제 진단에는 `debug`를 사용하세요
-  * 일반적인 운영에는 `info`를 사용하세요
-  * 로그 양을 줄이려면 프로덕션 환경에서는 `warn` 또는 `error`를 사용하세요
+### 애플리케이션 구성 설정 {#application-configuration-settings}
 
-* `HYPERDX_API_PORT`
-  * **기본값:** `8000`
-  * **설명:** HyperDX API 서버에 사용되는 포트입니다.
-  * **지침:**
-  * 이 포트를 호스트에서 사용할 수 있는지 확인하세요
-  * 포트 충돌이 있으면 변경하세요
-  * API 클라이언트 구성의 포트와 일치해야 합니다
+다음 환경 변수는 자체 호스팅 ClickStack을 구성하는 데 사용됩니다. ClickHouse Cloud에서 호스팅되는 ClickStack UI에서는 이 환경 변수를 구성할 수 없습니다. 별도로 명시하지 않는 한 아래 기본값은 공식 컨테이너 진입점을 기준으로 하며, Docker Compose에서 재정의할 수 있습니다. 환경 변수를 변경한 후에는 해당 서비스를 재시작하십시오.
 
-* `HYPERDX_APP_PORT`
-  * **기본값:** `8000`
-  * **설명:** HyperDX 프런트엔드 앱의 포트입니다.
-  * **지침:**
-  * 이 포트가 호스트에서 사용 가능한지 확인하세요
-  * 포트 충돌이 있으면 변경하세요
-  * 브라우저에서 이 포트에 접속할 수 있어야 합니다
+#### 네트워크 및 스토리지 {#network-and-storage}
 
-* `HYPERDX_APP_URL`
-  * **기본값:** `http://localhost`
-  * **설명:** 프런트엔드 앱의 기준 URL입니다.
-  * **지침:**
-  * 운영 환경에서는 도메인으로 설정하세요
-  * 프로토콜(http/https)을 포함하세요
-  * 끝의 슬래시는 포함하지 마세요
+| 변수                            | 기본값                                | 설명                                                                                                                           |
+| ----------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `HYPERDX_API_PORT`            | `8000`                             | 애플리케이션 컨테이너 내부의 API 서버 포트입니다. 이 값을 변경하는 경우 Docker 포트 매핑도 함께 수정하십시오.                                                          |
+| `HYPERDX_APP_PORT`            | `8080`                             | 애플리케이션 컨테이너 내부의 프론트엔드 포트입니다. 이 값을 변경하는 경우 Docker 포트 매핑도 함께 수정하십시오.                                                           |
+| `HYPERDX_APP_URL`             | `http://localhost`                 | 포트를 제외한 퍼블릭 프론트엔드 오리진(origin)입니다. `HYPERDX_APP_PORT`와 함께 `FRONTEND_URL`을 구성하는 데 사용됩니다.                                       |
+| `FRONTEND_URL`                | `HYPERDX_APP_URL:HYPERDX_APP_PORT` | 리디렉션에 사용되는 전체 퍼블릭 프론트엔드 URL입니다. 리버스 프록시 또는 HTTPS를 사용하는 경우 명시적으로 설정하십시오.                                                      |
+| `HYPERDX_APP_LISTEN_HOSTNAME` | `0.0.0.0`                          | UI 전용 컨테이너에서 프론트엔드가 수신 대기하는 주소입니다.                                                                                           |
+| `HYPERDX_OPAMP_PORT`          | `4320`                             | collector가 구성과 수집 키를 가져올 때 사용하는 OpAMP 서버 포트입니다. 컨테이너는 이 값을 `OPAMP_PORT`에 매핑합니다.                                              |
+| `MONGO_URI`                   | 배포 방식에 따라 다름                       | MongoDB 연결 문자열(Connection String)입니다. Compose 및 올인원 배포에서는 `mongodb://db:27017/hyperdx`를 사용합니다. 올인원 배포에서는 진입점이 이 값을 직접 설정합니다. |
+| `SERVER_URL`                  | 배포 방식에 따라 다름                       | 프론트엔드 서버가 사용하는 내부 API URL입니다. Compose 및 올인원 배포에서는 로컬 API 포트를 가리키도록 설정됩니다.                                                    |
 
-* `MONGO_URI`
-  * **기본값:** `mongodb://db:27017/hyperdx`
-  * **설명:** MongoDB 연결 문자열입니다.
-  * **지침:**
-  * Docker를 사용하는 로컬 개발 환경에서는 기본값을 사용하세요
-  * 운영 환경에서는 보안이 적용된 연결 문자열을 사용하세요
-  * 필요한 경우 인증 정보를 포함하세요
-  * 예시: `mongodb://user:pass@host:port/db`
+컨테이너 진입점을 사용하지 않고 API를 직접 실행하는 경우, API 리스너와 OpAMP 리스너용으로 각각 `PORT`와 `OPAMP_PORT`를 설정하십시오. `HYPERDX_*_PORT` 변수는 컨테이너 및 배포 환경에서 편의를 위해 제공되는 변수입니다.
 
-* `MINER_API_URL`
-  * **기본값:** `http://miner:5123`
-  * **설명:** 로그 패턴 마이닝 서비스의 URL입니다.
-  * **지침:**
-  * Docker를 사용하는 로컬 개발 환경에서는 기본값을 사용합니다.
-  * 운영 환경에서는 miner 서비스 URL로 설정합니다.
-  * API 서비스에서 접근할 수 있어야 합니다.
+#### 인증 및 보안 {#authentication-and-security}
 
-* `FRONTEND_URL`
-  * **기본값:** `http://localhost:3000`
-  * **설명:** 프런트엔드 앱의 URL입니다.
-  * **지침:**
-  * 로컬 개발 환경에서는 기본값을 사용하세요
-  * 운영 환경에서는 자체 도메인으로 설정하세요
-  * API 서비스에서 접근할 수 있어야 합니다
+| 변수                                | 기본값                       | 설명                                                                                                                                             |
+| --------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXPRESS_SESSION_SECRET`          | 설정되지 않은 경우 API 프로세스마다 생성됨 | 세션 서명용 시크릿입니다. 재시작 후에도 세션이 유지되도록, 모든 API 복제본(replicas)이 공유하는 강력하고 영구적인 값을 설정하십시오. 인증이 활성화된 배포에서는 이전의 공개 데모 시크릿을 거부하고 대신 임의의 값을 생성합니다.          |
+| `INGESTION_API_KEY`               | 설정되지 않음                   | 인증이 활성화된 올인원 이미지에서 사용할 수 있는 추가 수집 key입니다(선택 사항). 이 부트스트랩 재정의는 운영 환경용 UI 전용 이미지에서는 지원되지 않습니다. 그 외에는 팀에서 제공한 수집 key를 사용하십시오.              |
+| `WEBHOOK_HOSTNAME_ALLOWLIST`      | 비어 있음                     | 프라이빗 또는 예약된 대상으로 웹훅을 보낼 수 있도록 허용하는 예외 목록이며, 쉼표로 구분합니다. 호스트명 엔트리는 하위 도메인까지 허용하고, IP 엔트리는 정확히 일치하는 경우에만 허용합니다. 해당 대상을 신뢰할 수 있는 경우가 아니라면 비워 두십시오. |
+| `TOKEN_ENCRYPTION_KEY`            | 설정되지 않음                   | 저장된 타사 토큰을 암호화하는 데 사용하는 32바이트 키로, base64 또는 hex로 인코딩합니다. 설정하지 않으면 해당 토큰은 평문으로 저장됩니다. 키는 변경하지 말고 시크릿으로 안전하게 보호하십시오.                             |
+| `EXTERNAL_API_RATE_LIMIT_MAX`     | `100`                     | API Key당 분당 외부 API v2 요청 수를 제한하는 양의 정수입니다.                                                                                                     |
+| `EXTERNAL_API_SEARCH_MAX_RESULTS` | `2000`                    | 외부 검색 API가 허용하는 최대 결과 수입니다. `100` 이상의 정수여야 하며, 유효하지 않은 값을 지정하면 기본값이 사용됩니다.                                                                     |
+| `ENABLE_SWAGGER`                  | `false`                   | `NODE_ENV`가 `production`이 아닌 경우에만 API 문서를 활성화합니다. 배포된 운영 환경 image에서는 적용되지 않습니다.                                                                |
 
-* `OTEL_SERVICE_NAME`
-  * **기본값:** `hdx-oss-api`
-  * **설명:** OpenTelemetry 계측용 서비스 이름입니다.
-  * **지침:**
-  * HyperDX 서비스에 대해 의미를 잘 드러내는 이름을 사용하십시오. HyperDX가 자체 계측을 수행하는 경우에 적용됩니다.
-  * 텔레메트리 데이터에서 HyperDX 서비스를 식별하는 데 도움이 됩니다
+#### 부트스트랩 및 프로비저닝 {#bootstrap-and-provisioning}
 
-* `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`
-  * **기본값:** `http://localhost:4318`
-  * **설명:** OpenTelemetry collector 엔드포인트입니다.
-  * **지침:**
-  * HyperDX 자체 계측에 해당합니다.
-  * 로컬 개발 환경에서는 기본값을 사용하세요
-  * 프로덕션 환경에서는 collector URL로 설정하세요
-  * HyperDX 서비스에서 접근할 수 있어야 합니다.
+| 변수                                    | 기본값     | 설명                                                                                                                                  |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_CONNECTIONS`                 | 배포별로 다름 | 비어 있는 인스턴스를 부트스트랩할 때 사용하는 연결의 JSON 배열입니다. Compose 및 올인원 배포에서는 로컬 ClickHouse 연결을 제공합니다. 기존 연결을 업데이트하는 용도로는 사용할 수 없습니다.               |
+| `DEFAULT_SOURCES`                     | 배포별로 다름 | 비어 있는 인스턴스를 부트스트랩할 때 사용하는 소스의 JSON 배열입니다. Compose 및 올인원 배포에서는 Logs, Traces, Metrics, Sessions 소스를 제공합니다. 올인원 진입점은 이 값을 자체적으로 설정합니다. |
+| `DASHBOARD_PROVISIONER_DIR`           | 설정되지 않음 | 프로비저닝할 대시보드 정의가 들어 있는 디렉터리입니다. 이 값을 설정하면 UI 전용 컨테이너에서 대시보드 프로비저너가 시작됩니다.                                                            |
+| `DASHBOARD_PROVISIONER_TEAM_ID`       | 설정되지 않음 | 프로비저닝된 대시보드를 받을 팀입니다. `DASHBOARD_PROVISIONER_ALL_TEAMS=true`가 아니면 필수입니다. 두 값이 모두 설정된 경우 이 값이 우선합니다.                                 |
+| `DASHBOARD_PROVISIONER_ALL_TEAMS`     | `false` | 특정 팀 하나가 아니라 모든 팀에 대시보드를 프로비저닝합니다.                                                                                                  |
+| `ALERT_NOTIFICATION_FETCH_TIMEOUT_MS` | `30000` | 웹훅 및 Slack 경보 알림의 타임아웃(밀리초)입니다.                                                                                                     |
+| `RUN_SCHEDULED_TASKS_EXTERNALLY`      | `false` | 예약된 작업을 작업 프로세스 내부에서 스케줄링하지 않고 한 번만 실행합니다. 외부 스케줄러가 작업 호출을 담당하는 경우에만 사용하십시오.                                                        |
 
-* `USAGE_STATS_ENABLED`
-  * **기본값:** `true`
-  * **설명:** 사용 통계 수집 여부를 설정합니다.
-  * **지침:**
-  * 사용량 추적을 비활성화하려면 `false`로 설정하세요
-  * 개인정보 보호가 중요한 배포 환경에 유용합니다
-  * 제품 개선을 위해 기본값은 `true`입니다
+로컬 모드 배포에서는 `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_CONNECTIONS` 및 `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_SOURCES`가 대신 브라우저에서 JSON 기본값을 제공합니다. 이 값은 공개되므로 운영 환경의 자격 증명을 넣지 마십시오.
 
-* `IS_OSS`
-  * **기본값:** `true`
-  * **설명:** OSS 모드로 실행되는지 여부를 나타냅니다.
-  * **지침:**
-  * 오픈소스 배포에서는 `true`로 유지합니다
-  * 엔터프라이즈 배포에서는 `false`로 설정합니다
-  * 사용 가능한 기능에 영향을 줍니다
+#### AI 어시스턴트 {#ai-assistant-configuration}
 
-* `IS_LOCAL_MODE`
-  * **기본값:** `false`
-  * **설명:** 로컬 모드로 실행할지 여부를 나타냅니다.
-  * **지침:**
-  * 로컬 개발 환경에서는 `true`로 설정하세요
-  * 일부 운영 기능을 비활성화합니다
-  * 테스트 및 개발에 유용합니다
+| 변수                   | 기본값                                     | 설명                                                                                                            |
+| -------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `AI_PROVIDER`        | 설정되지 않음                                 | AI 프로바이더: `anthropic` 또는 `openai`. OpenAI 호환 provider는 Responses API를 사용합니다.                                  |
+| `AI_API_KEY`         | 설정되지 않음                                 | 선택한 provider의 API Key입니다.                                                                                     |
+| `AI_BASE_URL`        | provider 기본값                            | 사용자 정의 provider 엔드포인트입니다(선택 사항).                                                                              |
+| `AI_MODEL_NAME`      | Anthropic: `claude-sonnet-4-5-20250929` | 모델 식별자입니다. OpenAI 호환 provider를 사용할 때는 필수입니다.                                                                  |
+| `AI_REQUEST_HEADERS` | 설정되지 않음                                 | OpenAI 호환 provider에 전달할 추가 요청 헤더를 담은 JSON 객체입니다.                                                              |
+| `ANTHROPIC_API_KEY`  | 설정되지 않음                                 | 레거시 Anthropic 키입니다. `AI_PROVIDER`가 구성되지 않았을 때 이전 버전과의 호환성을 위해 사용됩니다. 가급적 `AI_PROVIDER`와 `AI_API_KEY`를 사용하십시오. |
 
-* `EXPRESS_SESSION_SECRET`
-  * **기본값:** `hyperdx is cool 👋`
-  * **설명:** Express session 관리를 위한 시크릿입니다.
-  * **지침:**
-  * 프로덕션 환경에서는 변경하세요
-  * 충분히 강력한 무작위 문자열을 사용하세요
-  * 외부에 노출되지 않도록 안전하게 관리하세요
+#### 로깅 및 자체 계측 {#logging-and-self-instrumentation}
 
-* `ENABLE_SWAGGER`
-  * **기본값:** `false`
-  * **설명:** Swagger API 문서의 활성화 여부를 전환합니다.
-  * **지침:**
-  * API 문서를 활성화하려면 `true`로 설정하세요
-  * 개발 및 테스트에 유용합니다
-  * production 환경에서는 비활성화하십시오
+이 설정은 ClickStack 자체에서 내보내는 텔레메트리를 제어하며, 사용자 인증이나 수신되는 애플리케이션 텔레메트리와는 관련이 없습니다.
 
-* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED`
-  * **기본값:** `false`
-  * **설명:** HyperDX에서 JSON 타입에 대한 베타 지원을 활성화합니다. OTel collector에서 JSON 지원을 활성화하려면 [`OTEL_AGENT_FEATURE_GATE_ARG`](#otel-collector)도 참조하십시오.
-  * **지침:**
-    * **베타 기능**을 활성화합니다. JSON 타입 스키마는 일반적인 관측성 워크로드에는 **권장되지 않습니다**. 두 방식의 비교와 각각이 적합한 사용 사례는 [Map vs JSON type](/ko/clickstack/ingesting-data/schema/map-vs-json)를 참조하십시오.
-    * ClickStack UI에서 JSON 지원을 활성화하려면 `true`로 설정하십시오.
+| 변수                                                                                                                                                  | 기본값                                                             | 설명                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HYPERDX_LOG_LEVEL`                                                                                                                                 | API에서는 `info`, Compose `.env`에서는 `debug`, 올인원에서는 `error`로 강제 지정 | 애플리케이션 로그 레벨입니다.                                                                                                                                                                  |
+| `HYPERDX_API_KEY`                                                                                                                                   | 설정되지 않음                                                         | ClickStack 자체 텔레메트리용 수집 key이며, 선택 사항입니다. 팀 데이터에 액세스하기 위한 API 인증 키가 아닙니다. `HDX_EXPORTER_ENABLED=true`이면 프론트엔드가 이 자체 텔레메트리 키를 브라우저에 노출하므로, 민감한 텔레메트리에 대한 액세스 권한을 부여하는 키는 사용하지 마십시오. |
+| `OTEL_SERVICE_NAME`                                                                                                                                 | 배포에 따라 다름                                                       | 서버 측 자체 계측에 사용할 서비스 이름입니다. Compose에서는 `hdx-oss-app`으로 설정됩니다.                                                                                                                      |
+| `NEXT_PUBLIC_OTEL_SERVICE_NAME`                                                                                                                     | `hdx-oss-dev-app`                                               | 프론트엔드 자체 계측에 사용할 서비스 이름입니다.                                                                                                                                                       |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                                       | 배포에 따라 다름                                                       | 서버 측 OTLP 엔드포인트입니다. Compose에서는 `http://otel-collector:4318`로 설정됩니다.                                                                                                               |
+| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                           | 서버 엔드포인트, 없으면 `http://localhost:4318`                           | 프론트엔드 OTLP 엔드포인트입니다. 브라우저 익스포터에는 브라우저에서 연결할 수 있는 주소가 필요합니다.                                                                                                                       |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`                                     | 설정되지 않음                                                         | 신호별 서버 측 OTLP URL입니다.                                                                                                                                                             |
+| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | 해당 서버 측 URL                                                     | 신호별 프론트엔드 URL이며, 해당 서버 측 값보다 우선 적용됩니다.                                                                                                                                            |
+| `NEXT_PUBLIC_OTEL_RESOURCE_ATTRIBUTES`                                                                                                              | 설정되지 않음                                                         | 브라우저 자체 계측에 사용할 리소스 속성으로, 쉼표로 구분된 `key=value` 형식입니다.                                                                                                                              |
+| `HDX_EXPORTER_ENABLED`                                                                                                                              | `true`                                                          | 프론트엔드 애플리케이션의 자체 계측 익스포터를 활성화합니다.                                                                                                                                                 |
+| `USAGE_STATS_ENABLED`                                                                                                                               | `true`                                                          | 사용량 통계 수집을 비활성화하려면 `false`로 설정하십시오.                                                                                                                                               |
 
-<div id="otel-collector">
-  ## OpenTelemetry collector
-</div>
+#### 선택 기능 및 배포 모드 {#optional-features-and-deployment-modes}
 
-자세한 내용은 [&quot;ClickStack OpenTelemetry Collector&quot;](/ko/clickstack/ingesting-data/collector)를 참조하십시오.
+| 변수                                 | 기본값     | 설명                                                                                                                                        |
+| ---------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `ENABLE_PROMQL`                    | `false` | API의 PromQL 지원을 활성화합니다. 이에 대응하는 프론트엔드 플래그도 함께 설정하고, collector의 Prometheus 엔드포인트와 스키마(schema)도 구성하십시오.                                     |
+| `NEXT_PUBLIC_ENABLE_PROMQL`        | `false` | UI에서 PromQL을 활성화합니다.                                                                                                                      |
+| `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` | `false` | UI에서 임시(ad hoc) 필터를 활성화합니다.                                                                                                               |
+| `NEXT_PUBLIC_ENABLE_ALERT_DETAILS` | `false` | 알림 상세 페이지를 활성화합니다. 현재는 옵트인(opt-in) 방식의 기능입니다.                                                                                             |
+| `NEXT_PUBLIC_IS_LLM_COST_ENABLED`  | `false` | 번들로 제공되는 모델 가격 카탈로그를 기반으로 LLM 비용 추정 기능을 활성화합니다. 실제 가격은 사용 중인 공급자와의 계약 조건과 다를 수 있습니다.                                                      |
+| `NEXT_PUBLIC_INSTANCE_LABEL`       | 비어 있음   | 브라우저 제목 뒤에 추가되고 사이드바에 표시되는 레이블로, 인스턴스를 구분할 때 유용합니다.                                                                                       |
+| `ENABLE_DATADOG_RECEIVER`          | `false` | OpAMP가 생성하는 수집기 설정에서 Datadog 트레이스 수신기를 활성화합니다. 포트 `8126`의 수신기는 팀 수집 키가 존재하고 collector 인증이 적용된 경우 `DD-API-KEY`를 검증하며, 그렇지 않으면 인증 없이 동작합니다. |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED` | `false` | 올인원 진입점에서 JSON 호환 기본 소스 매핑을 사용하도록 선택합니다. collector의 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE`과 함께 사용하십시오.                  |
 
-* `CLICKHOUSE_ENDPOINT`
-  * **Default:** 독립 실행형 이미지인 경우 *None (필수)*입니다. All-in-one 또는 Docker Compose 배포판에서는 통합된 ClickHouse 인스턴스로 설정됩니다.
-  * **Description:** 텔레메트리 데이터를 내보낼 대상 ClickHouse 인스턴스의 HTTPS URL입니다.
-  * **Guidance:**
-    * 포트를 포함한 전체 HTTPS 엔드포인트여야 합니다(예: `https://clickhouse.example.com:8443`)
-    * collector가 데이터를 ClickHouse로 전송하려면 필수입니다
+`NEXT_PUBLIC_IS_LOCAL_MODE`는 [Local Mode 배포판](/ko/clickstack/deployment/local-mode-only)용 프론트엔드 빌드 플래그이며, 범용 개발 스위치가 아닙니다. 기존 배포에서 인증을 비활성화하지 말고 용도에 맞는 배포판을 사용하십시오. `IS_LOCAL_MODE`와 `IS_OSS`는 애플리케이션 상수 이름일 뿐, 설정 대상 환경 변수가 아닙니다. `NEXT_PUBLIC_IS_OSS`는 빌드 설정이며, Enterprise 에디션 전환용 스위치가 아닙니다. `MINER_API_URL`은 현재 애플리케이션에서 더 이상 사용되지 않습니다.
 
-* `CLICKHOUSE_USER`
-  * **Default:** `default`
-  * **Description:** ClickHouse 인스턴스에 인증할 때 사용하는 사용자 이름입니다.
-  * **Guidance:**
-    * 해당 사용자에게 `INSERT` 및 `CREATE TABLE` 권한이 있는지 확인하십시오
-    * 수집 전용 사용자를 별도로 생성하는 것이 좋습니다
+제공된 리버스 프록시 구성을 하위 경로에 사용하는 경우, `HYPERDX_BASE_PATH`와 `NEXT_PUBLIC_HYPERDX_BASE_PATH`를 동일한 접두사(예: `/clickstack`)로 설정하고 `FRONTEND_URL`에도 해당 접두사를 포함하십시오.
 
-* `CLICKHOUSE_PASSWORD`
-  * **Default:** *None (인증이 활성화된 경우 필수)*
-  * **Description:** 지정된 ClickHouse 사용자의 비밀번호입니다.
-  * **Guidance:**
-    * 사용자 계정에 비밀번호가 설정되어 있으면 필수입니다
-    * 운영 배포에서는 시크릿을 사용해 안전하게 저장하십시오
+일부 프론트엔드 설정은 빌드 시점에 읽힙니다. 특히 `NEXT_PUBLIC_HYPERDX_BASE_PATH`(배포 경로 접두사), `NEXT_PUBLIC_NOINDEX`(검색 엔진 인덱싱) 또는 배포판의 모드 플래그를 변경하려면 해당 값을 적용해 프론트엔드를 다시 빌드해야 합니다. 반면 `NEXT_PUBLIC_INSTANCE_LABEL`처럼 `next-runtime-env`를 통해 읽히는 런타임 설정은 컨테이너 시작 시 제공할 수 있습니다.
 
-* `HYPERDX_LOG_LEVEL`
-  * **Default:** `info`
-  * **Description:** collector의 로그 상세도 수준입니다.
-  * **Guidance:**
-    * `debug`, `info`, `warn`, `error` 등의 값을 사용할 수 있습니다
-    * 문제 해결 중에는 `debug`를 사용하십시오
+## OpenTelemetry collector {#otel-collector}
 
-* `OPAMP_SERVER_URL`
-  * **Default:** 독립 실행형 이미지인 경우 *None (필수)*입니다. All-in-one 또는 Docker Compose 배포판에서는 배포된 HyperDX 인스턴스를 가리킵니다.
-  * **Description:** collector를 관리하는 데 사용하는 OpAMP 서버의 URL입니다(예: HyperDX 인스턴스). 기본 포트는 `4320`입니다.
-  * **Guidance:**
-    * HyperDX 인스턴스를 가리켜야 합니다
-    * 동적 구성과 안전한 수집을 활성화합니다
-    * 생략하면 `OTLP_AUTH_TOKEN` 값이 지정된 경우를 제외하고 안전한 수집이 비활성화됩니다.
+배포 지침은 [ClickStack OpenTelemetry 수집기](/ko/clickstack/ingesting-data/collector)를 참조하십시오. collector 변수는 UI 컨테이너뿐만 아니라 collector 컨테이너에도 설정해야 합니다. Compose에서는 `.env`에 값을 선언하더라도 `docker-compose.yml`에서 해당 값을 참조해야만 컨테이너에 전달됩니다.
 
-* `OTLP_AUTH_TOKEN`
-  * **Default:** *None*. 독립 실행형 이미지에서만 사용됩니다.
-  * **Description:** OTLP 인증 토큰을 지정할 수 있습니다. 설정하면 모든 통신에 이 Bearer token이 필요합니다.
-  * **Guidance:**
-    * 운영 환경에서 독립 실행형 collector 이미지를 사용하는 경우 권장됩니다.
+### 연결 및 인증 {#collector-connection-and-authentication}
 
-* `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
-  * **Default:** `default`
-  * **Description:** collector가 텔레메트리 데이터를 기록하는 ClickHouse 데이터베이스입니다.
-  * **Guidance:**
-    * 사용자 지정 데이터베이스 이름을 사용하는 경우 설정하십시오
-    * 지정된 사용자가 이 데이터베이스에 접근할 수 있는지 확인하십시오
+| 변수                                          | 기본값                         | 설명                                                                                                                                                                                                     |
+| ------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CLICKHOUSE_ENDPOINT`                       | 배포 환경에 따라 다름                | ClickHouse 익스포터 연결 URL입니다. Compose 및 올인원 배포에서는 `tcp://ch-server:9000?dial_timeout=10s`를 사용합니다. ClickHouse Cloud에서는 보안 네이티브 엔드포인트(예: `tcp://<host>:9440?secure=true`)를 사용하십시오. HTTPS만 사용할 수 있는 것은 아닙니다. |
+| `CLICKHOUSE_USER`                           | 마이그레이션 도구에서는 `default`      | ClickHouse 사용자 이름입니다. 독립형 collector에서는 마이그레이션과 익스포터가 모두 의도한 계정을 사용하도록 명시적으로 설정하십시오.                                                                                                                    |
+| `CLICKHOUSE_PASSWORD`                       | 비어 있음                       | ClickHouse 계정의 비밀번호입니다.                                                                                                                                                                                |
+| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` | 번들 배포 및 마이그레이션에서는 `default` | 대상 데이터베이스(target database)입니다. 독립형 collector에서는 명시적으로 설정하십시오.                                                                                                                                          |
+| `OPAMP_SERVER_URL`                          | 독립형 모드에서는 설정되지 않음           | ClickStack UI의 OpAMP URL로, 일반적으로 `http://<app>:4320`입니다. 설정하면 collector가 슈퍼바이저를 통해 구성과 팀 수집 키를 가져옵니다. 설정하지 않으면 독립형 구성을 사용합니다.                                                                          |
+| `OTLP_AUTH_TOKEN`                           | 설정되지 않음                     | 독립형 OTLP 수집에 사용하는 정적 bearer 토큰입니다. OIDC 인증을 선택하면 무시됩니다.                                                                                                                                                |
+| `OIDC_ISSUER_URL`                           | 설정되지 않음                     | 독립형 OTLP 수집에 OIDC 인증을 활성화합니다. `OTLP_AUTH_TOKEN`보다 우선 적용됩니다.                                                                                                                                            |
+| `OIDC_AUDIENCE`                             | 설정되지 않음                     | `OIDC_ISSUER_URL`을 설정한 경우 반드시 지정해야 하는 대상(audience)입니다. 생략하면 시작에 실패합니다.                                                                                                                                 |
 
-* `OTEL_AGENT_FEATURE_GATE_ARG`
-  * **Default:** `<empty string>`
-  * **Description:** collector에서 기능 플래그를 활성화합니다. `--feature-gates=clickhouse.json`으로 설정하면 collector에서 JSON 타입에 대한 베타 지원이 활성화되어 스키마가 해당 타입으로 생성됩니다. HyperDX에서 JSON 지원을 활성화하려면 [`BETA_CH_OTEL_JSON_SCHEMA_ENABLED`](#hyperdx)도 참조하십시오.
-  * **Guidance:**
-    * **베타 기능**을 활성화합니다. JSON 타입 스키마는 일반적인 관측성 워크로드에는 **권장되지 않습니다**. 비교와 각 방식이 적합한 경우는 [Map vs JSON type](/ko/clickstack/ingesting-data/schema/map-vs-json)을 참조하십시오.
-    * 새 테이블을 JSON 타입으로 생성하려면 `--feature-gates=clickhouse.json`으로 설정하십시오.
+OpAMP, OIDC, `OTLP_AUTH_TOKEN` 중 어느 것도 설정하지 않으면 독립형 OTLP 수신기에는 인증이 적용되지 않습니다. ClickHouse 계정에는 텔레메트리를 삽입할 권한(permission)이 필요하며, 스키마(schema) 생성 또는 마이그레이션(Migrations)이 활성화된 경우에는 필요한 데이터베이스 객체를 생성하거나 변경할 권한도 필요합니다.
+
+### 내보내기, 배칭 및 사용자 지정 구성 {#collector-export-and-batching}
+
+| 변수                                       | 기본값          | 설명                                                                                                                                                            |
+| ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HYPERDX_OTEL_EXPORTER_TIMEOUT`          | `5s`         | ClickHouse 내보내기 타임아웃입니다.                                                                                                                                      |
+| `HYPERDX_OTEL_BATCH_SEND_BATCH_SIZE`     | `10000`      | 배치 전송을 트리거하는 항목 수입니다.                                                                                                                                         |
+| `HYPERDX_OTEL_BATCH_SEND_BATCH_MAX_SIZE` | `0`          | 최대 배치 크기입니다. `0`은 크기 제한이 없음을 의미합니다.                                                                                                                           |
+| `HYPERDX_OTEL_BATCH_TIMEOUT`             | `5s`         | 배치를 전송하기 전까지 대기하는 최대 시간입니다.                                                                                                                                   |
+| `CUSTOM_OTELCOL_CONFIG_FILE`             | 설정되지 않음      | 마운트된 YAML 파일의 경로입니다. 이 파일은 독립형 모드와 OpAMP 모드 모두에서 수집기 설정과 머지됩니다. 자세한 내용은 [사용자 지정 수집기 설정](/ko/clickstack/ingesting-data/collector)을 참조하십시오.            |
+| `HYPERDX_LOG_LEVEL`                      | 배포 방식에 따라 다름 | collector 내부 로그 레벨입니다. 독립형 collector에서는 `info` 등으로 명시적으로 설정하십시오. Compose는 `debug`를 사용하며, 올인원은 `error`로 고정됩니다.                                                 |
+| `OTEL_SUPERVISOR_LOGS`                   | `false`      | `true`로 설정하면 collector 출력이 OpAMP 슈퍼바이저를 거쳐 전달됩니다. 슈퍼바이저 모드에서만 적용됩니다.                                                                                          |
+| `OTEL_AGENT_FEATURE_GATE_ARG`            | 설정되지 않음      | collector에 추가로 전달할 feature-gate 인수입니다. 기존 `--feature-gates=clickhouse.json` 값은 사용 중단 권고 상태이므로 대신 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE=true`를 사용하십시오. |
+
+### 스키마 및 보존 기간 {#collector-schema-and-retention}
+
+| 변수                                             | 기본값                                | 설명                                                                                                                                                                 |
+| ---------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA`   | `false`; Compose에서는 `true`로 재정의    | 마이그레이션 도구 대신 익스포터가 관리하는 레거시 스키마 생성 방식을 사용합니다.                                                                                                                      |
+| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE` | `false`                            | JSON 익스포터 모드를 활성화하고 레거시 스키마 생성 방식을 선택합니다. 일반적인 관측성 워크로드에는 JSON 타입 스키마를 권장하지 않습니다. 자세한 내용은 [Map vs JSON 타입](/ko/clickstack/ingesting-data/schema/map-vs-json)을 참조하십시오. |
+| `HYPERDX_OTEL_EXPORTER_TABLES_TTL`             | `720h`                             | 마이그레이션과 OpAMP로 생성된 레거시 익스포터가 생성하는 테이블의 기본 보존 기간입니다(`720h`와 같은 Go duration 형식 또는 `30d`와 같은 일 단위). 독립형 레거시 익스포터 구성에서는 `720h`로 고정됩니다.                                 |
+| `HYPERDX_OTEL_EXPORTER_LOGS_TTL`               | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 마이그레이션으로 관리되는 테이블의 로그 보존 기간입니다.                                                                                                                                    |
+| `HYPERDX_OTEL_EXPORTER_TRACES_TTL`             | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 마이그레이션으로 관리되는 테이블의 트레이스 보존 기간입니다.                                                                                                                                  |
+| `HYPERDX_OTEL_EXPORTER_METRICS_TTL`            | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 마이그레이션으로 관리되는 테이블의 메트릭 보존 기간입니다.                                                                                                                                   |
+| `HYPERDX_OTEL_EXPORTER_SESSIONS_TTL`           | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 마이그레이션으로 관리되는 테이블의 세션 보존 기간입니다.                                                                                                                                    |
+| `HYPERDX_OTEL_EXPORTER_RECONCILE_TABLE_TTL`    | `false`                            | 마이그레이션으로 관리되는 기존 테이블에도 구성된 TTL을 적용할지 선택합니다(옵트인). 활성화하기 전에 보존 기간 변경 사항을 검토하십시오. TTL을 더 짧게 설정하면 기존 데이터가 삭제될 수 있습니다.                                                  |
+
+신호별 TTL과 리컨실리에이션 설정은 마이그레이션 도구에 적용되며, 레거시 스키마 생성이 활성화되어 있으면 마이그레이션 도구는 실행되지 않습니다.
+
+### 마이그레이션(migration) TLS {#collector-migration-tls}
+
+이 변수들은 마이그레이션 도구의 ClickHouse 연결을 구성합니다. 익스포터 TLS는 자동으로 구성되지 않으므로, 사용자 정의 인증서를 사용하는 경우 collector 익스포터를 별도로 구성하십시오.
+
+| 변수                                    | 기본값     | 설명                                                  |
+| ------------------------------------- | ------- | --------------------------------------------------- |
+| `CLICKHOUSE_TLS_CA_FILE`              | 설정되지 않음 | CA 인증서 파일 경로입니다.                                    |
+| `CLICKHOUSE_TLS_CERT_FILE`            | 설정되지 않음 | 상호 TLS에 사용할 클라이언트 인증서 경로입니다.                        |
+| `CLICKHOUSE_TLS_KEY_FILE`             | 설정되지 않음 | 상호 TLS에 사용할 클라이언트 개인 키 경로입니다.                       |
+| `CLICKHOUSE_TLS_SERVER_NAME_OVERRIDE` | 설정되지 않음 | 인증서 검증에 사용할 서버 이름입니다.                               |
+| `CLICKHOUSE_TLS_INSECURE_SKIP_VERIFY` | `false` | `true`로 설정하면 서버 인증서 검증을 비활성화합니다. 문제 해결 용도로만 사용하십시오. |
+
+### Prometheus 호환 메트릭 {#collector-prometheus-metrics}
+
+| 변수                                       | 기본값                                 | 설명                                                                                                                                                                                                                                           |
+| ---------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ENABLE_PROMQL`                          | `false`                             | 마이그레이션(migration) 도구에서 PromQL 스키마(schema) 생성을 활성화합니다. OpAMP 모드에서는 API와 프론트엔드에서도 PromQL을 활성화해야 합니다.                                                                                                                                           |
+| `CLICKHOUSE_PROMETHEUS_METRICS_ENDPOINT` | 독립형: 설정되지 않음, 올인원: `ch-server:9363` | Prometheus 호환 엔드포인트입니다. `host:port`, `http://host:port`, `https://host:port` 형식을 사용할 수 있으며, 경로는 포함하지 마십시오. 이 값을 설정하면 독립형 모드에서 remote write가 활성화됩니다. 진입점은 URL을 기반으로 `HYPERDX_PROMETHEUS_SCHEME` 및 `HYPERDX_PROMETHEUS_TLS_INSECURE` 값을 결정합니다. |
 
 <div id="clickhouse">
-  ## ClickHouse
+  ## ClickHouse {#clickhouse}
 </div>
 
 ClickStack Open Source에는 멀티 테라바이트 규모에 맞게 설계된 기본 ClickHouse 구성이 포함되어 있지만, 워크로드에 맞게 자유롭게 수정하고 최적화할 수 있습니다.

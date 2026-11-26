@@ -57,9 +57,13 @@ Quando desabilitado, as políticas de linha são aplicadas antes de FINAL, o que
 filtra linhas que deveriam ser usadas para desduplicação em ReplacingMergeTree ou motores semelhantes.
 
 Se a expressão da política de linha for determinística e depender apenas de colunas que não sejam de ponto flutuante em ORDER BY, ela ainda será
-aplicada antes de FINAL como uma otimização, pois essa filtragem não pode afetar o resultado da desduplicação. Colunas de ponto flutuante
+aplicada antes de FINAL como uma otimização, pois essa filtragem não pode afetar o resultado da desduplicação. Um valor calculado
+uma única vez para toda a consulta, como `currentUser()`, `now()` ou o conjunto de `IN (subquery)`, não impede essa
+otimização; já o conjunto de uma tabela `Set`, que pode mudar durante a execução da consulta, impede. Colunas de ponto flutuante
 ou colunas que contêm valores de ponto flutuante (como `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)` etc.)
 são excluídas porque `-0.0` e `0.0` são desduplicados como uma única chave, enquanto uma condição da política pode diferenciá-los.
+`GraphiteMergeTree` consolida linhas com tempos diferentes em uma única linha; portanto, nesse caso, apenas a coluna de caminho é considerada, e somente
+quando ela é a primeira coluna de `ORDER BY`.
 
 Valores possíveis:
 
