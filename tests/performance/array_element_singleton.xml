@@ -21,4 +21,37 @@
         WHERE NOT ignore([a, a][number % 2 + 1])
         SETTINGS max_threads = 1
     </query>
+    <query>
+        WITH [arrayResize([[tuple(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        )]], 0)] AS a
+        SELECT count()
+        FROM numbers(5000000)
+        WHERE NOT ignore([a, a][number % 2 + 1])
+        SETTINGS max_threads = 1
+    </query>
+    <query>
+        WITH [[arrayResize([[tuple(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        )]], 0)]] AS a
+        SELECT count()
+        FROM numbers(5000000)
+        WHERE NOT ignore([a, a][number % 2 + 1])
+        SETTINGS max_threads = 1
+    </query>
+    <query>
+        WITH [[[[[[[[[[[[[[[[[[[[[[[[toUInt64(1)]]]]]]]]]]]]]]]]]]]]]]]] AS a
+        SELECT count()
+        FROM numbers(1000000)
+        WHERE NOT ignore([a, a][number % 2 + 1])
+        SETTINGS max_threads = 1
+    </query>
 </test>

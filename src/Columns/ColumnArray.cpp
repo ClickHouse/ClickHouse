@@ -37,6 +37,17 @@ namespace ErrorCodes
 
 namespace
 {
+    bool canUseScalarArrayInsertion(const IColumn & column)
+    {
+        const IColumn * values = &column;
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+            values = &nullable->getNestedColumn();
+
+        /// Composite and `LowCardinality` values retain their range-insertion semantics.
+        /// Inspect at most one nullable wrapper, without walking the nested type tree.
+        return values->isFixedAndContiguous() || typeid_cast<const ColumnString *>(values);
+    }
+
     /// Filter the elements of arrays, which are stored in `nested` and delimited by `offsets`, as
     /// `ColumnArray::filter` does. The filtering goes through a temporary `ColumnArray`, so it dispatches
     /// to the span-based in-place implementations (`filterNumber`, `filterString`, ...) and does not
@@ -463,9 +474,8 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     auto & nested = getData();
     const auto & src_nested = src.getData();
 
-    /// Columns with dynamic structure import variant metadata even from empty ranges.
-    /// Keep the existing range path when the nested column itself is shared.
-    if (size != 1 || &nested == &src_nested || nested.hasDynamicStructure())
+    /// Keep the original range path for shared, composite and dictionary columns.
+    if (size != 1 || &nested == &src_nested || !canUseScalarArrayInsertion(nested))
         nested.insertRangeFrom(src_nested, offset, size);
     else
         nested.insertFrom(src_nested, offset);

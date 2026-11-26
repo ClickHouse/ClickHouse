@@ -277,16 +277,6 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
         /// Dictionary is shared with src column. Insert only index.
         idx.insertIndex(position);
     }
-    else if (
-        empty()
-        && low_cardinality_src->isSharedDictionary()
-        && std::as_const(*this).getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
-        && std::as_const(*this).getDictionary().structureEquals(low_cardinality_src->getDictionary()))
-    {
-        /// Reuse an eligible immutable dictionary, as in `insertRangeFrom`.
-        setSharedDictionary(low_cardinality_src->getDictionaryPtr());
-        idx.insertIndex(position);
-    }
     else
     {
         compactIfSharedDictionary();

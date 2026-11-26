@@ -7,10 +7,11 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <algorithm>
+#include <bit>
 #include <limits>
 #include <string>
 #include <type_traits>
@@ -213,38 +214,30 @@ TEST(ColumnInsertFrom, ArraySingletonPreservesSharedLowCardinalityDictionary)
     }
 }
 
-TEST(ColumnInsertFrom, LowCardinalitySharedNullableDictionaryAndDetachment)
+TEST(ColumnInsertFrom, ArrayLowCardinalityPreservesRangeSignedZero)
 {
-    DataTypeLowCardinality type(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
-    auto private_source = type.createColumn();
-    private_source->insert(Field());
-    private_source->insert(Field(String()));
-    private_source->insert(Field(String("a\0b", 3)));
-    const auto & source_lc = assert_cast<const ColumnLowCardinality &>(*private_source);
-    auto source = ColumnLowCardinality::create(source_lc.getDictionaryPtr(), source_lc.getIndexes().getPtr(), true);
-    private_source.reset();
+    auto dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeFloat64());
+    const Float64 negative_zero = -0.0;
+    const size_t source_index = dictionary->uniqueInsertData(reinterpret_cast<const char *>(&negative_zero), sizeof(negative_zero));
+    ASSERT_GT(source_index, 0);
+    ASSERT_LE(source_index, std::numeric_limits<UInt8>::max());
+    MutableColumnPtr source_dictionary = std::move(dictionary);
+    auto indexes = ColumnUInt8::create();
+    indexes->insertValue(static_cast<UInt8>(source_index));
+    MutableColumnPtr source_indexes = std::move(indexes);
+    auto nested = ColumnLowCardinality::create(std::move(source_dictionary), std::move(source_indexes), false);
+    ASSERT_EQ(std::bit_cast<UInt64>(nested->getFloat64(0)), UInt64(1) << 63);
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(1);
+    auto source = ColumnArray::create(std::move(nested), std::move(offsets));
+    auto scalar = source->cloneEmpty();
+    auto range = source->cloneEmpty();
 
-    auto destination = type.createColumn();
-    for (size_t row = 0; row < source->size(); ++row)
-        destination->insertFrom(*source, row);
+    scalar->insertFrom(*source, 0);
+    range->insertRangeFrom(*source, 0, 1);
 
-    const auto & destination_lc = assert_cast<const ColumnLowCardinality &>(*destination);
-    ASSERT_EQ(destination_lc.getDictionaryPtr().get(), source->getDictionaryPtr().get());
-    for (size_t row = 0; row < source->size(); ++row)
-        EXPECT_EQ((*destination)[row], (*source)[row]);
-
-    destination->insert(Field(String("new")));
-    EXPECT_NE(destination_lc.getDictionaryPtr().get(), source->getDictionaryPtr().get());
-    EXPECT_EQ((*destination)[3], Field(String("new")));
-    EXPECT_EQ(source->size(), 3);
-    EXPECT_TRUE(source->isNullAt(0));
-    EXPECT_EQ((*source)[1], Field(String()));
-    EXPECT_EQ((*source)[2], Field(String("a\0b", 3)));
-
-    auto nonempty = type.createColumn();
-    nonempty->insert(Field(String("sentinel")));
-    nonempty->insertFrom(*source, 2);
-    EXPECT_NE(assert_cast<const ColumnLowCardinality &>(*nonempty).getDictionaryPtr().get(), source->getDictionaryPtr().get());
-    EXPECT_EQ((*nonempty)[0], Field(String("sentinel")));
-    EXPECT_EQ((*nonempty)[1], (*source)[2]);
+    const auto & scalar_data = assert_cast<const ColumnArray &>(*scalar).getData();
+    const auto & range_data = assert_cast<const ColumnArray &>(*range).getData();
+    EXPECT_EQ(std::bit_cast<UInt64>(scalar_data.getFloat64(0)), std::bit_cast<UInt64>(range_data.getFloat64(0)));
+    EXPECT_EQ(std::bit_cast<UInt64>(scalar_data.getFloat64(0)), UInt64(0));
 }
