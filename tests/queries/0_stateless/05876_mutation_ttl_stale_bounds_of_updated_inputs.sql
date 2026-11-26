@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_rows_wide;
 DROP TABLE IF EXISTS t_rows_compact;
 DROP TABLE IF EXISTS t_rows_drop_parts;
 DROP TABLE IF EXISTS t_rows_materialized;
+DROP TABLE IF EXISTS t_rows_where;
 
 -- Column TTL, Wide part, all columns rewritten.
 CREATE TABLE t_col_wide (d DateTime('UTC'), w String TTL d + INTERVAL 1 SECOND)
@@ -84,6 +85,20 @@ SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table 
 ALTER TABLE t_rows_materialized UPDATE d = toDateTime('2090-01-01 00:00:00', 'UTC') WHERE k = 1 SETTINGS mutations_sync = 2;
 SELECT 'rows_materialized', k, e FROM t_rows_materialized ORDER BY k;
 
+-- `DELETE WHERE` rule: the UPDATE moves a matching row past the expired bound; the rule must still apply to it later.
+CREATE TABLE t_rows_where (k UInt8, d DateTime('UTC'), f UInt8)
+ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 SECOND DELETE WHERE f = 1
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SYSTEM STOP TTL MERGES t_rows_where;
+INSERT INTO t_rows_where VALUES (1, '2020-01-01 00:00:00', 1), (2, '2020-01-01 00:00:00', 1), (3, '2020-01-01 00:00:00', 0);
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_rows_where' AND active;
+ALTER TABLE t_rows_where UPDATE d = now() WHERE k = 1 SETTINGS mutations_sync = 2;
+SELECT 'rows_where', k FROM t_rows_where ORDER BY k;
+SELECT sleep(2) FORMAT Null;
+SYSTEM START TTL MERGES t_rows_where;
+OPTIMIZE TABLE t_rows_where FINAL;
+SELECT 'rows_where_merged', k FROM t_rows_where ORDER BY k;
+
 DROP TABLE t_col_wide;
 DROP TABLE t_col_compact;
 DROP TABLE t_col_wide_partial;
@@ -91,3 +106,4 @@ DROP TABLE t_rows_wide;
 DROP TABLE t_rows_compact;
 DROP TABLE t_rows_drop_parts;
 DROP TABLE t_rows_materialized;
+DROP TABLE t_rows_where;

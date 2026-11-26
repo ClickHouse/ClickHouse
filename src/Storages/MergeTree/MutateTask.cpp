@@ -1868,7 +1868,7 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
 }
 
 /// The source bound of a rule reading a changed column is stale, and `TTLTransform` would act on it without evaluating
-/// the rows. `GROUP BY` bounds are kept, because `TTLAggregationAlgorithm::finalize` writes the inherited bound back.
+/// the rows. `GROUP BY` bounds are kept: unless the rule finished, `TTLAggregationAlgorithm::finalize` stores the inherited bound back.
 static void dropTTLInfosOfChangedInputs(
     MergeTreeDataPartTTLInfos & ttl_infos, const StorageInMemoryMetadata & metadata, const NameSet & changed_columns)
 {
