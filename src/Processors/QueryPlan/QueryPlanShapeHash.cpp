@@ -2,12 +2,20 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/Collator.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/SipHash.h>
 #include <Common/StackWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionsMiscellaneous.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -23,6 +31,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -31,6 +40,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageLog.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <fmt/format.h>
@@ -44,6 +54,69 @@ namespace
 /// Stands in for a column a step names but its input header does not have.
 constexpr size_t COLUMN_NOT_IN_HEADER = std::numeric_limits<size_t>::max();
 
+/// Every string goes in with its length, so that consecutive strings cannot run together: without it
+/// the table `ab`.`c` and the table `a`.`bc` would hash alike.
+void hashString(std::string_view value, SipHash & hash)
+{
+    hash.update(value.size());
+    hash.update(value.data(), value.size());
+}
+
+void hashStorageID(const StorageID & storage_id, SipHash & hash)
+{
+    hashString(storage_id.database_name, hash);
+    hashString(storage_id.table_name, hash);
+}
+
+/// The result type of a function, without the width of its numbers. A literal is typed by its value
+/// -- `5` is a `UInt8` and `500` a `UInt16` -- and the width carries over into the result of every
+/// function above it, so `a + 5` is a `UInt16` and `a + 500` a `UInt32`. Only whether a number is
+/// signed, unsigned or floating point is kept, which is enough to keep `CAST(x, 'Int32')` and
+/// `CAST(x, 'String')` apart once their constant argument is erased, though not `CAST(x, 'Int32')`
+/// and `CAST(x, 'Int64')`.
+void hashResultType(const IDataType & type, SipHash & hash)
+{
+    const WhichDataType which(type);
+    if (which.isUInt())
+    {
+        hashString("UInt", hash);
+    }
+    else if (which.isInt())
+    {
+        hashString("Int", hash);
+    }
+    else if (which.isFloat())
+    {
+        hashString("Float", hash);
+    }
+    else if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        hashString("Nullable", hash);
+        hashResultType(*nullable->getNestedType(), hash);
+    }
+    else if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+    {
+        hashString("LowCardinality", hash);
+        hashResultType(*low_cardinality->getDictionaryType(), hash);
+    }
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+    {
+        hashString("Array", hash);
+        hashResultType(*array->getNestedType(), hash);
+    }
+    else if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        hashString("Tuple", hash);
+        hash.update(tuple->getElements().size());
+        for (const auto & element : tuple->getElements())
+            hashResultType(*element, hash);
+    }
+    else
+    {
+        hashString(type.getName(), hash);
+    }
+}
+
 /// A column a step refers to by name. Within a plan the name is the result name of the expression
 /// that produced the column, which carries the literals of that expression, so the column is
 /// identified by its position in the header instead.
@@ -54,7 +127,7 @@ void hashColumn(const String & name, const Block * header, SipHash & hash)
 {
     if (!header)
     {
-        hash.update(name);
+        hashString(name, hash);
         return;
     }
 
@@ -78,7 +151,7 @@ void hashSortDescription(const SortDescription & description, const Block * head
         hash.update(column.nulls_direction);
         hash.update(column.with_fill);
         if (column.collator)
-            hash.update(column.collator->getLocale());
+            hashString(column.collator->getLocale(), hash);
     }
 }
 
@@ -91,8 +164,21 @@ void hashSortDescription(const SortDescription & description, const Block * head
 ///  - no `result_name` is hashed, because a constant's name is its value and is part of the name of
 ///    every node above it;
 ///  - an `INPUT` is identified by its position in `input_header`.
-/// The result types of functions are kept: they are how `CAST(x, 'Int32')` and `CAST(x, 'String')`
-/// stay apart once their constant argument is erased.
+/// The result types of functions are kept, without the width of their numbers, see `hashResultType`.
+/// The body of a lambda is hashed as well, see `hashLambda`.
+void hashActionsDAG(const ActionsDAG & dag, const Block * input_header, SipHash & hash);
+
+/// The body of a lambda, which is not among the children of the node that holds it. Its inputs are
+/// the lambda's arguments and the columns it captures, identified by their position among the
+/// body's inputs, since the captured columns are named after their expressions.
+void hashLambda(const ActionsDAG & body, SipHash & hash)
+{
+    Block body_header;
+    for (const auto * input : body.getInputs())
+        body_header.insert({nullptr, input->result_type, input->result_name});
+    hashActionsDAG(body, &body_header, hash);
+}
+
 void hashActionsDAG(const ActionsDAG & dag, const Block * input_header, SipHash & hash)
 {
     using Node = ActionsDAG::Node;
@@ -111,13 +197,30 @@ void hashActionsDAG(const ActionsDAG & dag, const Block * input_header, SipHash 
                 hashColumn(node.result_name, input_header, hash);
                 break;
             case ActionType::FUNCTION:
-                hash.update(node.function_base->getName());
-                hash.update(node.result_type->getName());
+                hashString(node.function_base->getName(), hash);
+                hashResultType(*node.result_type, hash);
+                /// A lambda with a captured column, whose children are the captured columns.
+                if (const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+                    hashLambda(function_capture->getAcionsDAG(), hash);
                 break;
             case ActionType::PLACEHOLDER:
-                hash.update(node.result_type->getName());
+                hashString(node.result_type->getName(), hash);
                 break;
             case ActionType::COLUMN:
+                /// A lambda that captures no column is folded into a constant, which holds the
+                /// lambda rather than a literal.
+                if (node.column && node.result_type && WhichDataType(node.result_type).isFunction())
+                {
+                    const IColumn * column = node.column.get();
+                    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                        column = &column_const->getDataColumn();
+                    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+                    {
+                        if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+                            hashLambda(function_expression->getAcionsDAG(), hash);
+                    }
+                }
+                break;
             case ActionType::ALIAS:
             case ActionType::ARRAY_JOIN:
                 break;
@@ -191,7 +294,7 @@ void hashAggregates(const AggregateDescriptions & aggregates, const Block * head
     {
         /// The name without the parameters, which are literals: `quantile(0.9)` and
         /// `quantile(0.5)` are the same choice.
-        hash.update(aggregate.function->getName());
+        hashString(aggregate.function->getName(), hash);
         hashColumns(aggregate.argument_names, header, hash);
     }
 }
@@ -202,6 +305,41 @@ void hashAggregatorParams(const Aggregator::Params & params, const Block * heade
     hashAggregates(params.aggregates, header, hash);
     hash.update(params.overflow_row);
     hash.update(params.only_merge);
+
+    /// The strategies the plan optimization picks for an aggregation that feeds an `ORDER BY ...
+    /// LIMIT` or a `HAVING`. Which one is used, and on which keys or aggregates, is a choice; the
+    /// limits and the thresholds are literals.
+    hash.update(params.bucket_top_k != 0);
+    if (params.bucket_top_k)
+    {
+        hash.update(params.bucket_top_k_ascending);
+        hash.update(params.bucket_top_k_rank_index);
+    }
+
+    hash.update(params.threshold_top_k.has_value());
+    if (params.threshold_top_k)
+    {
+        hash.update(params.threshold_top_k->ascending);
+        hash.update(params.threshold_top_k->aggregate_index);
+        hash.update(params.threshold_top_k->bound);
+    }
+
+    hash.update(params.top_k.has_value());
+    if (params.top_k)
+    {
+        hash.update(params.top_k->key_columns);
+        hash.update(params.top_k->directions.size());
+        for (int direction : params.top_k->directions)
+            hash.update(direction);
+        hash.update(params.top_k->nulls_directions.size());
+        for (int nulls_direction : params.top_k->nulls_directions)
+            hash.update(nulls_direction);
+        hash.update(params.top_k->threshold_tracker != nullptr);
+    }
+
+    hash.update(params.having_prefilter_op);
+    if (params.having_prefilter_op != Aggregator::Params::HavingPrefilterOp::Disabled)
+        hash.update(params.having_prefilter_count_index);
 }
 
 void hashGroupingSets(const GroupingSetsParamsList & grouping_sets, const Block * header, SipHash & hash)
@@ -217,7 +355,7 @@ void hashGroupingSets(const GroupingSetsParamsList & grouping_sets, const Block 
 void hashJoin(const IJoin & join, const Block * left_header, const Block * right_header, SipHash & hash)
 {
     const auto & table_join = join.getTableJoin();
-    hash.update(join.getName());
+    hashString(join.getName(), hash);
     hash.update(table_join.kind());
     hash.update(table_join.strictness());
     if (table_join.strictness() == JoinStrictness::Asof)
@@ -232,7 +370,35 @@ void hashJoin(const IJoin & join, const Block * left_header, const Block * right
         std::ranges::sort(null_safe);
         for (size_t index : null_safe)
             hash.update(index);
+
+        /// The columns holding the conditions of the clause that read one side only.
+        const auto [left_condition, right_condition] = clause.condColumnNames();
+        hash.update(!left_condition.empty());
+        if (!left_condition.empty())
+            hashColumn(left_condition, left_header, hash);
+        hash.update(!right_condition.empty());
+        if (!right_condition.empty())
+            hashColumn(right_condition, right_header, hash);
     }
+
+    /// The condition that reads both sides, such as `l.a < r.b` in an outer join, is evaluated by
+    /// the join itself, over the columns of both sides.
+    if (const auto & mixed_expression = table_join.getMixedJoinExpression())
+    {
+        hash.update(1);
+        Block both_sides;
+        for (const auto * side : {left_header, right_header})
+        {
+            if (side)
+            {
+                for (const auto & column : *side)
+                    both_sides.insert(column);
+            }
+        }
+        hashActionsDAG(mixed_expression->getActionsDAG(), &both_sides, hash);
+    }
+    else
+        hash.update(0);
 }
 
 /// What a source step reads and filters on while reading. The filters run over storage columns, so
@@ -240,11 +406,11 @@ void hashJoin(const IJoin & join, const Block * left_header, const Block * right
 void hashSource(const SourceStepWithFilter & source, SipHash & hash)
 {
     if (const auto & snapshot = source.getStorageSnapshot())
-    {
-        const auto storage_id = snapshot->storage.getStorageID();
-        hash.update(storage_id.database_name);
-        hash.update(storage_id.table_name);
-    }
+        hashStorageID(snapshot->storage.getStorageID(), hash);
+
+    /// The storage columns it reads. Above the source a column is known by its position only, so
+    /// this is what tells `sum(a)` from `sum(b)` over two columns of the same type.
+    hashColumns(source.requiredSourceColumns(), nullptr, hash);
 
     hash.update(source.isQueryWithFinal());
 
@@ -272,7 +438,7 @@ void hashReadFromMergeTree(const ReadFromMergeTree & read, SipHash & hash)
     {
         if (projection.metadata == metadata)
         {
-            hash.update(projection.name);
+            hashString(projection.name, hash);
             break;
         }
     }
@@ -302,9 +468,9 @@ void hashReadFromMergeTree(const ReadFromMergeTree & read, SipHash & hash)
         hash.update(indexes->use_skip_indexes);
         hash.update(indexes->skip_indexes.useful_indices.size());
         for (const auto & skip_index : indexes->skip_indexes.useful_indices)
-            hash.update(skip_index.index->index.name);
+            hashString(skip_index.index->index.name, hash);
         if (indexes->skip_indexes.skip_index_for_top_k_filtering)
-            hash.update(indexes->skip_indexes.skip_index_for_top_k_filtering->index.name);
+            hashString(indexes->skip_indexes.skip_index_for_top_k_filtering->index.name, hash);
     }
     else
         hash.update(0);
@@ -313,7 +479,7 @@ void hashReadFromMergeTree(const ReadFromMergeTree & read, SipHash & hash)
 /// The choices made for one step, apart from its children.
 void hashStep(const IQueryPlanStep & step, SipHash & hash)
 {
-    hash.update(step.getName());
+    hashString(step.getName(), hash);
 
     const auto & input_headers = step.getInputHeaders();
     const Block * header = input_headers.empty() ? nullptr : input_headers.front().get();
@@ -351,6 +517,9 @@ void hashStep(const IQueryPlanStep & step, SipHash & hash)
         hash.update(aggregating->isGroupByUseNulls());
         hash.update(aggregating->inOrder());
         hash.update(aggregating->explicitSortingRequired());
+        /// `isMergingSkipped` is left out: it follows from the parts the index analysis selected, so
+        /// a filter whose constant selects no part turns it on, as the selected parts themselves are
+        /// left out (see `hashReadFromMergeTree`).
     }
     else if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(&step))
     {
@@ -396,7 +565,7 @@ void hashStep(const IQueryPlanStep & step, SipHash & hash)
         hash.update(window->getWindowFunctions().size());
         for (const auto & function : window->getWindowFunctions())
         {
-            hash.update(function.getFunctionName());
+            hashString(function.getFunctionName(), hash);
             hashColumns(function.argument_names, header, hash);
         }
     }
@@ -422,6 +591,23 @@ void hashStep(const IQueryPlanStep & step, SipHash & hash)
         hashSource(*source, hash);
         if (const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step))
             hashReadFromMergeTree(*read_from_merge_tree, hash);
+    }
+    else if (input_headers.empty())
+    {
+        /// Any other source: the columns it produces, which are storage columns that no literal
+        /// names, and the table, for the steps that know theirs.
+        const auto & output_header = step.getOutputHeader();
+        hash.update(output_header ? output_header->columns() : 0);
+        if (output_header)
+        {
+            for (const auto & column : *output_header)
+                hashString(column.name, hash);
+        }
+
+        if (const auto * read_from_storage = typeid_cast<const ReadFromStorageStep *>(&step))
+            hashStorageID(read_from_storage->getStorage()->getStorageID(), hash);
+        else if (const auto * read_from_log = typeid_cast<const ReadFromStorageLogStep *>(&step))
+            hashStorageID(read_from_log->getStorageSnapshot()->storage.getStorageID(), hash);
     }
 }
 

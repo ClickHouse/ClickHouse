@@ -10,13 +10,26 @@
 
 DROP TABLE IF EXISTS t_plan_hash;
 DROP TABLE IF EXISTS t_plan_hash_right;
+DROP TABLE IF EXISTS t_plan_hash_memory;
+DROP TABLE IF EXISTS t_plan_hash_memory_other;
+DROP TABLE IF EXISTS t_plan_hash_names;
 
-CREATE TABLE t_plan_hash (k UInt64, a UInt32, b UInt32, s String, INDEX idx_b b TYPE minmax GRANULARITY 1)
+CREATE TABLE t_plan_hash (k UInt64, a UInt32, b UInt32, s String, n UInt8, INDEX idx_b b TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
-INSERT INTO t_plan_hash SELECT number, number % 97, number % 13, toString(number % 7) FROM numbers(1000);
+INSERT INTO t_plan_hash SELECT number, number % 97, number % 13, toString(number % 7), number % 200 FROM numbers(1000);
 
 CREATE TABLE t_plan_hash_right (k UInt64, c UInt32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_plan_hash_right SELECT number, number % 11 FROM numbers(500);
+
+-- Two columns of the same type, in tables of the same schema.
+CREATE TABLE t_plan_hash_memory (x UInt64, y UInt64) ENGINE = Memory;
+INSERT INTO t_plan_hash_memory SELECT number, number * 2 FROM numbers(100);
+CREATE TABLE t_plan_hash_memory_other (x UInt64, y UInt64) ENGINE = Memory;
+INSERT INTO t_plan_hash_memory_other SELECT number, number * 3 FROM numbers(100);
+
+-- Column names that concatenate to the same string: `ab` and `c`, `a` and `bc`.
+CREATE TABLE t_plan_hash_names (k UInt64, ab UInt64, c UInt64, a UInt64, bc UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_plan_hash_names SELECT number, number, number, number, number FROM numbers(100);
 
 SET log_query_plans = 1;
 
@@ -62,6 +75,14 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 'false', log_comm
 SELECT ntile(2) OVER (ORDER BY a) FROM t_plan_hash SETTINGS log_comment = 'same_window_1' FORMAT Null;
 SELECT ntile(3) OVER (ORDER BY a) FROM t_plan_hash SETTINGS log_comment = 'same_window_2' FORMAT Null;
 
+-- Over a `UInt8` column, `n + 5` is a `UInt16` and `n + 500` a `UInt32`: the width comes from the literal.
+SELECT max(n + 5) FROM t_plan_hash SETTINGS log_comment = 'same_arithmetic_1' FORMAT Null;
+SELECT max(n + 500) FROM t_plan_hash SETTINGS log_comment = 'same_arithmetic_2' FORMAT Null;
+
+-- A literal in a lambda body.
+SELECT sum(arraySum(arrayMap(x -> x + 1, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'same_lambda_1' FORMAT Null;
+SELECT sum(arraySum(arrayMap(x -> x + 7, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'same_lambda_2' FORMAT Null;
+
 -- Different plans: two hashes per group.
 
 SELECT count() FROM t_plan_hash WHERE a > 5 SETTINGS log_comment = 'different_column_1' FORMAT Null;
@@ -72,6 +93,35 @@ SELECT sum(a * 1) FROM t_plan_hash SETTINGS log_comment = 'different_function_2'
 
 SELECT ntile(2) OVER (ORDER BY a) FROM t_plan_hash SETTINGS log_comment = 'different_window_1' FORMAT Null;
 SELECT row_number() OVER (ORDER BY a) FROM t_plan_hash SETTINGS log_comment = 'different_window_2' FORMAT Null;
+
+-- The body of a lambda that captures nothing, which is folded into a constant.
+SELECT sum(arraySum(arrayMap(x -> x + 1, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'different_lambda_1' FORMAT Null;
+SELECT sum(arraySum(arrayMap(x -> x * 2, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'different_lambda_2' FORMAT Null;
+
+-- The body of a lambda that captures a column.
+SELECT sum(arraySum(arrayMap(x -> x + b, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'different_lambda_capture_1' FORMAT Null;
+SELECT sum(arraySum(arrayMap(x -> x * b, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'different_lambda_capture_2' FORMAT Null;
+
+-- A join condition that reads both sides, evaluated by the join itself.
+SELECT count() FROM t_plan_hash AS l LEFT JOIN t_plan_hash_right AS r ON l.k = r.k AND l.a < r.c
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 'false', log_comment = 'different_mixed_join_1' FORMAT Null;
+SELECT count() FROM t_plan_hash AS l LEFT JOIN t_plan_hash_right AS r ON l.k = r.k AND l.a > r.c
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 'false', log_comment = 'different_mixed_join_2' FORMAT Null;
+
+-- The aggregation keeps only the top groups of each bucket for the `ORDER BY ... LIMIT` above it.
+SELECT k % 50 AS g, count() AS c FROM t_plan_hash GROUP BY g ORDER BY c DESC LIMIT 10
+SETTINGS query_plan_push_down_limit = 1, query_plan_aggregation_bucket_top_k = 1, log_comment = 'different_bucket_top_k_1' FORMAT Null;
+SELECT k % 50 AS g, count() AS c FROM t_plan_hash GROUP BY g ORDER BY c DESC LIMIT 10
+SETTINGS query_plan_push_down_limit = 1, query_plan_aggregation_bucket_top_k = 0, log_comment = 'different_bucket_top_k_2' FORMAT Null;
+
+-- Same-typed columns of a table that is not a `MergeTree`, and two tables of the same schema.
+SELECT sum(x) FROM t_plan_hash_memory SETTINGS log_comment = 'different_memory_column_1' FORMAT Null;
+SELECT sum(y) FROM t_plan_hash_memory SETTINGS log_comment = 'different_memory_column_2' FORMAT Null;
+SELECT sum(x) FROM t_plan_hash_memory SETTINGS log_comment = 'different_memory_table_1' FORMAT Null;
+SELECT sum(x) FROM t_plan_hash_memory_other SETTINGS log_comment = 'different_memory_table_2' FORMAT Null;
+
+SELECT sum(ab) + sum(c) FROM t_plan_hash_names SETTINGS log_comment = 'different_concatenated_names_1' FORMAT Null;
+SELECT sum(a) + sum(bc) FROM t_plan_hash_names SETTINGS log_comment = 'different_concatenated_names_2' FORMAT Null;
 
 -- The same query, with the optimizer choosing differently.
 SELECT k FROM t_plan_hash ORDER BY k LIMIT 3 SETTINGS optimize_read_in_order = 1, log_comment = 'different_read_in_order_1' FORMAT Null;
@@ -114,3 +164,6 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 
 DROP TABLE t_plan_hash;
 DROP TABLE t_plan_hash_right;
+DROP TABLE t_plan_hash_memory;
+DROP TABLE t_plan_hash_memory_other;
+DROP TABLE t_plan_hash_names;
