@@ -11375,6 +11375,12 @@ The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `s
 A `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` or `multiSearchAnyCaseInsensitiveUTF8` call with one needle is searched as `%value%`.
 )", 0, \
         {"26.4", true, true, "New setting"}) \
+    DECLARE(Bool, use_text_index_for_substring_search, false, R"(
+Use the text index for `position(s, 'value') > 0` and the equivalent comparisons of `positionUTF8`, `countSubstrings` and their case-insensitive versions, by evaluating them as `s LIKE '%value%'` (`ILIKE` for the case-insensitive functions).
+
+Disabled by default because the dictionary scan that evaluates such a pattern can be slower than searching the column, e.g. when most rows have a token of their own, such as a unique id.
+)", 0, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
 Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,
 required to use the text index LIKE evaluation by the dictionary scan.
