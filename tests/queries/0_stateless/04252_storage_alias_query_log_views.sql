@@ -1,3 +1,4 @@
+SET allow_experimental_alias_table_engine = 1;
 
 CREATE TABLE alias_query_log_source (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE alias_query_log_table ENGINE = Alias(alias_query_log_source);

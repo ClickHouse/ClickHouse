@@ -102,8 +102,8 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     if (argument.type != ResultType::INSTANT_VECTOR)
     {
         throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "{} expects an argument of type {}, but expression {} has type {}",
-                        left_aggregation->getTypeAndName(), ResultType::INSTANT_VECTOR,
+                        "Aggregation operator '{}' expects an argument of type {}, but expression {} has type {}",
+                        left_aggregation->operator_name, ResultType::INSTANT_VECTOR,
                         getPromQLText(argument, context), argument.type);
     }
 
@@ -141,8 +141,8 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
                 applyMathBinaryOperatorToAST(
                     operator_node->operator_name, make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
-            left_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-            right_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values))));
+            left_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type),
+            right_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (left_aggregation->by || left_aggregation->without)

@@ -1,17 +1,21 @@
--- Exercises the two paths on which the adaptive aggregator leaves the work to the baseline
--- aggregation. A table that stays below every bound of the freeze, a few groups that the stream
--- repeats over and over, never freezes and aggregates to the end as the baseline does. A frozen
--- table whose staged stream proves to repeat the same keys over and over thaws mid-query: the
--- sampled repeat factor of the staged stream crosses the bound, every thread unfreezes, and the
--- merge combines the local tables with the records staged before the thaw. In both shapes each key
--- repeats far too often for staging to pay. Every cell compares the same query with the feature off
--- and on, so the expected output is a column of 1s.
+-- Exercises the two paths on which the adaptive aggregator hands the work back to the baseline
+-- aggregation. A table that consumes many times the freeze threshold in rows while staying below
+-- it in keys gives up on freezing. A frozen table whose staged stream proves to repeat the same
+-- keys over and over thaws mid-query: the sampled repeat factor of the staged stream crosses the
+-- bound, every thread unfreezes, and the merge combines the local tables with the records staged
+-- before the thaw. Both shapes are uniform mid-cardinality streams, where each key repeats far
+-- too often for staging to pay. Every cell compares the same query with the feature off and on,
+-- so the expected output is a column of 1s.
 
+SET max_threads = 4;
 SET max_block_size = 8192;
 SET adaptive_aggregator_freeze_threshold = 128;
 -- The hash-table statistics remember the thaw verdict and later runs of a marked query skip the
 -- adaptive engagement, so with them on only the first run of each cell would exercise the thaw.
 SET collect_hash_table_stats_during_aggregation = 0;
+-- The adaptive gate requires two-level aggregation to be permitted.
+SET group_by_two_level_threshold = 100000;
+SET group_by_two_level_threshold_bytes = 50000000;
 
 SELECT 'Thaw: general aggregate (sum)';
 SELECT
@@ -37,18 +41,13 @@ SELECT
     =
     (SELECT sum(cityHash64(k, s)), count() FROM (SELECT toString(number % 20000) AS k, min(toString(number)) AS s FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
 
--- The aggregation under `WITH TOTALS` is partial, and the adaptive aggregator takes a partial aggregation
--- only with two-level aggregation on. That needs non-zero thresholds and, without external aggregation,
--- several streams, so the cell pins the thresholds and four threads.
 SELECT 'Thaw under WITH TOTALS';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k WITH TOTALS
-        SETTINGS enable_adaptive_aggregator = 0, max_threads = 4, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000))
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k WITH TOTALS SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k WITH TOTALS
-        SETTINGS enable_adaptive_aggregator = 1, max_threads = 4, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000));
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k WITH TOTALS SETTINGS enable_adaptive_aggregator = 1));
 
-SELECT 'No freeze: repeat-dominated stream below every freeze bound';
+SELECT 'Give-up: repeat-dominated stream below the freeze threshold';
 SELECT
     (SELECT sum(u), count() FROM (SELECT toUInt64(number % 50) AS k, uniqExact(number % 100000) AS u FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
@@ -65,7 +64,7 @@ FROM
     GROUP BY k
     SETTINGS enable_adaptive_aggregator = 1
 );
-SELECT 'Analytic guard: no-freeze shape';
+SELECT 'Analytic guard: give-up shape';
 SELECT count(), sum(c), sum(u)
 FROM
 (

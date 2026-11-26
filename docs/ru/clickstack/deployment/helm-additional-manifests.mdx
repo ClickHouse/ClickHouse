@@ -14,7 +14,9 @@ keywords: ['дополнительные манифесты ClickStack', 'пол
 
 Параметр `additionalManifests` позволяет развертывать произвольные объекты Kubernetes вместе с чартом ClickStack. Используйте его для ресурсов, для которых в чарте нет встроенных шаблонов, например `NetworkPolicy`, `HorizontalPodAutoscaler`, `ServiceAccount`, `PodMonitor`, пользовательских объектов `Входной шлюз` и любых других объектов Kubernetes API.
 
-## Как это работает {#how-it-works}
+<div id="how-it-works">
+  ## Как это работает
+</div>
 
 Каждый элемент в `additionalManifests` — это полное описание ресурса Kubernetes. Чарт:
 
@@ -38,7 +40,9 @@ additionalManifests:
       release: '{{ .Release.Name }}'
 ```
 
-## Ограничения файла значений {#values-file-constraints}
+<div id="values-file-constraints">
+  ## Ограничения файла значений
+</div>
 
 `additionalManifests` настраивается в файле значений, а файлы значений разбираются как YAML до выполнения `tpl`.
 
@@ -59,7 +63,9 @@ labels:
   {{- include "clickstack.labels" . | nindent 2 }}
 ```
 
-## Доступные вспомогательные функции чарта {#available-chart-helpers}
+<div id="available-chart-helpers">
+  ## Доступные вспомогательные функции чарта
+</div>
 
 Эти вспомогательные функции определены в `templates/_helpers.tpl`:
 
@@ -74,9 +80,13 @@ labels:
 | `clickstack.clickhouse.fullname` | Имя CR ClickHouse                  | Безопасно использовать в скалярах в кавычках |
 | `clickstack.otel.fullname`       | Имя OTel collector                 | Безопасно использовать в скалярах в кавычках |
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
-### ServiceAccount {#serviceaccount}
+<div id="serviceaccount">
+  ### ServiceAccount
+</div>
 
 ```yaml
 additionalManifests:
@@ -92,9 +102,11 @@ additionalManifests:
         eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
 ```
 
-### NetworkPolicy {#networkpolicy}
+<div id="networkpolicy">
+  ### NetworkPolicy
+</div>
 
-Ограничьте входящий трафик для подов интерфейса ClickStack:
+Ограничьте входящий трафик для подов HyperDX:
 
 ```yaml
 additionalManifests:
@@ -121,7 +133,9 @@ additionalManifests:
               port: 8000
 ```
 
-### HorizontalPodAutoscaler {#horizontalpodautoscaler}
+<div id="horizontalpodautoscaler">
+  ### HorizontalPodAutoscaler
+</div>
 
 ```yaml
 additionalManifests:
@@ -145,7 +159,9 @@ additionalManifests:
               averageUtilization: 75
 ```
 
-### PodMonitor (Prometheus Operator) {#podmonitor}
+<div id="podmonitor">
+  ### PodMonitor (Prometheus Operator)
+</div>
 
 ```yaml
 additionalManifests:
@@ -165,7 +181,9 @@ additionalManifests:
           interval: 30s
 ```
 
-### Входной шлюз AWS ALB {#aws-alb-ingress}
+<div id="aws-alb-ingress">
+  ### Входной шлюз AWS ALB
+</div>
 
 При использовании [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) отключите встроенный в чарт входной шлюз nginx и определите пользовательский входной шлюз ALB:
 
@@ -204,7 +222,9 @@ additionalManifests:
 
 Полный пример настройки ALB, включая входной шлюз для внутреннего OTel collector и HPA, см. в [примере значений ALB](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress).
 
-### TargetGroupBinding {#targetgroupbinding}
+<div id="targetgroupbinding">
+  ### TargetGroupBinding
+</div>
 
 Для сценариев с ALB, в которых требуются явные ресурсы `TargetGroupBinding`:
 
@@ -222,7 +242,9 @@ additionalManifests:
       targetType: ip
 ```
 
-## Дополнительно: шаблоны обёрточного чарта {#advanced-wrapper-chart-templates}
+<div id="advanced-wrapper-chart-templates">
+  ## Дополнительно: шаблоны обёрточного чарта
+</div>
 
 Если вам нужны структурные вспомогательные конструкции, такие как `include "clickstack.labels" . | nindent 4`, рендерьте их через шаблон обёрточного чарта (`templates/*.yaml`), а не размещайте такие блоки напрямую в файлах значений.
 
@@ -239,9 +261,13 @@ data:
   appPort: "{{ .Values.hyperdx.ports.app }}"
 ```
 
-## Советы {#tips}
+<div id="tips">
+  ## Советы
+</div>
 
-### Хуки Helm {#helm-hooks}
+<div id="helm-hooks">
+  ### Хуки Helm
+</div>
 
 Каждая запись `additionalManifests` обрабатывается как отдельный YAML-документ. Вы можете добавить аннотации hook Helm, чтобы управлять порядком установки и обновления:
 
@@ -264,15 +290,21 @@ additionalManifests:
               command: ["./migrate.sh"]
 ```
 
-### Порядок CRD {#crd-ordering}
+<div id="crd-ordering">
+  ### Порядок CRD
+</div>
 
 Если ваши дополнительные манифесты включают пользовательские ресурсы (например, `PodMonitor`), CRD должны уже существовать в кластере до установки или обновления.
 
-### Объединение нескольких ресурсов {#combining-multiple-resources}
+<div id="combining-multiple-resources">
+  ### Объединение нескольких ресурсов
+</div>
 
 `additionalManifests` — это список. Элементы обрабатываются по порядку, и каждый из них становится отдельным YAML-документом.
 
-## Следующие шаги {#next-steps}
+<div id="next-steps">
+  ## Следующие шаги
+</div>
 
 * [Основное руководство по Helm](/ru/clickstack/deployment/helm) - базовая установка
 * [Руководство по настройке](/ru/clickstack/deployment/helm-configuration) - ключи API, секреты и входной шлюз

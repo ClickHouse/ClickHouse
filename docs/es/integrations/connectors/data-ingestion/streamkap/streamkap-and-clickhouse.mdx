@@ -12,6 +12,7 @@ integration:
   - website: 'https://streamkap.com/'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -23,7 +24,7 @@ Streamkap le permite transmitir en streaming cada insert, actualización y elimi
 Esto la hace ideal para impulsar paneles analíticos en tiempo real, analítica operativa y alimentar modelos de aprendizaje automático con datos en vivo.
 
 <div id="key-features">
-  ## Características clave {#key-features}
+  ## Características clave
 </div>
 
 * **CDC de streaming en tiempo real:** Streamkap captura los cambios directamente de los registros de tu base de datos, lo que garantiza que los datos en ClickHouse sean una réplica en tiempo real del origen.
@@ -38,13 +39,13 @@ Esto la hace ideal para impulsar paneles analíticos en tiempo real, analítica 
 * **Entrega resiliente:** La plataforma ofrece una garantía de entrega de al menos una vez, lo que asegura la consistencia de los datos entre tu origen y ClickHouse. Para las operaciones de upsert, realiza la deduplicación en función de la clave primaria.
 
 <div id="started">
-  ## Primeros pasos {#started}
+  ## Primeros pasos
 </div>
 
 Esta guía ofrece una visión general de cómo configurar una canalización de Streamkap para cargar datos en ClickHouse.
 
 <div id="prerequisites">
-  ### Requisitos previos {#prerequisites}
+  ### Requisitos previos
 </div>
 
 * Una <a href="https://app.streamkap.com/account/sign-up" target="_blank">cuenta de Streamkap</a>.
@@ -90,13 +91,13 @@ Esta guía ofrece una visión general de cómo configurar una canalización de S
 </Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## Cómo funciona con ClickHouse {#how-it-works-with-clickhouse}
+  ## Cómo funciona con ClickHouse
 </div>
 
 La integración de Streamkap está diseñada para gestionar de forma eficiente los datos de CDC en ClickHouse.
 
 <div id="table-engine-data-handling">
-  ### Motor de tabla y gestión de datos {#table-engine-data-handling}
+  ### Motor de tabla y gestión de datos
 </div>
 
 De forma predeterminada, Streamkap usa un modo de ingestión `upsert`. Cuando crea una tabla en ClickHouse, utiliza el motor ReplacingMergeTree. Este motor es ideal para gestionar eventos de CDC:
@@ -109,7 +110,7 @@ De forma predeterminada, Streamkap usa un modo de ingestión `upsert`. Cuando cr
   * Opcionalmente, los registros eliminados pueden conservarse en ClickHouse con fines analíticos
 
 <div id="metadata-columns">
-  ### Columnas de metadatos {#metadata-columns}
+  ### Columnas de metadatos
 </div>
 
 Streamkap agrega varias columnas de metadatos a cada tabla para gestionar el estado de los datos:
@@ -122,7 +123,7 @@ Streamkap agrega varias columnas de metadatos a cada tabla para gestionar el est
 | `_STREAMKAP_OFFSET`       | Valor de desplazamiento de los logs internos de Streamkap, útil para ordenar y depurar. |
 
 <div id="query-latest-data">
-  ### Consultar los datos más recientes {#query-latest-data}
+  ### Consultar los datos más recientes
 </div>
 
 Dado que ReplacingMergeTree procesa las actualizaciones y eliminaciones en segundo plano, una consulta simple `SELECT *` podría mostrar filas históricas o eliminadas antes de que se complete una fusión. Para obtener el estado más actual de sus datos, debe filtrar los registros eliminados y seleccionar solo la versión más reciente de cada fila.
@@ -152,7 +153,7 @@ GROUP BY key;
 Para casos de uso en producción y consultas recurrentes y concurrentes de usuarios finales, se pueden usar vistas materializadas para modelar los datos y adaptarlos mejor a los patrones de acceso de los sistemas aguas abajo.
 
 <div id="further-reading">
-  ## Más información {#further-reading}
+  ## Más información
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">Sitio web de Streamkap</a>

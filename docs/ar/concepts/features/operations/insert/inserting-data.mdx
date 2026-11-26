@@ -8,8 +8,10 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="inserting-into-clickhouse-vs-oltp-databases">
-  ## إدراج البيانات في ClickHouse مقارنةً بقواعد بيانات OLTP {#inserting-into-clickhouse-vs-oltp-databases}
+  ## إدراج البيانات في ClickHouse مقارنةً بقواعد بيانات OLTP
 </div>
 
 باعتبار ClickHouse قاعدة بيانات OLAP (Online Analytical Processing)، فهو مُحسَّن لتحقيق أداء عالٍ وقابلية توسّع كبيرة، بما يتيح نظريًا إدراج ملايين الصفوف في الثانية.
@@ -24,11 +26,11 @@ doc_type: 'guide'
 وسيساعدك اتباع هذه القواعد على تجنّب المشكلات التي يواجهها المستخدمون عادةً عند استخدام ClickHouse لأول مرة، ومحاولة تطبيق استراتيجية إدراج تناسب قواعد بيانات OLTP.
 
 <div id="best-practices-for-inserts">
-  ## أفضل الممارسات لعمليات الإدراج {#best-practices-for-inserts}
+  ## أفضل الممارسات لعمليات الإدراج
 </div>
 
 <div id="insert-in-large-batch-sizes">
-  ### الإدراج على دفعات كبيرة {#insert-in-large-batch-sizes}
+  ### الإدراج على دفعات كبيرة
 </div>
 
 افتراضيًا، تؤدي كل عملية إدراج تُرسل إلى ClickHouse إلى أن ينشئ ClickHouse فورًا جزءًا تخزينيًا يحتوي على بيانات عملية إدراج، إلى جانب بيانات وصفية أخرى يجب تخزينها.
@@ -39,7 +41,7 @@ doc_type: 'guide'
 إذا لم تكن الدفعات الكبيرة ممكنة، فاستخدم عمليات الإدراج غير المتزامنة الموضحة أدناه.
 
 <div id="ensure-consistent-batches-for-idempotent-retries">
-  ### احرص على اتساق الدُفعات لإعادة المحاولة المتماثلة الأثر {#ensure-consistent-batches-for-idempotent-retries}
+  ### احرص على اتساق الدُفعات لإعادة المحاولة المتماثلة الأثر
 </div>
 
 بشكل افتراضي، تكون عمليات الإدراج في ClickHouse متزامنة ومتماثلة الأثر (أي إن تنفيذ عملية الإدراج نفسها عدة مرات يعطي النتيجة نفسها كما لو نُفذت مرة واحدة فقط).
@@ -54,7 +56,7 @@ doc_type: 'guide'
 وطالما أن استعلام الإدراج المُعاد يحتوي على البيانات نفسها وبالترتيب نفسه، فسيتجاهل ClickHouse تلقائيًا عملية الإدراج المُعادة إذا كانت عملية الإدراج الأصلية (التي لم يصل إقرار بها) قد نجحت.
 
 <div id="insert-to-a-mergetree-table-or-a-distributed-table">
-  ### الإدراج في جدول MergeTree أو جدول موزّع {#insert-to-a-mergetree-table-or-a-distributed-table}
+  ### الإدراج في جدول MergeTree أو جدول موزّع
 </div>
 
 نوصي بالإدراج مباشرةً في جدول MergeTree (أو جدول Replicated)، مع موازنة الطلبات عبر مجموعة من العقد إذا كانت البيانات موزعة على عدة شظايا، وضبط `internal_replication=true`.
@@ -63,22 +65,20 @@ doc_type: 'guide'
 إذا كانت موازنة الحمل من جهة العميل غير عملية، فيمكنك الإدراج عبر [جدول موزّع](/ar/reference/engines/table-engines/special/distributed)، والذي سيتولى بعد ذلك توزيع عمليات الكتابة عبر العقد. ومرة أخرى، يُنصح بضبط `internal_replication=true`.
 ومع ذلك، تجدر الإشارة إلى أن هذا النهج أقل كفاءةً قليلًا، لأن عمليات الكتابة يجب أن تتم محليًا على العقدة التي تحتوي على الجدول الموزّع ثم تُرسل إلى الشظايا.
 
-### استخدم عمليات الإدراج غير المتزامنة للدفعات الصغيرة {#use-asynchronous-inserts-for-small-batches}
+<div id="use-asynchronous-inserts-for-small-batches">
+  ### استخدم الإدراج غير المتزامن للدفعات الصغيرة
+</div>
 
 هناك سيناريوهات لا يكون فيها التجميع على جهة العميل عمليًا، مثل حالات استخدام observability التي تتضمن مئات أو آلاف الوكلاء المخصصين لغرض واحد، والذين يرسلون السجلات والمقاييس وآثار التتبع وما إلى ذلك.
 في هذا السيناريو، يكون نقل هذه البيانات في الوقت الفعلي أمرًا بالغ الأهمية لاكتشاف المشكلات والحالات الشاذة بأسرع ما يمكن.
 علاوة على ذلك، هناك خطر حدوث ارتفاعات مفاجئة في الأحداث داخل الأنظمة الخاضعة للمراقبة، ما قد يؤدي إلى زيادات كبيرة في الذاكرة ومشكلات مرتبطة بها عند محاولة تخزين بيانات observability مؤقتًا على جهة العميل.
-إذا تعذر إدراج دفعات كبيرة، فيمكنك إسناد التجميع إلى ClickHouse باستخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts).
+إذا تعذر إدراج دفعات كبيرة، فيمكنك إسناد التجميع إلى ClickHouse باستخدام [الإدراج غير المتزامن](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts).
 
-مع عمليات الإدراج غير المتزامنة، تُدرج البيانات أولًا في مخزن مؤقت، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات عبر 3 خطوات، كما يوضح المخطط أدناه:
+مع الإدراج غير المتزامن، تُدرج البيانات أولًا في مخزن مؤقت، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات عبر 3 خطوات، كما يوضح المخطط أدناه:
 
-<div className="ch-image-md">
-  <Frame>
-    ![عمليات إدراج في Postgres](/images/guides/postgres-inserts.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="عمليات إدراج في Postgres" />
 
-عند تمكين عمليات الإدراج غير المتزامنة، يقوم ClickHouse بما يلي:
+عند تمكين الإدراج غير المتزامن، يقوم ClickHouse بما يلي:
 
 (1) يستقبل استعلام الإدراج بشكل غير متزامن.
 (2) يكتب بيانات الاستعلام أولًا إلى مخزن مؤقت في الذاكرة.
@@ -91,11 +91,11 @@ doc_type: 'guide'
 <Note>
   لاحظ أن البيانات لا تكون قابلة للبحث عبر الاستعلامات قبل تفريغها إلى مساحة تخزين قاعدة البيانات، وأن تفريغ المخزن المؤقت قابل للتهيئة.
 
-  يمكن العثور على التفاصيل الكاملة حول تهيئة عمليات الإدراج غير المتزامنة [هنا](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، مع شرح متعمق [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
+  يمكن العثور على التفاصيل الكاملة حول تهيئة الإدراج غير المتزامن [هنا](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، مع شرح متعمق [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### استخدم عملاء ClickHouse الرسميين {#use-official-clickhouse-clients}
+  ### استخدم عملاء ClickHouse الرسميين
 </div>
 
 يوفّر ClickHouse عملاءً لأكثر لغات البرمجة شيوعًا.
@@ -104,7 +104,7 @@ doc_type: 'guide'
 راجع [العملاء والواجهات الأصلية](/ar/concepts/features/interfaces/native-clients-interfaces-index) للاطلاع على القائمة الكاملة لعملاء ClickHouse وبرامج التشغيل المتاحة.
 
 <div id="prefer-the-native-format">
-  ### فضّل تنسيق Native {#prefer-the-native-format}
+  ### فضّل تنسيق Native
 </div>
 
 يدعم ClickHouse العديد من [تنسيقات الإدخال](/ar/reference/formats/index) عند تنفيذ عمليات الإدراج (وكذلك الاستعلامات).
@@ -120,7 +120,7 @@ doc_type: 'guide'
 ويمكن النظر في تنسيق [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow) إذا كان معدل كتابة البيانات لديك منخفضًا وتريد التكامل بسرعة. لكن ينبغي الانتباه إلى أن هذا التنسيق يفرض عبئًا على CPU في ClickHouse بسبب التحليل.
 
 <div id="use-the-http-interface">
-  ### استخدام واجهة HTTP {#use-the-http-interface}
+  ### استخدام واجهة HTTP
 </div>
 
 على عكس كثير من قواعد البيانات التقليدية، يدعم ClickHouse واجهة HTTP.
@@ -133,7 +133,7 @@ doc_type: 'guide'
 راجع [واجهة HTTP](/ar/concepts/features/interfaces/http) لمزيد من التفاصيل.
 
 <div id="basic-example">
-  ## مثال بسيط {#basic-example}
+  ## مثال بسيط
 </div>
 
 يمكنك استخدام الأمر المألوف `INSERT INTO TABLE` مع ClickHouse. لِنُدرِج بعض البيانات في الجدول الذي أنشأناه في دليل البدء السريع [&quot;إنشاء الجداول في ClickHouse&quot;](/ar/get-started/quickstarts/creating-tables).
@@ -163,7 +163,7 @@ user_id message                                             timestamp           
 ```
 
 <div id="loading-data-from-postgres">
-  ## تحميل البيانات من Postgres {#loading-data-from-postgres}
+  ## تحميل البيانات من Postgres
 </div>
 
 لتحميل البيانات من Postgres، يمكنك استخدام:
@@ -181,7 +181,7 @@ user_id message                                             timestamp           
 </Info>
 
 <div id="inserting-data-from-command-line">
-  ## إدراج البيانات من سطر الأوامر {#inserting-data-from-command-line}
+  ## إدراج البيانات من سطر الأوامر
 </div>
 
 **المتطلبات المسبقة**

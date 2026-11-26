@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <Info>
   **在本指南中，您将：**
 
@@ -18,7 +20,7 @@ doc_type: 'guide'
 </Info>
 
 <div id="vector-search-primer">
-  ## 向量搜索入门 {#vector-search-primer}
+  ## 向量搜索入门
 </div>
 
 在数学和物理学中，向量被正式定义为同时具有大小和方向的对象。
@@ -38,16 +40,14 @@ doc_type: 'guide'
 尽管专用向量数据库有其优势，用户通常仍更偏好具备即席向量能力的常规数据库，而不是完全专用的向量存储。
 ClickHouse 支持[暴力向量搜索](/zh/reference/engines/table-engines/mergetree-family/annindexes#exact-nearest-neighbor-search)，以及[近似最近邻 (ANN) 搜索方法](/zh/reference/engines/table-engines/mergetree-family/annindexes#approximate-nearest-neighbor-search)，其中包括 HNSW——这是当前快速向量检索的标准。
 
-### 理解嵌入向量 {#understanding-embeddings}
+<div id="understanding-embeddings">
+  ### 理解嵌入向量
+</div>
 
 我们通过一个简单示例来了解向量搜索的工作原理。
 先来看单词的嵌入向量 (向量表示) ：
 
-<div className="ch-image-md">
-  <Frame>
-    ![水果和动物嵌入向量可视化](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="水果和动物嵌入向量可视化" />
 
 创建下表，并填入一些示例嵌入向量：
 
@@ -95,14 +95,14 @@ query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
 ```
 
 <div id="approximate-nearest-neighbours">
-  ## 近似最近邻 (ANN) {#approximate-nearest-neighbours}
+  ## 近似最近邻 (ANN)
 </div>
 
 对于大型数据集，暴力搜索的速度会变得过慢。
 这时就需要使用近似最近邻方法了。
 
 <div id="quantisation">
-  ### 量化 {#quantisation}
+  ### 量化
 </div>
 
 量化涉及将数据向下转换为更小的数值类型。
@@ -114,13 +114,11 @@ ClickHouse 的向量化查询执行引擎可以在每次操作中将更多值装
 1. **将量化后的副本与原始列一并保留** - 这会使存储翻倍，但更安全，因为我们始终可以回退到完整精度
 2. **完全替换原始值** (通过在插入时向下转换)  - 这样可以节省空间和 I/O，但这是不可逆的
 
-### 分层可导航小世界 (HNSW) {#hnsw}
-
-<div className="ch-image-md">
-  <Frame>
-    ![HNSW 分层结构](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
-  </Frame>
+<div id="hnsw">
+  ### 分层可导航小世界 (HNSW)
 </div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="HNSW 分层结构" />
 
 HNSW 由多层节点 (向量) 组成。每个节点会被随机分配到一层或多层中，而且出现在更高层的概率会呈指数下降。
 
@@ -131,12 +129,12 @@ HNSW 由多层节点 (向量) 组成。每个节点会被随机分配到一层�
 <Warning>
   **HNSW 局限性**
 
-  主要瓶颈在于内存。ClickHouse 使用 HNSW 的 [usearch](https://github.com/unum-cloud/usearch) 实现，它是一种 in-memory 的数据结构，不支持拆分。
+  主要瓶颈在于内存。ClickHouse 使用 HNSW 的 [usearch](https://github.com/unum-cloud/usearch) 实现，它是一种驻留内存的数据结构，不支持拆分。
   因此，数据集越大，所需的 RAM 也会相应增加。
 </Warning>
 
 <div id="comparison-approaches">
-  ### 方法对比 {#comparison-approaches}
+  ### 方法对比
 </div>
 
 | 类别     | 暴力法                   | HNSW               | QBit            |
@@ -146,21 +144,19 @@ HNSW 由多层节点 (向量) 组成。每个节点会被随机分配到一层�
 | **其他** | 量化：要么占用更多空间，要么精度损失不可逆 | 索引必须能装入内存，并且需要预先构建 | 仍然是 O(#records) |
 
 <div id="qbit-deepdive">
-  ## QBit 深入剖析 {#qbit-deepdive}
+  ## QBit 深入剖析
 </div>
 
-### Quantised Bit (QBit) {#quantised-bit}
+<div id="quantised-bit">
+  ### Quantised Bit (QBit)
+</div>
 
 QBit 是一种新的数据结构，它利用浮点数按位表示的特性来存储 `BFloat16`、`Float32` 和 `Float64` 值。
 QBit 并不是将每个数字作为一个整体存储，而是将这些值拆分为**位平面**：所有第 1 位、所有第 2 位、所有第 3 位，依此类推。
 
-<div className="ch-image-md">
-  <Frame>
-    ![QBit 位平面概念](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="QBit 位平面概念" />
 
-这种方法解决了传统量化的主要局限。既不需要存储重复数据，也无需承担数值失去意义的风险。由于 QBit 直接基于已存储的数据工作，而不是维护 in-memory 索引，因此它也避开了 HNSW 的 RAM 瓶颈。
+这种方法解决了传统量化的主要局限。既不需要存储重复数据，也无需承担数值失去意义的风险。由于 QBit 直接基于已存储的数据工作，而不是维护内存中的索引，因此它也避开了 HNSW 的 RAM 瓶颈。
 
 <Tip>
   **优势**
@@ -175,7 +171,9 @@ QBit 并不是将每个数字作为一个整体存储，而是将这些值拆分
   尽管 QBit 能加速向量搜索，但其计算复杂度仍然是 O(n)。换句话说，如果你的数据集足够小，HNSW 索引可以轻松装入 RAM，那它仍然是最快的选择。
 </Info>
 
-### 数据类型 {#the-data-type}
+<div id="the-data-type">
+  ### 数据类型
+</div>
 
 下面介绍如何创建 QBit 类型的列：
 
@@ -197,11 +195,7 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![QBit 数据结构转置](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="QBit 数据结构转置" />
 
 当数据插入 QBit 列时，会经过转置：所有第 1 位排在一起、所有第 2 位排在一起，依此类推。我们将这些称为**组**。
 
@@ -214,7 +208,7 @@ INSERT INTO fruit_animal VALUES
 </Tip>
 
 <div id="the-distance-calculation">
-  ### 距离计算 {#the-distance-calculation}
+  ### 距离计算
 </div>
 
 要使用 QBit 执行查询，请使用带有 precision 参数的 [`L2DistanceTransposed`](/zh/reference/functions/regular-functions/distance-functions#L2DistanceTransposed) 函数：
@@ -239,46 +233,38 @@ ORDER BY distance;
 
 第三个参数 (16) 指定精度级别，以位为单位。
 
-### I/O 优化 {#io-optimisation}
-
-<div className="ch-image-md">
-  <Frame>
-    ![QBit I/O 优化](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
-  </Frame>
+<div id="io-optimisation">
+  ### I/O 优化
 </div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="QBit I/O 优化" />
 
 在计算距离之前，必须先从磁盘读取所需数据，然后进行逆转置 (即将分组的位表示还原为完整向量) 。由于 QBit 按精度级别以位转置形式存储数值，ClickHouse 只需读取重建到目标精度所需的高位位平面。
 
 在上面的查询中，我们使用的精度级别为 16。由于 Float64 有 64 位，我们只需读取前 16 个位平面，**跳过 75% 的数据**。
 
-<div className="ch-image-md">
-  <Frame>
-    ![QBit 重建](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="QBit 重建" />
 
 读取后，我们只根据已加载的位平面重建每个数值的高位部分，未读取的位则保留为 0。
 
-### 计算优化 {#calculation-optimisation}
-
-<div className="ch-image-md">
-  <Frame>
-    ![向下转换比较](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
-  </Frame>
+<div id="calculation-optimisation">
+  ### 计算优化
 </div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="降精度转换比较" />
 
 有人可能会问，将其转换为更小的类型 (如 Float32 或 BFloat16) 是否能消除这部分未使用的空间。确实可以，但如果对每一行都显式进行类型转换，开销会很高。
 
-相反，我们可以只对参考向量做向下转换，并将 QBit 数据视为包含更窄类型的值 (即“忽略”某些列的存在) ，因为它的布局通常对应于这些类型的截断版本。
+相反，我们可以只对参考向量做降精度处理，并将 QBit 数据视为包含更窄类型的值 (即“忽略”某些列的存在) ，因为它的布局通常对应于这些类型的截断版本。
 
 <div id="bfloat16-optimization">
-  #### BFloat16 优化 {#bfloat16-optimization}
+  #### BFloat16 优化
 </div>
 
 BFloat16 是将 Float32 的精度截去一半后得到的格式。它保留了相同的符号位和 8 位指数，但在 23 位尾数中只保留最高 7 位。因此，读取 QBit 列的前 16 个位平面，实际上就能还原出 BFloat16 值的布局。所以在这种情况下，我们可以 (并且确实会) 安全地将参考向量转换为 BFloat16。
 
 <div id="float64-complexity">
-  #### Float64 的复杂性 {#float64-complexity}
+  #### Float64 的复杂性
 </div>
 
 不过，Float64 就完全不同了。它使用 11 位指数和 52 位尾数，这意味着它并不是简单地把 Float32 的位数翻倍。它的结构和指数偏置都完全不同。将 Float64 向下转换为更小的格式 (如 Float32) 时，需要进行真正的 IEEE-754 转换，也就是将每个值舍入到最接近的可表示 Float32 值。这个舍入步骤的计算开销很高。
@@ -288,13 +274,13 @@ BFloat16 是将 Float32 的精度截去一半后得到的格式。它保留了�
 </Tip>
 
 <div id="example">
-  ## DBpedia 示例 {#example}
+  ## DBpedia 示例
 </div>
 
 让我们通过一个真实场景的示例看看 QBit 的实际表现。这里使用的是 DBpedia 数据集，其中包含 100 万篇以 Float32 嵌入向量表示的 Wikipedia 文章。
 
 <div id="setup">
-  ### 准备 {#setup}
+  ### 准备
 </div>
 
 首先，创建表
@@ -357,7 +343,7 @@ ALTER TABLE dbpedia UPDATE qbit = vector WHERE 1;
 ```
 
 <div id="search-query">
-  ### 搜索查询 {#search-query}
+  ### 搜索查询
 </div>
 
 我们来查找与这些太空相关搜索词最密切相关的概念：Moon、Apollo 11、Space Shuttle、Astronaut、Rocket：
@@ -661,7 +647,7 @@ avg_distance:         0.9972260772085877
 </Accordion>
 
 <div id="key-insight">
-  ### 关键洞察 {#key-insight}
+  ### 关键洞察
 </div>
 
 结果如何？不只是好，而是好得出乎意料。乍看之下，很难相信一个浮点数在去掉整个尾数和一半指数后，竟然还能保留有意义的信息。
@@ -671,7 +657,7 @@ avg_distance:         0.9972260772085877
 内存占用从 **6.05 GB 降至 740 MB**，同时仍保持了出色的语义搜索质量！
 
 <div id="result">
-  ## 结论 {#result}
+  ## 结论
 </div>
 
 QBit 是一种将浮点数存储为位平面的列类型。

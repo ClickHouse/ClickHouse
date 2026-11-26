@@ -7,10 +7,15 @@ keywords: ['managed postgres RBAC', '访问控制', '角色', '特权', '权限'
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
+
 ClickHouse Cloud 支持对 ClickHouse Managed Postgres 服务进行基于角色的访问控制 (RBAC) 。您可以创建具有特定权限的自定义角色，并将其分配给组织成员，以控制哪些人可以查看或管理您的 Postgres 服务。
 
 <div id="available-permissions">
-  ## 可用权限 {#available-permissions}
+  ## 可用权限
 </div>
 
 ClickHouse Managed Postgres 当前支持两项权限：
@@ -26,37 +31,27 @@ ClickHouse Managed Postgres 当前支持两项权限：
   未来的版本将提供更细粒度的权限控制。
 </Note>
 
-## 创建自定义角色 {#creating-a-custom-role}
-
-1. 在左侧边栏中点击您的组织名称，然后选择 **用户和角色**。
-
-<div className="ch-image-md">
-  <Frame>
-    ![用户和角色菜单](/images/managed-postgres/rbac/usersandroles.webp)
-  </Frame>
+<div id="creating-a-custom-role">
+  ## 创建自定义角色
 </div>
 
-2. 切换到 **角色** 选项卡，然后点击 **创建角色**。
-3. 输入角色名称，点击 **+ 允许**，然后从实体列表中选择 **Postgres 服务**。
+1. 在左侧边栏中点击组织名称，然后选择 **Users and roles**。
 
-<div className="ch-image-md">
-  <Frame>
-    ![选择 Postgres 服务实体](/images/managed-postgres/rbac/postgresentity.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Users and roles 菜单" size="md" border />
 
-4. 选择该角色适用的 Postgres 服务，然后选择要授予的权限。
+2. 切换到 **Roles** 选项卡，然后点击 **Create role**。
+3. 输入角色名称，然后点击 **+ Allow**，并从实体列表中选择 **Postgres Service**。
 
-<div className="ch-image-md">
-  <Frame>
-    ![为角色配置 Postgres 权限](/images/managed-postgres/rbac/newpostgresperms.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="选择 Postgres Service 实体" size="md" border />
 
-5. 点击 **创建角色** 完成保存。
+4. 选择该角色要限定到的 Postgres 服务，然后选择要授予的权限。
+
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="为角色配置 Postgres 权限" size="md" border />
+
+5. 点击 **Create role** 保存。
 
 <div id="assigning-a-role">
-  ## 分配角色 {#assigning-a-role}
+  ## 分配角色
 </div>
 
 角色创建完成后，请在同一 **Users and roles** 页面中的 **Users** 选项卡里将其分配给用户。一个用户可以拥有多个角色，您也可以通过组合这些角色来构建所需的精确访问 profile。

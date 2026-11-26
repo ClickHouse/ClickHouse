@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert}
+<div id="hdfs_create_new_file_on_insert">
+  ## hdfs_create_new_file_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,7 +28,9 @@ Valores possíveis:
 * 0 — a consulta `INSERT` acrescenta novos dados ao final do arquivo.
 * 1 — a consulta `INSERT` cria um novo arquivo.
 
-## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
+<div id="hdfs_ignore_file_doesnt_exist">
+  ## hdfs_ignore_file_doesnt_exist
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -39,13 +43,17 @@ Valores possíveis:
 * 1 — `SELECT` retorna resultado vazio.
 * 0 — `SELECT` lança uma exceção.
 
-## hdfs_replication {#hdfs_replication}
+<div id="hdfs_replication">
+  ## hdfs_replication
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 O número real de réplicas pode ser especificado quando o arquivo HDFS é criado.
 
-## hdfs_skip_empty_files {#hdfs_skip_empty_files}
+<div id="hdfs_skip_empty_files">
+  ## hdfs_skip_empty_files
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,20 +64,9 @@ Valores possíveis:
 * 0 — `SELECT` gera uma exceção se o arquivo vazio não for compatível com o formato solicitado.
 * 1 — `SELECT` retorna um resultado vazio para um arquivo vazio.
 
-## hdfs_skip_hidden_files {#hdfs_skip_hidden_files}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração: ignora arquivos com um segmento de caminho que começa com `_` ou `.` abaixo do prefixo sem glob ao listar arquivos por glob, como fazem outros leitores do ecossistema Hive. Tabelas com `partition_strategy = 'hive'` sempre ignoram esses caminhos."}]}]} />
-
-Habilita ou desabilita o salto de caminhos ocultos ao listar arquivos por glob em tabelas com o motor [HDFS](/pt-BR/reference/engines/table-engines/integrations/hdfs): arquivos com um segmento de caminho que começa com `_` ou `.` abaixo do prefixo sem glob do caminho. Um segmento que contém `=` é um diretório de partição (como `_p=1` para uma coluna de partição `_p`) e não é considerado oculto. Os gravadores do ecossistema Hive (Hive, Spark, Trino) fazem staging da saída em andamento e gravam arquivos marcadores nesses caminhos (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), e a leitura desses arquivos entra em condição de corrida com o commit do gravador. Segmentos dentro do prefixo sem glob não são verificados. Tabelas com `partition_strategy = 'hive'` sempre ignoram caminhos ocultos, independentemente desta configuração.
-
-Valores possíveis:
-
-* 0 — todos os arquivos correspondentes ao glob são lidos.
-* 1 — arquivos com um segmento de caminho oculto abaixo do prefixo sem glob são ignorados.
-
-## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
+<div id="hdfs_throw_on_zero_files_match">
+  ## hdfs_throw_on_zero_files_match
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,7 +79,9 @@ Valores possíveis:
 * 1 — `SELECT` gera uma exceção.
 * 0 — `SELECT` retorna resultado vazio.
 
-## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
+<div id="hdfs_truncate_on_insert">
+  ## hdfs_truncate_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

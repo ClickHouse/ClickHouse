@@ -19,7 +19,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   اطّلع على خدمة [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) الخاصة بنا. فهي تعتمد على تخزين NVMe موجود فعليًا إلى جانب موارد compute، وتوفّر أداءً أسرع بما يصل إلى 10 مرات لأعباء العمل التي يقيّدها أداء القرص، مقارنةً بالبدائل التي تستخدم تخزينًا متصلًا بالشبكة مثل EBS. كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
 </Tip>
 
-## استخدام محرك جدول PostgreSQL {#using-the-postgresql-table-engine}
+<div id="using-the-postgresql-table-engine">
+  ## استخدام محرك جدول PostgreSQL
+</div>
 
 يتيح محرك الجدول `PostgreSQL` تنفيذ عمليتَي **SELECT** و**INSERT** على البيانات المخزّنة على خادم PostgreSQL البعيد انطلاقًا من ClickHouse.
 تهدف هذه المقالة إلى توضيح أساليب التكامل الأساسية باستخدام جدول واحد.
@@ -204,7 +206,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 اطّلع على [صفحة التوثيق الخاصة بـ محرك الجدول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql) للتعرّف على مزيد من الميزات، مثل تحديد المخططات، وإرجاع مجموعة فرعية من الأعمدة فقط، والاتصال بعدة نُسخ متماثلة. واطّلع أيضًا على مدونة [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres).
 
-## استخدام محرك قاعدة البيانات MaterializedPostgreSQL {#using-the-materializedpostgresql-database-engine}
+<div id="using-the-materializedpostgresql-database-engine">
+  ## استخدام محرك قاعدة البيانات MaterializedPostgreSQL
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -275,9 +279,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
     host    db1             clickhouse_user 192.168.1.0/24          password
     ```
 
-    **لأغراض الشرح، يُستخدم هنا أسلوب المصادقة بكلمة مرور بنص واضح. حدِّث سطر العنوان باستخدام الشبكة الفرعية أو عنوان الخادم وفقًا لوثائق PostgreSQL*
+    **لأغراض الشرح، يُستخدم هنا أسلوب المصادقة بكلمة مرور بنص واضح. حدِّث سطر العنوان باستخدام الشبكة الفرعية أو عنوان الخادم وفقًا لوثائق PostgreSQL*
 
-    8. أعد تحميل إعدادات `pg_hba.conf` بشيء مماثل لما يلي (عدِّله بما يناسب إصدارك):
+    8. أعد تحميل إعدادات `pg_hba.conf` بشيء مماثل لما يلي (عدِّله بما يناسب إصدارك):
 
     ```text
     /usr/pgsql-12/bin/pg_ctl reload
@@ -300,7 +304,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
     2. فعّل الميزة التجريبية لـ PostgreSQL لمحرك قاعدة البيانات:
 
     ```sql
-    SET enable_database_materialized_postgresql=1
+    SET allow_experimental_database_materialized_postgresql=1
     ```
 
     3. أنشئ قاعدة البيانات الجديدة المراد نسخها متماثلًا وحدد الجدول الأولي:

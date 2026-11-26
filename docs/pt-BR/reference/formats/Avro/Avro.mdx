@@ -17,28 +17,38 @@ import DataTypeMapping from '/snippets/pt-BR/data-types-matching.mdx';
 | ------- | ----- | ----- |
 | ✔       | ✔     |       |
 
-## Descrição {#description}
+<div id="description">
+  ## Descrição
+</div>
 
 [Apache Avro](https://avro.apache.org/) é um formato de serialização orientado a linhas que usa codificação binária para processamento eficiente de dados. O formato `Avro` oferece suporte à leitura e à gravação de [arquivos de dados Avro](https://avro.apache.org/docs/current/specification/#object-container-files). Esse formato requer mensagens autodescritivas com um esquema incorporado. Se você estiver usando Avro com um registro de esquemas, consulte o formato [`AvroConfluent`](/pt-BR/reference/formats/Avro/AvroConfluent).
 
-## Mapeamento de tipos de dados {#data-type-mapping}
+<div id="data-type-mapping">
+  ## Mapeamento de tipos de dados
+</div>
 
 <DataTypeMapping />
 
-## Configurações de formato {#format-settings}
+<div id="format-settings">
+  ## Configurações de formato
+</div>
 
 | Configuração                               | Descrição                                                                                                                                                                                 | Valor padrão |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | `input_format_avro_allow_missing_fields`   | Se deve usar um valor padrão em vez de gerar um erro quando um campo não for encontrado no esquema.                                                                                       | `0`          |
 | `input_format_avro_null_as_default`        | Se deve usar um valor padrão em vez de gerar um erro ao inserir um valor `null` em uma coluna que não aceita `null`.                                                                      | `0`          |
-| `output_format_avro_codec`                 | Algoritmo de compressão para arquivos de saída Avro. Valores possíveis: `null`, `deflate`, `snappy`, `zstd`, `bzip2`, `xz`.                                                               |              |
+| `output_format_avro_codec`                 | Algoritmo de compressão para arquivos de saída Avro. Valores possíveis: `null`, `deflate`, `snappy`, `zstd`.                                                                              |              |
 | `output_format_avro_sync_interval`         | Frequência do marcador de sincronização em arquivos Avro (em bytes).                                                                                                                      | `16384`      |
 | `output_format_avro_string_column_pattern` | Expressão regular para identificar colunas `String` para o mapeamento para o tipo string do Avro. Por padrão, as colunas `String` do ClickHouse são gravadas como o tipo `bytes` do Avro. |              |
 | `output_format_avro_rows_in_file`          | Número máximo de linhas por arquivo de saída Avro. Quando esse limite é atingido, um novo arquivo é criado (se o sistema de armazenamento oferecer suporte à divisão de arquivos).        | `1`          |
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
-### Leitura de dados Avro {#reading-avro-data}
+<div id="reading-avro-data">
+  ### Leitura de dados Avro
+</div>
 
 Para ler dados de um arquivo Avro para uma tabela do ClickHouse:
 
@@ -53,11 +63,11 @@ Essa comparação diferencia maiúsculas de minúsculas, e os campos não usados
 
 Os tipos de dados das colunas da tabela do ClickHouse podem diferir dos campos correspondentes dos dados Avro inseridos. Ao inserir dados, o ClickHouse interpreta os tipos de dados de acordo com a tabela acima e, em seguida, [faz a conversão](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST) dos dados para o tipo da coluna correspondente.
 
-Um registro (record) com exatamente dois campos `bytes`, chamados `metadata` e `value` (que é a forma como o Iceberg v3 armazena um `variant` em Avro), é lido em uma coluna [`Dynamic`](/pt-BR/reference/data-types/dynamic) ou [`JSON`](/pt-BR/reference/data-types/newjson) com a [codificação binária de variant](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md), da mesma forma que uma coluna `VARIANT` do formato `Parquet`.
-
 Ao importar dados, quando um campo não é encontrado no esquema e a configuração [`input_format_avro_allow_missing_fields`](/pt-BR/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) está habilitada, o valor padrão será usado em vez de gerar um erro.
 
-### Gravando dados em Avro {#writing-avro-data}
+<div id="writing-avro-data">
+  ### Gravando dados em Avro
+</div>
 
 Para gravar dados de uma tabela do ClickHouse em um arquivo Avro:
 
@@ -72,7 +82,9 @@ Os nomes das colunas devem:
 
 A compressão de saída e o intervalo de sincronização de arquivos Avro podem ser configurados, respectivamente, com as configurações [`output_format_avro_codec`](/pt-BR/reference/settings/formats/output-format#output_format_avro_codec) e [`output_format_avro_sync_interval`](/pt-BR/reference/settings/formats/output-format#output_format_avro_sync_interval).
 
-### Inferindo o esquema Avro {#inferring-the-avro-schema}
+<div id="inferring-the-avro-schema">
+  ### Inferindo o esquema Avro
+</div>
 
 Usando a função [`DESCRIBE`](/pt-BR/reference/statements/describe-table) do ClickHouse, você pode visualizar rapidamente o formato inferido de um arquivo Avro, como no exemplo a seguir.
 Este exemplo inclui a URL de um arquivo Avro acessível publicamente no bucket público S3 do ClickHouse:

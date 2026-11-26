@@ -25,7 +25,7 @@ public:
     ActionLock(const ActionLock & other) = delete;
     ActionLock & operator=(const ActionLock & other) = delete;
 
-    [[nodiscard]] bool expired() const
+    bool expired() const
     {
         return counter_ptr.expired();
     }

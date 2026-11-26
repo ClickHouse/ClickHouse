@@ -6,22 +6,22 @@ tags: ['Настройки', 'Нативные клиенты и интерфе�
 keywords: ['клиент ClickHouse', 'Изменение промпта']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Если вам не нравится, как `clickhouse client` и clickhouse-local отображают промпт в терминале, его можно изменить, добавив префикс.
 В этой статье объясняется, как изменить промпт на любое по вашему выбору.
 
 По умолчанию промпт — это имя вашего локального компьютера, за которым следует `:) `:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse по умолчанию](/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="Промпт клиента ClickHouse по умолчанию" />
 
 Ниже приведены переменные, которые можно использовать в промпте: `{user}`, `{host}`
 
 Есть несколько способов изменить промпт, и мы разберем каждый из них.
 
-## Флаг `--prompt` {#--prompt-flag}
+<div id="--prompt-flag">
+  ## Флаг --prompt
+</div>
 
 Первый способ изменить значение флага — использовать `--prompt`:
 
@@ -31,15 +31,13 @@ clickhouse --prompt 👉
 
 Это добавит эмодзи с пальцем перед смайликом:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse с эмодзи пальца](/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp)
-  </Frame>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="Промпт клиента ClickHouse с эмодзи пальца" />
+
+<div id="config-file---top-level">
+  ## Файл конфигурации — верхний уровень
 </div>
 
-## Файл конфигурации — верхний уровень {#config-file---top-level}
-
-Также префикс промпта командной строки можно задать в файле `config.xml`:
+Также можно указать префикс промпта в файле `config.xml`:
 
 ```xml
 <config>
@@ -51,13 +49,9 @@ clickhouse --prompt 👉
 clickhouse
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse, заданный в файле конфигурации](/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="Промпт клиента ClickHouse с конфигурационным файлом" />
 
-Файлу конфигурации можно дать любое имя и передать его с помощью флага `-C`:
+Мы можем использовать конфигурационный файл с любым именем и передать его с помощью флага `-C`:
 
 ```xml
 <config>
@@ -69,14 +63,10 @@ clickhouse
 clickhouse -C christmas.xml
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse с эмодзи рождественской ёлки](/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="Промпт клиента ClickHouse с эмодзи в виде рождественской ёлки" />
 
-Предпочитаете хранить файлы конфигурации в формате YAML?
-Так тоже можно:
+Предпочитаете хранить файлы конфигурации в YAML?
+Это тоже можно:
 
 ```yaml
 prompt: 🟡
@@ -86,13 +76,11 @@ prompt: 🟡
 clickhouse -C christmas.yaml
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse с эмодзи в виде жёлтого круга](/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="Промпт клиента ClickHouse с эмодзи в виде жёлтого круга" />
 
-## Файл конфигурации - connections_credentials {#config-file---connections_credentials}
+<div id="config-file---connections_credentials">
+  ## Файл конфигурации - connections_credentials
+</div>
 
 Кроме того, можно указать отдельный промпт для каждого набора учетных данных подключения.
 Это имеет смысл только при использовании clickhouse-client.
@@ -126,11 +114,7 @@ clickhouse -C christmas.yaml
 clickhouse client -C connections.xml --connection dev
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse с подключением Development](/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="Промпт клиента ClickHouse с подключением Development" />
 
 Или вариант `prod`:
 
@@ -138,11 +122,7 @@ clickhouse client -C connections.xml --connection dev
 clickhouse client -C connections.xml --connection prod
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse с подключением к продакшну](/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="Промпт клиента ClickHouse с подключением к продакшну" />
 
 А вот версия в YAML:
 
@@ -169,11 +149,7 @@ connections_credentials:
 clickhouse client -C connections.yaml --connection dev
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse с подключением Development, заданным в YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="Промпт клиента ClickHouse с подключением Development, заданным в YAML" />
 
 А теперь `prod`:
 
@@ -181,8 +157,4 @@ clickhouse client -C connections.yaml --connection dev
 clickhouse client -C connections.yaml --connection prod
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Промпт клиента ClickHouse с подключением к продакшну через YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="Промпт клиента ClickHouse с подключением к продакшну через YAML" />

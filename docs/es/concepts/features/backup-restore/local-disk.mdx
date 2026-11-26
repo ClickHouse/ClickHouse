@@ -9,13 +9,19 @@ doc_type: 'guide'
 import ExampleSetup from '/snippets/es/_example_setup.mdx';
 import Syntax from '/snippets/es/_syntax.mdx';
 
-## Sintaxis {#syntax}
+<div id="syntax">
+  ## Sintaxis
+</div>
 
 <Syntax />
 
-## Configurar destinos de copia de seguridad en disco {#configure-backup-destinations-for-disk}
+<div id="configure-backup-destinations-for-disk">
+  ## Configurar destinos de copia de seguridad en disco
+</div>
 
-### Configurar un destino de copia de seguridad para disco local {#configure-a-backup-destination}
+<div id="configure-a-backup-destination">
+  ### Configurar un destino de copia de seguridad para disco local
+</div>
 
 En los ejemplos siguientes verá el destino de copia de seguridad especificado como `Disk('backups', '1.zip')`.
 Para usar el motor de copia de seguridad `Disk`, primero debe añadir un archivo que especifique
@@ -45,7 +51,9 @@ la lista **allowed&#95;disk** de **backups**:
 </clickhouse>
 ```
 
-### Configurar un destino de copia de seguridad para un disco S3 {#backuprestore-using-an-s3-disk}
+<div id="backuprestore-using-an-s3-disk">
+  ### Configurar un destino de copia de seguridad para un disco S3
+</div>
 
 También es posible realizar `BACKUP`/`RESTORE` en S3 configurando un disco S3 en la
 configuración de almacenamiento de ClickHouse. Configure el disco de esta forma, añadiendo un archivo a
@@ -94,9 +102,13 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
     la sintaxis `BACKUP ... TO S3(<endpoint>)` para este caso de uso.
 </Note>
 
-## Ejemplos de uso de copias de seguridad y restauración en disco local {#usage-examples}
+<div id="usage-examples">
+  ## Ejemplos de uso de copias de seguridad y restauración en disco local
+</div>
 
-### Hacer una copia de seguridad de una tabla y restaurarla {#backup-and-restore-a-table}
+<div id="backup-and-restore-a-table">
+  ### Hacer una copia de seguridad de una tabla y restaurarla
+</div>
 
 <ExampleSetup />
 
@@ -161,7 +173,9 @@ El archivo de la copia de seguridad tiene la siguiente estructura:
 Se pueden usar formatos distintos de zip. Consulte [&quot;Copias de seguridad como archivos tar&quot;](#backups-as-tar-archives)
 más abajo para más detalles.
 
-### Copias de seguridad incrementales en disco {#incremental-backups}
+<div id="incremental-backups">
+  ### Copias de seguridad incrementales en disco
+</div>
 
 Una copia de seguridad base en ClickHouse es la copia de seguridad completa inicial a partir de la cual se crean las
 siguientes copias de seguridad incrementales. Las copias de seguridad incrementales solo almacenan los cambios
@@ -193,7 +207,9 @@ RESTORE TABLE test_db.test_table AS test_db.test_table2
 FROM Disk('backups', 'incremental-a.zip');
 ```
 
-### Proteger una copia de seguridad {#assign-a-password-to-the-backup}
+<div id="assign-a-password-to-the-backup">
+  ### Proteger una copia de seguridad
+</div>
 
 A las copias de seguridad escritas en disco se les puede aplicar una contraseña al archivo.
 La contraseña puede especificarse mediante la configuración `password`.
@@ -220,7 +236,9 @@ FROM Disk('backups', 'password-protected.zip')
 SETTINGS password='qwerty'
 ```
 
-### Copias de seguridad como archivos tar {#backups-as-tar-archives}
+<div id="backups-as-tar-archives">
+  ### Copias de seguridad como archivos tar
+</div>
 
 Las copias de seguridad pueden almacenarse no solo como archivos zip, sino también como archivos tar.
 La funcionalidad es la misma que con zip, salvo que la protección con contraseña no está
@@ -256,7 +274,9 @@ Los sufijos de archivo de compresión admitidos son:
 * `.tzst`
 * `.tar.xz`
 
-### Configuración de compresión {#compression-settings}
+<div id="compression-settings">
+  ### Configuración de compresión
+</div>
 
 El método de compresión y el nivel de compresión se pueden especificar mediante
 las opciones `compression_method` y `compression_level`, respectivamente.
@@ -271,7 +291,9 @@ TO Disk('backups', 'filename.zip')
 SETTINGS compression_method='lzma', compression_level=3
 ```
 
-### Restaurar particiones específicas {#restore-specific-partitions}
+<div id="restore-specific-partitions">
+  ### Restaurar particiones específicas
+</div>
 
 Si es necesario restaurar particiones específicas asociadas a una tabla, se pueden indicar aquí.
 

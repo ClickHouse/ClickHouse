@@ -65,12 +65,16 @@ precise_datetime:      2025-03-12 11:39:07.196
 very_precise_datetime: 2025-03-12 11:39:07.196724000
 ```
 
-## Time 및 Time64 타입 {#time-series-time-types}
+<div id="time-series-time-types">
+  ## Time 및 Time64 타입
+</div>
 
 날짜 component 없이 하루 중 시간을 저장해야 하는 경우를 위해 ClickHouse는 [`Time`](/ko/reference/data-types/time) 및 [`Time64`](/ko/reference/data-types/time64) 타입을 제공합니다. 이 타입들은 버전 25.6에서 도입되었습니다. 반복 일정, 일별 패턴, 또는 날짜와 시간 component를 분리하는 것이 적절한 상황을 표현할 때 유용합니다.
 
 <Note>
-  `Time` 및 `Time64`는 버전 25.12부터 기본적으로 활성화되어 있습니다. 버전 25.6~25.11에서는 `SET enable_time_time64_type = 1;`로 활성화하십시오.
+  `Time` 및 `Time64`를 사용하려면 다음 설정을 활성화해야 합니다: `SET enable_time_time64_type = 1;`
+
+  이 타입들은 버전 25.6에서 도입되었습니다
 </Note>
 
 `Time` 타입은 초 단위 정밀도로 시, 분, 초를 저장합니다. 내부적으로는 부호 있는 32비트 정수로 저장되며, `[-999:59:59, 999:59:59]` 범위를 지원하므로 24시간을 초과하는 값도 저장할 수 있습니다. 이는 경과 시간을 추적하거나 단일 날짜 범위를 벗어나는 값을 생성하는 산술 연산을 수행할 때 유용합니다.
@@ -100,7 +104,7 @@ ORDER BY event_id;
 INSERT INTO time_examples VALUES 
     (1, '14:30:25', '14:30:25.123'),
     (2, 52225, 52225.456),
-    (3, '26:11:10', '26:11:10.789');  -- Values normalize beyond 24 hours
+    (3, '26:11:10', '26:11:10.789');  -- 24시간을 초과하는 값은 정규화됩니다
 
 SELECT * FROM time_examples ORDER BY event_id;
 ```
@@ -119,7 +123,9 @@ SELECT * FROM time_examples ORDER BY event_id;
 SELECT * FROM time_examples WHERE basic_time = '14:30:25';
 ```
 
-## 시간대 {#time-series-timezones}
+<div id="time-series-timezones">
+  ## 시간대
+</div>
 
 많은 사용 사례에서 시간대를 함께 저장해야 합니다. 시간대는 `DateTime` 또는 `DateTime64` 타입의 마지막 인수로 지정할 수 있습니다:
 
@@ -185,7 +191,9 @@ dt64_2: 2022-12-12 12:13:15.123456789
 두 번째 행에서는 모든 값을 시간대 없이 삽입했으므로 서버의 로컬 시간대가 사용되었습니다.
 첫 번째 행과 마찬가지로 `dt_1` 및 `dt64_1`은 `Europe/Berlin`으로 변환되고, `dt_2` 및 `dt64_2`는 서버의 로컬 시간대를 사용합니다.
 
-## 날짜 및 시간 함수 {#time-series-date-time-functions}
+<div id="time-series-date-time-functions">
+  ## 날짜 및 시간 함수
+</div>
 
 ClickHouse에는 서로 다른 데이터 타입 간에 변환하는 함수도 있습니다.
 

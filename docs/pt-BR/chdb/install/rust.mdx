@@ -2,16 +2,20 @@
 title: 'Instalando o chDB para Rust'
 sidebarTitle: 'Rust'
 slug: /chdb/install/rust
-description: 'Como instalar e usar os bindings do chDB Rust'
+description: 'Como instalar e usar os bindings do chDB para Rust'
 keywords: ['chdb', 'embutido', 'clickhouse-lite', 'rust', 'instalar', 'ffi', 'bindings']
 doc_type: 'guide'
 ---
 
 O chDB-rust oferece bindings FFI (Foreign Function Interface) experimentais para o chDB, permitindo executar consultas do ClickHouse diretamente nas suas aplicações em Rust, sem dependências externas.
 
-## Instalação {#installation}
+<div id="installation">
+  ## Instalação
+</div>
 
-### Instale libchdb {#install-libchdb}
+<div id="install-libchdb">
+  ### Instale libchdb
+</div>
 
 Instale a biblioteca chDB:
 
@@ -19,11 +23,15 @@ Instale a biblioteca chDB:
 curl -sL https://lib.chdb.io | bash
 ```
 
-## Uso {#usage}
+<div id="usage">
+  ## Uso
+</div>
 
 O chDB Rust oferece modos de execução de consultas sem estado e com estado.
 
-### Uso sem estado {#stateless-usage}
+<div id="stateless-usage">
+  ### Uso sem estado
+</div>
 
 Para consultas simples sem manter estado persistente:
 
@@ -49,7 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Uso com estado (Sessões) {#stateful-usage-sessions}
+<div id="stateful-usage-sessions">
+  ### Uso com estado (Sessões)
+</div>
 
 Para consultas que exigem estado persistente, como bancos de dados e tabelas:
 
@@ -107,21 +117,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Compilação e testes {#building-testing}
+<div id="building-testing">
+  ## Compilação e testes
+</div>
 
-### Compilar o projeto {#build-the-project}
+<div id="build-the-project">
+  ### Compilar o projeto
+</div>
 
 ```bash
 cargo build
 ```
 
-### Executar os testes {#run-tests}
+<div id="run-tests">
+  ### Executar os testes
+</div>
 
 ```bash
 cargo test
 ```
 
-### Dependências de desenvolvimento {#development-dependencies}
+<div id="development-dependencies">
+  ### Dependências de desenvolvimento
+</div>
 
 O projeto inclui estas dependências de desenvolvimento:
 
@@ -129,7 +147,9 @@ O projeto inclui estas dependências de desenvolvimento:
 * `tempdir` (v0.3.7) - Manipulação de diretórios temporários em testes
 * `thiserror` (v1) - Utilitários para tratamento de erros
 
-## Tratamento de erros {#error-handling}
+<div id="error-handling">
+  ## Tratamento de erros
+</div>
 
 chDB Rust oferece um tratamento de erros abrangente por meio do `enum` `Error`:
 
@@ -155,6 +175,8 @@ match execute("SELECT 1", None) {
 }
 ```
 
-## Repositório no GitHub {#github-repository}
+<div id="github-repository">
+  ## Repositório no GitHub
+</div>
 
 Você pode encontrar o repositório do projeto no GitHub em [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust).

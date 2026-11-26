@@ -1,12 +1,14 @@
 ---
 title: "使用 LLVM 的 XRay 对 ClickHouse 进行性能分析"
 date: 2024-11-13
-description: "了解如何使用 LLVM 的 XRay 插桩 profiler 对 ClickHouse 进行性能分析、将 trace 可视化并分析性能。"
+description: "了解如何使用 LLVM 的 XRay 插桩分析器对 ClickHouse 进行性能分析、将 trace 可视化并分析性能。"
 tags: ['性能与优化', '工具与实用程序']
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <div id="types-of-profilers">
-  ## Profiler 的类型 {#types-of-profilers}
+  ## Profiler 的类型
 </div>
 
 LLVM 已经内置了一个可对代码进行插桩的工具，使我们能够进行[插桩分析](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Instrumentation)。与[采样分析或统计分析](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Statistical_profilers)相比，
@@ -16,7 +18,9 @@ LLVM 已经内置了一个可对代码进行插桩的工具，使我们能够进
 统计分析器则允许我们在不修改代码的情况下运行程序，通过定期获取快照来查看应用程序的状态。因此，只有在获取快照时正在运行的函数才会被统计。[perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) 是一个非常知名的
 统计分析器。
 
-## 使用 XRay 的集成功能分析 ClickHouse 性能 {#profiling-clickhouse-using-xray-integration}
+<div id="profiling-clickhouse-using-xray-integration">
+  ## 使用 XRay 的集成功能分析 ClickHouse 性能
+</div>
 
 在 ClickHouse 25.12 中，XRay 已完成集成，可无缝为函数添加新的插桩点。
 因此，任何官方发布版本都已包含此功能，并且可按需触发；在未启用时，
@@ -42,19 +46,17 @@ SYSTEM INSTRUMENT REMOVE ALL
 我们将 system.trace&#95;log 中收集的数据转换为[Chrome
 格式](/zh/reference/system-tables/trace_log#chrome-event-trace-format)，以便在 [Perfetto](https://ui.perfetto.dev) 中可视化。请注意每个条目的 query&#95;id、cpu&#95;id 和 stacktrace。
 
-<div className="ch-image-md">
-  <Frame>
-    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
 
 <div id="profiling-a-native-application-using-xray">
-  ## 使用 XRay 对原生应用程序进行性能分析 {#profiling-a-native-application-using-xray}
+  ## 使用 XRay 对原生应用程序进行性能分析
 </div>
 
 以下内容保留为参考，帮助你了解 XRay 的底层工作机制，以及如何开箱即用地用它对原生应用程序进行性能分析。
 
-### 对代码进行插桩 {#instrument-the-code}
+<div id="instrument-the-code">
+  ### 对代码进行插桩
+</div>
 
 假设有如下源代码：
 
@@ -112,7 +114,7 @@ Idx Name          Size      VMA               LMA               File off  Algn
 ```
 
 <div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
-  ### 使用适当的环境变量值运行进程以收集 trace {#run-the-process-with-proper-env-var-values-to-collect-the-trace}
+  ### 使用适当的环境变量值运行进程以收集 trace
 </div>
 
 默认情况下，除非显式启用，否则 Profiler 不会收集数据。换句话说，除非
@@ -128,7 +130,7 @@ Finish
 ```
 
 <div id="convert-the-trace">
-  ### 转换 trace {#convert-the-trace}
+  ### 转换 trace
 </div>
 
 XRay 的 trace 可以转换为多种格式。`trace_event` 格式非常有用，因为
@@ -139,7 +141,7 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 ```
 
 <div id="visualize-the-trace">
-  ### 将 trace 可视化 {#visualize-the-trace}
+  ### 将 trace 可视化
 </div>
 
 我们可以使用基于 Web 的 UI，例如 [speedscope.app](https://www.speedscope.app/) 或
@@ -148,32 +150,26 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 虽然 Perfetto 更便于同时可视化多个线程并查询数据，但 speedscope 更适合
 生成火焰图以及数据的三明治视图。
 
-#### 按时间顺序 {#time-order}
-
-<div className="ch-image-md">
-  <Frame>
-    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
-  </Frame>
+<div id="time-order">
+  #### 按时间顺序
 </div>
 
-#### Left Heavy {#left-heavy}
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
-  </Frame>
+<div id="left-heavy">
+  #### 左偏重
 </div>
 
-#### 三明治视图 {#sandwitch}
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="左偏重" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![三明治视图](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
-  </Frame>
+<div id="sandwitch">
+  #### 三明治
 </div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="三明治" />
 
 <div id="check-out-the-docs">
-  ## 查阅文档 {#check-out-the-docs}
+  ## 查阅文档
 </div>
 
 * [SYSTEM INSTRUMENT](/zh/reference/statements/system#instrument) — 添加

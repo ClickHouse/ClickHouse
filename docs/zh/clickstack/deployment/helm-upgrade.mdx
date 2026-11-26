@@ -14,12 +14,16 @@ keywords: ['ClickStack 升级', 'Helm 迁移', 'v1.x 到 v2.x', '子图表架构
   v2.x 图表与 v1.x **不**向后兼容，不支持就地执行 `helm upgrade`。我们建议在现有部署旁边进行一次全新安装并迁移数据，而不是尝试就地升级。
 </Warning>
 
-## 前置条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
 * 升级前请先备份数据 (MongoDB、ClickHouse PVC)
 * 检查当前的 `values.yaml` 覆盖配置——大多数键已迁移或重命名
 
-## 分两阶段安装 {#two-phase-installation}
+<div id="two-phase-installation">
+  ## 分两阶段安装
+</div>
 
 v2.x chart 采用分两阶段的安装方式。必须先安装 Operator (用于注册 CRD) ，再安装主 chart (用于创建 CR) ：
 
@@ -38,13 +42,17 @@ helm uninstall my-clickstack
 helm uninstall clickstack-operators
 ```
 
-### 数据持久化 {#data-persistence}
+<div id="data-persistence">
+  ### 数据持久化
+</div>
 
 由 MongoDB 和 ClickHouse Operator 创建的 PersistentVolumeClaims 在执行 `helm uninstall` 时**不会**被删除。这是有意为之，旨在防止意外的数据丢失。要在卸载后清理 PVC，请参阅：
 
 * [MongoDB Kubernetes Operator 文档](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
 
-### 存储类 {#storage-class}
+<div id="storage-class">
+  ### 存储类
+</div>
 
 `global.storageClassName` 和 `global.keepPVC` 已移除。现在可直接在各个 Operator 的 CR spec 中配置存储类：
 
@@ -68,47 +76,53 @@ clickhouse:
         storageClassName: "fast-ssd"
 ```
 
-## 变更内容 {#what-changed}
+<div id="what-changed">
+  ## 变更内容
+</div>
 
-| Component          | Before (v1.x)                              | After (v2.x)                                                                                                              |
-| ------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| MongoDB            | 内联部署 + Service + PVC                       | 由 [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) 管理 `MongoDBCommunity` CR             |
-| ClickHouse         | 内联部署 + Service + ConfigMaps + PVCs         | 由 [ClickHouse Operator](/zh/products/kubernetes-operator/overview) 管理 `ClickHouseCluster` + `KeeperCluster` CR               |
-| OTel collector     | 内联部署 + Service (`otel.*` 块)                | [官方 OpenTelemetry Collector Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts) (`otel-collector:` 子图表) |
-| ClickStack 用户界面配置值 | `hyperdx.*` 下的扁平键，以及顶层 `tasks:` 和 `appUrl` | 在 `hyperdx.*` 下按 K8s 资源类型重新组织 (见下文)                                                                                       |
-| hdx-oss-v2         | 已弃用的旧版 Helm 图表                             | 已完全移除                                                                                                                     |
+| Component      | Before (v1.x)                              | After (v2.x)                                                                                                               |
+| -------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| MongoDB        | 内联部署 + Service + PVC                       | 由 [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) 管理 `MongoDBCommunity` CR              |
+| ClickHouse     | 内联部署 + Service + ConfigMaps + PVCs         | 由 [ClickHouse Operator](/zh/products/kubernetes-operator/overview) 管理 `ClickHouseCluster` + `KeeperCluster` CR                |
+| OTel collector | 内联部署 + Service (`otel.*` 块)                | [官方 OpenTelemetry Collector Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts) (`otel-collector:` 子图表)  |
+| HyperDX values | `hyperdx.*` 下的扁平键，以及顶层 `tasks:` 和 `appUrl` | 在 `hyperdx.*` 下按 K8s 资源类型重新组织 (见下文)                                                                                        |
+| hdx-oss-v2     | 已弃用的旧版 Helm 图表                             | 已完全移除                                                                                                                      |
 
-## ClickStack 用户界面 配置值 重组 {#hyperdx-values-reorganization}
+<div id="hyperdx-values-reorganization">
+  ## HyperDX Values 重组
+</div>
 
 `hyperdx:` 块现已按 Kubernetes 资源类型重新组织：
 
 ```yaml
 hyperdx:
-  ports:          # Shared port numbers (Deployment, Service, ConfigMap, Ingress)
+  ports:          # 共享端口号（Deployment、Service、ConfigMap、Ingress）
     api: 8000
     app: 3000
     opamp: 4320
 
-  frontendUrl: "http://localhost:3000"   # Replaces the removed appUrl
+  frontendUrl: "http://localhost:3000"   # 替代已移除的 appUrl
 
-  config:         # → clickstack-config ConfigMap (non-sensitive env vars)
+  config:         # → clickstack-config ConfigMap（非敏感环境变量）
     APP_PORT: "3000"
     HYPERDX_LOG_LEVEL: "info"
 
-  secrets:        # → clickstack-secret Secret (sensitive env vars)
+  secrets:        # → clickstack-secret Secret（敏感环境变量）
     HYPERDX_API_KEY: "..."
     CLICKHOUSE_PASSWORD: "otelcollectorpass"
     CLICKHOUSE_APP_PASSWORD: "hyperdx"
     MONGODB_PASSWORD: "hyperdx"
 
-  deployment:     # K8s Deployment spec (image, replicas, probes, etc.)
-  service:        # K8s Service spec (type, annotations)
-  ingress:        # K8s Ingress spec (host, tls, annotations)
-  podDisruptionBudget:  # K8s PDB spec
-  tasks:          # K8s CronJob specs (previously top-level tasks:)
+  deployment:     # K8s Deployment 规范（镜像、副本、探针等）
+  service:        # K8s Service 规范（类型、注解）
+  ingress:        # K8s Ingress 规范（主机、TLS、注解）
+  podDisruptionBudget:  # K8s PDB 规范
+  tasks:          # K8s CronJob 规范（之前为顶层 tasks:）
 ```
 
-### 关键调整 {#key-moves}
+<div id="key-moves">
+  ### 关键调整
+</div>
 
 | 之前 (v1.x)                                  | 之后 (v2.x)                                                    |
 | ------------------------------------------ | ------------------------------------------------------------ |
@@ -119,18 +133,24 @@ hyperdx:
 | `clickhouse.config.users.otelUserPassword` | `hyperdx.secrets.CLICKHOUSE_PASSWORD`                        |
 | `otel.*` 环境变量覆盖                            | `hyperdx.config.*` (非敏感) 和 `hyperdx.secrets.*` (敏感)          |
 
-### 统一的 ConfigMap 和 Secret {#unified-configmap-and-secret}
+<div id="unified-configmap-and-secret">
+  ### 统一的 ConfigMap 和 Secret
+</div>
 
-现在，所有环境变量都会通过两个名称固定的资源统一传递，ClickStack 用户界面部署 **以及** OTel collector 都通过 `envFrom` 共享这两个资源：
+现在，所有环境变量都会通过两个名称固定的资源统一传递，HyperDX 部署 **以及** OTel collector 都通过 `envFrom` 共享这两个资源：
 
 * **`clickstack-config`** ConfigMap — 从 `hyperdx.config` 填充
 * **`clickstack-secret`** Secret — 从 `hyperdx.secrets` 填充
 
 不再单独提供 OTel 专用的 ConfigMap。两个工作负载都从相同的来源读取。
 
-## MongoDB 迁移 {#mongodb-migration}
+<div id="mongodb-migration">
+  ## MongoDB 迁移
+</div>
 
-### 已移除的配置值 {#mongodb-removed-values}
+<div id="mongodb-removed-values">
+  ### 已移除的配置值
+</div>
 
 以下 `mongodb.*` 配置值已被移除：
 
@@ -149,7 +169,9 @@ mongodb:
     dataSize: 10Gi
 ```
 
-### 新增配置值 {#mongodb-new-values}
+<div id="mongodb-new-values">
+  ### 新增配置值
+</div>
 
 MongoDB 现在由 MCK operator 通过 `MongoDBCommunity` 自定义资源管理。CR 的 spec 部分会直接从 `mongodb.spec` 原样渲染：
 
@@ -200,9 +222,13 @@ mongodb:
 
 MCK Operator 子图表 在 `mongodb-operator:` 下配置 (不是 `mongodb-kubernetes:`) 。有关所有可用的 CRD 字段，请参阅 [MCK 文档](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)。
 
-## ClickHouse 迁移 {#clickhouse-migration}
+<div id="clickhouse-migration">
+  ## ClickHouse 迁移
+</div>
 
-### 已移除的配置值 {#clickhouse-removed-values}
+<div id="mongodb-removed-values">
+  ### 已移除的配置值
+</div>
 
 以下 `clickhouse.*` 配置值已被移除：
 
@@ -232,7 +258,9 @@ clickhouse:
       otelUserName: "..."
 ```
 
-### 新增配置项 {#clickhouse-new-values}
+<div id="clickhouse-new-values">
+  ### 新增配置项
+</div>
 
 ClickHouse 现由 ClickHouse Operator 通过 `ClickHouseCluster` 和 `KeeperCluster` 自定义资源进行管理。两个 CR 的 spec 部分都会根据 `配置值` 原样渲染：
 
@@ -280,9 +308,13 @@ ClickHouse 用户凭据现在从 `hyperdx.secrets` 获取 (而不是 `clickhouse
 
 ClickHouse Operator 子图表 在 `clickhouse-operator:` 下配置。Webhooks 和 cert-manager 默认处于禁用状态。有关所有可用的 CRD 字段，请参阅[operator 配置指南](/zh/products/kubernetes-operator/guides/configuration)。
 
-## OTEL Collector 迁移 {#otel-collector-migration}
+<div id="otel-collector-migration">
+  ## OTEL Collector 迁移
+</div>
 
-### 已移除的配置值 {#otel-removed-values}
+<div id="mongodb-removed-values">
+  ### 已移除的配置值
+</div>
 
 整个 `otel:` 块已被移除：
 
@@ -307,7 +339,9 @@ otel:
   customConfig: ...
 ```
 
-### 新增配置值 {#otel-new-values}
+<div id="mongodb-new-values">
+  ### 新增配置值
+</div>
 
 OTel collector 现通过官方 OpenTelemetry Collector Helm 图表作为 `otel-collector:` 子图表进行部署。不再提供父图表 `otel:` 包装层——请直接配置该子图表。
 
@@ -371,13 +405,17 @@ otel-collector:
 
 有关所有可用的子图表配置值，请参阅 [OpenTelemetry Collector Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)。
 
-## 保持不变的配置值 {#unchanged-values}
+<div id="unchanged-values">
+  ## 保持不变的配置值
+</div>
 
 以下部分**不会**受到此次迁移的影响：
 
 * `global.*` (imageRegistry, imagePullSecrets)
 
-## 全新安装与就地升级 {#fresh-install-vs-in-place-upgrade}
+<div id="fresh-install-vs-in-place-upgrade">
+  ## 全新安装与就地升级
+</div>
 
 对于**全新安装**，无需任何特殊步骤。默认值开箱即用。
 
@@ -390,7 +428,9 @@ otel-collector:
 
 我们建议在现有部署旁进行一次全新安装并迁移数据，而不是执行就地升级。
 
-## 后续步骤 {#next-steps}
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
 * [Helm 主要指南](/zh/clickstack/deployment/helm) - 使用 v2.x 进行基础安装
 * [配置指南](/zh/clickstack/deployment/helm-configuration) - API 密钥、Secrets 和入口

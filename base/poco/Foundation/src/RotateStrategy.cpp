@@ -42,7 +42,7 @@ RotateStrategy::~RotateStrategy()
 //
 
 
-[[clang::no_destroy]] const std::string RotateByIntervalStrategy::ROTATE_TEXT("# Log file created/rotated ");
+const std::string RotateByIntervalStrategy::ROTATE_TEXT("# Log file created/rotated ");
 
 
 RotateByIntervalStrategy::RotateByIntervalStrategy(const Timespan& span): 

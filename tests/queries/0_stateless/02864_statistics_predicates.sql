@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-msan
+-- Tags: no-fasttest
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
 -- Tests the cross product of all predicates with all right-hand sides on all data types and all statistics types.

@@ -7,10 +7,12 @@ title: クエリ API エンドポイントの設定
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 **クエリ API エンドポイント**機能を使用すると、ClickHouse Cloud コンソールで任意の保存クエリから API エンドポイントを直接作成できます。ネイティブドライバーで ClickHouse Cloud サービスに接続しなくても、HTTP 経由で API エンドポイントにアクセスして保存クエリを実行できます。
 
 <div id="quick-start-guide">
-  ## 前提条件 {#quick-start-guide}
+  ## 前提条件
 </div>
 
 先に進む前に、次のものを用意してください。
@@ -66,19 +68,11 @@ doc_type: 'guide'
 
     正しく動作することを確認するために、SQL エディタ右側のクエリ変数入力ボックスで年 `2010` を指定して、このクエリをすばやく実行してみましょう。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![サンプルクエリをテストする](/images/cloud/sqlconsole/endpoints-testquery.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="サンプルクエリをテストする" />
 
     次に、クエリを保存します。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![サンプルクエリを保存する](/images/cloud/sqlconsole/endpoints-savequery.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="サンプルクエリを保存する" />
 
     保存クエリの詳細については、[&quot;Saving a query&quot;](/ja/products/cloud/features/sql-console-features/sql-console#saving-a-query) セクションを参照してください。
   </Step>
@@ -87,11 +81,7 @@ doc_type: 'guide'
     クエリ API エンドポイントは、クエリビューで **Share** ボタンをクリックし、`API Endpoint` を選択することで直接設定できます。
     どの API キーにエンドポイントへのアクセスを許可するかを指定するよう求められます。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![クエリエンドポイントを設定する](/images/cloud/sqlconsole/endpoints-configure.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="クエリエンドポイントを設定する" />
 
     API キーを選択すると、次の項目を求められます。
 
@@ -102,11 +92,7 @@ doc_type: 'guide'
 
     テスト用のリクエストを送信できるよう、`curl` コマンドの例が表示されます。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![エンドポイントの curl コマンド](/images/cloud/sqlconsole/endpoints-completed.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="エンドポイントの curl コマンド" />
 
     インターフェイスに表示される curl コマンドを、便宜上以下に示します。
 
@@ -122,24 +108,16 @@ doc_type: 'guide'
   <Step title="テストと監視" id="testing-and-monitoring">
     クエリ API エンドポイントが作成されたら、`curl` または他の HTTP クライアントを使って動作をテストできます。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![エンドポイントの curl テスト](/images/cloud/sqlconsole/endpoints-curltest.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="エンドポイントの curl テスト" />
 
     最初のリクエストを送信すると、**Share** ボタンのすぐ右側に新しいボタンが表示されるはずです。これをクリックすると、クエリに関する監視データを含むフライアウトが開きます。
 
-    <div className="ch-image-sm">
-      <Frame>
-        ![エンドポイントの監視](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="エンドポイントの監視" />
   </Step>
 </Steps>
 
 <div id="implementation-details">
-  ## 実装の詳細 {#implementation-details}
+  ## 実装の詳細
 </div>
 
 このエンドポイントでは、保存済みのクエリ API エンドポイントに対してクエリを実行できます。
@@ -153,7 +131,7 @@ POST /query-endpoints/{queryEndpointId}/run
 ```
 
 <div id="http-methods">
-  ### HTTP メソッド {#http-methods}
+  ### HTTP メソッド
 </div>
 
 | Method   | Use Case                  | Parameters                                    |
@@ -174,7 +152,7 @@ POST /query-endpoints/{queryEndpointId}/run
 * ファイルのストリーミングアップロードや大容量データ
 
 <div id="authentication">
-  ### 認証 {#authentication}
+  ### 認証
 </div>
 
 **必須:** はい
@@ -182,11 +160,11 @@ POST /query-endpoints/{queryEndpointId}/run
 **権限:** クエリエンドポイントに対する適切な権限
 
 <div id="request-configuration">
-  ### リクエスト設定 {#request-configuration}
+  ### リクエスト設定
 </div>
 
 <div id="url-params">
-  #### URLパラメータ {#url-params}
+  #### URLパラメータ
 </div>
 
 | パラメータ             | 必須     | 説明                    |
@@ -194,7 +172,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `queryEndpointId` | **はい** | 実行するクエリエンドポイントの一意の識別子 |
 
 <div id="query-params">
-  #### クエリパラメータ {#query-params}
+  #### クエリパラメータ
 </div>
 
 | パラメータ                 | 必須  | 説明                                                                 | 例                        |
@@ -205,7 +183,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `:clickhouse_setting` | いいえ | サポートされている任意の [ClickHouse 設定](/ja/reference/settings/session-settings) | `?max_threads=8`         |
 
 <div id="headers">
-  #### ヘッダー {#headers}
+  #### ヘッダー
 </div>
 
 | ヘッダー                            | 必須  | 説明                                         | 値                                  |
@@ -216,11 +194,11 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="request-body">
-  ### リクエストボディ {#request-body}
+  ### リクエストボディ
 </div>
 
 <div id="params">
-  #### パラメータ {#params}
+  #### パラメータ
 </div>
 
 | パラメータ            | 型      | 必須  | 説明           |
@@ -229,7 +207,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `format`         | 文字列    | いいえ | レスポンスのフォーマット |
 
 <div id="supported-formats">
-  #### 対応フォーマット {#supported-formats}
+  #### 対応フォーマット
 </div>
 
 | バージョン                    | 対応フォーマット                                                                                                                                                                 |
@@ -240,18 +218,18 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="responses">
-  ### レスポンス {#responses}
+  ### レスポンス
 </div>
 
 <div id="success">
-  #### 成功 {#success}
+  #### 成功
 </div>
 
 **ステータス:** `200 OK`
 クエリは正常に実行されました。
 
 <div id="error-codes">
-  #### エラーコード {#error-codes}
+  #### エラーコード
 </div>
 
 | ステータスコード           | 説明                      |
@@ -261,7 +239,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `404 Not Found`    | 指定されたクエリエンドポイントが見つかりません |
 
 <div id="error-handling-best-practices">
-  #### エラー処理のベストプラクティス {#error-handling-best-practices}
+  #### エラー処理のベストプラクティス
 </div>
 
 * リクエストに有効な認証情報が含まれていることを確認する
@@ -271,7 +249,7 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="upgrading-endpoint-versions">
-  ### エンドポイントのバージョンのアップグレード {#upgrading-endpoint-versions}
+  ### エンドポイントのバージョンのアップグレード
 </div>
 
 バージョン 1 からバージョン 2 にアップグレードするには、次の 2 つのヘッダーを含めます。
@@ -286,11 +264,11 @@ POST /query-endpoints/{queryEndpointId}/run
 * パフォーマンスと機能の向上
 
 <div id="examples">
-  ## 例 {#examples}
+  ## 例
 </div>
 
 <div id="basic-request">
-  ### 基本的なリクエスト {#basic-request}
+  ### 基本的なリクエスト
 </div>
 
 **クエリ API エンドポイント用の SQL:**
@@ -300,7 +278,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 ```
 
 <div id="version-1">
-  #### バージョン 1 {#version-1}
+  #### バージョン 1
 </div>
 
 <Tabs>
@@ -358,7 +336,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 </Tabs>
 
 <div id="version-2">
-  #### バージョン 2 {#version-2}
+  #### バージョン 2
 </div>
 
 <Tabs>
@@ -412,7 +390,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 </Tabs>
 
 <div id="request-with-query-variables-and-version-2-on-jsoncompacteachrow-format">
-  ### クエリ変数とバージョン 2 を使用する JSONCompactEachRow フォーマットでのリクエスト {#request-with-query-variables-and-version-2-on-jsoncompacteachrow-format}
+  ### クエリ変数とバージョン 2 を使用する JSONCompactEachRow フォーマットでのリクエスト
 </div>
 
 **クエリ API エンドポイント用の SQL:**
@@ -479,7 +457,7 @@ SELECT name, database FROM system.tables WHERE match(name, {tableNameRegex: Stri
 </Tabs>
 
 <div id="request-with-array-in-the-query-variables-that-inserts-data-into-a-table">
-  ### テーブルにデータを挿入する、クエリ変数に配列を含むリクエスト {#request-with-array-in-the-query-variables-that-inserts-data-into-a-table}
+  ### テーブルにデータを挿入する、クエリ変数に配列を含むリクエスト
 </div>
 
 **テーブル SQL:**
@@ -544,7 +522,7 @@ INSERT INTO default.t_arr VALUES ({arr: Array(Array(Array(UInt32)))});
 </Tabs>
 
 <div id="request-with-clickhouse-settings-max_threads-set-to-8">
-  ### ClickHouse の設定 `max_threads` を 8 にしたリクエスト {#request-with-clickhouse-settings-max_threads-set-to-8}
+  ### ClickHouse の設定 `max_threads` を 8 にしたリクエスト
 </div>
 
 **クエリ API エンドポイント用の SQL:**
@@ -592,7 +570,7 @@ SELECT * FROM system.tables;
 </Tabs>
 
 <div id="request-and-parse-the-response-as-a-stream">
-  ### レスポンスを取得し、ストリームとして解析する {#request-and-parse-the-response-as-a-stream}
+  ### レスポンスを取得し、ストリームとして解析する
 </div>
 
 **クエリ API エンドポイント用の SQL:**
@@ -664,7 +642,7 @@ SELECT name, database FROM system.tables;
 </Tabs>
 
 <div id="insert-a-stream-from-a-file-into-a-table">
-  ### ファイルからテーブルにストリームを挿入する {#insert-a-stream-from-a-file-into-a-table}
+  ### ファイルからテーブルにストリームを挿入する
 </div>
 
 以下の内容でファイル `./samples/my_first_table_2024-07-11.csv` を作成してください。

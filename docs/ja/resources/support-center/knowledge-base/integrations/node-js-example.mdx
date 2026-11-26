@@ -6,7 +6,9 @@ tags: ['言語クライアント']
 keywords: ['NodeJS']
 ---
 
-## NodeJSで @clickhouse/client を使う {#use-nodejs-with-clickhouseclient}
+<div id="use-nodejs-with-clickhouseclient">
+  ## NodeJSで @clickhouse/client を使う
+</div>
 
 基本的なコードスニペットを `main.ts` に示します。
 
@@ -54,8 +56,7 @@ interface Count {
   c: number;
 }
 
-//Please replace client connection parameters like`host`
-//`username`, `password`, `database` as needed.
+//`host`、`username`、`password`、`database` などのクライアント接続パラメータを必要に応じて置き換えてください。
 
 const initClickHouseClient = async (): Promise<ClickHouseClient> => {
   const client = createClient({
@@ -114,9 +115,9 @@ $ npx ts-node src/main.ts
 次が出力されます：
 
 ```
-Initialising clickhouse client
+ClickHouseクライアントを初期化しています
 ClickHouse ping
 ClickHouse pong!
-I have found 120 system tables!
+120個のシステムテーブルが見つかりました！
 👋
 ```

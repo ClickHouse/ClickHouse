@@ -7,34 +7,31 @@ doc_type: 'guide'
 keywords: ['Private Service Connect']
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="GCP PSC" />
 
-Private Service Connect (PSC) 是 Google Cloud 的一项网络功能，可让消费者在其虚拟私有云 (VPC) 网络内私密访问托管服务。同样，它也允许托管服务生产者在各自独立的 VPC 网络中托管这些服务，并向消费者提供私有连接。
+Private Service Connect (PSC) 是 Google Cloud 的一项网络功能，可让消费者在其虚拟私有云 (VPC) 网络内私密访问托管服务。同样，它也允许托管服务提供方在各自独立的 VPC 网络中托管这些服务，并向消费者提供私有连接。
 
-服务生产者通过创建 Private Service Connect 服务，将其应用发布给消费者。服务消费者则通过其中一种 Private Service Connect 类型直接访问这些 Private Service Connect 服务。
+服务提供方通过创建 Private Service Connect 服务，将其应用发布给消费者。服务消费者则通过其中一种 Private Service Connect 类型直接访问这些 Private Service Connect 服务。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Private Service Connect 概览](/images/cloud/security/gcp-psc-overview.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Private Service Connect 概览" border />
 
 <Warning>
   GCP Private Service Connect 仅支持从你的 GCP VPC 发起并连接到 ClickHouse Cloud。它不能用于从 ClickHouse Cloud 发起并连接到你 VPC 中的服务，例如[私有数据库](#connecting-to-a-remote-database)。
 
-  默认情况下，即使 PSC 连接 已获批准并建立，ClickHouse 服务也无法通过 Private Service 连接 访问；你需要完成下方的[步骤](#add-endpoint-id-to-services-allow-list)，在 实例 级别将 PSC ID 明确添加到 允许列表 中。
+  默认情况下，即使 PSC connection 已获批准并建立，ClickHouse 服务也无法通过 Private Service connection 访问；你需要完成下方的[步骤](#add-endpoint-id-to-services-allow-list)，在 实例 级别将 PSC ID 明确添加到 允许列表 中。
 </Warning>
 
 **使用 Private Service Connect Global Access 时的重要注意事项**：
 
 1. 使用 Global Access 的区域必须属于同一个 VPC。
 2. 必须在 PSC 级别显式启用 Global Access (参见下方截图) 。
-3. 确保你的 防火墙 设置不会阻止来自其他区域对 PSC 的访问。
+3. 确保你的 firewall 设置不会阻止来自其他区域对 PSC 的访问。
 4. 请注意，你可能会产生 GCP 跨区域数据传输费用。
 
-不支持跨区域连接。生产者和消费者所在的区域必须相同。不过，你可以通过在 Private Service Connect (PSC) 级别启用 [Global Access](https://cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)，从 VPC 中的其他区域进行连接。
+不支持跨区域连接。提供方和消费者所在的区域必须相同。不过，你可以通过在 Private Service Connect (PSC) 级别启用 [Global Access](https://cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)，从 VPC 中的其他区域进行连接。
 
 **完成以下步骤以启用 GCP PSC**：
 
@@ -44,7 +41,7 @@ Private Service Connect (PSC) 是 Google Cloud 的一项网络功能，可让消
 4. 将“Endpoint ID”添加到 ClickHouse 服务 允许列表。
 
 <div id="attention">
-  ## 注意事项 {#attention}
+  ## 注意事项
 </div>
 
 ClickHouse 会尝试将您的服务分组，以便在同一 GCP 区域内复用同一个已发布的 [PSC 端点](https://cloud.google.com/vpc/docs/private-service-connect)。不过，这种分组并非一定能实现，尤其是在您将服务分布在多个 ClickHouse 组织中时。
@@ -53,7 +50,7 @@ ClickHouse 会尝试将您的服务分组，以便在同一 GCP 区域内复用�
 Terraform 示例见[此处](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/)。
 
 <div id="before-you-get-started">
-  ## 开始之前 {#before-you-get-started}
+  ## 开始之前
 </div>
 
 <Note>
@@ -92,21 +89,19 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 </Note>
 
 <div id="obtain-gcp-service-attachment-and-dns-name-for-private-service-connect">
-  ## 获取 Private Service Connect 所需的 GCP 服务附件和 DNS 名称 {#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect}
+  ## 获取 Private Service Connect 所需的 GCP 服务附件和 DNS 名称
 </div>
 
-### 选项 1：ClickHouse Cloud 控制台 {#option-1-clickhouse-cloud-console}
+<div id="option-1-clickhouse-cloud-console">
+  ### 选项 1：ClickHouse Cloud 控制台
+</div>
 
 在 ClickHouse Cloud 控制台中，打开要通过 Private Service Connect 连接的服务，然后打开 **设置** 菜单。点击 **设置专用终结点** 按钮。记下 **服务名称** (`endpointServiceId`) 和 **DNS 名称** (`privateDnsHostname`)，后续步骤中会用到它们。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![专用终结点](/images/cloud/security/gcp-privatelink-pe-create.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="lg" alt="专用终结点" border />
 
 <div id="option-2-api">
-  ### 选项 2：API {#option-2-api}
+  ### 选项 2：API
 </div>
 
 <Note>
@@ -126,7 +121,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 记下 `endpointServiceId` 和 `privateDnsHostname`，后续步骤会用到它们。
 
 <div id="create-service-endpoint">
-  ## 创建服务端点 {#create-service-endpoint}
+  ## 创建服务端点
 </div>
 
 <Warning>
@@ -140,20 +135,18 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 在本节中，你将创建一个服务端点。
 
 <div id="adding-a-private-service-connection">
-  ### 添加 Private Service Connection {#adding-a-private-service-connection}
+  ### 添加 Private Service Connection
 </div>
 
 首先，创建一个 Private Service Connection。
 
-#### 选项 1：使用 Google Cloud Console {#option-1-using-google-cloud-console}
+<div id="option-1-using-google-cloud-console">
+  #### 选项 1：使用 Google Cloud Console
+</div>
 
 在 Google Cloud Console 中，导航到 **Network services -&gt; Private Service Connect**。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![在 Google Cloud Console 中打开 Private Service Connect](/images/cloud/security/gcp-psc-open.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-psc-open.webp" size="lg" alt="在 Google Cloud Console 中打开 Private Service Connect" border />
 
 点击 **Connect Endpoint** 按钮，打开 Private Service Connect 创建对话框。
 
@@ -163,26 +156,18 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 * **Network/Subnetwork/IP address**：选择要用于该连接的网络。你需要为 Private Service Connect 端点创建一个 IP 地址，或使用现有地址。在我们的示例中，我们预先创建了一个名为 **your-ip-address** 的地址，并将 IP 地址设为 `10.128.0.2`。
 * 若要使该端点可从任何区域访问，可以选中 **Enable global access** 复选框。
 
-<div className="ch-image-md">
-  <Frame>
-    ![为 Private Service Connect 启用 Global Access](/images/cloud/security/gcp-psc-enable-global-access.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-psc-enable-global-access.webp" size="md" alt="为 Private Service Connect 启用 Global Access" border />
 
 要创建 PSC 端点，请点击 **ADD ENDPOINT** 按钮。
 
 连接获批后，**Status** 列会从 **Pending** 变为 **Accepted**。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![复制 PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-psc-copy-connection-id.webp" size="lg" alt="复制 PSC Connection ID" border />
 
 复制 ***PSC Connection ID***；你将在后续步骤中将其用作 ***Endpoint ID***。
 
 <div id="option-2-using-terraform">
-  #### 选项 2：使用 Terraform {#option-2-using-terraform}
+  #### 选项 2：使用 Terraform
 </div>
 
 ```json
@@ -236,7 +221,7 @@ output "psc_connection_id" {
 </Note>
 
 <div id="set-private-dns-name-for-endpoint">
-  ## 为端点设置私有 DNS 名称 {#set-private-dns-name-for-endpoint}
+  ## 为端点设置私有 DNS 名称
 </div>
 
 <Note>
@@ -250,23 +235,21 @@ output "psc_connection_id" {
 </Warning>
 
 <div id="add-endpoint-id-to-clickhouse-cloud-organization">
-  ## 向 ClickHouse Cloud 组织添加 Endpoint ID {#add-endpoint-id-to-clickhouse-cloud-organization}
+  ## 向 ClickHouse Cloud 组织添加 Endpoint ID
 </div>
 
-### 选项 1：ClickHouse Cloud 控制台 {#option-1-clickhouse-cloud-console-1}
+<div id="option-1-clickhouse-cloud-console">
+  ### 选项 1：ClickHouse Cloud 控制台
+</div>
 
 要将端点添加到您的组织，请前往[将“Endpoint ID”添加到 ClickHouse 服务允许列表](#add-endpoint-id-to-services-allow-list)这一步。通过 ClickHouse Cloud 控制台将 `PSC Connection ID` 添加到服务允许列表时，也会自动将其添加到组织中。
 
-要移除端点，请打开 **Organization details -&gt; 专用终结点**，然后点击删除按钮将其移除。
+要移除端点，请打开 **Organization details -&gt; Private Endpoints**，然后点击删除按钮将其移除。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![从 ClickHouse Cloud 中移除专用终结点](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-pe-remove-private-endpoint.webp" size="lg" alt="从 ClickHouse Cloud 移除专用终结点" border />
 
 <div id="option-2-api">
-  ### 选项 2：API {#option-2-api-1}
+  ### 选项 2：API
 </div>
 
 在运行任何命令之前，请先设置以下环境变量：
@@ -317,12 +300,14 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 ```
 
 <div id="add-endpoint-id-to-services-allow-list">
-  ## 将“Endpoint ID”添加到 ClickHouse 服务允许列表 {#add-endpoint-id-to-services-allow-list}
+  ## 将“Endpoint ID”添加到 ClickHouse 服务允许列表
 </div>
 
 您需要为每个应可通过 Private Service Connect 访问的实例，将 Endpoint ID 添加到允许列表中。
 
-### 选项 1：ClickHouse Cloud 控制台 {#option-1-clickhouse-cloud-console-2}
+<div id="option-1-clickhouse-cloud-console">
+  ### 选项 1：ClickHouse Cloud 控制台
+</div>
 
 在 ClickHouse Cloud 控制台中，打开您要通过 Private Service Connect 连接的服务，然后前往 **设置**。输入在[添加 Private Service Connection](#adding-a-private-service-connection)步骤中获取的 `Endpoint ID`。点击 **创建端点**。
 
@@ -330,14 +315,10 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
   如果您想允许来自现有 Private Service Connect 连接的访问，请使用现有端点下拉菜单。
 </Note>
 
-<div className="ch-image-lg">
-  <Frame>
-    ![专用终结点过滤器](/images/cloud/security/gcp-privatelink-pe-filters.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-privatelink-pe-filters.webp" size="lg" alt="专用终结点过滤器" border />
 
 <div id="option-2-api">
-  ### 选项 2：API {#option-2-api-2}
+  ### 选项 2：API
 </div>
 
 在运行任何命令之前，请先设置以下环境变量：
@@ -379,27 +360,25 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 ```
 
 <div id="accessing-instance-using-private-service-connect">
-  ## 通过 Private Service Connect 访问实例 {#accessing-instance-using-private-service-connect}
+  ## 通过 Private Service Connect 访问实例
 </div>
 
 每个启用了 Private Service Connect 的服务都同时具有公共端点和私有端点。要通过 Private Service Connect 连接，您需要使用私有端点，即在[获取用于 Private Service Connect 的 GCP 服务附件和 DNS 名称](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect)步骤中获取的 `privateDnsHostname`。
 
 <div id="getting-private-dns-hostname">
-  ### 获取私有 DNS 主机名 {#getting-private-dns-hostname}
+  ### 获取私有 DNS 主机名
 </div>
 
-#### 选项 1：ClickHouse Cloud 控制台 {#option-1-clickhouse-cloud-console-3}
+<div id="option-1-clickhouse-cloud-console-3">
+  #### 选项 1：ClickHouse Cloud 控制台
+</div>
 
 在 ClickHouse Cloud 控制台中，前往 **设置**。点击 **设置专用终结点** 按钮。在打开的弹出面板中，复制 **DNS 名称**。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![专用终结点 DNS 名称](/images/cloud/security/gcp-privatelink-pe-dns.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="lg" alt="专用终结点 DNS 名称" border />
 
 <div id="option-2-api-3">
-  #### 选项 2：API {#option-2-api-3}
+  #### 选项 2：API
 </div>
 
 ```bash
@@ -416,11 +395,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 在此示例中，连接到 `xxxxxxx.yy-xxxxN.p.gcp.clickhouse.cloud` 主机名的连接将通过 Private Service Connect 路由。与此同时，`xxxxxxx.yy-xxxxN.gcp.clickhouse.cloud` 将通过互联网路由。
 
 <div id="troubleshooting">
-  ## 故障排查 {#troubleshooting}
+  ## 故障排查
 </div>
 
 <div id="test-dns-setup">
-  ### 测试 DNS 设置 {#test-dns-setup}
+  ### 测试 DNS 设置
 </div>
 
 DNS&#95;NAME - 使用[获取用于 Private Service Connect 的 GCP 服务附件和 DNS 名称](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect)步骤中的 `privateDnsHostname`
@@ -436,13 +415,13 @@ Address: 10.128.0.2
 ```
 
 <div id="connection-reset-by-peer">
-  ### 连接被对端重置 {#connection-reset-by-peer}
+  ### 连接被对端重置
 </div>
 
 * 最可能的原因是尚未将 Endpoint ID 添加到服务允许列表中。请重新查看[&#95;将 Endpoint ID 添加到服务允许列表&#95;步骤](#add-endpoint-id-to-services-allow-list)。
 
 <div id="test-connectivity">
-  ### 测试连通性 {#test-connectivity}
+  ### 测试连通性
 </div>
 
 如果您通过 PSC 链接连接时遇到问题，请使用 `openssl` 检查连通性。请确保 Private Service Connect 端点的状态为 `Accepted`：
@@ -476,11 +455,11 @@ Verify return code: 0 (ok)
 ```
 
 <div id="checking-endpoint-filters">
-  ### 检查端点过滤器 {#checking-endpoint-filters}
+  ### 检查端点过滤器
 </div>
 
 <div id="rest-api">
-  #### REST API {#rest-api}
+  #### REST API
 </div>
 
 ```bash
@@ -491,7 +470,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
 ```
 
 <div id="connecting-to-a-remote-database">
-  ### 连接到远程数据库 {#connecting-to-a-remote-database}
+  ### 连接到远程数据库
 </div>
 
 根据 [GCP Private Service Connect 文档](https://cloud.google.com/vpc/docs/private-service-connect)：
@@ -501,7 +480,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
 要将 ClickHouse Cloud 中的 [MySQL](/zh/reference/functions/table-functions/mysql) 或 [PostgreSQL](/zh/reference/functions/table-functions/postgresql) 表函数连接到托管在你的 GCP VPC 中的数据库，请配置 GCP VPC 防火墙规则，允许来自 ClickHouse Cloud 的连接。请查看 [ClickHouse Cloud 各区域的默认出站 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)以及[可用的静态 IP 地址](https://api.clickhouse.cloud/static-ips.json)。
 
 <div id="more-information">
-  ## 更多信息 {#more-information}
+  ## 更多信息
 </div>
 
 如需了解更多详细信息，请访问 [cloud.google.com/vpc/docs/configure-private-service-connect-services](https://cloud.google.com/vpc/docs/configure-private-service-connect-services)。

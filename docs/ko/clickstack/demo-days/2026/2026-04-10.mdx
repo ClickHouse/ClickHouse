@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', '데모 데이']
 ---
 
-## 고정할 수 있는 데이터 소스 필터 {#pinnable-datasource-filters}
+<div id="pinnable-datasource-filters">
+  ## 고정할 수 있는 데이터 소스 필터
+</div>
 
 *시연: [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -21,7 +23,9 @@ keywords: ['ClickStack', '데모 데이']
 
 **관련 PR:** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] 팀 전체에서 필터를 보고 쉽게 찾을 수 있도록 Shared Filters 도입
 
-## ClickStack Cloud에서 서비스 깨우기 {#waking-service-from-clickstack-cloud}
+<div id="waking-service-from-clickstack-cloud">
+  ## ClickStack Cloud에서 서비스 깨우기
+</div>
 
 *시연: [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -33,7 +37,9 @@ keywords: ['ClickStack', '데모 데이']
 
 이제는 앱이 이 과정을 처음부터 끝까지 처리합니다. 서비스가 절전 상태이면 프롬프트에 &quot;서비스 깨우기&quot;라고 표시되며, 현재 보고 있는 화면을 벗어나지 않아도 전체 과정이 처리됩니다. 사소한 사용성 개선이지만 워크플로를 방해하던 번거로운 여러 단계의 중단을 없애 줍니다. 특히 한동안 비활성 상태였다가 ClickStack에 다시 접속해 바로 데이터로 이동하려는 경우 더욱 유용합니다.
 
-## AI 기능의 일관된 활성화 {#consistent-enabling-of-ai-features}
+<div id="consistent-enabling-of-ai-features">
+  ## AI 기능의 일관된 활성화
+</div>
 
 *[@brandon-pereira](https://github.com/brandon-pereira)의 시연*
 
@@ -45,7 +51,9 @@ keywords: ['ClickStack', '데모 데이']
 
 이제 ClickStack 내부의 체크박스는 ClickHouse Cloud로 연결되는 링크 역할만 하며, 그 외에는 비활성화되어 있습니다. ClickHouse Cloud에서 토글을 변경하면 해당 기능이 ClickStack에서 자동으로 사용 가능해집니다. 이를 통해 AI 기능 활성화 방식이 일관되고 예측 가능해지며, 실제 동작을 제어하는 설정이 무엇인지 더 이상 헷갈릴 일이 없습니다.
 
-## Raw SQL 알림 {#raw-sql-alerting}
+<div id="raw-sql-alerting">
+  ## Raw SQL 알림
+</div>
 
 *시연: [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -59,7 +67,9 @@ keywords: ['ClickStack', '데모 데이']
 
 **관련 PR:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Raw SQL 기반 대시보드 타일용 알림 구현, [#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: TileAlertEditor 컴포넌트 생성
 
-## ClickStack UI TUI 개선 {#hyperdx-tui-improvements}
+<div id="hyperdx-tui-improvements">
+  ## HyperDX TUI 개선
+</div>
 
 *시연: [@wrn14897](https://github.com/wrn14897)*
 
@@ -67,7 +77,7 @@ keywords: ['ClickStack', '데모 데이']
   <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-ClickStack 터미널 UI는 계속해서 더 쉽게 시작할 수 있도록 개선되고 있습니다. 이제 `npm install -g @hyperdx/cli`로 전역 설치한 뒤 `hdx`를 실행해 시작할 수 있습니다. 대화형 터미널 인터페이스를 바로 열려면 `--tui` 플래그를 사용하십시오. `npm`을 통해 `hdx` 바이너리도 제공되므로, 패키지를 설치한 후에는 별도의 설치 단계가 필요하지 않습니다.
+HyperDX 터미널 UI는 계속해서 더 쉽게 시작할 수 있도록 개선되고 있습니다. 이제 `npm install -g @hyperdx/cli`로 전역 설치한 뒤 `hdx`를 실행해 시작할 수 있습니다. 대화형 터미널 인터페이스를 바로 열려면 `--tui` 플래그를 사용하십시오. `npm`을 통해 `hdx` 바이너리도 제공되므로, 패키지를 설치한 후에는 별도의 설치 단계가 필요하지 않습니다.
 
 이번 주에는 설치 개선과 함께 눈에 띄는 기능 2가지도 추가되었습니다. 이제 오류 메시지가 터미널에서 적절한 강조 표시와 구조화된 형식으로 렌더링되며, 웹 프런트엔드의 포맷 패턴과도 일치하므로 브라우저를 사용하든 TUI를 사용하든 동일한 수준의 세부 정보를 확인할 수 있습니다. 또한 실제로 실행되는 기본 SQL 쿼리를 확인할 수 있는 새로운 SQL 미리보기 기능도 추가되었습니다. 여기에 더해 이벤트 뷰어에서 `Shift+A`를 눌러 새로운 알림 페이지에 접근할 수 있으며, 터미널을 벗어나지 않고도 구성된 모든 알림의 개요와 최근 트리거 이력을 확인할 수 있습니다.
 

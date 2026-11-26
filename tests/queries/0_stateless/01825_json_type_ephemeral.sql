@@ -1,4 +1,6 @@
 
+SET enable_json_type = 1;
+
 DROP TABLE IF EXISTS t_github_json;
 
 CREATE table t_github_json

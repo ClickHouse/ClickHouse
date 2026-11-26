@@ -25,11 +25,6 @@ def started_cluster():
                 "CREATE USER probe IDENTIFIED WITH plaintext_password BY 'x';"
                 "GRANT ro_role, other_role TO probe;"
                 "ALTER USER probe DEFAULT ROLE ro_role;"
-                # A separate user for `SET DEFAULT ROLE`, so that the cases changing its default roles
-                # do not affect the ones above, which expect `probe` to start with `ro_role`.
-                "CREATE USER default_role_probe IDENTIFIED WITH plaintext_password BY 'x';"
-                "GRANT ro_role, other_role TO default_role_probe;"
-                "ALTER USER default_role_probe DEFAULT ROLE ro_role;"
             )
 
         yield cluster
@@ -119,44 +114,3 @@ def test_http_role_parameter_not_restricted_when_enabled():
     answer, error = post("SELECT currentRoles()")
     assert error is None
     assert answer.strip() == "['ro_role']"
-
-
-def default_roles(node):
-    return node.query(
-        "SELECT default_roles_list FROM system.users WHERE name = 'default_role_probe'"
-    ).strip()
-
-
-@pytest.mark.parametrize(
-    "readonly, statement",
-    [
-        # `TO CURRENT_USER` requires no grant, so it is not refused by the access check.
-        (1, "SET DEFAULT ROLE other_role TO CURRENT_USER"),
-        (1, "SET DEFAULT ROLE ALL TO CURRENT_USER"),
-        (1, "SET DEFAULT ROLE ALL EXCEPT ro_role TO CURRENT_USER"),
-        (1, "SET DEFAULT ROLE NONE TO CURRENT_USER"),
-        (2, "SET DEFAULT ROLE other_role TO CURRENT_USER"),
-    ],
-)
-def test_set_default_role_refused_when_enabled(readonly, statement):
-    _, error = node_on.query_and_get_answer_with_error(
-        statement, user="default_role_probe", password="x", settings={"readonly": readonly}
-    )
-    assert "READONLY" in error
-    assert default_roles(node_on) == "['ro_role']"
-    # The next session starts with the same role.
-    answer = node_on.query(
-        "SELECT currentRoles()", user="default_role_probe", password="x"
-    )
-    assert answer.strip() == "['ro_role']"
-
-
-def test_set_default_role_allowed_at_default_settings():
-    _, error = node_off.query_and_get_answer_with_error(
-        "SET DEFAULT ROLE other_role TO CURRENT_USER",
-        user="default_role_probe",
-        password="x",
-        settings={"readonly": 1},
-    )
-    assert error == ""
-    assert default_roles(node_off) == "['other_role']"

@@ -7,7 +7,6 @@
 #include <condition_variable>
 #include <functional>
 #include <list>
-#include <memory>
 #include <optional>
 #include <atomic>
 #include <stack>
@@ -93,9 +92,7 @@ public:
         /// Each idle thread waits on its own CV, so the scheduler can wake the
         /// LIFO-selected thread directly without disturbing other idle threads.
         /// This avoids the thundering herd that a shared CV with `notify_all` creates.
-        /// Shared, so that `scheduleImpl` can notify it after releasing the pool mutex,
-        /// when the thread may already have left the pool.
-        std::shared_ptr<std::condition_variable> cv = std::make_shared<std::condition_variable>();
+        std::condition_variable cv;
 
         /// LIFO idle thread scheduling flag.
         /// When a new job is scheduled, the most recently idle thread is popped
@@ -152,14 +149,10 @@ public:
     void scheduleOrThrowOnError(Job job, Priority priority = {});
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    /// The timeout is signed, because it is fed by settings such as `lock_acquire_timeout`, whose value is an
-    /// Int64 count of microseconds and can be negative. A negative timeout means "already expired", i.e. give up
-    /// immediately if there is no free thread, the same as `wait_microseconds = 0`.
-    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, Int64 wait_microseconds = 0) noexcept;
+    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    /// See trySchedule() above about the sign of `wait_microseconds`.
-    void scheduleOrThrow(Job job, Priority priority = {}, Int64 wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -208,9 +201,7 @@ private:
     friend class GlobalThreadPool;
 
     mutable std::mutex mutex;
-    /// A finished job frees one slot, so it wakes only one scheduler waiting for a slot.
-    std::condition_variable slot_freed;
-    std::condition_variable all_jobs_finished;
+    std::condition_variable job_finished;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -255,7 +246,7 @@ private:
     size_t idle_thread_count = 0;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
@@ -427,12 +418,12 @@ public:
         state.reset();
     }
 
-    [[nodiscard]] bool joinable() const
+    bool joinable() const
     {
         return initialized();
     }
 
-    [[nodiscard]] std::thread::id get_id() const
+    std::thread::id get_id() const
     {
         return state ? state->thread_id.load() : std::thread::id{};
     }
@@ -443,7 +434,7 @@ protected:
     /// Internally initialized() should be used over joinable(),
     /// since it is enough to know that the thread is initialized,
     /// and ignore that fact that thread cannot join itself.
-    [[nodiscard]] bool initialized() const
+    bool initialized() const
     {
         return static_cast<bool>(state);
     }

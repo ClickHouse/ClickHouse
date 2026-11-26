@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-get-started.svg",
   "item": "Get started",
   "pages": [
     {
@@ -29,7 +30,8 @@
               "group": "Analytics em tempo real",
               "pages": [
                 "pt-BR/get-started/quickstarts/create-your-first-materialized-view",
-                "pt-BR/get-started/quickstarts/create-your-first-projection"
+                "pt-BR/get-started/quickstarts/create-your-first-projection",
+                "pt-BR/get-started/quickstarts/tutorial"
               ]
             },
             {
@@ -64,10 +66,10 @@
           "group": "Use cases",
           "pages": [
             "pt-BR/get-started/use-cases/overview",
-            "pt-BR/get-started/use-cases/choosing-a-service",
             "pt-BR/get-started/use-cases/real-time-analytics",
             "pt-BR/get-started/use-cases/observability",
-            "pt-BR/get-started/use-cases/data-warehousing"
+            "pt-BR/get-started/use-cases/data-warehousing",
+            "pt-BR/get-started/use-cases/agentic-analytics"
           ]
         },
         "pt-BR/get-started/about/deployment-modes"

@@ -46,11 +46,11 @@ public:
         : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{}
     {}
 
-    [[nodiscard]] String getName() const override { return "deltaSum"; }
+    String getName() const override { return "deltaSum"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -75,27 +75,24 @@ public:
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);
 
-        if (place_data->seen && rhs_data->seen)
+        if ((place_data->last < rhs_data->first) && place_data->seen && rhs_data->seen)
         {
-            // The merge counts the step from the lhs to the rhs as `add` counts the step to a new row: only
-            // when the number grows. Either way, the merged state ends where the rhs ends.
-            if (place_data->last < rhs_data->first)
-            {
-                // If the lhs last number seen is less than the first number the rhs saw, the lhs is before
-                // the rhs, for example [0, 2] [4, 7]. So we want to add the deltasums, but also add the
-                // difference between lhs last number and rhs first number (the 2 and 4). Then we want to
-                // take last value from the rhs, so first and last become 0 and 7.
-                place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
-            }
-            else
-            {
-                // In the opposite scenario, the lhs comes after the rhs, e.g. [4, 6] [1, 2]. Since we
-                // assume the input interval states are sorted by time, we assume this is a counter
-                // reset, and therefore do *not* add the difference between the rhs first value and our
-                // last value. An equal number, e.g. [0, 2] [2, 5], is a step of 0, and a NaN compares
-                // false, as in `add`. Neither adds a difference, which for two equal infinities would be NaN.
-                place_data->sum += rhs_data->sum;
-            }
+            // If the lhs last number seen is less than the first number the rhs saw, the lhs is before
+            // the rhs, for example [0, 2] [4, 7]. So we want to add the deltasums, but also add the
+            // difference between lhs last number and rhs first number (the 2 and 4). Then we want to
+            // take last value from the rhs, so first and last become 0 and 7.
+
+            place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
+            place_data->last = rhs_data->last;
+        }
+        else if ((rhs_data->first < place_data->last && rhs_data->seen && place_data->seen))
+        {
+            // In the opposite scenario, the lhs comes after the rhs, e.g. [4, 6] [1, 2]. Since we
+            // assume the input interval states are sorted by time, we assume this is a counter
+            // reset, and therefore do *not* add the difference between our first value and the
+            // rhs last value.
+
+            place_data->sum += rhs_data->sum;
             place_data->last = rhs_data->last;
         }
         else if (rhs_data->seen && !place_data->seen)
@@ -215,11 +212,7 @@ SELECT deltaSum(arrayJoin([2.25, 3, 4.5]))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = {
-        .returns_default_when_only_null = true,
-        .is_order_dependent = true,
-        .requires_ordered_rows_per_state = true,
-        .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
     factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, documentation, properties });
 }

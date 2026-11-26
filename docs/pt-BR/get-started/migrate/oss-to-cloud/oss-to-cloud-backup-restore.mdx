@@ -7,8 +7,10 @@ doc_type: 'guide'
 keywords: ['migração', 'ClickHouse Cloud', 'OSS', 'Migrar de autogerenciado para Cloud', 'BACKUP', 'RESTORE']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <div id="overview-migration-approaches">
-  ## Visão geral {#overview-migration-approaches}
+  ## Visão geral
 </div>
 
 Há dois métodos principais para migrar dados de um ClickHouse autogerenciado (OSS) para o ClickHouse Cloud:
@@ -36,7 +38,7 @@ para um cluster do ClickHouse com dois shards e duas réplicas.
 </Info>
 
 <div id="oss-setup">
-  ## Preparação do OSS {#oss-setup}
+  ## Preparação do OSS
 </div>
 
 Primeiro, vamos subir um cluster ClickHouse usando uma configuração do Docker Compose do nosso repositório de exemplos.
@@ -70,7 +72,7 @@ docker exec -it clickhouse-01 clickhouse-client
 ```
 
 <div id="mergetree-to-replicatedmergetree">
-  ### De tabela MergeTree para tabela ReplicatedMergeTree {#mergetree-to-replicatedmergetree}
+  ### De tabela MergeTree para tabela ReplicatedMergeTree
 </div>
 
 O ClickHouse Cloud usa [`SharedMergeTree`](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree).
@@ -173,7 +175,7 @@ Agora você já está pronto para prosseguir com a configuração do seu serviç
 restaurar um backup do seu bucket do S3.
 
 <div id="distributed-tables">
-  ### Tabelas distribuídas com ReplicatedMergeTree {#distributed-tables}
+  ### Tabelas distribuídas com ReplicatedMergeTree
 </div>
 
 Se a sua configuração utiliza tabelas distribuídas em vários shards, você precisará de uma tabela `ReplicatedMergeTree` local em cada nó e de uma tabela `Distributed` como ponto de entrada para consultas.
@@ -262,10 +264,12 @@ FROM s3(
 );
 ```
 
-## Preparação no Cloud {#cloud-setup}
+<div id="cloud-setup">
+  ## Preparação no Cloud
+</div>
 
-Você restaurará seus dados em um novo Serviço Cloud.
-Siga as etapas abaixo para criar um novo Serviço Cloud.
+Você restaurará seus dados em um novo serviço Cloud.
+Siga as etapas abaixo para criar um novo serviço Cloud.
 
 <Steps>
   <Step title="Abra o Cloud Console" id="open-cloud-console">
@@ -273,33 +277,21 @@ Siga as etapas abaixo para criar um novo Serviço Cloud.
   </Step>
 
   <Step title="Crie um novo serviço" id="create-new-service">
-    <div className="ch-image-md">
-      <Frame>
-        ![criar um novo serviço](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="criar um novo serviço" />
   </Step>
 
   <Step title="Configure e crie um serviço" id="configure-and-create">
     Escolha a região e a configuração desejadas e clique em `Create service`
 
-    <div className="ch-image-md">
-      <Frame>
-        ![definir preferências do serviço](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="definir preferências do serviço" />
   </Step>
 
   <Step title="Crie uma role de acesso" id="create-an-access-role">
     Abra o SQL Console
 
-    <div className="ch-image-md">
-      <Frame>
-        ![definir preferências do serviço](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="definir preferências do serviço" />
 
-### Configure o acesso ao S3 {#set-up-s3-access}
+    ### Configure o acesso ao S3
 
     Para restaurar seu backup do S3, você precisará configurar acesso seguro entre o ClickHouse Cloud e seu bucket do S3.
 
@@ -336,11 +328,13 @@ Siga as etapas abaixo para criar um novo Serviço Cloud.
     A política inclui ambos os ARNs:
 
     * **Usuário do IAM** (`docs-s3-user`): Permite que seu cluster ClickHouse autogerenciado faça backup no S3
-    * **Role do ClickHouse Cloud** (`ClickHouseAccess-001`): Permite que seu Serviço Cloud restaure a partir do S3
+    * **Role do ClickHouse Cloud** (`ClickHouseAccess-001`): Permite que seu serviço Cloud restaure a partir do S3
   </Step>
 </Steps>
 
-## Fazendo o backup (na implantação autogerenciada) {#taking-a-backup-on-oss}
+<div id="taking-a-backup-on-oss">
+  ## Fazendo o backup (na implantação autogerenciada)
+</div>
 
 Cada shard deve ser submetido a backup de forma independente. Conecte-se a um nó em cada shard e execute o
 comando de backup com um caminho de destino exclusivo para cada shard.
@@ -399,11 +393,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 Ao verificar o bucket do S3, que antes estava vazio, você verá que algumas pastas apareceram:
 
-<div className="ch-image-md">
-  <Frame>
-    ![backup, dados e metadados](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="backup, dados e metadados" />
 
 Se estiver realizando uma migração completa, você pode executar o comando a seguir para fazer backup de todo o servidor:
 
@@ -464,7 +454,7 @@ Também é possível fazer backups incrementais.
 Para mais detalhes sobre backups em geral, consulte a documentação sobre [backup e restauração](/pt-BR/concepts/features/backup-restore/overview).
 
 <div id="restore-to-clickhouse-cloud">
-  ## Restaurar no ClickHouse Cloud {#restore-to-clickhouse-cloud}
+  ## Restaurar no ClickHouse Cloud
 </div>
 
 Restaure o backup de cada shard, um de cada vez, no seu serviço Cloud. Defina `ROLE_ARN` como o

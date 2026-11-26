@@ -6,14 +6,16 @@ tags: ['数据导出', '数据格式']
 keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 ---
 
-## 如何将 PostgreSQL 数据导出为 Parquet、CSV 或 JSON {#how-to-export-postgresql-data-to-parquet-csv-or-json}
+<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
+  ## 如何将 PostgreSQL 数据导出为 Parquet、CSV 或 JSON
+</div>
 
 使用 `clickhouse-local` 很容易做到这一点：
 
 * 使用 [`postgresql` 表函数](/zh/reference/functions/table-functions/postgresql) 读取数据
 * 使用 `INTO OUTFILE _filename_ FORMAT` 子句，并指定所需的输出格式
 
-输出格式可以是 ClickHouse 支持的任意一种 [输出格式](/zh/reference/formats/index)。我们来看几个示例……
+输出格式可以是 ClickHouse 支持的任意一种 [ouput formats](/zh/reference/formats/index)。我们来看几个示例……
 
 这些示例使用了 `clickhouse-local`，它是 ClickHouse 二进制程序的一部分。请按以下方式下载：
 
@@ -21,7 +23,9 @@ keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 curl https://clickhouse.com/ | sh
 ```
 
-## 将 PostgreSQL 导出为 Parquet {#export-postgresql-to-parquet}
+<div id="export-postgresql-to-parquet">
+  ## 将 PostgreSQL 导出为 Parquet
+</div>
 
 `postgresql` 表函数允许对存储在远程 PostgreSQL 服务器上的数据执行 `SELECT` (以及 `INSERT`) 查询。例如，要查看 PostgreSQL 中某张表的全部内容：
 
@@ -55,7 +59,9 @@ INTO OUTFILE 'my_output_file.parquet'"
   由于输出文件名带有 `.parquet` 扩展名，ClickHouse 会默认我们要使用 Parquet 格式，因此这里省略了 `FORMAT Parquet` 子句。
 </Note>
 
-## 将 PostgreSQL 导出为 CSV {#export-postgresql-to-csv}
+<div id="export-postgresql-to-csv">
+  ## 将 PostgreSQL 导出为 CSV
+</div>
 
 这与导出为 Parquet 时相同，只是我们为输出指定了一个更合适的文件名：
 
@@ -73,7 +79,9 @@ INTO OUTFILE 'my_output_file.csv'"
 
 就是这样！ClickHouse 会根据输出文件名中的 `.csv` 扩展名，将数据输出为逗号分隔格式。除此之外，该命令与上面的命令完全相同。
 
-## 将 PostgreSQL 导出为 JSON {#export-postgresql-to-json}
+<div id="export-postgresql-to-json">
+  ## 将 PostgreSQL 导出为 JSON
+</div>
 
 要将 PostgreSQL 导出为 JSON，只需更改文件名，ClickHouse 就会自动识别格式：
 
@@ -108,7 +116,9 @@ INTO OUTFILE 'my_output_file.ndjson'"
   ```
 </Note>
 
-## 将 PostgreSQL 的输出流式传给另一个进程 {#stream-postgresql-to-another-process}
+<div id="stream-postgresql-to-another-process">
+  ## 将 PostgreSQL 的输出流式传给另一个进程
+</div>
 
 你可以不使用 `INTO OUTFILE`，而是将表函数的结果流式传给另一个进程。下面用一个简单示例演示这种语法——我们使用 Linux 的 `wc -l` 命令来统计行数：
 

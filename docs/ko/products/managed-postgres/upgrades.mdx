@@ -7,12 +7,17 @@ keywords: ['Managed Postgres 업그레이드', 'Postgres 버전', '마이너 업
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
 ClickHouse Managed Postgres는 인스턴스를 안전하고 최신 상태로 유지할 수 있도록 PostgreSQL 버전 업그레이드를 관리합니다. 마이너 버전 업그레이드와 메이저 버전 업그레이드 모두 중단을 최소화하면서 지원됩니다.
 
-## 유지 관리 업데이트 {#maintenance-updates}
+<div id="maintenance-updates">
+  ## 유지 관리 업데이트
+</div>
 
 PostgreSQL 인스턴스의 정기 유지 관리에는 다음이 포함됩니다.
 
@@ -24,7 +29,9 @@ PostgreSQL 인스턴스의 정기 유지 관리에는 다음이 포함됩니다.
 
 [대기 인스턴스](/ko/products/managed-postgres/high-availability)가 활성화된 인스턴스의 경우, 가동 중단 시간을 최소화하기 위해 먼저 대기 인스턴스에 업그레이드를 적용한 후 failover를 수행합니다.
 
-## 예약 업그레이드 {#scheduled-upgrades}
+<div id="scheduled-upgrades">
+  ## 예약 업그레이드
+</div>
 
 <ScalePlanFeatureBadge feature="예약 업그레이드" linking_verb_are="true" />
 
@@ -35,7 +42,9 @@ PostgreSQL 인스턴스의 정기 유지 관리에는 다음이 포함됩니다.
 Enterprise 플랜에서는 업그레이드를 특정 [요일](#days-of-the-week)로 제한할 수도 있습니다.
 Scale 플랜에서는 시간 범위만 선택할 수 있으며, 해당 윈도우의 어느 요일에나 업그레이드가 적용될 수 있습니다.
 
-### 일정 구성 {#configure-a-schedule}
+<div id="configure-a-schedule">
+  ### 일정 구성
+</div>
 
 <Steps>
   <Step title="인스턴스 설정 열기" id="open-settings">
@@ -68,7 +77,9 @@ Scale 플랜에서는 시간 범위만 선택할 수 있으며, 해당 윈도우
 일정을 변경하려면 인스턴스에 `control-plane:postgres-service:manage` 권한이 필요합니다. 인스턴스가 중지되었거나
 아직 프로비저닝 중이면 컨트롤도 비활성화됩니다.
 
-### 시간 범위 {#time-periods}
+<div id="time-periods">
+  ### 시간 범위
+</div>
 
 각 윈도우는 2시간이며 항상 UTC로 표시됩니다. 현지 시간대는 선택할 수
 없습니다. 사용 가능한 윈도우는 다음과 같습니다.
@@ -85,7 +96,9 @@ Scale 플랜에서는 시간 범위만 선택할 수 있으며, 해당 윈도우
 사용자 정의 시작 시간, 사용자 정의 윈도우 길이 및 인스턴스당 여러 윈도우는
 지원되지 않습니다.
 
-### 요일 {#days-of-the-week}
+<div id="days-of-the-week">
+  ### 요일
+</div>
 
 <EnterprisePlanFeatureBadge feature="업그레이드를 특정 요일로 제한" />
 
@@ -94,7 +107,9 @@ Scale 플랜에서는 시간 범위만 선택할 수 있으며, 해당 윈도우
 * **요일을 선택하지 않음** — 선택한 시간 범위 내의 어느 요일에나 업그레이드가 적용될 수 있습니다.
 * **하나 이상의 요일 선택** — 선택한 시간 범위 내에서 선택한 요일에만 업그레이드가 적용됩니다. 7일을 모두 선택하는 것은 요일을 선택하지 않는 것과 같습니다.
 
-### 일정의 적용 대상 {#schedule-scope}
+<div id="schedule-scope">
+  ### 일정의 적용 대상
+</div>
 
 일정은 [유지 관리 업데이트](#maintenance-updates)에 설명된 마이너 버전 업그레이드, 관리형
 서비스 기능 업데이트, 운영 체제 패치 등 **플랫폼 유지 관리**에만 적용됩니다.
@@ -103,18 +118,22 @@ Scale 플랜에서는 시간 범위만 선택할 수 있으며, 해당 윈도우
 스토리지 크기 조정, [구성 매개변수](/ko/products/managed-postgres/settings) 변경이 포함됩니다.
 
 <Note>
-  예약된 업그레이드는 최선의 노력으로 수행됩니다. 디스크 사용량이 95%에 도달한 경우와 같이 인스턴스의 상태 유지를 위해 필요한 경우 또는
+  예약된 업그레이드는 최선의 노력으로 수행됩니다. 인스턴스의 상태 유지를 위해 필요한 경우(예: 디스크 사용량이 95%에 도달한 경우) 또는
   중요한 보안 패치 및 취약점 수정이 필요한 경우에는 지정된 윈도우 외에 유지 관리가 적용될 수 있습니다. 이러한 예외 사항은 필요한 경우
   알림을 받게 됩니다.
 </Note>
 
-### 읽기 레플리카 {#read-replicas}
+<div id="read-replicas">
+  ### 읽기 레플리카
+</div>
 
 [읽기 레플리카](/ko/products/managed-postgres/read-replicas)는
 프라이머리 인스턴스의 일정을 따르고 자체 일정은 없으므로 **예약된 업그레이드**
 섹션이 표시되지 않습니다.
 
-## 메이저 버전 업그레이드 {#major-version-upgrades}
+<div id="major-version-upgrades">
+  ## 메이저 버전 업그레이드
+</div>
 
 UI 및 API를 통한 메이저 버전 업그레이드(예: 17.x에서 18.x로)는 곧 지원될 예정입니다.
 그때까지는 ClickHouse Managed Postgres 인스턴스를 업그레이드하려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.

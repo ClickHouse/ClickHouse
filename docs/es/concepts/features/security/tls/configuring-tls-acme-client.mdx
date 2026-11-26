@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/es/_self_managed_only_automated.mdx';
 
+import { Image } from "/snippets/es/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
@@ -20,7 +21,7 @@ Con la compatibilidad con ACME, ClickHouse puede obtener y renovar certificados 
 El cifrado TLS protege los datos en tránsito entre los clientes y los servidores de ClickHouse, evitando que se intercepten consultas y resultados confidenciales.
 
 <div id="overview">
-  ## Descripción general {#overview}
+  ## Descripción general
 </div>
 
 El protocolo ACME define un proceso de renovación automática de certificados con servicios como [Let&#39;s Encrypt](https://letsencrypt.org/) o [ZeroSSL](https://zerossl.com/). En resumen, ClickHouse, como solicitante del certificado, debe confirmar el control del dominio mediante tipos de desafío predefinidos para obtener un certificado.
@@ -48,7 +49,7 @@ En el bloque `acme`, definimos `email` para crear la cuenta y aceptamos los tér
 Después de eso, lo único que necesitamos es una lista de dominios.
 
 <div id="current-limitations">
-  ### Limitaciones actuales {#current-limitations}
+  ### Limitaciones actuales
 </div>
 
 * Solo se admite el tipo de desafío `HTTP-01`.
@@ -56,7 +57,7 @@ Después de eso, lo único que necesitamos es una lista de dominios.
 * No se admite la limitación de tasa.
 
 <div id="configuration-parameters">
-  ## Parámetros de configuración {#configuration-parameters}
+  ## Parámetros de configuración
 </div>
 
 Opciones de configuración disponibles en la sección `acme`:
@@ -74,11 +75,11 @@ Opciones de configuración disponibles en la sección `acme`:
 Ten en cuenta que la configuración usa de forma predeterminada el directorio de producción de Let&#39;s Encrypt. Para evitar alcanzar la cuota de solicitudes debido a una posible configuración incorrecta, se recomienda probar primero el proceso de emisión de certificados con el [directorio de staging](https://letsencrypt.org/docs/staging-environment/).
 
 <div id="administration">
-  # Administración {#administration}
+  # Administración
 </div>
 
 <div id="initial-deployment">
-  ## Implementación inicial {#initial-deployment}
+  ## Implementación inicial
 </div>
 
 Al habilitar el cliente ACME en un clúster con varias réplicas, hay que tener especial cuidado durante la emisión inicial del certificado.
@@ -92,7 +93,7 @@ Si no es factible enrutar el tráfico a una sola réplica, otra opción es carga
 Una vez emitido o importado el certificado inicial, su renovación no requiere ningún tratamiento especial, ya que todas las réplicas ya estarán ejecutando el cliente ACME y compartiendo el estado a través de Keeper.
 
 <div id="keeper-data-structure">
-  ## Estructura de datos de Keeper {#keeper-data-structure}
+  ## Estructura de datos de Keeper
 </div>
 
 ```text
@@ -107,7 +108,7 @@ Una vez emitido o importado el certificado inicial, su renovación no requiere n
 ```
 
 <div id="migrating-from-other-acme-clients">
-  ## Migración desde otros clientes ACME {#migrating-from-other-acme-clients}
+  ## Migración desde otros clientes ACME
 </div>
 
 Es posible migrar el certificado TLS y la clave actuales a Keeper para simplificar el proceso.

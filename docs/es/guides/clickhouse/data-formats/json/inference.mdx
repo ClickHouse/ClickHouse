@@ -8,14 +8,18 @@ doc_type: 'guide'
 
 ClickHouse puede determinar automáticamente la estructura de los datos JSON. Esto puede usarse para consultar datos JSON directamente, por ejemplo, en disco con `clickhouse-local` o en buckets de S3, y/o para crear esquemas automáticamente antes de cargar los datos en ClickHouse.
 
-## Cuándo usar la inferencia de tipos {#when-to-use-type-inference}
+<div id="when-to-use-type-inference">
+  ## Cuándo usar la inferencia de tipos
+</div>
 
 * **Estructura consistente** - Los datos a partir de los que se van a inferir los tipos contienen todas las claves que te interesan. La inferencia de tipos se basa en muestrear los datos hasta un [número máximo de filas](/es/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) o [bytes](/es/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference). Los datos que queden fuera de la muestra y contengan columnas adicionales se ignorarán y no podrán consultarse.
 * **Tipos consistentes** - Los tipos de datos de claves específicas deben ser compatibles; es decir, debe ser posible convertir automáticamente un tipo en otro.
 
 Si tienes JSON más dinámicos, a los que se añaden nuevas claves y en los que puede haber varios tipos para la misma ruta, consulta [&quot;Trabajar con datos semiestructurados y dinámicos&quot;](/es/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
 
-## Detección de tipos {#detecting-types}
+<div id="detecting-types">
+  ## Detección de tipos
+</div>
 
 A continuación, se asume que el JSON tiene una estructura coherente y un único tipo para cada ruta.
 
@@ -107,7 +111,9 @@ Podemos ver que la mayoría de las columnas se han detectado automáticamente co
   La detección automática de fechas y fechas con hora puede controlarse mediante las opciones de configuración [`input_format_try_infer_dates`](/es/reference/settings/formats/input-format#input_format_try_infer_dates) y [`input_format_try_infer_datetimes`](/es/reference/settings/formats/input-format#input_format_try_infer_datetimes), respectivamente (ambas activadas de forma predeterminada). La inferencia de objetos como tuplas se controla mediante la opción de configuración [`input_format_json_try_infer_named_tuples_from_objects`](/es/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Otras opciones de configuración que controlan la inferencia de esquemas para JSON, como la detección automática de números, pueden consultarse [aquí](/es/concepts/features/interfaces/schema-inference#text-formats).
 </Info>
 
-## Consulta de JSON {#querying-json}
+<div id="querying-json">
+  ## Consulta de JSON
+</div>
 
 A continuación, se asume que el JSON tiene una estructura coherente y un único tipo para cada ruta.
 
@@ -155,7 +161,9 @@ LIMIT 1 BY year
 
 La inferencia de esquemas permite consultar archivos JSON sin necesidad de definir el esquema, lo que agiliza las tareas de análisis ad hoc de datos.
 
-## Crear tablas {#creating-tables}
+<div id="creating-tables">
+  ## Crear tablas
+</div>
 
 Podemos recurrir a la inferencia de esquemas para crear el esquema de una tabla. El siguiente comando `CREATE AS EMPTY` hace que se infiera el DDL de la tabla y se cree la tabla. Esto no carga ningún dato:
 
@@ -196,7 +204,9 @@ ORDER BY update_date
 
 Lo anterior es el esquema correcto para estos datos. La inferencia de esquemas se basa en el muestreo de los datos y en leer los datos fila por fila. Los valores de las columnas se extraen según el formato, y se usan parsers recursivos y heurísticas para determinar el tipo de cada valor. El número máximo de filas y bytes leídos de los datos durante la inferencia de esquemas se controla mediante las opciones [`input_format_max_rows_to_read_for_schema_inference`](/es/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (25000 de forma predeterminada) y [`input_format_max_bytes_to_read_for_schema_inference`](/es/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (32MB de forma predeterminada). Si la detección no es correcta, puedes proporcionar indicaciones como se describe [aquí](/es/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable).
 
-### Crear tablas a partir de fragmentos {#creating-tables-from-snippets}
+<div id="creating-tables-from-snippets">
+  ### Crear tablas a partir de fragmentos
+</div>
 
 El ejemplo anterior utiliza un archivo en S3 para crear el esquema de la tabla. Es posible que quieras crear un esquema a partir de un fragmento de una sola fila. Esto se puede lograr usando la función [format](/es/reference/functions/table-functions/format), como se muestra a continuación:
 
@@ -229,7 +239,9 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-## Carga de datos JSON {#loading-json-data}
+<div id="loading-json-data">
+  ## Carga de datos JSON
+</div>
 
 A continuación, se asume que el JSON tiene una estructura uniforme y un único tipo para cada ruta.
 
@@ -287,19 +299,23 @@ FORMAT PrettyJSONEachRow
 1 row in set. Elapsed: 0.009 sec.
 ```
 
-## Manejo de errores {#handling-errors}
+<div id="handling-errors">
+  ## Manejo de errores
+</div>
 
 A veces, es posible que tengas datos incorrectos. Por ejemplo, columnas específicas que no tienen el tipo adecuado o un objeto JSON con un formato incorrecto. Para ello, puedes usar los ajustes [`input_format_allow_errors_num`](/es/reference/settings/formats/input-format#input_format_allow_errors_num) y [`input_format_allow_errors_ratio`](/es/reference/settings/formats/input-format#input_format_allow_errors_ratio) para permitir que se ignore una determinada cantidad de filas si los datos están provocando errores de inserción. Además, se pueden proporcionar [indicaciones](/es/reference/settings/formats/schema-inference#schema_inference_hints) para facilitar la inferencia.
 
-## Trabajar con datos semiestructurados y dinámicos {#working-with-semi-structured-data}
+<div id="working-with-semi-structured-data">
+  ## Trabajar con datos semiestructurados y dinámicos
+</div>
 
 En el ejemplo anterior usamos JSON, que era estático, con nombres de claves y tipos bien conocidos. Sin embargo, a menudo no es así: se pueden añadir claves o sus tipos pueden cambiar. Esto es habitual en casos de uso como los datos de observabilidad.
 
 ClickHouse resuelve esto mediante un tipo [`JSON`](/es/reference/data-types/newjson) específico.
 
-Si sabe que su JSON es muy dinámico, con muchas claves únicas y varios tipos para las mismas claves, le recomendamos no usar la inferencia de esquemas con `JSONEachRow` para intentar inferir una columna para cada clave, incluso si los datos están en formato JSON delimitado por saltos de línea.
+Si sabe que su JSON es muy dinámico, con muchas claves únicas y varios tipos para las mismas claves, le recomendamos no usar la inferencia de esquemas con `JSONEachRow` para intentar deducir una columna para cada clave, incluso si los datos están en formato JSON delimitado por saltos de línea.
 
-Considere el siguiente ejemplo de una versión ampliada del [conjunto de datos Python PyPI](https://clickpy.clickhouse.com/) anterior. Aquí hemos añadido una columna arbitraria de `tags` con pares clave-valor aleatorios.
+Considere el siguiente ejemplo de una versión ampliada del [Python PyPI dataset](https://clickpy.clickhouse.com/) anterior. Aquí hemos añadido una columna arbitraria de `tags` con pares clave-valor aleatorios.
 
 ```json
 {
@@ -335,10 +351,6 @@ El principal problema aquí es que el formato `JSONEachRow` se utiliza para la i
 Con miles de columnas únicas, este enfoque de inferencia es lento. Como alternativa, puedes usar el formato `JSONAsObject`.
 
 `JSONAsObject` trata toda la entrada como un único objeto JSON y la almacena en una sola columna de tipo [`JSON`](/es/reference/data-types/newjson), por lo que se adapta mejor a payloads JSON muy dinámicos o anidados.
-
-<Note>
-  En las versiones 24.8 a 25.2, active el tipo `JSON` añadiendo `allow_experimental_json_type = 1` a la cláusula `SETTINGS` de las consultas `JSONAsObject` de esta página.
-</Note>
 
 ```sql
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
@@ -378,7 +390,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Coerción de tipos**
 
-  Esta coerción de tipos se puede controlar mediante una serie de ajustes. El ejemplo anterior depende del parámetro de configuración [`input_format_json_read_numbers_as_strings`](/es/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings).
+  Esta coerción de tipos se puede controlar mediante una serie de ajustes. El ejemplo anterior depende del ajuste [`input_format_json_read_numbers_as_strings`](/es/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings).
 </Info>
 
 Sin embargo, algunos tipos no son compatibles. Considere el siguiente ejemplo:
@@ -408,7 +420,7 @@ En este caso, `JSONAsObject` trata cada fila como un único tipo [`JSON`](/es/re
 
 ```sql
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
-SETTINGS describe_compact_output = 1
+SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 
 ```response
@@ -419,6 +431,8 @@ SETTINGS describe_compact_output = 1
 1 row in set. Elapsed: 0.010 sec.
 ```
 
-## Lecturas adicionales {#further-reading}
+<div id="further-reading">
+  ## Lecturas adicionales
+</div>
 
 Para obtener más información sobre la inferencia de tipos de datos, consulte [esta](/es/concepts/features/interfaces/schema-inference) página de documentación.

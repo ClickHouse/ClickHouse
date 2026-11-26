@@ -1,3 +1,5 @@
+set allow_experimental_variant_type=1;
+set allow_experimental_dynamic_type=1;
 
 drop table if exists test;
 
@@ -23,6 +25,8 @@ create table test (d Variant(UInt64)) engine=MergeTree order by tuple() partitio
 
 create table test (d Dynamic) engine=Memory;
 insert into test select * from numbers(5);
+
+SET enable_analyzer=1;
 
 set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
@@ -59,6 +63,8 @@ drop table test;
 
 create table test (d Variant(UInt64)) engine=Memory;
 insert into test select * from numbers(5);
+
+SET enable_analyzer=1;
 
 set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;

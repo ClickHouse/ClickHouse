@@ -10,31 +10,23 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 在某些情况下，暂停 Postgres ClickPipe 会很有帮助。例如，你可能希望在数据保持静止状态时对现有数据进行分析。或者，你可能正在对 Postgres 进行升级。下面介绍如何暂停和恢复 Postgres ClickPipe。
 
-<Warning>
-  如果该管道的 `_peerdb_raw_mirror_*` 表设置了生存时间 (TTL) (包括由 ClickPipes 自动配置的 TTL) ，那么 TTL 到期时仍留在该表中的事件会被删除，即使管道处于暂停状态也不例外。如果计划长时间暂停，请先对原始表运行 `SHOW CREATE TABLE` 查看其 TTL，并确保暂停时长短于该 TTL。请参阅[原始表保留期限](/zh/integrations/clickpipes/postgres/faq#raw-mirror-table-retention)。
-</Warning>
-
-## 暂停 Postgres ClickPipe 的步骤 {#pause-clickpipe-steps}
+<div id="pause-clickpipe-steps">
+  ## 暂停 Postgres ClickPipe 的步骤
+</div>
 
 1. 在“数据源”选项卡中，点击要暂停的 Postgres ClickPipe。
 2. 转到 **设置** 选项卡。
 3. 点击 **暂停** 按钮。
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
 
 4. 此时会弹出一个确认对话框。再次点击“暂停”。
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
 
 4. 转到 **指标** 选项卡。
 5. 大约 5 秒后 (以及页面刷新时) ，该管道的状态应显示为 **已暂停**。
@@ -43,31 +35,21 @@ integration:
   暂停 Postgres ClickPipe 不会停止 replication slot 的增长。
 </Warning>
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp)
-  </Frame>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## 恢复 Postgres ClickPipe 的步骤
 </div>
 
-## 恢复 Postgres ClickPipe 的步骤 {#resume-clickpipe-steps}
+1. 在“数据源”选项卡中，点击要恢复的 Postgres ClickPipe。该 mirror 的初始状态应为 **Paused**。
+2. 转到 **Settings** 选项卡。
+3. 点击 **Resume** 按钮。
 
-1. 在“数据源”选项卡中，点击要恢复的 Postgres ClickPipe。该 mirror 的初始状态应为 **已暂停**。
-2. 转到 **设置** 选项卡。
-3. 点击 **恢复** 按钮。
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp)
-  </Frame>
-</div>
+4. 此时会出现确认对话框。再次点击 **Resume**。
 
-4. 此时会出现确认对话框。再次点击 **恢复**。
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp)
-  </Frame>
-</div>
-
-5. 转到 **指标** 选项卡。
+5. 转到 **Metrics** 选项卡。
 6. 大约 5 秒后 (以及刷新页面后) ，该管道的状态应变为 **Running**。

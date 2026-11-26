@@ -6,93 +6,332 @@ doc_type: 'guide'
 keywords: ['ClickStack', '可观测性', 'aws-lambda', 'lambda-layers']
 ---
 
-import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+**本指南支持以下集成：**
 
-对于使用异步处理程序的 Node.js 函数，请使用 ClickStack Node.js SDK。对于其他运行时或基于回调函数的处理程序，请使用下文所述的 OpenTelemetry Lambda 层。
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 日志</td>
+      <td className="pe-2">✅ 指标</td>
+      <td className="pe-2">✅ 链路追踪</td>
+    </tr>
+  </tbody>
+</table>
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+<div id="installing-the-otel-lambda-layers">
+  ## 安装 OpenTelemetry Lambda layer
+</div>
 
-## Node.js 异步处理程序 {#nodejs-async-handlers}
+OpenTelemetry 项目提供了独立的 Lambda layer，分别用于：
 
-请使用满足 SDK 最低版本要求 (Node.js 22.15) 的 Lambda Node.js 运行时。安装该 SDK，并将其打包到部署软件包中：
+1. 使用 OpenTelemetry 自动插桩功能，自动为 Lambda 函数代码添加插桩。
+2. 将采集到的日志、指标和链路追踪转发到 ClickStack。
+
+<div id="adding-language-specific-auto-instrumentation">
+  ### 添加特定语言的自动插桩 layer
+</div>
+
+特定语言的自动插桩 Lambda layer 会使用适用于相应语言的 OpenTelemetry 自动插桩包，自动为你的 Lambda 函数代码启用插桩。
+
+每种语言和区域都有各自对应的 layer ARN。
+
+如果你的 Lambda 已经通过 OpenTelemetry SDK 完成插桩，则可以跳过此步骤。
+
+**开始使用**：
+
+1. 在 Layers 部分中点击 “Add a layer”
+2. 选择 specify an ARN，并根据语言选择正确的 ARN；请确保将 `<region>` 替换为你的区域 (例如 `us-east-2`) ：
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-nodejs-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-python-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-javaagent-0_6_0:1
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-ruby-0_1_0:1
+    ```
+  </Tab>
+</Tabs>
+
+*这些 layer 的最新发布版本可在 [OpenTelemetry Lambda Layers GitHub 仓库](https://github.com/open-telemetry/opentelemetry-lambda/releases)中找到。*
+
+3. 在 Lambda 函数的 “Configuration” &gt; “Environment variables” 下配置以下环境变量。
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+</Tabs>
+
+<div id="installing-the-otel-collector-layer">
+  ### 安装 OpenTelemetry collector Lambda layer
+</div>
+
+collector Lambda layer 可让你将 Lambda function 的日志、指标和链路追踪转发到 ClickStack，且不会因 exporter 延迟而影响响应时间。
+
+**安装 collector layer**：
+
+1. 在 Layers 部分中，点击 &quot;Add a layer&quot;
+2. 选择指定 ARN，并根据架构选择正确的 ARN。请确保将 `<region>` 替换为你的区域 (例如：`us-east-2`) ：
+
+<Tabs>
+  <Tab title="x86_64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-amd64-0_8_0:1
+    ```
+  </Tab>
+
+  <Tab title="arm64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-arm64-0_8_0:1
+    ```
+  </Tab>
+</Tabs>
+
+3. 将以下 `collector.yaml` 文件添加到你的项目中，以将 collector 配置为发送到 ClickStack：
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+</Tabs>
+
+4. 添加以下环境变量：
 
 ```shell
-npm install @clickhouse/clickstack-node
+OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-设置以下 Lambda 环境变量，以便在处理器加载之前初始化 SDK，并为您的服务命名：
+<div id="checking-the-installation">
+  ## 检查安装
+</div>
 
-```text
-NODE_OPTIONS=--import @clickhouse/clickstack-node/register
-OTEL_SERVICE_NAME=my-lambda-function
-```
+部署这些 layer 后，你现在应该能在 HyperDX 中看到从 Lambda 函数自动收集到的链路追踪。`decouple` 和 `batching`
+处理器可能会导致可观测数据收集出现延迟，因此链路追踪可能不会立即显示。若要发送自定义日志或指标，你需要使用特定语言的
+OpenTelemetry SDK 为代码添加埋点。
 
-使用 `withFlush` 包装异步处理器，确保已缓冲的遥测数据在调用返回前完成导出：
+<div id="troubleshoting">
+  ## 故障排查
+</div>
 
-```javascript
-// index.mjs
-import { withFlush } from '@clickhouse/clickstack-node';
+<div id="custom-instrumentation-not-sending">
+  ### 自定义插桩未发送
+</div>
 
-export const handler = withFlush(async (event) => {
-  console.log('request received');
-  return { statusCode: 200, body: 'OK' };
-});
-```
+如果你看不到手动定义的 链路追踪 或其他遥测数据，可能是因为你使用了与 OpenTelemetry API 包不兼容的版本。请确保你的
+OpenTelemetry API 包版本至少与 AWS Lambda 中包含的版本相同或更低。
 
-将函数的处理器设置为 `index.handler`。如果对函数进行打包，请将 SDK 和已插桩的依赖项保留为外部依赖，并将它们包含在部署包中。在此设置下，请勿再额外启用自动插桩 Lambda 层。
+<div id="enabling-sdk-debug-logs">
+  ### 启用 SDK 调试日志
+</div>
 
-在 Lambda 函数的环境配置中设置以下目标端变量。您的函数必须能够访问该端点。SDK 会在调用截止时间之前完成刷写；`withFlush` 不支持基于回调函数的处理程序。
+将 `OTEL_LOG_LEVEL` 环境变量设置为 `DEBUG`，以启用
+OpenTelemetry SDK 的调试日志。这有助于确保自动插桩 layer
+已正确对您的应用程序进行插桩。
 
-### 配置目标端 {#configure-destination}
+<div id="enabling-collector-debug-logs">
+  ### 启用 collector 调试日志
+</div>
 
-为 ClickStack 采集器设置 OTLP HTTP 端点和摄取密钥。如果采集器未配置 TLS，请使用 `http://`。有关采集器的配置方法，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。
+要排查 collector 问题，可以修改 collector
+配置文件，添加 `logging` exporter，并将 telemetry 的
+日志级别设置为 `debug`，以启用 collector Lambda layer 的更详细日志。
 
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
-export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
-```
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
 
-## 其他运行时和处理程序 {#other-runtimes-and-handlers}
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
 
-请参照官方 [Lambda 自动插桩说明](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/)，根据您的运行时、架构和 AWS 区域选择相应的层，并配置插桩包装器。
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
 
-添加并配置 [OpenTelemetry 收集器 Lambda 层](https://opentelemetry.io/docs/platforms/faas/lambda-collector/)。按照上游文档的说明，让应用程序 SDK 的导出器继续指向本地采集器。然后按下文说明配置采集器的出站连接。
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
 
-### 配置 Lambda 采集器的目标端 {#configure-lambda-collector-destination}
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
 
-在 Lambda 函数的环境变量中设置 `CLICKHOUSE_OTLP_ENDPOINT` 和 `CLICKHOUSE_INGESTION_API_KEY`，然后将以下导出器添加到采集器配置中。
-
-将 `CLICKHOUSE_OTLP_ENDPOINT` 设置为 ClickStack 采集器的 OTLP HTTP 端点，并将 `CLICKHOUSE_INGESTION_API_KEY` 设置为该采集器的摄取密钥。请确保您的 Lambda 函数可以访问该端点。
-
-```yaml
-exporters:
-  otlphttp/clickhouse:
-    endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
-    headers:
-      Authorization: "${env:CLICKHOUSE_INGESTION_API_KEY}"
-```
-
-在每个需要发送数据的信号管道中，将 `otlphttp/clickhouse` 添加到 `exporters` 列表。例如，使用上游的 `otlp` 接收器时：
-
-```yaml
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      exporters: [otlphttp/clickhouse]
-    metrics:
-      receivers: [otlp]
-      exporters: [otlphttp/clickhouse]
-    logs:
-      receivers: [otlp]
-      exporters: [otlphttp/clickhouse]
-```
-
-将这些设置合并到您的采集器配置中，并保留其中原有的接收器和处理器设置。按照上游采集器的设置说明，将该配置与您的函数一同打包，并将 `OPENTELEMETRY_COLLECTOR_CONFIG_URI` 设置为该配置文件所在的路径，例如 `/var/task/collector.yaml`。
-
-## 验证摄取 {#verify-ingestion}
-
-部署并调用您的函数。在 ClickStack 中选择一个较近的时间范围，然后在 Traces 中找到该函数的服务名称。如果您的插桩还会发出日志和指标信号，请同时查看 Logs 和 Metrics；仅添加管道并不会自动启用这些信号的采集。
-
-有关 layer 配置和故障排查，请参阅 [OpenTelemetry Lambda 文档](https://github.com/open-telemetry/opentelemetry-lambda)。
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
+</Tabs>

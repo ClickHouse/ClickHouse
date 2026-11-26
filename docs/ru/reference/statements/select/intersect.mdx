@@ -27,9 +27,11 @@ FROM table2
 
 Условием может быть любое выражение в зависимости от ваших требований.
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
-Вот простой пример, который находит пересечение чисел от 1 до 10 и чисел от 3 до 10:
+Вот простой пример, который находит пересечение чисел от 1 до 10 и чисел от 3 до 8:
 
 ```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
@@ -43,8 +45,6 @@ SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 │      6 │
 │      7 │
 │      8 │
-│      9 │
-│     10 │
 └────────┘
 ```
 
@@ -67,7 +67,6 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
-    NOSIGN,
     'CSVWithNames'
 );
 
@@ -108,7 +107,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10),
+   ('DOGEFI', 10);
    ('Bitcoin Diamond', 5000);
 ```
 
@@ -132,7 +131,9 @@ WHERE price > 100
 
 Это означает, что в какой-то момент Bitcoin и Ethereum торговались выше $100, а DOGEFI и Bitcoin Diamond никогда не поднимались выше $100 (по крайней мере, по имеющимся у нас данным в этом примере).
 
-## INTERSECT DISTINCT {#intersect-distinct}
+<div id="intersect-distinct">
+  ## INTERSECT DISTINCT
+</div>
 
 Обратите внимание: в предыдущем запросе у нас было несколько позиций Bitcoin и Ethereum, торговавшихся выше $100. Возможно, стоит удалить повторяющиеся строки, поскольку они лишь дублируют уже известную информацию. Для этого можно добавить `DISTINCT` к `INTERSECT`, чтобы исключить из результата повторяющиеся строки:
 

@@ -6,6 +6,8 @@ description: 'ClickStack으로 JVM 모니터링'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -15,14 +17,16 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-jvm">
-  ## 기존 JVM 애플리케이션과의 통합 {#existing-jvm}
+  ## 기존 JVM 애플리케이션과의 통합
 </div>
 
 이 섹션에서는 OpenTelemetry Java agent를 사용해 기존 JVM 애플리케이션이 ClickStack으로 메트릭을 전송하도록 구성하는 방법을 설명합니다.
 
 프로덕션 환경을 구성하기 전에 통합을 테스트하려면 [데모 데이터세트 섹션](#demo-dataset)의 데모 데이터세트를 사용할 수 있습니다.
 
-##### 필수 조건 {#prerequisites}
+<div id="prerequisites">
+  ##### 필수 조건
+</div>
 
 * 실행 중인 ClickStack 인스턴스
 * 기존 Java 애플리케이션(Java 8+)
@@ -32,16 +36,12 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step title="ClickStack API Key 가져오기" id="get-api-key">
     OpenTelemetry Java agent는 데이터를 ClickStack의 OTLP endpoint로 전송하며, 이 endpoint에는 인증이 필요합니다.
 
-    1. ClickStack URL에서 ClickStack UI를 여십시오(예: http://localhost:8080)
+    1. ClickStack URL에서 HyperDX를 여십시오(예: http://localhost:8080)
     2. 필요하면 계정을 생성하거나 로그인하십시오
     3. **Team Settings → API Keys**로 이동하십시오
     4. **수집 API Key**를 복사하십시오
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack API Key](/images/clickstack/api-key.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
   </Step>
 
   <Step title="OpenTelemetry Java agent 다운로드" id="download-agent">
@@ -57,7 +57,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step title="JVM 시작 인수 구성" id="configure-jvm">
     JVM 시작 명령에 Java agent를 추가하십시오. agent는 JVM 메트릭을 자동으로 수집해 ClickStack으로 전송합니다.
 
-##### 옵션 1: 명령줄 플래그 {#command-line-flags}
+    ##### 옵션 1: 명령줄 플래그
 
     ```bash
     java -javaagent:opentelemetry-javaagent.jar \
@@ -79,7 +79,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     * `my-application.jar` → 애플리케이션의 JAR 파일 이름
     * `http://localhost:4318` → ClickStack endpoint(ClickStack이 같은 머신에서 실행 중이면 `localhost:4318`을 사용하고, 그렇지 않으면 `http://your-clickstack-host:4318`을 사용하십시오)
 
-##### 옵션 2: 환경 변수 {#env-vars}
+    ##### 옵션 2: 환경 변수
 
     또는 환경 변수를 사용하십시오:
 
@@ -115,17 +115,17 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Tip>
   </Step>
 
-  <Step title="ClickStack UI에서 메트릭 확인" id="verifying-metrics">
+  <Step title="HyperDX에서 메트릭 확인" id="verifying-metrics">
     애플리케이션이 agent와 함께 실행되면 메트릭이 ClickStack으로 전송되는지 확인하십시오:
 
-    1. http://localhost:8080에서 ClickStack UI를 여십시오(또는 ClickStack URL 사용)
+    1. http://localhost:8080에서 HyperDX를 여십시오(또는 ClickStack URL 사용)
     2. **Chart Explorer**로 이동하십시오
     3. `jvm.`로 시작하는 메트릭을 검색하십시오(예: `jvm.memory.used`, `jvm.gc.duration`, `jvm.thread.count`)
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 데모 데이터세트 {#demo-dataset}
+  ## 데모 데이터세트
 </div>
 
 애플리케이션에 계측을 추가하기 전에 JVM 메트릭 통합을 테스트하려는 사용자를 위해, 안정적으로 중간 수준의 트래픽이 발생하는 중간 규모 마이크로서비스의 실제 JVM 동작을 보여주는 사전 생성 메트릭이 포함된 샘플 데이터세트를 제공합니다.
@@ -180,7 +180,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step title="데모 데이터 확인" id="verify-demo-metrics">
     가져오기가 완료되면 다음을 수행합니다:
 
-    1. http://localhost:8080 에서 ClickStack UI를 열고 로그인합니다(필요한 경우 계정을 생성합니다)
+    1. http://localhost:8080 에서 HyperDX를 열고 로그인합니다(필요한 경우 계정을 생성합니다)
     2. 검색 view로 이동한 다음 source를 **Metrics**로 설정합니다
     3. 시간 범위를 **2025-12-06 14:00:00 - 2025-12-09 14:00:00**으로 설정합니다
     4. `jvm.memory.used` 또는 `jvm.gc.duration`을 검색합니다
@@ -190,12 +190,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **시간대 표시**
 
-      ClickStack UI는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터는 **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)** 기간을 포함합니다. 위치와 관계없이 데모 메트릭이 표시되도록 시간 범위를 **2025-12-06 14:00:00 - 2025-12-09 14:00:00**으로 설정하세요. 메트릭이 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
+      HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터는 **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)** 기간을 포함합니다. 위치와 관계없이 데모 메트릭이 표시되도록 시간 범위를 **2025-12-06 14:00:00 - 2025-12-09 14:00:00**으로 설정하세요. 메트릭이 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
   </Step>
 </Steps>
 
-## 대시보드 및 시각화 {#dashboards}
+<div id="dashboards">
+  ## 대시보드 및 시각화
+</div>
 
 ClickStack에서 JVM 애플리케이션을 모니터링할 수 있도록, JVM 메트릭에 필요한 핵심 시각화가 포함된 사전 구축된 대시보드를 제공합니다.
 
@@ -205,45 +207,33 @@ ClickStack에서 JVM 애플리케이션을 모니터링할 수 있도록, JVM �
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다
-    2. 오른쪽 상단의 줄임표 메뉴에서 **대시보드 가져오기**를 클릭합니다
+    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
+    2. 오른쪽 상단의 줄임표 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
 
-    3. `jvm-metrics-dashboard.json` 파일을 업로드한 다음 **가져오기 완료**를 클릭합니다
+    3. `jvm-metrics-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![가져오기 완료](/images/clickstack/jvm/jvm-metrics-import.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="가져오기 완료" />
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 사전 구성된 상태로 대시보드가 생성됩니다:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Kafka 메트릭 대시보드](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka 메트릭 대시보드" />
 
     <Note>
-      데모 데이터세트의 경우 시간 범위를 **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**&#xB85C; 설정하십시오. 로컬 시간대에 맞게 조정하십시오.
+      데모 데이터세트의 경우 시간 범위를 **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**로 설정하십시오. 로컬 시간대에 맞게 조정하십시오.
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### agent가 시작되지 않는 경우 {#troubleshooting-not-loading}
+  ### agent가 시작되지 않는 경우
 </div>
 
 **agent JAR 파일이 있는지 확인하세요:**
@@ -265,7 +255,9 @@ java -version
 [otel.javaagent] OpenTelemetry Javaagent v2.22.0 started
 ```
 
-### ClickStack UI에 메트릭이 표시되지 않을 때 {#no-metrics}
+<div id="no-metrics">
+  ### HyperDX에 메트릭이 표시되지 않을 때
+</div>
 
 **ClickStack이 실행 중이고 접근할 수 있는지 확인하십시오:**
 
@@ -277,9 +269,9 @@ curl -v http://localhost:4318/v1/metrics
 **메트릭 익스포터가 구성되었는지 확인하세요:**
 
 ```bash
-# If using environment variables, verify:
+# 환경 변수를 사용하는 경우 다음을 확인하세요:
 echo $OTEL_METRICS_EXPORTER
-# Should output: otlp
+# 예상 출력: otlp
 ```
 
 **애플리케이션 로그에서 OpenTelemetry 오류를 확인하세요:**
@@ -292,13 +284,15 @@ ClickStack이 원격 호스트에 있는 경우 애플리케이션 서버에서 
 최신 안정 agent 버전(현재 2.22.0)을 사용하고 있는지 확인하세요. 최신 버전에는 성능 개선이 포함되는 경우가 많습니다.
 
 <div id="next-steps">
-  ## 다음 단계 {#next-steps}
+  ## 다음 단계
 </div>
 
 * 힙 사용량 증가, 빈번한 GC 일시 중지, 스레드 고갈 등 중요한 메트릭에 대해 [알림](/ko/clickstack/features/alerts)을 설정하세요
 * 관측성 데이터를 통합할 수 있는 [다른 ClickStack 통합](/ko/clickstack/integration-examples/index)도 살펴보세요
 
-## 프로덕션 환경으로 전환 {#going-to-production}
+<div id="going-to-production">
+  ## 프로덕션 환경으로 전환
+</div>
 
 이 가이드는 로컬 테스트를 위해 OpenTelemetry Java agent를 구성하는 방법을 설명합니다. 프로덕션 배포에서는 관리를 더 쉽게 하기 위해 컨테이너 이미지에 agent JAR를 포함하고 환경 변수를 통해 구성하세요. JVM 인스턴스가 많은 대규모 환경에서는 ClickStack으로 직접 전송하는 대신, 중앙 집중식 OpenTelemetry Collector를 배포하여 여러 애플리케이션의 메트릭을 일괄 처리해 전달하세요.
 

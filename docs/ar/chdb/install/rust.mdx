@@ -9,9 +9,13 @@ doc_type: 'guide'
 
 يوفّر chDB-rust واجهات ربط FFI (واجهة الوظائف الأجنبية) تجريبية لـ chDB، مما يتيح لك تشغيل استعلامات ClickHouse مباشرةً في تطبيقات Rust من دون أي تبعيات خارجية.
 
-## التثبيت {#installation}
+<div id="installation">
+  ## التثبيت
+</div>
 
-### تثبيت libchdb {#install-libchdb}
+<div id="install-libchdb">
+  ### تثبيت libchdb
+</div>
 
 ثبّت مكتبة chDB:
 
@@ -19,11 +23,15 @@ doc_type: 'guide'
 curl -sL https://lib.chdb.io | bash
 ```
 
-## الاستخدام {#usage}
+<div id="usage">
+  ## الاستخدام
+</div>
 
 يوفر chDB Rust نمطَي تنفيذ للاستعلامات: عديم الحالة وذو حالة.
 
-### الاستخدام عديم الحالة {#stateless-usage}
+<div id="stateless-usage">
+  ### الاستخدام عديم الحالة
+</div>
 
 للاستعلامات البسيطة التي لا تتطلب حالة دائمة:
 
@@ -49,7 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### الاستخدام ذو الحالة (الجلسات) {#stateful-usage-sessions}
+<div id="stateful-usage-sessions">
+  ### الاستخدام ذو الحالة (الجلسات)
+</div>
 
 بالنسبة إلى الاستعلامات التي تتطلب حالةً مستمرة، مثل قواعد البيانات والجداول:
 
@@ -107,21 +117,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## البناء والاختبار {#building-testing}
+<div id="building-testing">
+  ## البناء والاختبار
+</div>
 
-### بناء المشروع {#build-the-project}
+<div id="build-the-project">
+  ### بناء المشروع
+</div>
 
 ```bash
 cargo build
 ```
 
-### إجراء الاختبارات {#run-tests}
+<div id="run-tests">
+  ### إجراء الاختبارات
+</div>
 
 ```bash
 cargo test
 ```
 
-### تبعيات التطوير {#development-dependencies}
+<div id="development-dependencies">
+  ### تبعيات التطوير
+</div>
 
 يتضمن المشروع تبعيات التطوير التالية:
 
@@ -129,7 +147,9 @@ cargo test
 * `tempdir` (v0.3.7) - التعامل مع الدليل المؤقت في الاختبارات
 * `thiserror` (v1) - أدوات لمعالجة الأخطاء
 
-## معالجة الأخطاء {#error-handling}
+<div id="error-handling">
+  ## معالجة الأخطاء
+</div>
 
 يوفّر chDB Rust معالجة شاملة للأخطاء عبر التعداد `Error`:
 
@@ -155,6 +175,8 @@ match execute("SELECT 1", None) {
 }
 ```
 
-## مستودع GitHub {#github-repository}
+<div id="github-repository">
+  ## مستودع GitHub
+</div>
 
 يمكنك العثور على مستودع GitHub الخاص بالمشروع على [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust).

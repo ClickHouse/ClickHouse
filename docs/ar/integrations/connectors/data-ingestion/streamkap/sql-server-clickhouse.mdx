@@ -7,10 +7,12 @@ title: 'تدفق البيانات من SQL Server إلى ClickHouse لتحليل
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 في هذه المقالة، نستعرض دليلًا عمليًا يوضّح كيفية تدفّق البيانات من SQL Server إلى ClickHouse. ويُعد ClickHouse خيارًا مثاليًا إذا كنت بحاجة إلى تحليلات فائقة السرعة لإعداد لوحات معلومات داخلية أو موجّهة للعملاء. سنأخذك خطوة بخطوة خلال إعداد قاعدتي البيانات كلتيهما، وكيفية ربطهما، ثم كيفية استخدام [Streamkap](https://streamkap.com) لبث بياناتك. إذا كان SQL Server يدير عملياتك اليومية، لكنك تحتاج إلى سرعة ClickHouse وذكائه في التحليلات، فأنت في المكان المناسب.
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
-  ## لماذا تبث البيانات من SQL Server إلى ClickHouse؟ {#why-stream-data-from-sql-server-to-clickhouse}
+  ## لماذا تبث البيانات من SQL Server إلى ClickHouse؟
 </div>
 
 إذا كنت هنا، فغالبًا أنك تعرف هذه المشكلة جيدًا: يتميز SQL Server بموثوقية عالية في المعاملات، لكنه ببساطة غير مصمم لتشغيل استعلامات تحليلية كثيفة وفي الوقت الفعلي.
@@ -24,13 +26,13 @@ doc_type: 'guide'
 * بث الأحداث، مثل الحفاظ على حداثة سجلات نشاط المستخدمين لأغراض التحليلات
 
 <div id="what-youll-need-to-get-started">
-  ## ما ستحتاج إليه للبدء {#what-youll-need-to-get-started}
+  ## ما ستحتاج إليه للبدء
 </div>
 
 قبل أن نخوض في التفاصيل، إليك ما ينبغي أن تجهزه:
 
 <div id="prerequisites">
-  ### المتطلبات الأساسية {#prerequisites}
+  ### المتطلبات الأساسية
 </div>
 
 * مثيل SQL Server قيد التشغيل
@@ -46,7 +48,7 @@ doc_type: 'guide'
 * ستكون هذه الأداة العمود الفقري لمسار المعالجة لتدفق البيانات لديك.
 
 <div id="connection-info">
-  ### معلومات الاتصال {#connection-info}
+  ### معلومات الاتصال
 </div>
 
 تأكد من توفر ما يلي:
@@ -77,19 +79,11 @@ doc_type: 'guide'
     * اسم المستخدم وكلمة المرور
     * اسم قاعدة البيانات
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
 
-#### ما الذي يحدث في الخلفية {#whats-happening-behind-the-scenes}
+    #### ما الذي يحدث في الخلفية
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
 
     عند إعداد ذلك، سيتصل Streamkap بخادم SQL Server لديك ويكتشف الجداول. في هذا العرض التوضيحي، سنختار جدولًا تتدفق إليه بعض البيانات بالفعل، مثل الأحداث أو المعاملات.
   </Step>
@@ -101,7 +95,7 @@ doc_type: 'guide'
 
     وكما فعلنا مع المصدر، سننشئ وجهة باستخدام تفاصيل اتصال ClickHouse الخاصة بنا.
 
-#### الخطوات: {#steps}
+    #### الخطوات:
 
     1. انتقل إلى قسم الوجهات في Streamkap.
     2. أضف وجهة جديدة — واختر ClickHouse كنوع الوجهة.
@@ -114,13 +108,13 @@ doc_type: 'guide'
 
     لقطة شاشة توضيحية: إضافة وجهة ClickHouse جديدة في لوحة معلومات Streamkap.
 
-### وضع upsert: ما المقصود به؟ {#upsert-mode-what-is-that}
+    ### وضع upsert: ما المقصود به؟
 
     هذه خطوة مهمة: نريد استخدام وضع “upsert” في ClickHouse، والذي يستخدم في الخلفية المحرك ReplacingMergeTree في ClickHouse. يتيح لنا ذلك دمج السجلات الواردة بكفاءة والتعامل مع التحديثات بعد استيعاب البيانات، باستخدام ما يسميه ClickHouse “دمج الأجزاء”.
 
     * يضمن ذلك عدم امتلاء جدول الوجهة لديك بالسجلات المكررة عند حدوث تغييرات على جانب SQL Server.
 
-### التعامل مع تطور المخطط {#handling-schema-evolution}
+    ### التعامل مع تطور المخطط
 
     في بعض الأحيان، لا تكون الأعمدة في ClickHouse وSQL Server متطابقة، خاصةً عندما يكون تطبيقك قيد التشغيل ويواصل المطورون إضافة أعمدة أثناء العمل.
 
@@ -134,15 +128,15 @@ doc_type: 'guide'
 
     بعد تحديد المصدر والوجهة، حان وقت الجزء الممتع—وهو بث بياناتك!
 
-#### إعداد مسار البيانات {#pipeline-setup}
+    #### إعداد مسار البيانات
 
     1. انتقل إلى علامة التبويب Pipelines في Streamkap.
 
     2. أنشئ مسار بيانات جديدًا.
 
-    3. حدِّد مصدر SQL Server الخاص بك (sqlserver-demo-source).
+    3. حدِّد مصدر SQL Server الخاص بك (sqlserver-demo-source).
 
-    4. حدِّد وجهة ClickHouse الخاصة بك (clickhouse-tutorial-destination).
+    4. حدِّد وجهة ClickHouse الخاصة بك (clickhouse-tutorial-destination).
 
     5. اختر الجدول الذي تريد بثه—ولنفترض أنه events.
 
@@ -152,13 +146,9 @@ doc_type: 'guide'
 
     لقطة شاشة لإعدادات مسار البيانات—تحديد المصدر والوجهة والجدول.
 
-#### هل تحتاج إلى تحميل البيانات التاريخية؟ {#should-you-backfill}
+    #### هل تحتاج إلى تحميل البيانات التاريخية؟
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
 
     قد تتساءل: هل ينبغي تحميل البيانات القديمة؟
 
@@ -170,7 +160,7 @@ doc_type: 'guide'
   <Step title="مراقبة تدفق البيانات" id="step-4-watch-the-data-stream">
     <a id="streaming-in-action-what-to-expect" />
 
-    الآن أصبح مسار المعالجة لديك مُعدًّا ويعمل!
+    الآن أصبح مسار المعالجة لديك مُعدًّا ويعمل!
 
     إليك ما يحدث:
 
@@ -192,7 +182,7 @@ doc_type: 'guide'
 </Steps>
 
 <div id="under-the-hood-whats-streamkap-actually-doing">
-  ## ما الذي يفعله Streamkap فعليًا في الخلفية؟ {#under-the-hood-whats-streamkap-actually-doing}
+  ## ما الذي يفعله Streamkap فعليًا في الخلفية؟
 </div>
 
 لإعطائك لمحة سريعة:
@@ -204,11 +194,11 @@ doc_type: 'guide'
 هذا ليس مجرد ETL، بل هو التقاط كامل لبيانات التغيير (CDC) يُبث في الوقت الفعلي.
 
 <div id="advanced-options">
-  ## الخيارات المتقدمة {#advanced-options}
+  ## الخيارات المتقدمة
 </div>
 
 <div id="upsert-vs-insert-modes">
-  ### نمط Upsert مقابل نمط Insert {#upsert-vs-insert-modes}
+  ### نمط Upsert مقابل نمط Insert
 </div>
 
 ما الفرق بين إدراج كل صف فقط (نمط Insert) وبين ضمان انعكاس التحديثات وعمليات الحذف أيضًا (نمط Upsert)؟
@@ -217,7 +207,7 @@ doc_type: 'guide'
 * نمط Upsert: تستبدل التحديثات على الصفوف الموجودة ما هو موجود بالفعل، وهذا أفضل بكثير للحفاظ على حداثة التحليلات ونظافتها.
 
 <div id="handling-schema-changes">
-  ### التعامل مع تغييرات المخطط {#handling-schema-changes}
+  ### التعامل مع تغييرات المخطط
 </div>
 
 تتغير التطبيقات، وتتغير معها مخططاتك أيضًا. مع مسار المعالجة هذا:
@@ -228,11 +218,11 @@ doc_type: 'guide'
   اعتمادًا على الإعدادات، قد تحتاج إلى ترحيل — لكن معظم الإضافات تتم بسلاسة.
 
 <div id="real-world-monitoring-keeping-tabs-on-the-pipeline">
-  ## المراقبة في البيئات الفعلية: متابعة مسار المعالجة عن كثب {#real-world-monitoring-keeping-tabs-on-the-pipeline}
+  ## المراقبة في البيئات الفعلية: متابعة مسار المعالجة عن كثب
 </div>
 
 <div id="checking-pipeline-health">
-  ### التحقق من صحة مسار المعالجة {#checking-pipeline-health}
+  ### التحقق من صحة مسار المعالجة
 </div>
 
 يوفّر Streamkap لوحة معلومات يمكنك من خلالها:
@@ -244,7 +234,7 @@ doc_type: 'guide'
 مثال على لوحة المعلومات: رسم بياني لزمن الاستجابة، وعدد الصفوف، ومؤشرات الحالة.
 
 <div id="common-metrics-to-watch">
-  ### المقاييس الشائعة التي ينبغي مراقبتها {#common-metrics-to-watch}
+  ### المقاييس الشائعة التي ينبغي مراقبتها
 </div>
 
 * التأخر: إلى أي مدى يتأخر ClickHouse عن SQL Server؟
@@ -252,7 +242,7 @@ doc_type: 'guide'
 * معدل الأخطاء: ينبغي أن يكون قريبًا من الصفر
 
 <div id="going-live-querying-clickhouse">
-  ## بدء الاستخدام الفعلي: الاستعلام عن ClickHouse {#going-live-querying-clickhouse}
+  ## بدء الاستخدام الفعلي: الاستعلام عن ClickHouse
 </div>
 
 بعد أن أصبحت بياناتك في ClickHouse، يمكنك الاستعلام عنها باستخدام كل أدوات analytics السريعة هذه. إليك مثالًا أساسيًا:
@@ -265,7 +255,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 اجمع بين ClickHouse وأدوات لوحات المعلومات مثل Grafana أو Superset أو Redash للحصول على تقارير متكاملة الإمكانات.
 
 <div id="next-steps-and-deep-dives">
-  ## الخطوات التالية والتعمق أكثر {#next-steps-and-deep-dives}
+  ## الخطوات التالية والتعمق أكثر
 </div>
 
 لا يقدّم هذا الدليل العملي سوى لمحة سريعة عمّا يمكنك إنجازه. وبعد إتقان الأساسيات، إليك ما يمكنك استكشافه بعد ذلك:
@@ -279,7 +269,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 ترقّب [مدونة Streamkap](https://streamkap.com/blog) لمزيد من الأدلة المتعمقة.
 
 <div id="faq-and-troubleshooting">
-  ## FAQ واستكشاف الأخطاء وإصلاحها {#faq-and-troubleshooting}
+  ## FAQ واستكشاف الأخطاء وإصلاحها
 </div>
 
 س: هل يعمل هذا مع قواعد البيانات السحابية؟
@@ -292,7 +282,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 ج: بالتأكيد. في وضع upsert، يتم تمييز عمليات الحذف والتعامل معها في ClickHouse أيضًا.
 
 <div id="wrapping-up">
-  ## الخلاصة {#wrapping-up}
+  ## الخلاصة
 </div>
 
 وهكذا تكون قد حصلت على نظرة عامة كاملة حول بث بيانات SQL Server إلى ClickHouse باستخدام Streamkap. إنه سريع ومرن، ومثالي للفرق التي تحتاج إلى تحليلات محدثة باستمرار من دون الضغط على قواعد بيانات الإنتاج لديها.

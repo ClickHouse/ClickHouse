@@ -2,16 +2,18 @@
 sidebarTitle: 'Введение'
 description: 'Выполняйте аналитические запросы в ClickHouse прямо из PostgreSQL без переписывания SQL'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'Документация по pg_clickhouse'
+title: 'Справочник по pg_clickhouse'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'обёртка внешних данных', 'pg_clickhouse', 'расширение']
 ---
 
-## Введение {#introduction}
+<div id="introduction">
+  ## Введение
+</div>
 
 [pg&#95;clickhouse] — расширение PostgreSQL с открытым исходным кодом, которое позволяет выполнять аналитические запросы
 в ClickHouse прямо из PostgreSQL без какого-либо переписывания SQL. Оно поддерживает
-PostgreSQL 14 и более поздние версии, а также ClickHouse v23 и выше.
+PostgreSQL 13 и более поздние версии, а также ClickHouse v23 и выше.
 
 Когда [ClickPipes](/ru/integrations/clickpipes/home) начнет синхронизировать данные с ClickHouse,
 используйте pg&#95;clickhouse, чтобы быстро и просто выполнить [import foreign tables] в
@@ -19,7 +21,9 @@ PostgreSQL 14 и более поздние версии, а также ClickHous
 таблицам, сохраняя текущую кодовую базу и передавая выполнение в
 ClickHouse.
 
-## Начало работы {#getting-started}
+<div id="getting-started">
+  ## Начало работы
+</div>
 
 Самый простой способ попробовать pg&#95;clickhouse — воспользоваться [Docker-образом], который содержит
 стандартный Docker-образ PostgreSQL с расширениями pg&#95;clickhouse и [re2]:
@@ -33,7 +37,9 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 См. [руководство], чтобы начать импорт таблиц ClickHouse и перенос
 выполнения запросов в ClickHouse.
 
-## Тестирование: TPC-H {#test-case-tpc-h}
+<div id="test-case-tpc-h">
+  ## Тестирование: TPC-H
+</div>
 
 В этой таблице сравнивается производительность запросов [TPC-H] на обычных таблицах PostgreSQL
 и через pg&#95;clickhouse, подключённый к ClickHouse, в обоих случаях данные загружены с коэффициентом масштабирования
@@ -66,18 +72,22 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 | [Запрос 21] |    1145 мс |           4470 мс |          |
 | [Запрос 22] |     270 мс |             45 мс |     ✼    |
 
-## Установка {#installation}
+<div id="compile-from-source">
+  ### Сборка из исходного кода
+</div>
 
-### Сборка из исходного кода {#compile-from-source}
-
-#### Unix в общем {#general-unix}
+<div id="general-unix">
+  #### Unix в общем
+</div>
 
 Пакеты разработки PostgreSQL и curl добавляют `pg_config` и
 `curl-config` в путь, поэтому вы можете просто выполнить `make` (или
 `gmake`), затем `make install`, а затем в своей базе данных
 `CREATE EXTENSION pg_clickhouse`.
 
-#### Debian / Ubuntu / APT {#debian--ubuntu--apt}
+<div id="debian--ubuntu--apt">
+  #### Debian / Ubuntu / APT
+</div>
 
 См. [PostgreSQL Apt], чтобы узнать подробности о получении пакетов из репозитория PostgreSQL Apt.
 
@@ -92,7 +102,9 @@ sudo apt install \
   g++
 ```
 
-#### RedHat / CentOS / Yum {#redhat--centos--yum}
+<div id="redhat--centos--yum">
+  #### RedHat / CentOS / Yum
+</div>
 
 ```sh
 sudo yum install \
@@ -107,7 +119,9 @@ sudo yum install \
 
 Подробнее о загрузке из репозитория PostgreSQL Yum см. в [PostgreSQL Yum].
 
-#### Установка из PGXN {#install-from-pgxn}
+<div id="install-from-pgxn">
+  #### Установка из PGXN
+</div>
 
 После установки указанных выше зависимостей используйте [PGXN client] (доступный в виде пакетов [Homebrew], [Apt] и Yum под именем `pgxnclient`) для загрузки, компиляции и установки `pg_clickhouse`:
 
@@ -115,7 +129,9 @@ sudo yum install \
 pgxn install pg_clickhouse
 ```
 
-#### Сборка и установка {#compile-and-install}
+<div id="compile-and-install">
+  #### Сборка и установка
+</div>
 
 Чтобы собрать и установить библиотеку ClickHouse и `pg_clickhouse`, выполните:
 
@@ -187,7 +203,9 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-#### Тестирование {#testing}
+<div id="testing">
+  #### Тестирование
+</div>
 
 Чтобы запустить набор тестов после установки расширения, выполните
 
@@ -208,43 +226,9 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
-### CloudNativePG {#cloudnativepg}
-
-Добавьте pg&#95;clickhouse в кластер [CloudNativePG] с помощью [ExtensionConfiguration]:
-
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: cluster-example
-spec:
-  # ... <snip>
-  postgresql:
-    # ExtensionConfiguration
-    extensions:
-      - name: pg_clickhouse
-        image:
-        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
-```
-
-Чтобы загрузить его в базу данных, используйте [ExtensionSpec]:
-
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: pg_clickhouse-cluster
-spec:
-  name: app
-  owner: app
-  cluster:
-    name: pg_clickhouse-cluster
-  extensions:
-    - name: pg_clickhouse
-      version: {pg_clickhouse_version}
-```
-
-### Подключение {#loading}
+<div id="loading">
+  ### Подключение
+</div>
 
 После установки `pg_clickhouse` его можно подключить к базе данных, подключившись
 под суперпользователем и выполнив:
@@ -261,13 +245,17 @@ CREATE SCHEMA env;
 CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
-## Зависимости {#dependencies}
+<div id="dependencies">
+  ## Зависимости
+</div>
 
-Для расширения `pg_clickhouse` требуются [PostgreSQL] 14 или новее, [libcurl],
+Для расширения `pg_clickhouse` требуются [PostgreSQL] 13 или новее, [libcurl],
 [libuuid]. Для сборки расширения требуются компиляторы C и C++, [libSSL], [GNU
 make] и [CMake].
 
-## Дорожная карта {#road-map}
+<div id="road-map">
+  ## Дорожная карта
+</div>
 
 Наш главный приоритет — полностью реализовать pushdown для аналитических рабочих нагрузок, прежде чем
 добавлять возможности DML. Наша дорожная карта:
@@ -279,21 +267,26 @@ make] и [CMake].
 * Разрешить настройки ClickHouse на уровне сервера и сеанса через CREATE SERVER
   и GUC
 * Поддержать все типы данных ClickHouse
+* Поддержать легковесные DELETE и UPDATE
+* Поддержать батч-вставку через COPY
 * Добавить функцию для выполнения произвольного запроса к ClickHouse и возврата его
   результатов в виде таблицы
 * Добавить поддержку pushdown для запросов UNION, если все они обращаются к удалённой
   базе данных
 
-## Авторы {#authors}
+<div id="authors">
+  ## Авторы
+</div>
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
-* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
-## Авторские права {#copyright}
+<div id="copyright">
+  ## Авторские права
+</div>
 
 * Авторские права (c) 2025-2026, ClickHouse
 * Отдельные части: авторские права (c) 2023-2025, Ildus Kurbangaliev
@@ -314,9 +307,9 @@ make] и [CMake].
 
 [PGXN client]: https://pgxn.github.io/pgxnclient/ "Документация клиента PGXN"
 
-[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Клиент PGXN в Homebrew"
+[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "PGXN client в Homebrew"
 
-[Apt]: https://tracker.debian.org/pkg/pgxnclient "Клиент PGXN в Debian Apt"
+[Apt]: https://tracker.debian.org/pkg/pgxnclient "PGXN client в Debian Apt"
 
 [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
 
@@ -335,14 +328,6 @@ make] и [CMake].
 [TPC-H]: https://www.tpc.org/tpch/
 
 [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: совместимые с ClickHouse функции регулярных выражений на базе RE2"
-
-[CloudNativePG]: https://cloudnative-pg.io/ "PostgreSQL по-кубернетесовски"
-
-[ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
-
-&quot;Документация CloudNativePG: ExtensionConfiguration:
-[ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
-&quot;Документация CloudNativePG: ExtensionSpec:
 
 [Запрос 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [Запрос 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql

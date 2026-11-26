@@ -14,20 +14,24 @@ integration:
   사이드바에 있는 지원되는 제공업체 중 하나를 사용하는 경우, 해당 제공업체별 가이드를 참조하십시오.
 </Info>
 
-## 바이너리 로그 보존 활성화 {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## 바이너리 로그 보존 활성화
+</div>
 
 바이너리 로그에는 MySQL 서버 인스턴스에서 수행된 데이터 변경 정보가 포함되며, 복제에 필요합니다.
 
-### MySQL 8.x 및 이후 버전 {#binlog-v8-x}
+<div id="binlog-v8-x">
+  ### MySQL 8.x 및 이후 버전
+</div>
 
 MySQL 인스턴스에서 바이너리 로깅을 활성화하려면 다음 설정이 구성되어 있는지 확인하십시오:
 
 ```sql
-log_bin = ON                        -- default value
-binlog_format = ROW                 -- default value
-binlog_row_image = FULL             -- default value
+log_bin = ON                        -- 기본값
+binlog_format = ROW                 -- 기본값
+binlog_row_image = FULL             -- 기본값
 binlog_row_metadata = FULL
-binlog_expire_logs_seconds = 259200  -- 3 days or higher; default is 30 days
+binlog_expire_logs_seconds = 86400  -- 1일 이상; 기본값은 30일
 ```
 
 이러한 설정을 확인하려면 다음 SQL 명령을 실행하십시오:
@@ -47,23 +51,25 @@ SET PERSIST log_bin = ON;
 SET PERSIST binlog_format = ROW;
 SET PERSIST binlog_row_image = FULL;
 SET PERSIST binlog_row_metadata = FULL;
-SET PERSIST binlog_expire_logs_seconds = 259200;
+SET PERSIST binlog_expire_logs_seconds = 86400;
 ```
 
 `log_bin` 설정을 변경했다면, 변경 사항이 적용되도록 MySQL 인스턴스를 반드시 다시 시작해야 합니다.
 
 설정을 변경한 후에는 [데이터베이스 사용자 구성](#configure-database-user)으로 진행하세요.
 
-### MySQL 5.7 {#binlog-v5-x}
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
 
 MySQL 5.7 인스턴스에서 바이너리 로깅을 활성화하려면 다음 설정이 적용되어 있는지 확인하십시오.
 
 ```sql
-server_id = 1            -- or greater; anything but 0
+server_id = 1            -- 1 이상; 0이 아닌 값
 log_bin = ON
-binlog_format = ROW      -- default value
-binlog_row_image = FULL  -- default value
-expire_logs_days = 3     -- or higher; 0 would mean logs are preserved forever
+binlog_format = ROW      -- 기본값
+binlog_row_image = FULL  -- 기본값
+expire_logs_days = 1     -- 1 이상; 0으로 설정하면 로그가 영구 보존됨
 ```
 
 이 설정을 확인하려면 다음 SQL 명령을 실행하십시오:
@@ -84,7 +90,7 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-expire_logs_days = 3
+expire_logs_days = 1
 ```
 
 변경 사항이 적용되려면 MySQL 인스턴스를 반드시 다시 시작해야 합니다.
@@ -93,7 +99,9 @@ expire_logs_days = 3
   컬럼 제외 및 스키마 변경은 MySQL 5.7 및 이전 버전에서는 지원되지 않습니다. 이러한 기능은 [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) 이전의 binlog에서 제공되지 않는 테이블 메타데이터에 의존합니다.
 </Note>
 
-## 데이터베이스 사용자 구성 {#configure-database-user}
+<div id="configure-database-user">
+  ## 데이터베이스 사용자 구성
+</div>
 
 root 사용자로 MySQL 인스턴스에 연결한 후 다음 명령을 실행하십시오:
 
@@ -120,7 +128,9 @@ root 사용자로 MySQL 인스턴스에 연결한 후 다음 명령을 실행하
   `clickpipes_user`와 `some_secure_password`는 원하는 사용자 이름과 비밀번호로 바꾸십시오.
 </Note>
 
-## SSL/TLS 구성 (권장) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## SSL/TLS 구성 (권장)
+</div>
 
 SSL 인증서는 MySQL 데이터베이스에 대한 보안 연결을 보장합니다. 구성 방법은 인증서 유형에 따라 달라집니다.
 
@@ -134,7 +144,9 @@ SSL 인증서는 MySQL 데이터베이스에 대한 보안 연결을 보장합�
 
 SSL/TLS 옵션에 대한 자세한 내용은 [FAQ](/ko/integrations/clickpipes/mysql/faq#tls-certificate-validation-error)를 참조하십시오.
 
-## 다음 단계 {#whats-next}
+<div id="whats-next">
+  ## 다음 단계
+</div>
 
 이제 [ClickPipe를 생성](/ko/integrations/clickpipes/mysql/index)하여 MySQL 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.
 ClickPipe 생성 과정에서 필요하므로 MySQL 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

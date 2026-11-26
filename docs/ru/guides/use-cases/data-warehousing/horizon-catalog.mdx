@@ -2,7 +2,7 @@
 slug: /use-cases/data-lake/horizon-catalog
 sidebarTitle: 'Каталог Horizon'
 title: 'Каталог Snowflake Horizon'
-description: 'Выполняйте запросы к таблицам Iceberg под управлением Snowflake и записывайте в них данные через каталог Snowflake Horizon с помощью ClickHouse DataLakeCatalog.'
+description: 'Выполняйте запросы к таблицам Iceberg, управляемым Snowflake, и записывайте в них данные через каталог Snowflake Horizon с помощью ClickHouse DataLakeCatalog.'
 keywords: ['Horizon', 'Snowflake', 'Iceberg', 'озеро данных', 'Polaris']
 show_related_blogs: true
 doc_type: 'guide'
@@ -28,12 +28,13 @@ Horizon связан со Snowflake Open Catalog / самоуправляемы�
 
 <Note>
   Поскольку эта возможность находится в бета-версии, включите её:
-  `SET allow_database_iceberg = 1;`
-
-  Тип каталога `horizon` доступен начиная с версии 26.8.
+  `SET allow_experimental_database_iceberg = 1;`
+  (или `SET allow_database_iceberg = 1;` в зависимости от версии ClickHouse).
 </Note>
 
-## Предварительные требования {#prerequisites}
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
 
 * Аккаунт Snowflake с таблицами Iceberg под управлением Snowflake
 * REST-конечная точка Horizon Iceberg:
@@ -46,12 +47,16 @@ Horizon связан со Snowflake Open Catalog / самоуправляемы�
 * Объектное хранилище, доступное из ClickHouse (рекомендуется использовать предоставляемые учетные данные)
 * ClickHouse с поддержкой DataLakeCatalog Iceberg
 
-## Создание подключения {#connecting}
+<div id="connecting">
+  ## Создание подключения
+</div>
 
-### Вариант A: токен программного доступа (рекомендуется) {#option-a-programmatic-access-token-recommended}
+<div id="option-a-programmatic-access-token-recommended">
+  ### Вариант A: токен программного доступа (рекомендуется)
+</div>
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE horizon_catalog
 ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
@@ -67,7 +72,9 @@ SETTINGS
 `warehouse` должно быть именем **базы данных** Snowflake (а не виртуального хранилища Snowflake).
 Идентификаторы Snowflake без кавычек пишутся в верхнем регистре.
 
-### Вариант B: Предварительно полученный токен доступа Bearer {#option-b-pre-exchanged-bearer-access-token}
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### Вариант B: Предварительно полученный токен доступа Bearer
+</div>
 
 ```sql
 CREATE DATABASE horizon_catalog
@@ -79,7 +86,9 @@ SETTINGS
     vended_credentials = 1;
 ```
 
-## Запросы к таблицам Iceberg {#query}
+<div id="query">
+  ## Запросы к таблицам Iceberg
+</div>
 
 ```sql
 USE horizon_catalog;
@@ -94,7 +103,9 @@ SHOW CREATE TABLE `PUBLIC.test_table`;
   включены экспериментальные пространства имен для таблиц.
 </Note>
 
-## Запись данных {#write}
+<div id="write">
+  ## Запись данных
+</div>
 
 При наличии роли с правами INSERT/UPDATE/DELETE (и CREATE ICEBERG TABLE при создании таблиц)
 ClickHouse может записывать данные через тот же каталог:
@@ -119,7 +130,9 @@ ENGINE = Iceberg;
 Точный синтаксис `CREATE TABLE` зависит от поддержки записи в ClickHouse Iceberg / DataLakeCatalog для REST-каталогов
 в используемой версии; ошибки привилегий Snowflake отображаются как HTTP-ошибки каталога.
 
-## Загрузка в MergeTree {#loading}
+<div id="loading">
+  ## Загрузка в MergeTree
+</div>
 
 ```sql
 CREATE TABLE my_clickhouse_table

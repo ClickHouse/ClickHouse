@@ -39,7 +39,9 @@ SELECT 1;
 clickhouse-benchmark [keys] < queries_file;
 ```
 
-## 命令行选项 {#clickhouse-benchmark-command-line-options}
+<div id="clickhouse-benchmark-command-line-options">
+  ## 命令行选项
+</div>
 
 * `--query=QUERY` — 要执行的查询。若未传入此参数，`clickhouse-benchmark` 将从标准输入读取查询。
 * `--query_id=ID` — 查询 ID。
@@ -52,10 +54,6 @@ clickhouse-benchmark [keys] < queries_file;
 * `-h HOST`, `--host=HOST` — 服务器主机。默认值：`localhost`。在[比较模式](#clickhouse-benchmark-comparison-mode)下，可以使用多个 `-h` 参数。
 * `-i N`, `--iterations=N` — 查询总数。默认值：0 (无限重复) 。
 * `-r`, `--randomize` — 如果输入查询多于一个，则按随机顺序执行查询。
-* `--arrival-rate=R` — 启用[开环模式](#clickhouse-benchmark-open-loop-mode)：查询在随机时刻到达，平均速率为每秒 `R` 个查询。若指定以逗号分隔的速率列表 (例如 `--arrival-rate=5,10,20`) ，则会依次针对每个速率运行基准测试，并为每个速率各生成一份报告；此时必须同时指定 `--iterations` 或 `--timelimit`。
-* `--max-in-flight=N` — 开环模式下同时执行的查询数上限。默认值：256。
-* `--seed=N` — 随机数生成器的种子，用于决定到达时间、使用 `--randomize` 时的查询顺序，以及开环模式下的服务器选择。使用相同的种子和选项即可复现同一次运行。到达时间仅取决于种子和速率，与查询或服务器无关，因此可以在相同的到达时间安排下比较不同的查询组合或服务器。默认值：随机种子，在开环模式下会在启动时打印。
-* `--per-query` — 在结束时输出每个查询的统计信息：查询数和错误数、QPS、延迟百分位数、最大延迟，以及查询在服务器上的平均 CPU 时间。
 * `-s`, `--secure` — 使用 `TLS` 连接。
 * `-t N`, `--timelimit=N` — 时间限制 (秒) 。达到指定时间限制后，`clickhouse-benchmark` 将停止发送查询。默认值：0 (禁用时间限制) 。
 * `--port=N` — 服务器端口。默认值：9000。在[比较模式](#clickhouse-benchmark-comparison-mode)下，可以使用多个 `--port` 参数。
@@ -77,12 +75,16 @@ clickhouse-benchmark [keys] < queries_file;
 
 如果要对查询应用某些[设置](/zh/concepts/features/configuration/settings/overview)，请将它们作为参数 `--<session setting name>= SETTING_VALUE` 传入。例如，`--max_memory_usage=1048576`。
 
-## 环境变量选项 {#clickhouse-benchmark-environment-variable-options}
+<div id="clickhouse-benchmark-environment-variable-options">
+  ## 环境变量选项
+</div>
 
 可通过环境变量 `CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` 和 `CLICKHOUSE_HOST` 设置用户名、密码和主机。
 命令行参数 `--user`、`--password` 或 `--host` 的优先级高于环境变量。
 
-## 输出 {#clickhouse-benchmark-output}
+<div id="clickhouse-benchmark-output">
+  ## 输出
+</div>
 
 默认情况下，`clickhouse-benchmark` 会在每个 `--delay` 时间间隔输出一次报告。
 
@@ -125,58 +127,17 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 
 * 查询执行时间的百分位数。
 
-## 开环模式 {#clickhouse-benchmark-open-loop-mode}
-
-默认情况下，`clickhouse-benchmark` 以闭环方式工作：`--concurrency` 指定的每个客户端都会在上一个查询返回后才发送下一个查询。服务器变慢时，收到的查询也会相应减少，因此负载会自动适应服务器的处理能力。
-
-使用 `--arrival-rate` 时，负载与服务器无关。查询以固定的平均速率在随机时刻到达，类似于大量独立用户发出的请求：相邻两次到达之间的时间间隔是一个服从指数分布、平均值为 `1 / R` 的随机值 (即泊松过程) 。即使之前的查询仍在运行，每个查询也会在其到达时刻发出。
-
-同一时刻最多执行 `--max-in-flight` 个查询。如果某个查询到达时这些执行槽位均已占满，它会在客户端队列中等待，直到其中一个查询完成。查询延迟的测量方式与闭环模式相同 (参见 `--client-side-time`) ，因此不包含在队列中等待的时间。排队的到达数量会单独报告。
-
-`--iterations` 选项用于设置到达次数；`clickhouse-benchmark` 会等待所有查询执行完毕。`--timelimit` 选项会在达到时间限制后停止新的到达；处理中的查询会继续执行完毕，而仍在队列中的到达则会被报告为未发送。
-
-报告中会额外包含两行，例如：
-
-```text
-Arrivals: 1061, target rate: 100.000/s, achieved rate: 106.100/s, queued: 0 (max queue size 0).
-In flight: mean 0.223, max 4 of 256.
-```
-
-* `Arrivals`：到达数。
-* `target rate`：由 `--arrival-rate` 指定的速率。
-* `achieved rate`：到达数除以到达过程的持续时间。它与目标速率之间存在随机误差，运行时间越长，误差越小。
-* `queued`：因所有 `--max-in-flight` 槽位均被占满而在客户端队列中等待的到达数，以及该队列的最大长度。
-* `not sent`：运行停止时仍在队列中的到达数。仅在不为零时显示。
-* `In flight`：同时执行的查询数的时间加权平均值和最大值。
-
-在开环到达下，QPS 随到达速率而定，因此难以反映负载的实际开销。在开环模式下，每个服务器的状态字符串还包含：
-
-* `CPU`：服务器上查询每秒消耗的 CPU 时间，以核数计。
-* `CPU per query`：服务器上单个查询的平均 CPU 时间，以秒计。
-
-这两项都包含执行期间失败的查询 (使用 `--ignore-error` 时) ，因为这些查询同样会给服务器带来负载。
-
-CPU 时间是服务器为每个查询发送的 `UserTimeMicroseconds` 与 `SystemTimeMicroseconds` 两个 profile events 之和，因此涵盖了执行该查询的所有线程，可近似视为查询的总 CPU 开销。对于分布式查询，该值是查询所运行的全部服务器上的总和，因为发起服务器会转发远程服务器的 profile events。如果服务器不发送 profile events (例如使用 `--send_profile_events=0` 时) ，状态字符串将显示 `CPU: not reported by the server`。
-
-要运行混合工作负载，请同时启动多个 `clickhouse-benchmark` 进程，每类查询对应一个进程。每个进程只报告其所属类别的统计信息。请为每个进程分别指定不同的 `--seed`，或者都不指定：种子相同的进程会生成相同的随机序列，因此它们的到达时刻会重合 (若速率不同，则彼此是按比例缩放的副本) 。使用相互独立的种子时，所有进程合并后的到达同样构成泊松过程。
-
-示例：
-
-```bash
-# 100 queries per second for 10 seconds; the lines above are from this run.
-$ clickhouse-benchmark --arrival-rate=100 --seed=42 --timelimit=10 --query "SELECT sum(number) FROM numbers(1000000)"
-
-# A sweep over four rates, 60 seconds each, with per-query statistics.
-$ clickhouse-benchmark --arrival-rate=5,10,20,40 --timelimit=60 --randomize --per-query < queries.tsv
-```
-
-## 比较模式 {#clickhouse-benchmark-comparison-mode}
+<div id="clickhouse-benchmark-comparison-mode">
+  ## 比较模式
+</div>
 
 `clickhouse-benchmark` 可以比较两个正在运行的 ClickHouse 服务器的性能。
 
 要使用比较模式，请使用两组 `--host` 和 `--port` 选项指定两个服务器的端点。这些选项会按照它们在参数列表中的位置进行配对：第一个 `--host` 对应第一个 `--port`，依此类推。`clickhouse-benchmark` 会与两个服务器分别建立连接，然后发送查询。每个查询都会被发送到随机选中的一个服务器。结果将显示在表格中。
 
-## 示例 {#clickhouse-benchmark-example}
+<div id="clickhouse-benchmark-example">
+  ## 示例
+</div>
 
 ```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10

@@ -14,14 +14,15 @@ doc_type: 'reference'
 
 ```sql
 ntile (buckets)
-  OVER ([[PARTITION BY grouping_column] ORDER BY sorting_column] | [window_name])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] ORDER BY sorting_column)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-各パーティションでは、ntile はウィンドウ順で最初の行にある正の整数のバケット数を使用し、それ以降の行の値は無視されます
+引数 `buckets` には、正の定数整数を指定する必要があります。
 
-`ORDER BY` 句が必要です。この関数は常にパーティション全体を読み取ります。ウィンドウフレームを指定しても無視されます。
+`ORDER BY` 句が必要です。ウィンドウフレームはパーティション全体 (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`) でなければなりません。これは、明示的な指定がない場合に使用されるデフォルトのフレームでもあります。
 
 window function の構文の詳細については、[Window Functions - Syntax](/ja/reference/functions/window-functions/index#syntax) を参照してください。
 

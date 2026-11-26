@@ -1,41 +1,37 @@
 ---
 slug: /cloud/reference/shared-merge-tree
 sidebarTitle: 'SharedMergeTree'
-title: 'محرك الجداول SharedMergeTree'
+title: 'محرك الجدول SharedMergeTree'
 keywords: ['SharedMergeTree']
-description: 'وصف لمحرك الجداول SharedMergeTree'
+description: 'وصف لمحرك الجدول SharedMergeTree'
 doc_type: 'reference'
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 تُعد عائلة محرك الجداول SharedMergeTree بديلاً سحابيًا أصليًا لمحركات ReplicatedMergeTree، وقد صُممت للعمل فوق التخزين المشترك (مثل Amazon S3 وGoogle Cloud Storage وMinIO وAzure Blob Storage). ويوجد نظير من SharedMergeTree لكل نوع محدد من محركات MergeTree، أي إن SharedReplacingMergeTree يحل محل ReplicatedReplacingMergeTree.
 
 تعتمد ClickHouse Cloud على عائلة محرك الجداول SharedMergeTree. وبالنسبة إلى المستخدم النهائي، لا حاجة إلى تغيير أي شيء للبدء في استخدام عائلة محركات SharedMergeTree بدلًا من المحركات المستندة إلى ReplicatedMergeTree. وهي توفّر المزايا الإضافية التالية:
 
-* معدل إدراج أعلى
+* معدل insert أعلى
 * تحسين معدل نقل عمليات الدمج في الخلفية
-* تحسين معدل نقل عمليات التعديل
+* تحسين معدل نقل عمليات mutation
 * عمليات scale-up وscale-down أسرع
 * اتساق قوي أخف وزنًا لاستعلامات select
 
 ومن أبرز التحسينات التي يقدّمها SharedMergeTree أنه يوفّر فصلًا أعمق بين compute وStorage مقارنةً بـ ReplicatedMergeTree. ويمكنك أن ترى أدناه كيف يفصل ReplicatedMergeTree بين compute وStorage:
 
-<div className="ch-image-md">
-  <Frame>
-    ![مخطط ReplicatedMergeTree](/images/cloud/reference/shared-merge-tree-1.png)
-  </Frame>
+<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="مخطط ReplicatedMergeTree" size="md" />
+
+كما ترى، رغم أن البيانات المخزنة في ReplicatedMergeTree موجودة في object storage، فإن البيانات الوصفية لا تزال موجودة على كل خادم من خوادم clickhouse-server. وهذا يعني أنه في كل عملية replicated، يجب أيضًا نسخ البيانات الوصفية إلى جميع replicas.
+
+<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="مخطط ReplicatedMergeTree مع البيانات الوصفية" size="md" />
+
+وعلى عكس ReplicatedMergeTree، لا يتطلب SharedMergeTree أن تتواصل replicas مع بعضها البعض. وبدلًا من ذلك، تتم جميع الاتصالات عبر التخزين المشترك وclickhouse-keeper. ويعتمد SharedMergeTree على replication غير متزامن ومن دون leader، ويستخدم clickhouse-keeper لأغراض coordination وmetadata storage. وهذا يعني أن البيانات الوصفية لا تحتاج إلى replication مع توسع خدمتك أو تقليصها. ويؤدي ذلك إلى تسريع replication وmutation وmerges وعمليات scale-up. كما يتيح SharedMergeTree وجود مئات replicas لكل table، مما يجعل التوسع الديناميكي ممكنًا من دون shards. ويُستخدم نهج distributed query execution في ClickHouse Cloud للاستفادة من مزيد من موارد compute للاستعلام.
+
+<div id="introspection">
+  ## الاستبطان
 </div>
-
-كما ترى، رغم أن البيانات المخزنة في ReplicatedMergeTree موجودة في object storage، فإن البيانات الوصفية لا تزال موجودة على كل خادم من خوادم clickhouse-server. وهذا يعني أنه في كل عملية replicated، يجب أيضًا نسخ البيانات الوصفية إلى جميع النسخ المتماثلة.
-
-<div className="ch-image-md">
-  <Frame>
-    ![مخطط ReplicatedMergeTree مع البيانات الوصفية](/images/cloud/reference/shared-merge-tree-2.png)
-  </Frame>
-</div>
-
-وعلى عكس ReplicatedMergeTree، لا يتطلب SharedMergeTree أن تتواصل النسخ المتماثلة مع بعضها البعض. وبدلًا من ذلك، تتم جميع الاتصالات عبر التخزين المشترك وclickhouse-keeper. ويعتمد SharedMergeTree على replication غير متزامن ومن دون leader، ويستخدم clickhouse-keeper لأغراض coordination وmetadata storage. وهذا يعني أن البيانات الوصفية لا تحتاج إلى replication مع توسع خدمتك أو تقليصها. ويؤدي ذلك إلى تسريع replication والتعديل والدمج وعمليات scale-up. كما يتيح SharedMergeTree وجود مئات النسخ المتماثلة لكل جدول، مما يجعل التوسع الديناميكي ممكنًا من دون shards. ويُستخدم نهج distributed query execution في ClickHouse Cloud للاستفادة من مزيد من موارد compute للاستعلام.
-
-## الاستبطان {#introspection}
 
 تتوفّر في SharedMergeTree معظم جداول النظام المستخدمة لاستبطان ReplicatedMergeTree، باستثناء `system.replication_queue` و`system.replicated_fetches`، إذ لا يحدث فيها أي replication للبيانات أو البيانات الوصفية. ومع ذلك، يوفّر SharedMergeTree بدائل مقابلة لهذين الجدولين.
 
@@ -47,7 +43,9 @@ doc_type: 'reference'
 
 يُعد هذا الجدول البديل عن `system.replicated_fetches` في SharedMergeTree. ويحتوي على معلومات عن عمليات الجلب الجارية حاليًا للمفاتيح الأساسية وقيم التحقّق إلى الذاكرة.
 
-## تمكين SharedMergeTree {#enabling-sharedmergetree}
+<div id="enabling-sharedmergetree">
+  ## تمكين SharedMergeTree
+</div>
 
 يكون `SharedMergeTree` مفعّلًا افتراضيًا.
 
@@ -100,7 +98,9 @@ ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica
 ORDER BY key
 ```
 
-## الإعدادات {#settings}
+<div id="settings">
+  ## الإعدادات
+</div>
 
 تغيّر سلوك بعض الإعدادات بشكل ملحوظ:
 
@@ -108,7 +108,9 @@ ORDER BY key
 * `insert_quorum_parallel` -- جميع عمليات insert إلى SharedMergeTree هي quorum inserts (تُكتب إلى التخزين المشترك)، لذا لا حاجة إلى هذا الإعداد عند استخدام محرك الجدول SharedMergeTree.
 * `select_sequential_consistency` -- لا يتطلب quorum inserts، لكنه يفرض حملاً إضافيًا على clickhouse-keeper عند تنفيذ استعلامات `SELECT`
 
-## الاتساق {#consistency}
+<div id="consistency">
+  ## الاتساق
+</div>
 
 يوفّر SharedMergeTree اتساقًا lightweight أفضل من ReplicatedMergeTree. عند إجراء `insert` في SharedMergeTree، لا تحتاج إلى تحديد إعدادات مثل `insert_quorum` أو `insert_quorum_parallel`. تكون عمليات الإدراج من نوع quorum inserts، ما يعني أن البيانات الوصفية ستُخزَّن في ClickHouse-Keeper، وستُكرَّر إلى ما لا يقل عن النصاب من مثيلات ClickHouse-Keeper. وسيجلب كل replica في الـ cluster لديك المعلومات الجديدة بشكل غير متزامن من ClickHouse-Keeper.
 
@@ -119,11 +121,3 @@ ORDER BY key
 2. إذا كنت تكتب إلى replica وتقرأ من أخرى، فيمكنك استخدام `SYSTEM SYNC REPLICA LIGHTWEIGHT` لإجبار الـ replica على جلب البيانات الوصفية من ClickHouse-Keeper.
 
 3. استخدم `select_sequential_consistency` كإعداد ضمن `query` الخاصة بك.
-
-## `ALTER` وإمكانية رؤية عمليات التعديل {#alter-and-mutation-visibility}
-
-ينسّق `SharedMergeTree` تغييرات البيانات الوصفية عبر ClickHouse Keeper. وتجلب النسخ المتماثلة البيانات الوصفية المتغيرة بشكل غير متزامن، لذا لا يظهر تغيير البيانات الوصفية بالضرورة فورًا على كل نسخة متماثلة. أما عمليات القراءة ضمن الـ session نفسها على العقدة نفسها، فتستخدم البيانات الوصفية الحالية أصلًا. وإذا لزم تشغيل عملية قراءة على نسخة متماثلة أخرى مباشرةً بعد تغيير البيانات الوصفية، فاستخدم `SYSTEM SYNC REPLICA LIGHTWEIGHT` لإلزام تلك النسخة المتماثلة بجلب البيانات الوصفية من ClickHouse Keeper.
-
-تُنفّذ عمليات `ALTER` التي تُنتج تعديلات عملًا في الخلفية يُنشئ أجزاء بيانات جديدة في التخزين المشترك، وينسّق إمكانية رؤيتها عبر ClickHouse Keeper. ولا يتعلق الأمر هنا بعملية إعادة كتابة أو نقل بيانات على مستوى كل نسخة متماثلة كما هو الحال في `ReplicatedMergeTree`.
-
-في ClickHouse Cloud، تكون القيمة الافتراضية للإعداد [`alter_sync`](/ar/reference/settings/session-settings/alter#alter_sync) هي `0`؛ لذا اضبطه عندما يتعين على العميل انتظار اكتمال عمليات البيانات الوصفية أو عملية إعادة كتابة ناتجة عن `MODIFY COLUMN` لا تقتصر على البيانات الوصفية. أما عمليات `UPDATE` و`DELETE` و`MATERIALIZE ...`، فاستخدم معها [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync) للتحكم في الانتظار، وتابِع التقدم في [`system.mutations`](/ar/reference/system-tables/mutations).

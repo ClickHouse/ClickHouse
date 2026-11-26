@@ -6,7 +6,9 @@ tags: ['データソース', 'データフォーマット']
 keywords: ['変換', 'Parquet', 'CSV', 'JSON']
 ---
 
-## Parquet から CSV または JSON へのファイル変換 {#converting-files-from-parquet-to-csv-or-json}
+<div id="converting-files-from-parquet-to-csv-or-json">
+  ## Parquet から CSV または JSON へのファイル変換
+</div>
 
 `clickhouse-local` を使うと、ClickHouse がサポートする任意の [入出力フォーマット](/ja/reference/formats/index) 間でファイルを変換できます (サポートされているフォーマットは 70 種類以上あります) 。この記事では、S3 上の Parquet ファイルを CSV ファイルと JSON ファイルに変換します。
 
@@ -18,7 +20,9 @@ keywords: ['変換', 'Parquet', 'CSV', 'JSON']
 curl https://clickhouse.com/ | sh
 ```
 
-## テーブル関数を使用してデータにアクセスする {#accessing-the-data-using-a-table-function}
+<div id="accessing-the-data-using-a-table-function">
+  ## テーブル関数を使用してデータにアクセスする
+</div>
 
 `s3` テーブル関数が作成する結果のテーブルに対して `DESCRIBE` を実行し、ファイルを読み取れることを確認しましょう。
 
@@ -72,7 +76,9 @@ ASCOT	551491.2975753123
 WEYBRIDGE	548974.828692494
 ```
 
-## ParquetファイルをCSVに変換する {#convert-the-parquet-file-to-a-csv}
+<div id="convert-the-parquet-file-to-a-csv">
+  ## ParquetファイルをCSVに変換する
+</div>
 
 任意のSQLクエリの結果はファイルに出力できます。S3上のParquetファイルからすべてのカラムを取得し、その結果を新しいCSVファイルに出力してみましょう。出力ファイルの拡張子が`.csv`で終わっているため、ClickHouseは`CSV`出力フォーマットを使用します:
 
@@ -98,7 +104,9 @@ $ tail house_prices.csv
 250000,15950,"YO8","9YD","detached",0,"freehold","3","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
 ```
 
-## ParquetファイルをJSONに変換する {#convert-the-parquet-file-to-a-json}
+<div id="convert-the-parquet-file-to-a-json">
+  ## ParquetファイルをJSONに変換する
+</div>
 
 ParquetファイルをJSONに変換するには、出力ファイル名の拡張子を変更するだけで済みます。
 
@@ -124,7 +132,9 @@ INTO OUTFILE 'house_prices.ndjson'"
 {"price":"250000","date":15950,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"3","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
 ```
 
-## CSVをParquetに変換 {#convert-csv-to-parquet}
+<div id="convert-csv-to-parquet">
+  ## CSVをParquetに変換
+</div>
 
 逆方向の変換も可能です。新しいCSVファイルを簡単に読み込み、Parquetファイルとして出力できます。ローカルファイル`house_prices.csv`は、`file`テーブル関数を使ってClickHouseで読み込めます。また、ClickHouseはファイル名の末尾が`.parquet`であれば、それに基づいてParquetフォーマットでファイルを出力します (または、`FORMAT Parquet`句を追加することもできます) 。
 

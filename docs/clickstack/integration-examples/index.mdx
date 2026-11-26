@@ -11,7 +11,7 @@ ClickStack provides multiple ways to ingest observability data into your ClickHo
 <Note>
 Several of these integration guides use ClickStack Open Source's built-in OpenTelemetry Collector for quick testing and evaluation. 
 
-For production deployments, we recommend running integrations as OpenTelemetry Collector agents close to your workloads. These agents should forward telemetry data via OTLP to a ClickStack OpenTelemetry Collector, which then delivers the data to the ClickHouse instance used by your ClickStack Open Source deployment. See ["Sending OpenTelemetry data"](/clickstack/ingesting-data/opentelemetry) for production configuration.
+For production deployments, we recommend running integrations as OpenTelemetry Collector agents close to your workloads. These agents should forward telemetry data via OTLP to a ClickStack OpenTelemetry Collector, which then delivers the data either to a self-managed ClickHouse instance for the ClickStack Open Source distribution or to Managed ClickStack. See ["Sending OpenTelemetry data"](/clickstack/ingesting-data/opentelemetry) for production configuration.
 </Note>
 
 | Section | Description |
@@ -24,7 +24,6 @@ For production deployments, we recommend running integrations as OpenTelemetry C
 | [Kafka Logs](/clickstack/integration-examples/kafka-logs) | Collect Kafka broker logs |
 | [Kafka Metrics](/clickstack/integration-examples/kafka-metrics) | Monitor Kafka performance |
 | [Kubernetes](/clickstack/integration-examples/kubernetes) | Monitor K8s clusters |
-| [Loom](/clickstack/integration-examples/loom) | Send Loom request traces and metrics |
 | [MongoDB Logs](/clickstack/integration-examples/mongodb-logs) | Collect MongoDB server logs |
 | [MySQL Logs](/clickstack/integration-examples/mysql) | Collect MySQL slow query/error logs |
 | [Nginx Logs](/clickstack/integration-examples/nginx-logs) | Collect Nginx access/error logs |

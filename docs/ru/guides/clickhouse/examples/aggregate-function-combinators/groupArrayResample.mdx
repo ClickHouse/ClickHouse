@@ -7,7 +7,9 @@ sidebarTitle: 'groupArrayResample'
 doc_type: 'reference'
 ---
 
-## Описание {#description}
+<div id="description">
+  ## Описание
+</div>
 
 Комбинатор [`Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)
 можно применить к агрегатной функции [`groupArray`](/ru/reference/functions/aggregate-functions/sum), чтобы
@@ -16,7 +18,9 @@ doc_type: 'reference'
 (соответствующему минимальному ключу) из точек данных, попадающих в каждый интервал.
 В результате создаётся прореженное представление данных, а не собираются все значения.
 
-## Пример использования {#example-usage}
+<div id="example-usage">
+  ## Пример использования
+</div>
 
 Рассмотрим пример. Мы создадим таблицу, содержащую `name`, `age` и
 `wage` сотрудников, и вставим в неё несколько записей:
@@ -28,7 +32,7 @@ CREATE TABLE employee_data
     age UInt8,
     wage Float32
 ) ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -58,7 +62,9 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
 └───────────────────────────────────────────────┘
 ```
 
-## См. также {#see-also}
+<div id="see-also">
+  ## См. также
+</div>
 
 * [`groupArray`](/ru/reference/functions/aggregate-functions/groupArray)
 * [`комбинатор Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)

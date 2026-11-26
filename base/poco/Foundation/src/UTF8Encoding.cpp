@@ -19,10 +19,6 @@
 namespace Poco {
 
 
-/// Only for `convert` and `queryConvert`: ClickHouse code uses `DB::UTF8::isLegalSequence`.
-static bool isLegal(const unsigned char *bytes, int length);
-
-
 const char* UTF8Encoding::_names[] =
 {
 	"UTF-8",
@@ -202,7 +198,7 @@ int UTF8Encoding::sequenceLength(const unsigned char* bytes, int length) const
 }
 
 
-static bool isLegal(const unsigned char *bytes, int length)
+bool UTF8Encoding::isLegal(const unsigned char *bytes, int length)
 {
 	// Note: The following is loosely based on the isLegalUTF8 function
 	// from ftp://ftp.unicode.org/Public/PROGRAMS/CVTUTF/ConvertUTF.c

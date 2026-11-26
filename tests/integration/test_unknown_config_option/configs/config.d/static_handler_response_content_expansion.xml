@@ -1,0 +1,31 @@
+<clickhouse>
+    <!--
+        Negative case: `StaticRequestHandler` reads `response_content` with `getRawString`, so a Poco
+        `${...}` reference in it is served verbatim and never expanded — no other config key is
+        consumed. The unknown-key validator must read the same field the same way (`getRawString`).
+        If it used `getString`, it would expand `${macros.expansion_macro}` to
+        `config://expansion_only_payload` and wrongly exempt the unknown top-level
+        `<expansion_only_payload>` — a false negative, because the server never actually reads it.
+        The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+
+        The `${...}` reference resolves against `<macros>` (a known section whose children are
+        user-defined and not validated), so `expansion_only_payload` is the only unknown top-level key.
+    -->
+    <macros>
+        <expansion_macro>config://expansion_only_payload</expansion_macro>
+    </macros>
+
+    <expansion_only_payload>Never read: response_content is taken raw, so ${...} is not expanded.</expansion_only_payload>
+
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/expansion_test</url>
+            <handler>
+                <type>static</type>
+                <response_content>${macros.expansion_macro}</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

@@ -8,7 +8,9 @@ keywords: ['DROP PARTITION', 'supprimer une partition', 'supprimer une partition
 doc_type: 'reference'
 ---
 
-## Contexte {#background}
+<div id="background">
+  ## Contexte
+</div>
 
 Le partitionnement est spécifié sur une table lors de sa définition initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL portant sur n’importe quelle colonne, dont le résultat détermine vers quelle partition une ligne est envoyée.
 
@@ -17,7 +19,7 @@ Les parties de données sont logiquement associées à chaque partition sur le d
 ```sql
  CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta, Default),
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -33,7 +35,9 @@ Consultez la section [Comment définir l’expression de partition](/fr/referenc
 
 Dans ClickHouse, les utilisateurs doivent considérer le partitionnement avant tout comme une fonctionnalité de gestion des données, et non comme une technique d’optimisation des requêtes. En séparant logiquement les données selon une clé, chaque partition peut être manipulée indépendamment, par exemple supprimée. Cela permet de déplacer efficacement des partitions, et donc des sous-ensembles de données, entre les [niveaux de stockage](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) en fonction du temps, ou d’[expirer des données/les supprimer efficacement du cluster](/fr/reference/statements/alter/partition).
 
-## Supprimer des partitions {#drop-partitions}
+<div id="drop-partitions">
+  ## Supprimer des partitions
+</div>
 
 `ALTER TABLE ... DROP PARTITION` permet de supprimer une partition entière à moindre coût.
 

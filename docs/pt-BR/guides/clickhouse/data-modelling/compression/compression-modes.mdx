@@ -6,6 +6,8 @@ keywords: ['compressão', 'codec', 'codificação', 'modos']
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 O protocolo do ClickHouse oferece suporte à compressão de **blocos de dados** com checksum.
 Use `LZ4` se não tiver certeza de qual modo escolher.
 &#96;&#96;
@@ -15,7 +17,7 @@ Use `LZ4` se não tiver certeza de qual modo escolher.
 </Tip>
 
 <div id="modes">
-  ## Modos {#modes}
+  ## Modos
 </div>
 
 | valor  | nome               | descrição                                     |
@@ -33,7 +35,7 @@ Segundo [benchmarks do Facebook](https://facebook.github.io/zstd/#benchmarks):
 | **lz4** 1.9.2     | 2.1  | 740 MB/s    | 4530 MB/s     |
 
 <div id="block">
-  ## Bloco {#block}
+  ## Bloco
 </div>
 
 | campo               | tipo    | descrição                                                                                           |
@@ -44,18 +46,14 @@ Segundo [benchmarks do Facebook](https://facebook.github.io/zstd/#benchmarks):
 | mode                | byte    | Modo de compressão                                                                                  |
 | compressed&#95;data | binary  | Bloco de dados comprimidos                                                                          |
 
-<div className="ch-image-md">
-  <Frame>
-    ![Diagrama que ilustra a estrutura do bloco de compressão do ClickHouse](/images/data-compression/ch_compression_block.webp)
-  </Frame>
-</div>
+<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Diagrama que ilustra a estrutura do bloco de compressão do ClickHouse" />
 
 O cabeçalho é (raw&#95;size + data&#95;size + mode), e o tamanho bruto consiste em len(header + compressed&#95;data).
 
 O checksum é `hash(header + compressed_data)`, usando [ClickHouse CityHash](/pt-BR/resources/develop-contribute/native-protocol/hash).
 
 <div id="none-mode">
-  ## Modo None {#none-mode}
+  ## Modo None
 </div>
 
 Se o modo *None* for usado, `compressed_data` será igual aos dados originais.

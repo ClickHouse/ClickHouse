@@ -6,19 +6,19 @@ keywords: ['スキーマ', 'スキーマ設計', 'クエリ最適化']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 効果的なスキーマ設計を理解することは、ClickHouse のパフォーマンスを最適化するうえで重要です。スキーマ設計ではしばしばトレードオフを伴う選択が求められ、最適なアプローチは、実行するクエリに加えて、データの更新頻度、レイテンシ要件、データ量といった要因によって異なります。このガイドでは、ClickHouse のパフォーマンスを最適化するための、スキーマ設計のベストプラクティスとデータモデリング手法の概要を説明します。
 
-## Stack Overflow dataset {#stack-overflow-dataset}
+<div id="stack-overflow-dataset">
+  ## Stack Overflow dataset
+</div>
 
 このガイドの例では、Stack Overflow dataset の一部を使用します。これには、2008年から2024年4月までに Stack Overflow で発生したすべての投稿、投票、ユーザー、コメント、バッジが含まれます。このデータは、以下のスキーマに対応する Parquet 形式で、S3 バケット `s3://datasets-documentation/stackoverflow/parquet/` から利用できます。
 
 > 示されている主キーとリレーションシップは制約によって強制されるものではありません (Parquet はテーブルフォーマットではなくファイルフォーマットであるため) 。あくまで、データ同士がどのように関連しているか、およびそれぞれがどの一意キーを持つかを示しているだけです。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Stack Overflow スキーマ](/images/data-modeling/stackoverflow-schema.webp)
-  </Frame>
-</div>
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow スキーマ" />
 
 <br />
 
@@ -27,7 +27,7 @@ Stack Overflow dataset には、相互に関連する複数のテーブルが含
 このガイドの目的上、上記のスキーマは意図的に最適ではないものにしています。
 
 <div id="establish-initial-schema">
-  ## 初期スキーマを確立する {#establish-initial-schema}
+  ## 初期スキーマを確立する
 </div>
 
 `posts` テーブルはほとんどの分析クエリの対象となるため、このテーブルのスキーマをまず定義することに焦点を当てます。このデータは公開 S3 バケット `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet` で入手でき、年ごとに 1 つのファイルが格納されています。
@@ -133,7 +133,7 @@ INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 > 上記のクエリでは 6000 万行を読み込みます。ClickHouse にとっては小規模ですが、インターネット接続が遅い環境では、データの一部だけを読み込みたい場合もあります。これは、読み込みたい年を glob パターンで指定するだけで実現できます。たとえば、`https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` や `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet` のように指定します。glob パターンを使ってファイルの一部を対象にする方法については、[こちら](/ja/reference/functions/table-functions/file#globs-in-path)を参照してください。
 
 <div id="optimizing-types">
-  ## 型の最適化 {#optimizing-types}
+  ## 型の最適化
 </div>
 
 ClickHouseのクエリパフォーマンスを高める秘訣の1つは、圧縮です。
@@ -231,31 +231,29 @@ INSERT INTO posts_v2 SELECT * FROM posts
 ClickHouse のプライマリ (順序) キー
 OLTP データベースに慣れたユーザーは、ClickHouse でもそれに相当する概念を探すことがよくあります。
 
-## 順序キーの選び方 {#choosing-an-ordering-key}
-
-ClickHouse がよく利用される規模では、メモリとディスクの効率が極めて重要です。データは ClickHouse テーブルにパーツと呼ばれる単位で書き込まれ、バックグラウンドでそれらのパーツをマージするルールが適用されます。ClickHouse では、各パーツがそれぞれ独自のプライマリインデックスを持ちます。パーツがマージされると、マージ済みのパーツのプライマリインデックスも統合されます。パーツのプライマリインデックスには、行の各グループごとに 1 つの索引エントリがあります。この手法はスパースインデックスと呼ばれます。
-
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse におけるスパースインデックス](/images/data-modeling/schema-design-indices.webp)
-  </Frame>
+<div id="choosing-an-ordering-key">
+  ## 順序キーの選び方
 </div>
+
+ClickHouse がよく利用される規模では、メモリとディスクの効率が極めて重要です。データは ClickHouse テーブルにパーツと呼ばれる単位で書き込まれ、バックグラウンドでそれらのパーツをマージするルールが適用されます。ClickHouse では、各パーツがそれぞれ独自のプライマリインデックスを持ちます。パーツがマージされると、マージ後のパーツのプライマリインデックスも統合されます。パーツのプライマリインデックスには、行の各グループごとに 1 つの索引エントリがあります。この手法はスパースインデックスと呼ばれます。
+
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse におけるスパースインデックス" />
 
 ClickHouse で選択したキーは、索引だけでなく、データがディスクに書き込まれる順序も決定します。そのため、圧縮率に大きな影響を与え、ひいてはクエリパフォーマンスにも影響します。大半のカラムの値が連続した順序で書き込まれるような順序キーを選べば、選択した圧縮アルゴリズム (および コーデック) によってデータをより効果的に圧縮できます。
 
-> テーブル内のすべてのカラムは、そのカラム自体がキーに含まれているかどうかにかかわらず、指定した順序キーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用すると、他のすべてのカラムの値の並び順も `CreationDate` カラムの値の順序に対応します。複数の順序キーを指定することもでき、その場合の並び順は `SELECT` クエリの `ORDER BY` 句 と同じ意味になります。
+> テーブル内のすべてのカラムは、そのカラム自体がキーに含まれているかどうかにかかわらず、指定した順序キーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用すると、他のすべてのカラムの値の並び順も `CreationDate` カラムの値の順序に対応します。複数の順序キーを指定することもでき、その場合の並び順は `SELECT` クエリの `ORDER BY` clause と同じ意味になります。
 
 順序キーを選ぶ際に役立つ、いくつかのシンプルなルールがあります。以下の条件は互いに競合する場合もあるため、この順序で検討してください。この過程で複数のキー候補を洗い出せますが、通常は 4〜5 個で十分です。
 
-* 一般的によく使う フィルタ に合ったカラムを選びます。あるカラムが `WHERE` 句 で頻繁に使われるなら、使用頻度の低いカラムよりも優先してキーに含めてください。
-  Prefer フィルタ 時に全行の大部分を除外できるカラムを優先すると、読み取る必要があるデータ量を減らせます。
+* 一般的によく使う filter に合ったカラムを選びます。あるカラムが `WHERE` clauses で頻繁に使われるなら、使用頻度の低いカラムよりも優先してキーに含めてください。
+  Prefer filter 時に全行の大部分を除外できるカラムを優先すると、読み取る必要があるデータ量を減らせます。
 * テーブル内の他のカラムと高い相関がある可能性の高いカラムを優先してください。これにより、それらの値も連続して格納されやすくなり、圧縮効率が向上します。
   `GROUP BY` および `ORDER BY` 操作も、順序キーに含まれるカラムに対しては、よりメモリ効率よく実行できます。
 
-順序キーに含めるカラムの部分集合を特定したら、それらのカラムを特定の順序で宣言します。この順序は、クエリにおける secondary key columns の フィルタ 効率と、テーブルの data files の compression ratio の両方に大きく影響します。一般に、キーはカーディナリティの低い順に並べるのが最適です。ただし、順序キーの後ろに現れるカラムでの フィルタ は、tuple の前方にあるカラムでの フィルタ より効率が落ちる点とのバランスを取る必要があります。これらの特性のバランスを取りながら、access patterns を考慮してください (そして最も重要なのは、variant をテストすることです) 。
+順序キーに含めるカラムの部分集合を特定したら、それらのカラムを特定の順序で宣言します。この順序は、クエリにおける secondary key columns の filter 効率と、テーブルの data files の compression ratio の両方に大きく影響します。一般に、キーはカーディナリティの低い順に並べるのが最適です。ただし、順序キーの後ろに現れるカラムでの filter は、tuple の前方にあるカラムでの filter より効率が落ちる点とのバランスを取る必要があります。これらの特性のバランスを取りながら、access patterns を考慮してください (そして最も重要なのは、variant をテストすることです) 。
 
 <div id="example">
-  ### 例 {#example}
+  ### 例
 </div>
 
 上記のガイドラインを `posts` テーブルに当てはめると、ユーザーはたとえば日付や投稿タイプで絞り込む分析を行いたいとします。たとえば次のようなものです。
@@ -352,7 +350,7 @@ LIMIT 3
 特定の型と適切な順序キーを使用して達成できる圧縮の改善に関心がある場合は、[ClickHouse における圧縮](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)をご覧ください。圧縮をさらに改善したい場合は、[適切なカラム圧縮コーデックの選び方](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)のセクションも参照することをお勧めします。
 
 <div id="next-data-modeling-techniques">
-  ## 次へ: データモデリング手法 {#next-data-modeling-techniques}
+  ## 次へ: データモデリング手法
 </div>
 
 ここまでで移行したのは 1 つのテーブルだけです。これにより ClickHouse の中核的な概念をいくつか紹介できましたが、残念ながら、ほとんどのスキーマはここまで単純ではありません。

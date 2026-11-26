@@ -12,11 +12,13 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
+<div id="allow_nondeterministic_mutations">
+  ## allow_nondeterministic_mutations
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-`dictGet` などの非決定論的関数や、`_table`、`_database`、`_disk_name` のようにレプリカ間で値が異なる可能性のある仮想カラムを、レプリケートテーブルに対する mutation で使用できるようにするユーザーレベル設定です。
+`dictGet` などの非決定論的関数をレプリケートテーブルに対する mutation で使用できるようにするユーザーレベル設定です。
 
 たとえば、ディクショナリはノード間で同期が取れていない可能性があるため、既定では、それらから値を取得する mutation はレプリケートテーブルでは許可されていません。この設定を有効にするとこの動作が許可されますが、使用するデータがすべてのノードで同期していることを保証する責任はユーザーにあります。
 
@@ -35,7 +37,9 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 </profiles>
 ```
 
-## allow_nondeterministic_optimize_skip_unused_shards {#allow_nondeterministic_optimize_skip_unused_shards}
+<div id="allow_nondeterministic_optimize_skip_unused_shards">
+  ## allow_nondeterministic_optimize_skip_unused_shards
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

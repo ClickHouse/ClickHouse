@@ -42,7 +42,11 @@
 
 
 #if !defined(Foundation_API)
-#    define Foundation_API
+#    if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined(__GNUC__) && (__GNUC__ >= 4)
+#        define Foundation_API __attribute__((visibility("default")))
+#    else
+#        define Foundation_API
+#    endif
 #endif
 
 

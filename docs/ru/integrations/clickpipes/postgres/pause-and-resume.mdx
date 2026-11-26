@@ -10,31 +10,23 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 В некоторых случаях бывает полезно приостановить ClickPipe для Postgres. Например, чтобы выполнить анализ существующих данных в неизменном состоянии. Или если вы проводите обновление Postgres. Вот как приостановить и затем возобновить ClickPipe для Postgres.
 
-<Warning>
-  Если для таблицы `_peerdb_raw_mirror_*` пайпа задан TTL, в том числе настроенный автоматически ClickPipes, события, остающиеся в этой таблице на момент истечения TTL, удаляются — даже если пайп приостановлен. Прежде чем планировать длительную приостановку, выполните `SHOW CREATE TABLE` для необработанной таблицы, чтобы проверить её TTL, и не приостанавливайте пайп дольше этого срока. См. раздел [срок хранения необработанной таблицы](/ru/integrations/clickpipes/postgres/faq#raw-mirror-table-retention).
-</Warning>
-
-## Как приостановить ClickPipe для Postgres {#pause-clickpipe-steps}
+<div id="pause-clickpipe-steps">
+  ## Как приостановить ClickPipe для Postgres
+</div>
 
 1. На вкладке «Источники данных» выберите ClickPipe для Postgres, который хотите приостановить.
 2. Перейдите на вкладку **Настройки**.
-3. Нажмите кнопку **Приостановить**.
+3. Нажмите кнопку **Pause**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
 
-4. Появится диалоговое окно подтверждения. Ещё раз нажмите **Приостановить**.
+4. Появится диалоговое окно подтверждения. Ещё раз нажмите **Pause**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
 
 4. Перейдите на вкладку **Метрики**.
 5. Примерно через 5 секунд (или после обновления страницы) статус пайпа должен измениться на **Приостановлен**.
@@ -43,31 +35,21 @@ integration:
   Приостановка ClickPipe для Postgres не остановит рост числа слотов репликации.
 </Warning>
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
 
-## Шаги по возобновлению ClickPipe для Postgres {#resume-clickpipe-steps}
+<div id="resume-clickpipe-steps">
+  ## Шаги по возобновлению ClickPipe для Postgres
+</div>
 
 1. На вкладке Источники данных нажмите на ClickPipe для Postgres, который нужно возобновить. Изначально status mirror должен быть **приостановлен**.
 2. Перейдите на вкладку **Настройки**.
 3. Нажмите кнопку **Resume**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
 
 4. Должно появиться диалоговое окно подтверждения. Нажмите **Resume** ещё раз.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
 
 5. Перейдите на вкладку **Метрики**.
 6. Примерно через 5 секунд (а также после обновления страницы) status пайпа должен стать **Running**.

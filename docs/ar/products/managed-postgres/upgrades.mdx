@@ -7,12 +7,17 @@ keywords: ['ترقيات ClickHouse Managed Postgres', 'إصدار Postgres', '�
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
 يتولى ClickHouse Managed Postgres ترقية إصدارات PostgreSQL للحفاظ على أمان مثيلاتك وإبقائها محدّثة. كما يدعم ترقيات الإصدارات الثانوية والرئيسية مع الحد الأدنى من الانقطاع.
 
-## تحديثات الصيانة {#maintenance-updates}
+<div id="maintenance-updates">
+  ## تحديثات الصيانة
+</div>
 
 تتضمن الصيانة الدورية لمثيلات PostgreSQL ما يلي:
 
@@ -24,7 +29,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 بالنسبة إلى المثيلات التي تكون فيها [المثيلات الاحتياطية](/ar/products/managed-postgres/high-availability) مفعّلة، يُطبَّق التحديث على المثيل الاحتياطي أولًا، ثم يتبعه التبديل عند الفشل لتقليل فترة التعطل إلى الحد الأدنى.
 
-## الترقيات المجدولة {#scheduled-upgrades}
+<div id="scheduled-upgrades">
+  ## الترقيات المجدولة
+</div>
 
 <ScalePlanFeatureBadge feature="الترقيات المجدولة" linking_verb_are="true" />
 
@@ -37,7 +44,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 [أيام محددة من الأسبوع](#days-of-the-week). أما في خطة Scale، فتختار الفترة الزمنية فقط،
 وقد تُجرى الترقيات في أي يوم خلالها.
 
-### تهيئة جدول زمني {#configure-a-schedule}
+<div id="configure-a-schedule">
+  ### تهيئة جدول زمني
+</div>
 
 <Steps>
   <Step title="افتح إعدادات المثيل" id="open-settings">
@@ -71,7 +80,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 جدوله الزمني. كما تُعطّل عناصر التحكم عند إيقاف المثيل أو عندما يكون لا يزال
 قيد التوفير.
 
-### الفترات الزمنية {#time-periods}
+<div id="time-periods">
+  ### الفترات الزمنية
+</div>
 
 تستغرق كل نافذة ساعتين، وتُحدد دائمًا بالتوقيت العالمي المنسق (UTC) — ولا يمكن اختيار
 منطقة زمنية محلية. النوافذ المتاحة هي:
@@ -87,7 +98,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 لا تُدعم أوقات البدء المخصصة، أو أطوال النوافذ المخصصة، أو أكثر من نافذة واحدة لكل مثيل.
 
-### أيام الأسبوع {#days-of-the-week}
+<div id="days-of-the-week">
+  ### أيام الأسبوع
+</div>
 
 <EnterprisePlanFeatureBadge feature="تقييد الترقيات بأيام محددة من الأسبوع" />
 
@@ -97,22 +110,28 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 * **تم تحديد يوم واحد أو أكثر** — لا تُطبَّق الترقيات إلا في تلك الأيام ضمن
   الفترة الزمنية المحددة. وتحديد الأيام السبعة جميعها يعادل عدم تحديد أي يوم.
 
-### ما الذي ينطبق عليه الجدول الزمني {#schedule-scope}
+<div id="schedule-scope">
+  ### ما الذي ينطبق عليه الجدول الزمني
+</div>
 
 ينظّم الجدول الزمني **صيانة المنصة** فقط، بما في ذلك ترقيات الإصدارات الثانوية وتحديثات ميزات الخدمة المُدارة وتصحيحات نظام التشغيل الموضحة في
 [تحديثات الصيانة](#maintenance-updates).
 
-أما التغييرات التي تُجريها بنفسك فلا تُؤجَّل إلى النافذة، بل تُطبَّق فور إجرائها. ويشمل ذلك [توسيع نطاق](/ar/products/managed-postgres/scaling) مثيل، وتغيير حجم التخزين، وتغيير [معلمات التكوين](/ar/products/managed-postgres/settings).
+أما التغييرات التي تُجريها بنفسك فلا تُؤجَّل إلى النافذة، بل تُطبَّق فور إجرائها. ويشمل ذلك [توسيع نطاق](/ar/products/managed-postgres/scaling) مثيل، وتغيير حجم التخزين، وتغيير [معلمات التكوين](/ar/products/managed-postgres/settings).
 
 <Note>
-  تُنفَّذ الترقيات المجدولة حسب الإمكان. قد تُطبَّق أعمال الصيانة خارج نافذتك عندما يكون ذلك ضروريًا للحفاظ على سلامة مثيلك، كأن يصل استخدام القرص إلى 95%، أو لتطبيق تصحيحات الأمان الحرجة وإصلاحات الثغرات الأمنية. وستتلقى إشعارًا بهذه الاستثناءات عند الضرورة.
+  تُنفَّذ الترقيات المجدولة حسب الإمكان. قد تُطبَّق أعمال الصيانة خارج نافذتك عندما يكون ذلك ضروريًا للحفاظ على سلامة مثيلك، مثلًا عند وصول استخدام القرص إلى 95%، أو لتطبيق تصحيحات الأمان الحرجة وإصلاحات الثغرات الأمنية. وستتلقى إشعارًا بهذه الاستثناءات عند الضرورة.
 </Note>
 
-### النسخ المتماثلة للقراءة {#read-replicas}
+<div id="read-replicas">
+  ### النسخ المتماثلة للقراءة
+</div>
 
 تتبع [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas) جدول المثيل الأساسي، ولا يكون لها جدول خاص بها، لذا لا يظهر لها قسم **الترقيات المجدولة**.
 
-## ترقيات الإصدارات الرئيسية {#major-version-upgrades}
+<div id="major-version-upgrades">
+  ## ترقيات الإصدارات الرئيسية
+</div>
 
 ستتوفر قريبًا ترقيات الإصدارات الرئيسية (مثل 17.x إلى 18.x) عبر واجهة المستخدم وواجهة برمجة تطبيقات.
 وإلى أن تتوفر، تواصل مع [الدعم](https://clickhouse.com/support/program) لترقية مثيل ClickHouse Managed Postgres لديك.

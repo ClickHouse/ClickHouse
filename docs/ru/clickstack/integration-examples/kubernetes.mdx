@@ -19,13 +19,17 @@ ClickStack использует коллектор OpenTelemetry (OTel) для �
 
 В этом руководстве предполагается, что вы уже развернули [коллектор ClickStack OTel в роли шлюза](/ru/clickstack/ingesting-data/collector), защищённый ключом API для приёма данных.
 
-## Создание файлов конфигурации Helm-чарта OTel {#creating-the-otel-helm-chart-config-files}
+<div id="creating-the-otel-helm-chart-config-files">
+  ## Создание файлов конфигурации Helm-чарта OTel
+</div>
 
 Чтобы собирать журналы и метрики как с каждого узла, так и с самого кластера, потребуется развернуть два отдельных коллектора OpenTelemetry. Один будет развернут как ДемонСет для сбора журналов и метрик с каждого узла, а другой — как Развертывание для сбора журналов и метрик с самого кластера.
 
-### Создание Secret с ключом API {#create-api-key-secret}
+<div id="create-api-key-secret">
+  ### Создание секрета с API key
+</div>
 
-Создайте новый Secret Kubernetes, используя [ключ API для приёма данных](/ru/clickstack/ingesting-data/opentelemetry#sending-otel-data) из интерфейса ClickStack. Он будет использоваться компонентами, устанавливаемыми ниже, для безопасной отправки данных в ваш коллектор ClickStack OTel:
+Создайте новый secret Kubernetes, используя [ключ API для приёма данных](/ru/clickstack/ingesting-data/opentelemetry#sending-otel-data) из HyperDX. Он будет использоваться компонентами, устанавливаемыми ниже, для безопасной отправки данных в ваш коллектор ClickStack OTel:
 
 ```shell
 kubectl create secret generic hyperdx-secret \
@@ -36,10 +40,12 @@ kubectl create secret generic hyperdx-secret \
 
 ```shell
 kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=<OTEL_COLLECTOR_ENDPOINT>
-# e.g. kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+# например: kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
 ```
 
-### Создание конфигурации ДемонСет {#creating-the-daemonset-configuration}
+<div id="creating-the-daemonset-configuration">
+  ### Создание конфигурации ДемонСет
+</div>
 
 ДемонСет будет собирать журналы и метрики с каждого узла в кластере, но не будет собирать события Kubernetes или метрики на уровне всего кластера.
 
@@ -249,7 +255,9 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-### Создание конфигурации развертывания {#creating-the-deployment-configuration}
+<div id="creating-the-deployment-configuration">
+  ### Создание конфигурации развертывания
+</div>
 
 Чтобы собирать события Kubernetes и метрики всего кластера, потребуется развернуть отдельный OpenTelemetry Collector в виде развертывания.
 
@@ -383,14 +391,16 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-## Развертывание OpenTelemetry Collector {#deploying-the-otel-collector}
+<div id="deploying-the-otel-collector">
+  ## Развертывание OpenTelemetry Collector
+</div>
 
 Теперь OpenTelemetry Collector можно развернуть в кластере Kubernetes с помощью [Helm-чарта OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
 
 Добавьте Helm-репозиторий OpenTelemetry:
 
 ```shell
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Add OTel Helm repo
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Добавить репозиторий OTel Helm
 ```
 
 Установите чарт, используя указанную выше конфигурацию:
@@ -400,9 +410,11 @@ helm install my-opentelemetry-collector-deployment open-telemetry/opentelemetry-
 helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
 ```
 
-Теперь в интерфейсе ClickStack должны отображаться метрики, журналы и события Kubernetes из вашего кластера Kubernetes.
+Теперь в HyperDX должны отображаться метрики, журналы и события Kubernetes из вашего кластера Kubernetes.
 
-## Пересылка тегов ресурсов в поды (рекомендуется) {#forwarding-resouce-tags-to-pods}
+<div id="forwarding-resouce-tags-to-pods">
+  ## Пересылка тегов ресурсов в поды (рекомендуется)
+</div>
 
 Чтобы коррелировать журналы, метрики и трассировки приложения с метаданными Kubernetes
 (например, именем пода, пространством имен и т. д.), нужно передать метаданные Kubernetes

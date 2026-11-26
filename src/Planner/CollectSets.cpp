@@ -61,11 +61,7 @@ public:
                 pending_source_expressions.push_back(constant_node->getSourceExpression());
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            return;
-
-        const auto & function_name = function_node->getFunctionName();
-        if (!isNameOfInFunction(function_name) || function_name.ends_with("IgnoreSet"))
+        if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
 
         if (function_node->getArguments().getNodes().size() < 2)
@@ -88,8 +84,6 @@ public:
 
         if (storage_set)
         {
-            storage_set->checkNoRowPolicy(planner_context.getQueryContext());
-
             /// Handle storage_set as ready set.
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findStorage(set_key))
@@ -99,20 +93,12 @@ public:
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
-            const GetSetElementParams params{
-                .transform_null_in = settings[Setting::transform_null_in],
-                .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-            };
-
-            std::optional<ColumnsWithTypeAndName> set_from_values;
-            if (const auto deferred_field = constant_node->tryGetDeferredField())
-                set_from_values = tryGetSetElementsForTupleOfPlainValues(
-                    in_first_argument->getResultType(), deferred_field->safeGet<Tuple>(), params);
-
-            auto set = set_from_values
-                ? std::move(*set_from_values)
-                : getSetElementsForConstantValue(
-                      in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(), params);
+            auto set = getSetElementsForConstantValue(
+                in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(),
+                GetSetElementParams{
+                    .transform_null_in = settings[Setting::transform_null_in],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                });
 
             if (set.empty())
                 throw Exception(

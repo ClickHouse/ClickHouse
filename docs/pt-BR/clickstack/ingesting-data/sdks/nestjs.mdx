@@ -6,43 +6,129 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logging', 'integração', 'monitoramento de aplicações']
 ---
 
-import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+A integração do NestJS com o ClickStack permite criar um logger ou usar o logger padrão
+para enviar logs ao ClickStack (com tecnologia do [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)).
 
-Use o SDK Node.js do ClickStack para coletar telemetria da sua aplicação NestJS e enviá-la ao ClickStack. Ele inclui instrumentação de requisições do NestJS e captura a saída do console.
+**Este guia integra:**
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ Logs</td>
+      <td className="pe-2">✖️ Métricas</td>
+      <td className="pe-2">✖️ Traces</td>
+    </tr>
+  </tbody>
+</table>
 
-## Instale o SDK {#install-sdk}
+*Para enviar métricas ou APM/traces, você também precisará adicionar à sua aplicação a
+integração correspondente da linguagem.*
 
-Use o Node.js 22.15 ou superior:
+<div id="getting-started">
+  ## Primeiros passos
+</div>
 
-```shell
-npm install @clickhouse/clickstack-node
+Importe `HyperDXNestLoggerModule` no `AppModule` principal e use o método `forRoot()`
+para configurá-lo.
+
+```javascript
+import { Module } from '@nestjs/common';
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+@Module({
+  imports: [
+    HyperDXNestLoggerModule.forRoot({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Não é necessário para Managed ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    }),
+  ],
+})
+export class AppModule {}
 ```
 
-## Configure o destino {#configure-destination}
+Depois, a instância do winston ficará disponível para ser injetada em todo o
+projeto usando o token de injeção `HDX_LOGGER_MODULE_PROVIDER`:
 
-Defina o endpoint HTTP OTLP e a chave de ingestão do seu Coletor do ClickStack. Use `http://` se o coletor não tiver TLS configurado. Para configurar o coletor, consulte [Ingerindo com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry).
+```javascript
+import { Controller, Inject } from '@nestjs/common';
+import { HyperDXNestLoggerModule, HyperDXNestLogger } from '@hyperdx/node-logger';
 
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
-export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+@Controller('cats')
+export class CatsController {
+  constructor(
+    @Inject(HyperDXNestLoggerModule.HDX_LOGGER_MODULE_PROVIDER)
+    private readonly logger: HyperDXNestLogger,
+  ) { }
+
+  meow() {
+    this.logger.info({ message: '🐱' });
+  }
+}
 ```
 
-## Inicie sua aplicação {#start-application}
+<div id="replacing-the-nest-logger">
+  ### Substituindo o logger do Nest (também durante o bootstrap)
+</div>
 
-Defina `OTEL_SERVICE_NAME` para identificar sua aplicação. Compile sua aplicação NestJS e, em seguida, pré-carregue o SDK antes do ponto de entrada compilado:
+<Info>
+  **Importante**
 
-```shell
-npm run build
-OTEL_SERVICE_NAME='my-nestjs-app' node --import @clickhouse/clickstack-node/register dist/main.js
+  Ao fazer isso, você abre mão da injeção de dependências, o que significa que `forRoot` e `forRootAsync` não são necessários e não devem ser usados. Remova-os do módulo principal.
+</Info>
+
+Usar a injeção de dependências tem uma pequena desvantagem. O Nest precisa primeiro inicializar a
+aplicação (instanciando módulos e providers, injetando dependências
+etc.) e, durante esse processo, a instância de `HyperDXNestLogger` ainda não
+está disponível, o que significa que o Nest recorre ao logger interno.
+
+Uma solução é criar o logger fora do ciclo de vida da aplicação, usando
+a função `createLogger`, e passá-lo para `NestFactory.create`. O Nest então
+encapsulará nosso logger personalizado (a mesma instância retornada pelo método `createLogger`)
+na classe Logger, encaminhando todas as chamadas para ela:
+
+Crie o logger no arquivo `main.ts`
+
+```javascript
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: HyperDXNestLoggerModule.createLogger({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Não é necessário para Managed ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    })
+  });
+  await app.listen(3000);
+}
+bootstrap();
 ```
 
-Ajuste `dist/main.js` de acordo com a saída da sua compilação. Se você usa `ts-node` ou outro transpilador que intercepta o `require`, use `--require @clickhouse/clickstack-node/register` no lugar. Se você empacotar sua aplicação, mantenha o SDK e as dependências instrumentadas como externas.
+Altere seu módulo principal para disponibilizar o serviço Logger:
 
-Você pode continuar usando o logger de console padrão do NestJS. Para usar um logger personalizado, recorra a uma integração compatível, como Winston ou Pino. Para detalhes de configuração e compatibilidade, consulte o [guia do Node.js](/pt-BR/clickstack/ingesting-data/sdks/nodejs).
+```javascript
+import { Logger, Module } from '@nestjs/common';
 
-## Verifique a ingestão {#verify-ingestion}
+@Module({
+  providers: [Logger],
+})
+export class AppModule {}
+```
 
-Faça uma requisição a um controlador e emita uma mensagem de log. No ClickStack, selecione um intervalo de tempo recente e localize o nome do serviço da sua aplicação em Logs e Traces. Depois de aguardar o tempo necessário para a exportação, verifique as Metrics.
+Em seguida, injete o logger simplesmente tipando-o com o Logger de `@nestjs/common`:
+
+```javascript
+import { Controller, Logger } from '@nestjs/common';
+
+@Controller('cats')
+export class CatsController {
+  constructor(private readonly logger: Logger) {}
+
+  meow() {
+    this.logger.log({ message: '🐱' });
+  }
+}
+```

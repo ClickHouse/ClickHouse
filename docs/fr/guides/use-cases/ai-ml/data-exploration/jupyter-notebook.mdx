@@ -2,65 +2,57 @@
 slug: /use-cases/AI/jupyter-notebook
 sidebarTitle: 'Explorer des données avec des notebooks Jupyter et chDB'
 title: 'Explorer des données avec des notebooks Jupyter et chDB'
-description: 'Ce guide explique comment configurer et utiliser chDB pour explorer des données de ClickHouse Cloud ou de fichiers locaux dans des notebooks Jupyter'
-keywords: ['ML', 'Jupyter', 'chDB', 'pandas']
+description: 'Ce guide explique comment configurer et utiliser chDB pour explorer des données de ClickHouse Cloud ou de fichiers locaux dans des notebooks Jupyer'
+keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 Dans ce guide, vous apprendrez à explorer un jeu de données dans ClickHouse Cloud à partir d’un notebook Jupyter à l’aide de [chDB](/fr/chdb/index), un moteur SQL OLAP in-process rapide basé sur ClickHouse.
 
-**Prérequis** :
+**Prérequis** :
 
 * un environnement virtuel
 * un service ClickHouse Cloud opérationnel et vos [informations de connexion](/fr/products/cloud/guides/sql-console/connection-details)
 
 <Tip>
   Si vous n&#39;avez pas encore de compte ClickHouse Cloud, vous pouvez [vous inscrire](https://console.clickhouse.cloud/signUp?loc=docs-juypter-chdb) pour
-  bénéficier d’un essai et obtenir 300 $ de crédits gratuits pour commencer.
+  bénéficier d’un essai et obtenir 300 $ de crédits gratuits pour commencer.
 </Tip>
 
-**Ce que vous apprendrez :**
+**Ce que vous apprendrez :**
 
 * Vous connecter à ClickHouse Cloud depuis des notebooks Jupyter avec chDB
-* Interroger des jeux de données distants et convertir les résultats en DataFrames Pandas
+* Interroger des jeux de données distants et convertir les résultats en Pandas DataFrames
 * Combiner des données de ClickHouse Cloud avec des fichiers CSV locaux pour l’analyse
 * Visualiser les données à l’aide de matplotlib
 
 Nous utiliserons le jeu de données UK Property Price, disponible dans ClickHouse Cloud comme l’un des jeux de données d’exemple.
 Il contient des données sur les prix de vente des maisons au Royaume-Uni entre 1995 et 2024.
 
-## Configuration {#setup}
+<div id="setup">
+  ## Configuration
+</div>
 
 Pour ajouter ce jeu de données à un service ClickHouse Cloud existant, connectez-vous à [console.clickhouse.cloud](https://console.clickhouse.cloud/) avec les informations de votre compte.
 
-Dans le menu de gauche, cliquez sur `Data sources`. Cliquez ensuite sur `Predefined sample data` :
+Dans le menu de gauche, cliquez sur `Data sources`. Cliquez ensuite sur `Predefined sample data` :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Ajouter un exemple de jeu de données](/images/use-cases/AI_ML/jupyter/1.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Ajouter un exemple de jeu de données" />
 
-Sélectionnez `Get started` sur la carte des données de prix de l’immobilier au Royaume-Uni (4GB) :
+Sélectionnez `Get started` sur la carte des données de prix de l’immobilier au Royaume-Uni (4GB) :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Sélectionner le jeu de données UK price paid](/images/use-cases/AI_ML/jupyter/2.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Sélectionner le jeu de données des prix de l’immobilier au Royaume-Uni" />
 
-Cliquez ensuite sur `Import dataset` :
+Cliquez ensuite sur `Import dataset` :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Importer le jeu de données UK price paid](/images/use-cases/AI_ML/jupyter/3.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Importer le jeu de données des prix de l’immobilier au Royaume-Uni" />
 
-ClickHouse créera automatiquement la table `pp_complete` dans la base de données `default` et la remplira avec 28,92 millions de lignes de données sur les prix.
+ClickHouse créera automatiquement la table `pp_complete` dans la base de données `default` et la remplira avec 28,92 millions de lignes de données sur les prix.
 
 Afin de réduire le risque d’exposer vos identifiants, nous vous recommandons d’ajouter votre nom d’utilisateur Cloud et votre mot de passe comme variables d’environnement sur votre machine locale.
-Depuis un terminal, exécutez la commande suivante pour ajouter votre nom d’utilisateur et votre mot de passe comme variables d’environnement :
+Depuis un terminal, exécutez la commande suivante pour ajouter votre nom d’utilisateur et votre mot de passe comme variables d’environnement :
 
 ```bash
 export CLICKHOUSE_USER=default
@@ -73,13 +65,13 @@ export CLICKHOUSE_PASSWORD=your_actual_password
 </Note>
 
 Activez maintenant votre environnement virtuel.
-Depuis celui-ci, installez Jupyter Notebook avec la commande suivante :
+Depuis celui-ci, installez Jupyter Notebook avec la commande suivante :
 
 ```python
 pip install notebook
 ```
 
-Lancez Jupyter Notebook avec la commande suivante :
+Lancez Jupyter Notebook avec la commande suivante :
 
 ```python
 jupyter notebook
@@ -88,28 +80,20 @@ jupyter notebook
 Une nouvelle fenêtre de navigateur devrait s’ouvrir avec l’interface Jupyter sur `localhost:8888`.
 Cliquez sur `File` &gt; `New` &gt; `Notebook` pour créer un nouveau notebook.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Créer un nouveau notebook](/images/use-cases/AI_ML/jupyter/4.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="Créer un nouveau notebook" />
 
 Vous serez invité à sélectionner un noyau.
-Sélectionnez n’importe quel noyau Python disponible ; dans cet exemple, nous choisirons `ipykernel` :
+Sélectionnez n’importe quel noyau Python disponible ; dans cet exemple, nous choisirons `ipykernel` :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Sélectionner un noyau](/images/use-cases/AI_ML/jupyter/5.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="Sélectionner un noyau" />
 
-Dans une cellule vide, vous pouvez saisir la commande suivante pour installer chDB, que nous utiliserons pour nous connecter à notre instance ClickHouse Cloud distante :
+Dans une cellule vide, vous pouvez saisir la commande suivante pour installer chDB, que nous utiliserons pour nous connecter à notre instance ClickHouse Cloud distante :
 
 ```python
 pip install chdb
 ```
 
-Vous pouvez maintenant importer chDB et exécuter une requête simple pour vérifier que tout est correctement configuré :
+Vous pouvez maintenant importer chDB et exécuter une requête simple pour vérifier que tout est correctement configuré :
 
 ```python
 import chdb
@@ -118,7 +102,9 @@ result = chdb.query("SELECT 'Hello, ClickHouse!' as message")
 print(result)
 ```
 
-## Explorer les données {#exploring-the-data}
+<div id="exploring-the-data">
+  ## Explorer les données
+</div>
 
 Avec le jeu de données UK price paid configuré et chDB en cours d’exécution dans un notebook Jupyter, nous pouvons maintenant commencer à explorer nos données.
 
@@ -126,7 +112,7 @@ Imaginons que nous voulions examiner l’évolution des prix au fil du temps pou
 La fonction [`remoteSecure`](/fr/reference/functions/table-functions/remote) de ClickHouse vous permet de récupérer facilement les données depuis ClickHouse Cloud.
 Vous pouvez demander à chDB de renvoyer ces données sous forme de DataFrame Pandas dans le processus, ce qui offre une manière pratique et familière de travailler avec les données.
 
-Écrivez la requête suivante pour récupérer les données UK price paid depuis votre service ClickHouse Cloud et les convertir en `pandas.DataFrame` :
+Écrivez la requête suivante pour récupérer les données UK price paid depuis votre service ClickHouse Cloud et les convertir en `pandas.DataFrame` :
 
 ```python
 import os
@@ -163,7 +149,7 @@ df.head()
 
 Dans l’extrait ci-dessus, `chdb.query(query, "DataFrame")` exécute la requête spécifiée et affiche le résultat dans le terminal sous forme de DataFrame Pandas.
 Dans la requête, nous utilisons la fonction `remoteSecure` pour nous connecter à ClickHouse Cloud.
-La fonction `remoteSecure` prend les paramètres suivants :
+La fonction `remoteSecure` prend les paramètres suivants :
 
 * une chaîne de connexion
 * le nom de la base de données et de la table à utiliser
@@ -177,15 +163,11 @@ Selon le volume de vos données, cela peut prendre quelques secondes.
 Dans cet exemple, nous renvoyons un prix moyen par année et appliquons le filtre `town='LONDON'`.
 Le résultat est ensuite stocké sous forme de DataFrame dans une variable appelée `df`.
 
-`df.head` affiche uniquement les premières lignes des données renvoyées :
+`df.head` affiche uniquement les premières lignes des données renvoyées :
 
-<div className="ch-image-md">
-  <Frame>
-    ![aperçu du dataframe](/images/use-cases/AI_ML/jupyter/6.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="aperçu du dataframe" />
 
-Exécutez la commande suivante dans une nouvelle cellule pour vérifier les types des colonnes :
+Exécutez la commande suivante dans une nouvelle cellule pour vérifier les types des colonnes :
 
 ```python
 df.dtypes
@@ -202,7 +184,7 @@ chDB déduit automatiquement le type le plus approprié lorsqu’il renvoie le D
 
 Maintenant que les données sont disponibles dans un format familier, voyons comment les prix de l&#39;immobilier à Londres ont évolué au fil du temps.
 
-Dans une nouvelle cellule, exécutez la commande suivante pour créer, avec matplotlib, un graphique simple du prix en fonction du temps pour Londres :
+Dans une nouvelle cellule, exécutez la commande suivante pour créer, avec matplotlib, un graphique simple du prix en fonction du temps pour Londres :
 
 ```python
 plt.figure(figsize=(12, 6))
@@ -220,11 +202,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![aperçu du DataFrame](/images/use-cases/AI_ML/jupyter/7.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="aperçu du DataFrame" />
 
 Sans surprise, les prix de l’immobilier à Londres ont considérablement augmenté au fil du temps.
 
@@ -251,7 +229,7 @@ df_2.head()
 ```
 
 <Accordion title="Lire depuis plusieurs sources en une seule étape">
-  Il est également possible de lire depuis plusieurs sources en une seule étape. Pour ce faire, vous pouvez utiliser la requête ci-dessous avec une `JOIN` :
+  Il est également possible de lire depuis plusieurs sources en une seule étape. Pour ce faire, vous pouvez utiliser la requête ci-dessous avec une `JOIN` :
 
   ```python
   query = f"""
@@ -280,14 +258,10 @@ df_2.head()
   ```
 </Accordion>
 
-<div className="ch-image-md">
-  <Frame>
-    ![aperçu du DataFrame](/images/use-cases/AI_ML/jupyter/8.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="aperçu du DataFrame" />
 
 Bien qu’il manque des données à partir de 2020, nous pouvons représenter les deux jeux de données sur un même graphique pour les années 1995 à 2019.
-Dans une nouvelle cellule, exécutez la commande suivante :
+Dans une nouvelle cellule, exécutez la commande suivante :
 
 ```python
 # Create a figure with two y-axes
@@ -330,20 +304,16 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Graphique du jeu de données distant et du jeu de données local](/images/use-cases/AI_ML/jupyter/9.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="Graphique du jeu de données distant et du jeu de données local" />
 
-D’après le graphique, on voit que les ventes ont démarré autour de 160 000 en 1995 et ont rapidement progressé, pour culminer à environ 540 000 en 1999.
-Ensuite, les volumes ont fortement reculé jusqu’au milieu des années 2000, chutant brutalement pendant la crise financière de 2007-2008 pour retomber à environ 140 000.
-Les prix, en revanche, ont connu une croissance régulière et soutenue, passant d’environ 150 000 £ en 1995 à près de 300 000 £ en 2005.
-Cette croissance s’est nettement accélérée après 2012, avec une hausse marquée d’environ 400 000 £ à plus de 1 000 000 £ en 2019.
-Contrairement au volume des ventes, les prix ont été peu affectés par la crise de 2008 et ont continué de suivre une trajectoire ascendante. Aïe !
+D’après le graphique, on voit que les ventes ont démarré autour de 160 000 en 1995 et ont rapidement progressé, pour culminer à environ 540 000 en 1999.
+Ensuite, les volumes ont fortement reculé jusqu’au milieu des années 2000, chutant brutalement pendant la crise financière de 2007-2008 pour retomber à environ 140 000.
+Les prix, en revanche, ont connu une croissance régulière et soutenue, passant d’environ 150 000 £ en 1995 à près de 300 000 £ en 2005.
+Cette croissance s’est nettement accélérée après 2012, avec une hausse marquée d’environ 400 000 £ à plus de 1 000 000 £ en 2019.
+Contrairement au volume des ventes, les prix ont été peu affectés par la crise de 2008 et ont continué de suivre une trajectoire ascendante. Aïe !
 
 <div id="summary">
-  ## Résumé {#summary}
+  ## Résumé
 </div>
 
 Ce guide a montré comment chDB permet d’explorer les données en toute fluidité dans les notebooks Jupyter en connectant ClickHouse Cloud à des sources de données locales.

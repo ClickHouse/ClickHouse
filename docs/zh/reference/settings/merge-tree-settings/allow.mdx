@@ -14,7 +14,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-## allow_coalescing_columns_in_partition_or_order_key {#allow_coalescing_columns_in_partition_or_order_key}
+<div id="allow_coalescing_columns_in_partition_or_order_key">
+  ## allow_coalescing_columns_in_partition_or_order_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,7 +25,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 启用后，允许在 CoalescingMergeTree 表中将合并列用作
 分区键或排序键。
 
-## allow_commit_order_projection {#allow_commit_order_projection}
+<div id="allow_commit_order_projection">
+  ## allow_commit_order_projection
+</div>
 
 <ExperimentalBadge />
 
@@ -34,7 +38,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 启用提交顺序投影，该投影会存储 `_block_number` 和 `_block_offset` 虚拟列，并在合并过程中保留原始插入顺序。
 需要启用 `enable_block_number_column` 和 `enable_block_offset_column`。
 
-## allow_dimensions_outside_sorting_key {#allow_dimensions_outside_sorting_key}
+<div id="allow_dimensions_outside_sorting_key">
+  ## allow_dimensions_outside_sorting_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -53,7 +59,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 该检查仅适用于实际发生聚合的表 (即至少包含一个 aggregate state
 列的表) ，并且在启用 `allow_tuple_element_aggregation` 时会跳过。
 
-## allow_floating_point_partition_key {#allow_floating_point_partition_key}
+<div id="allow_floating_point_partition_key">
+  ## allow_floating_point_partition_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -64,7 +72,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 * `0` — 不允许使用浮点数分区键。
 * `1` — 允许使用浮点数分区键。
 
-## allow_minmax_index_for_json {#allow_minmax_index_for_json}
+<div id="allow_minmax_index_for_json">
+  ## allow_minmax_index_for_json
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -73,13 +83,17 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 允许在 JSON (Object) 列上创建 minmax 跳过索引。默认情况下禁用，因为 minmax
 索引的序列化路径无法处理 JSON 列中可能包含的异构 Field 值。
 
-## allow_nullable_key {#allow_nullable_key}
+<div id="allow_nullable_key">
+  ## allow_nullable_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许将 Nullable 类型作为主键。
 
-## allow_part_offset_column_in_projections {#allow_part_offset_column_in_projections}
+<div id="allow_part_offset_column_in_projections">
+  ## allow_part_offset_column_in_projections
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -87,7 +101,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 
 允许在投影的 select 查询中使用 `_part_offset` 列。
 
-## allow_reduce_blocking_parts_task {#allow_reduce_blocking_parts_task}
+<div id="allow_reduce_blocking_parts_task">
+  ## allow_reduce_blocking_parts_task
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -96,7 +112,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 用于减少 shared merge tree 表中阻塞 parts 的后台任务。
 仅适用于 ClickHouse Cloud
 
-## allow_remote_fs_zero_copy_replication {#allow_remote_fs_zero_copy_replication}
+<div id="allow_remote_fs_zero_copy_replication">
+  ## allow_remote_fs_zero_copy_replication
+</div>
 
 <ExperimentalBadge />
 
@@ -104,7 +122,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 
 请勿在生产环境中使用此设置，因为它尚未准备就绪。
 
-## allow_summing_columns_in_partition_or_order_key {#allow_summing_columns_in_partition_or_order_key}
+<div id="allow_summing_columns_in_partition_or_order_key">
+  ## allow_summing_columns_in_partition_or_order_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -113,13 +133,17 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 启用后，允许在 SummingMergeTree 表中将求和列用作
 分区键或排序键。
 
-## allow_suspicious_indices {#allow_suspicious_indices}
+<div id="allow_suspicious_indices">
+  ## allow_suspicious_indices
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 拒绝使用相同表达式的主索引/二级索引和排序键
 
-## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
+<div id="allow_tuple_element_aggregation">
+  ## allow_tuple_element_aggregation
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -131,17 +155,9 @@ CoalescingMergeTree 合并期间参与聚合。嵌套的 Tuple 会被递归展�
 叶子元素都会被分别聚合。此设置不可更改，
 必须在创建表时指定。
 
-## allow_vector_similarity_index_in_specialized_merge_tree {#allow_vector_similarity_index_in_specialized_merge_tree}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置。默认不再允许在特殊 MergeTree 引擎上创建向量相似度索引"}]}]} />
-
-是否允许在 `MergeTree` / `ReplicatedMergeTree` 以外的 `MergeTree` 家族引擎上创建 `vector_similarity` 索引，
-例如 `ReplacingMergeTree` 或 `CollapsingMergeTree`。在此类引擎上，使用该索引的 `SELECT ... FINAL` 可能返回错误结果。
-该设置仅在创建索引时检查，因此不会影响已有的表以及 `ATTACH` 操作。
-
-## allow_vertical_merges_from_compact_to_wide_parts {#allow_vertical_merges_from_compact_to_wide_parts}
+<div id="allow_vertical_merges_from_compact_to_wide_parts">
+  ## allow_vertical_merges_from_compact_to_wide_parts
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

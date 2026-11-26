@@ -7,8 +7,10 @@ keywords: ['시맨틱 검색', '벡터 유사도', '근사 최근접 이웃', '�
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <div id="introduction">
-  ## 소개 {#introduction}
+  ## 소개
 </div>
 
 [LAION 5b 데이터셋](https://laion.ai/blog/laion-5b/)에는 58억 5천만 개의 이미지-텍스트 임베딩과
@@ -19,7 +21,7 @@ doc_type: 'guide'
 이 데이터셋은 텍스트-이미지 검색과 이미지-이미지 검색 모두에 사용할 수 있습니다.
 
 <div id="dataset-details">
-  ## 데이터셋 세부 정보 {#dataset-details}
+  ## 데이터셋 세부 정보
 </div>
 
 전체 데이터셋은 [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader)를 사용하여 다운로드할 수 있습니다.
@@ -30,7 +32,7 @@ ClickHouse는 공개 `S3` 버킷에 1천만 개 벡터의 부분 집합을 제�
 이 데이터셋에 필요한 스토리지와 메모리 요구 사항을 추정하려면 먼저 [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)를 참고하여 규모 산정을 수행하는 것이 좋습니다.
 
 <div id="steps">
-  ## 단계 {#steps}
+  ## 단계
 </div>
 
 <Steps>
@@ -160,10 +162,6 @@ ClickHouse는 공개 `S3` 버킷에 1천만 개 벡터의 부분 집합을 제�
 
     위 검색 결과는 다음과 같습니다.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![벡터 유사도 검색 결과](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="벡터 유사도 검색 결과" size="md" />
   </Step>
 </Steps>

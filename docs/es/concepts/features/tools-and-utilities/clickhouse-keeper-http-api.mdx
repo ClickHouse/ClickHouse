@@ -9,7 +9,9 @@ doc_type: 'reference'
 ClickHouse Keeper proporciona una API HTTP y un dashboard web integrado para monitorización, comprobaciones de estado y gestión del almacenamiento.
 Esta interfaz permite a los operadores inspeccionar el estado del cluster, ejecutar comandos y gestionar el almacenamiento de Keeper desde un navegador web o mediante clientes HTTP.
 
-## Configuración {#configuration}
+<div id="configuration">
+  ## Configuración
+</div>
 
 Para habilitar la API HTTP, añade la sección `http_control` a la configuración de `keeper_server`:
 
@@ -24,7 +26,9 @@ Para habilitar la API HTTP, añade la sección `http_control` a la configuració
 </keeper_server>
 ```
 
-### Opciones de configuración {#configuration-options}
+<div id="configuration-options">
+  ### Opciones de configuración
+</div>
 
 | Ajuste                                    | Predeterminado | Descripción                                                                |
 | ----------------------------------------- | -------------- | -------------------------------------------------------------------------- |
@@ -33,9 +37,13 @@ Para habilitar la API HTTP, añade la sección `http_control` a la configuració
 | `http_control.readiness.endpoint`         | `/ready`       | Ruta personalizada para la sonda de disponibilidad                         |
 | `http_control.storage.session_timeout_ms` | `30000`        | Tiempo de espera de la sesión para operaciones de la API de almacenamiento |
 
-## Endpoints {#endpoints}
+<div id="endpoints">
+  ## Endpoints
+</div>
 
-### Dashboard {#dashboard}
+<div id="dashboard">
+  ### Dashboard
+</div>
 
 * **Ruta**: `/dashboard`
 * **Método**: GET
@@ -48,7 +56,9 @@ El dashboard proporciona:
 * Navegador de almacenamiento
 * Interfaz para ejecutar comandos
 
-#### Pestaña Cluster {#dashboard-cluster-tab}
+<div id="dashboard-cluster-tab">
+  #### Pestaña Cluster
+</div>
 
 La pestaña **Cluster** muestra los miembros de Raft como un grafo de topología y una tabla. Cada miembro se muestra con un color que indica su estado:
 
@@ -59,7 +69,9 @@ La pestaña **Cluster** muestra los miembros de Raft como un grafo de topología
 
 La tabla también muestra el rol de cada miembro (líder, seguidor u observador), la prioridad de Raft, el índice del último registro, el retraso de replicación respecto al líder y el tiempo transcurrido desde la última respuesta correcta de Raft. Cuando el nodo actual no es el líder, la pestaña ofrece un enlace directo que abre el dashboard del líder, donde está disponible el estado completo de los pares. La pestaña se puede abrir directamente con `/dashboard?tab=cluster`.
 
-### Sonda de disponibilidad {#readiness-probe}
+<div id="readiness-probe">
+  ### Sonda de disponibilidad
+</div>
 
 * **Ruta**: `/ready` (configurable)
 * **Método**: GET
@@ -77,7 +89,9 @@ Respuesta exitosa (HTTP 200):
 }
 ```
 
-### API de comandos {#commands-api}
+<div id="commands-api">
+  ### API de comandos
+</div>
 
 * **Ruta**: `/api/v1/commands/{command}`
 * **Métodos**: GET, POST
@@ -86,19 +100,21 @@ Respuesta exitosa (HTTP 200):
 Parámetros de consulta:
 
 * `command` - El comando que se va a ejecutar
-* `cwd` - Directorio de trabajo actual para comandos basados en rutas; debe ser una ruta absoluta (predeterminado: `/`)
+* `cwd` - Directorio de trabajo actual para comandos basados en rutas (predeterminado: `/`)
 
 Ejemplos:
 
 ```bash
-# Four-Letter Word command
+# Comando de cuatro letras
 curl http://localhost:9182/api/v1/commands/stat
 
-# ZooKeeper CLI command
+# Comando CLI de ZooKeeper
 curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ```
 
-### API de almacenamiento {#storage-api}
+<div id="storage-api">
+  ### API de almacenamiento
+</div>
 
 * **Ruta base**: `/api/v1/storage`
 * **Descripción**: API REST para operaciones de almacenamiento en Keeper

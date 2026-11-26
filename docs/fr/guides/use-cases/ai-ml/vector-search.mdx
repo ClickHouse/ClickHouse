@@ -8,8 +8,10 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 <Info>
-  **Dans ce guide, vous allez :**
+  **Dans ce guide, vous allez :**
 
   * Découvrir brièvement la recherche vectorielle
   * Découvrir les plus proches voisins approximatifs (ANN) et Hierarchical Navigable Small World (HNSW)
@@ -18,7 +20,7 @@ doc_type: 'guide'
 </Info>
 
 <div id="vector-search-primer">
-  ## Introduction à la recherche vectorielle {#vector-search-primer}
+  ## Introduction à la recherche vectorielle
 </div>
 
 En mathématiques et en physique, un vecteur est formellement défini comme un objet qui possède à la fois une norme et une direction.
@@ -38,18 +40,16 @@ Elle alimente les recommandations musicales, la génération augmentée par réc
 Les utilisateurs préfèrent souvent les bases de données généralistes dotées de capacités vectorielles ad hoc aux bases vectorielles entièrement spécialisées, malgré les avantages de ces dernières.
 ClickHouse prend en charge la [recherche vectorielle brute-force](/fr/reference/engines/table-engines/mergetree-family/annindexes#exact-nearest-neighbor-search) ainsi que des [méthodes de recherche approximative des plus proches voisins (ANN)](/fr/reference/engines/table-engines/mergetree-family/annindexes#approximate-nearest-neighbor-search), notamment HNSW — la norme actuelle pour la recherche rapide de vecteurs.
 
-### Comprendre les embeddings {#understanding-embeddings}
-
-Examinons un exemple simple pour comprendre le fonctionnement de la recherche vectorielle.
-Considérons les embeddings (représentations vectorielles) de mots :
-
-<div className="ch-image-md">
-  <Frame>
-    ![Visualisation des embeddings de fruits et d'animaux](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
-  </Frame>
+<div id="understanding-embeddings">
+  ### Comprendre les embeddings
 </div>
 
-Créez la table ci-dessous avec quelques exemples d’embeddings :
+Examinons un exemple simple pour comprendre le fonctionnement de la recherche vectorielle.
+Considérons les embeddings (représentations vectorielles) de mots :
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="Visualisation des embeddings de fruits et d'animaux" />
+
+Créez la table ci-dessous avec quelques exemples d’embeddings :
 
 ```sql
 CREATE TABLE fruit_animal
@@ -66,7 +66,7 @@ FROM VALUES(
 );
 ```
 
-Vous pouvez rechercher les mots les plus proches d’un embedding donné :
+Vous pouvez rechercher les mots les plus proches d’un embedding donné :
 
 ```sql
 SELECT word, L2Distance(
@@ -87,7 +87,7 @@ LIMIT 5;
 └────────┴─────────────────────┘
 ```
 
-L’embedding de la requête est le plus proche de &quot;apple&quot; (distance la plus faible), ce qui est logique si l’on compare les deux embeddings côte à côte :
+L’embedding de la requête est le plus proche de &quot;apple&quot; (distance la plus faible), ce qui est logique si l’on compare les deux embeddings côte à côte :
 
 ```response
 apple:           [-0.99105519,1.28887844,-0.43526649,-0.98520696,0.66154391]
@@ -95,14 +95,14 @@ query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
 ```
 
 <div id="approximate-nearest-neighbours">
-  ## Plus proches voisins approximatifs (ANN) {#approximate-nearest-neighbours}
+  ## Plus proches voisins approximatifs (ANN)
 </div>
 
 Pour les grands jeux de données, la recherche exhaustive devient trop lente.
 C&#39;est là qu&#39;interviennent les méthodes de recherche des plus proches voisins approximatifs.
 
 <div id="quantisation">
-  ### Quantisation {#quantisation}
+  ### Quantisation
 </div>
 
 La quantisation consiste à convertir des valeurs vers des types numériques plus petits.
@@ -114,13 +114,11 @@ Vous avez deux options :
 1. **Conserver la copie quantifiée à côté de la colonne d’origine** - Cela double l’espace de stockage, mais c’est sans risque, car nous pouvons toujours revenir à la pleine précision
 2. **Remplacer entièrement les valeurs d’origine** (en les convertissant vers un type inférieur lors de l’insertion) - Cela permet d’économiser de l’espace et des E/S, mais c’est irréversible
 
-### Hierarchical Navigable Small World (HNSW) {#hnsw}
-
-<div className="ch-image-md">
-  <Frame>
-    ![Structure en couches de HNSW](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
-  </Frame>
+<div id="hnsw">
+  ### Hierarchical Navigable Small World (HNSW)
 </div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="Structure en couches de HNSW" />
 
 HNSW est constitué de plusieurs couches de nœuds (vecteurs). Chaque nœud est attribué aléatoirement à une ou plusieurs couches, avec une probabilité d’apparaître dans les couches supérieures qui décroît de façon exponentielle.
 
@@ -136,7 +134,7 @@ Grâce à cette structure en couches, HNSW atteint une complexité de recherche 
 </Warning>
 
 <div id="comparison-approaches">
-  ### Comparaison des approches {#comparison-approaches}
+  ### Comparaison des approches
 </div>
 
 | Catégorie     | Brute-force                                                       | HNSW                                            | QBit                 |
@@ -146,38 +144,38 @@ Grâce à cette structure en couches, HNSW atteint une complexité de recherche 
 | **Autres**    | Quantification : plus d’espace ou perte de précision irréversible | L’index doit tenir en mémoire et être construit | Toujours O(#records) |
 
 <div id="qbit-deepdive">
-  ## QBit en profondeur {#qbit-deepdive}
+  ## QBit en profondeur
 </div>
 
-### Quantised Bit (QBit) {#quantised-bit}
-
-QBit est une nouvelle structure de données capable de stocker des valeurs `BFloat16`, `Float32` et `Float64` en tirant parti de la manière dont les nombres à virgule flottante sont représentés : sous forme de bits.
-Au lieu de stocker chaque nombre dans son intégralité, QBit répartit les valeurs en **plans de bits** : tous les premiers bits, tous les deuxièmes bits, tous les troisièmes bits, et ainsi de suite.
-
-<div className="ch-image-md">
-  <Frame>
-    ![Concept des plans de bits de QBit](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
-  </Frame>
+<div id="quantised-bit">
+  ### Quantised Bit (QBit)
 </div>
 
-Cette approche résout la principale limite de la Quantification traditionnelle. Il n’est pas nécessaire de stocker des données dupliquées ni de risquer de rendre les valeurs dénuées de sens. Elle évite également les goulots d’étranglement liés à la RAM de HNSW, puisque QBit fonctionne directement sur les données stockées au lieu de maintenir un index en mémoire.
+QBit est une nouvelle structure de données capable de stocker des valeurs `BFloat16`, `Float32` et `Float64` en tirant parti de la manière dont les nombres à virgule flottante sont représentés : sous forme de bits.
+Au lieu de stocker chaque nombre dans son intégralité, QBit répartit les valeurs en **plans de bits** : tous les premiers bits, tous les deuxièmes bits, tous les troisièmes bits, et ainsi de suite.
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="Concept des plans de bits de QBit" />
+
+Cette approche résout la principale limite de la quantification traditionnelle. Il n’est pas nécessaire de stocker des données dupliquées ni de risquer de rendre les valeurs dénuées de sens. Elle évite également les goulots d’étranglement liés à la RAM de HNSW, puisque QBit fonctionne directement sur les données stockées au lieu de maintenir un index en mémoire.
 
 <Tip>
   **Avantage**
 
   **Surtout, aucune décision préalable n’est nécessaire.**
-  La précision et les performances peuvent être ajustées dynamiquement au moment de l’exécution de la requête, ce qui permet aux utilisateurs d’explorer le compromis entre précision et rapidité avec un minimum d’effort.
+  La précision et les performances peuvent être ajustées dynamiquement à l’exécution de la requête, ce qui permet aux utilisateurs d’explorer le compromis entre exactitude et rapidité avec un minimum d’effort.
 </Tip>
 
 <Info>
   **Limitation**
 
-  Bien que QBit accélère la recherche vectorielle, sa complexité de calcul reste O(n). En d’autres termes : si votre jeu de données est suffisamment petit pour qu’un index HNSW tienne facilement en RAM, cela reste le choix le plus rapide.
+  Bien que QBit accélère la recherche vectorielle, sa complexité de calcul reste O(n). En d’autres termes : si votre jeu de données est suffisamment petit pour qu’un index HNSW tienne facilement en RAM, cela reste le choix le plus rapide.
 </Info>
 
-### Le type de données {#the-data-type}
+<div id="the-data-type">
+  ### Le type de données
+</div>
 
-Voici comment créer une colonne QBit :
+Voici comment créer une colonne QBit :
 
 ```sql
 SET allow_experimental_qbit_type = 1;
@@ -197,24 +195,20 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Transposition de la structure de données QBit](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="Transposition de la structure de données QBit" />
 
 Lorsque des données sont insérées dans une colonne QBit, elles sont transposées de manière à ce que tous les premiers bits soient alignés ensemble, puis tous les deuxièmes bits, et ainsi de suite. On appelle cela des **groupes**.
 
-Chaque groupe est stocké dans une colonne `FixedString(N)` distincte : des chaînes de longueur fixe de N octets, stockées consécutivement en mémoire, sans séparateur entre elles. Tous ces groupes sont ensuite réunis dans un unique `Tuple`, qui constitue la structure sous-jacente de QBit.
+Chaque groupe est stocké dans une colonne `FixedString(N)` distincte : des chaînes de longueur fixe de N octets, stockées consécutivement en mémoire, sans séparateur entre elles. Tous ces groupes sont ensuite réunis dans un unique `Tuple`, qui constitue la structure sous-jacente de QBit.
 
-**Exemple :** Si l’on part d’un vecteur de 8 éléments `Float64`, chaque groupe contiendra 8 bits. Comme un Float64 comporte 64 bits, on obtient au final 64 groupes (un pour chaque bit). L’organisation interne de `QBit(Float64, 8)` ressemble donc à un Tuple de 64 colonnes `FixedString(1)`.
+**Exemple :** Si l’on part d’un vecteur de 8 éléments `Float64`, chaque groupe contiendra 8 bits. Comme un Float64 comporte 64 bits, on obtient au final 64 groupes (un pour chaque bit). L’organisation interne de `QBit(Float64, 8)` ressemble donc à un Tuple de 64 colonnes `FixedString(1)`.
 
 <Tip>
   Si la longueur du vecteur d’origine n’est pas divisible par 8, la structure est complétée par des éléments invisibles afin de l’aligner sur 8. Cela garantit la compatibilité avec FixedString, qui fonctionne strictement sur des octets complets.
 </Tip>
 
 <div id="the-distance-calculation">
-  ### Calcul de la distance {#the-distance-calculation}
+  ### Calcul de la distance
 </div>
 
 Pour exécuter une query avec QBit, utilisez la fonction [`L2DistanceTransposed`](/fr/reference/functions/regular-functions/distance-functions#L2DistanceTransposed) avec un paramètre de précision :
@@ -239,46 +233,38 @@ ORDER BY distance;
 
 Le troisième paramètre (16) indique le niveau de précision en bits.
 
-### Optimisation des E/S {#io-optimisation}
-
-<div className="ch-image-md">
-  <Frame>
-    ![Optimisation des E/S de QBit](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
-  </Frame>
+<div id="io-optimisation">
+  ### Optimisation des E/S
 </div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="Optimisation des E/S de QBit" />
 
 Avant de pouvoir calculer les distances, les données nécessaires doivent être lues depuis le disque, puis détransposées (reconverties de la représentation groupée des bits en vecteurs complets). Comme QBit stocke les valeurs transposées au niveau des bits par niveau de précision, ClickHouse peut ne lire que les plans de bits de poids fort nécessaires pour reconstruire les nombres jusqu’à la précision souhaitée.
 
-Dans la requête ci-dessus, nous utilisons un niveau de précision de 16. Comme un Float64 comporte 64 bits, nous ne lisons que les 16 premiers plans de bits, **en évitant la lecture de 75 % des données**.
+Dans la requête ci-dessus, nous utilisons un niveau de précision de 16. Comme un Float64 comporte 64 bits, nous ne lisons que les 16 premiers plans de bits, **en évitant la lecture de 75 % des données**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Reconstruction de QBit](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="Reconstruction de QBit" />
 
 Après la lecture, nous ne reconstruisons que la partie de poids fort de chaque nombre à partir des plans de bits chargés, en laissant les bits non lus à zéro.
 
-### Optimisation des calculs {#calculation-optimisation}
-
-<div className="ch-image-md">
-  <Frame>
-    ![Comparaison du downcasting](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
-  </Frame>
+<div id="calculation-optimisation">
+  ### Optimisation des calculs
 </div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="Comparaison du downcasting" />
 
 On peut se demander si une conversion vers un type plus petit, comme Float32 ou BFloat16, pourrait éliminer cette partie inutilisée. C’est possible, mais les conversions explicites coûtent cher lorsqu’elles sont appliquées à chaque ligne.
 
-À la place, nous pouvons réduire uniquement le type du vecteur de référence et traiter les données QBit comme si elles contenaient des valeurs codées sur moins de bits (« en faisant abstraction » de certaines colonnes), puisque leur agencement correspond souvent à une version tronquée de ces types.
+À la place, nous pouvons réduire uniquement le type du vecteur de référence et traiter les données QBit comme si elles contenaient des valeurs codées sur moins de bits (« en faisant abstraction » de certaines colonnes), puisque leur agencement correspond souvent à une version tronquée de ces types.
 
 <div id="bfloat16-optimization">
-  #### Optimisation de BFloat16 {#bfloat16-optimization}
+  #### Optimisation de BFloat16
 </div>
 
 BFloat16 est un Float32 tronqué de moitié. Il conserve le même bit de signe et le même exposant sur 8 bits, mais seulement les 7 bits de poids fort de la mantisse sur 23 bits. Ainsi, la lecture des 16 premiers plans de bits d’une colonne QBit reproduit effectivement la représentation des valeurs BFloat16. Dans ce cas, nous pouvons donc convertir le vecteur de référence en BFloat16 en toute sécurité, et c’est ce que nous faisons.
 
 <div id="float64-complexity">
-  #### Complexité de Float64 {#float64-complexity}
+  #### Complexité de Float64
 </div>
 
 Float64 est toutefois une tout autre histoire. Il utilise un exposant sur 11 bits et une mantisse sur 52 bits, ce qui signifie qu&#39;il ne s&#39;agit pas simplement d&#39;un Float32 avec deux fois plus de bits. Sa structure et son biais d&#39;exposant sont complètement différents. Convertir un Float64 vers un format plus petit comme Float32 nécessite une véritable conversion IEEE-754, dans laquelle chaque valeur est arrondie vers la valeur Float32 représentable la plus proche. Cette étape d&#39;arrondi est coûteuse en calcul.
@@ -288,13 +274,13 @@ Float64 est toutefois une tout autre histoire. Il utilise un exposant sur 11 bit
 </Tip>
 
 <div id="example">
-  ## Exemple avec DBpedia {#example}
+  ## Exemple avec DBpedia
 </div>
 
 Voyons QBit à l’œuvre à travers un exemple concret utilisant le jeu de données DBpedia, qui contient 1 million d’articles de Wikipédia représentés par des embeddings Float32.
 
 <div id="setup">
-  ### Configuration {#setup}
+  ### Configuration
 </div>
 
 Commencez par créer la table
@@ -357,7 +343,7 @@ ALTER TABLE dbpedia UPDATE qbit = vector WHERE 1;
 ```
 
 <div id="search-query">
-  ### Requête de recherche {#search-query}
+  ### Requête de recherche
 </div>
 
 Nous allons rechercher les concepts les plus étroitement liés à l’ensemble des termes de recherche relatifs à l’espace : Moon, Apollo 11, Space Shuttle, Astronaut, Rocket :
@@ -661,7 +647,7 @@ Peak memory usage: 327.04 MiB.
 </Accordion>
 
 <div id="key-insight">
-  ### Idée clé {#key-insight}
+  ### Idée clé
 </div>
 
 Les résultats ? Non seulement bons, mais étonnamment bons. Il n&#39;est pas évident que des nombres à virgule flottante privés de toute leur mantisse et de la moitié de leur exposant conservent encore des informations significatives.
@@ -671,7 +657,7 @@ Les résultats ? Non seulement bons, mais étonnamment bons. Il n&#39;est pas 
 L&#39;utilisation mémoire a été réduite de **6.05 GB à 740 MB** tout en conservant une excellente qualité de recherche sémantique !
 
 <div id="result">
-  ## Conclusion {#result}
+  ## Conclusion
 </div>
 
 QBit est un type de colonne qui stocke les nombres à virgule flottante sous forme de plans de bits.

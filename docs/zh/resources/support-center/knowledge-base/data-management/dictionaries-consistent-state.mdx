@@ -6,7 +6,9 @@ tags: ['Cloud 管理', '数据建模']
 keywords: ['字典']
 ---
 
-## ClickHouse 中的字典 {#dictionaries-in-clickhouse}
+<div id="dictionaries-in-clickhouse">
+  ## ClickHouse 中的字典
+</div>
 
 在 ClickHouse Cloud 中创建的字典，在初始创建阶段可能会出现不一致的情况。这意味着字典创建后，你可能无法立即看到其中的数据。不过，经过几次重试后，创建查询可能会落到不同的副本上，此时数据就会显示出来。
 
@@ -22,16 +24,12 @@ keywords: ['字典']
 
 解决这个问题的方法是：创建字典时不要指定源表，而应改用 `SELECT` 查询，并启用设置 `select_sequential_consistency=1`。
 
-<Note title="ClickHouse Cloud">
-  创建从 ClickHouse 表读取数据的字典时，请在 `SOURCE` 子句中填写一个专用用户的用户名和密码。该用户需要拥有源表的 `SELECT` 权限。请参阅 [ClickHouse 字典源示例](/zh/reference/statements/create/dictionary/sources/clickhouse)。
-</Note>
-
 与其指定源表，不如：
 
 ```sql
 SOURCE(CLICKHOUSE(
     table 'test.temp_title_table_1706189903924'
-    user 'dict_reader' password 'dict_reader_password'))
+    user default password 'PASSWORD'))
 ```
 
 使用将 `select_sequential_consistency=1` 设为参数的 `SELECT` 查询：
@@ -40,10 +38,12 @@ SOURCE(CLICKHOUSE(
 SOURCE(CLICKHOUSE(QUERY
     'SELECT songTitle, mappedTitle
     FROM test.temp_title_table_1706189903924
-    SETTINGS select_sequential_consistency=1' USER 'dict_reader' PASSWORD 'dict_reader_password'))
+    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
 ```
 
-## 为什么会出现这个问题？ {#why-does-this-issue-occur}
+<div id="why-does-this-issue-occur">
+  ## 为什么会出现这个问题？
+</div>
 
 当你插入数据，然后创建或重新加载字典时，DDL 可能会先于数据 (或新数据) 到达某个副本。这会导致不同副本上的字典不一致。这样一来，具体返回什么结果就取决于查询落到了哪个副本上。
 

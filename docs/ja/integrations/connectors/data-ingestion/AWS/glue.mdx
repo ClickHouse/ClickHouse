@@ -10,13 +10,17 @@ integration:
   - category: 'data_ingestion'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 [Amazon Glue](https://aws.amazon.com/glue/) は、Amazon Web Services (AWS) が提供する完全マネージド型のサーバーレス データインテグレーションサービスです。分析、機械学習、アプリケーション開発に向けて、データの検出、準備、変換を簡素化します。
 
-## インストール {#installation}
+<div id="installation">
+  ## インストール
+</div>
 
 Glue コードを ClickHouse と統合するには、次のいずれかの方法で Glue から公式の Spark コネクタを使用できます。
 
@@ -37,21 +41,13 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
       <Step title="コネクタを有効化して接続を作成する" id="activate-the-connector">
         サブスクライブ後、ジョブの要件に合った Glue バージョンを選択します。**Additional details** セクションの **Usage instructions** で、**Open Glue Studio - Add ClickHouse connector** へのリンクをクリックします。すると、主要なフィールドが事前入力された Glue の接続作成ページが開きます。接続に名前を付けて、作成をクリックしてください (この段階では ClickHouse の接続情報を指定する必要はありません) 。
 
-        <div className="ch-image-md">
-          <Frame>
-            ![ClickHouse Glue コネクタ向け AWS Marketplace の使用手順](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
-          </Frame>
-        </div>
+        <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size="md" alt="ClickHouse Glue コネクタ向け AWS Marketplace の使用手順" />
       </Step>
 
       <Step title="Glue ジョブで使用する" id="use-in-glue-job">
         Glue ジョブで `Job details` タブを選択し、`Advanced properties` ウィンドウを展開します。`Connections` セクションで、先ほど作成した接続を選択します。コネクタは必要な JAR をジョブランタイムに自動的に追加します。
 
-        <div className="ch-image-md">
-          <Frame>
-            ![Glue Notebook の接続設定](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
-          </Frame>
-        </div>
+        <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Glue Notebook の接続設定" force="true" />
 
         <Note>
           Glue ジョブの設定に一致するコネクタバージョンを選択してください:
@@ -78,24 +74,20 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
       <Step title="依存 JAR パスを設定する">
         `Job details` タブで下にスクロールし、`Advanced properties` のドロップダウンを展開して、`Dependent JARs path` に JAR のパスを入力します。
 
-        <div className="ch-image-md">
-          <Frame>
-            ![Glue Notebook の JAR パスオプション](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
-          </Frame>
-        </div>
+        <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Glue Notebook の JAR パスオプション" force="true" />
       </Step>
     </Steps>
   </Tab>
 </Tabs>
 
 <div id="secrets-manager">
-  ## 認証情報に AWS Secrets Manager を使用する {#secrets-manager}
+  ## 認証情報に AWS Secrets Manager を使用する
 </div>
 
 ClickHouse のユーザー名とパスワードをジョブ内にハードコードする代わりに、[AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/) に保存し、Glue の接続またはジョブスクリプトからそのシークレットを参照します。実行時には、Glue がシークレットを取得し、そのキー・バリューのペアをコネクタの接続オプションにマージします。
 
 <div id="create-secret">
-  ### シークレットを作成する {#create-secret}
+  ### シークレットを作成する
 </div>
 
 AWS Secrets Manager で、キーがコネクタのオプション名と一致するキー・バリューのペアを含む **その他のシークレットタイプ** のシークレットを作成します。
@@ -108,7 +100,7 @@ AWS Secrets Manager で、キーがコネクタのオプション名と一致す
 シークレットに追加したキーはすべてコネクタに転送されるため、コードに含めたくない場合は、`host`、`database`、そのほかのオプションもここに保存できます。
 
 <div id="reference-secret">
-  ### シークレットを参照する {#reference-secret}
+  ### シークレットを参照する
 </div>
 
 シークレットをジョブで利用する方法は 2 つあります。
@@ -151,21 +143,19 @@ AWS Secrets Manager で、キーがコネクタのオプション名と一致す
 
 シークレット内の `user` キーと `password` キーは実行時にコネクタのオプションへマージされるため、スクリプト内でそれらを読み取る必要はありません。
 
-## 例 {#example}
+<div id="example">
+  ## 例
+</div>
 
-以下の例では `marketplace.spark` を使用し、`connectionName` でコネクタを参照します。コネクタを手動でインストールした場合 (手動インストール タブ) は、代わりに `connection_type="custom.spark"` を使用し、`className`、`host`、`http_port`、`user`、`password` を オプション に直接指定してください。
+以下の例では `marketplace.spark` を使用し、`connectionName` でコネクタを参照します。コネクタを手動でインストールした場合 (手動インストール タブ) は、代わりに `connection_type="custom.spark"` を使用し、`className`、`host`、`http_port`、`user`、`password` を options に直接指定してください。
 
-接続自体に AWS シークレットをアタッチしている場合 ([認証情報にAWS Secrets Managerを使用する](#secrets-manager) の Option 1) は、オプション から `secretId` を削除してください。Glue は接続から認証情報を自動的に取得します。
+接続自体に AWS シークレットをアタッチしている場合 ([Using AWS Secrets Manager for credentials](#secrets-manager) の Option 1) は、options から `secretId` を削除してください。Glue は接続から認証情報を自動的に取得します。
 
 <Tabs>
   <Tab title="Visual Editor">
-    Glue Studio の visual editor では、ClickHouse コネクタをソースとしてもターゲットとしても使用できます。ClickHouse Spark コネクタ コンポーネントをキャンバスにドラッグし、データパイプラインに接続するだけです。
+    Glue Studio の visual editor では、ClickHouse コネクタをソースとしてもターゲットとしても使用できます。ClickHouse Spark Connector コンポーネントをキャンバスにドラッグし、データパイプラインに接続するだけです。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![ClickHouse コネクタ を使用した Glue Studio visual editor](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png" size="md" alt="ClickHouse connector を使用した Glue Studio visual editor" />
   </Tab>
 
   <Tab title="Scala">

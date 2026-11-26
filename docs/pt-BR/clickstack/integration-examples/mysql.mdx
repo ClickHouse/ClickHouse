@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['MySQL', 'logs', 'OTEL', 'ClickStack', 'monitoramento de banco de dados', 'consulta lenta']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -16,7 +18,7 @@ import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/Galaxy
 </Info>
 
 <div id="existing-mysql">
-  ## Integração com um MySQL existente {#existing-mysql}
+  ## Integração com um MySQL existente
 </div>
 
 Esta seção explica como configurar sua instalação existente do MySQL para enviar logs ao ClickStack, modificando a configuração do ClickStack OTel collector.
@@ -24,7 +26,7 @@ Esta seção explica como configurar sua instalação existente do MySQL para en
 Se quiser testar a integração de logs do MySQL antes de configurar seu próprio ambiente, você pode usar nossa configuração pré-configurada e os dados de exemplo na seção [&quot;Conjunto de dados de demonstração&quot;](/pt-BR/clickstack/integration-examples/mysql#demo-dataset).
 
 <div id="prerequisites">
-  ##### Pré-requisitos {#prerequisites}
+  ##### Pré-requisitos
 </div>
 
 * Instância do ClickStack em execução
@@ -86,7 +88,7 @@ Se quiser testar a integração de logs do MySQL antes de configurar seu própri
   </Step>
 
   <Step title="Criar configuração personalizada do OTel collector" id="custom-otel">
-    O ClickStack permite estender a configuração básica do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração básica gerenciada pela Interface do ClickStack via OpAMP.
+    O ClickStack permite estender a configuração básica do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração básica gerenciada pelo HyperDX via OpAMP.
 
     Crie um arquivo chamado `mysql-logs-monitoring.yaml` com a seguinte configuração:
 
@@ -162,7 +164,7 @@ Se quiser testar a integração de logs do MySQL antes de configurar seu própri
     * Processa entradas de log com várias linhas (consultas lentas ocupam várias linhas)
     * Analisa os dois formatos de log para extrair campos estruturados (level, error&#95;code, query&#95;time, rows&#95;examined)
     * Preserva os timestamps originais dos logs
-    * Adiciona os atributos `source: mysql-error` e `source: mysql-slow` para filtragem na Interface do ClickStack
+    * Adiciona os atributos `source: mysql-error` e `source: mysql-slow` para filtragem no HyperDX
     * Encaminha os logs para o ClickHouse exporter por meio de um pipeline dedicado
 
     <Note>
@@ -193,30 +195,22 @@ Se quiser testar a integração de logs do MySQL antes de configurar seu própri
     </Note>
   </Step>
 
-  <Step title="Verificando logs na Interface do ClickStack" id="verifying-logs">
-    Depois de configurar, faça login na Interface do ClickStack e verifique se os logs estão fluindo:
+  <Step title="Verificando logs no HyperDX" id="verifying-logs">
+    Depois de configurar, faça login no HyperDX e verifique se os logs estão fluindo:
 
     1. Vá para a visualização Busca
     2. Defina a source como Logs
     3. Filtre por `source:mysql-error` ou `source:mysql-slow` para ver logs específicos do MySQL
     4. Você deverá ver entradas de log estruturadas com campos como `level`, `error_code`, `message` (para logs de erro) e `query_time`, `rows_examined`, `query` (para logs de consultas lentas)
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Visualização Busca](/images/clickstack/mysql/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Visualização Busca" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Visualização de logs](/images/clickstack/mysql/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Visualização de logs" />
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## Conjunto de dados de demonstração {#demo-dataset}
+  ## Conjunto de dados de demonstração
 </div>
 
 Para usuários que desejam testar a integração de logs do MySQL antes de configurar seus sistemas em produção, fornecemos um conjunto de dados de exemplo com logs do MySQL pré-gerados e padrões realistas.
@@ -321,11 +315,11 @@ Para usuários que desejam testar a integração de logs do MySQL antes de confi
     ```
   </Step>
 
-  <Step title="Verifique os logs na Interface do ClickStack" id="verify-demo-logs">
+  <Step title="Verifique os logs no HyperDX" id="verify-demo-logs">
     Quando o ClickStack estiver em execução:
 
     1. Aguarde alguns instantes para que o ClickStack seja inicializado por completo (normalmente, de 30 a 60 segundos)
-    2. Abra a [Interface do ClickStack](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
+    2. Abra o [HyperDX](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
     3. Navegue até a visualização Busca e defina a source como `Logs`
     4. Defina o intervalo de tempo como **2025-11-13 00:00:00 - 2025-11-16 00:00:00**
     5. Você deverá ver 40 logs no total (30 logs de erro com `source:mysql-demo-error` + 10 consultas lentas com `source:mysql-demo-slow`)
@@ -334,27 +328,21 @@ Para usuários que desejam testar a integração de logs do MySQL antes de confi
       Se você não vir todos os 40 logs imediatamente, aguarde cerca de um minuto para o collector concluir o processamento. Se os logs ainda não aparecerem depois disso, execute `docker restart clickstack-demo` e verifique novamente após mais um minuto. Este é um problema conhecido do receiver filelog do OpenTelemetry ao carregar em massa arquivos preexistentes com `start_at: beginning`. Implantações em produção que usam `start_at: end` processam os logs à medida que são gravados em tempo real e não apresentam esse problema.
     </Note>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Tela de Busca](/images/clickstack/mysql/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Tela de Busca" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Visualização de logs](/images/clickstack/mysql/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Visualização de logs" />
 
     <Info>
       **Exibição de fuso horário**
 
-      A Interface do ClickStack exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração abrangem **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Assim que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
+      O HyperDX exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração abrangem **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Assim que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
     </Info>
   </Step>
 </Steps>
 
-## Painéis e visualização {#dashboards}
+<div id="dashboards">
+  ## Painéis e visualização
+</div>
 
 Para ajudar você a começar a monitorar o MySQL com o ClickStack, fornecemos visualizações essenciais para os logs do MySQL.
 
@@ -364,32 +352,20 @@ Para ajudar você a começar a monitorar o MySQL com o ClickStack, fornecemos vi
   </Step>
 
   <Step title="Importe o painel pré-configurado" id="import-dashboard">
-    1. Abra a Interface do ClickStack e vá para a seção Painéis
+    1. Abra o HyperDX e vá para a seção Painéis
     2. Clique em **Importar painel** no canto superior direito, no menu de reticências
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Botão de importação de painel](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Botão de importação de painel" />
 
-    3. Faça upload do arquivo `mysql-logs-dashboard.json` e clique em **Concluir Importação**
+    3. Faça upload do arquivo `mysql-logs-dashboard.json` e clique em **Finish Import**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Concluir importação](/images/clickstack/mysql/finish-import.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/finish-import.webp" alt="Concluir importação" />
   </Step>
 
   <Step title="Visualize o painel" id="created-dashboard">
     O painel será criado com todas as visualizações pré-configuradas.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Painel de exemplo](/images/clickstack/mysql/example-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Painel de exemplo" />
 
     <Note>
       Para o conjunto de dados de demonstração, defina o intervalo de tempo como **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (ajuste conforme o seu fuso horário local). Por padrão, o painel importado não terá um intervalo de tempo definido.
@@ -398,11 +374,11 @@ Para ajudar você a começar a monitorar o MySQL com o ClickStack, fornecemos vi
 </Steps>
 
 <div id="troubleshooting">
-  ## Solução de problemas {#troubleshooting}
+  ## Solução de problemas
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### Config personalizada não carrega {#troubleshooting-not-loading}
+  ### Config personalizada não carrega
 </div>
 
 Verifique se a variável de ambiente está definida:
@@ -417,9 +393,11 @@ Verifique se o arquivo de configuração personalizado está montado e legível:
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### Logs não aparecem na Interface do ClickStack {#no-logs}
+<div id="no-logs">
+  ### Logs não aparecem no HyperDX
+</div>
 
-Verifique se a configuração efetiva inclui o receiver filelog:
+Verifique se a config efetiva inclui o receiver filelog:
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
@@ -439,7 +417,7 @@ docker exec <container> cat /tmp/mysql-demo/mysql-slow.log | wc -l
 ```
 
 <div id="no-slow-queries">
-  ### Logs de consultas lentas não aparecem {#no-slow-queries}
+  ### Logs de consultas lentas não aparecem
 </div>
 
 Verifique se o log de consultas lentas está habilitado no MySQL:
@@ -462,7 +440,7 @@ SELECT SLEEP(2);
 ```
 
 <div id="logs-not-parsing">
-  ### Logs não estão sendo interpretados corretamente {#logs-not-parsing}
+  ### Logs não estão sendo interpretados corretamente
 </div>
 
 Verifique se o formato de log do MySQL corresponde ao formato esperado. Os padrões regex neste guia foram projetados para os formatos padrão do MySQL 5.7+ e 8.0+.
@@ -482,13 +460,15 @@ Formato esperado:
 Se o seu formato for significativamente diferente, ajuste os padrões de regex na configuração.
 
 <div id="next-steps">
-  ## Próximos passos {#next-steps}
+  ## Próximos passos
 </div>
 
 * Configure [alertas](/pt-BR/clickstack/features/alerts) para eventos críticos (falhas de conexão, consultas lentas que ultrapassam os limites, picos de erros)
 * Crie painéis personalizados para analisar consultas lentas por padrão de consulta
 * Ajuste `long_query_time` com base nos padrões observados de desempenho das consultas
 
-## Preparando para produção {#going-to-production}
+<div id="going-to-production">
+  ## Preparando para produção
+</div>
 
 Este guia se baseia no OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

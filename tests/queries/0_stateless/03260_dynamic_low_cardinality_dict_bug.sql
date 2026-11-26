@@ -1,3 +1,4 @@
+set allow_experimental_dynamic_type = 1;
 set min_bytes_to_use_direct_io = 0;
 
 drop table if exists test;

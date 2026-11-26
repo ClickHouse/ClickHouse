@@ -1,12 +1,10 @@
 #include <Interpreters/Context.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/IAST.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
 
@@ -63,7 +61,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
 
     take_sets_and_splice_out(root);
 
-    VectorWithMemoryTracking<QueryPlan::Node *> stack;
+    std::vector<QueryPlan::Node *> stack;
     stack.push_back(root);
     while (!stack.empty())
     {
@@ -78,7 +76,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
         /// Some steps own whole subplans (e.g. `ReadFromMerge` children). The root node of such
         /// a subplan cannot be removed from here, so only its sets are taken out; an emptied
         /// `DelayedCreatingSetsStep` does nothing and the serializer skips it.
-        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
+        for (auto * child_plan : node->step->getChildPlans())
         {
             auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
             if (!child_root)
@@ -99,15 +97,7 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
 {
     /// A source with a step that cannot be serialized for remote execution (e.g. a read from a
     /// table function) builds the set locally on the initiator instead of failing the query.
-    /// `StreamInQueryResultCacheStep` is not serializable either, but it is a removable pass-through:
-    /// `convertToDistributed` below drops every such step before the plan is split into fragments,
-    /// and keeps them when it takes the local fallback. Rejecting the whole source because of it
-    /// would stop a cacheable `IN` subquery from distributing its set source at all.
-    const auto ignore_query_result_cache_write = [](const IQueryPlanStep & step)
-    {
-        return typeid_cast<const StreamInQueryResultCacheStep *>(&step) != nullptr;
-    };
-    if (findNonSerializableStep(source_plan.getRootNode(), ignore_query_result_cache_write))
+    if (findNonSerializableStep(source_plan.getRootNode(), /*ignore=*/ {}))
         return;
 
     /// The row limit makes an over-limit set fail during the build. The byte limit is not

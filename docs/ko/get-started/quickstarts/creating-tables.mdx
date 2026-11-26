@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'ClickHouse에서 테이블 생성'
+sidebarTitle: '테이블 생성'
 searchable: true
 title: 'ClickHouse에서 테이블 생성'
 slug: /guides/creating-tables
@@ -38,15 +38,15 @@ CREATE DATABASE IF NOT EXISTS helloworld
 다음과 같이 `helloworld` 데이터베이스에 `my_first_table`이라는 테이블을 생성합니다:
 
 ```sql
-CREATE TABLE helloworld.my_first_table
-(
-    user_id UInt32,
-    message String,
-    timestamp DateTime,
-    metric Float32
-)
-ENGINE = MergeTree()
-PRIMARY KEY (user_id, timestamp)
+  CREATE TABLE helloworld.my_first_table
+  (
+      user_id UInt32,
+      message String,
+      timestamp DateTime,
+      metric Float32
+  )
+  ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)
 ```
 
 위 예시에서 `my_first_table`은 4개의 컬럼을 가진 `MergeTree` 테이블입니다:
@@ -67,7 +67,7 @@ PRIMARY KEY (user_id, timestamp)
 </Note>
 
 <div id="a-brief-intro-to-primary-keys">
-  ## 프라이머리 키에 대한 간단한 소개 {#a-brief-intro-to-primary-keys}
+  ## 프라이머리 키에 대한 간단한 소개
 </div>
 
 계속 진행하기 전에 ClickHouse에서 프라이머리 키(primary key)가 어떻게 동작하는지 이해하는 것이 중요합니다(프라이머리 키의 구현 방식은
@@ -87,7 +87,7 @@ ClickHouse 테이블의 프라이머리 키는 데이터가 디스크에 기록�
 컬럼 파일에 저장되는 데이터는 먼저 `user_id`, 그다음 `timestamp` 순으로 정렬됩니다.
 
 <Tip>
-  자세한 내용은 ClickHouse Academy의 [Modeling Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440)을 확인하십시오.
+  자세한 내용은 ClickHouse Academy의 [Modeling Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs)을 확인하십시오.
 </Tip>
 
 <div className="mt-8">

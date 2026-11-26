@@ -21,7 +21,7 @@ public:
 protected:
     Options options;
 
-    [[nodiscard]] const char * getName() const override { return "time interval"; }
+    const char * getName() const override { return "time interval"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -7,7 +7,9 @@ sidebarTitle: 'groupArrayResample'
 doc_type: 'reference'
 ---
 
-## 说明 {#description}
+<div id="description">
+  ## 说明
+</div>
 
 [`Resample`](/zh/reference/functions/aggregate-functions/combinators#-resample)
 组合器可应用于 [`groupArray`](/zh/reference/functions/aggregate-functions/sum) 聚合函数，用于
@@ -16,7 +18,9 @@ doc_type: 'reference'
 (对应最小键) 来构造结果数组。
 它生成的是数据的降采样视图，而不是收集所有值。
 
-## 示例用法 {#example-usage}
+<div id="example-usage">
+  ## 示例用法
+</div>
 
 来看一个示例。我们将创建一个包含员工 `name`、`age` 和
 `wage` 的表，并向其中插入一些数据：
@@ -28,7 +32,7 @@ CREATE TABLE employee_data
     age UInt8,
     wage Float32
 ) ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -59,7 +63,9 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
 └───────────────────────────────────────────────┘
 ```
 
-## 另见 {#see-also}
+<div id="see-also">
+  ## 另见
+</div>
 
 * [`groupArray`](/zh/reference/functions/aggregate-functions/groupArray)
 * [`Resample 组合器`](/zh/reference/functions/aggregate-functions/combinators#-resample)

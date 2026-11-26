@@ -7,19 +7,25 @@ sidebarTitle: 'avgResample'
 doc_type: 'reference'
 ---
 
-## Description {#description}
+<div id="description">
+  ## Description
+</div>
 
 Le [combinateur `Resample`](/fr/reference/functions/aggregate-functions/combinators#-resample)
 peut être appliqué à la [fonction d’agrégation `count`](/fr/reference/functions/aggregate-functions/count)
 pour compter les valeurs d’une colonne de clé dans un nombre fixe
 d’intervalles (`N`).
 
-## Exemple d’utilisation {#example-usage}
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
 
-### Exemple simple {#basic-example}
+<div id="basic-example">
+  ### Exemple simple
+</div>
 
 Examinons un exemple. Nous allons créer une table contenant les champs `name`, `age` et
-`wage` des employés, puis y insérer des données :
+`wage` des employés, puis y insérer des données :
 
 ```sql
 CREATE TABLE employee_data 
@@ -29,7 +35,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -62,7 +68,9 @@ FROM avg_wage;
 └──────────────────┘
 ```
 
-## Voir aussi {#see-also}
+<div id="see-also">
+  ## Voir aussi
+</div>
 
 * [`count`](/fr/reference/functions/aggregate-functions/count)
 * [`Resample combinateur`](/fr/reference/functions/aggregate-functions/combinators#-resample)

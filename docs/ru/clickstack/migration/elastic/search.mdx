@@ -7,32 +7,28 @@ doc_type: 'guide'
 keywords: ['clickstack', 'поиск', 'журналы', 'обсервабилити', 'полнотекстовый поиск']
 ---
 
-## Поиск в ClickStack и Elastic {#search-in-clickstack-and-elastic}
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="search-in-clickstack-and-elastic">
+  ## Поиск в ClickStack и Elastic
+</div>
 
 ClickHouse — это движок с нативной поддержкой SQL, изначально созданный для высокопроизводительных аналитических рабочих нагрузок. Elasticsearch, напротив, предоставляет SQL-подобный интерфейс, транслируя SQL в базовый DSL запросов Elasticsearch, — то есть SQL в нем не является средством первого класса, а [функциональный паритет](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) ограничен.
 
 ClickHouse не только поддерживает полноценный SQL, но и расширяет его набором функций, ориентированных на обсервабилити, таких как [`argMax`](/ru/reference/functions/aggregate-functions/argMax), [`histogram`](/ru/reference/functions/aggregate-functions/parametric-functions#histogram) и [`quantileTiming`](/ru/reference/functions/aggregate-functions/quantileTiming), которые упрощают выполнение запросов к структурированным журналам, метрикам и трассировкам.
 
-Для простого анализа журналов и трассировок интерфейс ClickStack предоставляет [синтаксис в стиле Lucene](/ru/clickstack/features/search) для интуитивной текстовой фильтрации по запросам вида поле-значение, диапазонам, подстановочным шаблонам и другим конструкциям. Это сопоставимо с [синтаксисом Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) в Elasticsearch и элементами [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
+Для простого анализа журналов и трассировок интерфейс ClickStack (HyperDX) предоставляет [синтаксис в стиле Lucene](/ru/clickstack/features/search) для интуитивной текстовой фильтрации по запросам вида поле-значение, диапазонам, подстановочным шаблонам и другим конструкциям. Это сопоставимо с [синтаксисом Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) в Elasticsearch и элементами [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Поиск](/images/use-cases/observability/hyperdx-search.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="Поиск" size="lg" />
 
 Интерфейс поиска поддерживает этот знакомый синтаксис, но за кулисами преобразует его в эффективные SQL-условия `WHERE`, что делает работу привычной для пользователей Kibana и при этом позволяет при необходимости использовать всю мощь SQL. Это позволяет задействовать весь набор [функций поиска по строкам](/ru/reference/functions/regular-functions/string-search-functions), [функций сходства](/ru/reference/functions/regular-functions/string-functions#stringJaccardIndex) и [функций даты и времени](/ru/reference/functions/regular-functions/date-time-functions) в ClickHouse.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![SQL](/images/use-cases/observability/hyperdx-sql.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
 
 Ниже мы сравним языки запросов Lucene в ClickStack и Elasticsearch.
 
 <div id="clickstack-vs-elasticsearch-query-string">
-  ## Поисковый синтаксис ClickStack и строка запроса Elasticsearch {#clickstack-vs-elasticsearch-query-string}
+  ## Поисковый синтаксис ClickStack и строка запроса Elasticsearch
 </div>
 
 И ClickStack, и Elasticsearch предоставляют гибкие языки запросов для удобной фильтрации журналов и трассировок. Если строка запроса Elasticsearch тесно связана с его DSL и движком индексирования, то ClickStack поддерживает синтаксис в стиле Lucene, который под капотом переводится в ClickHouse SQL. В таблице ниже показано, как распространённые шаблоны поиска работают в обеих системах, с акцентом на сходство синтаксиса и различия в их внутреннем выполнении.
@@ -60,7 +56,7 @@ ClickHouse не только поддерживает полноценный SQL
 | Экранированные специальные символы       | Экранируйте зарезервированные символы с помощью `\` | То же самое                       | Для зарезервированных символов требуется экранирование.                                                                                                                                                                                                                                                                                                                                             |
 
 <div id="empty-value-differences">
-  ## Различия между exists/missing {#empty-value-differences}
+  ## Различия между exists/missing
 </div>
 
 В отличие от Elasticsearch, где поле может полностью отсутствовать в событии и, следовательно, действительно «не существовать», в ClickHouse все столбцы должны быть определены в схеме таблицы. Если поле не передано в событии вставки:

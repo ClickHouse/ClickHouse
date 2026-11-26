@@ -10,8 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <div id="what-mysql-resync-do">
-  ### Resync는 무엇을 하나요? {#what-mysql-resync-do}
+  ### Resync는 무엇을 하나요?
 </div>
 
 Resync를 수행하면 다음 작업이 순서대로 진행됩니다:
@@ -24,7 +26,7 @@ Resync를 수행하면 다음 작업이 순서대로 진행됩니다:
 원래 ClickPipe의 모든 설정은 resync ClickPipe에도 유지됩니다. 원래 ClickPipe의 통계는 UI에서 초기화됩니다.
 
 <div id="use-cases-mysql-resync">
-  ### ClickPipe resync 사용 사례 {#use-cases-mysql-resync}
+  ### ClickPipe resync 사용 사례
 </div>
 
 다음과 같은 몇 가지 경우가 있습니다:
@@ -36,17 +38,15 @@ Resync를 수행하면 다음 작업이 순서대로 진행됩니다:
   resync는 여러 번 수행할 수 있지만, 매번 병렬 스레드를 사용한 초기 적재가 수반되므로 resync를 수행할 때 원본 데이터베이스에 가해지는 부하를 고려하십시오.
 </Note>
 
-### Resync ClickPipe 가이드 {#guide-mysql-resync}
+<div id="guide-mysql-resync">
+  ### Resync ClickPipe 가이드
+</div>
 
 1. **Data Sources** 탭에서 resync하려는 MySQL ClickPipe를 클릭합니다.
 2. **Settings** 탭으로 이동합니다.
 3. **Resync** 버튼을 클릭합니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
 4. 확인 대화상자가 나타나면 **Resync**를 다시 클릭합니다.
 5. **Metrics** 탭으로 이동합니다.

@@ -7,8 +7,10 @@ keywords: ['recherche sémantique', 'similarité vectorielle', 'plus proches voi
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 <div id="introduction">
-  ## Introduction {#introduction}
+  ## Introduction
 </div>
 
 Le [jeu de données LAION 5b](https://laion.ai/blog/laion-5b/) contient 5,85 milliards d’embeddings image-texte ainsi que les métadonnées d’image associées. Les embeddings ont été générés à l’aide du modèle `Open AI CLIP` [ViT-L/14](https://huggingface.co/sentence-transformers/clip-ViT-L-14). La dimension de chaque vecteur d’embedding est de `768`.
@@ -16,7 +18,7 @@ Le [jeu de données LAION 5b](https://laion.ai/blog/laion-5b/) contient 5,85 mi
 Ce jeu de données peut être utilisé pour modéliser les aspects liés à la conception, au dimensionnement et aux performances d’une application réelle de recherche vectorielle à grande échelle. Il peut être utilisé aussi bien pour la recherche de texte vers image que pour la recherche d’image à image.
 
 <div id="dataset-details">
-  ## Détails du jeu de données {#dataset-details}
+  ## Détails du jeu de données
 </div>
 
 Le jeu de données complet peut être téléchargé à l’aide de [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
@@ -27,12 +29,12 @@ Le sous-ensemble est stocké dans un fichier `Parquet`.
 Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimensionnement afin d’estimer les besoins en stockage et en mémoire pour ce jeu de données en consultant la [documentation](/fr/reference/engines/table-engines/mergetree-family/annindexes).
 
 <div id="steps">
-  ## Étapes {#steps}
+  ## Étapes
 </div>
 
 <Steps>
   <Step title="Créer une table" id="create-table">
-    Créez la table `laion_5b_10m` pour stocker les embeddings et leurs attributs associés :
+    Créez la table `laion_5b_10m` pour stocker les embeddings et leurs attributs associés :
 
     ```sql
     CREATE TABLE laion_5b_10m
@@ -61,19 +63,19 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
   </Step>
 
   <Step title="Charger les données" id="load-table">
-    Pour charger le jeu de données, exécutez l’instruction SQL suivante :
+    Pour charger le jeu de données, exécutez l’instruction SQL suivante :
 
     ```sql
     INSERT INTO laion_5b_10m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN);
     ```
 
-    Le chargement de 10 millions de lignes dans la table prendra quelques minutes.
+    Le chargement de 10 millions de lignes dans la table prendra quelques minutes.
   </Step>
 
   <Step title="Exécuter une recherche de similarité vectorielle par force brute" id="run-a-brute-force-vector-similarity-search">
     La recherche KNN (k - plus proches voisins), ou recherche par force brute, consiste à calculer la distance entre chaque vecteur du jeu de données
     et le vecteur d&#39;embedding de recherche, puis à trier ces distances pour obtenir les plus proches voisins. L&#39;un des vecteurs
-    du jeu de données peut lui-même être utilisé comme vecteur de recherche. Par exemple :
+    du jeu de données peut lui-même être utilisé comme vecteur de recherche. Par exemple :
 
     ```sql title="Query"
     SELECT id, url 
@@ -85,11 +87,11 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
     ```
 
     Notez la latence de la requête afin de pouvoir la comparer à celle de la requête ANN (avec index vectoriel).
-    Avec 10 millions de lignes, l’exécution de la requête ci-dessus sans index vectoriel peut prendre de quelques secondes à quelques minutes.
+    Avec 10 millions de lignes, l’exécution de la requête ci-dessus sans index vectoriel peut prendre de quelques secondes à quelques minutes.
   </Step>
 
   <Step title="Créer un index de similarité vectorielle" id="build-vector-similarity-index">
-    Exécutez le code SQL suivant pour définir et créer un index de similarité vectorielle sur la colonne `vector` de la table `laion_5b_10m` :
+    Exécutez le code SQL suivant pour définir et créer un index de similarité vectorielle sur la colonne `vector` de la table `laion_5b_10m` :
 
     ```sql
     ALTER TABLE laion_5b_10m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
@@ -102,11 +104,11 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
     Vous devez sélectionner soigneusement les valeurs optimales de ces paramètres en évaluant le temps de création de l’index et la qualité des résultats de recherche
     correspondant aux valeurs sélectionnées.
 
-    La création et l’enregistrement de l’index peuvent prendre beaucoup de temps pour le sous-ensemble de 10 millions de lignes, selon le nombre de cœurs de processeur disponibles et le débit du stockage.
+    La création et l’enregistrement de l’index peuvent prendre beaucoup de temps pour le sous-ensemble de 10 millions de lignes, selon le nombre de cœurs de processeur disponibles et le débit du stockage.
   </Step>
 
   <Step title="Effectuer une recherche ANN" id="perform-ann-search">
-    Une fois l’index de similarité vectorielle construit, les requêtes de recherche vectorielle utiliseront automatiquement cet index :
+    Une fois l’index de similarité vectorielle construit, les requêtes de recherche vectorielle utiliseront automatiquement cet index :
 
     ```sql title="Query"
     SELECT id, url 
@@ -159,12 +161,8 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
         print("</html>")
     ```
 
-    Le résultat de la recherche ci-dessus est présenté ci-dessous :
+    Le résultat de la recherche ci-dessus est présenté ci-dessous :
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Résultats de recherche par similarité vectorielle](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Résultats de recherche par similarité vectorielle" size="md" />
   </Step>
 </Steps>

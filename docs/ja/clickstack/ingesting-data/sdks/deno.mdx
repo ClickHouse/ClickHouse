@@ -6,32 +6,61 @@ doc_type: 'guide'
 keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'ClickStack Deno インテグレーション', 'Deno オブザーバビリティ', 'Deno ログ SDK']
 ---
 
-import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+このガイドで扱うのは次のとおりです。
 
-Deno に組み込まれている OpenTelemetry サポートを使用して、ログ、メトリクス、トレースを ClickStack に送信します。ClickStack Node.js SDK やレガシーの Deno ロギング用パッケージは不要です。
+* **ログ**
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+<Note>
+  現在サポートしているのは OpenTelemetry ログ のみです。トレーシングのサポートについては、[以下のガイドを参照してください](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example)。
+</Note>
 
-## OpenTelemetry のセットアップ {#set-up-opentelemetry}
+<div id="logging">
+  ## ログ
+</div>
 
-公式の [Deno OpenTelemetry セットアップ手順](https://docs.deno.com/runtime/fundamentals/open_telemetry/) に従って、アプリケーションをインストルメントしてください。以下の宛先を設定したうえで、アプリケーションの起動時に Deno の組み込みインテグレーションを有効にします。
+`std/log` モジュールにカスタムロガーをエクスポートすることで、ログを利用できます。
 
-```shell
-OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
+**使用例:**
+
+```typescript
+import * as log from 'https://deno.land/std@0.203.0/log/mod.ts';
+import { OpenTelemetryHandler } from 'npm:@hyperdx/deno';
+
+log.setup({
+  handlers: {
+    otel: new OpenTelemetryHandler('DEBUG'),
+  },
+
+  loggers: {
+    'my-otel-logger': {
+      level: 'DEBUG',
+      handlers: ['otel'],
+    },
+  },
+});
+
+log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-アプリケーションに必要なアクセス許可を追加します。アップストリームの手順に記載されているサンプルの宛先やコンソールエクスポーターの設定は、シグナルごとのエンドポイントのオーバーライドも含め、すべて置き換えてください。
+<div id="run-the-application">
+  ### アプリケーションを実行する
+</div>
 
-## 宛先を設定する {#configure-destination}
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
+    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+    ```
+  </Tab>
 
-ClickStack コレクターの OTLP HTTP エンドポイントとインジェスト用 API キーを設定します。コレクターで TLS が設定されていない場合は、`http://` を使用してください。コレクターのセットアップについては、[OpenTelemetry によるデータの取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
-
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
-export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
-```
-
-## インジェストを確認する {#verify-ingestion}
-
-アプリケーションを起動し、アクティビティを発生させます。ClickStack で直近の時間範囲を選択し、ログ または トレース でアプリケーションのサービス名を探します。メトリクス については、エクスポートされるまでしばらく待ってから確認してください。
+  <Tab title="ClickStack Open Source">
+    ```shell
+    OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
+    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+    ```
+  </Tab>
+</Tabs>

@@ -9,6 +9,8 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <SelfManaged />
 
 В этом руководстве приведены простые минимальные настройки для конфигурации ClickHouse с использованием сертификатов OpenSSL для проверки соединений. В этом примере создаются самоподписанные сертификат и ключ центра сертификации (CA), а также сертификаты узлов, чтобы установить соединения с нужными параметрами.
@@ -318,6 +320,7 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
            <transport_compression_level>0</transport_compression_level>
            <max_send_message_size>-1</max_send_message_size>
            <max_receive_message_size>-1</max_receive_message_size>
+           <verbose_logs>false</verbose_logs>
        </grpc>
        ```
 
@@ -458,11 +461,7 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 
     5. Войдите в интерфейс Play через `https`-интерфейс по адресу `https://chnode1.marsnet.local:8443/play`.
 
-       <div className="ch-image-md">
-         <Frame>
-           ![Настройка TLS](/images/guides/sre/configuring-ssl_01.webp)
-         </Frame>
-       </div>
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="Настройка TLS" size="md" border />
 
     <Note>
       браузер покажет, что сертификат не является доверенным, поскольку доступ к нему осуществляется с рабочей станции, а сертификаты отсутствуют в хранилищах корневых CA на клиентской машине.
@@ -514,7 +513,7 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## Настройка OpenSSL для автономного ClickHouse Keeper {#configure-openssl-for-standalone-clickhouse-keeper}
+  ## Настройка OpenSSL для автономного ClickHouse Keeper
 </div>
 
 Если ClickHouse Keeper запускается как автономный процесс (а не в составе ClickHouse server), сертификаты и параметры OpenSSL нужно настраивать отдельно в файле конфигурации Keeper. Без этого Keeper не сможет устанавливать защищённые соединения для связи с клиентами (`tcp_port_secure`) и для Raft-репликации между узлами Keeper.
@@ -558,13 +557,13 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 </Note>
 
 <div id="openssl-verification-modes">
-  ## Режимы проверки OpenSSL и обработчики сертификатов {#openssl-verification-modes}
+  ## Режимы проверки OpenSSL и обработчики сертификатов
 </div>
 
 Конфигурация `<openSSL>` поддерживает несколько вариантов для `<verificationMode>` и `<invalidCertificateHandler>`, которые определяют, как ClickHouse проверяет TLS-сертификаты. Эти настройки применяются к clickhouse-server, clickhouse-client и автономному ClickHouse Keeper.
 
 <div id="verification-modes">
-  ### Режимы проверки {#verification-modes}
+  ### Режимы проверки
 </div>
 
 Задайте `<verificationMode>` в разделе `<server>` или `<client>` элемента `<openSSL>`:
@@ -577,7 +576,7 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 | `strict`  | Требует сертификат узла `peer` и полностью проверяет его. Соединение завершается с ошибкой, если сертификат отсутствует, просрочен или не подписан доверенным CA. Рекомендуется для продакшна. |
 
 <div id="invalid-certificate-handlers">
-  ### Обработчики недействительных сертификатов {#invalid-certificate-handlers}
+  ### Обработчики недействительных сертификатов
 </div>
 
 Задайте `<invalidCertificateHandler>` в разделе `<server>` или `<client>` внутри `<openSSL>`. Этот обработчик определяет, что происходит при сбое проверки сертификата. На стороне сервера он управляет реакцией на недействительные клиентские сертификаты. На стороне клиента он управляет реакцией на недействительные сертификаты сервера.
@@ -588,7 +587,7 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 | `AcceptCertificateHandler` | Принимает соединение, даже если сертификат недействителен. Используйте это только для тестирования.        |
 
 <div id="disabling-certificate-verification">
-  ### Пример: отключение проверки сертификата {#disabling-certificate-verification}
+  ### Пример: отключение проверки сертификата
 </div>
 
 <Warning>
@@ -668,21 +667,8 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 </openSSL>
 ```
 
-## Ротация сертификатов и CA‑сертификатов без перезапуска {#rotating-certificates-without-restart}
-
-ClickHouse server и ClickHouse Keeper отслеживают файлы, указанные в `certificateFile`, `privateKeyFile` и `caConfig`
-в секциях `openSSL.server` и `openSSL.client` (а также в `protocols.*` для composable protocols), либо файлы в
-каталоге, если `caConfig` указывает на каталог. При изменении любого из этих файлов или при выполнении `SYSTEM RELOAD CONFIG`
-сертификаты перезагружаются и применяются ко всем новым TLS‑соединениям, включая HTTPS, защищённый собственный протокол, межсерверные
-соединения, соединения с Keeper и Raft‑соединения между узлами Keeper. Уже установленные соединения продолжают использовать
-те сертификаты, с которыми они были открыты.
-
-Чтобы выполнить ротацию CA без простоя, сначала замените файл `caConfig` набором (bundle), содержащим и старый, и новый
-CA‑сертификат, затем переключите сертификаты узлов и клиентов на выпущенные новым CA, и в завершение оставьте в наборе
-только новый CA‑сертификат.
-
 <div id="summary">
-  ## Краткое резюме {#summary}
+  ## Краткое резюме
 </div>
 
 В этой статье мы рассмотрели настройку среды ClickHouse с использованием TLS. Параметры в продакшн-среде будут отличаться в зависимости от требований; например, уровни проверки сертификатов, протоколы, шифры и т. д. Но теперь вы должны лучше понимать, какие шаги нужны для настройки и внедрения защищённых соединений.

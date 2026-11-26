@@ -12,11 +12,13 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
+<div id="allow_nondeterministic_mutations">
+  ## allow_nondeterministic_mutations
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Configuração em nível de usuário que permite que mutações em tabelas replicadas usem funções não determinísticas, como `dictGet`, e colunas virtuais cujos valores podem diferir entre réplicas, como `_table`, `_database` e `_disk_name`.
+Configuração em nível de usuário que permite que mutações em tabelas replicadas usem funções não determinísticas, como `dictGet`.
 
 Como, por exemplo, os dicionários podem estar dessincronizados entre os nós, mutações que extraem valores deles não são permitidas em tabelas replicadas por padrão. Habilitar essa configuração permite esse comportamento, tornando responsabilidade do usuário garantir que os dados usados estejam sincronizados em todos os nós.
 
@@ -35,7 +37,9 @@ Como, por exemplo, os dicionários podem estar dessincronizados entre os nós, m
 </profiles>
 ```
 
-## allow_nondeterministic_optimize_skip_unused_shards {#allow_nondeterministic_optimize_skip_unused_shards}
+<div id="allow_nondeterministic_optimize_skip_unused_shards">
+  ## allow_nondeterministic_optimize_skip_unused_shards
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
