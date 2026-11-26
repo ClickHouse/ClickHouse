@@ -8,6 +8,7 @@ tc	152	38	23	0
 te	7391	389	315	0
 tf	260	26	69	0
 tk	114	38	25	0
+tn	5491	289	209	0
 tp	131	131	48	0
 ts	56	28	18	0
 -- mismatches
@@ -15,6 +16,7 @@ ts	56	28	18	0
 256	0	0	306
 -- a constant path does not write the row
 7	1	7	7
+1	5000000	5000000
 1	5000000	5000000
 1
 -- examples: the call, on JSON, on String

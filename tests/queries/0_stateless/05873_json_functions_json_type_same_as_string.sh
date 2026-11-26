@@ -57,13 +57,15 @@ create_table()
 
 create_table t src "SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1" 1
 create_table te src "SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1, json_type_escape_dots_in_keys = 1" 0
+create_table tn src "SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1, type_json_skip_null_typed_paths = 1" 0
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE res (tbl String, call String, id UInt32, r String, e String) ENGINE = Memory"
 
 # One call per line: <function>|<path arguments, each with a leading comma>|<result type of JSONExtract*>.
 # With the argument `te` only the paths whose keys contain a dot, and a few result types: with escaped dots the paths of
-# the keys change, not the conversion of a value. The CaseInsensitive variants share the conversion with the others,
-# so they get the paths that exercise the key lookup.
+# the keys change, not the conversion of a value. With the argument `tn` the typed paths, which
+# `type_json_skip_null_typed_paths` drops where they are NULL. The CaseInsensitive variants share the conversion with
+# the others, so they get the paths that exercise the key lookup.
 gen_calls()
 {
     local plain=(JSONHas JSONLength JSONKey JSONType JSONExtractInt JSONExtractUInt JSONExtractFloat JSONExtractBool
@@ -100,6 +102,15 @@ gen_calls()
         tpaths=("" "'a'" "'a.b'" "'p.q'")
         types=("${ci_types[@]}")
         kav_types=("${ci_types[@]}")
+    elif [ "${1:-}" = tn ]; then
+        paths=("" "'a'" "'a', 'c'" "'d'" "'d', 1" "'s'" "'n'" "'lc'" "'t'" "'t', 'x'" "'m'" "'m', 'k1'" "'missing'"
+            "materialize('s')")
+        ci_paths=("'S'" "'n'")
+        tpaths=("'a'" "'d'" "'s'" "'n'" "'lc'" "'t'" "'m'" "'missing'")
+        types=("Int64" "String" "Nullable(Int64)" "Nullable(String)" "LowCardinality(String)" "Array(Nullable(String))"
+            "Dynamic")
+        kav_types=("String" "Dynamic")
+        ci_types=("String")
     fi
     local f p ty
     printf 'isValidJSON||\n'
@@ -175,6 +186,7 @@ SOURCES="o_dyn o_dyn o_typed"
 echo "calls: $(gen_calls | wc -l) $(gen_calls te | wc -l)"
 gen_calls | build_queries t "" "$COLUMNS" "$SOURCES" | $CLICKHOUSE_CLIENT
 gen_calls te | build_queries te "SETTINGS json_type_escape_dots_in_keys = 1" "$COLUMNS" "$SOURCES" | $CLICKHOUSE_CLIENT
+gen_calls tn | build_queries tn "SETTINGS type_json_skip_null_typed_paths = 1" "$COLUMNS" "$SOURCES" | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- the data: rows, text size, rows whose source is not what the JSON type keeps or whose untyped columns differ (must be 0)';
@@ -281,8 +293,9 @@ FROM numbers(256) SETTINGS max_execution_time = 10, max_memory_usage = '100M';
 "
 
 # A path of plain constant keys reads the subcolumn of the path, so the other paths of the row are not written; JSONHas
-# and the extraction of a typed String value do not write the value either. The whole-row route (a CaseInsensitive
-# call) writes them and goes over the same memory limit.
+# and the extraction of a typed String value do not write the value either, with or without
+# `type_json_skip_null_typed_paths`. The whole-row route (a CaseInsensitive call) writes them and goes over the same
+# memory limit.
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- a constant path does not write the row';
 CREATE TABLE tm (j JSON, jt JSON(pad String)) ENGINE = Memory;
@@ -291,6 +304,8 @@ SELECT JSONExtractInt(j, 'a'), JSONHas(j, 'a'), JSONExtractRaw(j, 'a'), JSONExtr
 FROM tm SETTINGS max_memory_usage = '20M';
 SELECT JSONHas(j, 'pad'), length(JSONExtractString(jt, 'pad')), length(JSONExtract(jt, 'pad', 'String'))
 FROM tm SETTINGS max_memory_usage = '20M';
+SELECT JSONHas(jt, 'pad'), length(JSONExtractString(jt, 'pad')), length(JSONExtract(jt, 'pad', 'String'))
+FROM tm SETTINGS type_json_skip_null_typed_paths = 1, max_memory_usage = '20M';
 "
 $CLICKHOUSE_CLIENT -q "SELECT JSONExtractIntCaseInsensitive(j, 'a') FROM tm SETTINGS max_memory_usage = '20M'" 2>&1 \
     | grep -c -m1 'MEMORY_LIMIT_EXCEEDED'

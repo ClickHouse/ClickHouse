@@ -278,7 +278,9 @@ public:
                 const String & path = prefixes.back();
                 const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
                 const auto typed_it = data_type_object.getTypedPaths().find(path);
-                const bool always_present = typed_it != data_type_object.getTypedPaths().end() && !skip_null;
+                /// `type_json_skip_null_typed_paths` skips only NULL values, so a typed path that cannot be NULL is always present.
+                const bool always_present = typed_it != data_type_object.getTypedPaths().end()
+                    && (!skip_null || !canContainNull(*typed_it->second));
                 auto value = always_present
                     ? data_type_object.extractLiteralSubcolumn(path, object_column)
                     : data_type_object.extractCombinedSubcolumn(path, object_column, skip_null);
