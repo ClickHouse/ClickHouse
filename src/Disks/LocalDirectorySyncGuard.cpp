@@ -102,7 +102,7 @@ void LocalDirectorySyncGuard::sync()
 }
 
 CheckedDirectorySync::CheckedDirectorySync(const String & full_path)
-    : fd(::open(full_path.c_str(), O_DIRECTORY)), path(full_path)
+    : path(full_path), fd(::open(path.c_str(), O_DIRECTORY))
 {
     if (-1 == fd)
         ErrnoException::throwFromPath(

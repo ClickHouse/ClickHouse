@@ -49,8 +49,8 @@ public:
     void sync();
 
 private:
-    int fd = -1;
     String path;
+    int fd = -1;
 };
 
 /// Creates `dir` and any missing ancestor of it. When `fsync` is set, `dir`'s own entry is
