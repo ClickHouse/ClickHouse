@@ -60,7 +60,10 @@ parser.add_argument("--hide-holes-then-ask", type=int, metavar="BYTES")
 # mapped rejects the offset.
 parser.add_argument("--report-size", type=int, metavar="EXTEND_TO")
 # Reports, for every input row, whether the probed stretch of the region still holds anything: `clean`
-# if the 4 KiB right after the input (or at `--peek-at`) are all zero, `dirty` otherwise. A previous
+# if 4 KiB shortly after the input (or at `--peek-at`) are all zero, `dirty` otherwise. The stretch
+# starts `PEEK_GAP` bytes after the input rather than right at its end: the server serializes the input
+# straight into the region, and a writer may store a few bytes past the text it produces (`itoa` does),
+# so the bytes next to the input are not zero even in a region nobody has used. A previous
 # request's larger input or output leaves its bytes there unless the server scrubbed them; this is how
 # the test sees whether it did. Then overwrites that stretch, so that the next request finds it dirty
 # unless scrubbed again.
@@ -143,8 +146,11 @@ def report_size(input_data, region):
     return place_answer(region, len(region) - len(output), output)
 
 
+PEEK_GAP = 64
+
+
 def peek(input_data, region):
-    probe_from = args.peek_at if args.peek_at is not None else len(input_data)
+    probe_from = args.peek_at if args.peek_at is not None else len(input_data) + PEEK_GAP
     probe = bytes(region[probe_from : probe_from + 4096])
     verdict = b"clean" if probe.strip(b"\x00") == b"" else b"dirty"
     region[probe_from : probe_from + 4096] = b"x" * 4096
