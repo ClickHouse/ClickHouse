@@ -1,7 +1,7 @@
 ---
 title: '지원 세션'
 sidebarTitle: '지원 세션'
-description: 'ClickHouse Connector를 통해 ClickHouse 지원팀의 접근 권한을 활성화하고, 범위를 설정하며, 감사 및 철회합니다'
+description: 'ClickHouse Connector를 통해 ClickHouse 지원팀의 액세스 권한을 활성화하고, 범위를 설정하며, 감사 및 철회합니다'
 keywords: ['BYOC', 'cloud', '자체 클라우드 사용', '커넥터']
 doc_type: 'guide'
 ---
@@ -16,16 +16,12 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 지원 세션은 troubleshooter가 ClickHouse 지원 엔지니어의 명령어를 수락하는, 시간이 정해진 윈도우입니다. 세션이 아닐 때는 아웃바운드 WebSocket이 연결되어 있더라도 모든 명령어를 거부합니다. 다른 실행 경로는 존재하지 않으며, ClickHouse가 사용자를 대신해 세션을 열 수도 없습니다. ClickHouse Cloud는 사용자의 환경으로 접속하지 않으며, troubleshooter가 아웃바운드 채널로 전송하는 내용만 수신합니다.
 
-세션은 진단만을 관장합니다. 관리형 모드 서비스의 라이프사이클 명령어는 실행기의 별도 채널을 통해 전달되며, 지원 세션은 이 채널을 열지도, 통제하지도 않습니다. [managed services](/ko/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)를 참조하십시오.
+세션은 진단만을 관장합니다. 관리형 모드 서비스의 라이프사이클 명령어는 실행기의 별도 채널을 통해 전달되며, 지원 세션은 이 채널을 열지도, 통제하지도 않습니다. [관리형 서비스](/ko/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)를 참조하십시오.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
+  </Frame>
 </div>
 
 세션은 두 가지 인터페이스를 통해 제어합니다.

@@ -6,7 +6,6 @@
 -- blockSerializedSize) then aborted with "Variant N has size X, but expected Y".
 -- https://github.com/ClickHouse/ClickHouse/issues/101415
 
-SET enable_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 
 -- Conversion path (ConvertImplFromVariantToColumn): toString returns the String subcolumn unchanged.
@@ -34,7 +33,6 @@ DROP TABLE t04337;
 -- Same bug in the sibling Dynamic adaptor (FunctionDynamicAdaptor): Dynamic is backed by a
 -- ColumnVariant, and the single-type-plus-NULL fast path also expanded the (possibly shared)
 -- nested function result in place via assumeMutable()->expand().
-SET enable_dynamic_type = 1;
 
 SELECT 'dynamic adaptor path, const array';
 SELECT arraySort(x -> concat(toString(x)), [NULL, CAST('hi', 'Dynamic')]);

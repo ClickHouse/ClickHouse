@@ -13,11 +13,16 @@ namespace DB
 static const auto BATCH = 1000;
 static const auto MAX_BUFFERED = 131072;
 
+/// A publish failing with any other status (e.g. a timeout during a leader change of the stream) is retried with backoff.
+static constexpr size_t MAX_PUBLISH_RETRIES = 5;
+static constexpr auto PUBLISH_RETRY_INITIAL_WAIT = std::chrono::milliseconds(100);
+
 namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_STATE;
+    extern const int CANNOT_CONNECT_NATS;
 }
 
 INATSProducer::INATSProducer(NATSConnectionPtr connection_, String subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
@@ -48,10 +53,14 @@ void INATSProducer::finishImpl()
 
     if (shutdown_called)
         throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+    if (!publish_error.empty())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot publish to NATS subject {}: {}", subject, publish_error);
 }
 
 void INATSProducer::cancel() noexcept
 {
+    cancelled = true;
     try
     {
         finish();
@@ -66,7 +75,7 @@ void INATSProducer::produce(const String & message, size_t, const Columns &, siz
 {
     if (!payloads.push(message))
     {
-        /// The producing task has stopped on table shutdown and closed the queue: `finish` throws its error.
+        /// The producing task has stopped on a publish error or on table shutdown and closed the queue: `finish` throws the error.
         finish();
         throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
     }
@@ -74,27 +83,39 @@ void INATSProducer::produce(const String & message, size_t, const Columns &, siz
 
 void INATSProducer::publish()
 {
-    String payload;
-
-    natsStatus status = {};
-    while (!payloads.empty())
+    while (pending_payload || !payloads.empty())
     {
         if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
             break;
-        bool pop_result = payloads.pop(payload);
 
-        if (!pop_result)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+        if (!pending_payload)
+        {
+            String payload;
+            if (!payloads.pop(payload))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+            pending_payload = std::move(payload);
+        }
 
-        status = publishMessage(payload);
+        natsStatus status = publishMessage(*pending_payload);
         if (status != NATS_OK)
         {
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), getNATSLastError());
-            if (!payloads.pushFront(payload))
-                throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
+            /// A retry cannot succeed: the client rejects a message over max_payload before sending it, and NATS_ERR is
+            /// the stream rejecting the message.
+            if (status == NATS_NO_RESPONDERS)
+                publish_error = "there is no JetStream stream for this subject";
+            else if (status == NATS_MAX_PAYLOAD || status == NATS_ERR || pending_payload_retries == MAX_PUBLISH_RETRIES || cancelled)
+                publish_error = fmt::format("{}. Last error message: {}", natsStatus_GetText(status), getNATSLastError());
+            else
+            {
+                std::this_thread::sleep_for(PUBLISH_RETRY_INITIAL_WAIT * (1 << pending_payload_retries));
+                ++pending_payload_retries;
+            }
             break;
         }
+        pending_payload.reset();
+        pending_payload_retries = 0;
     }
 }
 
@@ -109,7 +130,7 @@ void INATSProducer::startProducingTaskLoop()
 
     try
     {
-        while (!payloads.isFinishedAndEmpty() && !shutdown_called)
+        while (publish_error.empty() && !shutdown_called && (pending_payload || !payloads.isFinishedAndEmpty()))
         {
             if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
@@ -117,7 +138,7 @@ void INATSProducer::startProducingTaskLoop()
                 publish();
         }
 
-        if (shutdown_called)
+        if (!publish_error.empty() || shutdown_called)
         {
             /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
             payloads.finish();
@@ -135,6 +156,8 @@ void INATSProducer::startProducingTaskLoop()
     catch (...)
     {
         tryLogCurrentException(log);
+        publish_error = getCurrentExceptionMessage(false);
+        payloads.finish();
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
