@@ -18,11 +18,13 @@ SELECT cityHash64(number) AS k, randomPrintableASCII(24) AS s FROM numbers_mt(20
 SETTINGS max_bytes_before_external_sort = 8388608, log_comment = '05835_narrow';
 
 -- The merge of the temporary files takes less memory than the sort in memory.
-SELECT cityHash64(number) AS k, randomPrintableASCII(1000) AS s FROM numbers_mt(300000) ORDER BY k FORMAT Null
-SETTINGS max_bytes_before_external_sort = 0, log_comment = '05835_wide_in_memory';
+-- About 40 MB in blocks of about 2 MB; the threshold of 4 MiB is 1 MiB per stream before the change,
+-- so every block would be spilled as a separate one-block file.
+SELECT cityHash64(number) AS k, randomPrintableASCII(1000) AS s FROM numbers_mt(40000) ORDER BY k FORMAT Null
+SETTINGS max_block_size = 2048, max_bytes_before_external_sort = 0, log_comment = '05835_wide_in_memory';
 
-SELECT cityHash64(number) AS k, randomPrintableASCII(1000) AS s FROM numbers_mt(300000) ORDER BY k FORMAT Null
-SETTINGS max_bytes_before_external_sort = 16777216, log_comment = '05835_wide_spilled';
+SELECT cityHash64(number) AS k, randomPrintableASCII(1000) AS s FROM numbers_mt(40000) ORDER BY k FORMAT Null
+SETTINGS max_block_size = 2048, max_bytes_before_external_sort = 4194304, log_comment = '05835_wide_spilled';
 
 -- The merge of the temporary files sizes its blocks by the sort key as sorted, not as replicated by ARRAY JOIN.
 CREATE TABLE replicated_block_sizes (bs UInt64) ENGINE = Memory;
