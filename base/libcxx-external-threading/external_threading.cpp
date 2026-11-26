@@ -429,7 +429,10 @@ private:
             constexpr uint64_t max_fiber_timeout = 1'000'000'000ULL * 1'000'000'000;
             if (deadline == UINT64_MAX || timeout >= max_fiber_timeout)
                 return waiter.future.wait();
-            return silk::FiberFuture::waitWithTimeout(&waiter.future, timeout);
+            int result = silk::FiberFuture::waitWithTimeout(&waiter.future, timeout);
+            for (uint64_t now_after = silk::getTimeNanoseconds(); result == ETIMEDOUT && now_after < deadline; now_after = silk::getTimeNanoseconds())
+                result = silk::FiberFuture::waitWithTimeout(&waiter.future, deadline - now_after);
+            return result;
         }
 
         silk::spinWait([&] { return std::atomic_ref(waiter.notified).load(std::memory_order_acquire) != 0; });
@@ -581,7 +584,9 @@ void __libcpp_thread_sleep_for(const chrono::nanoseconds & ns)
 {
     if (needSilkAwareWait())
     {
-        silk::FiberScheduler::sleep(static_cast<uint64_t>(ns.count()));
+        const uint64_t deadline = silk::getTimeNanoseconds() + static_cast<uint64_t>(ns.count());
+        for (uint64_t now = silk::getTimeNanoseconds(); now < deadline; now = silk::getTimeNanoseconds())
+            silk::FiberScheduler::sleep(deadline - now);
         return;
     }
     timespec ts = std::__convert_to_timespec<timespec>(ns);
