@@ -184,9 +184,9 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler la prélecture des sous-flux de données partagées JSON lus en recherchant une marque dans les parties Wide."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler la prélecture des sous-flux de données partagées JSON lus en recherchant une marque dans les parties au format wide."}]}]} />
 
-Active la prélecture des sous-flux de données partagées JSON dans les parties Wide lus en recherchant une marque. Cette prélecture lit depuis le début du granule, qui n&#39;est généralement pas la position à partir de laquelle le sous-flux est lu ; elle peut donc être inutile. Désactivez ce paramètre pour ignorer ces prélectures.
+Active la prélecture des sous-flux de données partagées JSON dans les parties au format wide lus en recherchant une marque, y compris le sous-flux de données des chemins typés `SHARED`. Cette prélecture lit depuis le début du granule, qui n&#39;est généralement pas la position à partir de laquelle le sous-flux est lu ; elle peut donc être inutile. Désactivez ce paramètre pour ignorer ces prélectures.
 
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 

@@ -15,39 +15,37 @@ doc_type: 'reference'
 * получения полезной информации в удобочитаемом виде о базах данных, таблицах и частях, содержащихся в резервной копии
 * проверки целостности резервной копии
 
-<div id="example">
-  ## Пример:
-</div>
+## Пример: {#example}
 
 ```python
 from clickhouse_backupview import open_backup, S3, FileInfo
 
-# Открыть резервную копию. Также можно использовать локальный путь:
+# Open a backup. We could also use a local path:
 # backup = open_backup("/backups/my_backup_1/")
 backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
 
-# Получить список баз данных внутри резервной копии.
+# Get a list of databases inside the backup.
 print(backup.get_databases()))
 
-# Получить список таблиц внутри резервной копии,
-# а для каждой таблицы — запрос на создание и список частей и партиций.
+# Get a list of tables inside the backup,
+# and for each table its create query and a list of parts and partitions.
 for db in backup.get_databases():
     for tbl in backup.get_tables(database=db):
         print(backup.get_create_query(database=db, table=tbl))
         print(backup.get_partitions(database=db, table=tbl))
         print(backup.get_parts(database=db, table=tbl))
 
-# Извлечь всё из резервной копии.
+# Extract everything from the backup.
 backup.extract_all(table="mydb.mytable", out='/tmp/my_backup_1/all/')
 
-# Извлечь данные конкретной таблицы.
+# Extract the data of a specific table.
 backup.extract_table_data(table="mydb.mytable", out='/tmp/my_backup_1/mytable/')
 
-# Извлечь одну партицию.
+# Extract a single partition.
 backup.extract_table_data(table="mydb.mytable", partition="202201", out='/tmp/my_backup_1/202201/')
 
-# Извлечь одну часть.
+# Extract a single part.
 backup.extract_table_data(table="mydb.mytable", part="202201_100_200_3", out='/tmp/my_backup_1/202201_100_200_3/')
 ```
 
-Больше примеров см. в [test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test.py).
+Больше примеров см. в [test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test_backupview.py).

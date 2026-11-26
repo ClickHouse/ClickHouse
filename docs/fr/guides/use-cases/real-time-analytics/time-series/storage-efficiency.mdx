@@ -11,9 +11,7 @@ doc_type: 'guide'
 Après avoir vu comment interroger notre jeu de données de statistiques Wikipedia, intéressons-nous à l&#39;optimisation du stockage dans ClickHouse.
 Cette section présente des techniques pratiques pour réduire les besoins en stockage tout en préservant les performances des requêtes.
 
-<div id="time-series-type-optimization">
-  ## Optimisation des types
-</div>
+## Optimisation des types {#time-series-type-optimization}
 
 L’approche générale pour optimiser l’efficacité du stockage consiste à utiliser les types de données les plus adaptés.
 Prenons les colonnes `project` et `subproject`. Ces colonnes sont de type String, mais contiennent un nombre relativement faible de valeurs uniques :
@@ -61,12 +59,10 @@ MODIFY COLUMN `hits` UInt32;
 
 Cela réduira d’au moins moitié la taille de cette colonne en mémoire. Notez que sa taille sur disque restera inchangée en raison de la compression. Mais attention : choisissez des types de données qui ne soient pas trop petits !
 
-<div id="time-series-specialized-codecs">
-  ## Codecs spécialisés
-</div>
+## Codecs spécialisés {#time-series-specialized-codecs}
 
 Lorsque l’on traite des données séquentielles, comme des séries temporelles, on peut encore améliorer l’efficacité du stockage en utilisant des codecs spécialisés.
-L’idée générale est de stocker les écarts entre les valeurs plutôt que les valeurs absolues elles-mêmes, ce qui réduit considérablement l’espace nécessaire pour des données qui évoluent lentement :
+L’idée générale est de stocker les écarts entre les valeurs plutôt que les valeurs absolues elles-mêmes, ce qui réduit considérablement l’espace nécessaire pour des données qui évoluent lentement :
 
 ```sql
 ALTER TABLE wikistat
@@ -79,7 +75,7 @@ Une clé d&#39;ordonnancement bien choisie peut aussi faire gagner de l&#39;espa
 Comme nous voulons généralement filtrer par chemin, nous allons ajouter `path` à la clé de tri.
 Cela nécessite de recréer la table.
 
-Ci-dessous, nous pouvons voir la commande `CREATE` pour notre table initiale et la table optimisée :
+Ci-dessous, nous pouvons voir la commande `CREATE` pour notre table initiale et la table optimisée :
 
 ```sql
 CREATE TABLE wikistat
@@ -97,7 +93,7 @@ ORDER BY (time);
 ```sql
 CREATE TABLE optimized_wikistat
 (
-    `time` DateTime CODEC(Delta(4), ZSTD(1)),
+    `time` DateTime CODEC(Delta, Default),
     `project` LowCardinality(String),
     `subproject` LowCardinality(String),
     `path` String,
@@ -107,7 +103,7 @@ ENGINE = MergeTree
 ORDER BY (path, time);
 ```
 
-Et regardons l’espace occupé par les données dans chaque table :
+Et regardons l’espace occupé par les données dans chaque table :
 
 ```sql
 SELECT

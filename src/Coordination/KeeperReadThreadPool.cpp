@@ -154,13 +154,13 @@ void KeeperReadThreadPool::threadFunction()
                     first_exception = std::current_exception();
             }
 
+            lock.lock();
+
             /// Report that this thread is finished with this batch.
             size_t prev_busy_threads = busy_threads.fetch_sub(1, std::memory_order_release);
             chassert(prev_busy_threads > 0);
             if (prev_busy_threads == 1)
                 done_cv.notify_all();
-
-            lock.lock();
         }
     }
     catch (...)

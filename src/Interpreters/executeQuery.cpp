@@ -3678,7 +3678,7 @@ static BlockIO executeQueryImpl(
                 }
 
                 if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
-                    context->enablePlanLogCapture();
+                    context->enablePlanLogCapture(QueryPlanLogCapture::collectedStatisticsFromSettings(settings));
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
@@ -5082,9 +5082,11 @@ void executeQuery(
             String key = key_value.safeGet<Tuple>().at(0).safeGet<String>();
             String value = key_value.safeGet<Tuple>().at(1).safeGet<String>();
 
-            if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
-                || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys and values of the `http_response_headers` setting cannot contain ASCII control characters");
+            if (key.empty() || !std::all_of(key.begin(), key.end(), isHTTPTokenChar))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `http_response_headers` setting must be valid HTTP header names");
+
+            if (std::any_of(value.begin(), value.end(), isControlOrDeleteASCII))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `http_response_headers` setting cannot contain ASCII control characters");
 
             if (!result_details.additional_headers.emplace(key, value).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `http_response_headers` setting");

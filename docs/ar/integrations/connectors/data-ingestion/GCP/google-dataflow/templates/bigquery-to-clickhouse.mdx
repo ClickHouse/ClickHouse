@@ -8,10 +8,10 @@ keywords: ['Dataflow', 'BigQuery']
 ---
 
 قالب BigQuery إلى ClickHouse هو مسار معالجة دفعي يُدخِل البيانات من جدول BigQuery إلى جدول ClickHouse.
-يمكن للقالب قراءة الجدول بالكامل أو تصفية سجلات محددة باستخدام استعلام SQL مُقدَّم.
+يمكن للقالب قراءة الجدول بالكامل أو تصفية سجلات محددة باستخدام استعلام SQL مُقدَّم.
 
 <div id="pipeline-requirements">
-  ## متطلبات مسار المعالجة
+  ## متطلبات مسار المعالجة {#pipeline-requirements}
 </div>
 
 * يجب أن يكون جدول BigQuery المصدر موجودًا.
@@ -19,7 +19,7 @@ keywords: ['Dataflow', 'BigQuery']
 * يجب أن يكون مضيف ClickHouse متاحًا من الأجهزة العاملة في Dataflow.
 
 <div id="template-parameters">
-  ## معلمات القالب
+  ## معلمات القالب {#template-parameters}
 </div>
 
 <br />
@@ -50,7 +50,7 @@ keywords: ['Dataflow', 'BigQuery']
 </Note>
 
 <div id="source-and-target-tables-schema">
-  ## مخطط جدولَي المصدر والهدف
+  ## مخطط جدولَي المصدر والهدف {#source-and-target-tables-schema}
 </div>
 
 لتحميل مجموعة بيانات BigQuery إلى ClickHouse بكفاءة، ينفّذ مسار المعالجة عملية استنتاج للأعمدة عبر المراحل التالية:
@@ -66,7 +66,7 @@ keywords: ['Dataflow', 'BigQuery']
 </Warning>
 
 <div id="data-types-mapping">
-  ## مطابقة أنواع البيانات
+  ## مطابقة أنواع البيانات {#data-types-mapping}
 </div>
 
 تُحوَّل أنواع BigQuery استنادًا إلى تعريف جدول ClickHouse لديك. لذلك، يوضّح الجدول أعلاه
@@ -82,14 +82,13 @@ keywords: ['Dataflow', 'BigQuery']
 | [**الأنواع الرقمية - أنواع Integer**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**أنواع Integer**](/ar/reference/data-types/int-uint) | في BigQuery، تُعد جميع أنواع Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) أسماء مستعارة لـ `INT64`. نوصي بتعيين حجم Integer المناسب في ClickHouse، لأن القالب سيحوّل العمود استنادًا إلى نوع العمود المحدد (`Int8`, `Int16`, `Int32`, `Int64`). كما سيحوّل القالب أيضًا أنواع Int غير المعيّنة إذا استُخدمت في جدول ClickHouse (`UInt8`, `UInt16`, `UInt32`, `UInt64`). |
 | [**الأنواع الرقمية - أنواع Float**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)   | [**أنواع Float**](/ar/reference/data-types/float)      | أنواع ClickHouse المدعومة: `Float32` و`Float64`                                                                                                                                                                                                                                                                                                                                               |
 
-<div id="running-the-template">
-  ## تشغيل قالب
-</div>
+## تشغيل قالب {#running-the-template}
 
 يتوفر قالب ‏من BigQuery إلى ClickHouse للتشغيل عبر Google Cloud CLI.
 
 <Note>
-  احرص على مراجعة هذا المستند، ولا سيما الأقسام الواردة أعلاه، لفهم متطلبات تهيئة قالب والمتطلبات المسبقة الخاصة به فهمًا كاملًا.
+  احرص على مراجعة هذا المستند، ولا سيما الأقسام الواردة أعلاه، لفهم متطلبات إعدادات قالب
+  والمتطلبات المسبقة الخاصة به فهمًا كاملًا.
 </Note>
 
 <Tabs>
@@ -97,34 +96,25 @@ keywords: ['Dataflow', 'BigQuery']
     سجّل الدخول إلى Google Cloud Console وابحث عن DataFlow.
 
     1. اضغط على الزر `CREATE JOB FROM TEMPLATE`
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![وحدة تحكم DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-
-       </Frame>
-
+         <Frame>
+           ![وحدة تحكم DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+         </Frame>
        </div>
-    2. بعد فتح نموذج قالب، أدخل اسم المهمة وحدد المنطقة المطلوبة.
+    2. بعد فتح نموذج قالب، أدخل اسم Job وحدد المنطقة المطلوبة.
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![النموذج الأولي لـ DataFlow قالب](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
-
-       </Frame>
-
+         <Frame>
+           ![النموذج الأولي لـ DataFlow قالب](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+         </Frame>
        </div>
-    3. في حقل `DataFlow Template`، اكتب `ClickHouse` أو `BigQuery`، ثم اختر قالب ‏`BigQuery to ClickHouse`
+    3. في حقل `DataFlow Template`، اكتب `ClickHouse` أو  `BigQuery`، ثم اختر قالب ‏`BigQuery to ClickHouse`
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![اختر قالب ‏من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
-
-       </Frame>
-
+         <Frame>
+           ![اختر قالب ‏من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+         </Frame>
        </div>
     4. بعد الاختيار، سيتوسع النموذج ليتيح لك إدخال تفاصيل إضافية:
        * عنوان JDBC URL لخادم ClickHouse، بالتنسيق التالي `jdbc:clickhouse://host:port/schema`.
@@ -139,13 +129,9 @@ keywords: ['Dataflow', 'BigQuery']
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![نموذج القالب الموسّع لـ من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
-
-    </Frame>
-
+      <Frame>
+        ![نموذج القالب الموسّع لـ من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+      </Frame>
     </div>
 
     5. خصّص وأضف أي إعدادات مرتبطة بـ BigQuery/ClickHouseIO، كما هو موضح في
@@ -153,17 +139,17 @@ keywords: ['Dataflow', 'BigQuery']
   </Tab>
 
   <Tab title="Google Cloud CLI">
-    ### تثبيت `gcloud` CLI وتهيئته
+### تثبيت `gcloud` CLI وإعداده {#install--configure-gcloud-cli}
 
     * إذا لم يكن [`gcloud` CLI](https://cloud.google.com/sdk/docs/install) مثبتًا بالفعل، فثبّته.
     * اتبع قسم `Before you begin`
       في [هذا الدليل](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin) لإعداد
-      التهيئات والإعدادات والأذونات المطلوبة لتشغيل DataFlow قالب.
+      الإعدادات والإعدادات والأذونات المطلوبة لتشغيل DataFlow قالب.
 
-    ### تشغيل الأمر
+### تشغيل الأمر {#run-command}
 
     استخدم الأمر [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run)
-    لتشغيل مهمة Dataflow تستخدم Flex قالب.
+    لتشغيل Job تستخدم Flex قالب.
 
     فيما يلي مثال على الأمر:
 
@@ -173,14 +159,14 @@ keywords: ['Dataflow', 'BigQuery']
      --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
     ```
 
-    ### شرح مكوّنات الأمر
+### شرح مكوّنات الأمر {#command-breakdown}
 
-    * **اسم المهمة:** النص الذي يلي الكلمة المفتاحية `run` هو اسم المهمة الفريد.
+    * **اسم Job:** النص الذي يلي الكلمة المفتاحية `run` هو اسم Job الفريد.
     * **ملف قالب:** يحدد JSON file المشار إليه بواسطة `--template-file-gcs-location` بنية قالب
       وتفاصيل المعلمات المقبولة. مسار الملف المذكور عام وجاهز للاستخدام.
-    * **Parameters:** تُفصل Parameters بفواصل. وبالنسبة إلى المعلمات النصية، أَحِط القيم بعلامات اقتباس مزدوجة.
+    * **المعلمات:** تُفصل المعلمات بفواصل. وبالنسبة إلى المعلمات النصية، أَحِط القيم بعلامات اقتباس مزدوجة.
 
-    ### الاستجابة المتوقعة
+### الاستجابة المتوقعة {#expected-response}
 
     بعد تشغيل الأمر، ينبغي أن ترى استجابة مشابهة لما يلي:
 
@@ -197,29 +183,23 @@ keywords: ['Dataflow', 'BigQuery']
   </Tab>
 </Tabs>
 
-<div id="monitor-the-job">
-  ### مراقبة المهمة
-</div>
+### مراقبة Job {#monitor-the-job}
 
 انتقل إلى [علامة التبويب Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) في Google Cloud Console
-لمراقبة حالة المهمة. ستجد تفاصيل المهمة، بما في ذلك مدى التقدّم وأي أخطاء:
+لمراقبة حالة Job. ستجد تفاصيل Job، بما في ذلك مدى التقدّم وأي أخطاء:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![واجهة Dataflow تعرض مهمة قيد التشغيل لنقل البيانات من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
-
-</Frame>
-
+  <Frame>
+    ![وحدة تحكم DataFlow تعرض Job من BigQuery إلى ClickHouse قيد التشغيل](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+  </Frame>
 </div>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### خطأ تجاوز الحد الإجمالي للذاكرة (الرمز 241)
+  ### خطأ تجاوز الحد الإجمالي للذاكرة (الرمز 241) {#code-241-dbexception-memory-limit-total-exceeded}
 </div>
 
 يحدث هذا الخطأ عندما تستنفد ClickHouse الذاكرة أثناء معالجة دفعات كبيرة من البيانات. لحل هذه المشكلة:
@@ -228,7 +208,7 @@ keywords: ['Dataflow', 'BigQuery']
 * تقليل حجم الدفعة: عدّل حجم الدفعة في إعدادات مهمة Dataflow لإرسال أجزاء أصغر من البيانات إلى ClickHouse، مما يقلل استهلاك الذاكرة لكل دفعة. يمكن أن تساعد هذه التغييرات في تحقيق توازن في استخدام الموارد أثناء إدخال البيانات.
 
 <div id="template-source-code">
-  ## الشيفرة المصدرية للقالب
+  ## الشيفرة المصدرية للقالب {#template-source-code}
 </div>
 
 تتوفّر الشيفرة المصدرية للقالب في:
