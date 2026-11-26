@@ -35,6 +35,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Settings.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -1613,21 +1614,31 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
     }
     else
     {
+        /// Gather each selected element once, so the copy takes no more memory than the constant array or the result.
         auto selected_column = ColumnUInt64::create();
         auto & selected = selected_column->getData();
-        selected.reserve(rows - num_defaults);
-        const UInt64 default_position = rows - num_defaults;
+        HashMap<UInt64, UInt64> position_in_selected;
         for (auto & position : positions)
         {
             if (position == no_element)
+                continue;
+
+            HashMap<UInt64, UInt64>::LookupResult it;
+            bool inserted;
+            position_in_selected.emplace(position, it, inserted);
+            if (inserted)
             {
-                position = default_position;
-            }
-            else
-            {
+                it->getMapped() = selected.size();
                 selected.push_back(position);
-                position = selected.size() - 1;
             }
+            position = it->getMapped();
+        }
+
+        const UInt64 default_position = selected.size();
+        for (auto & position : positions)
+        {
+            if (position == no_element)
+                position = default_position;
         }
         source = IColumn::mutate(array_elements.index(*selected_column, selected.size()));
     }
