@@ -1477,8 +1477,9 @@ void addLimitByStep(
     {
         auto step = std::make_unique<LimitByStep>(
             query_plan.getCurrentHeader(), LimitByStep::Settings(settings), length, offset, column_names, always_read_till_end);
-        /// `LIMIT BY` sits above the `ORDER BY` sorting in the plan: the sorted order has to survive it up to the result.
-        if (query_node.hasOrderBy())
+        /// `LIMIT BY` sits above the `ORDER BY` sorting or the `SHUFFLE` in the plan: their order has to survive it up
+        /// to the result. `SHUFFLE` has no sort description, so a spilling `LIMIT BY` restores it by arrival numbers.
+        if (query_node.hasOrderBy() || query_node.isShuffle())
             step->preserveInputOrder(query_analysis_result.sort_description);
         return step;
     };
