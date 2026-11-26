@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <Common/CopyableAtomic.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
@@ -338,6 +339,11 @@ public:
         const SnapshotMoveCandidate & candidate,
         const std::function<bool(const SnapshotMoveCandidate &)> & publish_moved_snapshot);
 
+    /// Retry the removal of the destinations of failed moves whose removal failed as well.
+    /// Every maintenance pass calls it, including the passes without move candidates.
+    void retryPendingMoveTargetCleanups();
+    [[nodiscard]] size_t getPendingMoveTargetCleanupsCount() const;
+
     /// Best-effort maintenance (swallows exceptions); `just_written_log_idx` (0 = none) pins the
     /// caller's own entry through this pass.
     void runMaintenanceInline(uint64_t just_written_log_idx);
@@ -413,7 +419,11 @@ private:
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
     std::vector<SnapshotFileInfoPtr> detachOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
     std::vector<SnapshotMoveCandidate> selectSnapshotsToMove();
-    void cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate) const;
+    /// Remove the unpublished destination of a failed move and its marker. The destination is owned by
+    /// `pending_move_target_cleanups` until both are removed.
+    void cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate);
+    bool tryRemoveUnpublishedMoveTarget(const DiskPtr & target_disk, const std::string & target_path) const;
+    void retryPendingMoveTargetCleanupsLocked() TSA_REQUIRES(pending_move_target_cleanups_mutex);
 
     /// Build a `shared_ptr<SnapshotFileInfo>` whose deleter unlinks only when
     /// `retired_for_removal` is set.
@@ -433,6 +443,17 @@ private:
     /// Same-index recovery copies kept on disk at startup but not registered in `existing_snapshots`.
     /// `detachSnapshotForRemoval` retires them with their index so they age out without a restart.
     std::unordered_map<uint64_t, std::vector<SnapshotFileInfoPtr>> retained_duplicate_snapshots;
+    /// Unpublished destinations of failed moves that could not be removed, e.g. while the target disk
+    /// was unavailable. No snapshot metadata points to them, so retention never removes them:
+    /// they stay here until a maintenance pass removes them. The list has its own mutex because moves
+    /// run outside `snapshots_lock`.
+    struct PendingMoveTargetCleanup
+    {
+        DiskPtr disk;
+        std::string path;
+    };
+    mutable std::mutex pending_move_target_cleanups_mutex;
+    VectorWithMemoryTracking<PendingMoveTargetCleanup> pending_move_target_cleanups TSA_GUARDED_BY(pending_move_target_cleanups_mutex);
     /// See `setProtectedSnapshotIndex` / `setProtectedPendingSnapshotIndex`. Both checked by
     /// `detachOutdatedSnapshotsIfNeeded`.
     uint64_t protected_snapshot_log_idx = 0;

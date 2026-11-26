@@ -242,6 +242,7 @@ namespace
     {
         size_t data_size = 0;
         readVarUInt(data_size, in);
+        checkKeeperSerializedBufferSize(data_size, "the snapshot metadata");
         auto buffer = nuraft::buffer::alloc(data_size);
         in.readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
         buffer->pos(0);
@@ -1450,31 +1451,84 @@ bool KeeperSnapshotManager::publishMovedSnapshotIfValid(const SnapshotMoveCandid
     return true;
 }
 
-void KeeperSnapshotManager::cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate) const
+bool KeeperSnapshotManager::tryRemoveUnpublishedMoveTarget(const DiskPtr & target_disk, const std::string & target_path) const
 {
     try
     {
         /// The destination goes first: without it, a leftover move marker is an orphan that startup
         /// removes, while a destination without its marker could be accepted as a snapshot.
-        removeKeeperFileIfExists(candidate.target_disk, candidate.target_path);
-        removeKeeperFileIfExists(candidate.target_disk, getKeeperMoveMarkerPath(candidate.target_path));
-        LOG_DEBUG(log, "Removed unpublished snapshot target {} from disk {}", candidate.target_path, candidate.target_disk->getName());
+        removeKeeperFileIfExists(target_disk, target_path);
+        removeKeeperFileIfExists(target_disk, getKeeperMoveMarkerPath(target_path));
+        LOG_DEBUG(log, "Removed unpublished snapshot target {} from disk {}", target_path, target_disk->getName());
+        return true;
     }
     catch (...)
     {
         tryLogCurrentException(
             log,
-            fmt::format(
-                "Failed to remove unpublished snapshot target {} from disk {}",
-                candidate.target_path,
-                candidate.target_disk->getName()));
+            fmt::format("Failed to remove unpublished snapshot target {} from disk {}", target_path, target_disk->getName()));
+        return false;
     }
+}
+
+void KeeperSnapshotManager::cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate)
+{
+    std::lock_guard lock(pending_move_target_cleanups_mutex);
+
+    /// Take the ownership before the removal, so that a failure to record it cannot lose the target.
+    const bool already_pending = std::ranges::any_of(
+        pending_move_target_cleanups,
+        [&](const auto & pending) { return pending.disk == candidate.target_disk && pending.path == candidate.target_path; });
+    if (!already_pending)
+        pending_move_target_cleanups.push_back({candidate.target_disk, candidate.target_path});
+
+    retryPendingMoveTargetCleanupsLocked();
+}
+
+void KeeperSnapshotManager::retryPendingMoveTargetCleanupsLocked()
+{
+    std::erase_if(
+        pending_move_target_cleanups,
+        [&](const auto & pending) { return tryRemoveUnpublishedMoveTarget(pending.disk, pending.path); });
+}
+
+void KeeperSnapshotManager::retryPendingMoveTargetCleanups()
+{
+    std::lock_guard lock(pending_move_target_cleanups_mutex);
+    retryPendingMoveTargetCleanupsLocked();
+}
+
+size_t KeeperSnapshotManager::getPendingMoveTargetCleanupsCount() const
+{
+    std::lock_guard lock(pending_move_target_cleanups_mutex);
+    return pending_move_target_cleanups.size();
 }
 
 bool KeeperSnapshotManager::moveSnapshotCandidate(
     const SnapshotMoveCandidate & candidate,
     const std::function<bool(const SnapshotMoveCandidate &)> & publish_moved_snapshot)
 {
+    {
+        /// A destination left by an earlier failed move is removed only while it is in the pending list,
+        /// under its mutex, and a move starts only after its destination has left the list. So a retried
+        /// removal can never unlink a destination that a later move has published.
+        std::lock_guard lock(pending_move_target_cleanups_mutex);
+        retryPendingMoveTargetCleanupsLocked();
+        const bool target_pending = std::ranges::any_of(
+            pending_move_target_cleanups,
+            [&](const auto & pending) { return pending.disk == candidate.target_disk && pending.path == candidate.target_path; });
+        if (target_pending)
+        {
+            LOG_WARNING(
+                log,
+                "Not moving snapshot {} to disk {} because the destination {} of an earlier failed move is not removed yet",
+                candidate.log_idx,
+                candidate.target_disk->getName(),
+                candidate.target_path);
+            return false;
+        }
+    }
+
     bool metadata_published = false;
     /// Whether this move may have written the destination or its marker.
     bool target_touched = true;
@@ -1512,7 +1566,8 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
 
     /// An unpublished destination must not survive, whatever stage the move failed at: the metadata
     /// still points to the source, so retention removes only the source when it retires the snapshot,
-    /// and the destination with its marker would stay on the disk until restart.
+    /// and the destination with its marker would stay on the disk until restart. If the removal fails
+    /// too, the destination stays in the pending list and every later maintenance pass retries it.
     if (!metadata_published && target_touched)
         cleanupCopiedMoveTarget(candidate);
     return metadata_published;
@@ -1525,6 +1580,7 @@ void KeeperSnapshotManager::runMaintenanceInline(uint64_t just_written_log_idx)
     {
         SnapshotMaintenanceTasks tasks = prepareSnapshotMaintenanceTasks(just_written_log_idx);
         tasks.retired_snapshots.clear();
+        retryPendingMoveTargetCleanups();
         for (const auto & candidate : tasks.move_candidates)
             moveSnapshotCandidate(candidate, [this](const SnapshotMoveCandidate & move_candidate)
             {
@@ -1882,6 +1938,7 @@ void KeeperSnapshotReader::readSessionsAndClusterConfig(KeeperStorage & storage)
     {
         size_t data_size = 0;
         readVarUInt(data_size, *in);
+        checkKeeperSerializedBufferSize(data_size, "the cluster config in a snapshot");
         auto buffer = nuraft::buffer::alloc(data_size);
         in->readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
         buffer->pos(0);

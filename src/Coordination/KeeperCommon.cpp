@@ -46,6 +46,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
+
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
@@ -255,6 +260,17 @@ void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path)
 void syncKeeperParentDirectory(const DiskPtr & disk, const std::string & path)
 {
     syncLocalParentDirectory(disk, path);
+}
+
+void checkKeeperSerializedBufferSize(uint64_t size, std::string_view description)
+{
+    if (size > MAX_KEEPER_SERIALIZED_BUFFER_SIZE)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "The size of {} is too big: {}, the maximum is {}",
+            description,
+            size,
+            MAX_KEEPER_SERIALIZED_BUFFER_SIZE);
 }
 
 namespace

@@ -901,6 +901,7 @@ ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & f
     /// Read data
     if (record.header.blob_size != 0)
     {
+        checkKeeperSerializedBufferSize(record.header.blob_size, "a changelog record");
         auto buffer = nuraft::buffer::alloc(record.header.blob_size);
         auto * buffer_begin = reinterpret_cast<char *>(buffer->data_begin());
         read_buf.readStrict(buffer_begin, record.header.blob_size);

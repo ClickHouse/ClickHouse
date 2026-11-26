@@ -2917,6 +2917,7 @@ void KeeperStateMachine::runSnapshotMaintenance(SnapshotMaintenanceTasks && task
         /// May overlap save-path inline maintenance: each candidate holds an extra pin, so
         /// concurrent selection skips it; publication stays serialized by `snapshots_lock`.
         tasks.retired_snapshots.clear();
+        snapshot_manager.retryPendingMoveTargetCleanups();
 
         for (const auto & candidate : tasks.move_candidates)
         {

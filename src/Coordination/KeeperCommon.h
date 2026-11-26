@@ -180,6 +180,15 @@ std::string getKeeperMoveMarkerPath(const std::string & destination_path);
 /// Remove a Keeper file while holding a sync guard for its parent directory.
 void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path);
 
+/// A length decoded from a Keeper file is used as the size of a `nuraft::buffer` before the data is
+/// read and before any checksum is verified. `nuraft::buffer::alloc` adds its bookkeeping header to
+/// the size without an overflow check, so a damaged length close to 2^64 would wrap the allocation
+/// below the size of that header. No valid changelog record or snapshot section is this large.
+inline constexpr uint64_t MAX_KEEPER_SERIALIZED_BUFFER_SIZE = 1ULL << 40;
+
+/// Throws `CORRUPTED_DATA` if `size` cannot be the length of a serialized buffer.
+void checkKeeperSerializedBufferSize(uint64_t size, std::string_view description);
+
 /// Make a removal or creation of `path` durable by synchronizing its parent directory. Does nothing
 /// for disks that are not `DiskLocal`.
 void syncKeeperParentDirectory(const DiskPtr & disk, const std::string & path);

@@ -5973,6 +5973,31 @@ public:
     mutable std::atomic<bool> failed{false};
 };
 
+/// Fails the first `getFileSize` of a snapshot, and then every removal of a snapshot while `fail_removal` is set:
+/// the cleanup of the destination of the failed move fails as well, as it does while the disk is unavailable.
+class SnapshotSizeCheckAndRemovalFailureDisk final : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    size_t getFileSize(const String & path) const override
+    {
+        if (path.starts_with("snapshot_") && !failed.exchange(true))
+            throw std::runtime_error("Injected snapshot size check failure");
+        return DB::DiskLocal::getFileSize(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (path.starts_with("snapshot_") && fail_removal.load())
+            throw std::runtime_error("Injected snapshot removal failure");
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+
+    mutable std::atomic<bool> failed{false};
+    std::atomic<bool> fail_removal{true};
+};
+
 }
 
 TEST_P(CoordinationTest, MoveSnapshotCandidateRemovesTargetAfterDestinationValidationFailure)
@@ -6023,6 +6048,115 @@ TEST_P(CoordinationTest, MoveSnapshotCandidateRemovesTargetAfterDestinationValid
     EXPECT_FALSE(fs::exists("./snapshots/" + candidate.source_path));
     EXPECT_TRUE(fs::exists("./snapshots_move_target/" + candidate.target_path));
     EXPECT_FALSE(fs::exists("./snapshots_move_target/tmp_" + candidate.target_path));
+}
+
+TEST_P(CoordinationTest, FailedMoveTargetCleanupIsRetriedAfterSnapshotRetirement)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest rocks("./rocksdb");
+    ChangelogDirTest move_target("./snapshots_move_target");
+
+    auto ctx = makeContextForSnapshotApply(use_lsmt_storage, "./snapshots", "./rocksdb");
+
+    DB::KeeperSnapshotManager manager(3, ctx, true);
+    for (const uint64_t log_idx : {80, 90})
+    {
+        auto buf = makeSingleNodeSnapshotBuffer(ctx, log_idx, "/move_me", "data");
+        manager.serializeSnapshotBufferToDisk(*buf, log_idx);
+    }
+
+    auto target_disk = std::make_shared<SnapshotSizeCheckAndRemovalFailureDisk>("MoveTargetDisk", "./snapshots_move_target");
+
+    DB::SnapshotMoveCandidate candidate;
+    {
+        auto pin = manager.getSnapshotPin(80);
+        ASSERT_NE(pin, nullptr);
+        candidate = DB::SnapshotMoveCandidate{
+            .log_idx = 80,
+            .file_info = pin,
+            .source_disk = pin->disk,
+            .source_path = pin->path,
+            .target_disk = target_disk,
+            .target_path = pin->path};
+    }
+
+    size_t publications = 0;
+    const auto publish = [&](const DB::SnapshotMoveCandidate & c)
+    {
+        ++publications;
+        c.file_info->disk = c.target_disk;
+        c.file_info->path = c.target_path;
+        return true;
+    };
+
+    const auto target_file = "./snapshots_move_target/" + candidate.target_path;
+    const auto source_file = "./snapshots/" + candidate.source_path;
+
+    /// The copy succeeds, the validation of the destination fails, and so does the removal of the destination.
+    /// The metadata still points to the source, so the manager must keep the ownership of the destination.
+    EXPECT_FALSE(manager.moveSnapshotCandidate(candidate, publish));
+    EXPECT_TRUE(target_disk->failed.load());
+    EXPECT_EQ(publications, 0);
+    EXPECT_TRUE(fs::exists(source_file));
+    EXPECT_TRUE(fs::exists(target_file));
+    EXPECT_EQ(manager.getPendingMoveTargetCleanupsCount(), 1);
+
+    /// While the leftover destination cannot be removed, a new move to the same path does not start:
+    /// otherwise a later retry of the removal could unlink a published snapshot.
+    EXPECT_FALSE(manager.moveSnapshotCandidate(candidate, publish));
+    EXPECT_EQ(publications, 0);
+    EXPECT_TRUE(fs::exists(source_file));
+    EXPECT_TRUE(fs::exists(target_file));
+    EXPECT_EQ(manager.getPendingMoveTargetCleanupsCount(), 1);
+
+    /// Retention retires the snapshot. Its registered source is removed, the destination is still not removable.
+    candidate.file_info.reset();
+    manager.removeSnapshot(80);
+    EXPECT_FALSE(fs::exists(source_file));
+    EXPECT_TRUE(fs::exists(target_file));
+    manager.runMaintenanceInline(0);
+    EXPECT_TRUE(fs::exists(target_file));
+    EXPECT_EQ(manager.getPendingMoveTargetCleanupsCount(), 1);
+
+    /// The disk is back: the next maintenance pass removes the destination and its marker,
+    /// although no snapshot metadata refers to them anymore.
+    target_disk->fail_removal.store(false);
+    manager.runMaintenanceInline(0);
+    EXPECT_FALSE(fs::exists(target_file));
+    EXPECT_FALSE(fs::exists("./snapshots_move_target/tmp_" + candidate.target_path));
+    EXPECT_EQ(manager.getPendingMoveTargetCleanupsCount(), 0);
+    EXPECT_TRUE(fs::is_empty("./snapshots_move_target"));
+}
+
+TEST_P(CoordinationTest, SnapshotReaderRejectsImpossibleMetadataSize)
+{
+    /// The size is passed to `nuraft::buffer::alloc`, which adds its header to it without an overflow check.
+    DB::WriteBufferFromOwnString out;
+    DB::writeBinary(static_cast<uint8_t>(DB::MAX_SUPPORTED_SNAPSHOT_VERSION), out);
+    DB::writeVarUInt(std::numeric_limits<uint64_t>::max() - 1, out); /// The size of the snapshot metadata.
+    out.finalize();
+
+    DB::KeeperSnapshotReader reader(std::make_unique<DB::ReadBufferFromOwnString>(out.str()), this->keeper_context);
+    try
+    {
+        reader.readMetadata();
+        FAIL() << "the metadata size was accepted";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA);
+    }
+
+    EXPECT_NO_THROW(DB::checkKeeperSerializedBufferSize(DB::MAX_KEEPER_SERIALIZED_BUFFER_SIZE, "a test buffer"));
+    try
+    {
+        DB::checkKeeperSerializedBufferSize(DB::MAX_KEEPER_SERIALIZED_BUFFER_SIZE + 1, "a test buffer");
+        FAIL() << "the buffer size was accepted";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA);
+    }
 }
 
 TEST_P(CoordinationTest, SnapshotReaderRejectsImpossibleNodeCount)
