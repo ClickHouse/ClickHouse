@@ -95,7 +95,7 @@ namespace
 /// Random reads, prefetches and seeks on the buffer, each checked against the file content at the position a model tracks.
 void checkReadBigAgainstModel(bool with_seeks)
 {
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
     std::string data(3 * 1024 * 1024 + 123, '\0');
     for (auto & c : data)
         c = static_cast<char>(rng());
