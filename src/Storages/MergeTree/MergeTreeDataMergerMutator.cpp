@@ -302,7 +302,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 
         auto merge_choices = chooseMergesFrom(
             selector, *merge_predicate,
-            ranges_in_partition, partitions_stats, metadata_snapshot, settings, &data,
+            ranges_in_partition, partitions_stats, metadata_snapshot, settings,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges, current_time, log);
 
@@ -362,7 +362,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const auto & partitions_stats = collected.partitions_stats;
     auto merge_choices = chooseMergesFrom(
         selector, *merge_predicate,
-        ranges, partitions_stats, metadata_snapshot, settings, &data,
+        ranges, partitions_stats, metadata_snapshot, settings,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
         can_use_ttl_merges, current_time, log);
 
@@ -379,8 +379,8 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
             parts_collector,
             merge_predicate,
             /*partition_id=*/best,
-            /*final=*/true,
-            /*optimize_skip_merged_partitions=*/true);
+            /*force_full_partition_merge=*/true,
+            /*skip_merged_partition=*/true);
     }
 
     return std::unexpected(SelectMergeFailure{
@@ -394,8 +394,8 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const PartsCollectorPtr & parts_collector,
     const MergePredicatePtr & merge_predicate,
     const String & partition_id,
-    bool final,
-    bool optimize_skip_merged_partitions)
+    bool force_full_partition_merge,
+    bool skip_merged_partition)
 {
     /// time is not important in this context, since the parts will not be passed through the merge selector.
     const time_t current_time = std::time(nullptr);
@@ -420,7 +420,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         });
     }
 
-    if (!final && parts.size() == 1)
+    if (!force_full_partition_merge && parts.size() == 1)
     {
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
@@ -428,9 +428,9 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         });
     }
 
-    /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
+    /// If force_full_partition_merge, skip_merged_partition is true and we have only one part in partition with level > 0
     /// than we don't select it to merge. But if there are some expired TTL then merge is needed
-    if (final && optimize_skip_merged_partitions && parts.size() == 1)
+    if (force_full_partition_merge && skip_merged_partition && parts.size() == 1)
     {
         const PartProperties & part = parts.front();
 
@@ -485,7 +485,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
 
     LOG_TRACE(log, "Selected {} parts from {} to {}. Will apply {} patch parts", parts.size(), parts.front().name, parts.back().name, patch_parts.size());
-    return MergeSelectorChoices{{std::move(parts), std::move(patch_parts), MergeType::Regular, final}};
+    return MergeSelectorChoices{{std::move(parts), std::move(patch_parts), MergeType::Regular, MergeCoverage::FullPartition}};
 }
 
 /// parts should be sorted.
@@ -554,7 +554,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         if (entry_context->isBackgroundContext())
         {
             /// Latched, because a blocker released between two independent polls must not resurrect the read.
-            auto is_cancelled = [&blocker = merges_blocker,
+            auto merge_cancelled = [&blocker = merges_blocker,
                                  &ttl_blocker = ttl_merges_blocker,
                                  is_ttl_merge = isTTLMergeType(future_part->merge_type),
                                  merge_entry,
@@ -577,10 +577,10 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
 
             /// Installed before the first attach: `MergeTask::prepare` replaces it only at its end, after its first reads.
             (*merge_entry)->thread_group->setQueryCancellationPredicates(
-                is_cancelled,
-                [is_cancelled]
+                merge_cancelled,
+                [merge_cancelled]
                 {
-                    if (is_cancelled())
+                    if (merge_cancelled())
                         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
                 });
         }
@@ -835,7 +835,6 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionsStatistics & partitions_stats,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
-    const MergeTreeData * data,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
@@ -846,7 +845,7 @@ MergeSelectorChoices chooseMergesFrom(
 
     auto choices = selector.chooseMergesFrom(
         ranges, partitions_stats, predicate, metadata_snapshot,
-        data_settings, data, next_delete_times, next_recompress_times,
+        data_settings, next_delete_times, next_recompress_times,
         can_use_ttl_merges, current_time);
 
     if (!choices.empty())

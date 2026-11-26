@@ -2,10 +2,13 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -14,19 +17,25 @@
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/SipHash.h>
+#include <Common/SipHashStrings.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <base/getL2CacheSize.h>
 #include <base/unaligned.h>
+#include <Interpreters/AggregationCommon.h>
+#include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/TemporaryFileFrameReader.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/RowsBeforeStepCounter.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstring>
@@ -81,11 +90,16 @@ ALWAYS_INLINE inline UInt64 bucketHash(UInt32 x)
     return intHash64(x);
 }
 
-/// The 128-bit keys are uniformly distributed (see `mixKey`), so their low half is used as the hash, and the high half
-/// is used for the slot.
+/// The low half of the 128-bit keys is uniformly distributed (see `mixKey`), so it is used as the hash.
 ALWAYS_INLINE inline UInt64 bucketHash(UInt128 x)
 {
     return static_cast<UInt64>(x);
+}
+
+/// The 256-bit keys are the values themselves, as in `uniqExact`, so every word goes through `intHash64`.
+ALWAYS_INLINE inline UInt64 bucketHash(UInt256 x)
+{
+    return intHash64(x.items[0] ^ intHash64(x.items[1] ^ intHash64(x.items[2] ^ intHash64(x.items[3]))));
 }
 
 /// The slot of a key in a set is selected by the top bits of a different hash:
@@ -98,7 +112,7 @@ ALWAYS_INLINE inline UInt64 bucketHash(UInt128 x)
 ///   of the set.
 ALWAYS_INLINE inline UInt64 slotHash(UInt64 x)
 {
-    return x * 0x9E3779B97F4A7C15ULL;
+    return common::mulIgnoreOverflow(x, 0x9E3779B97F4A7C15ULL); /// Modulo 2^64 by design.
 }
 
 ALWAYS_INLINE inline UInt64 slotHash(UInt32 x)
@@ -106,22 +120,62 @@ ALWAYS_INLINE inline UInt64 slotHash(UInt32 x)
     return slotHash(UInt64{x});
 }
 
+/// The high half of `mixKey` keeps the varying bits of the value in place (e.g. the low bytes of a zero-padded
+/// `FixedString(12)`), so it is multiplied too.
 ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
 {
-    return static_cast<UInt64>(x >> 64);
+    return slotHash(static_cast<UInt64>(x >> 64));
 }
 
-/// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`) uniformly distributed,
-/// so that both halves of the result can serve as hashes. It is a two-round Feistel network with `intHash64` as the
-/// round function: each round only XORs one half with a function of the other one, so it can be undone, and distinct
-/// values stay distinct.
+/// The words are combined by multiplications by odd constants (the primes of xxHash64), which keep a word that differs
+/// different, without the cost of `intHash64` at every insertion.
+ALWAYS_INLINE inline UInt64 slotHash(UInt256 x)
+{
+    return slotHash(static_cast<UInt64>(
+        x.items[0] ^ common::mulIgnoreOverflow(UInt64{x.items[1]}, 0xC2B2AE3D27D4EB4FULL)
+        ^ common::mulIgnoreOverflow(UInt64{x.items[2]}, 0x165667B19E3779F9ULL)
+        ^ common::mulIgnoreOverflow(UInt64{x.items[3]}, 0x27D4EB2F165667C5ULL)));
+}
+
+/// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`, `Decimal128`) uniformly
+/// distributed, so that both halves of the result can serve as hashes. It is a two-round Feistel network with
+/// `intHash64` as the round function: each round only XORs one half with a function of the other one, so it can be
+/// undone, and distinct values stay distinct. The first round leaves the top bit alone, so the result keeps the top bit
+/// of the value (see `LONG_STRING_KEY_BIT`).
 ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
 {
     UInt64 low = static_cast<UInt64>(x);
-    UInt64 high = static_cast<UInt64>(x >> 64) ^ bucketHash(low);
+    UInt64 high = static_cast<UInt64>(x >> 64) ^ (bucketHash(low) & (~0ULL >> 1));
     low ^= bucketHash(high);
     return (UInt128(high) << 64) | low;
 }
+
+/// A string of up to 15 bytes as its bytes in the low bytes and its size in the high byte, so that distinct strings
+/// stay distinct without `SipHash`, which costs more than half of the routing of short strings. The data is followed by
+/// at least 15 readable bytes (`PaddedPODArray`).
+ALWAYS_INLINE inline UInt128 packShortString(const char * data, size_t size)
+{
+    auto low_bytes = [](size_t n) { return (1ULL << (n * 8)) - 1; };
+    UInt64 low = unalignedLoadLittleEndian<UInt64>(data);
+    UInt64 high = unalignedLoadLittleEndian<UInt64>(data + 8);
+    if (size < 8)
+    {
+        low &= low_bytes(size);
+        high = 0;
+    }
+    else
+    {
+        high &= low_bytes(size - 8);
+    }
+    high |= static_cast<UInt64>(size) << 56;
+    return (UInt128(high) << 64) | low;
+}
+
+/// The packed short strings have the top bit clear, and so do their keys (see `mixKey`), so the `SipHash` of the longer
+/// strings sets it: otherwise it could equal the key of a short string (`mixKey` is easy to invert), and they would be
+/// counted once. The `SipHash` is uniformly distributed already, so it is not mixed. The longer strings keep 127 bits of
+/// their hash, so two of them collide with probability 2^-127 instead of 2^-128.
+constexpr UInt128 LONG_STRING_KEY_BIT = UInt128(1) << 127;
 
 /// When a set does not fit into the L2 cache, the cell of the key this far ahead is prefetched while a key is inserted,
 /// so that the cache misses of the inserts overlap.
@@ -137,8 +191,8 @@ struct SlotHash
 /// itself: the load factor of 0.5 is kept by the callers, which rebuild the set (see `growLocalSet`).
 struct SlotGrower : HashTableGrower<1>
 {
-    size_t place(size_t x) const { return x >> (64 - size_degree); }
-    bool overflow(size_t /*elems*/) const { return false; }
+    [[nodiscard]] size_t place(size_t x) const { return x >> (64 - size_degree); }
+    [[nodiscard]] bool overflow(size_t /*elems*/) const { return false; }
 };
 
 /// A `HashSet` with the interface the streams and the buckets use.
@@ -187,9 +241,9 @@ public:
             insertMany<false>(keys, num_keys);
     }
 
-    size_t size() const { return set.size(); }
-    size_t capacity() const { return set.getBufferSizeInCells(); }
-    size_t numCellsInUse() const { return set.size() - set.hasZero(); }
+    [[nodiscard]] size_t size() const { return set.size(); }
+    [[nodiscard]] size_t capacity() const { return set.getBufferSizeInCells(); }
+    [[nodiscard]] size_t numCellsInUse() const { return set.size() - set.hasZero(); }
 
     template <typename Func>
     void forEach(Func && func) const
@@ -283,6 +337,53 @@ constexpr size_t DUPLICATES_BLOCK_BYTES = 16; /// SSE2, NEON
 /// The size of the cache of the recent keys (see `routeValues`): a few frequent keys fit, and it stays in L1.
 constexpr size_t RECENT_KEYS_BITS = 6;
 
+/// The columns that `packFixedBatch` packs for the elements of a tuple (see `packedTupleSize`). A `Nullable` element is its
+/// null flag, normalized to 0 or 1, and its values, with zero bytes for NULL, so that equal tuples have equal bytes whatever
+/// the nested column holds under a NULL.
+Columns packedTupleColumns(const ColumnTuple & tuple)
+{
+    Columns columns;
+    for (const auto & element : tuple.getColumns())
+    {
+        const auto * nullable = typeid_cast<const ColumnNullable *>(element.get());
+        if (!nullable)
+        {
+            columns.push_back(element);
+            continue;
+        }
+
+        const size_t num_rows = nullable->size();
+        const UInt8 * nulls = nullable->getNullMapData().data();
+        auto flags = ColumnUInt8::create(num_rows);
+        auto & flags_data = flags->getData();
+        for (size_t row = 0; row < num_rows; ++row)
+            flags_data[row] = nulls[row] != 0;
+        columns.push_back(std::move(flags));
+
+        const IColumn & nested = nullable->getNestedColumn();
+        auto zero_nulls = [&]<typename T>()
+        {
+            const T * values = reinterpret_cast<const T *>(nested.getRawData().data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            auto zeroed = ColumnVector<T>::create(num_rows);
+            auto & zeroed_data = zeroed->getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                zeroed_data[row] = nulls[row] ? T{} : values[row];
+            columns.push_back(std::move(zeroed));
+        };
+        switch (nested.sizeOfValueIfFixed())
+        {
+            case sizeof(UInt8): zero_nulls.template operator()<UInt8>(); break;
+            case sizeof(UInt16): zero_nulls.template operator()<UInt16>(); break;
+            case sizeof(UInt32): zero_nulls.template operator()<UInt32>(); break;
+            case sizeof(UInt64): zero_nulls.template operator()<UInt64>(); break;
+            case sizeof(UInt128): zero_nulls.template operator()<UInt128>(); break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in a packed tuple", nested.getName());
+        }
+    }
+    return columns;
+}
+
 template <typename Key>
 class RadixUniqExactState final : public IRadixUniqExactState
 {
@@ -292,8 +393,10 @@ public:
         size_t bucket_bits_,
         const StatsCollectingParams & stats_collecting_params_,
         std::optional<RadixUniqExactEntry> hint_,
-        const RadixUniqExactSpillParams & spill_params)
-        : bucket_bits(bucket_bits_)
+        const RadixUniqExactSpillParams & spill_params,
+        bool pack_tuples_)
+        : pack_tuples(pack_tuples_)
+        , bucket_bits(bucket_bits_)
         , num_buckets(1ULL << bucket_bits_)
         , streams(num_streams_)
         , stats_collecting_params(stats_collecting_params_)
@@ -329,13 +432,28 @@ public:
     /// the row number to the key, `same(last_row, row)` tells whether the key of `row` is known to be routed already,
     /// such as when the row equals the last routed row. The rows are compared before the keys are computed, because
     /// computing a key (hashing a string) is more expensive.
-    template <typename Extract, typename Same>
-    ALWAYS_INLINE void routeRows(size_t stream_index, size_t num_rows, const UInt8 * null_map, Extract && extract, Same && same)
+    /// With `defer`, the keys of the rows where `defer(row)` holds are computed after the other rows of a batch by
+    /// `extract_deferred(begin, positions, count, row_keys)`, which sets `row_keys[positions[i]]` to the key of row
+    /// `begin + positions[i]`.
+    template <typename Extract, typename Same, typename Defer = std::nullptr_t, typename ExtractDeferred = std::nullptr_t>
+    ALWAYS_INLINE void routeRows(
+        size_t stream_index,
+        size_t num_rows,
+        const UInt8 * null_map,
+        Extract && extract,
+        Same && same,
+        [[maybe_unused]] Defer && defer = nullptr,
+        [[maybe_unused]] ExtractDeferred && extract_deferred = nullptr)
     {
+        constexpr bool has_deferred = !std::is_same_v<std::decay_t<Defer>, std::nullptr_t>;
         auto & stream = streams[stream_index];
         std::array<Key, KEYS_BATCH_SIZE> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
         size_t last_row = 0;
         bool has_last_row = false;
+        bool has_routed = false;
+
+        [[maybe_unused]] std::array<Key, has_deferred ? KEYS_BATCH_SIZE : 0> row_keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - set before its read
+        [[maybe_unused]] std::array<UInt32, has_deferred ? KEYS_BATCH_SIZE : 0> deferred_positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_deferred entries are read
 
         /// The keys repeated within a few rows are skipped by a cache of the recent keys, as in `routeValues`, while they are
         /// frequent. The keys are hashes, so the cache compares them as fixed-size values.
@@ -349,20 +467,15 @@ public:
             const size_t end = std::min(begin + keys.size(), num_rows);
             size_t num_keys = 0;
             size_t num_computed = 0;
-            for (size_t row = begin; row < end; ++row)
+            [[maybe_unused]] size_t num_deferred = 0;
+
+            auto add = [&](const Key & key) ALWAYS_INLINE
             {
-                if (null_map && null_map[row])
-                    continue;
-
-                if (has_last_row && same(last_row, row))
-                    continue;
-                last_row = row;
-
-                const Key key = extract(row);
                 ++num_computed;
-                if (!has_last_row)
+                if (!has_routed)
                 {
                     /// Every slot holds a key that is routed, so that a key is never skipped without being routed.
+                    has_routed = true;
                     recent.fill(key);
                     keys[num_keys++] = key;
                 }
@@ -377,7 +490,38 @@ public:
                 {
                     keys[num_keys++] = key;
                 }
+            };
+
+            for (size_t row = begin; row < end; ++row)
+            {
+                if (null_map && null_map[row])
+                    continue;
+
+                if (has_last_row && same(last_row, row))
+                    continue;
+                last_row = row;
                 has_last_row = true;
+
+                if constexpr (has_deferred)
+                {
+                    if (defer(row))
+                    {
+                        deferred_positions[num_deferred++] = static_cast<UInt32>(row - begin);
+                        continue;
+                    }
+                }
+
+                add(extract(row));
+            }
+
+            if constexpr (has_deferred)
+            {
+                if (num_deferred)
+                {
+                    extract_deferred(begin, deferred_positions.data(), num_deferred, row_keys.data());
+                    for (size_t i = 0; i < num_deferred; ++i)
+                        add(row_keys[deferred_positions[i]]);
+                }
             }
 
             if (skip_recent)
@@ -394,7 +538,17 @@ public:
         checkSpill(stream);
     }
 
-    /// The same as `routeRows` for the values that are the keys themselves (zero-extended). NULLs and consecutive
+    /// The key of a value of the column: a 128-bit value is mixed (see `mixKey`), the others are zero-extended.
+    template <typename T>
+    static ALWAYS_INLINE Key valueKey(T value)
+    {
+        if constexpr (std::is_same_v<Key, UInt128>)
+            return mixKey(static_cast<UInt128>(value));
+        else
+            return static_cast<Key>(value);
+    }
+
+    /// The same as `routeRows` for the values that are the keys themselves (zero-extended, or mixed for 128 bits). NULLs and consecutive
     /// duplicates are dropped without branches into a buffer, which is then inserted. As in the ordinary `uniqExact`,
     /// the consecutive duplicates are looked for only while they are frequent.
     /// The values are loaded from the bytes, as the column may hold another type of the same size (e.g. `Float64`).
@@ -429,7 +583,7 @@ public:
                 {
                     const T value = data(row);
                     const bool is_null = null_map[row];
-                    keys[num_keys] = static_cast<Key>(value);
+                    keys[num_keys] = valueKey(value);
                     num_keys += !is_null && !(skip_duplicates && has_last_value && value == last_value);
                     last_value = is_null ? last_value : value;
                     has_last_value |= !is_null;
@@ -441,7 +595,8 @@ public:
                 /// the only dependency between the iterations is the number of keys.
                 /// A block that repeats the previous row (long runs, e.g. a sorted `CounterID`) is skipped with
                 /// vector compares, as the per-row stores would cost 1.85x the ordinary `uniqExact` there.
-                constexpr size_t block_size = DUPLICATES_BLOCK_BYTES / sizeof(T);
+                /// At least one row, as a 32-byte value does not fit into the 16-byte registers of SSE2 and NEON.
+                constexpr size_t block_size = std::max<size_t>(DUPLICATES_BLOCK_BYTES / sizeof(T), 1);
                 for (size_t block = begin; block < end; block += block_size)
                 {
                     const size_t block_end = std::min(block + block_size, end);
@@ -456,7 +611,7 @@ public:
 
                     for (size_t row = block; row < block_end; ++row)
                     {
-                        keys[num_keys] = static_cast<Key>(data(row));
+                        keys[num_keys] = valueKey(data(row));
                         num_keys += row == 0 || data(row) != data(row - 1);
                     }
                 }
@@ -467,14 +622,14 @@ public:
                 if (num_seen_recent == 0)
                 {
                     /// Every slot holds a key that is routed, so that a key is never skipped without being routed.
-                    keys[num_keys++] = static_cast<Key>(data(row));
+                    keys[num_keys++] = valueKey(data(row));
                     recent.fill(keys[0]);
                     ++row;
                 }
 
                 for (; row < end; ++row)
                 {
-                    const Key key = static_cast<Key>(data(row));
+                    const Key key = valueKey(data(row));
                     Key & slot = recent[slotHash(key) >> (64 - RECENT_KEYS_BITS)];
                     keys[num_keys] = key;
                     num_keys += slot != key;
@@ -484,7 +639,7 @@ public:
             else
             {
                 for (size_t row = begin; row < end; ++row)
-                    keys[num_keys++] = static_cast<Key>(data(row));
+                    keys[num_keys++] = valueKey(data(row));
             }
 
             if (skip_duplicates)
@@ -509,7 +664,30 @@ public:
         checkSpill(stream);
     }
 
-    void route(size_t stream_index, const IColumn & column, const UInt8 * null_map) override;
+    void route(size_t stream_index, const IColumn & column, const UInt8 * null_map) override
+    {
+        if (!pack_tuples)
+        {
+            routeColumn(stream_index, column, null_map);
+            return;
+        }
+
+        /// The elements of a tuple are packed into one key, as `packFixedBatch` packs the keys of `GROUP BY`, and the keys
+        /// are routed as the values of a column of the key type (see `packedTupleSize`).
+        const Columns columns = packedTupleColumns(assert_cast<const ColumnTuple &>(column));
+        ColumnRawPtrs elements;
+        Sizes sizes;
+        for (const auto & element : columns)
+        {
+            elements.push_back(element.get());
+            sizes.push_back(element->sizeOfValueIfFixed());
+        }
+        auto packed = ColumnVector<Key>::create();
+        packFixedBatch(elements.size(), elements, sizes, packed->getData());
+        routeColumn(stream_index, *packed, null_map);
+    }
+
+    void routeColumn(size_t stream_index, const IColumn & column, const UInt8 * null_map);
 
     void finishStream(size_t stream_index) override
     {
@@ -656,12 +834,12 @@ public:
             part_limit = std::max(builder_bytes / sizeof(Key) / num_parts, SPLIT_INSERT_CHUNK);
         }
 
-        std::vector<PODArray<Key>> parts(num_parts);
+        VectorWithMemoryTracking<PODArray<Key>> parts(num_parts);
         for (auto & part : parts)
             part.reserve(std::min(total / num_parts + total / (8 * num_parts) + MIN_BLOCK_SIZE, part_limit));
 
         RadixSet<Key> part_set;
-        std::vector<size_t> deduplicate_at(spilled ? num_parts : 0, part_limit);
+        VectorWithMemoryTracking<size_t> deduplicate_at(spilled ? num_parts : 0, part_limit);
         const size_t shift = 64 - split_bits;
         forEachKeys(bucket, [&](const Key * keys, size_t num_keys)
         {
@@ -715,15 +893,15 @@ public:
             || num_distinct == 0 || has_spilled.load(std::memory_order_relaxed))
             return;
 
-        std::vector<size_t> stream_distinct;
-        std::vector<size_t> stream_keys;
+        VectorWithMemoryTracking<size_t> stream_distinct;
+        VectorWithMemoryTracking<size_t> stream_keys;
         for (const auto & stream : streams)
         {
             stream_distinct.push_back(stream.estimated_distinct);
             stream_keys.push_back(stream.num_routed);
         }
 
-        auto median = [](std::vector<size_t> & values)
+        auto median = [](VectorWithMemoryTracking<size_t> & values)
         {
             auto middle = values.begin() + values.size() / 2;
             std::nth_element(values.begin(), middle, values.end());
@@ -786,9 +964,9 @@ private:
         /// The capacity is `MIN_BLOCK_SIZE << size_class`.
         UInt32 size_class;
 
-        size_t capacity() const { return MIN_BLOCK_SIZE << size_class; }
+        [[nodiscard]] size_t capacity() const { return MIN_BLOCK_SIZE << size_class; }
         Key * keys() { return reinterpret_cast<Key *>(this + 1); }
-        const Key * keys() const { return reinterpret_cast<const Key *>(this + 1); }
+        [[nodiscard]] const Key * keys() const { return reinterpret_cast<const Key *>(this + 1); }
     };
 
     /// The keys follow the header, aligned.
@@ -822,8 +1000,8 @@ private:
         RadixSet<Key> local_set;
         Mode mode = Mode::BoundedSet;
 
-        std::vector<Buffer> local_buffers;
-        std::vector<Cursor> local_cursors;
+        VectorWithMemoryTracking<Buffer> local_buffers;
+        VectorWithMemoryTracking<Cursor> local_cursors;
         std::unique_ptr<Arena> arena = std::make_unique<Arena>(4096, 2, ARENA_LINEAR_GROWTH_THRESHOLD);
         std::array<Block *, MAX_BLOCK_CLASS + 1> free_blocks{};
 
@@ -918,11 +1096,15 @@ private:
             }
             else
             {
+                /// Only the new keys take room, so with frequent keys, the set has room for chunks of the batch long
+                /// before it has room for the whole batch.
                 auto & set = stream.local_set;
-                if ((set.numCellsInUse() + num_keys - i) * 2 <= set.capacity())
+                const size_t num_inserted = std::min(set.capacity() / 2 - set.numCellsInUse(), num_keys - i);
+                if (num_inserted)
                 {
-                    set.insertMany(keys + i, num_keys - i);
-                    return;
+                    set.insertMany(keys + i, num_inserted);
+                    i += num_inserted;
+                    continue;
                 }
             }
 
@@ -1099,8 +1281,8 @@ private:
         /// The decisions are made by the medians over the sampled buffers, not by the totals: a key that is repeated
         /// much more often than the others (such as an empty string) is in a single buffer, and must not make the
         /// stream look like all its keys are repeated.
-        std::vector<double> remaining_ratios;
-        std::vector<double> new_distinct_ratios;
+        VectorWithMemoryTracking<double> remaining_ratios;
+        VectorWithMemoryTracking<double> new_distinct_ratios;
         size_t sampled_keys = 0;
         size_t num_deduplicated = 0;
         for (; num_deduplicated < num_buckets && (sampled_keys < DEDUPLICATION_SAMPLE_KEYS || num_deduplicated < DEDUPLICATION_SAMPLE_BUFFERS);
@@ -1129,7 +1311,7 @@ private:
             }
         }
 
-        auto median = [](std::vector<double> & values, double if_empty)
+        auto median = [](VectorWithMemoryTracking<double> & values, double if_empty)
         {
             if (values.empty())
                 return if_empty;
@@ -1243,7 +1425,7 @@ private:
         {
             /// `min_free_disk_space` is checked only here: the later spills append to the file without a check, as to the
             /// other temporary files that are appended to.
-            stream.spill_file = std::make_unique<TemporaryDataBuffer>(spill_scope, stream.arena->allocatedBytes() + min_free_disk_space);
+            stream.spill_file = std::make_unique<TemporaryDataBuffer>(spill_scope, getTemporaryFileReserveSize(stream.arena->allocatedBytes(), min_free_disk_space));
             stream.spilled_frames.resize(num_buckets);
             stream.spilled_keys.resize(num_buckets);
         }
@@ -1280,7 +1462,7 @@ private:
         stream.local_buffers.assign(num_buckets, Buffer{});
         stream.local_cursors.assign(num_buckets, Cursor{});
 
-        std::vector<const Block *> blocks;
+        VectorWithMemoryTracking<const Block *> blocks;
         for (size_t bucket = 0; bucket < num_buckets; ++bucket)
         {
             blocks.clear();
@@ -1389,9 +1571,11 @@ private:
         buffer.num_distinct = buffer.size;
     }
 
+    /// The argument is a tuple whose elements are packed into the key (see `packedTupleSize`).
+    const bool pack_tuples;
     const size_t bucket_bits;
     const size_t num_buckets;
-    std::vector<Stream> streams;
+    VectorWithMemoryTracking<Stream> streams;
 
     const StatsCollectingParams stats_collecting_params;
     const std::optional<RadixUniqExactEntry> hint;
@@ -1414,33 +1598,77 @@ void routeFixed(RadixUniqExactState<Key> & state, size_t stream, const IColumn &
     state.template routeValues<T>(stream, column.getRawData().data(), column.size(), null_map); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
+/// The values of the other sizes are zero-padded to the key (e.g. `FixedString(12)` to `UInt128`). All of them have the
+/// same size, so equal keys mean equal values.
+template <typename Key>
+void routePadded(RadixUniqExactState<Key> & state, size_t stream, const IColumn & column, const UInt8 * null_map)
+{
+    const char * bytes = column.getRawData().data(); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const size_t size = column.sizeOfValueIfFixed();
+    if (!column.isFixedAndContiguous() || size >= sizeof(Key))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+
+    state.routeRows(
+        stream, column.size(), null_map,
+        [&](size_t row)
+        {
+            Key key{};
+            memcpy(&key, bytes + row * size, size);
+            if constexpr (std::is_same_v<Key, UInt128>)
+                return mixKey(key);
+            else
+                return key;
+        },
+        [&](size_t lhs, size_t rhs) { return memcmp(bytes + lhs * size, bytes + rhs * size, size) == 0; });
+}
+
 template <>
-void RadixUniqExactState<UInt32>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
+void RadixUniqExactState<UInt32>::routeColumn(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
     switch (column.sizeOfValueIfFixed())
     {
         case 1: routeFixed<UInt32, UInt8>(*this, stream, column, null_map); return;
         case 2: routeFixed<UInt32, UInt16>(*this, stream, column, null_map); return;
         case 4: routeFixed<UInt32, UInt32>(*this, stream, column, null_map); return;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+        default: routePadded(*this, stream, column, null_map); return;
     }
 }
 
 template <>
-void RadixUniqExactState<UInt64>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
+void RadixUniqExactState<UInt64>::routeColumn(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
-    if (column.sizeOfValueIfFixed() != sizeof(UInt64))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
-    routeFixed<UInt64, UInt64>(*this, stream, column, null_map);
+    if (column.sizeOfValueIfFixed() == sizeof(UInt64))
+        routeFixed<UInt64, UInt64>(*this, stream, column, null_map);
+    else
+        routePadded(*this, stream, column, null_map);
 }
 
-/// Strings and `IPv6` are represented by their 128-bit `SipHash`, the same key as in `uniqExact`, and other 16-byte
-/// values by a bijection of themselves. Consecutive duplicates are compared by their bytes before they are hashed.
 template <>
-void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
+void RadixUniqExactState<UInt256>::routeColumn(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
-    if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
+    if (column.sizeOfValueIfFixed() != sizeof(UInt256))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+    routeFixed<UInt256, UInt256>(*this, stream, column, null_map);
+}
+
+/// The fixed-size values of 9 to 16 bytes are represented by a bijection of themselves (zero-padded), the strings of up
+/// to 15 bytes by a bijection of their bytes and size (see `packShortString`), the longer strings by the 128-bit
+/// `SipHash` of their bytes with the top bit set (see `LONG_STRING_KEY_BIT`), and the values of the other types by the 128-bit `SipHash`
+/// of `updateHashWithValue`, as in `uniqExact`. Consecutive duplicates of strings are compared by their bytes before they
+/// are hashed, those of the other types by their hashes, as `compareAt` can find equal the values with different hashes
+/// (e.g. -0.0 and 0.0 in a `Tuple`).
+template <>
+void RadixUniqExactState<UInt128>::routeColumn(size_t stream, const IColumn & column, const UInt8 * null_map)
+{
+    if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() == sizeof(UInt128))
+    {
+        routeFixed<UInt128, UInt128>(*this, stream, column, null_map);
+    }
+    else if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() > sizeof(UInt64) && column.sizeOfValueIfFixed() < sizeof(UInt128))
+    {
+        routePadded(*this, stream, column, null_map);
+    }
+    else if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
     {
         const char * chars = reinterpret_cast<const char *>(column_string->getChars().data());
         const auto * offsets = column_string->getOffsets().data();
@@ -1454,15 +1682,28 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
             [&](size_t row)
             {
                 const size_t size = size_of(row);
+                chassert(size < sizeof(UInt128));
                 routed_empty_string |= size == 0;
-                return sipHash128Padded(chars + start_of(row), size);
+                return mixKey(packShortString(chars + start_of(row), size));
             },
             [&](size_t lhs, size_t rhs)
             {
                 const size_t size = size_of(rhs);
                 if (size == 0)
                     return routed_empty_string || size_of(lhs) == 0;
-                return size == size_of(lhs) && memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
+                if (size != size_of(lhs))
+                    return false;
+                if (size < sizeof(UInt128))
+                    return packShortString(chars + start_of(lhs), size) == packShortString(chars + start_of(rhs), size);
+                return memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
+            },
+            [size_of](size_t row) { return size_of(row) >= sizeof(UInt128); },
+            /// Out of line, so that its code does not take registers from the routing loop.
+            [chars, offsets](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
+            {
+                sipHash128PaddedStringRows(chars, offsets + begin, positions, count, row_keys);
+                for (size_t i = 0; i < count; ++i)
+                    row_keys[positions[i]] |= LONG_STRING_KEY_BIT;
             });
     }
     else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&column))
@@ -1471,29 +1712,47 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         const size_t n = column_fixed_string->getN();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
-            [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; });
+            [](size_t) -> UInt128
+            {
+                chassert(false);
+                return {};
+            },
+            [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; },
+            [](size_t) { return true; },
+            [chars, n](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
+            { sipHash128PaddedFixedStringRows(chars + begin * n, n, positions, count, row_keys); });
     }
-    else if (const auto * column_ipv6 = typeid_cast<const ColumnIPv6 *>(&column))
+    else if (HashedJoinKey key({&column}); key.hashesRowsInBatches())
     {
-        const auto & data = column_ipv6->getData();
+        /// The hashes of `uniqExact` (`ColumnsHashing::hash128`), which `HashedJoinKey` computes for many rows at once for
+        /// tuples, `Nullable` values, strings and numbers. The rows that repeat the bytes of the previous routed row are
+        /// skipped before they are hashed, as their hash is the same.
+        /// Allocated exactly, as `resize` would round it up to a power of two.
+        PaddedPODArray<UInt8> skip(column.size());
+        if (null_map)
+            memcpy(skip.data(), null_map, column.size());
+        else
+            memset(skip.data(), 0, column.size());
+        key.markRepeatedRows(0, column.size(), skip.data());
+
+        PaddedPODArray<UInt128> hashes(column.size());
+        key.buildRange(0, column.size(), hashes.data(), skip.data());
         routeRows(
-            stream, column.size(), null_map,
-            [&](size_t row) { return sipHash128Padded(reinterpret_cast<const char *>(&data[row]), sizeof(IPv6)); },
-            [&](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; });
-    }
-    else if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() == sizeof(UInt128))
-    {
-        const char * bytes = column.getRawData().data();
-        auto data = [bytes](size_t row) { return unalignedLoad<UInt128>(bytes + row * sizeof(UInt128)); };
-        routeRows(
-            stream, column.size(), null_map,
-            [&](size_t row) { return mixKey(data(row)); },
-            [&](size_t lhs, size_t rhs) { return data(lhs) == data(rhs); });
+            stream, column.size(), skip.data(),
+            [&](size_t row) { return hashes[row]; },
+            [&](size_t lhs, size_t rhs) { return hashes[lhs] == hashes[rhs]; });
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+        routeRows(
+            stream, column.size(), null_map,
+            [&](size_t row)
+            {
+                SipHash hash;
+                column.updateHashWithValue(row, hash);
+                return hash.get128();
+            },
+            [](size_t, size_t) { return false; });
     }
 }
 
@@ -1519,7 +1778,10 @@ size_t bucketBits(size_t num_streams, size_t key_size, const std::optional<Radix
 
 template <typename Key>
 RadixUniqExactStatePtr createState(
-    size_t num_streams, const StatsCollectingParams & stats_collecting_params, const RadixUniqExactSpillParams & spill_params)
+    size_t num_streams,
+    const StatsCollectingParams & stats_collecting_params,
+    const RadixUniqExactSpillParams & spill_params,
+    bool pack_tuples)
 {
     std::optional<RadixUniqExactEntry> hint;
     if (stats_collecting_params.isCollectionAndUseEnabled())
@@ -1558,7 +1820,7 @@ RadixUniqExactStatePtr createState(
     }
 
     return std::make_shared<RadixUniqExactState<Key>>(
-        num_streams, bucketBits(num_streams, sizeof(Key), hint), stats_collecting_params, hint, spill_params);
+        num_streams, bucketBits(num_streams, sizeof(Key), hint), stats_collecting_params, hint, spill_params, pack_tuples);
 }
 
 }
@@ -1566,29 +1828,57 @@ RadixUniqExactStatePtr createState(
 namespace
 {
 
-/// The types for which `uniqExact` keeps the value itself in the set, and their size if it is at most 64 bits.
-std::optional<size_t> valueKeySize(const IDataType & type)
+/// The size of the key of a tuple whose elements are packed into it, as `packFixedBatch` packs the keys of `GROUP BY`: each
+/// element is unambiguously represented by its 1, 2, 4, 8 or 16 bytes, and a `Nullable` one by them and a null flag of one
+/// byte (see `packedTupleColumns`), and all of them fit into 16 bytes. The packed bytes of the elements are then the value,
+/// as for the other fixed-size values. Other tuples are hashed.
+std::optional<size_t> packedTupleSize(const IDataType & type)
 {
-    WhichDataType which(type);
-    if (which.isNativeInteger() || which.isFloat() || which.isEnum() || which.isDate() || which.isDate32() || which.isDateTime() || which.isIPv4())
-        return type.getSizeOfValueInMemory();
-    return {};
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
+    if (!tuple || tuple->getElements().empty())
+        return {};
+
+    size_t size = 0;
+    for (const auto & element : tuple->getElements())
+    {
+        /// A `LowCardinality` column holds indexes into a dictionary, not its values.
+        const auto values = removeNullable(element);
+        if (values->lowCardinality() || !values->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            return {};
+        const size_t element_size = values->getSizeOfValueInMemory();
+        if (!std::has_single_bit(element_size) || element_size > sizeof(UInt128))
+            return {};
+        size += element_size + (element->isNullable() ? sizeof(UInt8) : 0);
+    }
+    if (size > sizeof(UInt128))
+        return {};
+    return size;
 }
 
-bool isHashedKey(const IDataType & type)
+/// The size of the key of the type (see the `routeColumn` of each key). The values of up to 16 and of 32 bytes that are
+/// unambiguously represented by their bytes (packed for a tuple, see `packedTupleSize`) are the keys themselves, zero-extended, as equal bytes mean equal values.
+/// Other values are represented by a 128-bit hash, which is smaller than a padded 32-byte key. `uniqExact` keeps the values themselves for numbers and the 128-bit `SipHash` for the
+/// others (e.g. `Decimal`), so the radix partitioning counts the same values or more, if the hashes collide.
+size_t keySize(const IDataType & type)
 {
-    WhichDataType which(type);
-    return which.isUInt128() || which.isInt128() || which.isUUID() || which.isString() || which.isFixedString() || which.isIPv6();
+    std::optional<size_t> value_size = packedTupleSize(type);
+    if (!value_size && type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        value_size = type.getSizeOfValueInMemory();
+
+    if (value_size)
+    {
+        const size_t size = *value_size;
+        for (size_t key_size : {sizeof(UInt32), sizeof(UInt64), sizeof(UInt128)})
+        {
+            if (size <= key_size)
+                return key_size;
+        }
+        if (size == sizeof(UInt256))
+            return size;
+    }
+    return sizeof(UInt128);
 }
 
-}
-
-bool isRadixUniqExactSupported(const IDataType & argument_type)
-{
-    const IDataType & type = *removeNullable(argument_type.shared_from_this());
-    if (const auto size = valueKeySize(type))
-        return *size <= sizeof(UInt64);
-    return isHashedKey(type);
 }
 
 RadixUniqExactStatePtr createRadixUniqExactState(
@@ -1597,18 +1887,17 @@ RadixUniqExactStatePtr createRadixUniqExactState(
     const StatsCollectingParams & stats_collecting_params,
     const RadixUniqExactSpillParams & spill_params)
 {
-    const IDataType & type = *removeNullable(argument_type.shared_from_this());
-    if (const auto size = valueKeySize(type))
+    const auto type = removeNullable(removeLowCardinality(argument_type.shared_from_this()));
+    const bool pack_tuples = packedTupleSize(*type).has_value();
+    switch (keySize(*type))
     {
-        if (*size <= sizeof(UInt32))
-            return createState<UInt32>(num_streams, stats_collecting_params, spill_params);
-        if (*size == sizeof(UInt64))
-            return createState<UInt64>(num_streams, stats_collecting_params, spill_params);
+        case sizeof(UInt32): return createState<UInt32>(num_streams, stats_collecting_params, spill_params, pack_tuples);
+        case sizeof(UInt64): return createState<UInt64>(num_streams, stats_collecting_params, spill_params, pack_tuples);
+        case sizeof(UInt128): return createState<UInt128>(num_streams, stats_collecting_params, spill_params, pack_tuples);
+        case sizeof(UInt256): return createState<UInt256>(num_streams, stats_collecting_params, spill_params, pack_tuples);
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported argument type {} for the radix partitioned uniqExact", argument_type.getName());
     }
-    else if (isHashedKey(type))
-        return createState<UInt128>(num_streams, stats_collecting_params, spill_params);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported argument type {} for the radix partitioned uniqExact", argument_type.getName());
 }
 
 
@@ -1691,6 +1980,10 @@ void RadixUniqExactRouteTransform::work()
         column = column_sparse->getNumberOfDefaultRows() ? values : values->cut(1, values->size() - 1);
     }
     column = column->convertToFullIfWrapped();
+    /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
+    /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+        column = column_low_cardinality->getMinimalDictionary(0, column_low_cardinality->size());
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))

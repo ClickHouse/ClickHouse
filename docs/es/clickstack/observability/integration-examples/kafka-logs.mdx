@@ -1,0 +1,325 @@
+---
+slug: /clickstack/observability/integration-examples/kafka-logs
+title: 'Monitorización de registros de Kafka con ClickHouse Observability'
+sidebarTitle: 'Registros de Kafka'
+description: 'Recopile los registros de los brókeres de Kafka con OpenTelemetry y envíelos a ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['Kafka', 'logs', 'OTEL', 'ClickHouse Observability', 'broker monitoring', 'Log4j']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Recopile los registros del broker de Kafka con el receptor `filelog` de OpenTelemetry y envíelos a ClickHouse Observability. Utilice el [conjunto de datos de demostración](#demo-dataset) para probar la integración sin necesidad de desplegar Kafka.
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability
+* Docker y `curl`
+* Para usar sus propios log, acceso a archivos de registro del bróker de Kafka que sigan el formato indicado a continuación
+
+### Datos de conexión {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta en fase beta" />
+
+    Abra ClickHouse Observability y vaya a **Team Settings → Data → Managed Telemetry**. Copie su endpoint OTLP HTTP y su clave de API. Puede usar **Copiar datos de conexión** para copiar la configuración o **Reveal key** para ver la clave enmascarada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datos de conexión de Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Para los ejemplos del exportador OTLP que se muestran a continuación, defina estas variables en el terminal donde vaya a ejecutar el recolector:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Reemplace los marcadores de posición por el endpoint exacto de su servicio, incluido el puerto, y por su clave de API. Use el endpoint HTTP base sin el sufijo `/v1/logs`; el exportador añade al final la ruta de la señal.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Use un endpoint OTLP HTTP de su recolector que sea accesible (por ejemplo, `http://YOUR_COLLECTOR_HOST:4318`) y los ajustes de autenticación correspondientes. Si su recolector no requiere autenticación, omita el bloque `headers` del exportador en las configuraciones siguientes. Consulte la [guía de introducción para la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) para obtener instrucciones de configuración.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+El endpoint debe ser accesible desde el contenedor del recolector. Si el recolector de destino se ejecuta en este mismo equipo, use `http://host.docker.internal:4318`. Los comandos de Docker que aparecen a continuación ya incluyen la correspondencia del host.
+
+## Integración con una instancia de Kafka existente {#existing-kafka}
+
+<Steps>
+  <Step title="Verifique la configuración del registro de Kafka" id="verify-kafka">
+    Localice los registros del broker. Las ubicaciones habituales son `$KAFKA_HOME/logs` y `/var/log/kafka`, según su instalación y la configuración del registro:
+
+    ```bash
+    ls "$KAFKA_HOME/logs/"
+    ls /var/log/kafka/
+    ```
+
+    Los archivos habituales son `server.log` (eventos del bróker), `controller.log` (eventos del controlador) y `state-change.log` (transiciones de particiones y réplicas). Solo existen archivos independientes si se han configurado en los appenders de registro.
+
+    El analizador de esta guía espera el siguiente formato de texto de Log4j:
+
+    ```text
+    [2026-03-09 14:23:45,123] INFO [KafkaServer id=0] started (kafka.server.KafkaServer)
+    ```
+
+    Si su bróker solo escribe los logs en stdout, configure un appender de archivo en la configuración del registro del bróker y comparta ese directorio con el recolector. El receptor `filelog` no lee directamente el stdout del contenedor. Ajuste el analizador si su patrón de registro es diferente.
+  </Step>
+
+  <Step title="Configure el recolector" id="configure-collector">
+    Guarde lo siguiente como `kafka-logs-monitoring.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/kafka:
+        include:
+          - /var/log/kafka/server.log
+          - /var/log/kafka/controller.log
+          - /var/log/kafka/state-change.log
+        start_at: end
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '(?s)^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+              location: UTC
+            severity:
+              parse_from: attributes.severity
+          - type: move
+            from: attributes.message
+            to: body
+          - type: add
+            field: attributes.source
+            value: kafka
+          - type: add
+            field: resource["service.name"]
+            value: kafka-service
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/kafka:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/kafka:
+          receivers: [filelog/kafka]
+          processors: [memory_limiter, transform/kafka, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    Establezca `location` en la zona horaria que utilizan los registros del broker; el ejemplo presupone UTC. Las entradas multilínea conservan sus trazas de pila completas. El recolector lee las entradas nuevas con `start_at: end` y convierte a minúsculas el texto de gravedad.
+  </Step>
+
+  <Step title="Ejecute el recolector" id="run-collector">
+    Defina las [variables de conexión](#connection-details) y, a continuación, ejecute el comando desde el directorio de configuración. Ajuste la ruta de logs del host si es necesario. Para archivos con permisos de lectura para el grupo, añada `--group-add LOG_GROUP_ID` con el ID numérico del grupo que muestra `ls -ln /var/log/kafka`.
+
+    ```bash
+    docker run --rm --name kafka-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/kafka-logs-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/kafka:/var/log/kafka:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Deje la terminal abierta y genere actividad en el bróker que escriba nuevas entradas de log. Deténgalo con **Ctrl+C** cuando termine las pruebas.
+  </Step>
+
+  <Step title="Verifique los logs" id="verify-logs">
+    Abra **Búsqueda**, seleccione **Logs**, filtre por `ServiceName:kafka-service` y seleccione **Last 15 minutes**. Debería ver los mensajes del bróker con las marcas de tiempo y la gravedad ya analizadas.
+  </Step>
+</Steps>
+
+## Conjunto de datos de demostración {#demo-dataset}
+
+La muestra contiene 6,376 entradas de log del bróker de Kafka que abarcan aproximadamente 24 horas. El recolector actualiza sus marcas de tiempo y conserva los mensajes y los stack traces.
+
+<Steps>
+  <Step title="Descargar la muestra" id="download-sample">
+    ```bash
+    curl -fL -o server.log \
+      https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/server.log
+    ```
+  </Step>
+
+  <Step title="Configurar el recolector de demostración" id="configure-demo">
+    Guarde lo siguiente como `kafka-logs-demo.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/kafka:
+        include:
+          - /var/log/kafka/server.log
+        start_at: beginning
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '(?s)^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+              location: UTC
+            severity:
+              parse_from: attributes.severity
+          - type: move
+            from: attributes.message
+            to: body
+          - type: add
+            field: attributes.source
+            value: kafka-demo
+          - type: add
+            field: resource["service.name"]
+            value: kafka-demo
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/kafka:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2026-03-09T23:59:58.180Z", "%Y-%m-%dT%H:%M:%S.%LZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/kafka:
+          receivers: [filelog/kafka]
+          processors: [memory_limiter, transform/kafka, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+  </Step>
+
+  <Step title="Ejecutar el recolector de demostración" id="run-demo">
+    Defina las [variables de conexión](#connection-details) y, a continuación, ejecute el siguiente comando desde el directorio que contiene ambos archivos:
+
+    ```bash
+    docker run --rm --name kafka-logs-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/kafka-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/server.log:/var/log/kafka/server.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Mantenga la terminal abierta mientras verifica la ingesta. Cuando termine, deténgalo con **Ctrl+C**. Si vuelve a ejecutar la demostración, la muestra se ingesta de nuevo con marcas de tiempo actualizadas.
+  </Step>
+
+  <Step title="Verificar los logs de demostración" id="verify-demo">
+    Abra **Búsqueda**, seleccione **Logs**, filtre por `ServiceName:kafka-demo` y seleccione **Last 2 days**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Logs de demostración de Kafka con la gravedad analizada en la Búsqueda de ClickHouse Observability](/images/clickstack/observability-kafka-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Paneles y visualización {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json" download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Descargar la configuración del panel de control</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Importar el panel de control" id="import-dashboard">
+    1. Abra **Dashboards** y haga clic en **Import** en la esquina superior derecha.
+    2. Cargue `kafka-logs-dashboard.json`.
+    3. Asigne los gráficos a su fuente **Logs** y haga clic en **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Botón para importar el panel de control](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Ver el panel de control" id="view-dashboard">
+    Para los datos de ejemplo, puede filtrar opcionalmente por `ServiceName:kafka-demo` y seleccionar **Last 2 days**. Para sus propios logs, use `ServiceName:kafka-service` y un intervalo de tiempo que abarque sus registros.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panel de control de registros de Kafka en ClickHouse Observability que muestra el volumen de registros, la gravedad, la replicación y los eventos de conexión](/images/clickstack/observability-kafka-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Resolución de problemas {#troubleshooting}
+
+### No aparecen logs {#no-logs}
+
+Revise la salida del recolector en busca de errores de permisos de archivo, de análisis, de autenticación o de exportación. Confirme que su bróker escribe en el directorio montado y que los nombres de archivo coinciden con la lista `include` del receptor. La configuración activa solo lee las entradas nuevas.
+
+### Los logs no se analizan correctamente {#parsing-errors}
+
+Compare una entrada de log del bróker con el formato esperado:
+
+```bash
+tail -n 20 /var/log/kafka/server.log
+```
+
+Ajuste la expresión regular y el patrón de inicio multilínea si el formato de sus registros es distinto. Establezca el valor `location` del analizador de marcas de tiempo en la zona horaria que usa su bróker para los registros.
+
+## Próximos pasos {#next-steps}
+
+* Configure [alertas](/es/clickstack/observability/features/alerts) para fallos del bróker o errores de replicación.
+* Combínelo con las [métricas de Kafka](/es/clickstack/observability/integration-examples/kafka-metrics).
+* Cree [dashboards](/es/clickstack/observability/features/dashboards/overview) adicionales para eventos del controlador o la reasignación de particiones.
+* Consulte [Envío de datos de OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry) para obtener orientación sobre el despliegue.

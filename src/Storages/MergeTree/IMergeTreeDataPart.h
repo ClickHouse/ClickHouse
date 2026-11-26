@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <string_view>
+
 #include <Common/UniqueLock.h>
 
 #include <atomic>
@@ -15,6 +18,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/SecondaryIndexColumnTypes.h>
 #include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -74,7 +78,7 @@ public:
 
     const SharedPartColumns & operator*() const { return *bundle; }
     const SharedPartColumns * operator->() const { return bundle.get(); }
-    const SharedPartColumns * get() const { return bundle.get(); }
+    [[nodiscard]] const SharedPartColumns * get() const { return bundle.get(); }
 
 private:
     friend class MergeTreeData;
@@ -173,6 +177,10 @@ public:
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
     /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
+    /// The sizes of the subcolumns, and, if `with_columns`, of the columns among `column_names` that the part has. The uncached
+    /// subcolumn sizes are calculated with one reader per column, or nullopt is returned if `only_from_memory` and that reads files.
+    std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
+        const Names & column_names, bool with_columns, bool only_from_memory) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -192,6 +200,11 @@ public:
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
+
+    /// The size of the streams a read of all columns touches, so a second representation of the same data, such as
+    /// the copy of the shared data of Object, is not counted; the constant granularity of merges and mutations is
+    /// sized by it.
+    ColumnSize getTotalColumnsReadSize() const { return calculateTotalColumnsReadSize(); }
 
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSecondaryIndicesSize() const;
@@ -243,6 +256,9 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const { return secondary_index_column_types; }
+    void setSecondaryIndexColumnTypes(SecondaryIndexColumnTypes value) { secondary_index_column_types = std::move(value); }
+
     const PartSerializations & getSerializations() const { return *serializations; }
 
     SerializationPtr getSerialization(const String & column_name) const;
@@ -269,6 +285,9 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
+    /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
+    /// because the statistics of these columns are cached or the part has none for them.
+    bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
     /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
     /// otherwise `std::nullopt`. It never reads from disk.
     std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
@@ -495,6 +514,11 @@ public:
     /// that is producing the part: nothing on disk records it, so it stays `false` for a loaded part.
     bool default_codec_is_explicit_recompression = false;
 
+    /// Shared data serialization version of the `JSON` columns written into this part, chosen by
+    /// `MergeTreeData::chooseObjectSharedDataSerializationVersion` by the code that creates the part.
+    /// In-memory state of the write: each written column stores its version in its serialization prefix.
+    std::optional<MergeTreeObjectSharedDataSerializationVersion> object_shared_data_serialization_version;
+
     /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated
     /// during the current load. The regenerated file is compressed with the *current* built-in
     /// default codec (`CompressionCodecFactory::getDefaultCodec`), not the codec the part was written
@@ -528,9 +552,14 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
+
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
+    /// Whether `getIndex` returns the index without reading it from disk: it is loaded, or in the primary index cache.
+    bool isIndexInMemory() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -595,7 +624,7 @@ public:
     /// Returns the list of part files in the order they should be written to disk. This list is used to optimize
     /// the layout of files in packed storage.
     /// The list can be incomplete, in that case the remaining files should be written in any order.
-    virtual Strings getPreferredFileOrder() const { return COMMON_METADATA_FILES; }
+    virtual Strings getPreferredFileOrder() const { return getCommonMetadataFiles(); }
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -690,6 +719,10 @@ public:
     /// and information that helps to choose kind of serialization later during merging
     /// (number of rows, number of rows with default values, etc).
     static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
+
+    /// See SecondaryIndexColumnTypes. Present only when a skip index was materialized over a column
+    /// type the part has not materialized itself (a JSON type hint applied lazily).
+    static constexpr auto SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME = "secondary_index_column_types.json";
 
     static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
@@ -816,7 +849,8 @@ public:
     void removeIfNeeded();
 
 protected:
-    inline static const Strings COMMON_METADATA_FILES =
+    /// `constexpr` so that including this header costs no static initializer; `getCommonMetadataFiles` materializes it.
+    static constexpr std::array<std::string_view, 10> COMMON_METADATA_FILES =
     {
         "uuid.txt",
         "checksums.txt",
@@ -829,6 +863,8 @@ protected:
         "partition.dat",
         "ttl.txt",
     };
+
+    static Strings getCommonMetadataFiles() { return Strings(COMMON_METADATA_FILES.begin(), COMMON_METADATA_FILES.end()); }
 
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -884,6 +920,11 @@ protected:
 
     /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
     virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
+    virtual bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & /*subcolumn*/) const { return true; }
+
+    /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
+    /// in streams of their own.
+    virtual ColumnSize calculateTotalColumnsReadSize() const { return getTotalColumnsSize(); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -930,6 +971,9 @@ private:
     /// Map from name of column to its serialization info.
     /// Kept per-part: it holds the row/default counters of this part's data.
     SerializationInfoByName serialization_infos{{}};
+
+    /// See SecondaryIndexColumnTypes. Empty for almost every part.
+    SecondaryIndexColumnTypes secondary_index_column_types;
 
     /// Serializations for every columns and subcolumns by their names.
     /// Shared across parts of the table with the same serialization kinds; the per-column pieces
@@ -1001,8 +1045,6 @@ private:
     std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
         const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
-    /// The path that identifies the part in the caches shared between tables.
-    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 

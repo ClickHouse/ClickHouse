@@ -29,6 +29,8 @@ from ci.jobs.scripts.buildx import (
     with_timeout,
 )
 from ci.jobs.scripts.create_release import (
+    GITHUB_REPOSITORY,
+    PackageDownloader,
     ReleaseContextManager,
     ReleaseInfo,
     ReleaseProgress,
@@ -329,15 +331,21 @@ def main():
             workdir=REPO_PATH,
         )
 
+    def _prepare_release_info():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
+            release_info.prepare(
+                commit_ref=args.ref,
+                release_type="patch",
+                dry_run=args.dry_run,
+                skip_repo=args.skip_repo,
+                skip_docker=args.skip_docker,
+            )
+
     step(
         name="Prepare Release Info",
-        command=[
-            f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(args.ref)} --release-type patch"
-            f"{' --skip-repo' if args.skip_repo else ''}"
-            f"{' --skip-docker' if args.skip_docker else ''}"
-            f" {dry_run_flag}".strip()
-        ],
+        command=_prepare_release_info,
         workdir=REPO_PATH,
     )
 
@@ -358,15 +366,35 @@ def main():
         ) as release_info:
             release_info.update_version_and_contributors_list(dry_run=args.dry_run)
 
+    def _download_packages():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
+        ) as release_info:
+            PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            ).run()
+
+    def _create_gh_release():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.CREATE_GH_RELEASE
+        ) as release_info:
+            p = PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            )
+            release_info.create_gh_release(
+                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
+            )
+
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
     if not args.skip_repo:
         step(
             name="Download All Release Artifacts",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
-                f" {dry_run_flag}".strip()
-            ],
+            command=_download_packages,
             workdir=REPO_PATH,
         )
 
@@ -399,6 +427,8 @@ def main():
 
         uid = os.getuid()
         gid = os.getgid()
+        # Most pull requests of a release already have an entry in `CHANGELOG.md` on master, and `changelog.py` copies it. Requesting each of them from GitHub exhausts the hourly rate limit of the token: the script then sleeps until the limit is reset, and the job runs out of its time.
+        changelog_on_master = "./ci/tmp/changelog_on_master.md"
         for cmd in [
             "echo 'List versions'",
             "./utils/list-versions/list-versions.sh"
@@ -407,6 +437,7 @@ def main():
             "./utils/list-versions/update-docker-version.sh",
             "echo 'Generate ChangeLog'",
             "docker pull clickhouse/style-test:latest",
+            f"git show origin/master:CHANGELOG.md > {changelog_on_master}",
             # changelog.py runs in the container (no host gh session): the robot token goes in via -e GH_TOKEN / --gh-user-or-token, and the string carries $GH_TOKEN, not its value.
             f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
             f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
@@ -414,6 +445,7 @@ def main():
             f" ./ci/tools/changelog.py -v --debug-helpers"
             f' --gh-user-or-token "$GH_TOKEN"'
             f" --jobs=5"
+            f" --reuse-entries-from={changelog_on_master}"
             f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
             f"git add ./docs/changelogs/{release_info.release_tag}.md",
             "echo 'Generate Security'",
@@ -443,6 +475,7 @@ def main():
                 "docker/keeper/Dockerfile.distroless",
                 "docker/server/Dockerfile.alpine",
                 "docker/server/Dockerfile.distroless",
+                "docker/server/Dockerfile.scratch",
                 "docker/server/Dockerfile.ubuntu",
             ]
         )
@@ -489,11 +522,13 @@ def main():
         finally:
             shutil.rmtree(backup_dir, ignore_errors=True)
 
-    step(
-        name="Bump Changelog and Push to master",
-        command=_push_changelog_to_master,
-        workdir=REPO_PATH,
-    )
+    # A private repository releases during an embargo; the changelog goes to public master after it.
+    if GITHUB_REPOSITORY == "ClickHouse/ClickHouse":
+        step(
+            name="Bump Changelog and Push to master",
+            command=_push_changelog_to_master,
+            workdir=REPO_PATH,
+        )
 
     if not args.skip_repo:
         # Restore the working tree after the changelog/version-bump steps, which
@@ -511,10 +546,7 @@ def main():
 
         step(
             name="Create GH Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
-                f" {dry_run_flag}".strip()
-            ],
+            command=_create_gh_release,
             workdir=REPO_PATH,
         )
 
@@ -552,14 +584,24 @@ def main():
                 version_minor = ".".join(parts[:3])
                 version_major = ".".join(parts[:2])
 
+                # Older release tags may not ship every Dockerfile (e.g.
+                # distroless and scratch were added later); skip variants whose
+                # Dockerfile is absent at this tag, matching the legacy workflow.
+                present_configs = []
                 for variant, dockerfile, context in build_configs:
-                    # Older release tags may not ship every Dockerfile (e.g.
-                    # distroless was added later); skip variants whose Dockerfile
-                    # is absent at this tag, matching the legacy workflow.
-                    if not os.path.isfile(dockerfile):
+                    if os.path.isfile(dockerfile):
+                        present_configs.append((variant, dockerfile, context))
+                    else:
                         print(f"Skipping {variant}: {dockerfile} not found at this tag")
-                        continue
-                    version_suffix = "" if variant == "ubuntu" else f"-{variant}"
+                assert present_configs, f"No Dockerfiles for {image} at this tag"
+                # The first present variant is published without a tag suffix:
+                # `scratch` for the server since it exists, `ubuntu` before that.
+                default_variant = present_configs[0][0]
+
+                for variant, dockerfile, context in present_configs:
+                    version_suffix = (
+                        "" if variant == default_variant else f"-{variant}"
+                    )
                     label_version = f"{version_string}{version_suffix}"
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
@@ -664,7 +706,13 @@ def main():
             name="Docker clickhouse/clickhouse-server Building",
             command=_make_docker_build(
                 image="clickhouse/clickhouse-server",
+                # The first one is the default variant, see `_make_docker_build`.
                 build_configs=[
+                    (
+                        "scratch",
+                        "docker/server/Dockerfile.scratch",
+                        "docker/server",
+                    ),
                     (
                         "ubuntu",
                         "docker/server/Dockerfile.ubuntu",
@@ -689,6 +737,7 @@ def main():
             name="Docker clickhouse/clickhouse-keeper Building",
             command=_make_docker_build(
                 image="clickhouse/clickhouse-keeper",
+                # The first one is the default variant, see `_make_docker_build`.
                 build_configs=[
                     (
                         "ubuntu",

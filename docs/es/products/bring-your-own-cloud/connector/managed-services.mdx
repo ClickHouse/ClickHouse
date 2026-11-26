@@ -2,17 +2,16 @@
 title: 'Servicios administrados'
 sidebarTitle: 'Servicios administrados'
 slug: /products/bring-your-own-cloud/connector/managed-services
-description: 'Cree, supervise y dé de baja servicios de ClickHouse que ClickHouse Cloud opera en su cluster a través del executor del conector'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'conector', 'gestionado', 'executor']
+description: 'Cree, supervise y dé de baja servicios de ClickHouse que ClickHouse Cloud opera en su cluster a través del ejecutor del connector'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'Modo gestionado', 'ejecutor']
 doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-En modo administrado, el conector ejecuta un tercer componente: el executor. A través de él, ClickHouse Cloud opera los servicios de ClickHouse en su Kubernetes cluster. Esta página explica cómo crear un servicio, cómo consultar su estado, qué hace ClickHouse Cloud con él y cómo se retira.
+En modo gestionado, el connector ejecuta un tercer componente: el ejecutor. A través de él, ClickHouse Cloud opera los servicios de ClickHouse en su Kubernetes cluster. Esta página explica cómo crear un servicio, cómo consultar su estado, qué hace ClickHouse Cloud con él y cómo se retira.
 
 ## Qué hace el modo administrado {#what-managed-mode-does}
 
@@ -32,30 +31,34 @@ La instalación en sí no cambia. Consulte el [onboarding](/es/products/bring-yo
 
 ## Crear un servicio {#create-a-service}
 
-La creación de servicios a través del endpoint del conector se habilita por entorno; consúltalo con tu account team antes de empezar.
+La creación de servicios a través del endpoint del connector se habilita por entorno; consúltalo con tu account team antes de empezar.
 
-Crear un servicio requiere dos comandos. `prepare` crea todo lo necesario en tu lado; `instances create` envía la solicitud de creación a ClickHouse Cloud a través del endpoint del conector. ClickHouse Cloud genera la definición del servicio y envía la creación al executor por su canal saliente. El executor la aplica a tu cluster e informa del resultado.
+Crear un servicio requiere dos comandos. `prepare` crea todo lo necesario en tu lado; `instances create` envía la solicitud de creación a ClickHouse Cloud a través del endpoint del connector. ClickHouse Cloud genera la definición del servicio y envía la creación al ejecutor por su canal saliente. El ejecutor la aplica a tu cluster e informa del resultado.
 
-Solo `prepare` necesita AWS credentials: crea los S3 buckets y el IAM role. `instances create` necesita la configuración y las credentials del conector, y accede a la API local del executor únicamente para `--wait`. En una VM, ejecuta ambos como root en el host del conector. En Kubernetes, ejecuta ambos desde una workstation con un contexto de kube para el cluster gestionado:
+Solo `prepare` necesita AWS credentials: crea los S3 buckets y el IAM role. `instances create` necesita la configuración y las credentials del connector, y accede a la API local del ejecutor únicamente para `--wait`. En una VM, ejecuta ambos como root en el host del connector. En Kubernetes, ejecuta ambos desde una workstation con un contexto de kube para el cluster gestionado:
 
-* `prepare` necesita una copia de la configuración del conector (`--config`), un `kubectl port-forward` a la API local del executor y un `--output-dir` con permisos de escritura. Verifica el nombre del servicio con el executor y se niega a ejecutarse si no logra alcanzarlo.
-* Cuando este host no tiene los archivos de credentials indicados en la configuración, `instances create` los lee desde los Secrets `clicklink-hmac` y `clicklink-mtls` y anuncia cada lectura. Añade `--connector-namespace` cuando el espacio de nombres del conector no sea `clicklink`. Solo `instances create` cuenta con este fallback.
+* `prepare` necesita una copia de la configuración del connector (`--config`), un `kubectl port-forward` a la API local del ejecutor y un `--output-dir` con permisos de escritura. Verifica el nombre del servicio con el ejecutor y se niega a ejecutarse si no logra alcanzarlo.
+* Cuando este host no tiene los archivos de credentials indicados en la configuración, `instances create` los lee desde los Secrets `clicklink-hmac` y `clicklink-mtls` y anuncia cada lectura. Añade `--connector-namespace` cuando el espacio de nombres del connector no sea `clicklink`. Solo `instances create` cuenta con este fallback.
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="Ciclo de vida del servicio de ClickHouse Connector en modo gestionado" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Ciclo de vida del servicio del Connector de ClickHouse en modo gestionado](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+  </Frame>
+</div>
 
 <Steps>
   <Step title="Prepare el servicio" id="prepare">
     <Tabs>
       <Tab title="Kubernetes" id="prepare-kubernetes">
         ```bash
-        CONNECTOR_NAMESPACE='clicklink'   # el espacio de nombres del connector que eligió en init
+        CONNECTOR_NAMESPACE='clicklink'   # el espacio de nombres del connector que eligió durante init
         kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
           -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
         kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
         clicklink clctl executor prepare --config clicklink-config.yaml --output-dir ./clicklink-access
         ```
 
-        Conserve el directorio de salida: contiene el cuerpo de creación y el registro de nombre que leen `instances create` y cualquier retry.
+        Conserve el directorio de salida: contiene el cuerpo de la solicitud de creación y el registro del nombre, que leen `instances create` y cualquier reintento.
       </Tab>
 
       <Tab title="VM Linux" id="prepare-vm">
@@ -67,19 +70,19 @@ Solo `prepare` necesita AWS credentials: crea los S3 buckets y el IAM role. `ins
 
     El comando ejecuta cuatro pasos en orden y se detiene en el primer fallo:
 
-    1. **Nombre.** Elige un nombre de service o valida el que usted indique con `--instance <name>`. El nombre generado se registra en `<output-dir>/_prepare/<eks-cluster-name>.name` y la siguiente ejecución lo retoma, de modo que un retry reutiliza los buckets y el role de la primera ejecución. Con `--new-name` se elige otro. El comando rechaza un nombre que el executor todavía mantenga, o cuyo espacio de nombres ya contenga un ClickHouse cluster.
-    2. **Storage.** Crea los buckets de datos y de copia de seguridad y el IAM role `CH-S3-<name>-<region>-00-Role`. Los nombres de bucket predeterminados son `<cluster>-clickhouse-data-<rand>` y `<cluster>-clickhouse-backup-<rand>`; `--data-bucket` y `--backup-bucket` los sobrescriben. Con `--role-arn` se verifica un role aportado por usted y no se escribe nada en IAM.
-    3. **Conceder y aplicar.** En una VM, genera el paquete de access del executor para el espacio de nombres del service (`ns-<name>`), aplica su RBAC y registra el service en el registry del executor. En Kubernetes este paso se omite: el executor se ejecuta con el ServiceAccount de su pod y registra el service por sí mismo cuando llega la creación.
-    4. **Resumen.** Genera la password del usuario `default` y escribe el cuerpo de creación en `<output-dir>/_prepare/<name>.create.json` (mode `0600`; solo contiene los hash de la password). Imprime el siguiente comando en una línea `Next:`.
+    1. **Nombre.** Elige un nombre del servicio o valida el que usted indique con `--instance <name>`. Los nombres generados se registran en `<output-dir>/_prepare/<eks-cluster-name>.name` y la siguiente ejecución los retoma, de modo que un reintento reutiliza los buckets y el rol de la primera ejecución. `--new-name` elige otro. El comando rechaza los nombres que el ejecutor aún tiene en uso o cuyo espacio de nombres ya contiene un clúster de ClickHouse.
+    2. **Almacenamiento.** Crea los buckets de datos y de copia de seguridad, así como el rol de IAM `CH-S3-<name>-<region>-00-Role`. Los nombres predeterminados de los buckets son `<cluster>-clickhouse-data-<rand>` y `<cluster>-clickhouse-backup-<rand>`; `--data-bucket` y `--backup-bucket` permiten sobrescribirlos. Con `--role-arn`, verifica un rol existente que usted proporcione y no escribe nada en IAM.
+    3. **Permisos y aplicación.** En una VM, genera el paquete de acceso del ejecutor para el espacio de nombres del servicio (`ns-<name>`), aplica su RBAC y registra el servicio en el registro del ejecutor. En Kubernetes, este paso se omite: el ejecutor se ejecuta con la ServiceAccount de su pod y registra el servicio por sí mismo cuando llega la solicitud de creación.
+    4. **Resumen.** Genera la contraseña del usuario `default` y escribe el cuerpo de la solicitud de creación en `<output-dir>/_prepare/<name>.create.json` (modo `0600`; solo contiene los hash de la contraseña). Muestra el siguiente comando en una línea `Next:`.
 
     <Warning>
-      `prepare` imprime la password del usuario `default` una sola vez, en stderr. Ni el cuerpo de creación ni `--output json` la contienen, y ClickHouse Cloud solo recibe sus hash. Guárdela antes de continuar. Una nueva ejecución que encuentre el cuerpo de creación conserva los hash ya escritos y así lo indica.
+      `prepare` muestra la contraseña del usuario `default` una sola vez, en stderr. Ni el cuerpo de la solicitud de creación ni `--output json` la contienen, y ClickHouse Cloud solo recibe sus hash. Guárdela antes de continuar. Si una nueva ejecución encuentra el cuerpo de la solicitud de creación, conserva los hash ya escritos y lo indica.
     </Warning>
 
-    Use `--context <name>` cuando su kubeconfig contenga varios contextos; el contexto debe apuntar al EKS cluster indicado en `executor.cluster` en la configuración. `--dry-run` ejecuta todos los pasos sin crear ni escribir nada. El paso de hash usa SHA-1, que Go rechaza bajo `GODEBUG=fips140=only`; ejecute `prepare` en un host sin esa configuración.
+    Pase `--context <name>` cuando su kubeconfig contenga varios contextos; el contexto debe apuntar al clúster de EKS indicado en `executor.cluster` de la configuración. `--dry-run` ejecuta todos los pasos sin crear ni escribir nada. El paso de hash usa SHA-1, que Go rechaza con `GODEBUG=fips140=only`; ejecute `prepare` en un host sin ese parámetro de configuración.
   </Step>
 
-  <Step title="Envíe la creación" id="create">
+  <Step title="Envíe la solicitud de creación" id="create">
     <Tabs>
       <Tab title="Kubernetes" id="create-kubernetes">
         ```bash
@@ -89,10 +92,10 @@ Solo `prepare` necesita AWS credentials: crea los S3 buckets y el IAM role. `ins
           --wait
         ```
 
-        Deja abierto el reenvío de puertos de `prepare`: `--wait` sondea el executor a través de él.
+        Mantenga abierto el reenvío de puertos de `prepare`: `--wait` sondea el ejecutor a través de él.
       </Tab>
 
-      <Tab title="Linux VM" id="create-vm">
+      <Tab title="VM Linux" id="create-vm">
         ```bash
         sudo clicklink clctl instances create \
           --from-prepare /etc/clicklink/access/executor/_prepare/<name>.create.json \
@@ -102,11 +105,11 @@ Solo `prepare` necesita AWS credentials: crea los S3 buckets y el IAM role. `ins
       </Tab>
     </Tabs>
 
-    El comando envía el cuerpo preparado al endpoint del conector con las credenciales propias del conector. Imprime `created <spoken-name> (state provisioning)` y una sugerencia `watch:`. `<spoken-name>` es el nombre que asignó ClickHouse Cloud (por ejemplo, `amberaws-kq-42`), no el nombre del service que preparaste. La sugerencia `watch:` y todos los comandos `clctl` usan el nombre de tu service.
+    El comando envía el cuerpo preparado al endpoint del conector con las credenciales propias del conector. Muestra `created <spoken-name> (state provisioning)` y una indicación `watch:`. `<spoken-name>` es el nombre que asignó ClickHouse Cloud (por ejemplo, `amberaws-kq-42`), no el nombre del servicio que usted preparó. La indicación `watch:` y todos los comandos `clctl` usan el nombre de su servicio.
 
-    Es seguro reintentar con las mismas entradas. La clave de idempotencia se deriva de forma predeterminada de tu entorno y del nombre del service, por lo que volver a enviar la solicitud devuelve la primera creación.
+    Puede reintentar sin riesgo con las mismas entradas. La clave de idempotencia se deriva de forma predeterminada de su entorno y del nombre del servicio, por lo que, al reenviar la solicitud, se devuelve la creación original.
 
-    `--wait` sondea la API local del executor cada 10 segundos hasta que el service esté `running`, durante un máximo de `--wait-timeout` (valor predeterminado: `30m`). Falla de inmediato, indicando el error registrado, cuando el executor registra una creación fallida para ese nombre o el service pasa a `terminating`, `terminated` o `stale`.
+    `--wait` sondea la API local del ejecutor cada 10 segundos hasta que el servicio esté en `running`, durante un máximo de `--wait-timeout` (valor predeterminado: `30m`). Falla de inmediato, con el error registrado, si el ejecutor registra una creación fallida para ese nombre o si el servicio pasa a `terminating`, `terminated` o `stale`.
   </Step>
 
   <Step title="Verificar" id="verify">
@@ -114,7 +117,7 @@ Solo `prepare` necesita AWS credentials: crea los S3 buckets y el IAM role. `ins
     clicklink clctl instances get --name <name> --cluster <eks-cluster-name>
     ```
 
-    El service está listo cuando su `status` es `running`. Su usuario `default` toma la contraseña que imprimió `prepare`. `--cluster` también puede provenir de la variable de entorno `CLCTL_CLUSTER`.
+    El servicio está listo cuando su `status` es `running`. Su usuario `default` utiliza la contraseña que muestra `prepare`. `--cluster` también puede tomarse de la variable de entorno `CLCTL_CLUSTER`.
   </Step>
 </Steps>
 
@@ -220,12 +223,12 @@ De forma predeterminada conserva los datos y las copias de seguridad del servici
 
 Sin `--yes`, la ejecución se detiene tras el paso de registro e indica los nombres de los buckets que vaciaría. `--dry-run` lo lee todo y no escribe nada. Un role que aportaste con `--role-arn`, o un bucket que `prepare` no creó, se informa como conservado y nunca se toca. La ejecución se rechaza mientras el espacio de nombres del servicio siga alojando un cluster de ClickHouse. Lee todo antes de eliminar nada, por lo que una ejecución rechazada no cambia nada.
 
-## Cuando el conector está desconectado {#when-the-connector-is-offline}
+## Cuando el connector está desconectado {#when-the-connector-is-offline}
 
-Los servicios en ejecución no dependen del executor. El ClickHouse operator de tu cluster los mantiene en funcionamiento, y un conector desconectado no interrumpe nada que ya esté atendiendo queries.
+Los servicios en ejecución no dependen del ejecutor. El ClickHouse Operator de su cluster los mantiene en funcionamiento, y un connector desconectado no interrumpe nada que ya esté atendiendo consultas.
 
-Mientras no haya ningún executor conectado, ClickHouse Cloud no puede asignarle trabajo nuevo. Una creación, eliminación o sincronización de plataforma que ya se haya aceptado se conserva y se reintenta. Una creación se reintenta durante 30 minutos desde su último informe de progreso; una eliminación, durante 2 horas; y una sincronización de plataforma, hasta 10 intentos. Superado ese margen, el endpoint de tu conector marca el comando como fallido. Cualquier otro comando del ciclo de vida (scale, stop, start, restart, copia de seguridad, eliminación de copia de seguridad) se rechaza en lugar de ponerse en cola. Una creación o eliminación que envíes mientras no haya ningún executor conectado se rechaza del mismo modo; solo se reintentan los comandos ya aceptados.
+Mientras no haya ningún ejecutor conectado, ClickHouse Cloud no puede asignarle trabajo nuevo. Las creaciones, eliminaciones o sincronizaciones de plataforma que el ejecutor ya haya aceptado se conservan y se reintentan. Una creación se reintenta durante 30 minutos a partir de su último informe de progreso; una eliminación, durante 2 horas, y una sincronización de plataforma, hasta 10 intentos. Una vez agotado ese margen, el endpoint del connector marca el comando como fallido. Los demás comandos de ciclo de vida (escalado, detención, inicio, reinicio, copia de seguridad y eliminación de copias de seguridad) se rechazan en lugar de ponerse en cola. Las creaciones o eliminaciones que envíe mientras no haya ningún ejecutor conectado también se rechazan; solo se reintentan los comandos ya aceptados.
 
-Un comando que el executor ya haya aceptado se ejecuta hasta completarse; un resultado que no pudo comunicar se envía en su siguiente conexión.
+Un comando que el ejecutor ya haya aceptado se ejecuta hasta completarse; si no pudo notificar el resultado, lo envía en su siguiente conexión.
 
-`instances create` necesita que el endpoint de tu conector sea accesible desde el host donde se ejecuta. `--wait`, `instances list`, `instances get` y `commands list` necesitan la API local del executor, por lo que el executor debe estar en ejecución. El token de una aprobación de plataforma caduca según su propio reloj, independientemente de la conectividad; consulta [la ventana de aprobación](/es/products/bring-your-own-cloud/connector/platform-updates#the-approval-window).
+`instances create` requiere que el endpoint del connector sea accesible desde el host en el que se ejecuta. `--wait`, `instances list`, `instances get` y `commands list` requieren la API local del ejecutor, por lo que este debe estar en ejecución. El token de una aprobación de plataforma caduca según su propio plazo, independientemente de la conectividad; consulte [la ventana de aprobación](/es/products/bring-your-own-cloud/connector/platform-updates#the-approval-window).
