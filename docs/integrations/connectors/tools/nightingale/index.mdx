@@ -1,0 +1,128 @@
+---
+title: 'Nightingale and ClickHouse'
+sidebarTitle: 'Nightingale'
+slug: /integrations/nightingale
+description: 'Run scheduled SQL threshold alerts against ClickHouse from Nightingale.'
+doc_type: 'guide'
+keywords: ['Nightingale', 'n9e', 'alerting', 'ClickHouse']
+---
+
+import { CommunityMaintainedBadge } from '/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx';
+
+<CommunityMaintainedBadge />
+
+[Nightingale](https://github.com/ccfos/nightingale) is a self-hosted alerting engine. Its ClickHouse data source runs scheduled SQL queries so you can alert on thresholds in data you already store in ClickHouse.
+
+## Prerequisites {#prerequisites}
+
+- [Nightingale v9.3.0](https://github.com/ccfos/nightingale/releases/tag/v9.3.0), with permission to add a data source and create an alert rule in a business group.
+- A ClickHouse service reachable from the Nightingale server and, if used, the edge alert engine that runs the rule.
+- A ClickHouse user with `SELECT` on the table the rule reads. For the example, you also need a separate account that can create the table and insert sample data.
+
+| Nightingale | ClickHouse Cloud | Self-managed ClickHouse |
+| --- | --- | --- |
+| v9.3.0 | Configuration reference based on the Cloud Connect guide and the v9.3.0 client. Live validation pending. | Configuration reference based on the documented server ports and the v9.3.0 client. Server version and TLS test results are unrecorded. |
+
+## Connect Nightingale to ClickHouse {#connect-nightingale-to-clickhouse}
+
+In Nightingale, open **Integrations** → **Data sources** → **Add** and select **ClickHouse**. Enter a name and provide the ClickHouse **User** and **Password**. In **Nodes**, enter one `host:port` without a URL scheme or path.
+
+<Tabs>
+<Tab title="ClickHouse Cloud" id="clickhouse-cloud">
+
+Open your service in the Cloud console and select **Connect**. Copy the service hostname and use the port for your chosen protocol. Turn on **Secure connection (SSL/TLS)** and leave **Skip SSL verify** off.
+
+| Protocol in Nightingale | Port |
+| --- | --- |
+| **Native** | `9440` |
+| **HTTP** | `8443` (HTTPS) |
+
+If the service restricts incoming connections, allow the Nightingale server or alert engine's egress IP. Use database credentials for the service. [Cloud connection details](/cloud/guides/sql-console/gather-connection-details) · [IP filters](/cloud/security/setting-ip-filters)
+
+</Tab>
+<Tab title="Self-managed ClickHouse" id="self-managed-clickhouse">
+
+Match the protocol, port, and TLS setting to the server listener. For encrypted connections, turn on **Secure connection (SSL/TLS)** and leave **Skip SSL verify** off. Use the hostname on the certificate. If your server uses a private CA, add its CA certificate to the trust store of each Nightingale process that connects to ClickHouse.
+
+| Protocol in Nightingale | Typical port with TLS | Default port without TLS |
+| --- | --- | --- |
+| **Native** | `9440` | `9000` |
+| **HTTP** | `8443` (HTTPS) | `8123` |
+
+Use the actual listener port if it differs. [Network ports](/guides/sre/network-ports) · [Configure TLS](/guides/sre/tls/configuring-tls)
+
+</Tab>
+</Tabs>
+
+Test the connection when saving. Nightingale runs `SHOW DATABASES`. A successful connection check still requires the alert query to have access to its table.
+
+## Authentication and privileges {#authentication-and-privileges}
+
+Use a dedicated database user with a password over TLS. The ClickHouse data source form has no fields for client certificates or keys. Grant only `SELECT` on the table or view used by the rule. For the example, create the table below, then run these statements as a ClickHouse administrator. Replace the example password before running them.
+
+```sql
+CREATE USER nightingale_reader IDENTIFIED WITH sha256_password BY 'replace-with-a-strong-password';
+GRANT SELECT ON n9e_demo.requests TO nightingale_reader;
+```
+
+Use `nightingale_reader` in the data source. Run the example's `CREATE` and `INSERT` statements with a separate privileged account.
+
+## Alert on recent HTTP errors {#alert-on-recent-http-errors}
+
+Create a table and add a baseline. The twelve old errors fall outside the rule's one-minute window. The recent `200` response is inside the window but does not count as an error.
+
+```sql
+CREATE DATABASE n9e_demo;
+
+CREATE TABLE n9e_demo.requests
+(
+    event_time DateTime,
+    service LowCardinality(String),
+    status UInt16
+)
+ENGINE = MergeTree
+ORDER BY (service, event_time);
+
+INSERT INTO n9e_demo.requests
+SELECT now() - INTERVAL 2 MINUTE, 'checkout', 503 FROM numbers(12);
+
+INSERT INTO n9e_demo.requests VALUES (now(), 'checkout', 200);
+```
+
+In **Alerts & Notifications** → **Alert rules**, add a rule in your business group. Choose **ClickHouse** as the data source type and select the data source you saved. Paste this SQL as query `A`.
+
+```sql
+SELECT
+    'checkout' AS service,
+    countIf(status >= 500) AS error_count
+FROM n9e_demo.requests AS requests
+WHERE requests.service = 'checkout'
+  AND event_time >= now() - INTERVAL 1 MINUTE
+  AND event_time <= now()
+```
+
+Set **Value field** to `error_count` and the optional **Label field** to `service`. Preview the query to check that it returns one numeric value, `0`. Set the trigger expression to `$A.error_count >= 10`, with any severity, an evaluation interval of 15 seconds, and zero trigger and recovery delay. Keep the default recovery behavior. Enable the rule and wait for its first evaluation.
+
+Insert twelve recent errors using the privileged account.
+
+```sql
+INSERT INTO n9e_demo.requests
+SELECT now(), 'checkout', 503 FROM numbers(12);
+```
+
+On the next evaluation, the query should return `12` and the rule should create a current event with `service=checkout`. Stop inserting errors and wait for the window to pass. The same query returns `0`, so the rule should recover on the next evaluation and record the recovery in historical events. The aggregate returns a row with the same label even when the window is empty. A notification channel is optional for inspecting these events.
+
+Disable or delete the demo rule when finished. See [Nightingale's SQL-backed rules guide](https://n9e.io/docs/alerting/sql-rules) for rule settings.
+
+## Known limits {#known-limits}
+
+- In the open-source edition, the ClickHouse data source is available only in the SQL alert-rule editor.
+- Nightingale uses the first entry in **Nodes**. Point it at a service endpoint if your deployment needs failover.
+- Use a finite scalar number for the value field. A complex value such as an array, tuple, or map cannot be compared directly. Aggregate it or extract a number in SQL. Values are converted to `Float64`, so very large integers can lose precision.
+- The default result limit is 500 rows. Nightingale first counts the rows in a subquery and rejects results above the configured cap. Keep the window bounded on a sorting or partition key and aggregate to a small result. A small result does not limit the amount of data ClickHouse reads.
+
+## Troubleshooting {#troubleshooting}
+
+- **Connection or TLS test fails.** Verify the protocol and listener port, the network path from Nightingale, and any Cloud IP filters. For certificate errors, verify the hostname and trust chain. Keep certificate verification enabled.
+- **Connection test succeeds but the query fails.** Check the table grant, use a fully qualified name such as `n9e_demo.requests`, and verify the SQL with the same read-only account.
+- **The rule does not fire or recover.** Inspect the rule's evaluation records. Check the time window, the exact alias in **Value field**, and the expression reference. A grouped query can return no rows when a group disappears. Return a zero for the same label if recovery should follow a comparison with zero.
