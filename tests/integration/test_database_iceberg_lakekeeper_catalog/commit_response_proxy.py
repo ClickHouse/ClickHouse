@@ -121,10 +121,21 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.commit_path = self.path
                     self.server.attempts += 1
 
-        if snapshot is not None and not intercept and self.server.response_mode == "replay_reject":
+        if (
+            snapshot is not None
+            and not intercept
+            and self.server.response_mode in {"replay_reject", "replay_unavailable"}
+        ):
+            status = 400 if self.server.response_mode == "replay_reject" else 503
             self.reply(
-                400,
-                b'{"error":{"message":"Injected replay rejection","type":"BadRequestException","code":400}}',
+                status,
+                json.dumps({
+                    "error": {
+                        "message": "Injected replay failure",
+                        "type": "BadRequestException" if status == 400 else "ServiceUnavailableException",
+                        "code": status,
+                    }
+                }).encode(),
             )
             return
 

@@ -622,6 +622,7 @@ def commit_response_proxy(started_cluster):
         ("drop", "read_error_once", "insert"),
         # A later rejection must not authorize cleanup of an earlier commit.
         ("replay_reject", "read_error", "insert"),
+        ("replay_unavailable", "read_error", "insert"),
         ("drop", "read_error", "mutation"),
         ("drop", "read_error", "compaction"),
         ("drop", "read_error", "drop_partition"),
@@ -642,6 +643,10 @@ def test_preserves_files_after_lost_commit_response(
         "allow_insert_into_iceberg": 1,
         "write_full_path_in_iceberg_metadata": 1,
     }
+    cancel = response_mode == "replay_unavailable"
+    if cancel:
+        settings["async_insert"] = 0
+    query_id = f"lost_commit_{suffix}"
     node.query(
         f"CREATE DATABASE {database} ENGINE = DataLakeCatalog("
         f"'{proxy_url}', 'minio', '{minio_secret_key}') "
@@ -682,7 +687,7 @@ def test_preserves_files_after_lost_commit_response(
             "drop_partition": f"ALTER TABLE {table_name} DROP PARTITION 2",
         }
         insert = node.get_query_request(
-            queries[operation], settings=settings, timeout=180
+            queries[operation], settings=settings, timeout=180, query_id=query_id
         )
         # waits until the proxy has forwarded that commit to the catalog
         response = requests.get(f"{control_url}/committed", timeout=65)
@@ -720,16 +725,33 @@ def test_preserves_files_after_lost_commit_response(
 
         # Release the injected failure after verifying the committed files.
         requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        if cancel:
+            # The eighth failure starts the default ten-second backoff.
+            node.wait_for_log_line(
+                f"Retrying Iceberg commit for {namespace}.events after attempt 8/10", timeout=60
+            )
+            counts = requests.get(f"{control_url}/counts", timeout=5)
+            counts.raise_for_status()
+            attempts = counts.json()["attempts"]
+            assert attempts == 8, counts.json()
+            node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC", timeout=5)
         _, insert_error = insert.get_answer_and_error()
         insert = None
-        if readback_mode in {"read_error", "missing", "mismatch"}:
+        if cancel:
+            assert (
+                "QUERY_WAS_CANCELLED" in insert_error
+                or "ICEBERG_COMMIT_STATE_UNKNOWN" in insert_error
+            ), insert_error
+        elif readback_mode in {"read_error", "missing", "mismatch"}:
             assert "ICEBERG_COMMIT_STATE_UNKNOWN" in insert_error, insert_error
         else:
             assert not insert_error, insert_error
         counts = requests.get(f"{control_url}/counts", timeout=5)
         counts.raise_for_status()
         counts = counts.json()
-        if readback_mode in {"read_error", "missing", "mismatch", "read_error_once"}:
+        if cancel:
+            assert counts["attempts"] == attempts, counts
+        elif readback_mode in {"read_error", "missing", "mismatch", "read_error_once"}:
             assert counts["attempts"] == 2, counts
             expected_status = 400 if response_mode == "replay_reject" else 409
             assert counts["statuses"] == [expected_status], counts

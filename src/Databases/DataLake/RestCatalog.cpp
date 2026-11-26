@@ -25,6 +25,7 @@
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 
 #include <IO/ConnectionTimeouts.h>
@@ -2249,11 +2250,13 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         {
             if (attempt)
             {
-                auto process = getContext()->getProcessListElement();
                 for (size_t remaining_ms = backoff_ms; remaining_ms;)
                 {
-                    if (process)
-                        process->checkTimeLimit();
+                    /// The catalog context is global; check the executing query instead.
+                    DB::CurrentThread::checkIfNotCancelled();
+                    if (auto query_context = DB::CurrentThread::tryGetQueryContext())
+                        if (auto process = query_context->getProcessListElementSafe())
+                            process->checkTimeLimit();
                     const size_t slice_ms = std::min(remaining_ms, size_t{100});
                     sleepForMilliseconds(slice_ms);
                     remaining_ms -= slice_ms;
