@@ -30,6 +30,15 @@
 # arrive as one block regardless of `max_block_size`, and a background merge of two compact parts
 # would change the chunk layout. A wide part honours `max_block_size`, so the chunk boundaries are
 # the same whether or not the parts were merged.
+#
+# Every query pins `optimize_distinct_in_order=1`. `tests/clickhouse-test` randomizes that setting
+# to `0` or `1` through `CLICKHOUSE_CLIENT_OPT`, and the tag `no-random-merge-tree-settings` only
+# disables table setting randomization. With `0` the planner never selects
+# `DistinctSortedStreamTransform` (`QueryPlanOptimizationSettings::distinct_in_order` requires it),
+# so the queries finish without ever reaching the failpoint and each case would spend its full
+# `SYSTEM WAIT FAILPOINT` timeout before failing. The override stays in the query's own `SETTINGS`
+# clause, which wins over a command-line value, so the other randomized settings keep exercising
+# their variation.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -132,7 +141,7 @@ run_case "single_values" \
 "Cancelled at the outer-loop poll
 Cancelled after the row processing loop" \
 "SELECT DISTINCT number FROM numbers(10000) ORDER BY number FORMAT Null
- SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
+ SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0, optimize_distinct_in_order=1"
 
 # (2) Plain runs of 5000: the batch skip helper crosses its 4096-row poll inside run k=0.
 $CLICKHOUSE_CLIENT -q "
@@ -146,7 +155,7 @@ run_case "long_runs" \
 Cancelled after skipping a plain range
 Cancelled after the row processing loop" \
 "SELECT DISTINCT k FROM ${CLICKHOUSE_DATABASE}.runs ORDER BY k FORMAT Null
- SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
+ SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0, optimize_distinct_in_order=1"
 
 # (3) Runs of 5000 with a non-sorted column: the hash-table loop crosses i=4096 inside run k=0,
 # so the in-loop poll must be the one that observes the cancellation.
@@ -161,7 +170,7 @@ run_case "other_columns" \
 Cancelled after hashing a range
 Cancelled after the row processing loop" \
 "SELECT DISTINCT k, v FROM ${CLICKHOUSE_DATABASE}.runs_with_v ORDER BY k FORMAT Null
- SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
+ SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0, optimize_distinct_in_order=1"
 
 # (4) Plain path, second chunk: with 4000-row chunks the first chunk ends inside run k=1 without
 # reaching any poll, so chunk 2 goes through `continueWithPrevRange` and the poll right after the
@@ -176,7 +185,7 @@ run_case "continuation" \
 "Cancelled at the carried-over prefix poll
 Cancelled after the continuation range" \
 "SELECT DISTINCT k FROM ${CLICKHOUSE_DATABASE}.cont ORDER BY k FORMAT Null
- SETTINGS max_block_size=4000, max_threads=1, max_rows_to_read=0"
+ SETTINGS max_block_size=4000, max_threads=1, max_rows_to_read=0, optimize_distinct_in_order=1"
 
 # (5) Hash path with several runs: the cancellation is observed inside run k=0 of the first chunk,
 # which is followed by another range, so the bail-out after the hash helper must stop that range
@@ -193,7 +202,7 @@ run_case "other_columns_multiple_runs" \
 Cancelled after hashing a range
 Cancelled after the row processing loop" \
 "SELECT DISTINCT k, v FROM ${CLICKHOUSE_DATABASE}.runs_multi ORDER BY k FORMAT Null
- SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
+ SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0, optimize_distinct_in_order=1"
 
 # (6) Hash path, second chunk: 3000-row chunks keep chunk 1 below the `i & 0xFFF` poll and end it
 # inside run k=1, so chunk 2 really goes through `continueWithPrevRange` and hashes the carried-over
@@ -209,6 +218,6 @@ run_case "other_columns_continuation" \
 "Cancelled while hashing the carried-over prefix
 Cancelled after the continuation range" \
 "SELECT DISTINCT k, v FROM ${CLICKHOUSE_DATABASE}.cont_with_v ORDER BY k FORMAT Null
- SETTINGS max_block_size=3000, max_threads=1, max_rows_to_read=0"
+ SETTINGS max_block_size=3000, max_threads=1, max_rows_to_read=0, optimize_distinct_in_order=1"
 
 [ "$failed" -eq 0 ] || exit 1
