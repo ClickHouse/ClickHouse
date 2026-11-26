@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 #include <Poco/String.h>
 
@@ -55,6 +56,7 @@
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
 #include <Core/UUID.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -215,31 +217,63 @@ static ASTPtr buildSelectFromTableFunction(const boost::intrusive_ptr<ASTFunctio
     return result_select_query;
 }
 
+struct FailedSubqueryReadings
+{
+    /// The value of `starts_with_valid_select_or_explain` of each failed reading.
+    std::unordered_map<const char *, bool> starts_with_valid_select_or_explain;
+};
+
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     starts_with_valid_select_or_explain = false;
 
-    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
-    ParserExplainQuery explain;
-
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
-    const auto opening_bracket_pos = pos;
-    ++pos;
+    const char * const opening_bracket = pos->begin;
 
-    /// Lookahead for inner subquery
-    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+    /// The reading of a subquery depends only on where it starts, but a failed one is retried at the same
+    /// position by every enclosing alternative (a parenthesized expression, a tuple, a function argument,
+    /// a quantified comparison, a union element), and these alternatives nest. Without remembering the
+    /// failures, the parse time is exponential in the nesting depth of such brackets.
+    if (expected.failed_subquery_readings)
+    {
+        const auto & failed = expected.failed_subquery_readings->starts_with_valid_select_or_explain;
+        if (auto it = failed.find(opening_bracket); it != failed.end())
+        {
+            starts_with_valid_select_or_explain = it->second;
+            return false;
+        }
+    }
+
+    bool parsed = parseSubquery(pos, node, expected);
+    if (!parsed)
+    {
+        if (!expected.failed_subquery_readings)
+            expected.failed_subquery_readings = std::make_shared<FailedSubqueryReadings>();
+        expected.failed_subquery_readings->starts_with_valid_select_or_explain[opening_bracket] = starts_with_valid_select_or_explain;
+    }
+    return parsed;
+}
+
+bool ParserSubquery::parseSubquery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
+    ParserExplainQuery explain;
 
     /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
     /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
     /// Unlike a leading `SELECT`, `EXPLAIN` or `VALUES`, that word is therefore not evidence that the
     /// parentheses hold a subquery at all. Where the contents read as an expression over a column
     /// named `from`, that older reading wins and these are not a subquery.
+    if (parenthesesHoldExpressionOverColumnNamedFrom(pos))
+        return false;
+    ++pos;
+
+    /// Lookahead for inner subquery
+    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+
     const bool starts_with_from_clause
         = pos->type == TokenType::BareWord && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from");
-
-    if (starts_with_from_clause && parenthesesHoldExpressionOverColumnNamedFrom(opening_bracket_pos))
-        return false;
 
     ASTPtr result_node = nullptr;
 
@@ -1148,110 +1182,196 @@ static bool isNullKeyword(std::string_view text)
         && (text[3] == 'L' || text[3] == 'l');
 }
 
+struct FailedLiteralReadings
+{
+    /// Opening brackets from which `parseLiteralAsText` reads nothing, mapped to nothing, and those from which it reads a
+    /// literal not followed by `::`, mapped to the token after the literal.
+    std::unordered_map<const char *, std::optional<TokenIterator>> cast_operands;
+
+    /// Opening brackets where `ParserCollectionOfLiterals` failed.
+    std::unordered_set<const char *> collections;
+};
+
+/// A reading that ended this close to its bracket costs less to repeat than to remember.
+static constexpr ptrdiff_t min_remembered_reading_size = 64;
+
+static FailedLiteralReadings & getFailedLiteralReadings(Expected & expected)
+{
+    if (!expected.failed_literal_readings)
+        expected.failed_literal_readings = std::make_shared<FailedLiteralReadings>();
+    return *expected.failed_literal_readings;
+}
+
 /// Scans an array or a tuple of numbers, strings and `NULL`s, and of nested arrays and tuples of them,
 /// leaving `pos` right after it, and appends its text to `literal.text` token by token: without
 /// whatever the query holds between the tokens - a comment, or a space between a minus and its
 /// digits - which the text readers of the types do not skip, except for a single space after a
 /// comma when the query has one, which they do. Returns false if there is no such collection ahead,
 /// in which case `pos` is left somewhere inside what was scanned.
-static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal)
+///
+/// Without `build_text` it only checks, and remembers in `remember_in` what a scan from each bracket
+/// it passes would find, so that the scans from them are not repeated. It also tells in `verbatim`
+/// whether the text it would build is the query text of the collection as it is.
+template <bool build_text>
+static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal, Expected * remember_in, bool * verbatim)
 {
     using enum TokenType;
+
+    struct Bracket
+    {
+        TokenType type{};
+        const char * begin = nullptr;
+        /// Whether a comma, and a number, string or `NULL`, sit directly inside it.
+        bool holds_comma = false;
+        bool holds_scalar = false;
+    };
 
     /// A round bracket holding a single number or string is a parenthesized expression rather than a
     /// one-element tuple: `(1)` is the value `1`, and only a tuple type reads `(1)` as text. Whatever
     /// else a round bracket can hold - a comma, nothing at all, a nested collection - is a tuple, so
     /// its text is read as one.
-    const bool outer_is_round = pos->type == OpeningRoundBracket;
-    bool holds_own_comma = false;
-    bool holds_own_scalar = false;
+    auto is_collection = [](const Bracket & bracket)
+    {
+        return bracket.type != OpeningRoundBracket || bracket.holds_comma || !bracket.holds_scalar;
+    };
 
     TokenType last_token = OpeningSquareBracket;
-    const char * last_token_end = pos->begin;
-    std::vector<TokenType> stack;
+    [[maybe_unused]] const char * last_token_end = pos->begin;
+    std::vector<Bracket> stack;
+
+    /// What a scan from the bracket at `begin` finds, when it stops at the current token.
+    auto remember = [&](const char * begin, std::optional<TokenIterator> after_literal)
+    {
+        if (remember_in && pos->begin - begin >= min_remembered_reading_size)
+            getFailedLiteralReadings(*remember_in).cast_operands.emplace(begin, after_literal);
+    };
+
+    /// The nested bracket closed by the previous token. A scan from it would stop at the current token.
+    std::optional<Bracket> closed;
+    auto remember_closed = [&]
+    {
+        if (closed && pos->type != DoubleColon)
+            remember(closed->begin, is_collection(*closed) ? std::optional<TokenIterator>(pos) : std::nullopt);
+        closed.reset();
+    };
+
+    /// A scan from any bracket still open fails at the same token.
+    auto fail = [&]
+    {
+        for (const auto & bracket : stack)
+            remember(bracket.begin, std::nullopt);
+        return false;
+    };
+
     while (pos.isValid())
     {
-        /// Whether this token sits directly inside the outermost bracket.
-        const bool own = stack.size() == 1;
+        remember_closed();
 
-        if (last_token == Comma && pos->begin != last_token_end)
-            literal.text += ' ';
+        if constexpr (build_text)
+        {
+            if (last_token == Comma && pos->begin != last_token_end)
+                literal.text += ' ';
+        }
 
         if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
         {
-            stack.push_back(pos->type);
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                return false;
-            literal.text += tokenText(pos);
+                return fail();
+            stack.push_back({pos->type, pos->begin});
+            if constexpr (build_text)
+                literal.text += tokenText(pos);
         }
         else if (pos->type == ClosingSquareBracket)
         {
             if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
-                return false;
-            if (stack.empty() || stack.back() != OpeningSquareBracket)
-                return false;
+                return fail();
+            if (stack.empty() || stack.back().type != OpeningSquareBracket)
+                return fail();
+            closed = stack.back();
             stack.pop_back();
-            literal.text += tokenText(pos);
+            if constexpr (build_text)
+                literal.text += tokenText(pos);
         }
         else if (pos->type == ClosingRoundBracket)
         {
             if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
-                return false;
-            if (stack.empty() || stack.back() != OpeningRoundBracket)
-                return false;
+                return fail();
+            if (stack.empty() || stack.back().type != OpeningRoundBracket)
+                return fail();
+            closed = stack.back();
             stack.pop_back();
-            literal.text += tokenText(pos);
+            if constexpr (build_text)
+                literal.text += tokenText(pos);
         }
         else if (pos->type == Comma)
         {
             if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
-                return false;
-            holds_own_comma |= own;
-            literal.text += ',';
+                return fail();
+            stack.back().holds_comma = true;
+            if constexpr (build_text)
+                literal.text += ',';
         }
         else if (pos->type == Number)
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
-                return false;
+                return fail();
             const std::string_view text = tokenText(pos);
             if (!isPlainDecimalNumeral(text))
-                return false;
+                return fail();
             literal.all_integers &= isIntegerNumeral(text);
-            holds_own_scalar |= own;
+            stack.back().holds_scalar = true;
             if (last_token == Minus && !isIntegerZeroNumeral(text))
             {
                 literal.all_non_negative = false;
-                literal.text += '-';
+                if constexpr (build_text)
+                    literal.text += '-';
             }
-            literal.text += text;
+            else if (last_token == Minus && verbatim)
+            {
+                /// The minus of a zero is not written.
+                *verbatim = false;
+            }
+            if constexpr (build_text)
+                literal.text += text;
         }
         else if (isOneOf<StringLiteral, Minus>(pos->type))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                return false;
+                return fail();
             if (pos->type == StringLiteral)
             {
                 literal.all_numbers = false;
-                holds_own_scalar |= own;
-                literal.text += tokenText(pos);
+                stack.back().holds_scalar = true;
+                if constexpr (build_text)
+                    literal.text += tokenText(pos);
             }
             /// A minus is written together with the number that follows it.
         }
         else if (pos->type == BareWord && isNullKeyword(tokenText(pos)))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                return false;
+                return fail();
             literal.has_null = true;
-            holds_own_scalar |= own;
-            literal.text += "NULL";
+            stack.back().holds_scalar = true;
+            if (verbatim && tokenText(pos) != "NULL")
+                *verbatim = false;
+            if constexpr (build_text)
+                literal.text += "NULL";
         }
         else
         {
             break;
         }
 
-        last_token = pos->type;
-        last_token_end = pos->end;
+        const Token & token = *pos;
+
+        /// Only a single space after a comma is kept of what separates the tokens.
+        if (verbatim && token.begin != last_token_end
+            && !(last_token == Comma && token.begin == last_token_end + 1 && *last_token_end == ' '))
+            *verbatim = false;
+
+        last_token = token.type;
+        last_token_end = token.end;
         ++pos;
 
         if (stack.empty())
@@ -1259,10 +1379,17 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
     }
 
     if (!stack.empty())
-        return false;
+    {
+        remember_closed();
+        return fail();
+    }
 
-    if (outer_is_round && !holds_own_comma && holds_own_scalar)
+    /// The outermost bracket, closed by the last token.
+    if (!is_collection(*closed))
+    {
+        remember(closed->begin, std::nullopt);
         return false;
+    }
 
     return true;
 }
@@ -1307,7 +1434,7 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
     }
     else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
-        if (!scanCollectionOfLiteralsAsText(pos, result))
+        if (!scanCollectionOfLiteralsAsText</*build_text*/ true>(pos, result, /*remember_in*/ nullptr, /*verbatim*/ nullptr))
         {
             pos = begin;
             return false;
@@ -1450,10 +1577,67 @@ ASTPtr exactCastArgument(
     return result;
 }
 
+/// Reads at `pos` a collection of literals the way `parseLiteralAsText` does, but only when `::` follows it. That is
+/// checked first, without building the text of the literal, and what a check finds about the brackets it passes is
+/// remembered, so that the operand of every enclosing expression is not scanned again. On success `pos` is left at `::`.
+static bool readCollectionOfLiteralsBeforeCast(IParser::Pos & pos, LiteralAsText & literal, Expected & expected)
+{
+    std::optional<TokenIterator> after_literal;
+    bool remembered = false;
+    if (const auto * readings = expected.failed_literal_readings.get())
+    {
+        if (auto it = readings->cast_operands.find(pos->begin); it != readings->cast_operands.end())
+        {
+            after_literal = it->second;
+            remembered = true;
+        }
+    }
+
+    if (!remembered)
+    {
+        IParser::Pos end = pos;
+        LiteralAsText checked;
+        bool verbatim = true;
+        if (!scanCollectionOfLiteralsAsText</*build_text*/ false>(end, checked, &expected, &verbatim))
+            return false;
+
+        if (end->type == TokenType::DoubleColon)
+        {
+            if (!verbatim)
+                return parseLiteralAsText(pos, literal);
+
+            IParser::Pos last = end;
+            --last;
+            checked.text.assign(pos->begin, last->end);
+            literal = std::move(checked);
+            pos = end;
+            return true;
+        }
+
+        after_literal = end;
+        if (end->begin - pos->begin >= min_remembered_reading_size)
+            getFailedLiteralReadings(expected).cast_operands.emplace(pos->begin, after_literal);
+    }
+
+    if (!after_literal)
+        return false;
+
+    /// Expect `::` after the literal, as reading it would.
+    IParser::Pos after(*after_literal, pos.max_depth, pos.max_backtracks);
+    after.depth = pos.depth;
+    ParserToken(TokenType::DoubleColon).ignore(after, expected);
+    return false;
+}
+
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     LiteralAsText literal;
-    if (!parseLiteralAsText(pos, literal))
+    if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
+    {
+        if (!readCollectionOfLiteralsBeforeCast(pos, literal, expected))
+            return false;
+    }
+    else if (!parseLiteralAsText(pos, literal))
         return false;
 
     if (!ParserToken(TokenType::DoubleColon).ignore(pos, expected))
@@ -1504,6 +1688,7 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
     errno = 0;    /// Functions strto* don't clear errno.
@@ -1824,9 +2009,24 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     if (pos->type != opening_bracket)
         return false;
 
+    /// A reading from a bracket fails at the same token as a reading from any bracket that holds it, so remember where
+    /// it failed: each enclosing expression would try again from its own bracket.
+    if (expected.failed_literal_readings && expected.failed_literal_readings->collections.contains(pos->begin))
+        return false;
+
     std::vector<CollectionOfLiteralsLayer<Collection>> layers;
     layers.emplace_back(pos);
     pos.increaseDepth();
+
+    auto fail = [&]
+    {
+        for (auto & layer : layers)
+        {
+            if (pos->begin - layer.literal_begin->begin >= min_remembered_reading_size)
+                getFailedLiteralReadings(expected).collections.insert(layer.literal_begin->begin);
+        }
+        return false;
+    };
 
     ParserLiteral literal_p;
 
@@ -1838,7 +2038,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
-                    return false;
+                    return fail();
 
                 boost::intrusive_ptr<ASTLiteral> literal = make_intrusive<ASTLiteral>(std::move(layers.back().arr));
                 auto layer_begin = layers.back().literal_begin;
@@ -1872,7 +2072,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             else
             {
                 expected.add(pos, "comma or closing bracket");
-                return false;
+                return fail();
             }
         }
 
@@ -1887,11 +2087,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             pos.increaseDepth();
         }
         else
-            return false;
+            return fail();
     }
 
     expected.add(pos, getTokenName(closing_bracket));
-    return false;
+    return fail();
 }
 
 template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);

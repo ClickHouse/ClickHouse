@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -183,6 +184,16 @@ size_t NativeWriter::write(const Block & block)
     /// Dimensions
     size_t columns = block.columns();
     size_t rows = block.rows();
+
+    /// A block with no columns can still carry rows. A receiver below the revision rejects such a block,
+    /// and sending zero rows instead would lose them.
+    if (columns == 0 && rows > 0 && client_revision < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot write {} rows that carry no columns at protocol revision {}: it requires revision {}",
+            rows,
+            client_revision,
+            DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT);
 
     writeVarUInt(columns, ostr);
     writeVarUInt(rows, ostr);

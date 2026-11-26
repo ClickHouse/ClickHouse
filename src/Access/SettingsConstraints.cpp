@@ -57,7 +57,7 @@ struct SettingSourceRestrictions
     std::bitset<SettingSource::COUNT> allowed_sources;
 };
 
-const std::unordered_map<std::string_view, SettingSourceRestrictions> SETTINGS_SOURCE_RESTRICTIONS = {
+[[clang::no_destroy]] const std::unordered_map<std::string_view, SettingSourceRestrictions> SETTINGS_SOURCE_RESTRICTIONS = {
     {"max_sessions_for_user", {SettingSource::PROFILE}},
 };
 

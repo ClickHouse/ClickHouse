@@ -38,6 +38,23 @@ Valeurs possibles :
 * 0 — Désactivé.
 * 1 — Activé.
 
+## use_skip_indexes_for_disjunctions_max_rpn_elements {#use_skip_indexes_for_disjunctions_max_rpn_elements}
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "128"},{"label": "Nouveau paramètre, la limite était auparavant codée en dur à 32"}]}]} />
+
+Nombre maximal d’éléments dans la représentation interne (RPN) d’un filtre WHERE auquel `use_skip_indexes_for_disjunctions` s’applique.
+Approximativement, chaque condition et chaque `AND`, `OR` et `NOT` comptent pour un élément : par exemple, `A = 5 OR B = 5 OR C = 5` comporte 5 éléments.
+Les éléments sont comptés après la réécriture du filtre pour l’analyse d’index : par exemple, `A = 1 OR A = 2 OR A = 3` devient `A IN (1, 2, 3)`, soit un seul élément (voir `optimize_min_equality_disjunction_chain_length`), et `coalesce(A, B) = 5` est développé en plusieurs conditions (voir `allow_key_condition_coalesce_rewrite`).
+Pour les filtres comportant davantage d’éléments, chaque index de saut est évalué isolément et ne peut pas ignorer de granules pour des conditions portant sur des colonnes différentes reliées par `OR`.
+Lors de l’analyse d’index, les résultats partiels occupent un bit par élément et par granule de chaque part, et leur combinaison prend, pour chaque granule, un temps proportionnel au nombre d’éléments. Gardez-le à l’esprit si vous définissez la valeur 0 (aucune limite).
+
+Valeurs possibles :
+
+* 0 — Aucune limite.
+* Entier positif — Nombre maximal d’éléments.
+
 ## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -1046,7 +1046,7 @@ struct PhraseSearchStats
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + decode_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, ranges_read);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, bytes_read);
     }
@@ -1056,7 +1056,7 @@ struct PhraseSearchStats
     UInt64 directory_us = 0;
     UInt64 decode_us = 0;
     UInt64 match_us = 0;
-    size_t blocks_read = 0;
+    size_t ranges_read = 0;
     size_t blocks_total = 0;
     UInt64 bytes_read = 0;
 };
@@ -1140,7 +1140,7 @@ private:
                     stats.bytes_read += block_bytes;
                 }
                 parsed_blocks[u] = block_idx;
-                ++stats.blocks_read;
+                ++stats.ranges_read;
             }
 
             const auto & doc_offsets = scratches[u].doc_offsets;
@@ -1448,10 +1448,15 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
 {
     auto it = granules.find(index_read_task.index.index->index.name);
 
-    if (it != granules.end() && it->second)
+    /// The read tasks of a part usually pass the same granule, and the state of the reader stays valid from one task
+    /// to the next: `readRows` resets the cursors when a task starts before the previous one, and
+    /// `updateAllMarkRanges` drops the posting blocks outside the ranges of the new task.
+    /// A different granule invalidates all the state keyed into the previous one.
+    if (it != granules.end() && it->second && it->second != granule)
     {
         resetCursors();
         postings_blocks.clear();
+        postings_streams.clear();
         setIndexGranule(it->second);
     }
 }

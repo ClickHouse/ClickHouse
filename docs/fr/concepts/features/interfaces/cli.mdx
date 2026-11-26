@@ -16,7 +16,7 @@ Avec `clickhousectl`, vous pouvez :
 * Créer, configurer, mettre à l’échelle, sauvegarder et interroger des services ClickHouse Cloud
 * Créer, surveiller, configurer et restaurer des services [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview)
 * Créer et exploiter des ClickPipes depuis le stockage d’objet, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB et BigQuery
-* Gérer les sources, tableaux de bord, alertes, webhooks, recherches enregistrées et rôles d’un service [Managed ClickStack](/fr/clickstack/deployment/managed)
+* Gérer les sources, tableaux de bord, alertes, webhooks, recherches enregistrées et rôles d’un service [Self-managed ClickHouse Observability](/fr/clickstack/self-configured/deployment/managed)
 * Développer des UDF exécutables en local et les déployer sur ClickHouse Cloud
 * Gérer les membres de l’organisation, les invitations, les clés API et les rôles
 * Installer les ClickHouse agent skills officiels dans les agents de code
@@ -430,7 +430,7 @@ Les pipelines d’ingestion CDC doivent être à l’état `Paused` avant toute 
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack` gère les sources, les tableaux de bord, les alertes, les webhooks, les recherches enregistrées et les rôles d&#39;un service [Managed ClickStack](/fr/clickstack/deployment/managed) existant. Les ressources sont des fichiers JSON (`--file`, ou `-` pour stdin). Les lectures prennent en charge OAuth ; les écritures nécessitent une API key.
+`cloud clickstack` gère les sources, les tableaux de bord, les alertes, les webhooks, les recherches enregistrées et les rôles d&#39;un service [Self-managed ClickHouse Observability](/fr/clickstack/self-configured/deployment/managed) existant. Les ressources sont des fichiers JSON (`--file`, ou `-` pour stdin). Les lectures prennent en charge OAuth ; les écritures nécessitent une API key.
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

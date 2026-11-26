@@ -128,6 +128,7 @@ struct Dictionary
 struct PageDecoder
 {
     virtual void skip(size_t num_values) = 0;
+    /// Value `i` passes `filter` if `filter[filter_offset + i]` is nonzero (not necessarily 1).
     virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) = 0;
 
     /// Fused decode-and-gather for dictionary-encoded data pages: append the *dictionary values*
@@ -194,7 +195,7 @@ struct StringConverter
     /// If true, the output is ColumnString, and no special conversion is needed.
     [[nodiscard]] virtual bool isTrivial() const { return false; }
 
-    /// i-th string is range [offsets[i-1], offsets[i]-separator_bytes) in `chars`.
+    /// i-th string is range [offsets[static_cast<ssize_t>(i) - 1], offsets[i]-separator_bytes) in `chars`.
     /// `offsets[-1]` must be valid and is not necessarily 0.
     /// Does no range checks, the caller must ensure that `offsets` are valid and `chars` are long enough.
     virtual void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn &) const = 0;

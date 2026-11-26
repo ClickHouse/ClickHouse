@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
 {
     std::lock_guard guard(mutex);
 
@@ -32,7 +32,7 @@ void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
                 || c == '`' || c == '|' || c == '~';
         };
         if (entry.name.empty() || !std::all_of(entry.name.begin(), entry.name.end(), is_tchar)
-            || entry.value.contains('\r') || entry.value.contains('\n'))
+            || std::string_view(entry.value).contains('\r') || std::string_view(entry.value).contains('\n'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
 
         /// Header names are case-insensitive (RFC 9110 5.1); the forbidden set is stored lower-cased.
@@ -50,7 +50,7 @@ void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
     }
 }
 
-void HTTPHeaderFilter::checkHeaders(NormalizedHTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkHeaders(const NormalizedHTTPHeaderEntries & entries) const
 {
     /// The check only validates the entries; it does not modify them, so the container's
     /// lower-case invariant is preserved.
