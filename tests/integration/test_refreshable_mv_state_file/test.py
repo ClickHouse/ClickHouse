@@ -795,8 +795,11 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
             f"TO {remote_distributed} AS SELECT number b FROM numbers(2)"
         )
         # A TimeSeries table writes the rows into its inner tables, here Memory.
+        # version = 10 stores one sample per row: later versions merge the samples of a bucket and
+        # accept only an AggregatingMergeTree engine for the samples table.
         node.query(
-            f"CREATE TABLE {time_series} ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 "
+            f"CREATE TABLE {time_series} ENGINE = TimeSeries "
+            f"SETTINGS version = 10, recent_samples_ttl_seconds = 0 "
             f"SAMPLES INNER ENGINE = Memory TAGS INNER ENGINE = Memory "
             f"TIME RANGES INNER ENGINE = Memory METRIC FAMILIES INNER ENGINE = Memory",
             settings={"enable_time_series_table": 1},
