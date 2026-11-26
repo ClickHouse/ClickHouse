@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: shard
+# Random settings limits: adaptive_aggregator_freeze_threshold=(16384, 16384); adaptive_aggregator_freeze_threshold_bytes=(4194304, 4194304)
+# A frozen adaptive aggregator counts only the groups its merge builds (see #130077), so `LIMIT` can end the query before `TOO_MANY_ROWS`.
 # An explicit `group_by_overflow_mode = 'throw'` disables the limit on groups of a trivial `GROUP BY ... LIMIT`
 # on shards too, even if the shard enables `optimize_trivial_group_by_limit_query` itself.
 # `throw` is the default value, so the shard must not lose the mark that the mode is explicit.

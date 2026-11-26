@@ -1,6 +1,9 @@
 -- Tags: shard
 -- Shards limit the groups of `GROUP BY ... LIMIT` without aggregate functions,
 -- but they do not get `group_by_overflow_mode = 'any'` for that.
+-- A frozen adaptive aggregator counts only the groups its merge builds (see #130077), so `LIMIT` can end the query
+-- before `TOO_MANY_ROWS`; pin the freeze thresholds to their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 SET optimize_trivial_group_by_limit_query = 1, max_block_size = 10;
 

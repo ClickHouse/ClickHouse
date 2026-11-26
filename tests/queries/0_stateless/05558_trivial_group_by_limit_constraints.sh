@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: shard
+# Random settings limits: adaptive_aggregator_freeze_threshold=(16384, 16384); adaptive_aggregator_freeze_threshold_bytes=(4194304, 4194304)
+# A frozen adaptive aggregator counts only the groups its merge builds (see #130077), so `LIMIT` can end the query before `TOO_MANY_ROWS`.
 # The limit on groups of a trivial `GROUP BY ... LIMIT` does not override the limits of the user, also on shards.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
