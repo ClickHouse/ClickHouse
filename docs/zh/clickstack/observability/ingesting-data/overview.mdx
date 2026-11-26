@@ -1,0 +1,89 @@
+---
+slug: /clickstack/observability/ingesting-data/overview
+title: '摄取数据'
+sidebarTitle: '概览'
+description: '将应用程序和基础设施的遥测数据发送到 ClickHouse Observability 中的托管 OpenTelemetry 采集器。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '摄取', 'OpenTelemetry', 'OTLP', '日志', '指标', '链路追踪']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 服务" />
+
+    ClickHouse Observability 包含一个**托管的 OpenTelemetry (OTel) 采集器**，用于接收日志、指标、链路追踪和会话回放数据，并将其写入 ClickHouse Cloud。摄取采集器、数据库和 ClickStack 用户界面均由 ClickHouse Cloud 负责运维。您只需对应用程序进行插桩，并配置应用程序或数据采集 agent，将遥测数据发送到该托管服务。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![全托管架构：OpenTelemetry 采集器、ClickHouse 和 ClickStack 用户界面均由 ClickHouse Cloud 运维](/images/use-cases/observability/clickstack-managed-architecture.svg)
+      </Frame>
+    </div>
+
+    有关这些组件的更多详细信息，请参阅[架构](/zh/clickstack/observability/architecture)。
+
+## 查找连接详情 {#connection-details}
+
+    在您的服务中，打开 **Team Settings → Data**，找到 **Managed Telemetry**。该部分提供向服务发送遥测数据所需的 OTLP 端点和 API key。
+
+    选择 **URL**、**Collector config** 或 **Env vars**，以所需格式查看连接详情，然后点击 **Copy connection details**。再使用提供的端点和身份验证设置来配置您的 SDK 或采集器。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 中显示已掩码的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    详情请参阅 [Managed Telemetry](/zh/clickstack/observability/managing/config#managed-telemetry)。您可以点击 **Send a Test Log** 向服务提交一条示例日志。
+
+## 选择遥测数据的发送方式 {#sending-telemetry}
+
+### 应用程序插桩 {#application-instrumentation}
+
+    各语言 SDK 从应用程序内部采集遥测数据，例如请求 trace 和应用日志。您可以将 SDK 配置为通过 OTLP 将遥测数据直接导出到托管端点，也可以导出到您环境中的采集器，再由其转发至服务。
+
+    您可以沿用现有的 OpenTelemetry 插桩。ClickStack SDKs 还提供浏览器会话回放等功能；托管环境下的设置示例请参阅[会话回放](/zh/clickstack/observability/features/session-replay)。
+
+### 基础设施与采集 agent {#collection-agents}
+
+    在您的环境中运行采集 agent，以收集主机指标、容器日志和 Kubernetes 事件等遥测数据。根据采集需求，OpenTelemetry 采集器可以与应用程序一同运行、运行在主机上，或以 Kubernetes DaemonSet 形式运行。
+
+    使用服务的连接详情配置这些 agent，使其将遥测数据转发到托管 OTLP 端点。您也可以让应用程序遥测数据先经过这些采集器处理，再送达 ClickHouse Observability。
+
+## 验证摄取 {#verify-ingestion}
+
+    配置好应用程序或采集器后，生成一些遥测数据并打开[搜索](/zh/clickstack/observability/features/search)。选择 **Logs** 或 **Traces** 数据源，选取包含新事件的时间范围，然后搜索您的服务名称，确认数据已到达。
+  </Tab>
+
+  <Tab title="自管理">
+    所有数据都通过 **OpenTelemetry (OTel) 采集器**摄取到 Self-managed ClickHouse Observability 中。该采集器是日志、指标、链路追踪和会话数据的主要入口点。
+
+    您需要自行运行 OpenTelemetry 收集器，用于接收应用程序发送的遥测数据。使用 Self-managed ClickHouse Observability 时，ClickHouse 和 UI 均托管在 ClickHouse Cloud 中，并由其统一管理，身份验证集成和运维管理都无需您操心。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![OTLP 遥测数据经由自管理采集器流入 ClickHouse，ClickStack 用户界面托管在 ClickHouse Cloud 中](/images/use-cases/observability/clickstack-self-managed-architecture.svg)
+      </Frame>
+    </div>
+
+    该采集器对外提供两个 OTLP 端点：
+
+    * **HTTP** - 端口 `4318`
+    * **gRPC** - 端口 `4317`
+
+    您可以直接通过[语言 SDK](/zh/clickstack/observability/ingesting-data/sdks) 向这些端点发送数据，也可以借助兼容 OTel 的数据采集 agent 发送，例如用于采集基础设施指标和日志的其他 OTel collector。
+
+    具体来说：
+
+    * [**语言 SDK**](/zh/clickstack/observability/ingesting-data/sdks) 负责在应用程序内部采集遥测数据 (主要是**链路追踪**和**日志**) ，并通过 OTLP 端点将数据导出到 OpenTelemetry 采集器，再由采集器将数据摄取到 ClickHouse 中。有关可用语言 SDK 的详细信息，请参阅 [SDK](/zh/clickstack/observability/ingesting-data/sdks)。
+
+    * **数据采集 agent** 是部署在边缘的 agent，运行在服务器或 Kubernetes 节点上，或与应用程序部署在一起。它们负责采集基础设施遥测数据 (例如日志、指标) ，或直接接收来自已通过 SDK 插桩的应用程序的事件。在后一种情况下，agent 与应用程序运行在同一主机上，通常以 sidecar 或 DaemonSet 的形式部署。这些 agent 会将数据转发到中央 ClickStack OTel 收集器，该收集器充当 [gateway](/zh/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured)，通常每个集群、数据中心或区域部署一个。[gateway](/zh/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) 接收来自 agent 或应用程序的 OTLP 事件，并负责将其摄取到 ClickHouse 中。详情请参阅 [OTel collector](/zh/clickstack/self-configured/ingesting-data/collector)。这些 agent 既可以是 OTel collector 的其他实例，也可以是 [Fluentd](https://www.fluentd.org/) 或 [Vector](https://vector.dev/) 等其他技术。
+
+    <Info>
+      **OpenTelemetry 兼容性**
+
+      ClickStack 提供了自有的语言 SDK 和定制版 OpenTelemetry 采集器，具备更强的遥测能力和更丰富的功能；不过，您同样可以无缝使用现有的 OpenTelemetry SDK 和 agent。
+    </Info>
+  </Tab>
+</Tabs>

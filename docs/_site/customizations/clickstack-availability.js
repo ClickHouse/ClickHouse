@@ -807,92 +807,68 @@
   ],
   "/clickstack/managed-onboarding/instrument-application": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/instrument-application"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/instrument-application"
+      "/clickstack/managed-onboarding/instrument-application"
     ]
   ],
   "/clickstack/managed-onboarding/instrument-application-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/instrument-application-serverless"
     ]
   ],
   "/clickstack/managed-onboarding/managed-getting-started": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/managed-getting-started"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/self-configured/managed-onboarding/managed-getting-started"
+      "/clickstack/managed-onboarding/managed-getting-started"
     ]
   ],
   "/clickstack/managed-onboarding/migrating-from-datadog-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/migrating-from-datadog-serverless"
     ]
   ],
   "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs"
+      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
     ]
   ],
   "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless"
     ]
   ],
   "/clickstack/managed-onboarding/monitoring-kubernetes": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-kubernetes"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/monitoring-kubernetes"
+      "/clickstack/managed-onboarding/monitoring-kubernetes"
     ]
   ],
   "/clickstack/managed-onboarding/monitoring-kubernetes-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/monitoring-kubernetes-serverless"
     ]
   ],
   "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector"
+      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
     ]
   ],
   "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless"
     ]
   ],
   "/clickstack/managed-onboarding/tuning-clickstack-schema": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/tuning-clickstack-schema"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/tuning-clickstack-schema"
+      "/clickstack/managed-onboarding/tuning-clickstack-schema"
     ]
   ],
   "/clickstack/managing/config": [
@@ -1749,19 +1725,11 @@
   ],
   "/clickstack/observability/managed-onboarding/instrument-application": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/instrument-application"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/instrument-application"
     ]
   ],
   "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs"
@@ -1769,19 +1737,11 @@
   ],
   "/clickstack/observability/managed-onboarding/monitoring-kubernetes": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-kubernetes"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/monitoring-kubernetes"
     ]
   ],
   "/clickstack/observability/managed-onboarding/tuning-clickstack-schema": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/tuning-clickstack-schema"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/tuning-clickstack-schema"
@@ -2029,19 +1989,11 @@
   ],
   "/clickstack/self-configured/managed-onboarding/instrument-application": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/instrument-application"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/instrument-application"
     ]
   ],
   "/clickstack/self-configured/managed-onboarding/managed-getting-started": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/managed-getting-started"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/managed-getting-started"
@@ -2049,19 +2001,11 @@
   ],
   "/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs"
     ]
   ],
   "/clickstack/self-configured/managed-onboarding/monitoring-kubernetes": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-kubernetes"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/monitoring-kubernetes"
@@ -2069,19 +2013,11 @@
   ],
   "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector"
     ]
   ],
   "/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/tuning-clickstack-schema"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema"
@@ -2232,6 +2168,7 @@
     "observabilityOnly": [
       "rbac-for-predefined-dashboards"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2248,6 +2185,7 @@
       "waking-service-from-clickstack-cloud",
       "consistent-enabling-of-ai-features"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2261,6 +2199,7 @@
   },
   "/clickstack/demo-days/2026/2026-04-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2274,6 +2213,7 @@
   },
   "/clickstack/demo-days/2026/2026-05-08": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2289,6 +2229,7 @@
     "observabilityOnly": [
       "alerts-from-notebooks"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2302,6 +2243,7 @@
   },
   "/clickstack/demo-days/2026/2026-05-22": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2315,6 +2257,7 @@
   },
   "/clickstack/demo-days/2026/2026-05-29": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2331,6 +2274,7 @@
       "anomaly-alerts",
       "schema-migrations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2348,6 +2292,7 @@
       "anomaly-alerts-with-group-by",
       "all-notebook-tools-now-use-the-mcp"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2361,6 +2306,7 @@
   },
   "/clickstack/demo-days/2026/2026-06-18": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2376,6 +2322,7 @@
     "observabilityOnly": [
       "anomaly-detection-for-alerting-continues-with-bar-charts"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2391,6 +2338,7 @@
     "observabilityOnly": [
       "notebook-citations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2404,6 +2352,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2417,6 +2366,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2430,6 +2380,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-24": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2443,6 +2394,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-31": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2456,6 +2408,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-07": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2469,6 +2422,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-15": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2482,6 +2436,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-21": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2495,6 +2450,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-28": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2508,6 +2464,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-04": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2521,6 +2478,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2534,6 +2492,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2547,6 +2506,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-24": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2560,6 +2520,7 @@
   },
   "/clickstack/demo-days/2026/2026-10-01": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2573,6 +2534,7 @@
   },
   "/clickstack/demo-days/2026/2026-10-08": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2588,6 +2550,7 @@
     "observabilityOnly": [
       "source-level-access-control-for-promql-sources"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2601,6 +2564,7 @@
   },
   "/clickstack/demo-days/2026/2026-10-22": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2612,10 +2576,30 @@
       ]
     ]
   },
+  "/clickstack/demo-days/2026/2026-11-12": {
+    "observabilityOnly": [
+      "mcp-server-connections-without-custom-headers",
+      "datadog-agent-setup-in-getting-started"
+    ],
+    "openSourceOnly": [
+      "organization-api-keys"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-11-12"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/demo-days/2026/2026-11-12"
+      ]
+    ]
+  },
   "/clickstack/observability/demo-days/2026/2026-04-03": {
     "observabilityOnly": [
       "rbac-for-predefined-dashboards"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2632,6 +2616,7 @@
       "waking-service-from-clickstack-cloud",
       "consistent-enabling-of-ai-features"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2645,6 +2630,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-04-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2658,6 +2644,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-05-08": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2673,6 +2660,7 @@
     "observabilityOnly": [
       "alerts-from-notebooks"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2686,6 +2674,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-05-22": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2699,6 +2688,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-05-29": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2715,6 +2705,7 @@
       "anomaly-alerts",
       "schema-migrations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2732,6 +2723,7 @@
       "anomaly-alerts-with-group-by",
       "all-notebook-tools-now-use-the-mcp"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2745,6 +2737,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-06-18": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2760,6 +2753,7 @@
     "observabilityOnly": [
       "anomaly-detection-for-alerting-continues-with-bar-charts"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2775,6 +2769,7 @@
     "observabilityOnly": [
       "notebook-citations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2788,6 +2783,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2801,6 +2797,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2814,6 +2811,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-24": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2827,6 +2825,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-31": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2840,6 +2839,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-07": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2853,6 +2853,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-15": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2866,6 +2867,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-21": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2879,6 +2881,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-28": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2892,6 +2895,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-09-04": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2905,6 +2909,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-09-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2918,6 +2923,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-09-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2967,7 +2973,9 @@
       if (existing) existing.remove();
       document.querySelectorAll('#content h2[id]').forEach(function (heading) {
         var variants = features.variants.filter(function (variant) {
-          return variant[0] !== 'Open Source' || features.observabilityOnly.indexOf(heading.id) === -1;
+          // A feature in one product only drops the other product's pill.
+          var hidden = variant[0] === 'Open Source' ? features.observabilityOnly : features.openSourceOnly;
+          return hidden.indexOf(heading.id) === -1;
         }).map(function (variant) {
           return [variant[0], variant[1] + '#' + heading.id];
         });

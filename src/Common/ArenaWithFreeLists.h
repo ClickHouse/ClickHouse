@@ -111,7 +111,7 @@ public:
     }
 
     /// Size of the allocated pool in bytes
-    size_t allocatedBytes() const { return pool.allocatedBytes(); }
+    [[nodiscard]] size_t allocatedBytes() const { return pool.allocatedBytes(); }
 };
 
 class SynchronizedArenaWithFreeLists : private ArenaWithFreeLists

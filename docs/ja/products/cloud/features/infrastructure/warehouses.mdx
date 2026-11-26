@@ -21,13 +21,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 * サービスがすべてのデータとメタデータの一部を保存するオブジェクトストレージ フォルダー:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud 内の単一サービス](/images/cloud/reference/compute-compute-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud 内の単一サービス](/images/cloud/reference/compute-compute-1.webp)
+  </Frame>
 </div>
 
 <br />
@@ -43,22 +39,16 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 また、コンピュート分離を使うことで、読み取り処理と書き込み処理を分離し、相互に干渉しないようにすることもできます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud におけるコンピュート分離](/images/cloud/reference/compute-compute-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud におけるコンピュート分離](/images/cloud/reference/compute-compute-2.webp)
+  </Frame>
 </div>
 
 <br />
 
 *図 2 - ClickHouse Cloud におけるコンピュート分離*
 
-<div id="what-is-a-warehouse">
-  ## ウェアハウス とは何ですか？
-</div>
+## ウェアハウス とは何ですか？ {#what-is-a-warehouse}
 
 ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有する**サービス**の集合です。
 各 ウェアハウス には、プライマリ サービス (最初に作成されるサービス) と、1 つ以上のセカンダリ サービスがあります。
@@ -68,13 +58,9 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 * セカンダリ サービス `DWH Prod Subservice`
 
 <div className="ch-image-lg ch-image-background-white">
-
-<Frame>
-
-![プライマリ サービスとセカンダリ サービスを含む ウェアハウス の例](/images/cloud/reference/compute-compute-8.webp)
-
-</Frame>
-
+  <Frame>
+    ![プライマリ サービスとセカンダリ サービスを含む ウェアハウス の例](/images/cloud/reference/compute-compute-8.webp)
+  </Frame>
 </div>
 
 <br />
@@ -91,7 +77,7 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 ウェアハウス は、データを共有する長期稼働の ClickHouse Cloud サービスをグループ化するもので、各サービスに専用の コンピュート と エンドポイント が割り当てられます。[On-Demand Compute](/ja/products/cloud/features/infrastructure/on-demand-compute) は、既存のサービスと エンドポイント を介して、マネージド pool の worker をサポート対象の ワークロード に一時的に割り当てます。
 
 <div id="access-controls">
-  ## アクセス制御
+  ## アクセス制御 {#access-controls}
 </div>
 
 ### データベース認証情報 {#database-credentials}
@@ -101,13 +87,9 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 各サービスで使用するエンドポイントは異なりますが、ユーザー名とパスワードはすべてのサービスで共通です。つまり、以下の図に示すように、**同じストレージを使用するサービス間ではユーザーが共有されます**。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![同じデータを共有するサービス間でのユーザーアクセス](/images/cloud/reference/compute-compute-3.webp)
-
-</Frame>
-
+  <Frame>
+    ![同じデータを共有するサービス間でのユーザーアクセス](/images/cloud/reference/compute-compute-3.webp)
+  </Frame>
 </div>
 
 <br />
@@ -125,13 +107,9 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 以下の例では、Alice は ウェアハウス 内のサービス 2 へのアクセスを制限されています。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ネットワークアクセス制御の設定](/images/cloud/reference/compute-compute-4.webp)
-
-</Frame>
-
+  <Frame>
+    ![ネットワークアクセス制御の設定](/images/cloud/reference/compute-compute-4.webp)
+  </Frame>
 </div>
 
 <br />
@@ -140,9 +118,7 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 
 また、*default* ユーザーではなく個別のユーザーとして接続する場合は、ClickHouse のロールと grants を適用してデータへのアクセスを制御することもできます。
 
-<div id="read-vs-read-write">
-  ### 読み取り専用サービスと読み書きサービス
-</div>
+### 読み取り専用サービスと読み書きサービス {#read-vs-read-write}
 
 サービスの種類は次のいずれかです。
 
@@ -160,13 +136,9 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 これは 2 つ目のサービスと、それ以降に作成する追加サービスで設定できます。ただし、最初のサービスは常に読み書きサービスです。以下の図を参照してください。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ウェアハウス内の読み書きサービスと読み取り専用サービス](/images/cloud/reference/compute-compute-5.webp)
-
-</Frame>
-
+  <Frame>
+    ![ウェアハウス内の読み書きサービスと読み取り専用サービス](/images/cloud/reference/compute-compute-5.webp)
+  </Frame>
 </div>
 
 <br />
@@ -202,7 +174,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## 制限事項
+  ## 制限事項 {#limitations}
 </div>
 
 ### ワークロード分離の制限事項 {#workload-isolation-limitations}
@@ -234,7 +206,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * **プライマリサービスのアイドル化**: プライマリサービスの自動アイドル化はデフォルトで有効になっています。
 
 <div id="pricing">
-  ## 料金
+  ## 料金 {#pricing}
 </div>
 
 コンピュートの価格は、1 つの ウェアハウス 内のすべてのサービス (プライマリおよびセカンダリ) で共通です。ストレージ料金が課金されるのは 1 回のみで、最初の (元の) サービスに含まれます。
@@ -242,30 +214,24 @@ SETTINGS distributed_ddl_task_timeout=0
 ワークロードの規模と選択したティアに基づいてコストを見積もるには、[pricing](https://clickhouse.com/pricing) ページの料金計算ツールを参照してください。Usage Breakdown テーブルには、サービスごとのコンピュートコストの内訳が表示されます。
 
 <div id="backups">
-  ## バックアップ
+  ## バックアップ {#backups}
 </div>
 
 * 1 つの ウェアハウス 内のすべての サービス は同じストレージを共有するため、バックアップはプライマリ (初期) サービス でのみ作成されます。これにより、ウェアハウス 内のすべての サービス のデータがバックアップされます。
 * ウェアハウス のプライマリ サービス からバックアップを復元すると、既存の ウェアハウス には接続されていない、まったく新しい サービス として復元されます。復元が完了したらすぐに、その新しい サービス にさらに サービス を追加できます。
 
 <div id="setup-warehouses">
-  ## ウェアハウス の設定方法
+  ## ウェアハウス の設定方法 {#setup-warehouses}
 </div>
 
-<div id="creating-a-warehouse">
-  ### ウェアハウスの作成
-</div>
+### ウェアハウスの作成 {#creating-a-warehouse}
 
 ウェアハウスを作成するには、既存のサービスとデータを共有する 2 つ目のサービスを作成する必要があります。これは、既存のサービスのいずれかにあるプラス記号をクリックして行えます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ウェアハウス内で新しいサービスを作成](/images/cloud/reference/compute-compute-7.webp)
-
-</Frame>
-
+  <Frame>
+    ![ウェアハウス内で新しいサービスを作成](/images/cloud/reference/compute-compute-7.webp)
+  </Frame>
 </div>
 
 <br />
@@ -275,7 +241,7 @@ SETTINGS distributed_ddl_task_timeout=0
 サービス作成画面では、新しいサービスのデータ元として、元のサービスがドロップダウンで選択された状態になります。作成後、これら 2 つのサービスで 1 つのウェアハウスが構成されます。
 
 <div id="renaming-a-warehouse">
-  ### ウェアハウス名の変更
+  ### ウェアハウス名の変更 {#renaming-a-warehouse}
 </div>
 
 ウェアハウス名を変更する方法は 2 つあります。
@@ -284,7 +250,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * いずれかのサービスでウェアハウス名をクリックし、そこで名前を変更できます
 
 <div id="deleting-a-warehouse">
-  ### ウェアハウスの削除
+  ### ウェアハウスの削除 {#deleting-a-warehouse}
 </div>
 
 ウェアハウスを削除すると、すべてのコンピュートサービスとデータ (テーブル、ビュー、ユーザーなど) が削除されます。この操作は元に戻せません。
