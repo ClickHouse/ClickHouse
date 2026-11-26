@@ -4,6 +4,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferBase.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <city.h>
 
 
@@ -12,6 +13,9 @@ namespace DB
 
 class Exception;
 class ReadBuffer;
+
+/// Ranges in a file, [begin, end), of compressed blocks.
+using CompressedBlockRanges = VectorWithMemoryTracking<std::pair<size_t, size_t>>;
 
 /** Basic functionality for implementation of
   *  CompressedReadBuffer, CompressedReadBufferFromFile and CachedCompressedReadBuffer.
@@ -61,6 +65,9 @@ protected:
     /// Adds diagnostics to the error message.
     void addDiagnostics(Exception & e) const;
 
+    /// See `setRangesReadSink`. Maintained by the buffers that read from a file.
+    CompressedBlockRanges * ranges_read = nullptr;
+
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false, bool external_data_ = false);
@@ -75,12 +82,16 @@ public:
         disable_checksum = true;
     }
 
+    /// Makes the buffer append the range in the file, [offset, offset + compressed size with the header and the checksum),
+    /// of every block it decompresses or takes decompressed from a cache, every time it loads it.
+    void setRangesReadSink(CompressedBlockRanges * ranges_read_) { ranges_read = ranges_read_; }
+
     /// Identifies the column this buffer reads, see LZ4StatisticsHint.h.
     void setStatisticsHint(UInt64 hint) { statistics_hint = hint; }
 
     /// Some compressed read buffer can do useful seek operation
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
-    virtual off_t getPosition() const;
+    [[nodiscard]] virtual off_t getPosition() const;
 
     /// Each compressed block starts with the checksum of its header and compressed data.
     using Checksum = CityHash_v1_0_2::uint128;

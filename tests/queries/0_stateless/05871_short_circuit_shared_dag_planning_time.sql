@@ -1,0 +1,7 @@
+-- Planning of a short-circuit function visits each node of a shared expression DAG once, also the nodes that are not executed lazily.
+-- 10 nested subqueries, each doubling the paths three times: 2^30 paths, few enough levels for the TSan stack.
+SELECT if(x < 0, a10, toUInt64(0)) AS result FROM (SELECT x, ((a9 + a9) + (a9 + a9)) + ((a9 + a9) + (a9 + a9)) AS a10 FROM (SELECT x, ((a8 + a8) + (a8 + a8)) + ((a8 + a8) + (a8 + a8)) AS a9 FROM (SELECT x, ((a7 + a7) + (a7 + a7)) + ((a7 + a7) + (a7 + a7)) AS a8 FROM (SELECT x, ((a6 + a6) + (a6 + a6)) + ((a6 + a6) + (a6 + a6)) AS a7 FROM (SELECT x, ((a5 + a5) + (a5 + a5)) + ((a5 + a5) + (a5 + a5)) AS a6 FROM (SELECT x, ((a4 + a4) + (a4 + a4)) + ((a4 + a4) + (a4 + a4)) AS a5 FROM (SELECT x, ((a3 + a3) + (a3 + a3)) + ((a3 + a3) + (a3 + a3)) AS a4 FROM (SELECT x, ((a2 + a2) + (a2 + a2)) + ((a2 + a2) + (a2 + a2)) AS a3 FROM (SELECT x, ((a1 + a1) + (a1 + a1)) + ((a1 + a1) + (a1 + a1)) AS a2 FROM (SELECT x, ((a0 + a0) + (a0 + a0)) + ((a0 + a0) + (a0 + a0)) AS a1 FROM (SELECT number AS x, number AS a0 FROM numbers(1)))))))))))) SETTINGS compile_expressions = 0, short_circuit_function_evaluation = 'enable';
+
+-- A node shared by two lazily executed arguments is still executed lazily in both of them.
+SELECT if(x = 0, 0, (s + 1) * (s + 2)) FROM (SELECT number AS x, intDiv(1, number) AS s FROM numbers(3)) ORDER BY x
+SETTINGS short_circuit_function_evaluation = 'enable';

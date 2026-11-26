@@ -9,7 +9,10 @@
 #include <Common/Macros.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
+#include <condition_variable>
 #include <limits>
+#include <mutex>
+#include <queue>
 
 namespace DB
 {
@@ -43,31 +46,31 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
-    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+    [[nodiscard]] virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
 
-    virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
-    virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
-    virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
+    [[nodiscard]] virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
+    [[nodiscard]] virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
+    [[nodiscard]] virtual bool isArchive() const { return false; }
+    [[nodiscard]] virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    [[nodiscard]] virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    [[nodiscard]] virtual std::string getPathOrPathToArchiveIfArchive() const;
+    [[nodiscard]] virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
     /// The exact size of the object as the table metadata records it, if it records a positive one.
-    virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
+    [[nodiscard]] virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
 
     /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
     /// It is only an estimate used to report the progress of a query, not to compute any result.
-    virtual std::optional<size_t> getNumRowsHint() const
+    [[nodiscard]] virtual std::optional<size_t> getNumRowsHint() const
     {
         if (data_lake_metadata)
             return data_lake_metadata->num_rows;
         return std::nullopt;
     }
 
-    std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
+    [[nodiscard]] std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
@@ -83,11 +86,27 @@ struct ObjectInfo
     /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
     std::optional<size_t> archive_entry_index;
 
-    String getIdentifier(bool include_file_bucket_info = true) const;
-    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+    [[nodiscard]] String getIdentifier(bool include_file_bucket_info = true) const;
+    [[nodiscard]] String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+
+/// An object whose size the table metadata records.
+struct ObjectInfoWithFileSizeHint : public ObjectInfo
+{
+    ObjectInfoWithFileSizeHint(const RelativePathWithMetadata & relative_path_with_metadata_, size_t file_size_hint_)
+        : ObjectInfo(relative_path_with_metadata_)
+        , file_size_hint(file_size_hint_)
+    {
+    }
+
+    [[nodiscard]] std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectInfoWithFileSizeHint>(*this); }
+
+    [[nodiscard]] std::optional<size_t> getFileSizeHint() const override { return file_size_hint; }
+
+    const size_t file_size_hint;
+};
 using ObjectInfos = std::vector<ObjectInfoPtr>;
 class ExpressionActions;
 
@@ -96,7 +115,7 @@ struct IObjectIterator
     virtual ~IObjectIterator() = default;
     virtual ObjectInfoPtr next(size_t) = 0;
     virtual size_t estimatedKeysCount() = 0;
-    virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
 
     /// When false, the iterator should not emit ProfileEvents.
     /// Used when the iterator is created for metadata purposes (e.g. `getPathSample`)
@@ -127,7 +146,7 @@ public:
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {
@@ -182,7 +201,7 @@ public:
         return (peeked_objects.size() - next_peeked_object) + delegate_count;
     }
 
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {
@@ -215,7 +234,7 @@ public:
     }
 
     size_t estimatedKeysCount() override { return 1; }
-    std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
 
 private:
     const ObjectInfoPtr object;
@@ -236,9 +255,11 @@ public:
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
 private:
+    [[nodiscard]] ObjectInfos splitToBuckets(const ObjectInfoPtr & object_info) const;
+
     const ObjectIterator iterator;
     StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
@@ -247,7 +268,11 @@ private:
     FormatFilterInfoPtr format_filter_info;
     QueryConditionCachePtr query_condition_cache;
 
+    std::mutex mutex;
+    std::condition_variable objects_split_cv;
     std::queue<ObjectInfoPtr> pending_objects_info;
+    size_t objects_being_split = 0;
+    bool iterator_exhausted = false;
     const LoggerPtr log = getLogger("GlobIterator");
 };
 

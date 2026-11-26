@@ -15,6 +15,7 @@
                 <max_tries>2</max_tries>
                 <retry_initial_backoff_ms>10</retry_initial_backoff_ms>
                 <retry_max_backoff_ms>50</retry_max_backoff_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </azure_disk>
             <!-- Like azure_disk but SDK retry off (max_tries=0), so the write test sees the CH loop retry, not the SDK. -->
             <azure_disk_nosdk>
@@ -30,6 +31,7 @@
                 <max_tries>0</max_tries>
                 <retry_initial_backoff_ms>10</retry_initial_backoff_ms>
                 <retry_max_backoff_ms>50</retry_max_backoff_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </azure_disk_nosdk>
         </disks>
         <policies>

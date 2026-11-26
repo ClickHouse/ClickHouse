@@ -46,7 +46,6 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
-    bool supportsChmod() const override;
     bool supportsStat() const override;
     struct stat stat(const String & path) const override;
 
@@ -79,6 +78,7 @@ public:
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
+    bool hasPendingRemovalBatches(const BatchIds & batch_ids) const override;
     int64_t getDeadBlobsQueueEstimate() override;
     bool hasDeadBlobsQueue() const override;
     void setDeadBlobsQueuedCallback(std::function<void()> callback) override;
@@ -124,9 +124,6 @@ public:
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
-    bool supportsChmod() const override;
-    void chmod(const String & path, mode_t mode) override;
-
     void setReadOnly(const std::string & path) override;
 
     void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
@@ -145,6 +142,7 @@ public:
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
     void recordBlobsReplication(const StoredObject & blob, const Locations & missing_locations) override;
     StoredObjects getSubmittedForRemovalBlobs() override;
+    BatchIds getSubmittedForRemovalBatches() override;
 
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;

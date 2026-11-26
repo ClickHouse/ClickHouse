@@ -110,11 +110,6 @@ time_t MetadataStorageFromCacheObjectStorage::getLastChanged(const std::string &
     return underlying->getLastChanged(path);
 }
 
-bool MetadataStorageFromCacheObjectStorage::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
 bool MetadataStorageFromCacheObjectStorage::supportsStat() const
 {
     return underlying->supportsStat();
@@ -155,14 +150,13 @@ std::string MetadataStorageFromCacheObjectStorage::readInlineDataToString(const 
     return underlying->readInlineDataToString(path);
 }
 
+/// The underlying metadata storage belongs to the wrapped disk, which starts it up and shuts it down itself.
 void MetadataStorageFromCacheObjectStorage::startup()
 {
-    underlying->startup();
 }
 
 void MetadataStorageFromCacheObjectStorage::shutdown()
 {
-    underlying->shutdown();
 }
 
 void MetadataStorageFromCacheObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
@@ -244,6 +238,11 @@ bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredO
 
     std::lock_guard guard(removed_objects_mutex);
     return objects_to_remove.containsAny(blobs);
+}
+
+bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBatches(const BatchIds & batch_ids) const
+{
+    return underlying->hasPendingRemovalBatches(batch_ids);
 }
 
 int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
@@ -394,16 +393,6 @@ void MetadataStorageFromCacheObjectStorageTransaction::setLastModified(const std
     underlying->setLastModified(path, timestamp);
 }
 
-bool MetadataStorageFromCacheObjectStorageTransaction::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
-void MetadataStorageFromCacheObjectStorageTransaction::chmod(const String & path, mode_t mode)
-{
-    underlying->chmod(path, mode);
-}
-
 void MetadataStorageFromCacheObjectStorageTransaction::setReadOnly(const std::string & path)
 {
     underlying->setReadOnly(path);
@@ -467,6 +456,11 @@ void MetadataStorageFromCacheObjectStorageTransaction::recordBlobsReplication(co
 StoredObjects MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBlobs()
 {
     return underlying->getSubmittedForRemovalBlobs();
+}
+
+BatchIds MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBatches()
+{
+    return underlying->getSubmittedForRemovalBatches();
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
