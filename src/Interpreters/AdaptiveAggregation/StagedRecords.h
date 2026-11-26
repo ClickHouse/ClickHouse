@@ -579,6 +579,14 @@ struct StagedKeysAndPackedStringKey
         return leadHasString(readStagedUInt(pos));
     }
 
+    /// Adds `rows` to the count of a written count record whose lead is at `lead_pos`, while the lead keeps
+    /// its stored width (see `addToStagedUInt`), and returns whether it did. The count lies above the flag of
+    /// the string, which the sum leaves as it is.
+    static bool addToCount(char * lead_pos, UInt32 rows) requires with_count
+    {
+        return addToStagedUInt(lead_pos, size_t{rows} << 1);
+    }
+
 private:
     /// The size of the string of a key that the producer counts as `key_size` bytes: `sizeof(Keys)` plus the string.
     static size_t stringSize(size_t key_size)
@@ -657,11 +665,10 @@ struct StagedKeysAndPackedStringRecord
 
     UInt32 count(const char * record) const requires with_count { return key_layout.read(record).count; }
 
-    /// The key opens the record, so the lead, which holds the count above the flag of the string, is its
-    /// first field.
+    /// The key opens the record, so the lead of the key is the record's first field.
     static bool addToCount(char * record, UInt32 rows) requires with_count
     {
-        return addToStagedUInt(record, size_t{rows} << 1);
+        return StagedKeysAndPackedStringKey<Table, with_count>::addToCount(record, rows);
     }
 
     const StagedKeysAndPackedStringKey<Table, with_count> key_layout;
