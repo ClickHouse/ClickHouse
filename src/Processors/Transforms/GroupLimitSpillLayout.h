@@ -49,7 +49,8 @@ public:
     static size_t estimateServiceColumnsMemory(
         size_t num_rows, SpillKeyRepresentation key_representation, bool attach_arrival_numbers);
 
-    /// Normalizes input rows, adding fingerprints for generic keys and optional arrival numbers.
+    /// Normalizes the key columns of input rows, adding fingerprints for generic keys and optional arrival
+    /// numbers. The other columns keep their representation.
     [[nodiscard]] Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
 
     /// Combines the owning comparison-key columns returned by a `SeenGroupExtractor` with their seen counts,

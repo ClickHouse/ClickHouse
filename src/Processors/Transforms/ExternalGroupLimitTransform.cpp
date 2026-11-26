@@ -854,8 +854,8 @@ void ExternalGroupLimitTransform<Traits>::collectInput(CollectingInput & collect
     const size_t rows = prepared.getNumRows();
     const size_t bytes = prepared.allocatedBytes();
 
-    /// Reserve the average materialized width before buffering. Allow one byte for division rounding
-    /// and the width of the seen count that the final merge adds to input rows.
+    /// Reserve the average width of the prepared rows before buffering. Allow one byte for division
+    /// rounding and the width of the seen count that the final merge adds to input rows.
     const size_t average_row_bytes = prepared.bytes() / rows + 1 + spill_layout->getSeenRowsBytes();
     max_average_row_bytes = std::max(max_average_row_bytes, average_row_bytes);
 

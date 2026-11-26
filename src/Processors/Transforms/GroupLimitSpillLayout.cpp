@@ -166,9 +166,11 @@ Chunk GroupLimitSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival
         columns.push_back(std::move(input_columns[pos]));
 
     chunk.setColumns(std::move(columns), num_rows);
-    /// Match the in-memory filter's normalization before hashing. Fingerprints survive `Native` round trips,
-    /// which can change an aggregate state's serialized bytes.
-    materializeChunk(chunk);
+    /// Normalize the keys as the in-memory filter does before hashing them. Fingerprints survive `Native`
+    /// round trips, which can change an aggregate state's serialized bytes. The other columns keep their
+    /// compact forms, such as the replicated columns of `ARRAY JOIN`, which the sorting units, the run files
+    /// and the merges carry: expanding them here would allocate the rows that the group limit then drops.
+    materializeChunk(chunk, key_columns_pos);
     columns = chunk.detachColumns();
 
     if (arrival_number_column_pos)
