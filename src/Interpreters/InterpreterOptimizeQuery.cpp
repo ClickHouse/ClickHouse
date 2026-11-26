@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -47,10 +48,8 @@ BlockIO InterpreterOptimizeQuery::execute()
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
-        /// The hosts expand the list without the user, so `SELECT` is required on the whole table here.
         if (ast.deduplicate_by_columns)
         {
-            params.access_to_check.emplace_back(AccessType::SELECT, ast.getDatabase(), ast.getTable());
             params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
             {
                 /// Hosts that run the query as the initiating user check the table themselves.
@@ -58,6 +57,8 @@ BlockIO InterpreterOptimizeQuery::execute()
                     return;
                 const auto & query = captured_query_ptr->as<const ASTOptimizeQuery &>();
                 const StorageID table_id(query.getDatabase().empty() ? cluster_default_database : query.getDatabase(), query.getTable());
+                /// The hosts expand the list without the user, so `SELECT` is required on the whole table here.
+                context->checkAccess(AccessType::SELECT, table_id.database_name, table_id.table_name);
                 const auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 if (!table)
                     throw Exception(ErrorCodes::UNKNOWN_TABLE,
@@ -72,6 +73,12 @@ BlockIO InterpreterOptimizeQuery::execute()
                         "on its target. Run OPTIMIZE ... ON CLUSTER ... DEDUPLICATE BY on the target table. Alternatively, enable the server "
                         "setting distributed_ddl_use_initial_user_and_roles on every host, and set distributed_ddl_entry_format_version to at least {}",
                         table_id.getNameForLogs(), DDLLogEntry::INITIATOR_USER_VERSION);
+                if (auto view = castStorage<StorageMaterializedView>(table, DeferredTable::Load))
+                {
+                    auto view_metadata = view->getInMemoryMetadataPtr(context, false);
+                    if (!view_metadata->sql_security_type && !view_metadata->select.select_table_id.empty())
+                        context->checkAccess(AccessType::SELECT, view_metadata->select.select_table_id);
+                }
             };
         }
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

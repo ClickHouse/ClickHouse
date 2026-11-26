@@ -7,6 +7,10 @@ DEDUPLICATE, no list : OK
 Alias                : (NOT_IMPLEMENTED) hides secret
 Alias, no list       : OK
 missing table        : (UNKNOWN_TABLE) names initiator
+-- a materialized view also needs SELECT on its whole source table
+view, source columns : (ACCESS_DENIED) hides secret
+view, source granted : OK
+mv rows: 4
 -- SELECT on the table
 table granted        : OK
 rows: 4

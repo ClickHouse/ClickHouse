@@ -11,12 +11,14 @@ u_full="u_full_${db}"
 u_ghost="u_ghost_${db}"
 u_id="u_id_${db}"
 u_alias="u_alias_${db}"
-users="$u_cols, $u_opt, $u_full, $u_ghost, $u_id, $u_alias"
+u_mv="u_mv_${db}"
+users="$u_cols, $u_opt, $u_full, $u_ghost, $u_id, $u_alias, $u_mv"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $users"
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE TABLE $db.t (sort_key UInt64, id UInt64, secret String) ENGINE = MergeTree ORDER BY sort_key;
 CREATE TABLE $db.t_alias ENGINE = Alias('t');
+CREATE MATERIALIZED VIEW $db.mv ENGINE = MergeTree ORDER BY sort_key AS SELECT * FROM $db.t;
 CREATE USER $users IDENTIFIED WITH no_password;
 GRANT SELECT(sort_key, id), OPTIMIZE ON $db.t TO $u_cols;
 GRANT OPTIMIZE ON $db.t TO $u_opt;
@@ -25,12 +27,15 @@ GRANT SELECT(sort_key, id, nope), OPTIMIZE ON $db.t TO $u_ghost;
 GRANT SELECT(id), OPTIMIZE ON $db.t TO $u_id;
 GRANT SELECT, OPTIMIZE ON $db.t_alias TO $u_alias;
 GRANT SELECT(sort_key, id), OPTIMIZE ON $db.t TO $u_alias;
+GRANT SELECT, OPTIMIZE ON $db.mv TO $u_mv;
+GRANT SELECT(sort_key, id) ON $db.t TO $u_mv;
 "
 
 # Refills the table with 6 rows, 4 of them distinct by (sort_key, secret), and lists its active parts.
 reset()
 {
     ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE $db.t"
+    ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE $db.mv"
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.t VALUES (1, 1, 'A'), (1, 2, 'A'), (1, 3, 'B'), (2, 4, 'A'), (2, 5, 'C'), (2, 6, 'C')"
     parts=$(${CLICKHOUSE_CLIENT} --query "SELECT arrayStringConcat(groupArray(concat(char(39), name, char(39))), ', ') FROM system.parts WHERE database = '$db' AND table = 't' AND active FORMAT TSVRaw")
 }
@@ -71,6 +76,13 @@ check 'target not granted   ' "$u_alias" "OPTIMIZE TABLE $db.t_alias FINAL DEDUP
 count
 check 'target granted       ' "$u_alias" "OPTIMIZE TABLE $db.t_alias FINAL DEDUPLICATE BY sort_key, id"
 count
+
+echo '-- through a materialized view, SELECT is also required on its source table'
+reset
+check 'read, source denied  ' "$u_mv" "SELECT secret FROM $db.mv FORMAT Null"
+check 'source not granted   ' "$u_mv" "OPTIMIZE TABLE $db.mv FINAL DEDUPLICATE BY sort_key, secret"
+echo "mv rows: $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.mv")"
+check 'source granted       ' "$u_mv" "OPTIMIZE TABLE $db.mv FINAL DEDUPLICATE BY sort_key, id"
 
 echo '-- the errors name the columns only for a user who may DESCRIBE the table'
 check 'unknown, default     ' default "OPTIMIZE TABLE $db.t DEDUPLICATE BY sort_key, nope"

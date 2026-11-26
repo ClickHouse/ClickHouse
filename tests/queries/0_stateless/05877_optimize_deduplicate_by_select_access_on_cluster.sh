@@ -13,18 +13,21 @@ ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $u_cols, $u_full"
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE TABLE $db.t (sort_key UInt64, id UInt64, secret String) ENGINE = MergeTree ORDER BY sort_key;
 CREATE TABLE $db.t_alias ENGINE = Alias('t');
+CREATE MATERIALIZED VIEW $db.mv ENGINE = MergeTree ORDER BY sort_key AS SELECT * FROM $db.t;
 CREATE USER $u_cols, $u_full IDENTIFIED WITH no_password;
 GRANT CLUSTER ON *.* TO $u_cols, $u_full;
 GRANT SELECT(sort_key, id), OPTIMIZE ON $db.t TO $u_cols;
 GRANT SELECT, OPTIMIZE ON $db.t TO $u_full;
 GRANT SELECT, OPTIMIZE ON $db.t_alias TO $u_full;
 GRANT SELECT, OPTIMIZE ON $db.t_absent TO $u_full;
+GRANT SELECT, OPTIMIZE ON $db.mv TO $u_cols, $u_full;
 "
 
 # Refills the table with 6 rows, 4 of them distinct by (sort_key, secret).
 reset()
 {
     ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE $db.t"
+    ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE $db.mv"
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.t VALUES (1, 1, 'A'), (1, 2, 'A'), (1, 3, 'B'), (2, 4, 'A'), (2, 5, 'C'), (2, 6, 'C')"
 }
 
@@ -57,6 +60,12 @@ reset
 check 'Alias                ' "$u_full" "OPTIMIZE TABLE $db.t_alias ON CLUSTER test_shard_localhost FINAL DEDUPLICATE BY sort_key, id"
 check 'Alias, no list       ' "$u_full" "OPTIMIZE TABLE $db.t_alias ON CLUSTER test_shard_localhost FINAL DEDUPLICATE"
 check 'missing table        ' "$u_full" "OPTIMIZE TABLE $db.t_absent ON CLUSTER test_shard_localhost FINAL DEDUPLICATE BY sort_key" initiator
+
+echo '-- a materialized view also needs SELECT on its whole source table'
+reset
+check 'view, source columns ' "$u_cols" "OPTIMIZE TABLE $db.mv ON CLUSTER test_shard_localhost FINAL DEDUPLICATE BY sort_key, id"
+check 'view, source granted ' "$u_full" "OPTIMIZE TABLE $db.mv ON CLUSTER test_shard_localhost FINAL DEDUPLICATE BY sort_key, secret"
+echo "mv rows: $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.mv")"
 
 echo '-- SELECT on the table'
 reset
