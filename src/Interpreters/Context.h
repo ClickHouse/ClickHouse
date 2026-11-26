@@ -12,6 +12,7 @@
 #include <Common/IThrottler.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
@@ -1378,6 +1379,15 @@ public:
 
     bool displaySecretsInShowAndSelect() const;
     Settings getSettingsCopy() const;
+    /// Read settings without copying custom payloads, serialized with settings mutations.
+    /// The callback must not retain references to the settings or call back into this context.
+    template <typename Reader>
+    auto readSettings(Reader && reader) const
+    {
+        SharedLockGuard lock(mutex);
+        const Settings & settings_ref = *settings;
+        return reader(settings_ref);
+    }
     const Settings & getSettingsRef() const { return *settings; }
     void setSettings(const Settings & settings_);
 

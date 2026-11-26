@@ -394,9 +394,8 @@ void ThreadStatus::applyGlobalSettings()
     if (!global_context_ptr)
         return;
 
-    const auto settings = global_context_ptr->getSettingsCopy();
-
-    DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
+    DB::Exception::enable_job_stack_trace = global_context_ptr->readSettings(
+        [](const Settings & settings) { return settings[Setting::enable_job_stack_trace].value; });
 }
 
 void ThreadStatus::applyQuerySettings()
@@ -406,21 +405,26 @@ void ThreadStatus::applyQuerySettings()
         return;
 
     /// The client can update its session settings while an input pipeline is running.
-    const auto settings = query_context_ptr->getSettingsCopy();
-
-    DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
+    DB::Exception::enable_job_stack_trace = query_context_ptr->readSettings(
+        [](const Settings & settings) { return settings[Setting::enable_job_stack_trace].value; });
 
     if (boundToOSThread())
         initQueryProfiler();
 
-    untracked_memory_limit = settings[Setting::max_untracked_memory];
-    if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
-        untracked_memory_limit = settings[Setting::memory_profiler_step];
+    const bool has_trace_collector = query_context_ptr->hasTraceCollector();
+    [[maybe_unused]] const auto [enable_jemalloc_profiler, collect_jemalloc_samples] = query_context_ptr->readSettings(
+        [&](const Settings & settings)
+        {
+            untracked_memory_limit = settings[Setting::max_untracked_memory];
+            if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
+                untracked_memory_limit = settings[Setting::memory_profiler_step];
 
-    /// Populate the cache from authoritative query settings; on the initiator this runs before ProcessList::insert, on workers after (idempotent)
-    /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)
-    if (thread_group->master_thread_id == thread_id)
-        configureMemoryTrackerFromSettings(query_context_ptr->hasTraceCollector(), thread_group->memory_tracker, settings);
+            /// Populate the cache from authoritative query settings; on the initiator this runs before ProcessList::insert, on workers after (idempotent).
+            /// Only the master thread may write the group's memory sampling configuration.
+            if (thread_group->master_thread_id == thread_id)
+                configureMemoryTrackerFromSettings(has_trace_collector, thread_group->memory_tracker, settings);
+            return std::pair{settings[Setting::jemalloc_enable_profiler].value, settings[Setting::jemalloc_collect_profile_samples_in_trace_log].value};
+        });
     resolveMemorySampleConfig();
 
 #if USE_JEMALLOC
@@ -428,13 +432,13 @@ void ThreadStatus::applyQuerySettings()
     /// for another thread. So fibers do not get them, as they do not get the query profiler above.
     if (boundToOSThread())
     {
-        if (settings[Setting::jemalloc_enable_profiler])
+        if (enable_jemalloc_profiler)
         {
             jemalloc_profiler_enabled = true;
             Jemalloc::getThreadProfileActiveMib().setValue(true);
         }
 
-        if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
+        if (collect_jemalloc_samples)
             Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
     }
 #endif
@@ -648,12 +652,17 @@ void ThreadStatus::initPerformanceCounters()
 
     if (auto query_context_ptr = query_context.lock())
     {
-        const auto settings = query_context_ptr->getSettingsCopy();
-        if (settings[Setting::metrics_perf_events_enabled])
+        const auto events = query_context_ptr->readSettings([](const Settings & settings) -> std::optional<String>
+        {
+            if (settings[Setting::metrics_perf_events_enabled])
+                return settings[Setting::metrics_perf_events_list].value;
+            return std::nullopt;
+        });
+        if (events)
         {
             try
             {
-                current_thread_counters.initializeProfileEvents(settings[Setting::metrics_perf_events_list]);
+                current_thread_counters.initializeProfileEvents(*events);
             }
             catch (...)
             {
@@ -693,7 +702,8 @@ void ThreadStatus::finalizePerformanceCounters()
         // one query.
         bool close_perf_descriptors = true;
         if (auto global_context_ptr = global_context.lock())
-            close_perf_descriptors = !global_context_ptr->getSettingsCopy()[Setting::metrics_perf_events_enabled];
+            close_perf_descriptors = global_context_ptr->readSettings(
+                [](const Settings & settings) { return !settings[Setting::metrics_perf_events_enabled]; });
 
         current_thread_counters.finalizeProfileEvents(performance_counters);
         if (close_perf_descriptors)
@@ -710,15 +720,16 @@ void ThreadStatus::finalizePerformanceCounters()
         auto query_context_ptr = query_context.lock();
         if (global_context_ptr && query_context_ptr)
         {
-            const auto settings = query_context_ptr->getSettingsCopy();
-            if (settings[Setting::log_queries] && settings[Setting::log_query_threads])
+            const Int64 query_duration_ms = thread_attach_time.elapsedMilliseconds();
+            const bool log_query_thread = query_context_ptr->readSettings([query_duration_ms](const Settings & settings)
             {
-                Int64 query_duration_ms = thread_attach_time.elapsedMilliseconds();
-                if (query_duration_ms >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
-                {
-                    if (auto thread_log = global_context_ptr->getQueryThreadLog())
-                        logToQueryThreadLog(*thread_log, query_context_ptr->getCurrentDatabase());
-                }
+                return settings[Setting::log_queries] && settings[Setting::log_query_threads]
+                    && query_duration_ms >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
+            });
+            if (log_query_thread)
+            {
+                if (auto thread_log = global_context_ptr->getQueryThreadLog())
+                    logToQueryThreadLog(*thread_log, query_context_ptr->getCurrentDatabase());
             }
         }
     }
@@ -784,25 +795,28 @@ void ThreadStatus::initQueryProfiler()
 
     try
     {
-        const auto settings = query_context_ptr->getSettingsCopy();
-        if (settings[Setting::query_profiler_real_time_period_ns] > 0)
+        const auto [real_time_period, cpu_time_period] = query_context_ptr->readSettings([](const Settings & settings)
+        {
+            return std::pair{settings[Setting::query_profiler_real_time_period_ns].value, settings[Setting::query_profiler_cpu_time_period_ns].value};
+        });
+        if (real_time_period > 0)
         {
             if (!query_profiler_real)
                 query_profiler_real = std::make_unique<QueryProfilerReal>(
                     thread_id,
-                    /* period= */ settings[Setting::query_profiler_real_time_period_ns]);
+                    /* period= */ real_time_period);
             else
-                query_profiler_real->setPeriod(settings[Setting::query_profiler_real_time_period_ns]);
+                query_profiler_real->setPeriod(real_time_period);
         }
 
-        if (settings[Setting::query_profiler_cpu_time_period_ns] > 0)
+        if (cpu_time_period > 0)
         {
             if (!query_profiler_cpu)
                 query_profiler_cpu = std::make_unique<QueryProfilerCPU>(
                     thread_id,
-                    /* period= */ settings[Setting::query_profiler_cpu_time_period_ns]);
+                    /* period= */ cpu_time_period);
             else
-                query_profiler_cpu->setPeriod(settings[Setting::query_profiler_cpu_time_period_ns]);
+                query_profiler_cpu->setPeriod(cpu_time_period);
         }
     }
     catch (...)
@@ -858,7 +872,9 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
         {
             element.client_info = query_context_ptr->getClientInfo();
 
-            if (query_context_ptr->getSettingsCopy()[Setting::log_profile_events] != 0)
+            const bool log_profile_events = query_context_ptr->readSettings(
+                [](const Settings & settings) { return settings[Setting::log_profile_events].value; });
+            if (log_profile_events)
             {
                 /// NOTE: Here we are in the same thread, so we can make memcpy()
                 element.profile_counters = performance_counters.getPartiallyAtomicSnapshot();

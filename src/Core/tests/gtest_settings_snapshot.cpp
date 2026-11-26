@@ -215,11 +215,17 @@ GTEST_TEST(SettingsSnapshot, WorkerLifecycleWithConcurrentSessionSettings)
         ThreadStatus owner_thread;
         auto context = Context::createCopy(getMutableContext().context);
         context->makeQueryContext();
+        constexpr size_t payload_size = 2 * 1024 * 1024;
+        auto settings = context->getSettingsCopy();
+        settings.setCustom("custom_worker_payload", String(payload_size, 'p'));
+        settings.set("max_untracked_memory", UInt64(0));
+        context->setSettings(settings);
         auto group = ThreadGroup::createForQuery(context);
         std::barrier<> start(2);
         std::jthread worker([&]
         {
             ThreadStatus worker_thread;
+            worker_thread.untracked_memory_limit = 0;
             start.arrive_and_wait();
             for (size_t iteration = 0; iteration < 1000; ++iteration)
             {
@@ -231,6 +237,9 @@ GTEST_TEST(SettingsSnapshot, WorkerLifecycleWithConcurrentSessionSettings)
         start.arrive_and_wait();
         for (size_t iteration = 0; iteration < 1000; ++iteration)
             context->setSetting("session_timezone", String(iteration % 2 ? "UTC" : "Europe/Amsterdam"));
+        worker.join();
+        /// Reading worker flags must not allocate another copy of the custom payload.
+        EXPECT_LT(group->memory_tracker.getPeak(), payload_size / 2);
     }).join();
 }
 
