@@ -72,11 +72,7 @@ private:
     {
         Data & data_ref = data(place);
 
-        /// When aggregating on windows transformed columns, the function WindowTransform::appendChunk
-        /// calls updateAggregationState + writeOutCurrentRow in a loop.
-        /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
-        /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
-        if (!data_ref.calculator || data_ref.calculator->isFinalized())
+        if (!data_ref.calculator)
             data_ref.calculator = std::make_unique<CompressedSizeCalculator>(
                 getCodecOrDefault(),
                 roundCompressBlockSizeToWholeValues(block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE), *argument_types[0]));
