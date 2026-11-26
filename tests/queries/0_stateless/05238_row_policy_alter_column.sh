@@ -94,6 +94,17 @@ CREATE ROW POLICY pf ON $DB.tf FOR SELECT USING arrayExists($UDF, [1]) TO CURREN
 refused "ALTER TABLE tf DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tf RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
 
+echo "-- a lambda parameter is not a column, the body is still read"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tlam (id UInt32, x UInt8, tenant UInt32, arr Array(UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tlam VALUES (1, 0, 1, [1]), (2, 0, 2, [2]);
+CREATE ROW POLICY plam ON $DB.tlam FOR SELECT USING arrayExists(x -> x = 1, arr) AND $UDF(id) TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tlam DROP COLUMN x"
+$CLICKHOUSE_CLIENT -q "SELECT 'lambda policy after drop', arraySort(groupArray(id)) FROM tlam"
+refused "ALTER TABLE tlam DROP COLUMN arr" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tlam RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
+
 echo "-- a name that starts with the table name can also be a column of that name"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tt (id UInt32, tt Tuple(x UInt8)) ENGINE = MergeTree ORDER BY id;
@@ -139,6 +150,7 @@ DROP ROW POLICY pn ON $DB.tn;
 DROP ROW POLICY pu ON $DB.tu;
 DROP ROW POLICY pa ON $DB.ta;
 DROP ROW POLICY pf ON $DB.tf;
+DROP ROW POLICY plam ON $DB.tlam;
 DROP ROW POLICY ptt ON $DB.tt;
 DROP ROW POLICY ptl ON $DB.tl;
 DROP ROW POLICY ptal ON $DB.tal;
@@ -153,6 +165,7 @@ DROP TABLE tn;
 DROP TABLE tu;
 DROP TABLE ta;
 DROP TABLE tf;
+DROP TABLE tlam;
 DROP TABLE tt;
 DROP TABLE tl;
 DROP TABLE al;
