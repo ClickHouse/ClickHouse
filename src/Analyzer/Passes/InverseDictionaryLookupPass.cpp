@@ -375,6 +375,16 @@ tryResolveColumnDefinition(const ColumnNode & column_node, const ContextPtr & co
     }
     else if (auto * table_node = column_source->as<TableNode>())
     {
+        /// The rewrite removes the reference to the view column, so the planner would no longer check access to it.
+        /// Check it before looking into the view: the inspection and the load of the dictionary can throw, and an invoker
+        /// who may not read the column must get `ACCESS_DENIED` from the query without the rewrite.
+        if (!typeid_cast<const StorageView *>(table_node->getStorage().get()))
+            return std::nullopt;
+        const auto & storage_id = table_node->getStorageID();
+        if (!context->getAccess()->isGranted(
+                AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), column_node.getColumnName()))
+            return std::nullopt;
+
         auto resolved = tryResolveViewInnerQueryForInspection(*table_node, context, cache);
         if (!resolved)
             return std::nullopt;
@@ -471,17 +481,12 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
                 if (!declared_key_column || !declared_key_column->type->equals(*outer_key_column.type))
                     return std::nullopt;
 
-                /// Crossed a view boundary: check access on the view's own exposed columns, not on
+                /// Crossed a view boundary: check access on the view's own exposed key column, not on
                 /// whatever table its private inner resolution happens to use (which can run under
-                /// the view definer's rights, not the invoker's). The rewrite removes the reference to
-                /// the original column, so the planner would no longer check access to it: skip the
-                /// rewrite unless the invoker may read both the original column and the key column.
-                /// Then the query without the rewrite throws `ACCESS_DENIED` as usual.
+                /// the view definer's rights, not the invoker's). The original column is checked in
+                /// tryResolveColumnDefinition, before the view is looked into.
                 const auto & storage_id = outer_table_node->getStorageID();
-                const auto access = context->getAccess();
-                if (!access->isGranted(
-                        AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), column_node->getColumnName())
-                    || !access->isGranted(
+                if (!context->getAccess()->isGranted(
                         AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), outer_key_column.name))
                     return std::nullopt;
             }
