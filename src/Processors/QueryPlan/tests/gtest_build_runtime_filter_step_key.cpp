@@ -206,8 +206,9 @@ TEST(BuildRuntimeFilterStepKey, KeyRoundTripsAtCurrentVersion)
 TEST(BuildRuntimeFilterStepKey, OlderPeerGetsInertStep)
 {
     ASSERT_EQ(stepRegistry().versionToWrite(step_name, pre_key_version), 0);
+    ASSERT_EQ(stepRegistry().versionToWrite(step_name, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES), 1);
     ASSERT_EQ(stepRegistry().versionToWrite(step_name, pre_local_key_version), 1);
-    for (const UInt64 version : {pre_key_version, pre_local_key_version})
+    for (const UInt64 version : {pre_key_version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES, pre_local_key_version})
     {
         SCOPED_TRACE(version);
         const String bytes = serializeStep(*makeBuildStep("key-a"), version);

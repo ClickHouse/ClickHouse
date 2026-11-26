@@ -156,6 +156,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `IMPORTANT`, so a peer at this version that does not know the name yet rejects the plan instead of
 /// skipping the name and aggregating with another method.
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
+/// Version 22 adds step version 2 of `BuildRuntimeFilter`, which carries the key of a local build.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -167,8 +168,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.11.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+/// Last bumped for release 26.12.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 22;
 /// The oldest query-plan serialization version that can be written or read. Below it, the step settings were
 /// encoded in a binary form that is not supported anymore. A plan is not serialized for such a peer, and a plan
 /// from such a peer is not deserialized.
