@@ -10,8 +10,6 @@ insert into t1 values (1, 'x'), (2, 'y'), (3, 'z');
 insert into t2 values (2, 'w'), (4, 'y');
 insert into t3 values (3);
 
-set enable_optimize_predicate_expression = 0;
-
 select * from t1 join t2 on a = c;
 select * from t1 join t2 on c = a;
 
@@ -41,8 +39,6 @@ select t1.a as c, t2.c as a from t1 join t2 on t2.c = t1.a;
 select t1.a, t3.a from t1 join t3 on t1.a = t3.a;
 select t1.a as t1_a, t3.a as t3_a from t1 join t3 on t1_a = t3_a;
 select table1.a as t1_a, table3.a as t3_a from t1 as table1 join t3 as table3 on t1_a = t3_a;
-
-set enable_optimize_predicate_expression = 1;
 
 select * from t1 join t2 on a = c;
 select * from t1 join t2 on c = a;

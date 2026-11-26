@@ -22,13 +22,9 @@ doc_type: 'reference'
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Сведения о подсети BYOC в GCP с основным и вторичным диапазонами IPv4 и включенным Private Google Access](/images/cloud/reference/byoc-gcp-subnet.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Сведения о подсети BYOC в GCP с основным и вторичным диапазонами IPv4 и включенным Private Google Access](/images/cloud/reference/byoc-gcp-subnet.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -41,8 +37,8 @@ doc_type: 'reference'
 
     VPC без исходящего маршрута не сможет завершить подготовку; предварительная проверка контролирует, что сеть покрыта Cloud NAT gateway. Единого опубликованного списка конечных точек не существует; если ваша сетевая политика требует явного перечня, обратитесь в поддержку для анализа вашей конфигурации.
 
-    **DNS Resolution**
-    Убедитесь, что в вашей VPC корректно работает DNS-разрешение и что стандартные DNS-имена не блокируются, не изменяются и не подменяются. ClickHouse BYOC использует DNS для разрешения серверов control plane Tailscale и конечных точек сервиса ClickHouse. Если DNS недоступен или настроен неправильно, сервисы BYOC могут не подключаться или работать некорректно.
+    **Разрешение DNS-имён**
+    Убедитесь, что в вашей VPC корректно работает разрешение DNS-имён и что стандартные DNS-имена не блокируются, не изменяются и не подменяются. ClickHouse BYOC использует DNS для разрешения серверов control plane Tailscale и конечных точек сервиса ClickHouse. Если DNS недоступен или настроен неправильно, сервисы BYOC могут не подключаться или работать некорректно.
   </Step>
 
   <Step title="Настройте BYOC infrastructure" id="set-up-byoc-infrastructure">
@@ -60,13 +56,9 @@ doc_type: 'reference'
     6. Нажмите **Set up Infrastructure**, чтобы начать подготовку.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Интерфейс настройки ClickHouse Cloud BYOC с выбранным Use existing VPC для GCP, где показаны поля VPC network name, subnet name, secondary range names и Shared VPC host project ID](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Интерфейс настройки ClickHouse Cloud BYOC с выбранным Use existing VPC для GCP, где показаны поля VPC network name, subnet name, secondary range names и Shared VPC host project ID](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

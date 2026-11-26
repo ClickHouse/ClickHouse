@@ -1,0 +1,61 @@
+---
+title: 'Gestion de la mémoire des JOIN et déversement sur disque'
+sidebarTitle: 'Mémoire et déversement'
+description: 'Limites, seuils de déversement sur disque et stockage temporaire utilisés par les JOIN dans ClickHouse.'
+keywords: ['mémoire des JOIN', 'déversement des JOIN', 'max_bytes_in_join', 'jointure par hachage Grace', 'stockage temporaire']
+doc_type: 'guide'
+---
+
+La mémoire utilisée par les JOIN est régie par deux groupes de paramètres. Pour la plupart des algorithmes, des limites strictes interrompent la requête lorsque l&#39;état du JOIN devient trop volumineux. Les seuils de déversement sur disque, eux, amènent le JOIN à écrire une partie de son état sur le disque afin que la requête puisse se poursuivre.
+
+## Limites strictes {#hard-limits}
+
+* [`max_rows_in_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_join) limite le nombre de lignes de la structure de données de droite d&#39;une JOIN, généralement une table de hachage.
+* [`max_bytes_in_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join) limite la taille en octets de cette même structure de données.
+* [`join_overflow_mode`](/fr/reference/settings/session-settings/join#join_overflow_mode) définit l&#39;action à effectuer lorsque l&#39;une des deux limites est atteinte.
+
+Ces deux limites s&#39;appliquent également au [table engine `Join`](/fr/reference/engines/table-engines/special/join). Si une requête contient plusieurs JOIN, ClickHouse vérifie les limites pour chacune d&#39;elles.
+
+Pour les algorithmes hash-based, y compris ceux qui déversent sur le disque, atteindre une limite arrête la requête et ne déclenche jamais le déversement d&#39;une JOIN. Par conséquent, une limite inférieure ou égale au seuil de déversement sur disque arrête normalement la requête avant que la JOIN ne puisse déverser sur le disque.
+
+Deux paramètres modifient ce comportement :
+
+* [`enable_adaptive_memory_spill_scheduler`](/fr/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) déverse sur le disque les processeurs éligibles lorsque la requête est soumise à une pression mémoire. Pour les JOIN, il ne s&#39;applique qu&#39;à une JOIN déjà capable de déverser sur le disque : une JOIN `hash`, `parallel_hash` ou `auto` avec un [seuil de déversement sur disque](#spill-thresholds) non nul, une JOIN `grace_hash`, ou le repli block nested loop lorsqu&#39;un stockage temporaire est configuré. Une telle JOIN peut alors être déversée sur disque avant d&#39;atteindre le seuil de déversement sur disque ou une limite stricte.
+* [`legacy_join_size_limits_trigger_spilling`](/fr/reference/settings/session-settings/other#legacy_join_size_limits_trigger_spilling) rétablit le comportement des versions antérieures à 26.10, dans lesquelles les limites strictes poursuivent le déversement sur disque de la partie d&#39;une JOIN qui s&#39;exécute déjà sur disque, au lieu d&#39;arrêter la requête. Avec ce paramètre, `grace_hash` déverse sur le disque uniquement en fonction des limites strictes et ignore les seuils de déversement sur disque. `hash` et `parallel_hash` commencent toujours à déverser sur le disque au seuil de déversement sur disque et continuent de traiter les limites strictes comme des plafonds pendant leur phase in-memory.
+
+Les limites se comportent différemment avec les autres algorithmes :
+
+* Pour [`ie_join`](/fr/concepts/features/operations/select/join-algorithms#ie-join), les limites s&#39;appliquent à l&#39;entrée cumulée des deux côtés.
+* Pour le [repli block nested loop](/fr/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), les limites s&#39;appliquent au côté droit matérialisé, y compris les blocs déversés sur disque.
+* Pour [`partial_merge`](/fr/concepts/features/operations/select/join-algorithms#partial-merge), atteindre une limite modifie la stratégie d&#39;exécution au lieu d&#39;arrêter la requête : la JOIN commence à écrire sur le disque ses blocs triés du côté droit.
+
+## Seuils de déversement sur disque {#spill-thresholds}
+
+* [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) définit un seuil absolu de déversement sur disque, en octets, pour le côté droit d&#39;une JOIN hash-based.
+* [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) définit le seuil de déversement sur disque sous la forme d&#39;un ratio de la mémoire encore disponible dans les limites de mémoire de l&#39;utilisateur et du serveur. Si aucune limite de mémoire n&#39;est configurée, ce ratio est sans effet.
+
+Si les deux paramètres sont définis, c&#39;est le plus petit des seuils obtenus qui s&#39;applique. Ces seuils s&#39;appliquent à `hash`, `parallel_hash`, `grace_hash`, à la valeur `auto`, ainsi qu&#39;au repli block nested loop. Ils nécessitent qu&#39;un chemin de données temporaires soit configuré.
+
+## Fonctionnement du déversement sur disque {#how-spilling-works}
+
+Chaque algorithme capable de déverser sur le disque écrit une partie différente de son état dans des fichiers temporaires :
+
+* **`hash` et `parallel_hash`.** La JOIN construit ses tables de hachage en mémoire. Lorsque le côté droit dépasse le seuil de déversement sur disque, la JOIN bascule vers `grace_hash`. Elle répartit les lignes du côté droit en compartiments selon un hachage de la clé de jointure, conserve un compartiment en mémoire et écrit les autres dans des fichiers temporaires. Les lignes du côté gauche sont réparties avec la même fonction de hachage. Les lignes correspondant au compartiment in-memory sont jointes immédiatement, et les autres sont écrites dans des fichiers temporaires. Une fois le côté gauche lu, ClickHouse charge et joint les paires de compartiments restantes, une par une.
+* **`grace_hash`.** La JOIN applique la même procédure dès le premier bloc. Si la table de hachage d&#39;un compartiment dépasse le seuil, le nombre de compartiments double, dans la limite de `grace_hash_join_max_buckets`. Au-delà de ce maximum, la requête échoue avec une erreur.
+* **`full_sorting_merge`.** Le tri de chaque entrée écrit des blocs triés dans des fichiers temporaires lorsqu&#39;il dépasse `max_bytes_before_external_sort` ou `max_bytes_ratio_before_external_sort`. Les fichiers triés sont ensuite fusionnés.
+* **`partial_merge`.** Les blocs triés du côté droit et leurs index min-max sont écrits dans des fichiers temporaires dès que le côté droit atteint une limite stricte.
+* **Repli block nested loop.** Les blocs du côté droit sont compressés en mémoire, puis écrits dans des fichiers temporaires une fois le seuil de déversement sur disque atteint.
+
+Les algorithmes [`direct`](/fr/concepts/features/operations/select/join-algorithms#direct) et [`ie_join`](/fr/concepts/features/operations/select/join-algorithms#ie-join) ne déversent pas sur le disque.
+
+Les fichiers temporaires sont écrits sur le stockage configuré par le paramètre du serveur [`tmp_path`](/fr/reference/settings/server-settings/settings/tmp#tmp_path), [`tmp_policy`](/fr/reference/settings/server-settings/settings/tmp#tmp_policy) ou [`temporary_data_in_cache`](/fr/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache). La lecture et l&#39;écriture de fichiers temporaires génèrent des E/S disque supplémentaires : une JOIN qui déverse sur le disque est donc plus lente que la même JOIN exécutée en mémoire.
+
+Les événements de profilage `ExternalJoinWritePart`, `ExternalJoinCompressedBytes` et `ExternalJoinUncompressedBytes` indiquent le nombre de fichiers temporaires écrits par une JOIN et le volume de données qu&#39;ils contenaient. Ils sont disponibles dans la colonne `ProfileEvents` de [`system.query_log`](/fr/reference/system-tables/query_log).
+
+## Pages connexes {#related-pages}
+
+* [Utiliser les JOIN dans ClickHouse](/fr/concepts/features/operations/select/joining-tables)
+* [Comment ClickHouse exécute les JOIN](/fr/concepts/features/operations/select/join-execution)
+* [Algorithmes de JOIN](/fr/concepts/features/operations/select/join-algorithms)
+* [Paramètres des JOIN](/fr/concepts/features/operations/select/join-settings)
+* [Limiter et optimiser les JOIN](/fr/concepts/best-practices/minimize-optimize-joins)

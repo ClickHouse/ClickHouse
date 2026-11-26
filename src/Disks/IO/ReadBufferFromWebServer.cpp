@@ -72,7 +72,8 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     size_t read_until_position_,
     HTTPHeaderEntries headers_,
     String expected_etag_)
-    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, getKnownFileSize(file_size_))
+    /// No own memory: the working buffer is either the external one or the one of `impl`.
+    : ReadBufferFromFileBase(0, nullptr, 0, getKnownFileSize(file_size_))
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , urls(std::move(urls_))
@@ -212,6 +213,10 @@ bool ReadBufferFromWebServer::nextImpl()
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
+
+    /// The buffer has no own memory, so an external buffer must be set before reading.
+    if (use_external_buffer && internal_buffer.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "External buffer is not set before reading from `ReadBufferFromWebServer`");
 
     if (!impl)
     {

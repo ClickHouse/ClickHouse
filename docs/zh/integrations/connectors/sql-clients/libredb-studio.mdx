@@ -10,7 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -75,7 +74,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default` 或 `https://reader:secret@ch.example.com:8443/analytics`。
     使用 `https://` URL 时会自动启用 TLS。
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="LibreDB Studio 新连接对话框，已选择 ClickHouse，填写了主机、端口 8123、用户名和数据库，且连接测试成功" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![LibreDB Studio 新连接对话框，已选择 ClickHouse，填写了主机、端口 8123、用户名和数据库，且连接测试成功](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="运行查询" id="run-a-query">
@@ -98,7 +101,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="LibreDB Studio SQL 编辑器，显示 uk_price_paid 查询以及包含所声明 ClickHouse 列类型的结果表格" />
+    <div className="ch-image-md">
+      <Frame>
+        ![LibreDB Studio SQL 编辑器，显示 uk_price_paid 查询以及包含所声明 ClickHouse 列类型的结果表格](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
@@ -106,15 +113,15 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
 
 监控仪表板以该连接所配置的用户身份读取以下数据源：
 
-| 区域              | ClickHouse 数据源                                                      |
-| --------------- | ------------------------------------------------------------------- |
-| 版本、运行时间、连接数     | `version()`, `uptime()`, `system.metrics`, `system.server_settings` |
-| 缓存命中率、每秒查询数、内存  | `system.events`, `system.asynchronous_metrics`                      |
-| 慢查询 (按归一化查询分组)  | `system.query_log`                                                  |
-| 正在运行的查询         | `system.processes`                                                  |
-| 表、表数据片段、行数和大小   | `system.tables`, `system.parts`                                     |
-| 数据跳过索引          | `system.data_skipping_indices`                                      |
-| 磁盘              | `system.disks`                                                      |
+| 区域             | ClickHouse 数据源                                                      |
+| -------------- | ------------------------------------------------------------------- |
+| 版本、运行时间、连接数    | `version()`, `uptime()`, `system.metrics`, `system.server_settings` |
+| 缓存命中率、每秒查询数、内存 | `system.events`, `system.asynchronous_metrics`                      |
+| 慢查询 (按归一化查询分组) | `system.query_log`                                                  |
+| 正在运行的查询        | `system.processes`                                                  |
+| 表、表数据片段、行数和大小  | `system.tables`, `system.parts`                                     |
+| 数据跳过索引         | `system.data_skipping_indices`                                      |
+| 磁盘             | `system.disks`                                                      |
 
 如果用户缺少上述某张表的授权，或者 `query_log` 已关闭，对应面板将保持
 空白，而不会导致整个仪表盘无法加载。`system.query_log` 采用异步方式变为已刷盘状态，因此
@@ -124,7 +131,11 @@ LibreDB Studio 还可以对表执行 `OPTIMIZE TABLE ... FINAL`，显示某个�
 并通过 `KILL QUERY ... SYNC` 终止正在运行的查询。执行这些操作需要
 具备相应的授权。
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="LibreDB Studio 中某个 ClickHouse 连接的监控概览，显示服务器版本、运行时间、连接数、存储大小、缓存命中率和表数量" />
+<div className="ch-image-md">
+  <Frame>
+    ![LibreDB Studio 中某个 ClickHouse 连接的监控概览，显示服务器版本、运行时间、连接数、存储大小、缓存命中率和表数量](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## 故障排查 {#troubleshooting}
 

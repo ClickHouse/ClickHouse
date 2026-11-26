@@ -1,4 +1,3 @@
-set allow_experimental_dynamic_type = 1;
 set allow_suspicious_types_in_group_by = 1;
 set allow_suspicious_types_in_order_by = 1;
 drop table if exists test;
