@@ -15,6 +15,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --table_engine_read_through_distributed_cache 0"
+
 DIR="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ROWS=25000
 WRITE="s3_truncate_on_insert = 1, output_format_parquet_row_group_size = $ROWS, output_format_parquet_compression_method = 'none', output_format_parquet_write_page_index = 1"
