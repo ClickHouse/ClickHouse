@@ -206,6 +206,8 @@ A timeout on the reference side only of an SQL query that only reads (`SELECT`, 
 * Teardown: on exit, including `SIGTERM`, `perf.py` runs the drop queries on every server that ran setup and prints `teardown-complete` only if all of them succeeded (a missing table is accepted on a reference whose setup failed). Without that line the harness records `teardown incomplete, stopping the batch` and runs no further tests on that host; what was measured is still reported.
 * Changes reported by the nightly are unconfirmed: `confirm_changes` is skipped, and the repetition from night to night is the confirmation.
 
+Without `--long` (the `master_head` jobs of pull requests and master), the tests and the log export end 10 minutes before `job_end` (`TESTS_END_RESERVE_SEC`), so that the report fits into the job timeout. Each test runs under `timeout -k 60` with the time left. A test cut by it, or not started, is an error record, so the job is red with its report. The log export gets the rest of that time, down to dropping the export without sending the logs. `perf.py` runs its teardown on `SIGTERM` in every mode.
+
 To get the text of a reported `query_index` (0-based, after substitutions), check out the tests of that run and use `tests/performance/scripts/perf.py --print-queries tests/performance/<test>.xml --queries-to-run <query_index>`.
 
 #### Conditions changelog
