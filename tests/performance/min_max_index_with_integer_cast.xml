@@ -1,0 +1,34 @@
+<test>
+    <!-- A minmax skip index is analyzed through an integer conversion of the indexed column: into `DateTime`
+         from a wider or signed integer, between signed and unsigned integers, into `Bool`, or of a `Nullable` column.
+         The conversion is evaluated on the bounds of every granule. -->
+
+    <create_query>
+        CREATE TABLE index_test_integer_cast
+        (
+            ts UInt64 CODEC(Delta, ZSTD),
+            ts_signed Int64 CODEC(Delta, ZSTD),
+            ts_nullable Nullable(UInt64) CODEC(Delta, ZSTD),
+            flag UInt8 CODEC(Delta, ZSTD),
+            t DateTime('UTC') ALIAS ts,
+            t_nullable Nullable(DateTime('UTC')) ALIAS ts_nullable,
+            u32 UInt32 ALIAS ts_signed,
+            b Bool ALIAS flag,
+            INDEX i_ts ts TYPE minmax GRANULARITY 1,
+            INDEX i_ts_signed ts_signed TYPE minmax GRANULARITY 1,
+            INDEX i_ts_nullable ts_nullable TYPE minmax GRANULARITY 1,
+            INDEX i_flag flag TYPE minmax GRANULARITY 1
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>INSERT INTO index_test_integer_cast SELECT 1700000000 + number, 1700000000 + number, 1700000000 + number, (number % 100000000) &lt; 8192 FROM numbers_mt(toUInt64(0x100000000 / 20)) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>OPTIMIZE TABLE index_test_integer_cast FINAL</fill_query>
+
+    <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE t >= '2024-01-01 00:00:00' AND t < '2024-01-01 00:10:00']]></query>
+    <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE toDateTime(ts_signed, 'UTC') >= '2024-01-01 00:00:00' AND toDateTime(ts_signed, 'UTC') < '2024-01-01 00:10:00']]></query>
+    <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE t_nullable >= '2024-01-01 00:00:00' AND t_nullable < '2024-01-01 00:10:00']]></query>
+    <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE u32 >= 1704067200 AND u32 < 1704067800]]></query>
+    <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE b = true]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS index_test_integer_cast</drop_query>
+</test>
