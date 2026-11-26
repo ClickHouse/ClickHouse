@@ -61,6 +61,7 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
+extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
 }
 
 namespace DB::Setting
@@ -818,6 +819,13 @@ static bool writeMetadataFiles(
                 return false;
             }
         }
+    }
+    catch (const Exception & e)
+    {
+        /// The snapshot may already reference these files even though the commit was not confirmed.
+        if (e.code() != ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN)
+            cleanup();
+        throw;
     }
     catch (...)
     {

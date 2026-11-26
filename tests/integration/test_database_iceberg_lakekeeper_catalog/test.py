@@ -610,18 +610,25 @@ def commit_response_proxy(started_cluster):
 
 
 @pytest.mark.parametrize(
-    "response_mode,readback_mode",
+    "response_mode,readback_mode,operation",
     [
-        ("drop", "normal"),
-        ("server_error", "normal"),
-        ("drop", "superseded"),
-        ("drop", "read_error"),
-        ("drop", "missing"),
-        ("drop", "mismatch"),
+        ("drop", "normal", "insert"),
+        ("server_error", "normal", "insert"),
+        ("drop", "superseded", "insert"),
+        ("drop", "read_error", "insert"),
+        ("drop", "missing", "insert"),
+        ("drop", "mismatch", "insert"),
+        # Force a replay before allowing reconciliation.
+        ("drop", "read_error_once", "insert"),
+        # A later rejection must not authorize cleanup of an earlier commit.
+        ("replay_reject", "read_error", "insert"),
+        ("drop", "read_error", "mutation"),
+        ("drop", "read_error", "compaction"),
+        ("drop", "read_error", "drop_partition"),
     ],
 )
-def test_insert_preserves_files_after_lost_commit_response(
-    started_cluster, commit_response_proxy, response_mode, readback_mode
+def test_preserves_files_after_lost_commit_response(
+    started_cluster, commit_response_proxy, response_mode, readback_mode, operation
 ):
     node = started_cluster.instances["node1"]
     catalog = load_catalog_impl(started_cluster)
@@ -644,14 +651,18 @@ def test_insert_preserves_files_after_lost_commit_response(
     )
     insert = None
     try:
+        partition = "PARTITION BY id" if operation == "drop_partition" else ""
         node.query(
-            f"CREATE TABLE {table_name} (id Int32) ENGINE = Iceberg", settings=settings
+            f"CREATE TABLE {table_name} (id Int32) ENGINE = Iceberg {partition}",
+            settings=settings,
         )
         node.query(f"INSERT INTO {table_name} VALUES (1)", settings=settings)
         assert node.query(f"SELECT id FROM {table_name}") == "1\n"
+        if operation != "insert":
+            node.query(f"INSERT INTO {table_name} VALUES (2)", settings=settings)
         baseline_id = catalog.load_table(identifier).metadata.current_snapshot_id
 
-        # intercept the next shanpshot commit for {namespace}.events
+        # Intercept the next snapshot commit for this table.
         requests.post(
             f"{control_url}/arm",
             json={
@@ -661,9 +672,17 @@ def test_insert_preserves_files_after_lost_commit_response(
             },
             timeout=5,
         ).raise_for_status()
-        # insert asynchronously
+        queries = {
+            "insert": f"INSERT INTO {table_name} VALUES (2)",
+            "mutation": f"ALTER TABLE {table_name} DELETE WHERE id = 2",
+            "compaction": (
+                f"OPTIMIZE TABLE {table_name} MANIFEST SETTINGS "
+                "allow_experimental_iceberg_compaction = 1, iceberg_manifest_min_count_to_compact = 1"
+            ),
+            "drop_partition": f"ALTER TABLE {table_name} DROP PARTITION 2",
+        }
         insert = node.get_query_request(
-            f"INSERT INTO {table_name} VALUES (2)", settings=settings, timeout=180
+            queries[operation], settings=settings, timeout=180
         )
         # waits until the proxy has forwarded that commit to the catalog
         response = requests.get(f"{control_url}/committed", timeout=65)
@@ -681,15 +700,17 @@ def test_insert_preserves_files_after_lost_commit_response(
         assert snapshot.manifest_list == attempted_snapshot["manifest-list"]
         referenced = {snapshot.manifest_list}
         referenced.update(manifest.manifest_path for manifest in snapshot.manifests(committed_table.io))
-        referenced.update(task.file.file_path for task in committed_table.scan().plan_files())
+        for task in committed_table.scan().plan_files():
+            referenced.add(task.file.file_path)
+            referenced.update(file.file_path for file in task.delete_files)
 
         def missing_files():
             return sorted(path for path in referenced if not committed_table.io.new_input(path).exists())
 
         assert not missing_files(), "Committed files must exist before dropping the response"
-        assert sorted(committed_table.scan().to_arrow().column("id").to_pylist()) == [1, 2]
+        expected_ids = [1] if operation in {"mutation", "drop_partition"} else [1, 2]
+        assert sorted(committed_table.scan().to_arrow().column("id").to_pylist()) == expected_ids
 
-        expected_ids = [1, 2]
         expected_snapshot_id = snapshot_id
         if readback_mode == "superseded":
             node.query(f"INSERT INTO {table_name} VALUES (3)", settings=settings)
@@ -697,7 +718,7 @@ def test_insert_preserves_files_after_lost_commit_response(
             expected_snapshot_id = catalog.load_table(identifier).metadata.current_snapshot_id
             assert expected_snapshot_id != snapshot_id
 
-        # Proxy CLOSE the connection wihtout sending the successfull commit response (e.g. Network issue)
+        # Release the injected failure after verifying the committed files.
         requests.post(f"{control_url}/release", timeout=5).raise_for_status()
         _, insert_error = insert.get_answer_and_error()
         insert = None
@@ -705,6 +726,14 @@ def test_insert_preserves_files_after_lost_commit_response(
             assert "ICEBERG_COMMIT_STATE_UNKNOWN" in insert_error, insert_error
         else:
             assert not insert_error, insert_error
+        counts = requests.get(f"{control_url}/counts", timeout=5)
+        counts.raise_for_status()
+        counts = counts.json()
+        if readback_mode in {"read_error", "missing", "mismatch", "read_error_once"}:
+            assert counts["attempts"] == 2, counts
+            expected_status = 400 if response_mode == "replay_reject" else 409
+            assert counts["statuses"] == [expected_status], counts
+            assert counts["reads"] == 2, counts
         requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
         current = catalog.load_table(identifier)
         assert current.metadata.current_snapshot_id == expected_snapshot_id
@@ -724,6 +753,54 @@ def test_insert_preserves_files_after_lost_commit_response(
         requests.post(f"{control_url}/release", timeout=5).raise_for_status()
         if insert is not None:
             insert.get_answer_and_error()
+        requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
+        node.query(f"DROP DATABASE {database}")
+
+
+def test_insert_retries_before_commit(started_cluster, commit_response_proxy):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    proxy_url, control_url = commit_response_proxy
+    namespace = f"retry_commit_{uuid.uuid4().hex}"
+    database = namespace
+    table_name = f"{database}.`{namespace}.events`"
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "async_insert": 0,
+    }
+    node.query(
+        f"CREATE DATABASE {database} ENGINE = DataLakeCatalog("
+        f"'{proxy_url}', 'minio', '{minio_secret_key}') "
+        "SETTINGS catalog_type = 'rest', warehouse = 'demo', "
+        "storage_endpoint = 'http://minio1:9001/warehouse-rest'",
+        settings={"allow_database_iceberg": 1},
+    )
+    try:
+        node.query(f"CREATE TABLE {table_name} (id Int32) ENGINE = Iceberg", settings=settings)
+        node.query(f"INSERT INTO {table_name} VALUES (1)", settings=settings)
+        requests.post(
+            f"{control_url}/arm",
+            json={
+                "identifier": {"namespace": [namespace], "name": "events"},
+                "response_mode": "unavailable",
+            },
+            timeout=5,
+        ).raise_for_status()
+        requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        node.query(f"INSERT INTO {table_name} VALUES (2)", settings=settings)
+
+        counts = requests.get(f"{control_url}/counts", timeout=5)
+        counts.raise_for_status()
+        assert counts.json() == {"attempts": 2, "statuses": [503, 200], "reads": 1}
+        attempted = requests.get(f"{control_url}/intercepted", timeout=5)
+        attempted.raise_for_status()
+        table = catalog.load_table((namespace, "events"))
+        assert table.metadata.current_snapshot_id == attempted.json()["snapshot-id"]
+        assert len(table.metadata.snapshots) == 2
+        assert sorted(table.scan().to_arrow().column("id").to_pylist()) == [1, 2]
+        assert node.query(f"SELECT id FROM {table_name} ORDER BY id") == "1\n2\n"
+    finally:
         requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
         node.query(f"DROP DATABASE {database}")
 
@@ -792,6 +869,10 @@ def test_insert_cleans_files_after_rejected_commit(started_cluster, commit_respo
         _, error = insert.get_answer_and_error()
         insert = None
         assert "Injected commit rejection" in error
+        assert "ICEBERG_COMMIT_REJECTED" in error
+        counts = requests.get(f"{control_url}/counts", timeout=5)
+        counts.raise_for_status()
+        assert counts.json() == {"attempts": 1, "statuses": [400], "reads": 0}
         assert catalog.load_table(identifier).metadata.current_snapshot_id == baseline_id
         assert not uploaded_files.intersection(table_files())
         assert node.query(f"SELECT id FROM {table_name} ORDER BY id") == "1\n"

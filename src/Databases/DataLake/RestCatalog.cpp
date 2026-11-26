@@ -25,6 +25,7 @@
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/NetException.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -34,6 +35,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <base/sleep.h>
 #include <filesystem>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -46,6 +49,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <IO/ReadHelpers.h>
@@ -2231,57 +2235,96 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("updates", updates);
     }
 
-    try
+    const auto http_settings = getContext()->getReadSettings().http_settings;
+    const size_t max_tries = std::max(size_t{1}, http_settings.max_tries);
+    size_t backoff_ms = http_settings.retry_initial_backoff_ms;
+    bool uncertain = false;
+    for (size_t attempt = 0;; ++attempt)
     {
-        /// Replaying an applied commit after losing its response may return HTTP 409, which would
-        /// be mistaken for a rejected commit and allow deletion of files the catalog references.
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ false);
-    }
-    catch (const DB::HTTPException & ex)
-    {
-        /// 409 Conflict: caller retries after re-reading the latest metadata tip.
-        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        bool retry = false;
+        bool conflict = false;
+        bool rejected = false;
+        String error;
+        try
         {
-            LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
-            return false;
+            if (attempt)
+            {
+                auto process = getContext()->getProcessListElement();
+                for (size_t remaining_ms = backoff_ms; remaining_ms;)
+                {
+                    if (process)
+                        process->checkTimeLimit();
+                    const size_t slice_ms = std::min(remaining_ms, size_t{100});
+                    sleepForMilliseconds(slice_ms);
+                    remaining_ms -= slice_ms;
+                }
+                backoff_ms = std::min(backoff_ms * 2, http_settings.retry_max_backoff_ms);
+            }
+            /// Retry here so a later rejection cannot hide an earlier ambiguous attempt.
+            sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ false);
+            return true;
         }
-        LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
-        const auto status = ex.getHTTPStatus();
-        if (status == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST
-            || status == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED
-            || status == Poco::Net::HTTPResponse::HTTP_FORBIDDEN
-            || status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND
-            || status == Poco::Net::HTTPResponse::HTTP_UNPROCESSABLE_ENTITY)
+        catch (const DB::HTTPException & ex)
         {
+            const auto status = ex.getHTTPStatus();
+            conflict = status == Poco::Net::HTTPResponse::HTTP_CONFLICT;
+            rejected = status == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST
+                || status == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED
+                || status == Poco::Net::HTTPResponse::HTTP_FORBIDDEN
+                || status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND
+                || status == Poco::Net::HTTPResponse::HTTP_UNPROCESSABLE_ENTITY;
+            retry = DB::isRetriableHTTPError(status);
+            error = ex.displayText();
+        }
+        catch (const DB::NetException & ex)
+        {
+            retry = true;
+            error = ex.displayText();
+        }
+        catch (const Poco::Net::NetException & ex)
+        {
+            retry = true;
+            error = ex.displayText();
+        }
+        catch (const Poco::TimeoutException & ex)
+        {
+            retry = true;
+            error = ex.displayText();
+        }
+        catch (...)
+        {
+            error = DB::getCurrentExceptionMessage(/* with_stacktrace */ false);
+        }
+
+        /// A replay may return `409` after our commit succeeded but its response was lost.
+        if ((!rejected || uncertain) && isSnapshotCommitted(*state_snapshot, endpoint, new_snapshot))
+            return true;
+
+        /// A rejection proves nothing about an earlier ambiguous attempt.
+        if (!uncertain)
+        {
+            if (conflict)
+            {
+                LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, error);
+                return false;
+            }
+            if (rejected)
+                throw DB::Exception(
+                    DB::ErrorCodes::ICEBERG_COMMIT_REJECTED,
+                    "Iceberg catalog rejected commit for table {}.{}: {}",
+                    namespace_name, table_name, error);
+        }
+
+        /// A missing snapshot or a failed refresh cannot prove that the commit did not land.
+        uncertain = true;
+        if (!retry || attempt + 1 == max_tries)
             throw DB::Exception(
-                DB::ErrorCodes::ICEBERG_COMMIT_REJECTED,
-                "Iceberg catalog rejected commit for table {}.{}: {}",
-                namespace_name,
-                table_name,
-                ex.displayText());
-        }
-        if (DB::isRetriableHTTPError(status) && isSnapshotCommitted(*state_snapshot, endpoint, new_snapshot))
-            return true;
-        throw DB::Exception(
-            DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
-            "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
-            namespace_name,
-            table_name,
-            ex.displayText());
+                DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+                "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
+                namespace_name, table_name, error);
+
+        LOG_DEBUG(log, "Retrying Iceberg commit for {}.{} after attempt {}/{}: {}", namespace_name, table_name, attempt + 1, max_tries, error);
     }
-    catch (...)
-    {
-        /// Non-HTTP exceptions, such as a connection reset or timeout, may follow an applied commit.
-        if (isSnapshotCommitted(*state_snapshot, endpoint, new_snapshot))
-            return true;
-        throw DB::Exception(
-            DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
-            "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
-            namespace_name,
-            table_name,
-            DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
-    }
-    return true;
 }
 
 Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(

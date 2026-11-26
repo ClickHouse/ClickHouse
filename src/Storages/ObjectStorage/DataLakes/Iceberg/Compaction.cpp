@@ -49,6 +49,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int NOT_IMPLEMENTED;
+    extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
 }
 
 namespace DB::Setting
@@ -1073,6 +1074,13 @@ static bool writeConsolidatedManifestFile(
                 }
             }
         }
+    }
+    catch (const Exception & e)
+    {
+        /// The snapshot may already reference these files even though the commit was not confirmed.
+        if (e.code() != ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN)
+            cleanup();
+        throw;
     }
     catch (...)
     {

@@ -57,6 +57,7 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
 }
 
 namespace Setting
@@ -698,9 +699,10 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
     std::vector<std::string> files_for_cleanup;
     bool committed = false;
+    bool uncertain = false;
 
     SCOPE_EXIT({
-        if (!committed)
+        if (!committed && !uncertain)
             cleanupNotCommited(std::move(files_for_cleanup));
     });
 
@@ -713,7 +715,16 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
                 components.path_resolver, object_storage, context))
             files_for_cleanup.push_back(*statistics_file_path);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    try
+    {
+        committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    }
+    catch (const Exception & e)
+    {
+        /// Keep the staged files if the catalog may already reference them.
+        uncertain = e.code() == ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN;
+        throw;
+    }
     if (!committed)
         return false;
 

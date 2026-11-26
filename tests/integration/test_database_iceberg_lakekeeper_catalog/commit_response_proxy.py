@@ -1,4 +1,4 @@
-"""Inject a snapshot-commit rejection or lose one successful commit response."""
+"""Inject snapshot-commit failures before or after forwarding to the catalog."""
 
 import json
 import socket
@@ -17,6 +17,9 @@ class Proxy(ThreadingHTTPServer):
         self.response_mode = None
         self.readback_mode = None
         self.commit_path = None
+        self.attempts = 0
+        self.statuses = []
+        self.reads = 0
         self.intercepted = threading.Event()
         self.committed = threading.Event()
         self.release = threading.Event()
@@ -26,6 +29,8 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def reply(self, status, body, content_type="application/json"):
+        if self.command == "POST" and self.path == self.server.commit_path:
+            self.server.statuses.append(status)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -35,6 +40,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/control/ready":
             self.reply(200, b"ready", "text/plain")
+        elif self.path == "/control/counts":
+            self.reply(
+                200,
+                json.dumps({
+                    "attempts": self.server.attempts,
+                    "statuses": self.server.statuses,
+                    "reads": self.server.reads,
+                }).encode(),
+            )
         elif self.path in {"/control/committed", "/control/intercepted"}:
             event = self.server.committed if self.path == "/control/committed" else self.server.intercepted
             if not event.wait(timeout=60):
@@ -52,6 +66,9 @@ class Handler(BaseHTTPRequestHandler):
             self.server.readback_mode = command.get("readback_mode", "normal")
             self.server.commit_path = None
             self.server.snapshot = None
+            self.server.attempts = 0
+            self.server.statuses = []
+            self.server.reads = 0
             self.server.intercepted.clear()
             self.server.committed.clear()
             self.server.release.clear()
@@ -75,16 +92,23 @@ class Handler(BaseHTTPRequestHandler):
             and self.path == self.server.commit_path
             and self.server.release.is_set()
         )
-        if readback and self.server.readback_mode == "read_error":
+        if readback:
+            self.server.reads += 1
+        if readback and (
+            self.server.readback_mode == "read_error"
+            or (self.server.readback_mode == "read_error_once" and self.server.reads == 1)
+        ):
             self.reply(
                 403,
                 b'{"error":{"message":"Injected read-back failure","type":"ForbiddenException","code":403}}',
             )
             return
         snapshot = None
-        if body and self.server.target is not None:
+        intercept = False
+        if body:
             request = json.loads(body)
-            if request.get("identifier") == self.server.target:
+            intercept = self.server.target is not None and request.get("identifier") == self.server.target
+            if intercept or self.path == self.server.commit_path:
                 snapshot = next(
                     (
                         update["snapshot"]
@@ -93,16 +117,32 @@ class Handler(BaseHTTPRequestHandler):
                     ),
                     None,
                 )
+                if snapshot is not None:
+                    self.server.commit_path = self.path
+                    self.server.attempts += 1
 
-        if snapshot is not None and self.server.response_mode == "reject":
+        if snapshot is not None and not intercept and self.server.response_mode == "replay_reject":
+            self.reply(
+                400,
+                b'{"error":{"message":"Injected replay rejection","type":"BadRequestException","code":400}}',
+            )
+            return
+
+        if snapshot is not None and intercept and self.server.response_mode in {"reject", "unavailable"}:
             self.server.target = None
             self.server.snapshot = snapshot
             self.server.intercepted.set()
             self.server.release.wait(timeout=120)
-            self.reply(
-                400,
-                b'{"error":{"message":"Injected commit rejection","type":"BadRequestException","code":400}}',
-            )
+            if self.server.response_mode == "unavailable":
+                self.reply(
+                    503,
+                    b'{"error":{"message":"Injected error before commit","type":"ServiceUnavailableException","code":503}}',
+                )
+            else:
+                self.reply(
+                    400,
+                    b'{"error":{"message":"Injected commit rejection","type":"BadRequestException","code":400}}',
+                )
             return
 
         headers = {
@@ -125,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
             status = response.code
             content_type = response.headers.get("Content-Type", "application/json")
 
-        if snapshot is not None and 200 <= status < 300:
+        if snapshot is not None and intercept and 200 <= status < 300:
             self.server.target = None
             self.server.snapshot = snapshot
             self.server.commit_path = self.path
