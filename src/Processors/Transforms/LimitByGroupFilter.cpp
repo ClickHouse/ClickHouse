@@ -284,9 +284,13 @@ public:
         auto seen_rows = ColumnUInt64::create();
         auto & counts = seen_rows->getData();
 
-        /// Returns whether the batch can take another group.
+        /// Returns whether the batch can take another group. An empty batch always can, because the caller
+        /// reads an empty batch as exhaustion, while the empty key columns alone can exceed the byte target: a
+        /// `LowCardinality` dictionary holds the default value, which a wide `FixedString` makes large.
         auto has_room = [&]
         {
+            if (counts.empty())
+                return true;
             if (counts.size() >= max_rows)
                 return false;
             if (max_bytes)
