@@ -1094,6 +1094,82 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+Introducido en: v26.11.0
+
+Calcula la similitud normalizada basada en la [distancia de edición](https://en.wikipedia.org/wiki/Edit_distance) entre dos cadenas de bytes:
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+Devuelve un valor entre `0` (la distancia de edición es igual a la longitud de la cadena más larga, como ocurre con `'ab'` y `'ba'`) y `1` (cadenas iguales). Dos cadenas vacías se consideran iguales.
+
+**Sintaxis**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**Alias**: `levenshteinRatio`
+
+**Argumentos**
+
+* `s1` — Primera cadena de entrada. [`String`](/es/reference/data-types/string)
+* `s2` — Segunda cadena de entrada. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve la similitud entre las dos cadenas basada en la distancia de edición normalizada. [`Float64`](/es/reference/data-types/float)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+Introducido en: v26.11.0
+
+Igual que [`editDistanceRatio`](#editDistanceRatio), pero para cadenas codificadas en UTF-8: tanto la distancia de edición como las longitudes se miden en puntos de código.
+
+**Sintaxis**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**Alias**: `levenshteinRatioUTF8`
+
+**Argumentos**
+
+* `s1` — Primera cadena de entrada en UTF-8. [`String`](/es/reference/data-types/string)
+* `s2` — Segunda cadena de entrada en UTF-8. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve la similitud según la distancia de edición normalizada entre las dos cadenas UTF-8. [`Float64`](/es/reference/data-types/float)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 Introducido en: v24.6.0
@@ -1322,7 +1398,7 @@ Extrae el contenido de texto de HTML o XHTML.
 Esta función elimina las etiquetas HTML, los comentarios y los elementos script/style, y deja únicamente el contenido de texto. Gestiona lo siguiente:
 
 * La eliminación de todas las etiquetas HTML/XML
-* La eliminación de comentarios (`{/* */}`)
+* La eliminación de comentarios (`<!-- -->`)
 * La eliminación de los elementos script y style junto con su contenido
 * El procesamiento de secciones CDATA (copiadas literalmente)
 * El tratamiento y la normalización correctos de los espacios en blanco
@@ -3164,6 +3240,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+Introducido en: v26.11.0
+
+Calcula la similitud indel normalizada entre dos cadenas de bytes, que coincide con el valor de `Levenshtein.ratio` de Python:
+`2 * LCS / (length(s1) + length(s2))`, donde `LCS` es la longitud de la [subsecuencia común más larga](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+De forma equivalente, `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+Devuelve un valor entre `0` (nada en común) y `1` (cadenas iguales). Dos cadenas vacías se consideran iguales.
+
+**Sintaxis**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**Argumentos**
+
+* `s1` — Primera cadena de entrada. [`String`](/es/reference/data-types/string)
+* `s2` — Segunda cadena de entrada. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve la similitud indel normalizada entre ambas cadenas. [`Float64`](/es/reference/data-types/float)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**Coincidencia aproximada de nombres**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+Introducido en: v26.11.0
+
+Igual que [`stringSimilarityRatio`](#stringSimilarityRatio), pero para cadenas UTF8-encoded: las longitudes se miden en puntos de código.
+
+**Sintaxis**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**Argumentos**
+
+* `s1` — Primera cadena de entrada en UTF-8. [`String`](/es/reference/data-types/string)
+* `s2` — Segunda cadena de entrada en UTF-8. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve la similitud indel normalizada entre ambas cadenas UTF-8. [`Float64`](/es/reference/data-types/float)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## substring {#substring}

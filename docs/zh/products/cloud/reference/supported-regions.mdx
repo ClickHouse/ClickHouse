@@ -9,9 +9,19 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-## 支持的区域 {#supported-regions}
+import { CloudRegionsMap } from "/snippets/zh/components/CloudRegionsMap/CloudRegionsMap.jsx";
 
-下表按云提供商列出了支持的区域。徽章表示可用性：`Public` 表示正式可用的区域，`Private`、`HIPAA` 或 `PCI` 表示提供这些选项的区域。`BYOC` 标记表示该区域支持 [自备 Cloud](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 部署。对于同时标记为 `Private` 的区域，可按需申请 BYOC。
+ClickHouse Cloud 已在 AWS、Google Cloud 和 Microsoft Azure 的多个区域提供。您可以通过下方的地图和表格为服务查找受支持的地理位置，并查看可用的部署和合规选项。
+
+您可以按区域代码或地理位置搜索地图，也可以按云服务提供商、私有区域、仅限 BYOC 的区域或 HIPAA 合规性进行过滤。不同颜色代表不同的云服务提供商。实心圆表示公共区域，空心圆表示私有区域，虚线圆表示仅限 BYOC 的区域。地图上标注的位置仅为近似位置。
+
+<CloudRegionsMap />
+
+## 区域可用性 {#region-availability}
+
+下表按云服务提供商列出了所有支持的区域，不受地图筛选条件影响。徽章表示可用性：`Public` 表示正式可用的区域，`Private`、`HIPAA` 或 `PCI` 表示提供这些选项的区域。
+
+`BYOC` 标记表示该区域支持 [自备 Cloud](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 部署。对于同时标记为 `Private` 的区域，可按需申请 BYOC。仅标记为 `BYOC` 的区域仅支持 BYOC 部署。
 
 <Tabs>
   <Tab title="AWS" id="aws-regions" icon="aws">
@@ -33,7 +43,6 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
     | `eu-west-1`      | 欧洲 (爱尔兰)           | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `eu-west-2`      | 欧洲 (伦敦)            | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `il-central-1`   | 以色列 (特拉维夫)         | <Badge color="yellow">公网</Badge> <Badge color="orange">BYOC</Badge>                                                                    |
-    | `me-central-1`   | 中东 (阿联酋)           | <Badge color="yellow">公网</Badge>                                                                                                       |
     | `mx-central-1`   | 墨西哥 (中部)           | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                    |
     | `sa-east-1`      | 南美洲 (圣保罗)          | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                    |
     | `us-east-1`      | 美国东部 (N. Virginia) | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
@@ -52,16 +61,23 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
     | `europe-west4`            | 荷兰埃姆斯哈文       | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `europe-west6`            | 瑞士苏黎世         | <Badge color="purple">私网</Badge>                                                                                                       |
     | `northamerica-northeast1` | 加拿大魁北克省蒙特利尔   | <Badge color="purple">私网</Badge>                                                                                                       |
-    | `us-central1`             | 美国艾奥瓦州康瑟尔布拉夫斯 | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
+    | `us-central1`             | 美国艾奥瓦州康瑟尔布拉夫斯 | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `us-east1`                | 美国南卡罗来纳州蒙克斯科纳 | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `us-west1`                | 美国俄勒冈州达尔斯     | <Badge color="purple">私网</Badge>                                                                                                       |
+
+    <Note>
+      由于容量受限，Google Cloud `us-central1` 区域目前限制访问。如需申请访问权限，请[联系销售团队](https://clickhouse.com/company/contact)。上述限制不适用于 BYOC 部署。
+    </Note>
   </Tab>
 
   <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
     | 区域代码                 | 区域名称   | 可用性                                                                 |
     | -------------------- | ------ | ------------------------------------------------------------------- |
     | `australiaeast`      | 澳大利亚东部 | <Badge color="purple">私网</Badge> <Badge color="orange">BYOC</Badge> |
+    | `canadacentral`      | 加拿大中部  | <Badge color="orange">BYOC</Badge>                                  |
+    | `centralindia`       | 印度中部   | <Badge color="orange">BYOC</Badge>                                  |
     | `eastus2`            | 美国东部 2 | <Badge color="yellow">公网</Badge> <Badge color="orange">BYOC</Badge> |
+    | `francecentral`      | 法国中部   | <Badge color="orange">BYOC</Badge>                                  |
     | `germanywestcentral` | 德国中西部  | <Badge color="yellow">公网</Badge> <Badge color="orange">BYOC</Badge> |
     | `japaneast`          | 日本东部   | <Badge color="purple">私网</Badge> <Badge color="orange">BYOC</Badge> |
     | `uaenorth`           | 阿联酋北部  | <Badge color="purple">私网</Badge>                                    |

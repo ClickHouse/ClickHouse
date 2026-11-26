@@ -673,9 +673,9 @@ ClickHouse prend en charge les opérateurs `IS NULL` et `IS NOT NULL`.
   * `0` sinon.
 * Pour les autres valeurs, l’opérateur `IS NULL` renvoie toujours `0`.
 
-Cela peut être optimisé en activant le paramètre [optimize&#95;functions&#95;to&#95;subcolumns](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [null](/fr/reference/data-types/nullable#finding-null), au lieu de lire et de traiter l’ensemble des données de la colonne. La requête `SELECT n IS NULL FROM table` est transformée en `SELECT n.null != 0 FROM TABLE`.
+Lorsque la colonne n&#39;est utilisée nulle part ailleurs dans la requête, la fonction peut se contenter de lire la sous-colonne [null](/fr/reference/data-types/nullable#finding-null), au lieu de lire et de traiter l’ensemble des données de la colonne. La requête `SELECT n IS NULL FROM table` est transformée en `SELECT n.null != 0 FROM TABLE`. Cette optimisation est contrôlée par le paramètre [optimize&#95;functions&#95;to&#95;subcolumns](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), activé par défaut.
 
-{{/* */}}
+{/* */}
 
 ```sql
 SELECT x+100 FROM t_null WHERE y IS NULL
@@ -689,7 +689,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is_not_null}
 
-* Pour les valeurs du type [Nullable](/fr/reference/data-types/nullable), l’opérateur `IS NOT NULL` renvoie :
+* Pour les valeurs du type [Nullable](/fr/reference/data-types/nullable), l’opérateur `IS NOT NULL` renvoie :
   * `0` si la valeur est `NULL`.
   * `1` dans le cas contraire.
 * Pour toutes les autres valeurs, l’opérateur `IS NOT NULL` renvoie toujours `1`.
@@ -706,7 +706,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Peut être optimisé en activant le paramètre [optimize&#95;functions&#95;to&#95;subcolumns](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [null](/fr/reference/data-types/nullable#finding-null), au lieu de lire et de traiter l’ensemble des données de la colonne. La requête `SELECT n IS NOT NULL FROM table` se transforme en `SELECT NOT n.null FROM TABLE`.
+Lorsque la colonne n&#39;est utilisée nulle part ailleurs dans la requête, la fonction peut lire uniquement la sous-colonne [null](/fr/reference/data-types/nullable#finding-null), au lieu de lire et de traiter l’ensemble des données de la colonne. La requête `SELECT n IS NOT NULL FROM table` se transforme en `SELECT NOT n.null FROM TABLE`. Cette optimisation est contrôlée par le paramètre [optimize&#95;functions&#95;to&#95;subcolumns](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), activé par défaut.
 
 ## Vérification des valeurs booléennes {#checking-boolean-values}
 
