@@ -108,10 +108,6 @@ Equality with a constant string is not moved for this reason: it is still applie
 Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
 the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
 
-Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
-(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
-the amount of data read from disk when the values are replaced by empty strings.
-
 Possible values:
 
 - 0 — Disabled.

@@ -4,6 +4,7 @@
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/var/lib/clickhouse/local_disk_slru/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize_slru>
                 <type>cache</type>

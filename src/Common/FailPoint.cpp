@@ -242,6 +242,7 @@ static struct InitFiu
     ONCE(write_buffer_valid_utf8_finalize_throw) \
     ONCE(http_output_finalize_throw) \
     ONCE(http_push_delayed_results_throw) \
+    ONCE(prometheus_handler_finalize_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
@@ -281,6 +282,7 @@ static struct InitFiu
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(async_insert_pause_before_schedule) \
+    ONCE(async_insert_throw_before_schedule) \
     PAUSEABLE_ONCE(async_insert_flush_pause_after_set_user) \
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \

@@ -6,6 +6,7 @@
                 <endpoint>http://minio1:9001/root/data/stripelog_upgrade/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
             </stripelog_s3>
             <stripelog_s3_cache>
                 <type>cache</type>
