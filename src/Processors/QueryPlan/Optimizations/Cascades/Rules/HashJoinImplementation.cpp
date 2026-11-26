@@ -58,7 +58,10 @@ public:
 
     [[nodiscard]] bool hasEquiKeys() const { return !equi_keys.empty(); }
     [[nodiscard]] bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
-    [[nodiscard]] bool isBroadcastSafe() const { return left_preserved; }
+    [[nodiscard]] bool isBroadcastSafe() const
+    {
+        return JoinCommon::canSplitLeftInput(join_step.getJoinOperator().kind, join_step.getJoinOperator().strictness);
+    }
 
 private:
     /// `hash_type_name` is the least supertype both sides are cast to before hashing when
@@ -468,10 +471,8 @@ GroupExpressions HashJoinImplementation::applyImpl(GroupExpressionPtr expression
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
-        /// Broadcast replicates the right side, so it is only safe when every output row is
-        /// driven by the partitioned left side: `RIGHT` and `FULL` emit unmatched right-side rows
-        /// on every node, and `PASTE` pairs rows by position. `JoinCommutativity` can turn `RIGHT`
-        /// Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
+        /// Broadcast replicates the right side (see `JoinCommon::canSplitLeftInput`).
+        /// `JoinCommutativity` can turn `RIGHT` Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
         if (strategies.isBroadcastSafe())
             strategies.addBroadcastJoins(candidate_node_count);
 

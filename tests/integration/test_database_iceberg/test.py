@@ -2737,6 +2737,57 @@ def test_writes_mutate_delete(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n"
 
 
+def test_writes_table_statistics_ndv_rejected(started_cluster):
+    # A REST catalog commits the table metadata itself, so every commit with the setting on throws before it writes a file.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_table_statistics_ndv_rejected_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # `create_clickhouse_iceberg_table` cannot express PARTITION BY, which sits between ENGINE and SETTINGS.
+    node.query(
+        f"""
+        CREATE TABLE {table_ref} (x String, y Int32)
+        ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+        PARTITION BY y
+        """,
+        settings={"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query(f"INSERT INTO {table_ref} VALUES ('a', 1);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('b', 1);", settings=write_settings)
+
+    def table_state():
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        files = sorted(list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/"))
+        return table.metadata_location, table.metadata.current_snapshot_id, files
+
+    state_before = table_state()
+    statistics_settings = {
+        **write_settings,
+        "iceberg_write_table_statistics_ndv": 1,
+        "allow_experimental_iceberg_compaction": 1,
+        "iceberg_manifest_min_count_to_compact": 1,
+    }
+    for query in [
+        f"INSERT INTO {table_ref} VALUES ('c', 2)",
+        f"ALTER TABLE {table_ref} DELETE WHERE x = 'a'",
+        f"OPTIMIZE TABLE {table_ref} MANIFEST",
+        f"ALTER TABLE {table_ref} DROP PARTITION 1",
+    ]:
+        with pytest.raises(QueryRuntimeException) as exc_info:
+            node.query(query, settings=statistics_settings)
+        assert "Setting `iceberg_write_table_statistics_ndv` is not supported" in str(exc_info.value), str(exc_info.value)
+
+    assert table_state() == state_before
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "a\t1\nb\t1\n"
+
+
 def test_iceberg_file_progress_callback(started_cluster):
     """
     Regression test for the `IcebergIterator::next` file-progress callback wiring (PR #105413).

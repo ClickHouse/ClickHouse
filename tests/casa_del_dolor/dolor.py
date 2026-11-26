@@ -50,6 +50,7 @@ from properties import (
     SERVER_START_WAIT_SECONDS,
     SERVER_STOP_WAIT_SECONDS,
     generate_distributed_cache_config,
+    generate_streaming_named_collections,
     modify_server_settings,
     modify_user_settings,
     modify_keeper_settings,
@@ -239,6 +240,10 @@ parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
 parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
+parser.add_argument("--with-nats", action="store_true", help="With NATS integration")
+parser.add_argument(
+    "--with-rabbitmq", action="store_true", help="With RabbitMQ integration"
+)
 parser.add_argument(
     "--with-distributed-cache",
     action="store_true",
@@ -661,6 +666,9 @@ dolor_main_configs = [
 ]
 if server_settings is not None:
     dolor_main_configs.append(server_settings)
+streaming_collections = generate_streaming_named_collections(args, cluster)
+if streaming_collections is not None:
+    dolor_main_configs.append(streaming_collections)
 # In-flush trace_log symbolization is too slow under sanitizers for the stop window.
 if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
     dolor_main_configs.append("../config/config.d/trace_log_no_symbolize.xml")
@@ -698,6 +706,8 @@ for i in range(0, len(args.replica_values)):
             with_hms_catalog=args.with_hms,
             with_arrowflight=args.with_arrowflight,
             with_kafka=args.with_kafka,
+            with_nats=args.with_nats,
+            with_rabbitmq=args.with_rabbitmq,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=node_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -757,6 +767,8 @@ cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
 
 if args.with_postgresql:
+    # The sidecar restarts a paused postgres1, which Docker reports as unhealthy, so dolor's unpause fails
+    cluster.process_integration_nodes("postgres", ["autoheal"], "stop")
     postgres_conn = get_postgres_conn(
         ip=cluster.postgres_ip, port=cluster.postgres_port
     )
@@ -796,6 +808,10 @@ if args.with_redis:
     integrations.append("redis")
 if args.with_kafka:
     integrations.append("kafka")
+if args.with_nats:
+    integrations.append("nats")
+if args.with_rabbitmq:
+    integrations.append("rabbitmq")
 if args.with_arrowflight:
     integrations.append("arrowflight")
 
@@ -858,16 +874,19 @@ while all_running and (not reached_limit):
     if (not all_running) or reached_limit:
         break
 
+    kill_server = random.randint(1, 100) <= args.kill_server_prob
+    restart_server = random.randint(1, 100) <= args.restart_clickhouse_prob
+    # Hash a table on the server that gets restarted; an integration restart affects any of them
+    hash_node = random.choice(servers)
     dump_table = (
-        tables_oracle.collect_table_hash_before_shutdown(cluster, logger)
-        if random.randint(1, 100) <= args.compare_table_dump_prob
+        tables_oracle.collect_table_hash_before_shutdown(cluster, logger, hash_node)
+        if (restart_server or len(integrations) > 0)
+        and random.randint(1, 100) <= args.compare_table_dump_prob
         else None
     )
-    kill_server = random.randint(1, 100) <= args.kill_server_prob
-    # Pick one of the servers to restart
     # Restart ClickHouse
-    if random.randint(1, 100) <= args.restart_clickhouse_prob:
-        next_pick = random.choice(servers)
+    if restart_server:
+        next_pick = hash_node
         logger.info(
             f"Restarting the server {next_pick.name} with {'kill' if kill_server else 'manual shutdown'}"
         )
@@ -973,6 +992,8 @@ while all_running and (not reached_limit):
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
             "kafka": ["kafka1"],
+            "nats": ["nats1"],
+            "rabbitmq": ["rabbitmq1"],
             "arrowflight": ["flight_server"],
         }
 
@@ -980,15 +1001,19 @@ while all_running and (not reached_limit):
         random.shuffle(restart_choices)
         for i in range(0, random.randint(1, len(restart_choices))):
             choosen_instances.append(restart_choices[i])
+        # A paused service keeps its connections open, so its clients see a hang instead of a disconnect,
+        # and a Keeper paused past the session timeout expires the sessions for real
+        if random.randint(1, 3) == 1:
+            stop_action, start_action = "pause", "unpause"
+        else:
+            stop_action, start_action = "kill" if kill_server else "stop", "start"
         logger.info(
-            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {'kill' if kill_server else 'manual shutdown'}"
+            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {stop_action}"
         )
 
-        cluster.process_integration_nodes(
-            next_pick, choosen_instances, "kill" if kill_server else "stop"
-        )
+        cluster.process_integration_nodes(next_pick, choosen_instances, stop_action)
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
-        cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+        cluster.process_integration_nodes(next_pick, choosen_instances, start_action)
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 

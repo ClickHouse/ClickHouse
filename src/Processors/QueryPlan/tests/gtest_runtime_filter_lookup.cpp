@@ -6,9 +6,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <base/scope_guard.h>
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -34,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace
@@ -90,6 +93,33 @@ RuntimeFilterGeometry makeGeometry(
         .blocks_to_skip_before_reenabling = 30,
         .max_ratio_of_set_bits_in_bloom_filter = max_ratio_of_set_bits_in_bloom_filter,
     };
+}
+
+/// Runs `action` with the memory limit of the current thread just above its usage, as when a query reaches its limit,
+/// and returns whether it threw MEMORY_LIMIT_EXCEEDED. Allocations below `max_untracked_memory` (4 MiB) are not checked.
+template <typename Action>
+bool throwsAtMemoryLimit(Action && action)
+{
+    MainThreadStatus::getInstance();
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    const Int64 previous_hard_limit = thread_tracker.getHardLimit();
+    CurrentThread::flushUntrackedMemory();
+    thread_tracker.setHardLimit(thread_tracker.get() + 64 * 1024);
+    SCOPE_EXIT({
+        thread_tracker.setHardLimit(previous_hard_limit);
+        CurrentThread::flushUntrackedMemory();
+    });
+    try
+    {
+        action();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            throw;
+        return true;
+    }
+    return false;
 }
 
 }
@@ -264,6 +294,175 @@ TEST(RuntimeFilterLookup, DenseBitsetFindsExactlyTheKeys)
     checkDenseBitsetFindsExactlyTheKeys<Int8>();
     checkDenseBitsetFindsExactlyTheKeys<UInt16>();
     checkDenseBitsetFindsExactlyTheKeys<Int16>();
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesAtTheFirstNewKeyPastTheLimit)
+{
+    /// Duplicates at the limit stay in the exact set. The first new key switches it to a dense bitset, which takes the
+    /// rows after that key.
+    tryRegisterFunctions();
+    const auto type = std::make_shared<DataTypeUInt16>();
+    auto make_keys = [](std::initializer_list<UInt16> keys)
+    {
+        auto column = ColumnUInt16::create();
+        for (const UInt16 key : keys)
+            column->insertValue(key);
+        return column;
+    };
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+
+    filter.insert(make_keys({0}));
+    filter.insert(make_keys({0, 5, 0, 5}));
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 0);
+    filter.insert(make_keys({5, 0, 7, 8, 5, 0}));
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 1);
+    filter.finishInsert();
+
+    const auto description = filter.describe();
+    EXPECT_EQ(description.kind, RuntimeFilterKind::DenseBitset);
+    ASSERT_TRUE(description.keys.has_value());
+    EXPECT_EQ(*description.keys, 4);
+    expectMask(filter.find(ColumnWithTypeAndName(make_keys({0, 1, 5, 7, 8, 9}), type, "k")), {1, 0, 1, 1, 1, 0});
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItThrew)
+{
+    /// The full exact set switches to an 8 MiB Bloom filter, which the memory limit refuses. The set keeps its keys, and
+    /// the next block retries the switch, as after `ISimpleTransform` passed the exception downstream.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({0, 5}));
+
+    ColumnPtr block = makeUInt64Column({7});
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.insert(block); }));
+
+    filter.insert(makeUInt64Column({6}));
+    filter.finishInsert();
+    /// No key is lost, and the probe is checked rather than skipped as for a dropped key set. Other values may pass
+    /// the Bloom filter.
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6, 7}, type)), {1, 1, 1, 1});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
+    EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterKeepsTheRowsUpToTheFirstNewKeyWhenItsSwitchThrows)
+{
+    /// The exact set reaches its limit at key 5 and takes the duplicate 0 after it. The new key 7 fills it, and its switch
+    /// to an 8 MiB Bloom filter is refused by the memory limit, so the set keeps the rows up to 7 and 8 is in no filter.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    filter.enableIndexAnalysis();
+    filter.insert(makeUInt64Column({0}));
+
+    ColumnPtr block = makeUInt64Column({0, 5, 0, 7, 5, 8});
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.insert(block); }));
+    filter.finishInsert();
+
+    /// A full set gives index analysis nothing.
+    EXPECT_FALSE(filter.getRecordedKeyValues());
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 1, 0});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
+    EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesToABloomFilterAtTheFirstNewKeyPastTheLimit)
+{
+    /// The new key 7 fills the exact set, and the Bloom filter that replaces it takes the rows after 7.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({0}));
+    filter.insert(makeUInt64Column({0, 5, 0, 7, 8, 5}));
+    filter.finishInsert();
+
+    EXPECT_EQ(filter.describe().kind, RuntimeFilterKind::BloomFilter);
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 1, 1});
+}
+
+TEST(RuntimeFilterLookup, ReplacementFiltersTakeTheRowsFromFirstRow)
+{
+    /// The rows before `first_row` are in the exact set that seeds the replacement, so they are not inserted again.
+    tryRegisterFunctions();
+    const auto type = std::make_shared<DataTypeUInt16>();
+    auto column = ColumnUInt16::create();
+    for (UInt16 key = 1; key <= 4; ++key)
+        column->insertValue(key);
+    const ColumnPtr keys = std::move(column);
+    const ColumnWithTypeAndName probe(keys, type, "k");
+    std::optional<size_t> rows_passed;
+
+    DenseBitsetRuntimeFilter bitset_filter(type);
+    bitset_filter.insert(keys, /*first_row=*/2);
+    expectMask(bitset_filter.find(probe, rows_passed), {0, 0, 1, 1});
+
+    ApproximateSetRuntimeFilter bloom_filter(1_MiB, 3);
+    bloom_filter.insert(keys, /*first_row=*/2);
+    expectMask(bloom_filter.find(probe, rows_passed), {0, 0, 1, 1});
+}
+
+TEST(RuntimeFilterLookup, ExactSetReportsTheRowsItTookUntilItIsFull)
+{
+    /// With a limit of 2 keys, the second block is taken up to the new key 7, which fills the set.
+    const auto type = makeUInt64Type();
+    ExactSetRuntimeFilter<false> filter(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/2);
+    EXPECT_EQ(filter.insert(makeUInt64Column({0, 5, 0})), 3);
+    EXPECT_FALSE(filter.isFull());
+    EXPECT_EQ(filter.insert(makeUInt64Column({5, 7, 8, 0})), 2);
+    EXPECT_TRUE(filter.isFull());
+    EXPECT_EQ(filter.getValuesColumn()->size(), 3);
+}
+
+TEST(RuntimeFilterLookup, ExactNotContainsTakesTheWholeBlockPastTheLimit)
+{
+    /// `NOT IN` filters by every key of a full set, so it does not stop at the limit.
+    const auto type = makeUInt64Type();
+    ExactSetRuntimeFilter<true> filter(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/2);
+    EXPECT_EQ(filter.insert(makeUInt64Column({0, 5, 7, 8, 0})), 5);
+    EXPECT_TRUE(filter.isFull());
+    EXPECT_EQ(filter.getValuesColumn()->size(), 4);
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterKeepsItsExactSetWhenMergingABloomFilterThrows)
+{
+    /// Merging a Bloom filter into the exact set allocates an 8 MiB Bloom filter, which the memory limit refuses. The
+    /// destination keeps its keys and still takes the partials of the other build streams.
+    const auto type = makeUInt64Type();
+    const auto make_filter = [&](size_t filters_to_merge)
+    {
+        return std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    };
+    auto destination = make_filter(1);
+    destination->insert(makeUInt64Column({0, 5}));
+    auto approximate_source = make_filter(0);
+    approximate_source->insert(makeUInt64Column({1, 2, 3}));
+    approximate_source->finishInsert();
+
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { destination->merge(*approximate_source); }));
+
+    auto exact_source = make_filter(0);
+    exact_source->insert(makeUInt64Column({6}));
+    exact_source->finishInsert();
+    destination->merge(*exact_source);
+    destination->finishInsert();
+    ASSERT_TRUE(destination->isReady());
+    expectMask(destination->find(makeUInt64ColumnWithType({0, 5, 6}, type)), {1, 1, 1});
+    EXPECT_EQ(destination->getStats().rows_checked.load(), 3);
+    EXPECT_EQ(destination->getStats().rows_skipped.load(), 0);
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
