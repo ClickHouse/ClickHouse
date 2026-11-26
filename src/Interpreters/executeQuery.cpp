@@ -3793,11 +3793,13 @@ static BlockIO executeQueryImpl(
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
+                            const bool has_non_deterministic_alias = context->queryHasNonDeterministicAlias()
+                                || (context->hasQueryContext() && context->getQueryContext()->queryHasNonDeterministicAlias());
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
-                                settings[Setting::query_cache_share_between_users],
+                                settings[Setting::query_cache_share_between_users] && !has_non_deterministic_alias,
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);

@@ -1878,6 +1878,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (apply_constant_if_optimization)
             {
+                if (queryTreeNodeContainsNonDeterministicFunction(if_function_condition))
+                {
+                    scope.context->markQueryHasNonDeterministicAlias();
+                    if (scope.context->hasQueryContext())
+                        scope.context->getQueryContext()->markQueryHasNonDeterministicAlias();
+                }
+
                 auto result_projection_names = resolveExpressionNode(constant_if_result_node,
                     scope,
                     false /*allow_lambda_expression*/,
@@ -1919,6 +1926,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             bool found_true_branch = false;
             size_t winner_index = else_index;
             bool stopped_on_nonconstant = false;
+            bool checked_condition_is_non_deterministic = false;
 
             for (size_t pair = 0; pair < num_pairs; ++pair)
             {
@@ -1929,6 +1937,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/,
                     allow_niladic_functions);
+
+                checked_condition_is_non_deterministic |= queryTreeNodeContainsNonDeterministicFunction(cond_node);
 
                 auto constant_condition = tryExtractConstantFromConditionNode(cond_node);
                 if (!constant_condition.has_value())
@@ -2016,6 +2026,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 if (apply_constant_multi_if_optimization)
                 {
+                    if (checked_condition_is_non_deterministic)
+                    {
+                        scope.context->markQueryHasNonDeterministicAlias();
+                        if (scope.context->hasQueryContext())
+                            scope.context->getQueryContext()->markQueryHasNonDeterministicAlias();
+                    }
+
                     /// Resolve the live branch via the local copy and replace the whole
                     /// multiIf node with it.
                     auto result_projection_names = resolveExpressionNode(live_branch_copy,

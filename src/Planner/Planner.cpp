@@ -561,10 +561,13 @@ static void addStreamInQueryResultCacheStepIfNeeded(
     auto created_at = std::chrono::system_clock::now();
     auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
+    const bool has_non_deterministic_alias = query_context->queryHasNonDeterministicAlias()
+        || (query_context->hasQueryContext() && query_context->getQueryContext()->queryHasNonDeterministicAlias());
+
     QueryResultCache::Key key(
         ast, query_context->getCurrentDatabase(), settings_for_key, query_plan.getRootNode()->step->getOutputHeader(),
         query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
-        settings[Setting::query_cache_share_between_users],
+        settings[Setting::query_cache_share_between_users] && !has_non_deterministic_alias,
         created_at, expires_at,
         settings[Setting::query_cache_compress_entries],
         /* is_subquery = */ true);

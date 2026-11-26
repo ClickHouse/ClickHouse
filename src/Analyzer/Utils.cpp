@@ -2275,4 +2275,36 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+bool queryTreeNodeContainsNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (!constant_node->isDeterministic())
+            return true;
+        if (constant_node->hasSourceExpression() && queryTreeNodeContainsNonDeterministicFunction(constant_node->getSourceExpression()))
+            return true;
+        return false;
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (function_node->isOrdinaryCall())
+        {
+            if (auto func = function_node->getFunction(); func && !func->isDeterministic())
+                return true;
+        }
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && queryTreeNodeContainsNonDeterministicFunction(child))
+            return true;
+    }
+
+    return false;
+}
+
 }

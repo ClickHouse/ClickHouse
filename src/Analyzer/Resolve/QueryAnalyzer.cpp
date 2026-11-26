@@ -5489,6 +5489,16 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
+
+            /// Track whether a resolved ALIAS column contains any non-deterministic function
+            /// (including constant-folded calls such as `currentUser` or live `dictHas`/`dictGet`)
+            /// so QueryResultCache skips caching / cross-user sharing without scanning every table's unused ALIASes.
+            if (queryTreeNodeContainsNonDeterministicFunction(resolved_expression))
+            {
+                scope.context->markQueryHasNonDeterministicAlias();
+                if (scope.context->hasQueryContext())
+                    scope.context->getQueryContext()->markQueryHasNonDeterministicAlias();
+            }
             alias_column_resolved = true;
         };
 

@@ -1682,6 +1682,7 @@ ContextData::ContextData(const ContextData &o) :
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
     can_use_query_result_cache(o.can_use_query_result_cache),
+    query_has_non_deterministic_alias(o.query_has_non_deterministic_alias),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
@@ -4709,6 +4710,7 @@ void Context::makeQueryContext()
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
     query_max_threads_snapshot = std::make_shared<QueryMaxThreadsSnapshot>();
+    query_has_non_deterministic_alias = std::make_shared<std::atomic<bool>>(false);
     /// A new query must classify under its own workload and scheduling settings. The ContextData
     /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
     /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
@@ -6496,6 +6498,17 @@ void Context::setCanUseQueryResultCache(bool can_use_query_result_cache_)
 bool Context::getCanUseQueryResultCache() const
 {
     return can_use_query_result_cache;
+}
+
+bool Context::queryHasNonDeterministicAlias() const
+{
+    return query_has_non_deterministic_alias && query_has_non_deterministic_alias->load(std::memory_order_relaxed);
+}
+
+void Context::markQueryHasNonDeterministicAlias() const
+{
+    if (query_has_non_deterministic_alias)
+        query_has_non_deterministic_alias->store(true, std::memory_order_relaxed);
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
@@ -10664,6 +10677,12 @@ void Context::shareQueryMaxThreadsSnapshot(const Context & from)
 {
     if (from.query_max_threads_snapshot)
         query_max_threads_snapshot = from.query_max_threads_snapshot;
+}
+
+void Context::shareQueryNonDeterministicAliasFlag(const Context & from)
+{
+    if (from.query_has_non_deterministic_alias)
+        query_has_non_deterministic_alias = from.query_has_non_deterministic_alias;
 }
 
 UInt64 Context::getClientProtocolVersion() const

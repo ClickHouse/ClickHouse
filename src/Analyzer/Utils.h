@@ -362,4 +362,7 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
 /// and its name is not in the database catalog, so the `SELECT` grants are not checked for it.
 bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context);
 
+/// Returns true if `node` or any descendant (including `ConstantNode::getSourceExpression`) calls a non-deterministic function.
+bool queryTreeNodeContainsNonDeterministicFunction(const QueryTreeNodePtr & node);
+
 }

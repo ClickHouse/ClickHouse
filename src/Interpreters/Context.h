@@ -37,6 +37,7 @@
 
 #include "config.h"
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -435,6 +436,7 @@ protected:
     /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
     /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
     bool can_use_query_result_cache = false;
+    std::shared_ptr<std::atomic<bool>> query_has_non_deterministic_alias;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1861,6 +1863,8 @@ public:
     void clearQueryResultCache(const std::optional<String> & tag) const;
     bool getCanUseQueryResultCache() const;
     void setCanUseQueryResultCache(bool can_use_query_result_cache_);
+    bool queryHasNonDeterministicAlias() const;
+    void markQueryHasNonDeterministicAlias() const;
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
@@ -2328,6 +2332,7 @@ public:
     const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
     /// For a query context made for a part of the query of `from`.
     void shareQueryMaxThreadsSnapshot(const Context & from);
+    void shareQueryNonDeterministicAliasFlag(const Context & from);
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
