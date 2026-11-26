@@ -24,6 +24,9 @@ unknown, default     : (NO_SUCH_COLUMN_IN_TABLE) names secret
 unknown, no SELECT   : (ACCESS_DENIED) hides secret
 DESCRIBE, ghost grant: (ACCESS_DENIED) hides secret
 unknown, ghost grant : (NO_SUCH_COLUMN_IN_TABLE) hides secret
+DESCRIBE Alias       : (ACCESS_DENIED) hides secret
+unknown, Alias hidden: (NO_SUCH_COLUMN_IN_TABLE) hides secret
+unknown, Alias shown : (NO_SUCH_COLUMN_IN_TABLE) names secret
 empty list           : (EMPTY_LIST_OF_COLUMNS_QUERIED) hides secret
 empty, no SELECT     : (ACCESS_DENIED) hides secret
 key missing, default : (THERE_IS_NO_COLUMN) names sort_key

@@ -23,6 +23,7 @@ CREATE USER $users IDENTIFIED WITH no_password;
 GRANT SELECT(sort_key, id), OPTIMIZE ON $db.t TO $u_cols;
 GRANT OPTIMIZE ON $db.t TO $u_opt;
 GRANT SELECT, OPTIMIZE ON $db.t TO $u_full;
+GRANT SELECT, OPTIMIZE ON $db.t_alias TO $u_full;
 GRANT SELECT(sort_key, id, nope), OPTIMIZE ON $db.t TO $u_ghost;
 GRANT SELECT(id), OPTIMIZE ON $db.t TO $u_id;
 GRANT SELECT, OPTIMIZE ON $db.t_alias TO $u_alias;
@@ -89,6 +90,9 @@ check 'unknown, default     ' default "OPTIMIZE TABLE $db.t DEDUPLICATE BY sort_
 check 'unknown, no SELECT   ' "$u_opt" "OPTIMIZE TABLE $db.t DEDUPLICATE BY sort_key, nope"
 check 'DESCRIBE, ghost grant' "$u_ghost" "DESCRIBE TABLE $db.t"
 check 'unknown, ghost grant ' "$u_ghost" "OPTIMIZE TABLE $db.t DEDUPLICATE BY sort_key, nope"
+check 'DESCRIBE Alias       ' "$u_alias" "DESCRIBE TABLE $db.t_alias"
+check 'unknown, Alias hidden' "$u_alias" "OPTIMIZE TABLE $db.t_alias DEDUPLICATE BY sort_key, nope"
+check 'unknown, Alias shown ' "$u_full" "OPTIMIZE TABLE $db.t_alias DEDUPLICATE BY sort_key, nope"
 check 'empty list           ' "$u_cols" "OPTIMIZE TABLE $db.t DEDUPLICATE BY COLUMNS('^nope')"
 check 'empty, no SELECT     ' "$u_opt" "OPTIMIZE TABLE $db.t DEDUPLICATE BY COLUMNS('^nope')"
 check 'key missing, default ' default "OPTIMIZE TABLE $db.t DEDUPLICATE BY id" sort_key
