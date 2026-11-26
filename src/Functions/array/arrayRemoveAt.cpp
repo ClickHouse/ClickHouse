@@ -33,8 +33,8 @@ std::optional<size_t> getRemovePosition(Int64 index, size_t array_size)
         return static_cast<size_t>(positive_index - 1);
     }
 
-    /// Compute |index| in the unsigned domain so INT64_MIN is handled without overflow.
-    const UInt64 distance_from_end = UInt64(0) - static_cast<UInt64>(index);
+    /// Compute |index| as |index + 1| + 1, so that INT64_MIN is handled without overflow in either domain.
+    const UInt64 distance_from_end = static_cast<UInt64>(-(index + 1)) + 1;
     if (distance_from_end > array_size)
         return std::nullopt;
 

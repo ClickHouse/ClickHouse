@@ -631,9 +631,9 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 ### Nullable {#nullable}
 
-Go 中的 Nil 值表示 ClickHouse 的 NULL。如果某个字段声明为 Nullable，就可以使用它。在写入时，对于列的普通版本和 Nullable 版本，都可以传入 Nil。对于前者，会写入该类型的默认值，例如 string 类型的空字符串。对于 Nullable 版本，则会在 ClickHouse 中存储 NULL 值。
+Go 中的 Nil 值表示 ClickHouse 的 NULL。如果某个字段声明为 Nullable，就可以使用它。在写入时，对于列的普通版本和 Nullable 版本，都可以传入 Nil。对于前者，会写入该类型的默认值，例如 字符串 类型的空字符串。对于 Nullable 版本，则会在 ClickHouse 中存储 NULL 值。
 
-在扫描时，用户必须传入一个支持 nil 的类型指针，例如 *string，才能表示 Nullable 字段的 nil 值。在下面的示例中，col1 是 Nullable(String)，因此接收的是 **string。这样就可以表示 nil。
+在扫描时，用户必须传入一个支持 nil 的类型指针，例如 *string，才能表示 Nullable 字段的 nil 值。在下面的示例中，col1 是 Nullable(String)，因此接收的是 **string。这样就可以表示 nil。如果将 NULL 扫描到无法表示 nil 的目标 (例如 *int64) 中，会返回 &quot;converting NULL to *int64 is unsupported&quot; 错误。实现了 `sql.Scanner` 的类型会通过其自身的 `Scan(nil)` 处理 NULL。
 
 ```go
 if err = conn.Exec(ctx, `

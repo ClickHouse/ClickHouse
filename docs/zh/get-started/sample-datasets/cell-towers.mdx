@@ -1,5 +1,5 @@
 ---
-description: '了解如何将 OpenCelliD 蜂窝基站数据集加载到 ClickHouse Cloud 中，借助字典丰富数据，使用地理函数进行查询，并通过 ClickHouse 智能体实现可视化'
+description: '了解如何将 OpenCelliD 蜂窝基站数据集加载到 ClickHouse Cloud 中，借助字典为数据补充信息，使用地理函数进行查询，并通过 ClickHouse 智能体实现可视化'
 sidebarTitle: '蜂窝基站'
 title: '基于蜂窝基站数据集的地理空间分析'
 keywords: ['示例数据集', '蜂窝基站', 'OpenCelliD', '地理空间', 'pointInPolygon', '字典', 'ClickHouse 智能体', '入门']
@@ -8,7 +8,7 @@ doc_type: 'guide'
 
 在本教程中，您将借助蜂窝基站数据集，探索如何使用 ClickHouse 处理地理数据。
 您将把该数据集加载到 ClickHouse Cloud，查看其 schema，并对数千万行数据执行聚合查询。
-随后，您将使用字典丰富数据，利用 `pointInPolygon` 函数统计德国境内的基站数量，并借助 ClickHouse 智能体将结果在地图上可视化。
+随后，您将使用字典为数据补充信息，利用 `pointInPolygon` 函数统计德国境内的基站数量，并借助 ClickHouse 智能体将结果在地图上可视化。
 
 ## 前置条件 {#prerequisites}
 
@@ -233,13 +233,9 @@ doc_type: 'guide'
     在某次运行中，智能体执行了以下步骤：
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickHouse 智能体聊天界面，展示为德国构建蜂窝基站密度网格所执行的步骤](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse 智能体聊天界面，展示为德国构建蜂窝基站密度网格所执行的步骤](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+      </Frame>
     </div>
 
     * 在 `mcc_country_dict` 中查找德国的移动国家代码 (MCC) ，得到 MCC `262`。
@@ -250,13 +246,9 @@ doc_type: 'guide'
     打开生成的文件即可查看结果。图中明亮的聚集区域即为主要大都市区：柏林、汉堡、慕尼黑和法兰克福。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![德国蜂窝基站密度热力图，采用 0.1 度网格和对数色标](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
-
-    </Frame>
-
+      <Frame>
+        ![德国蜂窝基站密度热力图，采用 0.1 度网格和对数色标](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
@@ -264,7 +256,7 @@ doc_type: 'guide'
 ## 后续步骤 {#next-steps}
 
 在本教程中，您将 OpenCelliD 蜂窝基站数据集加载到 ClickHouse Cloud 中，查看了其 schema，并对数千万行数据运行了聚合查询。
-您创建了一个字典，为数值型的 `mcc` 列补充国家名称；将德国的轮廓存储为多边形，并使用 `pointInPolygon` 统计了德国境内的基站数量。
+您创建了一个字典，为数值型的 `mcc` 列补充信息，即国家名称；将德国的轮廓存储为多边形，并使用 `pointInPolygon` 统计了德国境内的基站数量。
 最后，您借助 ClickHouse 智能体将这一问题直接转化为一张密度地图，无需亲自编写聚合或绘图代码。
 
 接下来，您可以：

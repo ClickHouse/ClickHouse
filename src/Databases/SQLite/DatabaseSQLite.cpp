@@ -42,10 +42,11 @@ namespace ErrorCodes
 
 DatabaseSQLite::DatabaseSQLite(
         ContextPtr context_,
+        const String & database_name_,
         const ASTStorage * database_engine_define_,
         bool is_attach_,
         const String & database_path_)
-    : DatabaseWithAltersOnDiskBase("SQLite")
+    : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
@@ -291,7 +292,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
-        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
+        return std::make_shared<DatabaseSQLite>(args.context, args.database_name, engine_define, args.create_query.attach, database_path);
     };
     factory.registerDatabase("SQLite", create_fn, SecretArgumentsSpec{}, {
         .supports_arguments = true,

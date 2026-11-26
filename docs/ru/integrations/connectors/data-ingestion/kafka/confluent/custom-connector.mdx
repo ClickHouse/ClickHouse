@@ -23,7 +23,7 @@ picture-in-picture"
 </div>
 
 <div id="prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#prerequisites}
 </div>
 
 Мы предполагаем, что вы знакомы со следующим:
@@ -43,13 +43,13 @@ picture-in-picture"
 Подробнее см. в [официальной документации Confluent](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
 
 <div id="create-a-topic">
-  #### Создайте топик
+  #### Создайте топик {#create-a-topic}
 </div>
 
 Создать топик в Confluent Cloud довольно просто; подробные инструкции приведены [здесь](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
 <div id="important-notes">
-  #### Важные примечания
+  #### Важные примечания {#important-notes}
 </div>
 
 * Имя Kafka топика должно совпадать с именем таблицы ClickHouse. Это можно изменить с помощью трансформера (например, [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
@@ -70,23 +70,19 @@ picture-in-picture"
 Пример:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Интерфейс Confluent Platform с параметрами добавления пользовательского коннектора ClickHouse](/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp)
-
-</Frame>
-
+  <Frame>
+    ![Интерфейс Confluent Platform с настройками для добавления пользовательского коннектора ClickHouse](/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp)
+  </Frame>
 </div>
 
 <div id="gather-your-connection-details">
-  #### Подготовьте сведения о подключении
+  #### Подготовьте сведения о подключении {#gather-your-connection-details}
 </div>
 
 <ConnectionDetails />
 
 <div id="configure-the-connector">
-  #### Настройте коннектор
+  #### Настройте коннектор {#configure-the-connector}
 </div>
 
 Перейдите в `Connectors` -&gt; `Add Connector` и используйте следующие настройки (обратите внимание, что значения приведены только в качестве примера):
@@ -110,7 +106,7 @@ picture-in-picture"
 ```
 
 <div id="specify-the-connection-endpoints">
-  #### Укажите конечные точки подключения
+  #### Укажите конечные точки подключения {#specify-the-connection-endpoints}
 </div>
 
 Необходимо указать список разрешенных конечных точек, к которым коннектор может обращаться.
@@ -125,11 +121,9 @@ picture-in-picture"
 
 Теперь всё готово!
 
-<div id="known-limitations">
-  #### Известные ограничения
-</div>
+#### Известные ограничения {#known-limitations}
 
-* Custom Connectors должны использовать общедоступные интернет-конечные точки. Статические IP-адреса не поддерживаются.
-* Вы можете переопределить некоторые свойства Custom Connectors. См. полный [список в официальной документации.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
-* Custom Connectors доступны только в [некоторых регионах AWS](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)
-* См. список [ограничений Custom Connectors в официальной документации](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)
+* Пользовательские Коннекторы должны использовать конечные точки, доступные через общедоступный интернет. Статические IP-адреса не поддерживаются.
+* Некоторые свойства Пользовательского Коннектора можно переопределить. Полный [список приведён в официальной документации.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
+* Пользовательские Коннекторы доступны только в [некоторых регионах AWS](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)
+* Список [ограничений Пользовательских Коннекторов приведён в официальной документации](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)

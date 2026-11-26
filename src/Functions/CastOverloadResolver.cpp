@@ -10,10 +10,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -68,49 +68,30 @@ bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
 }
 
 std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastElementPositions(
-    const DataTypeTuple & from, const DataTypeTuple & to)
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching)
 {
-    VectorWithMemoryTracking<std::optional<size_t>> positions;
-    positions.reserve(to.getElements().size());
-
     if (from.hasExplicitNames() && to.hasExplicitNames())
     {
-        const auto & from_names = from.getElementNames();
-        const auto & to_names = to.getElementNames();
-        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
-        from_positions.reserve(from_names.size());
-        for (size_t i = 0; i < from_names.size(); ++i)
-            from_positions.emplace(from_names[i], i);
-
-        bool has_common_name = false;
-        for (const auto & name : to_names)
-        {
-            auto it = from_positions.find(name);
-            if (it == from_positions.end())
-                positions.emplace_back();
-            else
-            {
-                positions.emplace_back(it->second);
-                has_common_name = true;
-            }
-        }
-
-        if (has_common_name)
+        auto positions = from.matchElementsByName(to, matching == TupleElementsMatching::ByNameCaseInsensitive);
+        if (matching != TupleElementsMatching::Default
+            || std::ranges::any_of(positions, [](const auto & position) { return position.has_value(); }))
             return positions;
-        positions.clear();
     }
 
     if (from.getElements().size() != to.getElements().size())
         return std::nullopt;
 
+    VectorWithMemoryTracking<std::optional<size_t>> positions;
+    positions.reserve(to.getElements().size());
     for (size_t i = 0; i < to.getElements().size(); ++i)
         positions.emplace_back(i);
     return positions;
 }
 
-VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(const DataTypeTuple & from, const DataTypeTuple & to)
+VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching)
 {
-    auto positions = tryGetTupleCastElementPositions(from, to);
+    auto positions = tryGetTupleCastElementPositions(from, to, matching);
     if (!positions)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
                         "with the same number of elements or from String.\nLeft type: {}, right type: {}",
@@ -132,7 +113,8 @@ using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings
 
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,
@@ -277,7 +259,8 @@ public:
         DataTypePtr to,
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context_)
+        ContextPtr context_,
+        TupleElementsMatching tuple_elements_matching)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -290,7 +273,7 @@ public:
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate),
+            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate, tuple_elements_matching),
             getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
     }
 
@@ -373,9 +356,11 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context, TupleElementsMatching tuple_elements_matching)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
+    return CastOverloadResolverImpl::createInternalCast(
+        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, tuple_elements_matching);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)

@@ -27,13 +27,9 @@ Os dados serão inseridos em uma `ReplacingMergeTree`. Esse mecanismo de tabela 
     Consulte o guia da AWS [aqui](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Kinesis Stream do DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Kinesis Stream do DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -42,18 +38,14 @@ Os dados serão inseridos em uma `ReplacingMergeTree`. Esse mecanismo de tabela 
     **Você vai querer fazer uma &quot;Exportação completa&quot; no formato DynamoDB JSON.**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Exportação do DynamoDB para S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Exportação do DynamoDB para S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Carregue o snapshot no ClickHouse" id="3-load-the-snapshot-into-clickhouse">
-    ### Crie as tabelas necessárias
+### Crie as tabelas necessárias {#create-necessary-tables}
 
     Os dados do snapshot do DynamoDB terão esta aparência:
 
@@ -116,7 +108,7 @@ Os dados serão inseridos em uma `ReplacingMergeTree`. Esse mecanismo de tabela 
     * A tabela deve usar a chave de partição como chave de ordenação (especificada por `ORDER BY`)
       * Linhas com a mesma chave de ordenação serão deduplicadas com base na coluna `version`.
 
-    ### Crie o ClickPipe de snapshot
+### Crie o ClickPipe de snapshot {#create-the-snapshot-clickpipe}
 
     Agora você pode criar um ClickPipe para carregar os dados de snapshot do S3 no ClickHouse. Siga o guia do S3 ClickPipe [aqui](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview), mas use as seguintes configurações:
 
@@ -143,13 +135,9 @@ Os dados serão inseridos em uma `ReplacingMergeTree`. Esse mecanismo de tabela 
       * Mapeie os outros campos para as colunas de destino apropriadas, conforme mostrado abaixo
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Mapeamento de colunas do DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Mapeamento de colunas do DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+      </Frame>
     </div>
   </Step>
 

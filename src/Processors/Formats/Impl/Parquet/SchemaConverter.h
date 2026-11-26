@@ -15,6 +15,14 @@ class ColumnMapper;
 namespace DB::Parquet
 {
 
+/// Checks that the schema tree, as described by the `num_children` fields from the file, fits in
+/// `FileMetaData::schema`. `Reader::readFileFooter` calls it, and the code that walks the schema
+/// (`SchemaConverter`, `schemaHasLeaf`) relies on it for bounds.
+void checkSchemaTree(const parq::FileMetaData & file_metadata);
+
+/// Whether the schema has a primitive column with this path, the names of its elements joined with '.'.
+bool schemaHasLeaf(const parq::FileMetaData & file_metadata, std::string_view path);
+
 /// Converting parquet schema to clickhouse schema + information for decoding.
 /// Used both for schema inference and for reading.
 struct SchemaConverter
@@ -94,6 +102,9 @@ private:
         std::optional<String> parquet_name;
         DataTypePtr type_hint;
         bool requested = false;
+        /// Index of the key_value tuple element not read, for a requested map read by one side. Not inherited by recursive calls.
+        std::optional<size_t> map_element_to_skip;
+        bool inside_skipped_map_element = false;
         /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
         bool not_in_datalake_schema = false;
 
@@ -133,6 +144,7 @@ private:
             TraversalNode res = *this;
             res.schema_context = schema_context_;
             res.type_hint = std::move(type_hint_);
+            res.map_element_to_skip.reset();
             res.element = nullptr;
             res.output_idx.reset();
             return res;

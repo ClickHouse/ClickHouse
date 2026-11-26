@@ -865,6 +865,8 @@ def test_async_backups_to_same_destination(interface, on_cluster):
 
     nodes = [node1, node2]
     node1.query("INSERT INTO tbl VALUES (1)")
+    # A backup without ON CLUSTER on node2 contains only the parts node2 has.
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     backup_name = new_backup_name()
     on_cluster_part = "ON CLUSTER 'cluster'" if on_cluster else ""
@@ -1039,6 +1041,23 @@ def test_system_users():
         == "CREATE USER u1 IDENTIFIED WITH no_password SETTINGS custom_a = 123\n"
     )
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
+
+
+def test_system_users_settings_constraints():
+    node1.query("CREATE USER u1 SETTINGS allow_introspection_functions = 1")
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}")
+    node1.query("DROP USER u1")
+
+    # The hosts restore without the user, so the initiator checks the constraints for them.
+    node1.query("CREATE USER u2 SETTINGS allow_introspection_functions = 0 CONST")
+    node1.query("GRANT CLUSTER, CREATE USER ON *.* TO u2")
+    node1.query("GRANT READ ON DISK TO u2")
+    assert "SETTING_CONSTRAINT_VIOLATION" in node1.query_and_get_error(
+        f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
+    )
+    for node in [node1, node2]:
+        assert node.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
 
 
 def test_system_functions():
@@ -1434,7 +1453,7 @@ def test_system_named_collections_key_mismatch():
     node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
 
     # node3 does not hold the key the collections were encrypted with: the restore must fail
-    # before anything is restored, with both key fingerprints in the message.
+    # before anything is restored, naming the fingerprint of the missing key in the message.
     expected_error = "encrypted with a key with fingerprint"
     assert expected_error in node3.query_and_get_error(
         f"RESTORE TABLE system.named_collections FROM {backup_name}"

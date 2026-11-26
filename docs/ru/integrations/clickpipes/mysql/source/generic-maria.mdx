@@ -14,21 +14,19 @@ integration:
   Если вы используете одного из поддерживаемых провайдеров (см. боковую панель), обратитесь к соответствующему руководству для этого провайдера.
 </Info>
 
-<div id="enable-binlog-retention">
-  ## Включите хранение бинарных логов
-</div>
+## Включите хранение бинарных логов {#enable-binlog-retention}
 
 Бинарные логи содержат сведения об изменениях данных на экземпляре сервера MariaDB и необходимы для репликации.
 
 Чтобы включить бинарное логирование на вашем экземпляре MariaDB, убедитесь, что заданы следующие параметры:
 
 ```sql
-server_id = 1               -- или больше; любое значение, кроме 0
+server_id = 1               -- or greater; anything but 0
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-binlog_row_metadata = FULL  -- добавлено в 10.5.0
-expire_logs_days = 1        -- или больше; значение 0 означает бессрочное хранение журналов
+binlog_row_metadata = FULL  -- introduced in 10.5.0
+expire_logs_days = 3        -- or higher; 0 would mean logs are preserved forever
 ```
 
 Чтобы проверить эти настройки, выполните следующие SQL-команды:
@@ -50,8 +48,8 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-binlog_row_metadata = FULL  ; только начиная с версии 10.5.0
-expire_logs_days = 1
+binlog_row_metadata = FULL  ; only in 10.5.0 and newer
+expire_logs_days = 3
 ```
 
 Если исходная база данных — реплика, убедитесь, что `log_slave_updates` тоже включён.
@@ -62,9 +60,7 @@ expire_logs_days = 1
   Исключение столбцов не поддерживается в MariaDB &lt;= 10.4, поскольку параметр `binlog_row_metadata` в этой версии ещё не был доступен.
 </Note>
 
-<div id="configure-database-user">
-  ## Настройка пользователя базы данных
-</div>
+## Настройка пользователя базы данных {#configure-database-user}
 
 Подключитесь к своему экземпляру MariaDB от имени пользователя root и выполните следующие команды:
 
@@ -80,20 +76,19 @@ expire_logs_days = 1
    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
    ```
 
-3. Предоставьте пользователю разрешения на репликацию:
+3. Предоставьте пользователю разрешения на репликацию. Для MariaDB 10.5.9 и более новых версий также требуется `SLAVE MONITOR`:
 
    ```sql
    GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
    ```
 
 <Note>
   Обязательно замените `clickpipes_user` и `some_secure_password` на нужные имя пользователя и пароль.
 </Note>
 
-<div id="ssl-tls-configuration">
-  ## Настройка SSL/TLS (рекомендуется)
-</div>
+## Настройка SSL/TLS (рекомендуется) {#ssl-tls-configuration}
 
 SSL‑сертификаты обеспечивают защищённое подключение к вашей базе данных MariaDB. Настройка зависит от типа сертификата:
 
@@ -107,9 +102,7 @@ SSL‑сертификаты обеспечивают защищённое по�
 
 Дополнительную информацию о параметрах SSL/TLS см. в нашем [FAQ](/ru/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
 
-<div id="whats-next">
-  ## Что дальше?
-</div>
+## Что дальше? {#whats-next}
 
 Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/mysql/index) и начать импорт данных из вашего экземпляра MariaDB в ClickHouse Cloud.
 Обязательно сохраните сведения о подключении, которые вы использовали при настройке экземпляра MariaDB, — они понадобятся вам при создании ClickPipe.

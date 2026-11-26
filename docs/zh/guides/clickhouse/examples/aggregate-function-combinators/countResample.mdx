@@ -7,21 +7,15 @@ sidebarTitle: 'countResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## 说明
-</div>
+## 说明 {#description}
 
 [`Resample`](/zh/reference/functions/aggregate-functions/combinators#-resample)
 组合器可应用于 [`count`](/zh/reference/functions/aggregate-functions/count)
 聚合函数，在固定数量的区间 (`N`) 内对指定键列的值进行计数。
 
-<div id="example-usage">
-  ## 示例用法
-</div>
+## 示例用法 {#example-usage}
 
-<div id="basic-example">
-  ### 基本示例
-</div>
+### 基本示例 {#basic-example}
 
 下面来看一个示例。我们将创建一个表，用于存储员工的 `name`、`age` 和
 `wage`，并向其中插入一些数据：
@@ -34,7 +28,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -59,9 +53,7 @@ SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
 └────────┘
 ```
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [`count`](/zh/reference/functions/aggregate-functions/count)
 * [`Resample 组合器`](/zh/reference/functions/aggregate-functions/combinators#-resample)

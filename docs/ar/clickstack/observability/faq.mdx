@@ -1,0 +1,103 @@
+---
+slug: /clickstack/observability/faq
+title: 'الأسئلة الشائعة حول ClickHouse Observability'
+sidebarTitle: 'الأسئلة الشائعة'
+description: 'إجابات عن الأسئلة الشائعة حول ClickHouse Observability بنسختيه المُدارة بالكامل والمُدارة ذاتيًا، وجمع البيانات، والتنبيهات، ولوحات المعلومات، واكتشاف المقاييس.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'الأسئلة الشائعة', 'التنبيهات', 'لوحات المعلومات', 'التعمّق', 'اكتشاف المقاييس']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+توضح هذه الصفحة الوضعين المُدار بالكامل والمُدار ذاتيًا في ClickHouse Observability، وتجيب عن الأسئلة الشائعة المتعلقة بجمع البيانات والتنبيهات ولوحات المعلومات واكتشاف المقاييس.
+
+## النشر وجمع البيانات {#data-collection}
+
+<Accordion title="ما الفرق بين ClickHouse Observability المُدار بالكامل والمُدار ذاتيًا؟">
+  **مُدار بالكامل**
+
+  <BetaBadge label="خدمة في المرحلة التجريبية" />
+
+  يُعد [ClickHouse Observability المُدار بالكامل](/ar/clickstack/observability/overview) نقطة البداية الموصى بها. أرسل بيانات القياس عن بُعد إلى نقطة نهاية OpenTelemetry المُدارة، وستتولى ClickHouse إدارة جامع بيانات الإدخال والمخططات والبنية التحتية والتوسع.
+
+  **مُدار ذاتيًا**
+
+  يمنحك [ClickHouse Observability المُدار ذاتيًا](/ar/clickstack/self-configured/overview) التحكم في الإدخال والمخططات ومدة الاحتفاظ بالبيانات وتهيئة قاعدة البيانات. تستضيف ClickHouse Cloud كلًا من ClickHouse وواجهة مستخدم ClickStack، بينما تتولى أنت تشغيل جامع بيانات الإدخال وضبط أداء قاعدة البيانات وإدارة سعتها. علمًا بأن الخيار المُدار ذاتيًا ليس خدمة في المرحلة التجريبية.
+</Accordion>
+
+<Accordion title="هل أحتاج إلى تشغيل مُجمِّع OpenTelemetry؟">
+  **مُدار بالكامل:** لا حاجة إلى نشر جامع بيانات للإدخال، إذ يمكن للتطبيقات ومولّدات بيانات القياس عن بُعد إرسال البيانات مباشرةً إلى نقطة نهاية OpenTelemetry المُدارة.
+
+  ومع ذلك، قد تحتاج إلى جامع بيانات في بيئتك الخاصة لقراءة ملفات السجلات أو جمع مقاييس المضيف وKubernetes، ثم إعادة توجيه هذه البيانات إلى جامع البيانات المُدار. للاطلاع على أمثلة، راجع [السجلات والمقاييس المحلية](/ar/clickstack/observability/example-datasets/local-data) و[مراقبة Kubernetes](/ar/clickstack/observability/example-datasets/kubernetes).
+
+  **مُدار ذاتيًا:** تحتاج إلى جامع بيانات إدخال قيد التشغيل ومتصل بخدمة ClickHouse Cloud الخاصة بك. ترسل التطبيقات والوكلاء بيانات القياس عن بُعد إلى جامع البيانات هذا، الذي يكتبها بدوره في ClickHouse. ونوصي باستخدام توزيعة ClickStack. راجع [استيعاب البيانات باستخدام OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) للاطلاع على تعليمات الاتصال، و[دليل النشر](/ar/clickstack/self-configured/deployment/managed#start-a-collector-existing) لمعرفة كيفية تشغيل جامع بيانات.
+</Accordion>
+
+<Accordion title="أين أجد نقطة نهاية بيانات القياس عن بُعد ومفتاح API الخاص بي؟">
+  **مُدار بالكامل:** في خدمة ClickHouse Observability الخاصة بك، افتح **إعدادات الفريق ← البيانات ← بيانات القياس عن بُعد المُدارة** وانسخ نقطة نهاية OTLP وAPI key لاستيعاب البيانات. استخدم هذه البيانات عند تهيئة SDK أو جامع البيانات الذي يعيد التوجيه أو مولّد بيانات القياس عن بُعد.
+
+  **مُدار ذاتيًا:** استخدم نقطة نهاية OTLP الخاصة بجامع البيانات الذي تشغّله، وأي رمز مصادقة مُهيأ على المستقبِل الخاص به. بالنسبة إلى مُجمِّع ClickStack، إذا فعّلت `OTLP_AUTH_TOKEN`، فأرسل هذا الرمز في الترويسة `authorization`. وتختلف هذه البيانات عن نقطة نهاية قاعدة بيانات ClickHouse Cloud وبيانات الاعتماد التي يستخدمها جامع البيانات لكتابة البيانات. راجع [استيعاب البيانات باستخدام OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured) للاطلاع على أمثلة.
+
+  اتبع صيغة نقطة النهاية التي تتطلبها الأداة التي تستخدمها. وتتضمن [البيانات النموذجية والعروض التوضيحية](/ar/clickstack/observability/example-datasets) أمثلة على التهيئة لكل أداة.
+</Accordion>
+
+## التنبيهات {#alerting}
+
+<Accordion title="ما أنواع التنبيهات التي يدعمها ClickHouse Observability؟">
+  يدعم ClickHouse Observability نوعين من التنبيهات:
+
+  * [تنبيهات البحث](/ar/clickstack/observability/features/alerts#search-alerts): ترسل إشعارات عندما يتجاوز عدد نتائج السجلات أو التتبّعات المطابقة ضمن نافذة زمنية عتبةً محددة أو ينخفض عنها.
+  * [تنبيهات مخططات لوحة المعلومات](/ar/clickstack/observability/features/alerts#dashboard-alerts): ترسل إشعارات عندما يتخطى مقياس معروض في بلاطة ضمن لوحة المعلومات عتبةً محددة.
+
+  يُقارن كلا النوعين النتائج بالعتبات المُهيّأة. لمزيد من التفاصيل، راجع [التنبيهات](/ar/clickstack/observability/features/alerts).
+</Accordion>
+
+<Accordion title="هل يمكنني إنشاء تنبيهات على شروط مقاييس معقدة مثل النسب أو p95/p99 أو الصيغ التي تجمع عدة مقاييس؟">
+  أنشئ العملية الحسابية في صورة مخطط ضمن لوحة المعلومات، ثم أرفق به تنبيهًا قائمًا على عتبة. تدعم [أداة إنشاء المخططات](/ar/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) عمليات حسابية مثل النسب والمئينات.
+
+  أما العمليات الحسابية التي تتطلب SQL، فاستخدم لها [تنبيه مخطط قائمًا على SQL](/ar/clickstack/observability/features/alerts#sql-based-alerts). تدعم تنبيهات SQL المخططات الخطية والمخططات الشريطية المكدّسة والمخططات الرقمية. احفظ لوحة المعلومات لتفعيل التنبيه.
+</Accordion>
+
+## لوحات المعلومات والتعمّق {#dashboards-and-drill-downs}
+
+<Accordion title="هل تتوفر لوحات معلومات جاهزة؟">
+  نعم. افتح **لوحات المعلومات** لتجد لوحات المعلومات المُعدّة مسبقًا **Services** و**Kubernetes** و**LLM**. تعرض هذه اللوحات البيانات عند استيعاب بيانات القياس عن بُعد ذات الصلة، شريطة أن يشمل النطاق الزمني المحدد تلك البيانات.
+
+  يمكنك أيضًا إنشاء لوحات معلومات مخصصة باستخدام السجلات والتتبّعات والمقاييس التي تم استيعابها. راجع [لوحات المعلومات](/ar/clickstack/observability/features/dashboards/overview) لمعرفة كيفية إنشاء المخططات وتنظيمها في لوحات معلومات.
+</Accordion>
+
+<Accordion title="هل يدعم ClickHouse Observability لوحات المعلومات ذات المعاملات أو متغيرات لوحة المعلومات؟">
+  نعم، يدعم ClickHouse Observability لوحات معلومات ذات معاملات تعتمد على عوامل تصفية ومتغيرات مخصصة تُعبّأ ببيانات مُستعلَم عنها من ClickHouse. وتتيح لك عوامل التصفية هذه حصر نطاق بعض البلاطات في لوحة المعلومات أو جميعها ديناميكيًا في قيمة محددة (مثل اسم الخدمة أو البيئة أو المضيف).
+
+  للاطلاع على تفاصيل إنشاء لوحات المعلومات وتطبيق عوامل التصفية، راجع [لوحات المعلومات](/ar/clickstack/observability/features/dashboards/overview).
+</Accordion>
+
+<Accordion title="ما إمكانات التعمّق المتاحة؟">
+  يدعم ClickHouse Observability سير عمل التعمّق التالي:
+
+  * [التصفية على مستوى لوحة المعلومات](/ar/clickstack/observability/features/dashboards/overview#filter-dashboards): تُطبَّق عوامل تصفية Lucene أو SQL على مستوى لوحة المعلومات على البلاطات المُفعَّل فيها خيار **Apply filters**. ويمكنك أيضًا ضبط النطاق الزمني للوحة المعلومات.
+  * عوامل تصفية لوحة المعلومات المخصصة: توفر لوحات المعلومات المخصصة عناصر تحكم صريحة للتصفية تُعبّأ بقيم من بياناتك، مما يتيح للمستخدمين حصر نطاق البلاطات المشاركة دون الحاجة إلى كتابة الاستعلامات يدويًا.
+  * عرض الأحداث بالنقر: يؤدي النقر على البيانات في بلاطة لوحة المعلومات ثم اختيار **View Events** إلى الانتقال إلى صفحة [بحث](/ar/clickstack/observability/features/search) مع تطبيق عوامل التصفية ذات الصلة على بيانات السجل والتتبع.
+  * [التعمّق بالنقر على صفوف الجدول](/ar/clickstack/observability/features/dashboards/row-click-drilldowns): يمكن تهيئة لوحة جدول بحيث يؤدي النقر على أحد الصفوف إلى فتح صفحة بحث أو لوحة معلومات أخرى، مع تمرير قيم الصف بوصفها عوامل تصفية. ويتيح ذلك سير عمل متعدد المستويات، كالانتقال من قائمة الخدمات إلى لوحة معلومات تفصيلية لكل خدمة.
+
+  <Note>
+    استخدم [بحث](/ar/clickstack/observability/features/search) لفحص سجلات وتتبّعات بعينها، واستخدم مستكشف المخططات لاستكشاف المقاييس.
+  </Note>
+</Accordion>
+
+## اكتشاف المقاييس {#metrics-discovery}
+
+<Accordion title="هل توجد UI لتصفح المقاييس والبحث فيها؟">
+  ![مستكشف سمات المقياس](/images/clickstack/faq/metrics-explorer-fully-managed.png)
+
+  يمكنك اكتشاف أسماء المقاييس من خلال القائمة المنسدلة لاسم المقياس في [أداة إنشاء المخططات](/ar/clickstack/observability/features/dashboards/overview#navigate-chart-explorer). وعند اختيار مقياس، تعرض لوحة مستكشف سمات المقياس وصفه ووحداته والسمات المتاحة مع قيمها، مما يتيح لك تصفح السمات وإضافتها كعوامل تصفية أو كحقول group-by مباشرةً من اللوحة.
+
+  لا تتوفر حاليًا صفحة مخصصة للبحث في المقاييس على غرار تجربة البحث في السجلات.
+</Accordion>
+
+## قراءات إضافية {#further-reading}
+
+* [التنبيهات](/ar/clickstack/observability/features/alerts): تنبيهات البحث، وتنبيهات مخططات لوحة المعلومات، والتكامل عبر webhook.
+* [لوحات المعلومات](/ar/clickstack/observability/features/dashboards/overview): إنشاء التمثيلات المرئية، وبناء لوحات المعلومات، وتطبيق عوامل التصفية.
+* [البحث](/ar/clickstack/observability/features/search): الاستعلام عن السجلات وبيانات التتبّع باستخدام Lucene وبناء جملة SQL.
+* [المعمارية](/ar/clickstack/observability/architecture): مكوّنات ClickHouse Observability وكيفية تكاملها معًا.
