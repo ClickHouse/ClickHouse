@@ -12,6 +12,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Common/re2.h>
 
@@ -190,14 +191,14 @@ namespace
 
     std::string ensureTrailingSlashInPath(std::string url)
     {
-        Poco::URI uri(url, false);
+        auto uri = parseURI(url, false);
         uri.setPath(ensureTrailingSlash(uri.getPath()));
         return uri.toString();
     }
 
     std::string getPathPrefixForMatching(const std::string & url)
     {
-        const Poco::URI uri(url, false);
+        const auto uri = parseURI(url, false);
         return ensureTrailingSlash(uri.getPath());
     }
 
@@ -568,7 +569,7 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
         for (size_t i = 0; i != listing_urls.size(); ++i)
         {
             const auto & listing_url = listing_urls[i];
-            const Poco::URI listing_uri(listing_url, enable_url_encoding);
+            const auto listing_uri = parseURI(listing_url, enable_url_encoding);
             Poco::Net::HTTPBasicCredentials credentials;
             setCredentialsFromURL(credentials, listing_uri, request_context->getHTTPHeaderFilter());
             try

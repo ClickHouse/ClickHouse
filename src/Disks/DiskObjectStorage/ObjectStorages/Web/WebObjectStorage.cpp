@@ -11,6 +11,7 @@
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/parseURI.h>
 #include <Poco/Timestamp.h>
 
 #include <deque>
@@ -439,7 +440,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
     for (const auto & url : urls)
     {
-        const Poco::URI uri(url, enable_url_encoding);
+        const auto uri = parseURI(url, enable_url_encoding);
         Poco::Net::HTTPBasicCredentials credentials;
         setCredentialsFromURL(credentials, uri, request_context->getHTTPHeaderFilter());
         try
@@ -543,7 +544,7 @@ std::string WebObjectStorage::buildURL(const URL & url_option, const std::string
     if (!base_path.ends_with('/'))
         base_path += '/';
 
-    Poco::URI path_uri(stripLeadingSlashes(path), false);
+    auto path_uri = parseURI(stripLeadingSlashes(path), false);
     base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
 
     Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);

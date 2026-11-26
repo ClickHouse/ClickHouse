@@ -8,6 +8,8 @@ SELECT * FROM url('http://[::1/x', 'CSV', 'a String'); -- { serverError BAD_ARGU
 DESCRIBE url('http://[::1/x', 'CSV'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM urlCluster('test_shard_localhost', 'http://[::1/x', 'CSV', 'a String'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM url('http://[::1/*.csv', 'CSV', 'a String') SETTINGS allow_url_wildcard_from_index_pages = 1; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM url('http://127.0.0.1:1/bad\tpath/*.csv', 'CSV', 'a String') SETTINGS allow_url_wildcard_from_index_pages = 1, use_hive_partitioning = 0; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM url('http://127.0.0.1:1/bad%zzpath/*.csv', 'CSV', 'a String') SETTINGS allow_url_wildcard_from_index_pages = 1, use_hive_partitioning = 0, enable_url_encoding = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_s3 (a String) ENGINE = S3('http://[::1/b/k', 'CSV'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM s3('http://[::1/b/k', 'CSV', 'a String'); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_disk (a Int8) ENGINE = MergeTree ORDER BY a
