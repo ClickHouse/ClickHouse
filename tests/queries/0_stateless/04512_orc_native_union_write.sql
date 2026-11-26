@@ -4,7 +4,6 @@
 -- The native ORC writer maps the ClickHouse Variant type to an ORC uniontype, and the native reader
 -- maps it back, so a Variant survives an ORC round-trip (including NULL rows and branch reordering).
 
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 SET engine_file_truncate_on_insert = 1;
 
