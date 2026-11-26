@@ -102,3 +102,8 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'spill\_at\_threshold\_%'
 ORDER BY event_time_microseconds;
+
+-- A join that spills switches before it holds its whole right side (about 72 MiB), so its query peak stays below that.
+SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 76000000 AS switched_early
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'spill_at_threshold_serial_spills';
