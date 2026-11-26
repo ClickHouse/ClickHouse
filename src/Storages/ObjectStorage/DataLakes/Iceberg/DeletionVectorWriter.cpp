@@ -217,8 +217,9 @@ RewrittenDeleteManifest rewriteDeleteManifest(
     {
         avro::DataFileWriter<avro::GenericDatum> writer(std::make_unique<OutputStreamWriteBufferAdapter>(buf), schema);
         for (const auto & [key, value] : source_metadata)
-            if (key == f_avro_schema || !key.starts_with("avro."))
+            if (key != f_content && (key == f_avro_schema || !key.starts_with("avro.")))
                 writer.setMetadata(key, String(value.begin(), value.end()));
+        writer.setMetadata(f_content, "deletes");
 
         avro::GenericDatum datum(schema);
         while (reader.read(datum))

@@ -348,11 +348,35 @@ static SharedHeader addRowLineageColumns(const SharedHeader & sample_block)
     return std::make_shared<const Block>(std::move(result));
 }
 
+static void addMatchedRowPositions(const Block & block, std::map<String, roaring::Roaring64Map> & positions_by_data_file)
+{
+    if (block.rows() == 0)
+        return;
+
+    const auto data_files = block.getByName(block_datafile_path).column->convertToFullColumnIfLowCardinality();
+    auto positions = block.getByName(block_row_number).column;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(positions.get()))
+    {
+        if (std::ranges::any_of(nullable->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
+        positions = nullable->getNestedColumnPtr();
+    }
+
+    for (size_t row = 0; row < block.rows(); ++row)
+    {
+        const auto data_file = data_files->getDataAt(row);
+        if (data_file.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty _iceberg_metadata_file_path");
+        positions_by_data_file[String(data_file)].add(positions->get64(row));
+    }
+}
+
 struct UpdatedDataFiles
 {
     DataFileWriteResultWithStats data_files;
     /// Null without statistics.
     std::unique_ptr<IcebergColumnSketches> sketches;
+    std::map<String, roaring::Roaring64Map> replaced_positions;
 };
 
 static UpdatedDataFiles writeUpdatedDataFiles(
@@ -375,6 +399,7 @@ static UpdatedDataFiles writeUpdatedDataFiles(
     PartitionWriteBuffers update_data_write_buffers;
     PartitionOutputFormats update_data_writers;
     std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
+    std::map<String, roaring::Roaring64Map> replaced_positions;
 
     bool written = false;
     SCOPE_EXIT({
@@ -405,6 +430,8 @@ static UpdatedDataFiles writeUpdatedDataFiles(
     {
         if (block.rows() == 0)
             continue;
+
+        addMatchedRowPositions(block, replaced_positions);
 
         /// Strip virtual columns and unwrap LowCardinality to ensure the
         /// block types are compatible with the Avro serializer schema.
@@ -479,6 +506,7 @@ static UpdatedDataFiles writeUpdatedDataFiles(
         partition_files.statistics.push_back(std::move(update_data_statistics.at(partition_key)));
     }
     result.sketches = std::move(updated_rows_sketches);
+    result.replaced_positions = std::move(replaced_positions);
     written = true;
     return result;
 }
@@ -657,41 +685,19 @@ static std::map<String, roaring::Roaring64Map> collectMatchedRowPositions(
     StorageMetadataPtr metadata,
     StoragePtr storage_ptr)
 {
+    chassert(commands.size() == 1 && commands[0].type == MutationCommand::DELETE);
     MutationsInterpreter::Settings settings(true);
     settings.return_all_columns = true;
     settings.return_mutated_rows = true;
 
-    auto delete_commands = commands;
-    delete_commands[0].type = MutationCommand::DELETE;
-
-    MutationsInterpreter interpreter(storage_ptr, metadata, delete_commands, context, settings);
+    MutationsInterpreter interpreter(storage_ptr, metadata, commands, context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter.execute());
     PullingPipelineExecutor executor(pipeline);
 
     std::map<String, roaring::Roaring64Map> positions_by_data_file;
     Block block;
     while (executor.pull(block))
-    {
-        if (block.rows() == 0)
-            continue;
-
-        const auto data_files = block.getByName(block_datafile_path).column->convertToFullColumnIfLowCardinality();
-        auto positions = block.getByName(block_row_number).column;
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(positions.get()))
-        {
-            if (std::ranges::any_of(nullable->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
-            positions = nullable->getNestedColumnPtr();
-        }
-
-        for (size_t row = 0; row < block.rows(); ++row)
-        {
-            const auto data_file = data_files->getDataAt(row);
-            if (data_file.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty _iceberg_metadata_file_path");
-            positions_by_data_file[String(data_file)].add(positions->get64(row));
-        }
-    }
+        addMatchedRowPositions(block, positions_by_data_file);
     return positions_by_data_file;
 }
 
@@ -1443,16 +1449,22 @@ void mutate(
 
         if (format_version >= 3)
         {
-            auto positions_by_data_file = collectMatchedRowPositions(commands, context, fresh_storage_metadata, storage_ptr);
-            if (positions_by_data_file.empty())
-                break;
-
+            std::map<String, roaring::Roaring64Map> positions_by_data_file;
             UpdatedDataFiles updated_data_files;
             if (commands[0].type == MutationCommand::UPDATE)
+            {
                 updated_data_files = writeUpdatedDataFiles(
                     commands, context, fresh_storage_metadata, storage_ptr, object_storage, write_format, filename_generator,
                     persistent_table_components.path_resolver, format_settings, chunk_partitioner, current_schema, write_statistics,
                     /* preserve_row_lineage */ true);
+                positions_by_data_file = std::move(updated_data_files.replaced_positions);
+            }
+            else
+            {
+                positions_by_data_file = collectMatchedRowPositions(commands, context, fresh_storage_metadata, storage_ptr);
+            }
+            if (positions_by_data_file.empty())
+                break;
 
             std::optional<DeletionVectorChanges> deletion_vectors;
             try
