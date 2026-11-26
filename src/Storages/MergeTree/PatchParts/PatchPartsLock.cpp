@@ -5,6 +5,8 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -424,6 +426,21 @@ PlainLightweightUpdateLock::~PlainLightweightUpdateLock()
 UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands, const ColumnsDescription & columns, const ContextPtr & context)
 {
     UpdateAffectedColumns res;
+    const auto physical_columns = columns.getAllPhysical();
+
+    /// Names in the statement are resolved to the stored columns they read, as `MaterializedColumnDependencies` does for a default.
+    auto add_used = [&](const ASTPtr & expression)
+    {
+        ASTPtr resolved = expression ? expression->clone() : nullptr;
+        if (resolved)
+        {
+            replaceAliasColumnsInQuery(resolved, columns, {}, context);
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(resolved, physical_columns);
+        }
+
+        auto identifiers = collectIdentifiersFullNames(buildQueryTree(resolved, context));
+        std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
+    };
 
     for (const auto & command : commands)
     {
@@ -438,9 +455,7 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
         if (predicate)
             normalizeSetOperations(predicate, context);
 
-        auto query_tree = buildQueryTree(predicate, context);
-        auto identifiers = collectIdentifiersFullNames(query_tree);
-        std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
+        add_used(predicate);
 
         if (!alter->update_assignments)
             continue;
@@ -453,9 +468,7 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
             ASTPtr assignment_expression = assignment.expression();
             normalizeSetOperations(assignment_expression, context);
 
-            query_tree = buildQueryTree(assignment_expression, context);
-            identifiers = collectIdentifiersFullNames(query_tree);
-            std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
+            add_used(assignment_expression);
         }
     }
 
