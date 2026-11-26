@@ -12,6 +12,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -39,9 +40,21 @@ bool removesColumn(const AlterCommand & command)
     return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
 }
 
-/// every identifier of the filter, subqueries and SQL UDF bodies included, lambda parameters excluded
-void collectIdentifiers(const ASTPtr & ast, NameSet & names, NameSet & visited_udfs, NameSet bound = {})
+bool readsAnyOf(const ASTPtr & ast, const NameSet & table_names)
 {
+    if (const auto * table = ast->as<ASTTableIdentifier>())
+        return table_names.contains(table->shortName());
+    return std::ranges::any_of(ast->children, [&](const auto & child) { return readsAnyOf(child, table_names); });
+}
+
+/// every identifier of the filter, SQL UDF bodies included, lambda parameters excluded
+void collectIdentifiers(const ASTPtr & ast, const NameSet & table_names, NameSet & names, NameSet & visited_udfs, NameSet bound = {})
+{
+    /// a filter cannot be correlated and cannot read its own table (see `buildFilterInfo`), so the names
+    /// of a subquery belong to other tables unless the subquery reads one of the checked tables
+    if (ast->as<ASTSubquery>() && !readsAnyOf(ast, table_names))
+        return;
+
     /// a UDF is also called by a bare name passed as a lambda, `arrayExists(udf, arr)`
     String name;
     if (const auto * identifier = ast->as<ASTIdentifier>())
@@ -59,15 +72,15 @@ void collectIdentifiers(const ASTPtr & ast, NameSet & names, NameSet & visited_u
         {
             for (const auto & parameter : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
                 bound.insert(parameter);
-            collectIdentifiers(function->arguments->children[1], names, visited_udfs, bound);
+            collectIdentifiers(function->arguments->children[1], table_names, names, visited_udfs, bound);
             return;
         }
     }
     if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); body && visited_udfs.insert(name).second)
-        collectIdentifiers(body, names, visited_udfs);
+        collectIdentifiers(body, table_names, names, visited_udfs);
 
     for (const auto & child : ast->children)
-        collectIdentifiers(child, names, visited_udfs, bound);
+        collectIdentifiers(child, table_names, names, visited_udfs, bound);
 }
 
 /// tenant, t.tenant, db.t.tenant, tenant.sub and n.x for a nested n all mention the column,
@@ -117,6 +130,9 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const AlterCommands &
         return;
 
     const auto tables = tablesSharingColumns(table, context);
+    NameSet table_names;
+    for (const auto & id : tables)
+        table_names.insert(id.table_name);
     const auto & access_control = context->getAccessControl();
     for (const auto & id : access_control.findAll<RowPolicy>())
     {
@@ -138,7 +154,7 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const AlterCommands &
             if (filter.empty())
                 continue;
             ParserExpression parser;
-            collectIdentifiers(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS), names, visited_udfs);
+            collectIdentifiers(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS), table_names, names, visited_udfs);
         }
 
         for (const auto & command : commands)
