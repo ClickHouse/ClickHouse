@@ -9,5 +9,6 @@ SELECT finalizeAggregation(multiply(s, toUInt64(9223372036854775808))) FROM (SEL
 SELECT finalizeAggregation(multiply(s, toUInt64(9223372036854775809))) FROM (SELECT categoricalInformationValueState(number % 2 = 0, number % 3 = 0) AS s FROM numbers(5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT categoricalInformationValueMerge(s) FROM (SELECT multiply(categoricalInformationValueState(number % 2 = 0, number % 3 = 0), toUInt64(9223372036854775808)) AS s FROM numbers(4) GROUP BY number % 2); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
--- A crafted state whose per-category counter overflows while both totals fit.
+-- Crafted states whose per-category `no` or `yes` counter overflows while both totals fit.
 SELECT finalizeAggregation(multiply(CAST(unhex('0000000000000080000000000000000001000000000000000100000000000000'), 'AggregateFunction(categoricalInformationValue, UInt8, UInt8)'), toUInt64(2))); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT finalizeAggregation(multiply(CAST(unhex('0000000000000000000000000000008001000000000000000100000000000000'), 'AggregateFunction(categoricalInformationValue, UInt8, UInt8)'), toUInt64(2))); -- { serverError ARGUMENT_OUT_OF_BOUND }
