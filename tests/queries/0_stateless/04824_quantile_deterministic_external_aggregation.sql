@@ -3,6 +3,9 @@
 -- so the reservoir's skip degree survives the round trip only because the temporary streams are
 -- written at the current protocol revision, which versions those states the same way as the wire.
 -- https://github.com/ClickHouse/ClickHouse/pull/112052
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 -- One group fed by two very unequal blocks: each flush turns the states accumulated so far into a
 -- temporary file of its own, so the merge sees the same lopsided 990000/10000 split that used to

@@ -4,6 +4,9 @@
 -- state's scratch buffer rather than in a per-block buffer; a descending key
 -- stream then makes the heap evict continuously, erasing hash-table entries
 -- through those captured keys.
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 -- The top-K optimization does not apply to serialized plans; pin the setting
 -- so the assertions hold in the distributed-plan suite.

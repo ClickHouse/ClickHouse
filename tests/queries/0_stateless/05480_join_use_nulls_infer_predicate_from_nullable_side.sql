@@ -1,6 +1,8 @@
 -- With `join_use_nulls`, a predicate on the join key of the side an outer join makes `Nullable` is inferred
 -- on the other table through the equi-join condition, once the join is converted so that this side has
 -- no unmatched rows. `force_primary_key` checks that both tables use their primary key.
+-- The `force_primary_key` checks need the predicate propagated across the join; pin it against the settings randomization.
+SET query_plan_propagate_predicate_across_join = 1;
 
 SET enable_analyzer = 1;
 SET join_use_nulls = 1;

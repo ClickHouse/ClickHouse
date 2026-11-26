@@ -1,6 +1,8 @@
 -- `query_plan_optimize_lazy_final` replaces a `FINAL` read with reads without `FINAL`: one collects the keys of the rows
 -- that pass the filter, another reads the part ranges that need no merge. Both prune granules by a JOIN runtime filter
 -- (`enable_join_runtime_filters_index_analysis`); the rows of the collected keys are then read with `FINAL` in full.
+-- Seal-gated reading applies the runtime filter while reading instead of in the index analysis checked below.
+SET enable_join_seal_gated_reading = 0;
 
 -- An inserted part is deduplicated, otherwise a part of its own still needs `FINAL`.
 SET optimize_on_insert = 1;

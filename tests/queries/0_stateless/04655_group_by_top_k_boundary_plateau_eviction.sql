@@ -7,6 +7,9 @@
 -- pinned at the plateau, nothing is ever skipped or evicted, and the heap grows
 -- until it freezes - which makes the optimization silently depend on the order
 -- rows happen to arrive in.
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 -- The top-K optimization does not apply to serialized plans; pin the setting
 -- so the assertions hold in the distributed-plan suite.

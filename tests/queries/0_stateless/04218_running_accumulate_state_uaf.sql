@@ -13,6 +13,9 @@
 -- `ColumnAggregateFunction::insertFrom` allocates a fresh state in the
 -- column's own arena and merges the accumulator into it, so each row
 -- owns its own state independent of the stack-local accumulator.
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 SET allow_deprecated_error_prone_window_functions = 1;
 SET group_by_two_level_threshold = 0;
