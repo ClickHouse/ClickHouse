@@ -124,8 +124,9 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
                 FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
             if (isCancelled())
             {
+                /// The caller discards the chunk, so the rest of the filter is never consumed:
+                /// filling it would do the whole suffix of the cancellation that just arrived.
                 LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while hashing a range at a poll site");
-                std::fill(filter.begin() + i + 1, filter.end(), 0);
                 return count;
             }
         }
@@ -150,8 +151,8 @@ bool DistinctSortedStreamTransform::fillFilterRangeWithPolling(IColumnFilter & f
         FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
         if (isCancelled())
         {
+            /// The caller discards the chunk, so the rest of the filter is never consumed.
             LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while skipping a plain range at a poll site");
-            std::fill(filter.begin() + pos, filter.end(), 0);
             return false;
         }
     }
@@ -293,7 +294,6 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
             if (isCancelled())
             {
                 LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after hashing a range");
-                std::fill(filter.begin() + range_end, filter.end(), 0);
                 break;
             }
         }
@@ -308,7 +308,6 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
             if (isCancelled())
             {
                 LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled at the outer-loop poll");
-                std::fill(filter.begin() + range_begin, filter.end(), 0);
                 break;
             }
         }
