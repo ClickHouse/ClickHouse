@@ -13,7 +13,7 @@ CHECK_PATH="${USER_FILES_PATH}/${T}_check/"
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${T}_check_reader; DROP TABLE IF EXISTS ${T}_check; DROP TABLE IF EXISTS ${T}_s3; DROP TABLE IF EXISTS ${T}_mv; DROP TABLE IF EXISTS ${T}_src; DROP TABLE IF EXISTS ${T2}; DROP TABLE IF EXISTS ${T}"
+    ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY IF EXISTS ${T}_dict; DROP TABLE IF EXISTS ${T}_check_reader; DROP TABLE IF EXISTS ${T}_check; DROP TABLE IF EXISTS ${T}_s3; DROP TABLE IF EXISTS ${T}_mv; DROP TABLE IF EXISTS ${T}_src; DROP TABLE IF EXISTS ${T2}; DROP TABLE IF EXISTS ${T}"
     rm -rf "${TABLE_PATH}" "${CHECK_PATH}"
 }
 trap cleanup EXIT
@@ -88,6 +88,11 @@ ${CLIENT} --max_query_size=0 --query "ALTER TABLE ${T}_check DROP COLUMN k" 2>&1
 ${CLIENT} --query "INSERT INTO ${T}_check VALUES (3, 4)"
 ${CLIENT} --query "CREATE TABLE ${T}_check_reader ENGINE = IcebergLocal('${CHECK_PATH}')"
 ${CLIENT} --query "SELECT * FROM ${T}_check_reader ORDER BY k"
+
+echo "column default that makes a dependency cycle"
+${CLIENT} --query "CREATE DICTIONARY ${T}_dict (k Int32, v Int32) PRIMARY KEY k SOURCE(CLICKHOUSE(DATABASE '${CLICKHOUSE_DATABASE}' TABLE '${T}_check')) LIFETIME(0) LAYOUT(HASHED())"
+${CLIENT} --query "ALTER TABLE ${T}_check ADD COLUMN w Nullable(Int32) DEFAULT dictGetOrDefault('${CLICKHOUSE_DATABASE}.${T}_dict', 'v', k, 0)" 2>&1 | grep -o -m1 INFINITE_LOOP
+${CLIENT} --query "SELECT * FROM icebergLocal('${CHECK_PATH}') ORDER BY k"
 
 echo "comment of a table that is not a data lake"
 ${CLIENT} --query "CREATE TABLE ${T}_s3 (id UInt64) ENGINE = S3('http://localhost:1/no-such-bucket/*.parquet', 'test', 'testtest', 'Parquet')"

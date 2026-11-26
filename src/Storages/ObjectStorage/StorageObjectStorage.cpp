@@ -11,6 +11,8 @@
 #include <Common/parseGlobs.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/Pipe.h>
@@ -1536,10 +1538,15 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     /// `alterTable` below validates the new definition only after the data lake is changed.
     if (!catalog)
-        applyMetadataChangesToCreateQuery(
-            DatabaseCatalog::instance().getDatabase(storage_id.database_name)->getCreateTableQuery(storage_id.table_name, context),
-            metadata_to_store,
-            context);
+    {
+        auto create_query = DatabaseCatalog::instance().getDatabase(storage_id.database_name)->getCreateTableQuery(storage_id.table_name, context);
+        applyMetadataChangesToCreateQuery(create_query, metadata_to_store, context);
+        auto ref_dependencies = getDependenciesFromCreateQuery(
+            context->getGlobalContext(), storage_id.getQualifiedName(), create_query, context->getCurrentDatabase());
+        auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), storage_id.getQualifiedName(), create_query);
+        DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(
+            storage_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+    }
 
     configuration->alter(object_storage, params, context, getStorageID(), catalog);
 

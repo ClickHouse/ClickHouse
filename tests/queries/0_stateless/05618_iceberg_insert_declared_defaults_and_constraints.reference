@@ -33,5 +33,9 @@ drop of a column used by a constraint
 UNKNOWN_IDENTIFIER
 1	2
 3	4
+column default that makes a dependency cycle
+INFINITE_LOOP
+1	2
+3	4
 comment of a table that is not a data lake
 updated
