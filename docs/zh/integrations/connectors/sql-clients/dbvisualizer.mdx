@@ -11,15 +11,12 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
-<div id="start-or-download-dbvisualizer">
-  ## 启动或下载 DbVisualizer
-</div>
+## 启动或下载 DbVisualizer {#start-or-download-dbvisualizer}
 
 DbVisualizer 可从 https://www.dbvis.com/download/ 下载
 
@@ -31,7 +28,11 @@ DbVisualizer 可从 https://www.dbvis.com/download/ 下载
   <Step title="内置 JDBC 驱动管理" id="2-built-in-jdbc-driver-management">
     DbVisualizer 内置了最新的 ClickHouse JDBC 驱动。它还提供完整的 JDBC 驱动管理功能，既支持最新发行版，也支持历史版本的驱动。
 
-    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="显示 ClickHouse JDBC 驱动配置的 DbVisualizer 驱动管理器界面" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![显示 ClickHouse JDBC 驱动配置的 DbVisualizer 驱动程序管理器界面](/images/integrations/sql-clients/dbvisualizer-driver-manager.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="连接到 ClickHouse" id="3-connect-to-clickhouse">
@@ -45,7 +46,7 @@ DbVisualizer 可从 https://www.dbvis.com/download/ 下载
 
     4. 将 **Database Type** 保持为 **Auto Detect**。
 
-    5. 如果 **Driver Type** 中所选的驱动程序带有绿色对勾标记，则表示已可直接使用。如果没有绿色对勾，你可能需要在 **Driver Manager** 中配置该驱动程序。
+    5. 如果 **Driver Type** 中所选的驱动程序带有绿色对勾标记，则表示已可直接使用。如果没有绿色对勾，你可能需要在 **驱动程序管理器** 中配置该驱动程序。
 
     6. 在其余字段中输入数据库服务器的相关信息。
 
@@ -60,7 +61,7 @@ DbVisualizer 可从 https://www.dbvis.com/download/ 下载
 </Steps>
 
 <div id="learn-more">
-  ## 了解更多
+  ## 了解更多 {#learn-more}
 </div>
 
 如需了解有关 DbVisualizer 的更多信息，请参阅 [DbVisualizer 文档](https://www.dbvis.com/docs/ug/)。

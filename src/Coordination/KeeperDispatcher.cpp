@@ -150,12 +150,12 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
+        [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session, int32_t dispatcher_server_id)
         {
             if (dispatcher_old)
                 dispatcher_old->onCommit(request_for_session);
             else
-                dispatcher->onCommit(request_for_session);
+                dispatcher->onCommit(request_for_session, dispatcher_server_id);
         });
 
     bool new_dispatcher_response_thread_started = false;
@@ -880,8 +880,9 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
     Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
+    /// The metric is incremented after the request is pushed, so it may briefly be negative if the request is popped first.
     result.outstanding_requests_count
-        = CurrentMetrics::values[CurrentMetrics::KeeperOutstandingRequests].load(std::memory_order_relaxed);
+        = std::max<Int64>(0, CurrentMetrics::values[CurrentMetrics::KeeperOutstandingRequests].load(std::memory_order_relaxed));
     result.alive_connections_count
         = CurrentMetrics::values[CurrentMetrics::KeeperAliveConnections].load(std::memory_order_relaxed);
     return result;

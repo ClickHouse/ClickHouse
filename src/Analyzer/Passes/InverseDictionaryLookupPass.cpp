@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -170,12 +171,14 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
 /// equal-typed probe, yet the key constant the rewrite folds in does not compare equal to that value read
 /// from a column; a convertible probe is cast for `dictGet` while the emitted comparison keeps it uncast.
 /// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
+/// A floating point key diverges as well: a dictionary lookup tells `-0.0` from `0.0` by the representation,
+/// while `IN` matches them as equal (see `replaceNegativeZeros`).
 bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
 {
     if (key_type.hasDynamicStructure())
         return true;
 
-    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested); });
+    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested) || isFloat(nested); });
 }
 
 /// Check whether `dictGet` accepts this key expression shape for the dictionary's key columns.
@@ -622,7 +625,9 @@ public:
                 /// key expression. Exceptions from that expression, such as an explicit user-supplied
                 /// cast or the `UInt64` conversion this pass inserts for a signed simple-key probe,
                 /// are therefore skipped together with the lookup.
-                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
+                /// A key with an aggregate function or `arrayJoin` changes the row count, so it is kept by the membership below.
+                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type)
+                    && !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin"))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
                     auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);

@@ -7,8 +7,6 @@ keywords: ['estrategias de deduplicación', 'deduplicación de datos', 'upserts'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 **La deduplicación** se refiere al proceso de ***eliminar filas duplicadas de un conjunto de datos***. En una base de datos OLTP, esto se hace fácilmente porque cada fila tiene una clave primaria única, pero a costa de inserciones más lentas. Primero hay que buscar cada fila insertada y, si se encuentra, reemplazarla.
 
 ClickHouse está diseñado para ser rápido a la hora de insertar datos. Los archivos de almacenamiento son inmutables y ClickHouse no comprueba si ya existe una clave primaria antes de insertar una fila, por lo que la deduplicación requiere algo más de esfuerzo. Esto también significa que la deduplicación no es inmediata: se produce **con el tiempo**, lo que tiene algunos efectos secundarios:
@@ -18,13 +16,13 @@ ClickHouse está diseñado para ser rápido a la hora de insertar datos. Los arc
 * Tus consultas deben contemplar la posibilidad de que existan duplicados
 
 <div class="transparent-table">
-  |                                                                                                        |                                                                                                                                                                                                                                                                          |
-  | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="Logotipo de deduplicación" size="sm" /> | ClickHouse ofrece formación gratuita sobre deduplicación y muchos otros temas. El [módulo de formación Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) es un buen punto de partida. |
+  |                                                                                                                                |                                                                                                                                                                                                                                          |
+  | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | <span className="ch-image-sm"><Frame>![Logotipo de deduplicación](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse ofrece formación gratuita sobre deduplicación y muchos otros temas. El [módulo de formación sobre eliminación y actualización de datos](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) es un buen punto de partida. |
 </div>
 
 <div id="options-for-deduplication">
-  ## Opciones de deduplicación
+  ## Opciones de deduplicación {#options-for-deduplication}
 </div>
 
 La deduplicación se implementa en ClickHouse mediante los siguientes motores de tabla:
@@ -33,10 +31,10 @@ La deduplicación se implementa en ClickHouse mediante los siguientes motores de
 
 2. Colapso de filas: los motores de tabla `CollapsingMergeTree` y `VersionedCollapsingMergeTree` usan una lógica en la que una fila existente se &quot;cancela&quot; y se inserta una fila nueva. Son más complejos de implementar que `ReplacingMergeTree`, pero las consultas y agregaciones pueden ser más sencillas de escribir, sin tener que preocuparte de si los datos ya se han fusionado o no. Estos dos motores de tabla son útiles cuando necesitas actualizar datos con frecuencia.
 
-A continuación, explicamos ambas técnicas. Para obtener más información, consulta nuestro [módulo de formación Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs), gratuito y disponible a demanda.
+A continuación, explicamos ambas técnicas. Para obtener más información, consulta nuestro [módulo de formación sobre eliminación y actualización de datos](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461), gratuito y disponible a demanda.
 
 <div id="using-replacingmergetree-for-upserts">
-  ## Uso de ReplacingMergeTree para upserts
+  ## Uso de ReplacingMergeTree para upserts {#using-replacingmergetree-for-upserts}
 </div>
 
 Veamos un ejemplo sencillo en el que una tabla contiene comentarios de Hacker News con una columna `views` que representa el número de veces que se ha visto un comentario. Supongamos que insertamos una nueva fila cuando se publica un artículo y que hacemos un upsert de una nueva fila una vez al día con el número total de visualizaciones si el valor aumenta:
@@ -109,9 +107,7 @@ El resultado solo tiene 2 filas, y la última fila insertada es la que se devuel
   encontrar el valor más reciente de una columna.
 </Note>
 
-<div id="avoiding-final">
-  ### Evitar FINAL
-</div>
+### Evitar FINAL {#avoiding-final}
 
 Volvamos a actualizar la columna `views` para ambas filas únicas:
 
@@ -164,10 +160,10 @@ GROUP BY (id, author, comment)
 
 La agrupación, como se muestra en la consulta anterior, puede ser incluso más eficiente (en términos de rendimiento de la consulta) que usar la palabra clave `FINAL`.
 
-Nuestro [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) amplía este ejemplo, incluido el uso de una columna `version` con `ReplacingMergeTree`.
+Nuestro [módulo de formación sobre eliminación y actualización de datos](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) amplía este ejemplo, incluido el uso de una columna `version` con `ReplacingMergeTree`.
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
-  ## Uso de CollapsingMergeTree para actualizar columnas con frecuencia
+  ## Uso de CollapsingMergeTree para actualizar columnas con frecuencia {#using-collapsingmergetree-for-updating-columns-frequently}
 </div>
 
 Actualizar una columna implica eliminar una fila existente y sustituirla por valores nuevos. Como ya has visto, este tipo de mutación en ClickHouse ocurre *con el tiempo*, durante las fusiones. Si tienes muchas filas que actualizar, de hecho puede ser más eficiente evitar `ALTER TABLE..UPDATE` y, en su lugar, simplemente insertar los datos nuevos junto con los datos existentes. Podríamos añadir una columna que indique si los datos están obsoletos o son nuevos... y, de hecho, ya existe un motor de tabla que implementa este comportamiento de forma muy elegante, sobre todo porque elimina automáticamente los datos obsoletos. Veamos cómo funciona.
@@ -253,7 +249,7 @@ Pero, por supuesto, no se recomienda usar `FINAL` en tablas grandes.
 </Note>
 
 <div id="real-time-updates-from-multiple-threads">
-  ## Actualizaciones en tiempo real desde varios hilos
+  ## Actualizaciones en tiempo real desde varios hilos {#real-time-updates-from-multiple-threads}
 </div>
 
 Con una tabla `CollapsingMergeTree`, las filas se cancelan entre sí mediante una columna de signo, y el estado de una fila lo determina la última fila insertada. Pero esto puede ser problemático si insertas filas desde distintos hilos, ya que pueden insertarse fuera de orden. Usar la “última” fila no funciona en esta situación.
@@ -344,10 +340,8 @@ FROM hackernews_views_vcmt
 
 Una tabla `VersionedCollapsingMergeTree` resulta muy útil cuando se quiere implementar la deduplicación al insertar filas desde varios clientes y/o hilos.
 
-<div id="why-arent-my-rows-being-deduplicated">
-  ## ¿Por qué no se están deduplicando mis filas?
-</div>
+## ¿Por qué no se están deduplicando mis filas? {#why-arent-my-rows-being-deduplicated}
 
-Una de las razones por las que las filas insertadas pueden no deduplicarse es que estés usando una función o expresión no idempotente en tu sentencia `INSERT`. Por ejemplo, si estás insertando filas con la columna `createdAt DateTime64(3) DEFAULT now()`, tus filas serán necesariamente únicas, ya que cada fila tendrá un valor predeterminado distinto para la columna `createdAt`. El motor de tabla MergeTree / ReplicatedMergeTree no sabrá que debe deduplicar las filas, porque cada fila insertada generará una suma de comprobación única.
+Uno de los motivos por los que las filas insertadas pueden no deduplicarse es el uso de una función o expresión no idempotente en la sentencia `INSERT`. Por ejemplo, si inserta filas con la columna `createdAt DateTime64(3) DEFAULT now()`, sus filas serán siempre únicas, ya que cada fila tendrá un valor predeterminado distinto en la columna `createdAt`. El motor de tabla MergeTree / ReplicatedMergeTree no podrá determinar que debe eliminar los duplicados, ya que cada fila insertada generará una suma de comprobación única.
 
-En este caso, puedes especificar tu propio `insert_deduplication_token` para cada lote de filas a fin de garantizar que varias inserciones del mismo lote no hagan que se vuelvan a insertar las mismas filas. Consulta la [documentación sobre `insert_deduplication_token`](/es/reference/settings/session-settings/insert#insert_deduplication_token) para obtener más información sobre cómo usar esta configuración.
+En este caso, puede especificar su propio `insert_deduplication_token` para cada batch de filas y así garantizar que varias inserciones del mismo batch no vuelvan a insertar las mismas filas. Consulte la [documentación sobre `insert_deduplication_token`](/es/reference/settings/session-settings/insert#insert_deduplication_token) para obtener más información sobre cómo usar este parámetro de configuración.

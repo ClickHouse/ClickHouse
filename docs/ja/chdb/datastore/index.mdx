@@ -1,18 +1,16 @@
 ---
-title: 'DataStore: SQL 最適化を備えた pandas互換 API'
+title: 'DataStore: SQL 最適化を備えた pandas 互換 API'
 sidebarTitle: '概要'
 slug: /chdb/datastore
-description: 'DataStore は、高性能なデータ分析に向けて、SQL 最適化を備えた pandas互換 API を提供します'
+description: 'DataStore は、高性能なデータ分析に向けて、SQL 最適化を備えた pandas 互換 API を提供します'
 keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-DataStore は、使い慣れた pandas DataFrame インターフェイスと SQL によるクエリ最適化の力を組み合わせた、chDB の pandas-compatible API です。pandas スタイルのコードを書きながら、ClickHouse のパフォーマンスを活用できます。
+DataStore は、使い慣れた pandas DataFrame インターフェイスと SQL によるクエリ最適化の力を組み合わせた、chDB の pandas 互換 API です。pandas スタイルのコードを書きながら、ClickHouse のパフォーマンスを活用できます。
 
 <div id="key-features">
-  ## 主な機能
+  ## 主な機能 {#key-features}
 </div>
 
 * **Pandas 互換性**: 209 の pandas DataFrame メソッド、56 の `.str` メソッド、42 以上の `.dt` メソッド
@@ -21,11 +19,13 @@ DataStore は、使い慣れた pandas DataFrame インターフェイスと SQL
 * **630+ API メソッド**: データ操作のための包括的な API
 * **ClickHouse 拡張機能**: pandas にはない追加のアクセサ (`.arr`、`.json`、`.url`、`.ip`、`.geo`)
 
-<div id="architecture">
-  ## アーキテクチャ
-</div>
+## アーキテクチャ {#architecture}
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore アーキテクチャ" />
+<div className="ch-image-md">
+  <Frame>
+    ![DataStore アーキテクチャ](/images/chdb/datastore_architecture.png)
+  </Frame>
+</div>
 
 DataStore は、**遅延評価** と **デュアルエンジン実行** を採用しています。
 
@@ -36,7 +36,7 @@ DataStore は、**遅延評価** と **デュアルエンジン実行** を採�
 詳しくは [実行モデル](/ja/chdb/datastore/execution-model) を参照してください。
 
 <div id="migration">
-  ## Pandas からのワンライナーでの移行
+  ## Pandas からのワンライナーでの移行 {#migration}
 </div>
 
 ```python
@@ -54,7 +54,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 既存のpandasコードは変更なしでそのまま動作し、ClickHouseエンジン上で実行されます。
 
 <div id="performance">
-  ## パフォーマンス比較
+  ## パフォーマンス比較 {#performance}
 </div>
 
 DataStore は、特に集計や複雑なパイプラインにおいて、pandas と比べて大幅に高いパフォーマンスを発揮します。
@@ -69,7 +69,7 @@ DataStore は、特に集計や複雑なパイプラインにおいて、pandas 
 *1,000万行でのベンチマークです。詳しくは [ベンチマークスクリプト](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py) と [パフォーマンスガイド](/ja/chdb/guides/pandas-performance) を参照してください。*
 
 <div id="when-to-use">
-  ## DataStore を使うタイミング
+  ## DataStore を使うタイミング {#when-to-use}
 </div>
 
 **次のような場合は DataStore を使用します。**
@@ -87,7 +87,7 @@ DataStore は、特に集計や複雑なパイプラインにおいて、pandas 
 * pandas API では利用できない ClickHouse 固有の機能を使う場合
 
 <div id="comparison">
-  ## 機能比較
+  ## 機能比較 {#comparison}
 </div>
 
 | 機能                    | Pandas | Polars | DuckDB | DataStore     |
@@ -102,7 +102,7 @@ DataStore は、特に集計や複雑なパイプラインにおいて、pandas 
 | Cloud ストレージ対応         | いいえ    | 限定的    | はい     | **はい**        |
 
 <div id="api-stats">
-  ## API統計
+  ## API統計 {#api-stats}
 </div>
 
 | カテゴリ             | 件数       | 対応率                        |
@@ -118,18 +118,18 @@ DataStore は、特に集計や複雑なパイプラインにおいて、pandas 
 | **APIメソッド総数**    | **630+** | -                          |
 
 <div id="navigation">
-  ## ドキュメントのナビゲーション
+  ## ドキュメントのナビゲーション {#navigation}
 </div>
 
 <div id="getting-started">
-  ### はじめに
+  ### はじめに {#getting-started}
 </div>
 
 * [クイックスタート](/ja/chdb/datastore/quickstart) - インストールと基本的な使い方
 * [Pandas からの移行](/ja/chdb/guides/migration-from-pandas) - 移行手順ガイド
 
 <div id="api-reference">
-  ### API リファレンス
+  ### API リファレンス {#api-reference}
 </div>
 
 * [Factory Methods](/ja/chdb/datastore/factory-methods) - さまざまなソースから DataStore を作成
@@ -140,14 +140,14 @@ DataStore は、特に集計や複雑なパイプラインにおいて、pandas 
 * [I/O Operations](/ja/chdb/datastore/io) - データの読み取りと書き込み
 
 <div id="advanced-topics">
-  ### 応用トピック
+  ### 応用トピック {#advanced-topics}
 </div>
 
 * [実行モデル](/ja/chdb/datastore/execution-model) - 遅延評価とキャッシュ
 * [クラスリファレンス](/ja/chdb/datastore/class-reference) - 完全版のAPIリファレンス
 
 <div id="configuration-debugging">
-  ### 設定とデバッグ
+  ### 設定とデバッグ {#configuration-debugging}
 </div>
 
 * [設定](/ja/chdb/configuration/index) - すべての設定オプション
@@ -155,7 +155,7 @@ DataStore は、特に集計や複雑なパイプラインにおいて、pandas 
 * [デバッグ](/ja/chdb/debugging/index) - Explain、プロファイリング、ログ
 
 <div id="pandas-user-guides">
-  ### Pandasユーザーガイド
+  ### Pandasユーザーガイド {#pandas-user-guides}
 </div>
 
 * [Pandasクックブック](/ja/chdb/guides/pandas-cookbook) - よくあるパターン
@@ -164,7 +164,7 @@ DataStore は、特に集計や複雑なパイプラインにおいて、pandas 
 * [Pandasユーザー向けSQL](/ja/chdb/guides/pandas-to-sql) - pandasの操作の裏で使われるSQLを理解する
 
 <div id="quick-example">
-  ## 簡単な使用例
+  ## 簡単な使用例 {#quick-example}
 </div>
 
 ```python
@@ -191,10 +191,8 @@ print(result.to_sql())
 df = result.to_df()  # Returns pandas DataFrame
 ```
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
-* **DataStore は初めてですか？** [クイックスタートガイド](/ja/chdb/datastore/quickstart)から始めましょう
-* **pandas から移行する場合** [移行ガイド](/ja/chdb/guides/migration-from-pandas)をご覧ください
-* **さらに詳しく知りたいですか？** [API リファレンス](/ja/chdb/datastore/class-reference)をご覧ください
+* **DataStore を初めて使う場合：** [クイックスタートガイド](/ja/chdb/datastore/quickstart)から始めてください
+* **pandas から移行する場合：** [移行ガイド](/ja/chdb/guides/migration-from-pandas)をお読みください
+* **さらに詳しく知りたい場合：** [API リファレンス](/ja/chdb/datastore/class-reference)を参照してください

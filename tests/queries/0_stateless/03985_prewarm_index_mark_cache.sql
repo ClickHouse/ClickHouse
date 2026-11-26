@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas
+-- Random settings limits: use_columns_cache=(0, 0)
 
 DROP TABLE IF EXISTS t_prewarm_idx_cache_1;
 DROP TABLE IF EXISTS t_prewarm_idx_cache_2;

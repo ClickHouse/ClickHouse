@@ -22,13 +22,12 @@ description: 'Trouvez des solutions aux problèmes ClickHouse les plus courants,
 
 Vous rencontrez des problèmes avec ClickHouse ? Retrouvez ici les solutions aux problèmes courants.
 
-<div id="performance-and-errors">
-  ## Performances et erreurs
-</div>
+## Performances et erreurs {#performance-and-errors}
 
 Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifiques comme &quot;Memory limit exceeded&quot; ou &quot;Connection refused&quot;.
 
 <Accordion title="Afficher les solutions liées aux performances et aux erreurs">
+  <a id="query-performance" />
   ### Performances des requêtes
 
   * [Identifier les requêtes qui utilisent le plus de ressources](/fr/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
@@ -38,6 +37,7 @@ Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifi
 
   <br />
 
+  <a id="data-insertion-performance" />
   ### Performances d’insertion des données
 
   * [Accélérer l’insertion des données](/fr/concepts/features/operations/insert/bulkinserts)
@@ -45,6 +45,7 @@ Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifi
 
   <br />
 
+  <a id="advanced-analysis-tools" />
   ### Outils d’analyse avancés
 
   {/* - [Profiler avec LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
@@ -54,6 +55,7 @@ Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifi
 
   <br />
 
+  <a id="error-messages" />
   ### Messages d’erreur
 
   * **&quot;Memory limit exceeded&quot;** → [Diagnostiquer les erreurs de limite mémoire](/fr/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -65,13 +67,12 @@ Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifi
   * **&quot;Autres problèmes&quot;** → [Suivre les erreurs dans l’ensemble de votre cluster](/fr/reference/system-tables/errors)
 </Accordion>
 
-<div id="memory-and-resources">
-  ## Mémoire et ressources
-</div>
+## Mémoire et ressources {#memory-and-resources}
 
 Utilisation élevée de la mémoire, plantages par manque de mémoire ou besoin d’aide pour dimensionner votre déploiement ClickHouse.
 
 <Accordion title="Afficher les solutions pour la mémoire">
+  <a id="memory-debugging-and-monitoring" />
   ### Débogage et surveillance de la mémoire :
 
   * [Identifier ce qui consomme la mémoire](/fr/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -81,6 +82,7 @@ Utilisation élevée de la mémoire, plantages par manque de mémoire ou besoin 
 
   <br />
 
+  <a id="memory-configuration" />
   ### Configuration de la mémoire :
 
   * [Configurer les limites mémoire](/fr/concepts/features/configuration/settings/memory-overcommit)
@@ -89,19 +91,19 @@ Utilisation élevée de la mémoire, plantages par manque de mémoire ou besoin 
 
   <br />
 
+  <a id="scaling-and-sizing" />
   ### Mise à l’échelle et dimensionnement :
 
   * [Dimensionner correctement votre service](/fr/guides/oss/best-practices/tips)
   * [Configurer la mise à l’échelle automatique](/fr/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-<div id="connections-and-authentication">
-  ## Connexions et authentification
-</div>
+## Connexions et authentification {#connections-and-authentication}
 
 Impossible de vous connecter à ClickHouse, échecs d’authentification, erreurs de certificat SSL ou problèmes de configuration du client.
 
 <Accordion title="Afficher les solutions de connexion">
+  <a id="basic-connection-issues" />
   ### Problèmes de connexion courants
 
   * [Résoudre les problèmes liés à l’interface HTTP](/fr/concepts/features/interfaces/http)
@@ -110,6 +112,7 @@ Impossible de vous connecter à ClickHouse, échecs d’authentification, erreur
 
   <br />
 
+  <a id="client-interfaces" />
   ### Interfaces client
 
   * [Clients ClickHouse natifs](/fr/concepts/features/interfaces/native-clients-interfaces-index)
@@ -120,19 +123,19 @@ Impossible de vous connecter à ClickHouse, échecs d’authentification, erreur
 
   <br />
 
+  <a id="network-and-data" />
   ### Réseau et données
 
   * [Paramètres de sécurité réseau](/fr/reference/settings/server-settings/settings)
   * [Problèmes d’analyse des formats de données](/fr/reference/formats/index)
 </Accordion>
 
-<div id="setup-and-configuration">
-  ## Installation et configuration
-</div>
+## Installation et configuration {#setup-and-configuration}
 
 Installation initiale, configuration du serveur, création de bases de données, problèmes d’ingestion de données ou configuration de la réplication.
 
 <Accordion title="Afficher les solutions d’installation et de configuration">
+  <a id="initial-setup" />
   ### Configuration initiale
 
   * [Configurer les paramètres du serveur](/fr/reference/settings/server-settings/settings)
@@ -141,6 +144,7 @@ Installation initiale, configuration du serveur, création de bases de données,
 
   <br />
 
+  <a id="database-management" />
   ### Gestion des bases de données
 
   * [Créer et gérer des bases de données](/fr/reference/statements/create/database)
@@ -150,6 +154,7 @@ Installation initiale, configuration du serveur, création de bases de données,
 
   <br />
 
+  <a id="data-operations" />
   ### Opérations sur les données
 
   * [Optimiser l’insertion de données en masse](/fr/concepts/features/operations/insert/bulkinserts)
@@ -159,6 +164,7 @@ Installation initiale, configuration du serveur, création de bases de données,
 
   <br />
 
+  <a id="advanced-configuration" />
   ### Configuration avancée
 
   * [Configurer la réplication des données](/fr/reference/engines/table-engines/mergetree-family/replication)
@@ -170,11 +176,9 @@ Installation initiale, configuration du serveur, création de bases de données,
   * [Configurer le monitoring](/fr/reference/system-tables/overview)
 </Accordion>
 
-<div id="still-need-help">
-  ## Vous avez encore besoin d’aide ?
-</div>
+## Vous avez encore besoin d’aide ? {#still-need-help}
 
-Si vous ne trouvez pas de solution :
+Si vous ne trouvez pas de solution :
 
 1. **Demander à l’IA** - <button type="button" data-docs-ai-entry="troubleshooting" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Demander à l’IA</button> pour obtenir des réponses instantanées.
 2. **Consulter les tables système** - [Vue d’ensemble](/fr/reference/system-tables/overview)

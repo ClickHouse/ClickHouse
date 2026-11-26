@@ -1,22 +1,20 @@
 ---
-title: 'Monitoring dans la console ClickHouse Cloud'
+title: 'Supervision dans la console ClickHouse Cloud'
 slug: /cloud/monitoring/cloud-console
-description: 'Tableaux de bord de monitoring intégrés à la console ClickHouse Cloud'
-keywords: ['cloud', 'monitoring', 'tableaux de bord', 'santé du service', 'utilisation des ressources', 'tableau de bord avancé']
+description: 'Tableaux de bord de supervision intégrés à la console ClickHouse Cloud'
+keywords: ['cloud', 'supervision', 'tableaux de bord', 'état du service', 'utilisation des ressources', 'tableau de bord avancé']
 sidebarTitle: 'Console Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
-Les services ClickHouse Cloud incluent des composants de monitoring prêts à l’emploi, qui mettent à la disposition des utilisateurs des tableaux de bord et des notifications. Par défaut, tous les utilisateurs de la Cloud Console peuvent accéder à ces tableaux de bord.
+Les services ClickHouse Cloud incluent des composants de supervision prêts à l’emploi, qui mettent à la disposition des utilisateurs des tableaux de bord et des notifications. Par défaut, tous les utilisateurs de la Console Cloud peuvent accéder à ces tableaux de bord.
 
 <div id="dashboards">
-  ## Tableaux de bord
+  ## Tableaux de bord {#dashboards}
 </div>
 
 <div id="service-health">
-  ### État du service
+  ### État du service {#service-health}
 </div>
 
 Le tableau de bord Service Health permet de surveiller l’état global d’un service. ClickHouse Cloud collecte et stocke les métriques affichées sur ce tableau de bord à partir des tables système afin qu’elles puissent être consultées lorsqu’un service est mis en veille.
@@ -24,13 +22,13 @@ Le tableau de bord Service Health permet de surveiller l’état global d’un s
 {/* TODO : Ajouter une capture d’écran du tableau de bord Service Health */}
 
 <div id="resource-utilization">
-  ### Utilisation des ressources
+  ### Utilisation des ressources {#resource-utilization}
 </div>
 
 Le tableau de bord Infrastructure fournit une vue détaillée des ressources utilisées par le processus ClickHouse. ClickHouse Cloud collecte et stocke les métriques affichées sur ce tableau de bord à partir des tables système, afin qu’elles puissent être consultées lorsqu’un service est mis en veille.
 
 <div id="memory-and-cpu">
-  #### Mémoire et CPU
+  #### Mémoire et CPU {#memory-and-cpu}
 </div>
 
 Les graphiques **CPU alloué** et **Mémoire allouée** affichent le total des ressources de calcul disponibles pour chaque réplique de votre service. Ces allocations peuvent être modifiées à l’aide des [fonctionnalités de mise à l’échelle](/fr/products/cloud/features/autoscaling/overview) de ClickHouse Cloud.
@@ -57,24 +55,26 @@ Voici les métriques correspondantes de la table système affichées dans ces gr
 | CPU utilisé      | Métrique système du CPU       | Max        | `ClickHouseServer_UsageCores` via l’endpoint Prometheus |
 
 <div id="data-transfer">
-  #### Transfert de données
+  #### Transfert de données {#data-transfer}
 </div>
 
 Les graphiques affichent les flux de données entrants et sortants de ClickHouse Cloud. Pour en savoir plus, consultez [le transfert de données réseau](/fr/products/cloud/reference/billing/network-data-transfer).
 
-<div id="advanced-dashboard">
-  ### Tableau de bord avancé
-</div>
+### Tableau de bord avancé {#advanced-dashboard}
 
 Ce tableau de bord est une version modifiée du [tableau de bord d’observabilité avancé intégré](/fr/products/cloud/features/monitoring/advanced-dashboard), où chaque série représente les métriques par réplique. Ce tableau de bord peut être utile pour surveiller et résoudre les problèmes spécifiques à ClickHouse.
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Tableau de bord avancé dans ClickHouse Cloud" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Tableau de bord avancé dans ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
+</div>
 
 <Note>
-  ClickHouse Cloud collecte et stocke les métriques affichées sur ce tableau de bord à partir des tables système afin qu’elles puissent être consultées même lorsqu’un service est mis en veille. L’accès à ces métriques n’exécute pas de query sur le service sous-jacent et ne réactive pas les services mis en veille.
+  ClickHouse Cloud collecte et stocke les métriques affichées sur ce tableau de bord à partir des tables système afin qu’elles puissent être consultées même lorsqu’un service est mis en veille. L’accès à ces métriques n’exécute pas de requête sur le service sous-jacent et ne réactive pas les services mis en veille.
 </Note>
 
-Le tableau ci-dessous associe chaque graphique du tableau de bord avancé à la métrique ClickHouse correspondante, à la table système source et au type d’agrégation correspondant :
+Le tableau ci-dessous associe chaque graphique du tableau de bord avancé à la métrique ClickHouse correspondante, à la table système source et au type d’agrégation correspondant :
 
 | Graphique                                       | Nom de la métrique ClickHouse correspondante                                                                                                                            | Table système             | Type d’agrégation         |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------- |
@@ -90,7 +90,7 @@ Le tableau ci-dessous associe chaque graphique du tableau de bord avancé à la 
 | Utilisation CPU de l’OS (kernel, normalized)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                           |
 | Lecture depuis le disk                          | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Somme / bucketSizeSeconds |
 | Lecture depuis le filesystem                    | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Somme / bucketSizeSeconds |
-| Memory (suivie, octets)                         | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                           |
+| Mémoire (suivie, octets)                         | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                           |
 | Nombre total de parts MergeTree                 | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                           |
 | Nombre maximal de parts par partition           | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                           |
 | Lecture depuis S3                               | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Somme / bucketSizeSeconds |
@@ -108,50 +108,62 @@ Le tableau ci-dessous associe chaque graphique du tableau de bord avancé à la 
 Pour des informations détaillées sur chaque visualisation et sur la façon de les utiliser pour le dépannage, consultez la [documentation du tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="query-insights">
-  ## Query insights
+  ## Query insights {#query-insights}
 </div>
 
-La fonctionnalité **Query Insights** rend le journal des requêtes intégré de ClickHouse plus facile à utiliser grâce à diverses visualisations et tableaux. La table `system.query_log` de ClickHouse est une source d’informations essentielle pour l’optimisation des requêtes, le débogage, ainsi que la surveillance globale de l’état de santé et des performances du cluster.
+La fonctionnalité **Query Insights** rend le journal des requêtes intégré de ClickHouse plus facile à utiliser grâce à diverses visualisations et tableaux. La table `system.query_log` de ClickHouse est une source d’informations essentielle pour l’optimisation des requêtes, le débogage, ainsi que la supervision globale de l’état de santé et des performances du cluster.
 
-Après avoir sélectionné un service, l’élément de navigation **Monitoring** dans la barre latérale gauche se développe pour révéler un sous-élément **Query insights** :
+Après avoir sélectionné un service, l’élément de navigation **Supervision** dans la barre latérale gauche se développe pour révéler un sous-élément **Query insights** :
 
-<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Vue d’ensemble de l’UI de Query Insights" border />
-
-<div id="top-level-metrics">
-  ### Métriques principales
+<div className="ch-image-md">
+  <Frame>
+    ![Vue d’ensemble de l’UI Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+  </Frame>
 </div>
 
-Les encadrés statistiques en haut représentent les métriques de base des requêtes sur la période sélectionnée. En dessous, des graphiques de séries temporelles montrent le volume de requêtes, la latence et le taux d’erreur, ventilés par type de requête (select, insert, other). Le graphique de latence peut être ajusté pour afficher les latences p50, p90 et p99 :
+### Métriques principales {#top-level-metrics}
 
-<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="Graphique de latence de Query Insights" border />
+Les encadrés statistiques en haut représentent les métriques de base des requêtes sur la période sélectionnée. En dessous, des graphiques de séries temporelles montrent le volume de requêtes, la latence et le taux d’erreur, ventilés par type de requête (select, insert, other). Le graphique de latence peut être ajusté pour afficher les latences p50, p90 et p99 :
 
-<div id="recent-queries">
-  ### Requêtes récentes
+<div className="ch-image-md">
+  <Frame>
+    ![Graphique de latence de Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+  </Frame>
 </div>
 
-Un tableau affiche les entrées du journal des requêtes regroupées par hash de requête normalisée et par utilisateur sur la plage temporelle sélectionnée. Les requêtes récentes peuvent être filtrées et triées selon n’importe quel champ disponible, et le tableau peut être configuré pour afficher ou masquer des champs supplémentaires, tels que les tables et les latences p90 et p99 :
+### Requêtes récentes {#recent-queries}
 
-<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Tableau des requêtes récentes de Query Insights" border />
+Un tableau affiche les entrées du journal des requêtes regroupées par hash de requête normalisée et par utilisateur sur la plage temporelle sélectionnée. Les requêtes récentes peuvent être filtrées et triées selon n’importe quel champ disponible, et le tableau peut être configuré pour afficher ou masquer des champs supplémentaires, tels que les tables et les latences p90 et p99 :
 
-<div id="query-drill-down">
-  ### Analyse détaillée des requêtes
+<div className="ch-image-md">
+  <Frame>
+    ![Tableau des requêtes récentes de Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
+  </Frame>
 </div>
 
-La sélection d’une requête dans le tableau **Recent queries** ouvre un panneau latéral contenant des métriques et des informations propres à la requête sélectionnée :
+### Analyse détaillée des requêtes {#query-drill-down}
 
-<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Analyse détaillée d’une requête dans l’UI Query Insights" border />
+La sélection d’une requête dans le tableau **Requêtes récentes** ouvre un panneau latéral contenant des métriques et des informations propres à la requête sélectionnée :
 
-Toutes les métriques de l’onglet **Query info** sont des métriques agrégées, mais il est également possible d’afficher les métriques de chaque exécution en sélectionnant l’onglet **Query history** :
+<div className="ch-image-md">
+  <Frame>
+    ![Analyse détaillée d’une requête dans l’UI Query Insights](/images/cloud/sqlconsole/insights_drilldown.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Informations sur la requête dans l’UI Query Insights" border />
+Toutes les métriques de l’onglet **Query info** sont des métriques agrégées, mais il est également possible d’afficher les métriques de chaque exécution en sélectionnant l’onglet **Query history** :
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Informations sur la requête dans l’UI Query Insights](/images/cloud/sqlconsole/insights_query_info.webp)
+  </Frame>
+</div>
 
 Depuis ce panneau, les éléments `Settings` et `Profile Events` de chaque exécution de requête peuvent être développés pour afficher des informations supplémentaires.
 
-<div id="related">
-  ## Pages connexes
-</div>
+## Pages connexes {#related}
 
-* [Notifications](/fr/products/cloud/features/monitoring/notifications) — Configurer des alertes pour les événements de mise à l’échelle, les erreurs et la facturation
-* [tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée pour chaque visualisation du tableau de bord
-* [Interroger les tables système](/fr/products/cloud/features/monitoring/system-tables) — Exécuter des requêtes SQL personnalisées sur les tables système pour une introspection approfondie
-* [Point de terminaison Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exporter les métriques vers Grafana, Datadog ou d’autres outils compatibles Prometheus
+* [Notifications](/fr/products/cloud/features/monitoring/notifications) — Configurez des alertes pour les événements de mise à l’échelle, les erreurs et la facturation
+* [Tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée de chaque visualisation du tableau de bord
+* [Exécution de requêtes sur les tables système](/fr/products/cloud/features/monitoring/system-tables) — Exécutez des requêtes SQL personnalisées sur les tables système pour une introspection approfondie
+* [Point de terminaison Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exportez des métriques vers Grafana, Datadog ou d’autres outils compatibles avec Prometheus

@@ -10,6 +10,7 @@
 #include <random>
 #include <unordered_map>
 #include <vector>
+#include <base/sanitizer_defs.h>
 
 using namespace DB;
 
@@ -23,7 +24,8 @@ const ASTLiteral * fakeLiteral(uintptr_t n)
     return reinterpret_cast<const ASTLiteral *>((n + 1) * alignof(void *));
 }
 
-LiteralTokenInfo someTokenInfo(uintptr_t n)
+/// The fake pointers are built by multiplying, which wraps for the large `n` the test feeds in.
+LiteralTokenInfo NO_SANITIZE_UNSIGNED_OVERFLOW someTokenInfo(uintptr_t n)
 {
     return LiteralTokenInfo{reinterpret_cast<const char *>(n * 2 + 1), reinterpret_cast<const char *>(n * 2 + 2)};
 }

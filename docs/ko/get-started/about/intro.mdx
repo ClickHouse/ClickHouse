@@ -1,18 +1,16 @@
 ---
 slug: /intro
 sidebarTitle: 'ClickHouse란 무엇입니까?'
-description: 'ClickHouse®는 온라인 분석 처리(OLAP)를 위한 컬럼 지향 SQL 데이터베이스 관리 시스템(DBMS)입니다. 오픈소스 소프트웨어와 클라우드 형태로 모두 제공됩니다.'
+description: 'ClickHouse®는 온라인 분석 처리(Online Analytical Processing)(OLAP)를 위한 컬럼 지향 SQL 데이터베이스 관리 시스템(DBMS)입니다. 오픈소스 소프트웨어와 클라우드 서비스 형태로 모두 제공됩니다.'
 title: 'ClickHouse란 무엇입니까?'
 keywords: ['ClickHouse', '컬럼형 데이터베이스', 'OLAP 데이터베이스', '분석용 데이터베이스', '고성능 데이터베이스']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
-ClickHouse®는 온라인 분석 처리(OLAP)를 위한 고성능 컬럼 지향 SQL 데이터베이스 관리 시스템(DBMS)입니다. [오픈소스 소프트웨어](https://github.com/ClickHouse/ClickHouse)와 [Cloud 서비스](https://clickhouse.com/cloud) 형태로 제공됩니다.
+ClickHouse®는 온라인 분석 처리(Online Analytical Processing)(OLAP)를 위한 고성능 컬럼 지향 SQL 데이터베이스 관리 시스템(DBMS)입니다. [오픈소스 소프트웨어](https://github.com/ClickHouse/ClickHouse)와 [클라우드 서비스](https://clickhouse.com/cloud) 형태로 제공됩니다.
 
 <div id="what-are-analytics">
-  ## 분석이란 무엇입니까?
+  ## 분석이란 무엇입니까? {#what-are-analytics}
 </div>
 
 분석은 OLAP(Online Analytical Processing)이라고도 하며, 방대한 데이터셋에 대해 복잡한 계산(예: 집계, 문자열 처리, 산술 연산)을 수행하는 SQL 쿼리를 의미합니다.
@@ -21,9 +19,7 @@ ClickHouse®는 온라인 분석 처리(OLAP)를 위한 고성능 컬럼 지향 
 
 많은 사용 사례에서 [분석 쿼리는 &quot;실시간&quot;이어야 합니다](https://clickhouse.com/engineering-resources/what-is-real-time-analytics). 즉, 1초 이내에 결과를 반환해야 합니다.
 
-<div id="row-oriented-vs-column-oriented-storage">
-  ## 행 지향 저장과 컬럼 지향 저장 비교
-</div>
+## 행 지향 저장과 컬럼 지향 저장 비교 {#row-oriented-vs-column-oriented-storage}
 
 이와 같은 수준의 성능은 데이터의 올바른 &quot;지향성&quot;이 있어야만 달성할 수 있습니다.
 
@@ -51,55 +47,67 @@ LIMIT 8;
 
 [ClickHouse SQL Playground에서 이 쿼리를 실행](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)하여 기존 [100개가 넘는 컬럼 중 일부만](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) 선택하고 필터링한 다음, 결과를 밀리초 단위로 받아볼 수 있습니다:
 
-<Image img="/images/column-oriented-example-query.webp" alt="컬럼 지향 데이터베이스의 예시 쿼리" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![컬럼 지향 데이터베이스의 예시 쿼리](/images/column-oriented-example-query.webp)
+  </Frame>
+</div>
 
 위 그림의 통계 섹션에서 볼 수 있듯이, 이 쿼리는 1억 행을 92밀리초 만에 처리했으며, 처리량은 초당 약 10억 행 이상, 또는 초당 7 GB에 약간 못 미치는 데이터 전송량에 해당합니다.
 
 **행 지향 DBMS**
 
-행 지향 데이터베이스에서는 위 쿼리가 기존 컬럼 중 일부만 처리하더라도, 시스템은 여전히 다른 컬럼의 데이터도 디스크에서 메모리로 로드해야 합니다. 이는 데이터가 디스크에 [블록](https://en.wikipedia.org/wiki/Block_\(data_storage\))이라고 하는 청크 단위로 저장되기 때문입니다(보통 4 KB 또는 8 KB 같은 고정 크기). 블록은 디스크에서 메모리로 읽어 오는 데이터의 가장 작은 단위입니다. 애플리케이션이나 데이터베이스가 데이터를 요청하면 운영 체제의 디스크 I/O 하위 시스템이 디스크에서 필요한 블록을 읽습니다. 블록의 일부만 필요하더라도 전체 블록이 메모리로 읽혀집니다(이는 디스크 및 파일 시스템 설계에 따른 것입니다):
+행 지향 데이터베이스에서는 위 쿼리가 기존 컬럼 중 일부만 처리하더라도, 시스템은 여전히 다른 컬럼의 데이터도 디스크에서 메모리로 로드해야 합니다. 이는 데이터가 디스크에 [블록(Block)](https://en.wikipedia.org/wiki/Block_\(data_storage\))이라고 하는 청크 단위로 저장되기 때문입니다(보통 4 KB 또는 8 KB 같은 고정 크기). 블록(Block)은 디스크에서 메모리로 읽어 오는 데이터의 가장 작은 단위입니다. 애플리케이션이나 데이터베이스가 데이터를 요청하면 운영 체제의 디스크 I/O 하위 시스템이 디스크에서 필요한 블록(Block)을 읽습니다. 블록(Block)의 일부만 필요하더라도 전체 블록(Block)이 메모리로 읽혀집니다(이는 디스크 및 파일 시스템 설계에 따른 것입니다):
 
-<Image img="/images/row-oriented.webp" alt="행 지향 데이터베이스 구조" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![행 지향 데이터베이스 구조](/images/row-oriented.webp)
+  </Frame>
+</div>
 
 **컬럼 지향 DBMS**
 
 각 컬럼의 값이 디스크에 순차적으로 저장되므로, 위 쿼리를 실행할 때 불필요한 데이터는 로드되지 않습니다.
-디스크에서 메모리로의 block 단위 저장 및 전송이 분석 쿼리의 데이터 접근 패턴과 일치하므로, 쿼리에 필요한 컬럼만 디스크에서 읽어 사용되지 않는 데이터에 대한 불필요한 I/O를 피할 수 있습니다. 이는 전체 행(관련 없는 컬럼 포함)을 읽는 행 기반 저장 방식과 비교하면 [훨씬 더 빠릅니다](https://benchmark.clickhouse.com/):
+디스크에서 메모리로의 블록(Block) 단위 저장 및 전송이 분석 쿼리의 데이터 접근 패턴과 일치하므로, 쿼리에 필요한 컬럼만 디스크에서 읽어 사용되지 않는 데이터에 대한 불필요한 I/O를 피할 수 있습니다. 이는 전체 행(관련 없는 컬럼 포함)을 읽는 행 기반 저장 방식과 비교하면 [훨씬 더 빠릅니다](https://benchmark.clickhouse.com/):
 
-<Image img="/images/column-oriented.webp" alt="컬럼 지향 데이터베이스 구조" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![컬럼 지향 데이터베이스 구조](/images/column-oriented.webp)
+  </Frame>
+</div>
 
 <div id="data-replication-and-integrity">
-  ## 데이터 복제 및 무결성
+  ## 데이터 복제 및 무결성 {#data-replication-and-integrity}
 </div>
 
 ClickHouse는 여러 노드에 데이터를 중복 저장할 수 있도록 비동기 멀티 마스터 복제 방식을 사용합니다. 사용 가능한 아무 레플리카에 데이터를 쓰면, 나머지 모든 레플리카는 백그라운드에서 해당 데이터의 사본을 가져옵니다. 시스템은 서로 다른 레플리카에 동일한 데이터가 유지되도록 합니다. 대부분의 장애는 자동으로 복구되며, 복잡한 경우에는 반자동으로 복구됩니다.
 
 <div id="role-based-access-control">
-  ## 역할 기반 접근 제어
+  ## 역할 기반 접근 제어 {#role-based-access-control}
 </div>
 
 ClickHouse는 SQL 쿼리를 사용해 사용자 계정을 관리하며, ANSI SQL 표준과 널리 사용되는 관계형 데이터베이스 관리 시스템과 유사한 역할 기반 접근 제어 구성을 지원합니다.
 
 <div id="sql-support">
-  ## SQL 지원
+  ## SQL 지원 {#sql-support}
 </div>
 
 ClickHouse는 많은 경우 ANSI SQL 표준과 동일한 [SQL 기반의 선언형 쿼리 언어](/ko/reference/home)를 지원합니다. 지원되는 쿼리 절에는 [GROUP BY](/ko/reference/statements/select/group-by), [ORDER BY](/ko/reference/statements/select/order-by), [FROM](/ko/reference/statements/select/from)의 서브쿼리, [JOIN](/ko/reference/statements/select/join) 절, [IN](/ko/reference/statements/in) 연산자, [윈도우 함수](/ko/reference/functions/window-functions/index), 그리고 스칼라 서브쿼리가 포함됩니다.
 
 <div id="approximate-calculation">
-  ## 근사 계산
+  ## 근사 계산 {#approximate-calculation}
 </div>
 
 ClickHouse는 정확도와 성능을 절충할 수 있는 방법을 제공합니다. 예를 들어 일부 집계 함수는 고유값 개수, 중앙값, 분위수를 근사적으로 계산합니다. 또한 데이터의 일부 샘플에 대해 쿼리를 실행해 근사 결과를 빠르게 계산할 수 있습니다. 마지막으로 모든 키에 대해 집계를 수행하는 대신, 제한된 수의 키에 대해서만 집계를 수행할 수 있습니다. 키 분포가 얼마나 치우쳐 있는지에 따라, 이 방식은 정확 계산보다 훨씬 적은 리소스를 사용하면서도 상당히 정확한 결과를 제공할 수 있습니다.
 
 <div id="adaptive-join-algorithms">
-  ## 적응형 조인 알고리즘
+  ## 적응형 조인 알고리즘 {#adaptive-join-algorithms}
 </div>
 
 ClickHouse는 조인 알고리즘을 상황에 맞게 선택합니다. 먼저 빠른 해시 조인을 사용하고, 큰 테이블이 2개 이상이면 머지 조인으로 전환합니다.
 
 <div id="superior-query-performance">
-  ## 뛰어난 쿼리 성능
+  ## 뛰어난 쿼리 성능 {#superior-query-performance}
 </div>
 
 ClickHouse는 매우 빠른 쿼리 성능을 제공하는 것으로 잘 알려져 있습니다.
