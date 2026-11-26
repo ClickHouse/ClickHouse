@@ -428,7 +428,6 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
     UpdateAffectedColumns res;
     const auto physical_columns = columns.getAllPhysical();
 
-    /// Names in the statement are resolved to the stored columns they read, as `MaterializedColumnDependencies` does for a default.
     auto add_used = [&](const ASTPtr & expression)
     {
         ASTPtr resolved = expression ? expression->clone() : nullptr;
