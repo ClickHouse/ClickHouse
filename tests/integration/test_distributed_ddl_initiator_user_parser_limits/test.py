@@ -71,3 +71,117 @@ def test_on_cluster_parses_the_entry_under_the_initiator_user_profile(started_cl
             == "1"
         )
         assert node.query("SELECT x FROM default.deep_view").strip() == "1"
+
+
+def test_self_authentication_on_cluster(started_cluster):
+    # Entry format version 8 preserves the actor and its explicitly enabled roles under this fixture's config.
+    user = "self_auth_cluster"
+    other = f"{user}_other"
+    role = f"{user}_role"
+    password = "InitialClusterPassword"
+    restricted_password = "RestrictedClusterPassword"
+    denied_password = "DeniedClusterPassword"
+    privilege = "ALTER USER SELF AUTHENTICATION"
+    settings = {
+        "distributed_ddl_entry_format_version": 8,
+        "distributed_ddl_output_mode": "throw",
+    }
+    role_prefix = f"SET ROLE {role}; "
+
+    def alter(query, login_password):
+        node1.query(
+            role_prefix + f"ALTER USER {user} ON CLUSTER cluster {query}",
+            user=user,
+            password=login_password,
+            settings=settings,
+        )
+
+    def definitions():
+        return [
+            node.query(f"SHOW CREATE USER {user}; SHOW CREATE USER {other}")
+            for node in all_nodes
+        ]
+
+    # A denied statement changes nothing and is not dispatched to the DDL queue.
+    def deny(query, message, login_password=password, extra_settings=None):
+        before = definitions()
+        error = node1.query_and_get_error(
+            role_prefix + query,
+            user=user,
+            password=login_password,
+            settings={**settings, **(extra_settings or {})},
+        )
+        assert "ACCESS_DENIED" in error or "READONLY" in error
+        assert message in error
+        assert definitions() == before
+        assert node1.query(
+            f"SELECT count() FROM system.distributed_ddl_queue WHERE position(query, '{user}') > 0"
+        ) == "0\n"
+
+    def assert_login(secret):
+        for node in all_nodes:
+            assert node.query("SELECT 1", user=user, password=secret) == "1\n"
+
+    try:
+        for node in all_nodes:
+            # Create independently, so UUIDs differ across servers.
+            node.query(
+                f"CREATE USER {user} IDENTIFIED WITH sha256_password BY '{password}', "
+                f"sha256_password BY '{restricted_password}' GRANTS ({privilege}, CLUSTER ON *.*);"
+                f"CREATE USER {other} IDENTIFIED WITH sha256_password BY '{password}';"
+                f"CREATE ROLE {role};"
+                f"GRANT {role} TO {user};"
+                f"ALTER USER {user} DEFAULT ROLE NONE;"
+                f"GRANT CLUSTER ON *.* TO {user};"
+            )
+        ids = [
+            node.query(f"SELECT id FROM system.users WHERE name = '{user}'")
+            for node in all_nodes
+        ]
+        assert len(set(ids)) == len(all_nodes)
+
+        replacement = f"ALTER USER {user} ON CLUSTER cluster IDENTIFIED WITH sha256_password BY '{denied_password}'"
+        deny(replacement, privilege)
+        for node in all_nodes:
+            node.query(f"GRANT {privilege} TO {role}")
+        node1.query(f"REVOKE CLUSTER ON *.* FROM {user}")
+        deny(replacement, "CLUSTER")
+        node1.query(f"GRANT CLUSTER ON *.* TO {user}")
+
+        for targets, clause in (
+            (other, ""),
+            (f"{user}, {other}", ""),
+            (user, " HOST ANY"),
+            (user, " IN nonexistent_storage"),
+        ):
+            deny(
+                f"ALTER USER {targets} ON CLUSTER cluster IDENTIFIED WITH sha256_password BY '{denied_password}'{clause}",
+                "ALTER USER",
+            )
+        deny(replacement, "readonly", extra_settings={"readonly": 1})
+        deny(replacement, "cannot change authentication methods", login_password=restricted_password)
+        deny(
+            f"ALTER USER {user} ON CLUSTER cluster RESET AUTHENTICATION METHODS TO NEW",
+            "cannot change authentication methods",
+            login_password=restricted_password,
+        )
+
+        replacement_password = "ReplacementClusterPassword"
+        alter(f"IDENTIFIED WITH sha256_password BY '{replacement_password}'", password)
+        assert_login(replacement_password)
+        added_password = "AddedClusterPassword"
+        alter(f"ADD IDENTIFIED WITH sha256_password BY '{added_password}'", replacement_password)
+        assert_login(replacement_password)
+        assert_login(added_password)
+        alter("RESET AUTHENTICATION METHODS TO NEW", added_password)
+        assert_login(added_password)
+        for node in all_nodes:
+            assert node.query(
+                f"SELECT length(auth_type) FROM system.users WHERE name = '{user}'"
+            ) == "1\n"
+            assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+                "SELECT 1", user=user, password=replacement_password
+            )
+    finally:
+        for node in all_nodes:
+            node.query(f"DROP USER IF EXISTS {user}, {other}; DROP ROLE IF EXISTS {role};")

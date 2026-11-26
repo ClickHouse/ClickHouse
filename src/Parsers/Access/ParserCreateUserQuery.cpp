@@ -1228,7 +1228,13 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
-To use `ALTER USER` you must have the [ALTER USER](/reference/statements/grant#access-management) privilege.
+To use `ALTER USER` you must have the [ALTER USER](/reference/statements/grant#access-management) privilege. Changing the authentication methods of your own account requires only [ALTER USER SELF AUTHENTICATION](/reference/statements/grant#self-service-authentication), with the restrictions described there:
+
+```sql
+ALTER USER alice IDENTIFIED WITH sha256_password BY 'new_password';
+ALTER USER alice ADD IDENTIFIED WITH sha256_password BY 'additional_password';
+ALTER USER alice RESET AUTHENTICATION METHODS TO NEW;
+```
 
 `SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest. Prefer it (or `MODIFY SETTING`) over the bare `SETTINGS` clause, which replaces the whole settings list and also removes all inherited (parent) profiles.
 

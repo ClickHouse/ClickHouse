@@ -354,6 +354,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `ALTER ROW POLICY`
     - `ALTER SETTINGS PROFILE`
     - `ALTER USER`
+    - `ALTER USER SELF AUTHENTICATION`
     - `CREATE QUOTA`
     - `CREATE ROLE`
     - `CREATE ROW POLICY`
@@ -782,6 +783,7 @@ Allows a user to execute queries that manage users, roles and row policies.
 - `ACCESS MANAGEMENT`. Level: `GROUP`
   - `CREATE USER`. Level: `GLOBAL`
   - `ALTER USER`. Level: `GLOBAL`
+  - `ALTER USER SELF AUTHENTICATION`. Level: `GLOBAL`
   - `DROP USER`. Level: `GLOBAL`
   - `CREATE TOKEN`. Level: `GLOBAL`
   - `CREATE ROLE`. Level: `GLOBAL`
@@ -808,6 +810,30 @@ Allows a user to execute queries that manage users, roles and row policies.
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
 The `CREATE TOKEN` privilege allows a user to add an authentication method to its own account, with [`CREATE TOKEN`](/reference/statements/create/token) or with the equivalent `ALTER USER <current user> ADD IDENTIFIED ...` statement, without being able to administer accounts otherwise. It is separate from `ALTER USER` because it lets a user lower the security level of its own account, for example by adding a long-lived password to an account which is otherwise reachable only with a certificate.
+
+#### Self-service authentication {#self-service-authentication}
+
+`ALTER USER SELF AUTHENTICATION` allows a user to replace, add, or reset the authentication methods of their own account with `ALTER USER`. It is a global privilege and is granted without an `ON` clause:
+
+```sql
+GRANT ALTER USER SELF AUTHENTICATION TO alice;
+REVOKE ALTER USER SELF AUTHENTICATION FROM alice;
+```
+
+`ALL` and `ACCESS MANAGEMENT` include the privilege. It is independent of `ALTER USER`: revoking `ALTER USER` does not revoke it.
+
+The privilege authorizes an `ALTER USER` statement only if:
+
+- the statement names only the current user and has no `IN <storage>` clause;
+- the statement changes only authentication methods and has no user-level `VALID UNTIL` or `VALID FOR` clause.
+
+The current password is not required, and existing sessions are not disconnected. Any authentication method can be set, including `no_password` if the server allows it.
+
+A new authentication method cannot outlive the account. If every existing method of the account has a `VALID UNTIL` deadline, a new method without a deadline, or with a later one, gets the latest of those deadlines. A method-level `VALID UNTIL` or `VALID FOR` clause can set an earlier deadline.
+
+With `ON CLUSTER`, accounts on other servers are matched by name, and the deadline is computed on the server which initiates the query.
+
+Older ClickHouse versions cannot load grants that list this privilege. Revoke it before downgrading.
 
 ### SYSTEM {#system}
 
