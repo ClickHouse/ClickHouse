@@ -1795,6 +1795,32 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
+bool AlterCommand::stopsStoringUnreferencedColumn(const StorageInMemoryMetadata & metadata) const
+{
+    if (ignore || type != MODIFY_COLUMN || !default_expression
+        || (default_kind != ColumnDefaultKind::Alias && default_kind != ColumnDefaultKind::Ephemeral)
+        || !metadata.columns.hasPhysical(column_name) || metadata.hasUniqueKey())
+        return false;
+
+    NameSet names{column_name};
+    for (const auto & subcolumn : metadata.columns.getSubcolumns(column_name))
+        names.insert(subcolumn.name);
+
+    auto any_dependency = [](const String &, ColumnDependency::Kind) { return true; };
+    if (!metadata.getColumnDependencies(names, /*include_ttl_target=*/ false, any_dependency).empty())
+        return false;
+
+    for (const auto & key_columns : {metadata.getColumnsRequiredForSortingKey(), metadata.getColumnsRequiredForPrimaryKey(),
+                                     metadata.getColumnsRequiredForPartitionKey(), metadata.getColumnsRequiredForSampling()})
+    {
+        for (const auto & key_column : key_columns)
+            if (names.contains(key_column))
+                return false;
+    }
+
+    return true;
+}
+
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!getMutationStageDecision(metadata, context).requires_mutation)
@@ -2831,6 +2857,20 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
+static MutationCommand createDropColumnCommand(const String & column_name, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::DROP_COLUMN;
+    ast->column = ast->children.emplace_back(make_intrusive<ASTIdentifier>(column_name)).get();
+    command.type = MutationCommand::DROP_COLUMN;
+    command.column_name = column_name;
+    command.ast_text = ast->formatWithSecretsOneLine();
+    command.max_parser_depth = max_parser_depth;
+    command.max_parser_backtracks = max_parser_backtracks;
+    return command;
+}
+
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
@@ -2851,6 +2891,9 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
+        /// Otherwise the parts keep the column's data, and a column of the same name stored again later reads it.
+        const bool drop_stored_data = alter_cmd.stopsStoringUnreferencedColumn(metadata);
+
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
         {
             result.push_back(*mutation_cmd);
@@ -2865,6 +2908,9 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                 .has_partition = isCommandScopedToPartitions(alter_cmd.ast->as<const ASTAlterCommand &>()),
             });
         }
+
+        if (drop_stored_data)
+            result.push_back(createDropColumnCommand(alter_cmd.column_name, max_parser_depth, max_parser_backtracks));
     }
 
     if (materialize_ttl)

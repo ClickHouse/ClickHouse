@@ -1,0 +1,19 @@
+compact	Compact
+compact	1	0
+compact after merge	1	0
+wide	Wide
+wide	1	0
+wide after merge	1	0
+ephemeral	1	0
+one statement	1	0
+remove alias	1	0
+to default	1	5
+nested	1	[11]	[0]
+pending	1	0
+pending done	1	0
+pending after merge	1	0
+created alias mutations	0
+replicated	1	0
+indexed mutations	0
+pending update	1	7	7
+pending update mutations	0	0

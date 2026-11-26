@@ -232,6 +232,9 @@ struct AlterCommand
     /// `CLEAR COLUMN` of the virtual column `_block_number` or `_block_offset` stored in parts, see `DB::isClearOfBlockColumns`.
     [[nodiscard]] bool isClearOfBlockColumns(const StorageInMemoryMetadata & metadata) const;
 
+    /// Turns a stored column into `ALIAS` or `EPHEMERAL`, and no key, skip index, projection or TTL reads it.
+    [[nodiscard]] bool stopsStoringUnreferencedColumn(const StorageInMemoryMetadata & metadata) const;
+
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
