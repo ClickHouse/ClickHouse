@@ -98,7 +98,7 @@ void HDFSBuilderWrapper::loadFromConfig(
 }
 
 #if USE_KRB5
-void HDFSBuilderWrapper::runKinit() const
+void HDFSBuilderWrapper::runKinit(bool force) const
 {
     if (!need_kinit)
     {
@@ -108,7 +108,7 @@ void HDFSBuilderWrapper::runKinit() const
     LOG_DEBUG(getLogger("HDFSClient"), "Running KerberosInit");
     try
     {
-        kerberosInit(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
+        kerberosInit(hadoop_kerberos_keytab, hadoop_kerberos_principal, hadoop_security_kerberos_ticket_cache_path, force);
     }
     catch (const DB::Exception & e)
     {

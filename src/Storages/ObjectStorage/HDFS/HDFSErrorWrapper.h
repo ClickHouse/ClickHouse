@@ -25,7 +25,7 @@ public:
         #if USE_KRB5
         if (errno == EACCES) // NOLINT
         {
-            builder.runKinit(); // krb5 keytab reinitialization
+            builder.runKinit(/* force */ true); // krb5 keytab reinitialization
             r = fn(p...);
         }
         #endif // USE_KRB5

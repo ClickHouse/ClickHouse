@@ -79,7 +79,8 @@ public:
     [[nodiscard]] hdfsBuilder * get() const { return hdfs_builder; }
 
     #if USE_KRB5
-    void runKinit() const;
+    /// `force` renews the ticket even if the cache has a fresh one, e.g. after the server refused it.
+    void runKinit(bool force = false) const;
     #endif // USE_KRB5
 
 private:

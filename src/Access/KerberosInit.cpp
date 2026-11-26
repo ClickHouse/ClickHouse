@@ -36,9 +36,11 @@ struct K5Data
 class KerberosInit : boost::noncopyable
 {
 public:
-    void init(const String & keytab_file, const String & principal, const String & cache_name = "");
+    void init(const String & keytab_file, const String & principal, const String & cache_name, bool force);
     ~KerberosInit();
 private:
+    [[nodiscard]] bool hasFreshTicket() const;
+    void switchToCache();
     struct K5Data k5 {};
     krb5_ccache defcache = nullptr;
     krb5_get_init_creds_opt * options = nullptr;
@@ -51,6 +53,54 @@ private:
 }
 
 
+/// Whether the output cache holds a ticket-granting ticket of the principal with more than a fifth of
+/// its lifetime left. Then there is nothing to renew yet: Hadoop's Java client renews at 80% of the
+/// lifetime too. Contacting the KDC on every call instead costs a round trip under the global mutex
+/// of `kerberosInit` each time an HDFS client is created.
+bool KerberosInit::hasFreshTicket() const
+{
+    krb5_principal cache_principal = nullptr;
+    if (krb5_cc_get_principal(k5.ctx, k5.out_cc, &cache_principal))
+        return false; /// The cache is empty or does not exist.
+    const bool same_principal = krb5_principal_compare(k5.ctx, cache_principal, k5.me);
+    krb5_free_principal(k5.ctx, cache_principal);
+    if (!same_principal)
+        return false;
+
+    const krb5_data * realm = krb5_princ_realm(k5.ctx, k5.me);
+    krb5_principal tgt_server = nullptr;
+    if (krb5_build_principal_ext(
+            k5.ctx, &tgt_server,
+            realm->length, realm->data,
+            KRB5_TGS_NAME_SIZE, KRB5_TGS_NAME,
+            realm->length, realm->data,
+            0))
+        return false;
+
+    krb5_creds match_creds {};
+    match_creds.client = k5.me;
+    match_creds.server = tgt_server;
+    krb5_creds tgt {};
+    const krb5_error_code ret = krb5_cc_retrieve_cred(k5.ctx, k5.out_cc, 0, &match_creds, &tgt);
+    krb5_free_principal(k5.ctx, tgt_server);
+    if (ret)
+        return false;
+
+    krb5_timestamp now = 0;
+    bool fresh = false;
+    if (!krb5_timeofday(k5.ctx, &now))
+    {
+        /// Kerberos timestamps are unsigned 32-bit values stored in signed ones, so subtract them as such.
+        const auto delta = [](krb5_timestamp a, krb5_timestamp b) { return static_cast<int32_t>(static_cast<uint32_t>(a) - static_cast<uint32_t>(b)); };
+        const krb5_timestamp start = tgt.times.starttime ? tgt.times.starttime : tgt.times.authtime;
+        const int64_t lifetime = delta(tgt.times.endtime, start);
+        const int64_t remaining = delta(tgt.times.endtime, now);
+        fresh = lifetime > 0 && remaining * 5 > lifetime;
+    }
+    krb5_free_cred_contents(k5.ctx, &tgt);
+    return fresh;
+}
+
 String KerberosInit::fmtError(krb5_error_code code) const
 {
     const char *msg = nullptr;
@@ -60,7 +110,18 @@ String KerberosInit::fmtError(krb5_error_code code) const
     return fmt_error;
 }
 
-void KerberosInit::init(const String & keytab_file, const String & principal, const String & cache_name)
+void KerberosInit::switchToCache()
+{
+    if (k5.switch_to_cache)
+    {
+        // Make a credential cache the primary cache for its collection.
+        const krb5_error_code ret = krb5_cc_switch(k5.ctx, k5.out_cc);
+        if (ret)
+            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error while switching to new cache: {}", fmtError(ret));
+    }
+}
+
+void KerberosInit::init(const String & keytab_file, const String & principal, const String & cache_name, bool force)
 {
     auto log = getLogger("KerberosInit");
     LOG_TRACE(log,"Trying to authenticate with Kerberos v5");
@@ -136,6 +197,13 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         throw Exception(ErrorCodes::KERBEROS_ERROR, "Error when unparsing name: {}", fmtError(ret));
     LOG_TRACE(log,"Using principal: {}", k5.name);
 
+    if (!force && hasFreshTicket())
+    {
+        LOG_TRACE(log, "The cache already has a ticket-granting ticket that is not due for renewal");
+        switchToCache();
+        return;
+    }
+
     // Allocate a new initial credential options structure.
     ret = krb5_get_init_creds_opt_alloc(k5.ctx, &options);
     if (ret)
@@ -182,13 +250,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         LOG_TRACE(log,"Stored credentials");
     }
 
-    if (k5.switch_to_cache)
-    {
-        // Make a credential cache the primary cache for its collection.
-        ret = krb5_cc_switch(k5.ctx, k5.out_cc);
-        if (ret)
-            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error while switching to new cache: {}", fmtError(ret));
-    }
+    switchToCache();
 
     LOG_TRACE(log,"Authenticated to Kerberos v5");
 }
@@ -217,12 +279,12 @@ KerberosInit::~KerberosInit()
     }
 }
 
-void kerberosInit(const String & keytab_file, const String & principal, const String & cache_name)
+void kerberosInit(const String & keytab_file, const String & principal, const String & cache_name, bool force)
 {
     // Using mutex to prevent cache file corruptions
     static std::mutex kinit_mtx;
     std::lock_guard lck(kinit_mtx);
     KerberosInit k_init;
-    k_init.init(keytab_file, principal, cache_name);
+    k_init.init(keytab_file, principal, cache_name, force);
 }
 #endif // USE_KRB5
