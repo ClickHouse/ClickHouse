@@ -7638,7 +7638,7 @@ static std::optional<IntegerCastOnField> getIntegerCastOnField(
     bool is_cast = (name == "_CAST" || name == "CAST"
         || name == "toUInt8" || name == "toUInt16" || name == "toUInt32" || name == "toUInt64"
         || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64"
-        || name == "toDateTime" || name == "toUnixTimestamp");
+        || name == "toDateTime" || name == "toDateTime32" || name == "toUnixTimestamp");
 
     if (!is_cast)
         return {};

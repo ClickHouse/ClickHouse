@@ -55,6 +55,10 @@ SELECT count() FROM t_minmax_integer_cast WHERE toDateTime(i64, 'UTC') = '2106-0
 SELECT count() FROM t_minmax_integer_cast WHERE toDateTime(i64, 'UTC') = '2106-02-07 06:28:15' SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
 SELECT count() FROM t_minmax_integer_cast WHERE toDateTime(i64, 'UTC') = '1970-01-01 00:00:00' SETTINGS date_time_overflow_behavior = 'saturate';
 SELECT count() FROM t_minmax_integer_cast WHERE toDateTime(i64, 'UTC') = '1970-01-01 00:00:00' SETTINGS date_time_overflow_behavior = 'saturate', use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_minmax_integer_cast WHERE toDateTime32(i64, 'UTC') = '1970-01-01 00:00:00';
+SELECT count() FROM t_minmax_integer_cast WHERE toDateTime32(i64, 'UTC') = '1970-01-01 00:00:00' SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_minmax_integer_cast WHERE toDateTime32(i64, 'UTC') BETWEEN '2024-01-01 00:00:00' AND '2024-01-08 00:00:00' SETTINGS force_data_skipping_indices = 'idx_i64', max_rows_to_read = 100;
+SELECT count() FROM t_minmax_integer_cast WHERE toDateTime32(i64, 'UTC') BETWEEN '2024-01-01 00:00:00' AND '2024-01-08 00:00:00' SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
 
 SELECT 'Int32 to DateTime';
 SELECT count() FROM t_minmax_integer_cast WHERE CAST(i32, 'DateTime(\'UTC\')') = '1970-01-01 00:00:00';
