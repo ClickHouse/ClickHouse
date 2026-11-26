@@ -61,17 +61,21 @@ void JoinSwitcher::onBuildPhaseFinish()
 
 bool JoinSwitcher::switchJoin(JoinBuildContext context)
 {
-    HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
+    /// The installed join must stay usable whatever throws: it is still read after a failure, for
+    /// example for its statistics. `releaseJoinedBlocks` empties the hash join, so `MergeJoin` is
+    /// created and installed before that, and the hash join is kept alive here until it is emptied.
+    JoinPtr hash_join_holder = join;
+    HashJoin * hash_join = assert_cast<HashJoin *>(hash_join_holder.get());
 
-    /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
+    switched = true;
+
+    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
+    hash_join_holder.reset();
 
     bool success = true;
     for (const Block & saved_block : right_blocks)
         success = success && join->addBlockToJoin(saved_block, saved_block.rows(), context);
-
-    switched = true;
 
     QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
 
