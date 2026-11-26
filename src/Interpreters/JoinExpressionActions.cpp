@@ -131,8 +131,6 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Block & right_header, ActionsDAG && actions_dag_)
 {
-    Data::NodeToSourceMapping expression_sources;
-
     const auto & input_nodes = actions_dag_.getInputs();
     if (input_nodes.size() != left_header.columns() + right_header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input nodes size mismatch in dag: {}, expected: [{}], [{}]",
@@ -144,21 +142,51 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
     if (std::ranges::any_of(left_column_names, [&right_column_names](const auto & name) { return right_column_names.contains(name); }))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Left and right columns have same names: [{}], [{}]", left_header.dumpNames(), right_header.dumpNames());
 
+    std::vector<JoinTableSide> input_sides;
+    input_sides.reserve(input_nodes.size());
     for (size_t i = 0; i < input_nodes.size(); ++i)
     {
-        BitSet rels;
         if (input_nodes[i]->type != ActionsDAG::ActionType::INPUT)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} is not INPUT in dag: {}",
                             i, actions_dag_.dumpDAG());
         const auto & column_name = input_nodes[i]->result_name;
         if (left_column_names.contains(column_name))
-            rels.set(0);
+            input_sides.push_back(JoinTableSide::Left);
         else if (right_column_names.contains(column_name))
-            rels.set(1);
+            input_sides.push_back(JoinTableSide::Right);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} from is not in headers: [{}] [{}], dag: {}",
                             column_name, actions_dag_.dumpDAG(), left_header.dumpNames(), right_header.dumpNames());
-        expression_sources[input_nodes[i]] = rels;
+    }
+
+    *this = JoinExpressionActions(left_header, right_header, std::move(actions_dag_), input_sides);
+}
+
+JoinExpressionActions::JoinExpressionActions(
+    const Block & left_header, const Block & right_header, ActionsDAG && actions_dag_, const std::vector<JoinTableSide> & input_sides)
+{
+    Data::NodeToSourceMapping expression_sources;
+
+    const auto & input_nodes = actions_dag_.getInputs();
+    if (input_nodes.size() != left_header.columns() + right_header.columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input nodes size mismatch in dag: {}, expected: [{}], [{}]",
+                        actions_dag_.dumpDAG(), left_header.dumpNames(), right_header.dumpNames());
+
+    if (input_sides.size() != input_nodes.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} input sides for {} input nodes in dag: {}",
+                        input_sides.size(), input_nodes.size(), actions_dag_.dumpDAG());
+
+    for (size_t i = 0; i < input_nodes.size(); ++i)
+    {
+        if (input_nodes[i]->type != ActionsDAG::ActionType::INPUT)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} is not INPUT in dag: {}",
+                            i, actions_dag_.dumpDAG());
+        const bool is_left = input_sides[i] == JoinTableSide::Left;
+        const auto & column_name = input_nodes[i]->result_name;
+        if (!(is_left ? left_header : right_header).has(column_name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} of the {} side is not in its header: [{}] [{}]",
+                            column_name, toString(input_sides[i]), left_header.dumpNames(), right_header.dumpNames());
+        expression_sources[input_nodes[i]].set(is_left ? 0 : 1);
     }
 
     data = std::make_shared<Data>(std::move(actions_dag_), std::move(expression_sources));
