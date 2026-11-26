@@ -4,6 +4,7 @@
 #include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Databases/RenderedCreateQuery.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/SettingsEnums.h>
@@ -48,6 +49,7 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageNull.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -1982,12 +1984,31 @@ std::shared_ptr<IcebergMetadata> DatabaseDataLake::getIcebergMetadata(const Stri
         /* use_stateful_tables */ false, /* allow_cluster_storage */ false);
     if (!table)
         throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
-    /// NOLINT(storage-cast): a temporary local storage constructed above.
-    auto & object_storage_table = assert_cast<StorageObjectStorage &>(*table);
-    auto metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table.getExternalMetadata(context_));
+    auto object_storage_table = castStorage<StorageObjectStorage>(table, DeferredTable::Skip);
+    if (!object_storage_table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected object storage for table `{}`", name);
+    auto metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table->getExternalMetadata(context_));
     if (!metadata)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Iceberg metadata for table `{}`", name);
     return metadata;
+}
+
+RenderedCreateQueryPtr DatabaseDataLake::getRenderedCreateTableQueryImpl(
+    const String & name, ContextPtr context_, const RenderOptions & options, const RenderedCreateQueryFields & fields) const
+{
+    ASTPtr query;
+    try
+    {
+        query = tryGetCreateTableQuery(name, context_);
+    }
+    catch (...)
+    {
+        /// A lazy storage may be available even when its external metadata cannot be read.
+        /// Keep its `system.tables` row with empty definition fields, as for an unresolved storage.
+        /// Standalone `SHOW CREATE TABLE` bypasses this rendering hook and propagates the error.
+        tryLogCurrentException(log, fmt::format("Cannot read the definition of table {}.{} for system.tables", getDatabaseName(), name));
+    }
+    return renderCreateQuery(query, options, fields);
 }
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(

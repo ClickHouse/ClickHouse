@@ -108,6 +108,8 @@ public:
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
+    RenderedCreateQueryPtr getRenderedCreateTableQueryImpl(
+        const String & name, ContextPtr context, const RenderOptions & options, const RenderedCreateQueryFields & fields) const override;
 
 private:
     /// Iceberg Catalog url.

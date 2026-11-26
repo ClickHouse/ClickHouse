@@ -2513,6 +2513,57 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 
+def test_system_tables_lazy_metadata_access_failure_does_not_abort_scan(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"show_definition_isolation_{uuid.uuid4().hex}"
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, "keys")
+    healthy_database = f"{namespace}_healthy"
+    broken_database = f"{namespace}_broken"
+    create_clickhouse_iceberg_database(started_cluster, node, healthy_database)
+    try:
+        # The REST catalog can read its metadata, while ClickHouse cannot authenticate to S3.
+        node.query(
+            f"CREATE DATABASE {broken_database} "
+            f"ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'invalid-secret') "
+            "SETTINGS catalog_type = 'rest', warehouse = 'demo', vended_credentials = 0, "
+            "storage_endpoint = 'http://minio1:9001/warehouse-rest'",
+            settings={"allow_database_iceberg": 1},
+        )
+        for require in (0, 1):
+            settings = {
+                "show_data_lake_catalogs_in_system_tables": 1,
+                "database_datalake_require_metadata_access": require,
+            }
+            rows = [json.loads(line) for line in node.query(
+                "SELECT database, name, engine, create_table_query, engine_full, as_select "
+                "FROM system.tables "
+                f"WHERE database IN ('{healthy_database}', '{broken_database}') "
+                f"AND name = '{namespace}.keys' FORMAT JSONEachRow",
+                settings=settings,
+            ).splitlines()]
+            assert len(rows) == 2
+            rows_by_database = {row["database"]: row for row in rows}
+            healthy = rows_by_database[healthy_database]
+            broken = rows_by_database[broken_database]
+            assert healthy["create_table_query"].startswith("CREATE TABLE")
+            assert healthy["engine_full"]
+            # A nonempty engine proves the iterator returned a storage; rendering fails later.
+            assert broken["engine"]
+            assert broken["create_table_query"] == ""
+            assert broken["engine_full"] == ""
+            assert broken["as_select"] == ""
+            error = node.query_and_get_error(
+                f"SHOW CREATE TABLE {broken_database}.`{namespace}.keys`",
+                settings=settings,
+            )
+            assert "signature" in error.lower()
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {broken_database}")
+        node.query(f"DROP DATABASE IF EXISTS {healthy_database}")
+
+
 def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_cluster):
     """
     Regression test for the StorageMerge consumer of DatabaseDataLake::getTablesIterator.
