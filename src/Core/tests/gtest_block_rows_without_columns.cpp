@@ -16,17 +16,17 @@ ColumnWithTypeAndName makeColumn(const String & name, size_t num_rows)
 
 }
 
-/// A block with no columns reports the number of rows it was given, and it is not the absence of data.
+/// A block with no columns reports the number of rows it was given, and it is not empty then.
 TEST(BlockRowsWithoutColumns, RowsAreReported)
 {
     Block block;
     ASSERT_EQ(block.rows(), 0);
-    ASSERT_TRUE(block.hasNoColumnsAndNoRows());
+    ASSERT_TRUE(block.empty());
 
     block.setRowsWithoutColumns(42);
-    ASSERT_TRUE(block.empty());
+    ASSERT_EQ(block.columns(), 0);
     ASSERT_EQ(block.rows(), 42);
-    ASSERT_FALSE(block.hasNoColumnsAndNoRows());
+    ASSERT_FALSE(block.empty());
 
     ASSERT_EQ(block.cloneWithCutColumns(40, 5).rows(), 2);
     ASSERT_EQ(concatenateBlocks({block, block}).rows(), 84);
@@ -46,21 +46,21 @@ TEST(BlockRowsWithoutColumns, CopyAndMove)
     Block moved = std::move(block);
     ASSERT_EQ(moved.rows(), 42);
     // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved,clang-analyzer-cplusplus.Move)
-    ASSERT_TRUE(block.hasNoColumnsAndNoRows());
+    ASSERT_TRUE(block.empty());
 
     Block assigned;
     assigned = std::move(moved);
     ASSERT_EQ(assigned.rows(), 42);
     // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved,clang-analyzer-cplusplus.Move)
-    ASSERT_TRUE(moved.hasNoColumnsAndNoRows());
+    ASSERT_TRUE(moved.empty());
 
     Block swapped;
     swapped.swap(assigned);
     ASSERT_EQ(swapped.rows(), 42);
-    ASSERT_TRUE(assigned.hasNoColumnsAndNoRows());
+    ASSERT_TRUE(assigned.empty());
 
     swapped.clear();
-    ASSERT_TRUE(swapped.hasNoColumnsAndNoRows());
+    ASSERT_TRUE(swapped.empty());
 }
 
 /// A block with columns takes its rows from them: the number given to it before does not come back
@@ -74,5 +74,5 @@ TEST(BlockRowsWithoutColumns, ColumnsTakeOver)
     ASSERT_EQ(block.rows(), 3);
 
     block.erase("x");
-    ASSERT_TRUE(block.hasNoColumnsAndNoRows());
+    ASSERT_TRUE(block.empty());
 }

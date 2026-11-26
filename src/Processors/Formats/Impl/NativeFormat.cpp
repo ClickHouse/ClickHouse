@@ -39,8 +39,7 @@ public:
         auto block = reader->read();
         approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - block_start;
 
-        /// A block with no columns is the end of the data only when it has no rows either.
-        if (block.hasNoColumnsAndNoRows())
+        if (block.empty())
             return {};
 
         assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName());
@@ -103,7 +102,7 @@ protected:
             block.setColumns(chunk.detachColumns());
 
             /// A block takes its number of rows from its columns, so without them it has to be told.
-            if (block.empty())
+            if (block.columns() == 0)
                 block.setRowsWithoutColumns(num_rows);
 
             writer.write(block);

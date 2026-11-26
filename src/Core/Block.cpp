@@ -1247,7 +1247,7 @@ Block concatenateBlocks(const Blocks & blocks)
     out.setColumns(std::move(columns));
 
     /// The rows of blocks with no columns carry no values, so only their number is concatenated.
-    if (out.empty())
+    if (out.columns() == 0)
         out.setRowsWithoutColumns(num_rows);
 
     return out;

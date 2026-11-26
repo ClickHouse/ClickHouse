@@ -146,10 +146,10 @@ public:
     /// and for a block with no columns, the number set by `setRowsWithoutColumns` (zero by default).
     [[nodiscard]] size_t rows() const;
 
-    /// Sets the number of rows of a block that has no columns. Such a block is not always empty: its rows
-    /// can carry no values at all, and then their number is all the data there is. It is what a shard
-    /// produces for `SELECT count() OVER () FROM distributed_table WHERE x > 0`, where the initiator
-    /// needs the number of rows and nothing else.
+    /// Sets the number of rows of a block that has no columns. Such a block is not empty when the number
+    /// is not zero: its rows carry no values at all, and their number is all the data there is. It is what
+    /// a shard produces for `SELECT count() OVER () FROM distributed_table WHERE x > 0`, where the
+    /// initiator needs the number of rows and nothing else.
     ///
     /// The number of rows of a block with no columns is never derived: removing every column of a block
     /// leaves a block without rows, and so does making a block out of a header with no columns
@@ -170,12 +170,11 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     [[nodiscard]] size_t allocatedBytes() const;
 
-    /// The block has no columns. It can still have rows, see `setRowsWithoutColumns`.
-    [[nodiscard]] bool empty() const { return !columns(); }
-
-    /// The block has neither columns nor rows: it is not data at all, but the absence of it,
-    /// e.g. the end of the data, or a timeout while waiting for it.
-    [[nodiscard]] bool hasNoColumnsAndNoRows() const { return data.empty() && rows_without_columns == 0; }
+    /// The block has neither columns nor rows, the same as for a `Chunk`: it is not data at all, but the
+    /// absence of it, e.g. the end of the data, or a timeout while waiting for it. A header is empty when
+    /// it has no columns. A block with no columns is not empty when it has rows, see
+    /// `setRowsWithoutColumns`: ask `columns` to know whether there are columns.
+    [[nodiscard]] bool empty() const { return data.empty() && rows_without_columns == 0; }
 
     /** Get a list of column names separated by commas. */
     [[nodiscard]] std::string dumpNames() const;

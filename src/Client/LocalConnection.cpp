@@ -668,9 +668,8 @@ void LocalConnection::sendQueryPlan(const QueryPlan &)
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
-    /// Data sent to the server always has columns. Treating a block of rows without columns as the end
-    /// of the data would silently drop its rows.
-    if (block.empty() && block.rows() > 0)
+    /// Data sent to the server always has columns.
+    if (block.columns() == 0 && block.rows() > 0)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Cannot send a block of {} rows without columns as data to the server",
@@ -912,7 +911,7 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->block && !state->block.value().hasNoColumnsAndNoRows())
+    if (state->block && !state->block.value().empty())
     {
         next_packet_type = Protocol::Server::Data;
         return true;
@@ -980,15 +979,11 @@ bool LocalConnection::pollImpl()
     Block block;
     auto next_read = pullBlock(block);
 
-    /// A block with no columns is the timeout of the executor only when it has no rows either:
-    /// its rows can carry no values at all, and they are still a part of the result.
-    const bool has_data = !block.hasNoColumnsAndNoRows();
-
-    if (!has_data && next_read)
+    if (block.empty() && next_read)
     {
         return true;
     }
-    if (has_data && !state->io.null_format)
+    if (!block.empty() && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -1032,7 +1027,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
-            if (state->block && !state->block.value().hasNoColumnsAndNoRows())
+            if (state->block && !state->block.value().empty())
             {
                 packet.block = std::move(state->block.value());
                 state->block.reset();

@@ -211,8 +211,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     else
         block = query_executor->readBlock();
 
-    /// A block with no columns is the end of the data only when it has no rows either.
-    if (block.hasNoColumnsAndNoRows())
+    if (block.empty())
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);

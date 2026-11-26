@@ -90,7 +90,7 @@ bool PullingPipelineExecutor::pull(Block & block)
     block = pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
 
     /// A block takes its number of rows from its columns, so without them it has to be told.
-    if (block.empty())
+    if (block.columns() == 0)
         block.setRowsWithoutColumns(num_rows);
 
     if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())

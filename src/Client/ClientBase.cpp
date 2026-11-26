@@ -896,8 +896,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    /// A block with no columns is still data when it carries rows that hold no values.
-    if (block.hasNoColumnsAndNoRows() || local_format_error_happened)
+    if (block.empty() || local_format_error_happened)
         return;
 
     processed_rows_from_blocks += block.rows();

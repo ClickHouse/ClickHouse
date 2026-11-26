@@ -1052,8 +1052,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (packet.block.rows() > 0 || packet.block.empty())
                 throwIfColumnLessResultFromOldServer();
 
-            /// A block with rows and no columns is data too: its rows carry no values.
-            if (packet.block.rows() > 0)
+            if (!packet.block.empty() && (packet.block.rows() > 0))
             {
                 got_data_from_replica = true;
                 return ReadResult(adaptBlockStructure(std::move(packet.block), *header, header_describes_result));
