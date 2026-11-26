@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceDataObjectInfo.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 
@@ -28,6 +29,10 @@ struct ClusterFunctionReadTaskResponse
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
     /// The size of a data lake object recorded in the table metadata, unless `iceberg_info` carries it.
     std::optional<size_t> file_size_hint;
+#if USE_LANCE
+    /// Lance fragment-pack metadata (version + fragment_ids).
+    std::optional<Lance::LanceObjectSerializableInfo> lance_info;
+#endif
 
     /// Convert received response into ObjectInfo.
     [[nodiscard]] ObjectInfoPtr getObjectInfo() const;

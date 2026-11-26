@@ -16,6 +16,11 @@ if (RUST_BUILD_CACHE_DIR AND "delta_kernel" IN_LIST _features)
     message(STATUS "RUST_BUILD_CACHE_DIR is not used: the Rust workspace includes delta-kernel-rs")
 endif()
 
+get_property(_env GLOBAL PROPERTY CLICKHOUSE_RUST_ENV)
+if (_env)
+    corrosion_set_env_vars(_ch_rust_workspace ${_env})
+endif()
+
 get_property(_build_depends GLOBAL PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS)
 if (_build_depends)
     list(REMOVE_DUPLICATES _build_depends)

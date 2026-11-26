@@ -42,6 +42,12 @@ add_library(_libxml2 ${SRCS})
 
 target_link_libraries(_libxml2 PRIVATE ch_contrib::zlib)
 
+# Headers enable LIBXML_ICONV_ENABLED. On macOS iconv lives in libiconv, not libc;
+# without this, final links (e.g. unit_tests_dbms) fail with undefined _iconv*.
+if (OS_DARWIN)
+    target_link_libraries(_libxml2 PUBLIC iconv)
+endif()
+
 target_include_directories(_libxml2 BEFORE PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include")
 target_include_directories(_libxml2 BEFORE PUBLIC "${LIBXML2_SOURCE_DIR}/include")
 

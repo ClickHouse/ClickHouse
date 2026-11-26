@@ -6,13 +6,16 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include "config.h"
 
 namespace DB
 {
@@ -42,6 +45,11 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 #endif
     if (!iceberg_info.has_value())
         file_size_hint = object->getFileSizeHint();
+
+#if USE_LANCE
+    if (const auto * lance_object = typeid_cast<const LanceDatasetObjectInfo *>(object.get()))
+        lance_info = lance_object->toSerializableInfo();
+#endif
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
@@ -73,6 +81,12 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg support is disabled");
 #endif
     }
+#if USE_LANCE
+    else if (lance_info.has_value())
+    {
+        object = std::make_shared<LanceDatasetObjectInfo>(RelativePathWithMetadata{path}, *lance_info);
+    }
+#endif
     else if (file_size_hint)
     {
         object = std::make_shared<ObjectInfoWithFileSizeHint>(RelativePathWithMetadata{path}, *file_size_hint);
@@ -191,6 +205,33 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         if (file_size_hint)
             writeVarUInt(*file_size_hint, out);
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA)
+    {
+#if USE_LANCE
+        if (lance_info.has_value())
+        {
+            writeVarUInt(1, out);
+            lance_info->serializeForClusterFunctionProtocol(out, protocol_version);
+        }
+        else
+#endif
+        {
+            writeVarUInt(0, out);
+        }
+    }
+#if USE_LANCE
+    else if (lance_info.has_value())
+    {
+        /// Fail closed: path-only ObjectInfo cannot drive Lance fragment packs.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry Lance fragment-pack metadata "
+            "(minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA);
+    }
+#endif
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -287,6 +328,20 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             file_size_hint = value;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA)
+    {
+        bool has_lance_metadata = false;
+        readVarUInt(has_lance_metadata, in);
+        if (has_lance_metadata)
+        {
+#if USE_LANCE
+            lance_info = Lance::LanceObjectSerializableInfo{};
+            lance_info->deserializeForClusterFunctionProtocol(in, protocol_version);
+#else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance support is disabled");
+#endif
         }
     }
 }

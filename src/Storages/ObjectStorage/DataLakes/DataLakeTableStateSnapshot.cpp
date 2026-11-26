@@ -9,6 +9,9 @@
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
 #endif
+#if USE_LANCE
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceTableStateSnapshot.h>
+#endif
 
 namespace DB
 {
@@ -44,6 +47,13 @@ void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, Write
         std::get<Paimon::TableStateSnapshot>(state).serialize(out);
     }
 #endif
+#if USE_LANCE
+    else if (std::holds_alternative<Lance::TableStateSnapshot>(state))
+    {
+        writeVarInt(LANCE_TABLE_STATE_SNAPSHOT, out);
+        std::get<Lance::TableStateSnapshot>(state).serialize(out);
+    }
+#endif
     else
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization for this DataLakeTableStateSnapshot type is not implemented");
@@ -60,7 +70,7 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
             "Cannot deserialize DataLakeTableStateSnapshot with protocol version {}, maximum supported version is {}",
             protocol_version,
             DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
-    if (protocol_version == 1)
+    if (protocol_version == 1 || protocol_version == 2)
     {
         int type = 0;
         readVarInt(type, in);
@@ -78,6 +88,12 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
         else if (type == PAIMON_TABLE_STATE_SNAPSHOT)
         {
             return Paimon::TableStateSnapshot::deserialize(in, protocol_version);
+        }
+#endif
+#if USE_LANCE
+        else if (type == LANCE_TABLE_STATE_SNAPSHOT)
+        {
+            return Lance::TableStateSnapshot::deserialize(in, protocol_version);
         }
 #endif
         else
