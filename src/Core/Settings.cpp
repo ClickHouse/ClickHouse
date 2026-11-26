@@ -8908,7 +8908,7 @@ If true, data from INSERT query is stored in queue and later flushed to table in
 )", 0, \
         {"26.2", false, true, "Enable async inserts by default."}) \
     DECLARE(Bool, async_insert_select_as_async_insert, true, R"(
-Whether a user-initiated `INSERT ... SELECT` may use the asynchronous insert queue when `async_insert` is enabled and the query is eligible (a single small block into a `MergeTree`-family destination with no dependent views). When disabled, `INSERT ... SELECT` always runs synchronously regardless of `async_insert`. Internal inserts (refreshable materialized view, `POPULATE`, `CREATE TABLE ... AS SELECT`) are always synchronous and ignore this setting.
+Whether a user-initiated `INSERT ... SELECT` may use the asynchronous insert queue when `async_insert` is enabled and the query is eligible (a single small block into a `MergeTree`-family table, or into a materialized view writing into one, whose dependent materialized views, if any, write only into `MergeTree`-family tables). When disabled, `INSERT ... SELECT` always runs synchronously regardless of `async_insert`. Internal inserts (refreshable materialized view, `POPULATE`, `CREATE TABLE ... AS SELECT`) are always synchronous and ignore this setting.
 )", 0, \
         {"26.10", false, true, "Enable async inserts for `INSERT ... SELECT` queries by default."}) \
     DECLARE(Bool, wait_for_async_insert, true, R"(

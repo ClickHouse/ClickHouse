@@ -1,0 +1,14 @@
+src	[0,1,2]
+t1	[0,10,20]
+t2	[1,11,21]
+memory_target	3
+join_target	2
+src	6
+src_joinget	[0,10,20]
+chain queued: 1
+memory queued: 0
+join queued: 1
+reads_graph queued: 1
+joinget queued: 1
+mv1	QueryFinish
+mv2	QueryFinish

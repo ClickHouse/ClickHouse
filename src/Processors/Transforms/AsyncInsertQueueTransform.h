@@ -1,22 +1,61 @@
 #pragma once
 
-#include <deque>
 #include <Common/DequeWithMemoryTracking.h>
 
+#include <Core/Block.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/ISource.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/Logger.h>
+
+#include <optional>
 
 namespace DB
 {
 
 class AsynchronousInsertQueue;
-class QueryPipeline;
 class PushingAsyncPipelineExecutor;
+
+/// The block `AsyncInsertQueueTransform` diverts, with the query to push it with.
+struct AsyncInsertDivertedBlock
+{
+    ASTPtr query;
+    std::optional<Block> block;
+};
+
+/// Runs the pipeline of a local `INSERT ... SELECT` that may divert its result, destroys it, and only then
+/// pushes the diverted block to the async insert queue and waits for the flush. The flush locks its tables
+/// under a query id of its own, so a lock the query still held could deadlock with a writer queued between
+/// the two. Once the pipeline is gone, the query holds no lock.
+class AsyncInsertSelectSource final : public ISource
+{
+public:
+    AsyncInsertSelectSource(
+        QueryPipeline pipeline_,
+        std::shared_ptr<AsyncInsertDivertedBlock> diverted_,
+        AsynchronousInsertQueue * queue_,
+        ContextPtr context_,
+        UInt64 wait_timeout_ms_,
+        bool wait_for_flush_);
+
+    String getName() const override { return "AsyncInsertSelectSource"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    QueryPipeline pipeline;
+    std::shared_ptr<AsyncInsertDivertedBlock> diverted;
+    AsynchronousInsertQueue * queue;
+    ContextPtr context;
+    UInt64 wait_timeout_ms;
+    bool wait_for_flush;
+};
 
 /// Additive one-block lookahead for a local `INSERT ... SELECT` under `async_insert`. A result
 /// that fits in a single block within `async_insert_max_data_size` is diverted to the async queue;
@@ -29,14 +68,12 @@ class AsyncInsertQueueTransform final : public ExceptionKeepingTransform
 public:
     AsyncInsertQueueTransform(
         SharedHeader header_,
-        AsynchronousInsertQueue * queue_,
         ContextMutablePtr context_,
         ASTPtr query_ast_,
         Names insert_column_names_,
         UInt64 max_data_size_,
-        UInt64 wait_timeout_ms_,
-        bool wait_for_flush_,
         TableLockHolder destination_lock_,
+        std::shared_ptr<AsyncInsertDivertedBlock> diverted_,
         InsertDependenciesBuilder::ConstPtr insert_dependencies_,
         StoragePtr table_,
         size_t max_threads_,
@@ -63,26 +100,20 @@ private:
     /// `disqualify` without a chunk of its own to push.
     void fallBack();
 
-    AsynchronousInsertQueue * queue;
     ContextMutablePtr context;
     ASTPtr query_ast;
     /// Frozen onto the AST clone pushed to the queue instead of re-resolved against a possibly newer schema.
     Names insert_column_names;
     UInt64 max_data_size;
-    UInt64 wait_timeout_ms;
-    bool wait_for_flush;
-    /// The destination's share lock, owned here so it can be dropped once the queue has the block:
-    /// the flush re-acquires it under its own query id, which cannot join this lock's reader group
-    /// once an exclusive locker is queued. Kept for the whole pipeline when the block is not diverted.
-    /// `insert_dependencies` below holds share locks of its own and goes at the same point.
+    /// The destination's share lock. Owned by this pipeline rather than the outer one, so it goes with this
+    /// pipeline before `AsyncInsertSelectSource` pushes the diverted block.
     TableLockHolder destination_lock;
+    std::shared_ptr<AsyncInsertDivertedBlock> diverted;
     LoggerPtr logger;
 
     /// Frozen at query start (see `InterpreterInsertQuery::addInsertToSelectPipeline`), so the
     /// fallback pipeline, built lazily here, sees the same schema/dedup/view decisions as an eagerly
-    /// built one would, not ones re-derived from possibly newer catalog state. Dropped once a block is
-    /// diverted: it keeps a share lock per node of the dependency path, the destination included, and
-    /// nothing needs it after the divert.
+    /// built one would, not ones re-derived from possibly newer catalog state.
     InsertDependenciesBuilder::ConstPtr insert_dependencies;
     StoragePtr table;
     size_t max_threads;

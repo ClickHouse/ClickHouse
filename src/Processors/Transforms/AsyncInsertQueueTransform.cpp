@@ -9,9 +9,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -107,30 +109,119 @@ size_t estimateMaterializedBytes(const Columns & columns, size_t rows)
 
 }
 
+/// Returns early, without an error, if `source` is cancelled meanwhile.
+static void waitForFlush(
+    std::future<AsyncInsertProgress> & future, const ContextPtr & context, UInt64 wait_timeout_ms, const IProcessor & source)
+{
+    /// `cancelQuery` sets `is_killed` before cancelling the pipeline executors, so a `KILL QUERY`
+    /// (or `max_execution_time`) is visible here as `throwIfKilled()` / `checkTimeLimit()`. Shared
+    /// by the loop and the post-loop check, since a `false` return under `'break'` is ignored.
+    auto throw_if_killed_or_timed_out = [&]
+    {
+        if (auto process_list_elem = context->getProcessListElement())
+        {
+            process_list_elem->throwIfKilled();
+            process_list_elem->checkTimeLimit();
+        }
+    };
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_timeout_ms);
+    while (true)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline)
+            break;
+
+        /// Clamped, so a timeout shorter than the interval is not rounded up to a multiple of it.
+        const auto remaining_wait = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        if (future.wait_for(std::min(flush_wait_cancellation_check_interval, remaining_wait)) == std::future_status::ready)
+            break;
+
+        throw_if_killed_or_timed_out();
+
+        if (source.isCancelled())
+            return;
+    }
+
+    /// Readiness must not outrank a kill or an expired `max_execution_time` observed in the same poll window.
+    throw_if_killed_or_timed_out();
+
+    if (future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", wait_timeout_ms);
+
+    /// The future is already ready, so the timeout argument below is unused; `report_read_progress`
+    /// is false because the `SELECT` side already reported its own reads.
+    waitForAsyncInsertAndReportProgress(
+        future, /* future is already ready, unused for waiting */ 0,
+        context->getProcessListElement(), context->getProgressCallback(),
+        /* report_read_progress */ false);
+}
+
+AsyncInsertSelectSource::AsyncInsertSelectSource(
+    QueryPipeline pipeline_,
+    std::shared_ptr<AsyncInsertDivertedBlock> diverted_,
+    AsynchronousInsertQueue * queue_,
+    ContextPtr context_,
+    UInt64 wait_timeout_ms_,
+    bool wait_for_flush_)
+    : ISource(std::make_shared<const Block>())
+    , pipeline(std::move(pipeline_))
+    , diverted(std::move(diverted_))
+    , queue(queue_)
+    , context(std::move(context_))
+    , wait_timeout_ms(wait_timeout_ms_)
+    , wait_for_flush(wait_for_flush_)
+{
+}
+
+Chunk AsyncInsertSelectSource::generate()
+{
+    /// Set here and not by `executeQuery`, which only sees the outer pipeline.
+    pipeline.setProgressCallback(context->getProgressCallback());
+    pipeline.setProcessListElement(context->getProcessListElement());
+    pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
+    {
+        CompletedPipelineExecutor executor(pipeline);
+        executor.setCancelCallback(
+            [this] { return isCancelled(); }, static_cast<size_t>(flush_wait_cancellation_check_interval.count()));
+        executor.execute();
+    }
+    logProcessorProfile(context, pipeline.getProcessors());
+    pipeline.reset();
+
+    if (!diverted->block || isCancelled())
+        return {};
+
+    auto result = queue->pushQueryWithBlock(diverted->query, std::move(*diverted->block), context);
+    diverted.reset();
+
+    /// The queue owns the block and the flush proceeds independently of this query; the client gives up
+    /// the flush result, i.e. written row/byte accounting and any flush error.
+    if (wait_for_flush)
+        waitForFlush(result.future, context, wait_timeout_ms, *this);
+    return {};
+}
+
 AsyncInsertQueueTransform::AsyncInsertQueueTransform(
     SharedHeader header_,
-    AsynchronousInsertQueue * queue_,
     ContextMutablePtr context_,
     ASTPtr query_ast_,
     Names insert_column_names_,
     UInt64 max_data_size_,
-    UInt64 wait_timeout_ms_,
-    bool wait_for_flush_,
     TableLockHolder destination_lock_,
+    std::shared_ptr<AsyncInsertDivertedBlock> diverted_,
     InsertDependenciesBuilder::ConstPtr insert_dependencies_,
     StoragePtr table_,
     size_t max_threads_,
     bool no_squash_,
     bool async_insert_flag_)
     : ExceptionKeepingTransform(header_, header_, /* ignore_on_start_and_finish */ false)
-    , queue(queue_)
     , context(std::move(context_))
     , query_ast(std::move(query_ast_))
     , insert_column_names(std::move(insert_column_names_))
     , max_data_size(max_data_size_)
-    , wait_timeout_ms(wait_timeout_ms_)
-    , wait_for_flush(wait_for_flush_)
     , destination_lock(std::move(destination_lock_))
+    , diverted(std::move(diverted_))
     , logger(getLogger("AsyncInsertQueueTransform"))
     , insert_dependencies(std::move(insert_dependencies_))
     , table(std::move(table_))
@@ -295,65 +386,10 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
         async_insert_query.columns = make_intrusive<ASTExpressionList>();
         for (const auto & name : insert_column_names)
             async_insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(name));
-        auto result = queue->pushQueryWithBlock(async_query, std::move(block), context);
 
-        /// The queue owns the block, and the flush relocks the table under a fresh query id, so it
-        /// cannot join the reader group of this query: a share lock kept across the wait below lets an
-        /// exclusive locker queue between the two, and neither side moves. `InsertDependenciesBuilder`
-        /// holds one such lock per node of the dependency path. Only the fallback pipeline needs the
-        /// builder, and it can no longer be built, so this transform is its last owner.
-        chassert(insert_dependencies.use_count() == 1);
-        destination_lock.reset();
-        insert_dependencies.reset();
-
-        /// The queue owns the block and the flush proceeds independently of this pipeline, so
-        /// there is nothing left to keep alive here; the client gives up the flush result, i.e.
-        /// written row/byte accounting and any flush error.
-        if (!wait_for_flush)
-            return {};
-
-        /// `cancelQuery` sets `is_killed` before cancelling the pipeline executors, so a `KILL QUERY`
-        /// (or `max_execution_time`) is visible here as `throwIfKilled()` / `checkTimeLimit()`. Shared
-        /// by the loop and the post-loop check, since a `false` return under `'break'` is ignored.
-        auto throw_if_killed_or_timed_out = [&]
-        {
-            if (auto process_list_elem = context->getProcessListElement())
-            {
-                process_list_elem->throwIfKilled();
-                process_list_elem->checkTimeLimit();
-            }
-        };
-
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_timeout_ms);
-        while (true)
-        {
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= deadline)
-                break;
-
-            /// Clamped, so a timeout shorter than the interval is not rounded up to a multiple of it.
-            const auto remaining_wait = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
-            if (result.future.wait_for(std::min(flush_wait_cancellation_check_interval, remaining_wait)) == std::future_status::ready)
-                break;
-
-            throw_if_killed_or_timed_out();
-
-            if (isCancelled())
-                return {};
-        }
-
-        /// Readiness must not outrank a kill or an expired `max_execution_time` observed in the same poll window.
-        throw_if_killed_or_timed_out();
-
-        if (result.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", wait_timeout_ms);
-
-        /// The future is already ready, so the timeout argument below is unused; `report_read_progress`
-        /// is false because the `SELECT` side already reported its own reads.
-        waitForAsyncInsertAndReportProgress(
-            result.future, /* future is already ready, unused for waiting */ 0,
-            context->getProcessListElement(), context->getProgressCallback(),
-            /* report_read_progress */ false);
+        /// `AsyncInsertSelectSource` pushes it once this pipeline, and every lock it holds, is gone.
+        diverted->query = std::move(async_query);
+        diverted->block = std::move(block);
     }
     else if (!fallback_executor)
     {

@@ -50,7 +50,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
@@ -469,48 +468,6 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
     return query_sample_block;
 }
 
-/// Bounds the Alias chase, so a cyclic catalog state still terminates.
-constexpr size_t max_alias_chase_depth = 8;
-
-/// A `StorageAlias` chain is one destination; returns false when it is broken or too deep, counted as unresolvable.
-static bool collectDestinationIdentities(const StoragePtr & table, std::unordered_set<const IStorage *> & identities)
-{
-    StoragePtr storage = table;
-    for (size_t depth = 0; depth <= max_alias_chase_depth; ++depth)
-    {
-        if (!storage)
-            return false;
-
-        /// A cycle adds nothing new: everything reachable is already collected.
-        if (!identities.insert(storage.get()).second)
-            return true;
-
-        const auto * alias = storage->as<StorageAlias>();
-        if (!alias)
-            return true;
-
-        storage = alias->tryGetTargetTable();
-    }
-    return false;
-}
-
-/// True if this SELECT pipeline reads the destination table, or if that cannot be established (needed
-/// because the queue route would let the SELECT side's lock outlive the wait for the flush's own lock,
-/// stalling a DDL write arriving in between). Reads the pipeline's storage holders rather than
-/// re-deriving the table set from the AST.
-static bool selectPipelineReadsDestinationTable(const QueryPipelineBuilder & pipeline, const StoragePtr & table)
-{
-    std::unordered_set<const IStorage *> destination_identities;
-    if (!collectDestinationIdentities(table, destination_identities))
-        return true;
-
-    for (const auto & storage : pipeline.getResources().storage_holders)
-        if (destination_identities.contains(storage.get()))
-            return true;
-
-    return false;
-}
-
 QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline, bool add_async_insert_queue_transform,
     TableLockHolder * destination_lock)
@@ -536,7 +493,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     /// The queue flush has no defaults step to undo the `Nullable` widening `insert_null_as_default`
     /// applies, so such a query stays on the sink chain below.
     bool needs_null_default_sync = false;
-    bool select_reads_destination = false;
     if (add_async_insert_queue_transform)
     {
         /// Named handle: converting a temporary `StorageMetadataHandle` to `StorageMetadataPtr` is deleted.
@@ -544,7 +500,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         needs_null_default_sync = !blocksHaveEqualStructure(
             query_sample_block,
             getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
-        select_reads_destination = selectPipelineReadsDestinationTable(pipeline, table);
     }
 
     auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(
@@ -578,14 +533,11 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         std::string_view reason;
         if (needs_null_default_sync)
             reason = "insert_null_as_default widens the block to Nullable";
-        else if (select_reads_destination)
-            reason = "SELECT reads the destination table";
-        /// Views are excluded wholesale, not per view target: a diverted block leaves their sink chain
-        /// built but unfed. `isViewsInvolved` only sees the dependency graph `collectAllDependencies`
-        /// walked from `table`; an `Alias` destination hides its target's own dependent views behind
-        /// the nested `INSERT` its `AliasSink` runs at execution time, so that hop needs its own probe.
-        else if (insert_dependencies->isViewsInvolved() || InsertDependenciesBuilder::forwardedInsertHidesDependentView(table))
-            reason = "destination table has dependent views";
+        /// `collectAllDependencies` does not see the views behind an `Alias` destination.
+        else if (InsertDependenciesBuilder::forwardedInsertHidesDependentView(table))
+            reason = "destination table forwards the insert to a table with dependent views";
+        else if (insert_dependencies->isViewsInvolved() && !insert_dependencies->viewTargetsArePlainMergeTree())
+            reason = "dependent views are not plain MergeTree";
 
         if (reason.empty())
             LOG_DEBUG(logger, "INSERT ... SELECT is eligible for the asynchronous insert queue route");
@@ -610,6 +562,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         if (pipeline.getNumStreams() != 1)
             pipeline.resize(1);
 
+        auto diverted_block = std::make_shared<AsyncInsertDivertedBlock>();
         pipeline.addSimpleTransform([&](const SharedHeader & in_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             /// Only the main stream carries rows to divert, and only it may take the lock over. A
@@ -619,12 +572,8 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
                 return nullptr;
 
             return std::make_shared<AsyncInsertQueueTransform>(
-                in_header, context->tryGetAsynchronousInsertQueue(), context, query_ptr, insert_column_names,
-                settings[Setting::async_insert_max_data_size],
-                saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count(),
-                settings[Setting::wait_for_async_insert],
-                std::move(*destination_lock),
-                insert_dependencies, table, max_threads, no_squash, async_insert);
+                in_header, context, query_ptr, insert_column_names, settings[Setting::async_insert_max_data_size],
+                std::move(*destination_lock), diverted_block, insert_dependencies, table, max_threads, no_squash, async_insert);
         });
 
         pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
@@ -632,7 +581,17 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             return std::make_shared<EmptySink>(cur_header);
         });
 
-        return QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        auto select_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        /// Never executed, so it is printed as is, without the source that would run it.
+        if (explain_only)
+            return select_pipeline;
+
+        QueryPipeline result(Pipe(std::make_shared<AsyncInsertSelectSource>(
+            std::move(select_pipeline), diverted_block, context->tryGetAsynchronousInsertQueue(), context,
+            saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count(),
+            settings[Setting::wait_for_async_insert])));
+        result.complete(std::make_shared<EmptySink>(std::make_shared<const Block>()));
+        return result;
     }
 
     /// Reached only when the async route was never eligible: build the ordinary synchronous
@@ -1573,8 +1532,8 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
-    /// the block, so it does not outlive the flush wait. The SELECT side's own lock does outlive it, and
-    /// that is why the queue route is refused below for a SELECT that may read the destination.
+    /// the block, so it does not outlive the flush wait. The SELECT side's own locks do outlive it, and
+    /// that is why the queue route is refused below for a SELECT that may read a table the flush locks.
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     table->updateExternalDynamicMetadataIfExists(context);
@@ -1642,6 +1601,9 @@ BlockIO InterpreterInsertQuery::execute()
             /// The remaining eligibility guards need the built SELECT pipeline, so
             /// `addInsertToSelectPipeline` makes the final decision.
             std::string_view reason;
+            const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
+            /// A materialized view writes into its target table.
+            const StoragePtr written_table = materialized_view ? materialized_view->tryGetTargetTable() : table;
             /// Internal inserts (refresh, POPULATE, CTAS) swap or publish their destination as soon as
             /// execute() returns, so the async route with wait_for_async_insert = 0 would race the flush
             /// and lose data. Kept before the transaction guard, which throws rather than downgrades.
@@ -1662,7 +1624,7 @@ BlockIO InterpreterInsertQuery::execute()
             else if (AsynchronousInsertQueue::checkInsideTransaction(context))
                 reason = "query runs inside a transaction";
             /// `StorageAlias::isMergeTree` delegates to its target, so the alias needs no unwrapping.
-            else if (!table->isMergeTree())
+            else if (!written_table || !written_table->isMergeTree())
                 reason = "destination table is not a MergeTree-family table";
             else if ((settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto)
                 && !settings[Setting::insert_quorum_parallel])
@@ -1694,7 +1656,7 @@ BlockIO InterpreterInsertQuery::execute()
     /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
     /// dependent views (and will see the newly registered view).
     /// Empty when the async insert queue transform took the lock over: it commits through a separate
-    /// flush that takes its own lock, and the route is refused when any dependent view exists.
+    /// flush, which discovers the dependent views and commits under a lock of its own.
     if (table_lock)
     {
         QueryPlanResourceHolder insert_resources;

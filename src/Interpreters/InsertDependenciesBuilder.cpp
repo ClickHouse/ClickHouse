@@ -2187,6 +2187,28 @@ bool InsertDependenciesBuilder::isViewsInvolved() const
 }
 
 
+bool InsertDependenciesBuilder::viewTargetsArePlainMergeTree() const
+{
+    for (const auto & [id, storage] : storages)
+    {
+        /// The caller checks the destination.
+        if (id == init_table_id)
+            continue;
+
+        if (isView(id))
+        {
+            if (view_types.at(id) != QueryViewsLogElement::ViewType::MATERIALIZED)
+                return false;
+        }
+        else if (!storage->isMergeTree() || storage->as<StorageAlias>())
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+
 size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
 {
     const auto & settings = init_context->getSettingsRef();
