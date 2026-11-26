@@ -197,7 +197,7 @@ public:
         bool write_cache_per_user_directory_,
         bool use_real_disk_size_,
         size_t background_cleanup_threads_,
-        size_t background_cleanup_tasks_per_thread_);
+        size_t background_cleanup_elements_per_thread_);
 
     virtual ~CacheMetadata();
 
@@ -322,7 +322,7 @@ private:
     std::atomic<size_t> download_threads_num;
     std::vector<std::shared_ptr<DownloadThread>> download_threads;
     const size_t max_cleanup_threads;
-    const size_t cleanup_tasks_per_thread;
+    const size_t cleanup_elements_per_thread;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size = std::nullopt);

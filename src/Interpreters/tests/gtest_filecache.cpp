@@ -125,7 +125,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsNonZeroUInt64 background_cleanup_threads;
-    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_tasks_per_thread;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_elements_per_thread;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
@@ -2552,7 +2552,7 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
                                  /* write_cache_per_user_directory */false,
                                  /* use_real_disk_size */false,
                                  /* background_cleanup_threads */1,
-                                 /* background_cleanup_tasks_per_thread */1);
+                                 /* background_cleanup_elements_per_thread */1);
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3587,7 +3587,7 @@ TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
                                  /* write_cache_per_user_directory */false,
                                  /* use_real_disk_size */false,
                                  /* background_cleanup_threads */1,
-                                 /* background_cleanup_tasks_per_thread */1);
+                                 /* background_cleanup_elements_per_thread */1);
 
     const auto key = DB::FileCacheKey::fromPath("lru_decrement_to_zero_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -5199,7 +5199,7 @@ TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
     {
         auto settings = getSettingsForLoadTests(/* max_size */ num_keys * segment_size);
         settings[FileCacheSetting::background_cleanup_threads] = 4;
-        settings[FileCacheSetting::background_cleanup_tasks_per_thread] = 1;
+        settings[FileCacheSetting::background_cleanup_elements_per_thread] = 1;
         auto cache = DB::FileCache("ManyEmptiedKeys", settings);
         cache.initialize();
 
@@ -5225,7 +5225,7 @@ TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
     auto settings = getSettingsForLoadTests(/* max_size */ 1000);
     settings[FileCacheSetting::background_cleanup_threads] = 4;
     /// All the directories are queued before the cleanup thread starts, so its first task sees the others waiting.
-    settings[FileCacheSetting::background_cleanup_tasks_per_thread] = 1;
+    settings[FileCacheSetting::background_cleanup_elements_per_thread] = 1;
 
     std::vector<fs::path> empty_key_directories;
     for (size_t i = 0; i < num_empty_keys; ++i)

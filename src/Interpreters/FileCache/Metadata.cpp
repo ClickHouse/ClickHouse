@@ -266,7 +266,7 @@ CacheMetadata::CacheMetadata(
     bool write_cache_per_user_directory_,
     bool use_real_disk_size_,
     size_t background_cleanup_threads_,
-    size_t background_cleanup_tasks_per_thread_)
+    size_t background_cleanup_elements_per_thread_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
@@ -276,7 +276,7 @@ CacheMetadata::CacheMetadata(
     , origins(ProfileEvents::FilesystemCacheLockOriginPoolMicroseconds)
     , download_threads_num(background_download_threads_)
     , max_cleanup_threads(background_cleanup_threads_)
-    , cleanup_tasks_per_thread(background_cleanup_tasks_per_thread_)
+    , cleanup_elements_per_thread(background_cleanup_elements_per_thread_)
 {
 
 }
@@ -1043,10 +1043,10 @@ void CacheMetadata::cleanupThreadFunc()
             /// This thread counts as the first one.
             const size_t running_threads = helper_threads.active() + 1;
             if (running_threads < max_cleanup_threads
-                && task->backlog >= running_threads * cleanup_tasks_per_thread
+                && task->backlog >= running_threads * cleanup_elements_per_thread
                 && helper_threads.trySchedule([this] { runCleanupUntilEmpty(); }))
             {
-                LOG_DEBUG(log, "Started a helper cleanup thread: {} cleanup tasks were waiting", task->backlog);
+                LOG_DEBUG(log, "Started a helper cleanup thread: {} keys were waiting for cleanup", task->backlog);
             }
         }
         catch (...)
