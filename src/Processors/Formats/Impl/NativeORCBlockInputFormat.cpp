@@ -158,7 +158,7 @@ asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_pref
 {
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
-    if (seekable_in && settings.seekable_read && seekable_in->checkIfActuallySeekable())
+    if (seekable_in && settings.seekable_read && seekable_in->supportsReadAt() && seekable_in->checkIfActuallySeekable())
     {
         if (auto file_size = tryGetFileSizeFromReadBuffer(in))
             return std::make_unique<ORCInputStream>(*seekable_in, *file_size, use_prefetch);

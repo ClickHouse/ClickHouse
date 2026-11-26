@@ -311,9 +311,12 @@ bool ReadBufferFromWebServer::checkIfActuallySeekable()
 
 bool ReadBufferFromWebServer::supportsReadAt()
 {
-    if (!impl)
-        impl = initialize();
-    return impl && impl->supportsReadAt();
+    return false;
+}
+
+size_t ReadBufferFromWebServer::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const
+{
+    return impl->readBigAt(to, n, offset, progress_callback);
 }
 
 
