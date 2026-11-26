@@ -2,9 +2,7 @@
 title: Расширение конфигурации
 ---
 
-<div id="extending-collector-config">
-  ### Расширение конфигурации OTel collector
-</div>
+### Расширение конфигурации коллектора OTel {#extending-collector-config}
 
 Дистрибутив ClickStack с OTel collector поддерживает расширение базовой конфигурации за счёт монтирования пользовательского файла конфигурации и задания переменной окружения.
 
@@ -18,7 +16,7 @@ title: Расширение конфигурации
 
 ```yaml
 receivers:
-  # Сбор журналов из локальных файлов
+  # Collect logs from local files
   filelog:
     include:
       - /var/log/**/*.log
@@ -26,7 +24,7 @@ receivers:
       - /var/log/messages
     start_at: beginning
 
-  # Сбор метрик хост-системы
+  # Collect host system metrics
   hostmetrics:
     collection_interval: 30s
     scrapers:
@@ -47,7 +45,7 @@ receivers:
 
 service:
   pipelines:
-    # Конвейер журналов
+    # Logs pipeline
     logs/host:
       receivers: [filelog]
       processors:
@@ -57,7 +55,7 @@ service:
       exporters:
         - clickhouse
     
-    # Конвейер метрик
+    # Metrics pipeline
     metrics/hostmetrics:
       receivers: [hostmetrics]
       processors:
@@ -72,7 +70,6 @@ service:
 ```bash
 docker run -d \
   -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
   -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
   -e CLICKHOUSE_USER=default \
   -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
@@ -81,14 +78,79 @@ docker run -d \
   clickhouse/clickstack-otel-collector:latest
 ```
 
+Чтобы коллектор управлялся через OpAMP, также передайте `-e OPAMP_SERVER_URL=${OPAMP_SERVER_URL}`.
+
 <Note>
-  В пользовательской конфигурации вы определяете только новые приёмники, процессоры и конвейеры. Базовые процессоры (`memory_limiter`, `batch`) и экспортёры (`clickhouse`) уже определены — обращайтесь к ним по имени. Пользовательская конфигурация объединяется с базовой и не может переопределять существующие компоненты.
+  В пользовательской конфигурации вы определяете только новые приёмники, коннекторы, процессоры и конвейеры. Базовые процессоры (`memory_limiter`, `batch`) и экспортёры (`clickhouse`) уже определены — обращайтесь к ним по имени. Пользовательская конфигурация объединяется с базовой и не может переопределять существующие компоненты.
+
+  Пользовательская конфигурация может заменить список `processors` конвейера по умолчанию. Начиная с версии 2.44.0, сохраняйте `transform/session_id` в списках процессоров стандартных конвейеров трассировки и журналов, иначе события от старых браузерных SDK не получат `session.id`.
+
+  При использовании OpAMP (образ «всё в одном» или любой коллектор с заданной переменной `OPAMP_SERVER_URL`) приёмники, экспортёры и коннекторы, добавленные в конвейер по умолчанию, отбрасываются без какой-либо ошибки. Добавляйте их в отдельные конвейеры с собственными именами, как в примерах ниже.
 </Note>
 
 Для более сложных конфигураций см. [конфигурацию коллектора ClickStack по умолчанию](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml) и [документацию экспортёра ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options).
 
-<div id="configuration-structure">
-  #### Структура конфигурации
-</div>
+#### Получение метрик StatsD {#statsd-receiver}
+
+Начиная с версии 2.40.0, коллектор ClickStack включает [приёмник StatsD](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/statsdreceiver), поэтому приложения, генерирующие метрики StatsD или DogStatsD, могут отправлять их в коллектор. Метки DogStatsD в формате `key:value`, например `|#env:prod,team:payments`, становятся атрибутами метрик.
+
+По умолчанию приёмник отключён. Подключите его с помощью пользовательской конфигурации в отдельном конвейере с собственным именем:
+
+```yaml
+receivers:
+  statsd:
+    endpoint: 0.0.0.0:8125
+
+service:
+  pipelines:
+    metrics/statsd:
+      receivers: [statsd]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+Опубликуйте UDP-порт `8125` контейнера коллектора, например с помощью `-p 8125:8125/udp`. У метрик StatsD нет `service.name`, поэтому фильтр по сервису их не находит. Приёмник агрегирует метрики внутри процесса коллектора, поэтому отправляйте каждую метрику в один инстанс коллектора — иначе её значения окажутся разделены между репликами.
+
+#### Получение метрик из спанов {#span-metrics}
+
+Начиная с версии 2.39.0, коллектор ClickStack включает [коннектор span metrics](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector). Он формирует счётчики вызовов и гистограммы длительности на основе спанов, которые получает коллектор. Благодаря этому метрики запросов, ошибок и длительности доступны для каждого сервиса без отдельного инструментирования для метрик.
+
+По умолчанию коннектор отключён. Чтобы добавить его, используйте пользовательскую конфигурацию: конвейер трассировки экспортирует спаны в коннектор, а конвейер метрик получает от него сгенерированные метрики. Задайте каждому из конвейеров собственное имя:
+
+```yaml
+connectors:
+  span_metrics:
+    namespace: traces.span.metrics
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    histogram:
+      exponential:
+        max_size: 160
+    aggregation_cardinality_limit: 10000
+    series_expiration: 5m
+
+service:
+  pipelines:
+    traces/spanmetrics:
+      receivers: [otlp/hyperdx]
+      processors:
+        - memory_limiter
+      exporters: [span_metrics]
+    metrics/spanmetrics:
+      receivers: [span_metrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+Коллектор записывает число вызовов в `traces.span.metrics.calls`, а длительности — в `traces.span.metrics.duration`. Не удаляйте параметры `aggregation_temporality`, `aggregation_cardinality_limit` и `series_expiration`: они ограничивают потребление памяти коннектором, которое `memory_limiter` не контролирует, и сохраняют корректность счётчиков при вытеснении устаревшей серии.
+
+Чтобы включить трассировку от агента Datadog, добавьте `datadog` в `receivers` конвейера `traces/spanmetrics`. Приёмник `datadog` должен быть определён, иначе коллектор отклонит конфигурацию: при использовании OpAMP задайте переменную окружения `ENABLE_DATADOG_RECEIVER=true` для интерфейса ClickStack, который генерирует конфигурацию коллектора; без OpAMP определите приёмник `datadog` в пользовательской конфигурации.
+
+#### Структура конфигурации {#configuration-structure}
 
 Подробную информацию о настройке коллекторов OTel, включая [`приёмники`](https://opentelemetry.io/docs/collector/transforming-telemetry/), [`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) и [`процессоры`](https://opentelemetry.io/docs/collector/configuration/#processors), рекомендуем смотреть в [официальной документации OpenTelemetry Collector](https://opentelemetry.io/docs/collector/configuration).

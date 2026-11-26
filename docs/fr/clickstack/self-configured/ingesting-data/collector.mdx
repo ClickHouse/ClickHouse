@@ -248,7 +248,7 @@ Cela suppose que le collecteur a été configuré pour utiliser la base de donn�
 
 ## Traitement - filtrage, transformation et enrichissement {#processing-filtering-transforming-enriching-self-configured}
 
-Les utilisateurs auront presque toujours besoin de filtrer, transformer et enrichir les messages d&#39;événements lors de l&#39;ingestion. La configuration du connecteur ClickStack ne pouvant pas être modifiée, nous recommandons aux utilisateurs qui ont besoin d&#39;un filtrage et d&#39;un traitement plus poussés des événements de choisir l&#39;une des options suivantes :
+Les utilisateurs auront presque toujours besoin de filtrer, transformer et enrichir les messages d&#39;événements lors de l&#39;ingestion. Ils peuvent ajouter des processeurs et des pipelines au collecteur ClickStack à l&#39;aide d&#39;une [configuration personnalisée](#extending-collector-config). Pour effectuer ce traitement en dehors du collecteur ClickStack, nous recommandons aux utilisateurs de choisir l&#39;une des options suivantes :
 
 * Déployer leur propre version de l&#39;OTel collector chargée du filtrage et du traitement, qui transmet les événements au collecteur ClickStack via OTLP pour ingestion dans ClickHouse.
 * Déployer leur propre version de l&#39;OTel collector et envoyer les événements directement à ClickHouse à l&#39;aide de l&#39;exportateur ClickHouse.
@@ -261,13 +261,13 @@ OpenTelemetry propose les fonctionnalités de traitement et de filtrage suivante
 
 * Un [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md), qui permet d&#39;éviter les situations de mémoire insuffisante sur le collecteur. Consultez [Estimation des ressources](#estimating-resources-self-configured) pour des recommandations.
 
-* Tout processeur effectuant un enrichissement basé sur le contexte. Par exemple, le [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) permet de renseigner automatiquement les attributs de ressource des spans, métriques et logs avec des métadonnées k8s, par exemple pour enrichir les événements avec l&#39;identifiant de leur pod source.
+* Tout processeur effectuant un enrichissement basé sur le contexte. Par exemple, le [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) permet de renseigner automatiquement les attributs de ressource des spans, metrics et logs avec des métadonnées k8s, par exemple pour enrichir les événements avec l&#39;identifiant de leur pod source.
 
 * L&#39;[échantillonnage tail ou head](https://opentelemetry.io/docs/concepts/sampling/) si nécessaire pour les traces.
 
 * Le [filtrage de base](https://opentelemetry.io/docs/collector/transforming-telemetry/) - suppression des événements inutiles si cela ne peut pas être fait via un opérateur (voir ci-dessous).
 
-* Le [batching](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - indispensable avec ClickHouse pour garantir que les données sont envoyées par lots. Consultez [« Optimisation des insertions »](#optimizing-inserts-self-configured).
+* Le [batching](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - indispensable avec ClickHouse pour garantir que les données sont envoyées par batch. Consultez [« Optimisation des insertions »](#optimizing-inserts-self-configured).
 
 * **Opérateurs** - Les [opérateurs](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) constituent l&#39;unité de traitement la plus élémentaire disponible au niveau du récepteur. Ils prennent en charge une analyse de base, permettant de définir des champs tels que Severity et Timestamp. L&#39;analyse JSON et par expressions régulières y est prise en charge, ainsi que le filtrage des événements et des transformations simples. Nous recommandons d&#39;effectuer le filtrage des événements à ce niveau.
 

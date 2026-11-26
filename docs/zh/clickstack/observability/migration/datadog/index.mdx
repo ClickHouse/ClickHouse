@@ -182,3 +182,5 @@ sudo launchctl kickstart -k system/com.datadoghq.agent
 Datadog receiver 目前处于实验性阶段，可将 Datadog 日志、链路追踪以及受支持的指标转换为 ClickHouse Observability 所使用的 OpenTelemetry 数据模型。上述配置使用的是 v2 指标摄取端点；其他 Datadog 后端功能不在本迁移流程的范围内。
 
 你可以保留现有的 Datadog 插桩，同时将应用程序逐步迁移到 OpenTelemetry。
+
+如果使用自管理的 ClickStack 采集器，应用程序还可以将 DogStatsD 自定义指标直接发送到采集器，采集器也可以从链路追踪中派生出请求、错误和耗时指标。请参阅 [接收 StatsD 指标](/zh/clickstack/self-configured/ingesting-data/collector#statsd-receiver) 和 [从 span 派生指标](/zh/clickstack/self-configured/ingesting-data/collector#span-metrics)。

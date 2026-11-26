@@ -248,7 +248,7 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 
 ## المعالجة - التصفية والتحويل والإثراء {#processing-filtering-transforming-enriching-self-configured}
 
-سيرغب المستخدمون حتمًا في تصفية رسائل الأحداث وتحويلها وإثرائها أثناء الإدخال. ونظرًا لتعذّر تعديل تهيئة موصل ClickStack، نوصي المستخدمين الذين يحتاجون إلى مزيد من تصفية الأحداث ومعالجتها باتباع أحد الخيارين التاليين:
+سيرغب المستخدمون حتمًا في تصفية رسائل الأحداث وتحويلها وإثرائها أثناء الإدخال. ويمكن للمستخدمين إضافة معالجات ومسارات معالجة البيانات (pipelines) إلى مُجمِّع ClickStack باستخدام [تهيئة مخصّصة](#extending-collector-config). ولإبقاء هذه المعالجة خارج مُجمِّع ClickStack، نوصي المستخدمين باتباع أحد الخيارين التاليين:
 
 * نشر نسختهم الخاصة من OTel collector لإجراء التصفية والمعالجة، ثم إرسال الأحداث إلى مُجمِّع ClickStack عبر OTLP لإدخالها في ClickHouse.
 * نشر نسختهم الخاصة من OTel collector وإرسال الأحداث مباشرةً إلى ClickHouse باستخدام مُصدِّر ClickHouse.
@@ -269,9 +269,9 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 
 * [التجميع في دفعات](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - وهو ضروري عند العمل مع ClickHouse لضمان إرسال البيانات على دفعات. راجع [&quot;تحسين عمليات الإدراج&quot;](#optimizing-inserts-self-configured).
 
-* **المشغّلات** - توفّر [المشغّلات](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) أبسط وحدة معالجة متاحة في المستقبِل. وهي تدعم التحليل النحوي الأساسي، مما يتيح تعيين حقول مثل Severity وTimestamp. كما تدعم التحليل النحوي لـ JSON والتعبيرات النمطية (regex)، إلى جانب تصفية الأحداث والتحويلات الأساسية. ونوصي بإجراء تصفية الأحداث في هذه المرحلة.
+* **المشغّلات** - توفّر [المشغّلات](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) أبسط وحدة معالجة متاحة في المستقبِل. وهي تدعم التحليل النحوي الأساسي، مما يتيح تعيين حقول مثل Severity وطابع زمني. كما تدعم التحليل النحوي لـ JSON والتعبيرات النمطية (regex)، إلى جانب تصفية الأحداث والتحويلات الأساسية. ونوصي بإجراء تصفية الأحداث في هذه المرحلة.
 
-نوصي المستخدمين بتجنّب الإفراط في معالجة الأحداث باستخدام المشغّلات أو [معالجات التحويل](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md)، إذ قد يترتب على ذلك عبء كبير على الذاكرة ووحدة المعالجة المركزية، لا سيما عند التحليل النحوي لـ JSON. ويمكن إجراء المعالجة كلها في ClickHouse وقت الإدراج باستخدام العروض المادية (materialized views) والأعمدة، مع بعض الاستثناءات، وتحديدًا الإثراء المعتمد على السياق، مثل إضافة بيانات k8s الوصفية. لمزيد من التفاصيل، راجع [استخراج البنية باستخدام SQL](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
+نوصي المستخدمين بتجنّب الإفراط في معالجة الأحداث باستخدام المشغّلات أو [معالجات التحويل](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md)، إذ قد يترتب على ذلك عبء إضافي كبير على الذاكرة ووحدة المعالجة المركزية، لا سيما عند التحليل النحوي لـ JSON. ويمكن إجراء المعالجة كلها في ClickHouse وقت الإدراج باستخدام العروض المادية (materialized views) والأعمدة، مع بعض الاستثناءات، وتحديدًا الإثراء المعتمد على السياق، مثل إضافة بيانات k8s الوصفية. لمزيد من التفاصيل، راجع [استخراج البنية باستخدام SQL](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
 
 ### مثال {#example-processing-self-configured}
 

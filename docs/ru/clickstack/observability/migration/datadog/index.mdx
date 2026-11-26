@@ -182,3 +182,5 @@ sudo launchctl kickstart -k system/com.datadoghq.agent
 Приёмник Datadog является экспериментальным. Он преобразует журналы, трассировку и поддерживаемые метрики Datadog в модель данных OpenTelemetry, которую использует ClickHouse Observability. В приведённой выше конфигурации используется приём метрик через API v2; прочие возможности бэкенда Datadog в этот сценарий миграции не входят.
 
 Вы можете сохранить существующее инструментирование Datadog и переводить приложения на OpenTelemetry постепенно.
+
+При использовании самоуправляемого коллектора ClickStack приложения также могут отправлять пользовательские метрики DogStatsD напрямую в коллектор, а сам коллектор может формировать на основе трассировки метрики запросов, ошибок и длительности. См. разделы [Приём метрик StatsD](/ru/clickstack/self-configured/ingesting-data/collector#statsd-receiver) и [Формирование метрик на основе спанов](/ru/clickstack/self-configured/ingesting-data/collector#span-metrics).

@@ -228,20 +228,20 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
   ## 处理——过滤、转换与富集 {#processing-filtering-transforming-enriching}
 </div>
 
-用户通常都希望在摄取过程中对事件消息进行过滤、转换和富集。由于 ClickStack connector 的配置无法修改，我们建议需要进一步进行事件过滤和处理的用户采用以下任一方式：
+用户通常都希望在摄取过程中对事件消息进行过滤、转换和富集。用户可以通过[自定义配置](#extending-collector-config)向 ClickStack 采集器添加处理器和 pipelines。若希望将这类处理放在 ClickStack 采集器之外进行，我们建议用户采用以下任一方式：
 
-* 部署自有版本的 OTel collector 执行过滤和处理，并通过 OTLP 将事件发送到 ClickStack collector，摄取到 ClickHouse。
-* 部署自有版本的 OTel collector，并使用 ClickHouse exporter 将事件直接发送到 ClickHouse。
+* 部署自有版本的 OTel 采集器执行过滤和处理，并通过 OTLP 将事件发送到 ClickStack 采集器，摄取到 ClickHouse。
+* 部署自有版本的 OTel 采集器，并使用 ClickHouse exporter 将事件直接发送到 ClickHouse。
 
-如果使用 OTel collector 进行处理，我们建议在 gateway 实例上执行转换，并尽量减少在 agent 实例上进行的工作。这样可以确保运行在服务器上的边缘 agent 所需资源尽可能少。通常，我们看到用户只执行过滤 (以尽量减少不必要的网络开销) 、时间戳设置 (通过 operators) 以及需要上下文的富集。例如，如果 gateway 实例位于不同的 Kubernetes cluster 中，则 k8s 富集就需要在 agent 中完成。
+如果使用 OTel 采集器进行处理，我们建议在 gateway 实例上执行转换，并尽量减少在 agent 实例上进行的工作。这样可以确保运行在服务器上的边缘 agent 所需资源尽可能少。通常，我们看到用户只执行过滤 (以尽量减少不必要的网络开销) 、时间戳设置 (通过 operators) 以及需要上下文的富集。例如，如果 gateway 实例位于不同的 Kubernetes cluster 中，则 k8s 富集就需要在 agent 中完成。
 
 OpenTelemetry 支持以下可加以利用的处理和过滤功能：
 
-* **Processors** - Processors 会在数据由 [receivers 接收后对其进行修改或转换](https://opentelemetry.io/docs/collector/transforming-telemetry/)，再发送给 exporters。Processors 会按照 collector 配置中 `processors` 部分定义的顺序依次应用。这些是可选的，但通常建议至少使用[最小集合](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors)。在将 OTel collector 与 ClickHouse 配合使用时，我们建议将 processors 限制为：
+* **处理器** - 处理器会在数据由 [receivers 接收后对其进行修改或转换](https://opentelemetry.io/docs/collector/transforming-telemetry/)，再发送给 exporters。处理器会按照采集器配置中 `processors` 部分定义的顺序依次应用。这些是可选的，但通常建议至少使用[最小集合](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors)。在将 OTel 采集器与 ClickHouse 配合使用时，我们建议将处理器限制为：
 
-* 使用 [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) 防止 collector 出现内存不足的情况。有关建议，请参见[资源估算](#estimating-resources)。
+* 使用 [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) 防止采集器出现内存不足的情况。有关建议，请参见[资源估算](#estimating-resources)。
 
-* 任何基于上下文进行富集的 processor。例如，[Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) 可以利用 k8s 元数据自动设置 spans、metrics 和 logs 的资源属性，例如用源 pod (容器组) id 为事件补充信息。
+* 任何基于上下文进行富集的处理器。例如，[Kubernetes Attributes 处理器](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) 可以利用 k8s 元数据自动设置 spans、指标和日志的资源属性，例如用源 pod (容器组) id 为事件补充信息。
 
 * 如果 traces 需要采样，可使用[尾部采样或头部采样](https://opentelemetry.io/docs/concepts/sampling/)。
 
@@ -251,7 +251,7 @@ OpenTelemetry 支持以下可加以利用的处理和过滤功能：
 
 * **Operators** - [Operators](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) 是 receiver 中可用的最基本处理单元。这里支持基础解析，可设置 Severity 和 Timestamp 等字段。这里还支持 JSON 和正则表达式解析，以及事件过滤和基础转换。我们建议在这里执行事件过滤。
 
-我们建议用户避免使用 operators 或 [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md) 进行过多事件处理。这类处理可能带来相当大的内存和 CPU 开销，尤其是 JSON 解析。除少数例外外——尤其是依赖上下文的富集，例如添加 k8s 元数据——所有处理都可以在 ClickHouse 中通过 materialized views 和列在写入时完成。更多详细信息，请参见[使用 SQL 提取结构](/zh/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)。
+我们建议用户避免使用 operators 或 [transform 处理器](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md) 进行过多事件处理。这类处理可能带来相当大的内存和 CPU 开销，尤其是 JSON 解析。除少数例外外——尤其是依赖上下文的富集，例如添加 k8s 元数据——所有处理都可以在 ClickHouse 中通过 materialized views 和列在写入时完成。更多详细信息，请参见[使用 SQL 提取结构](/zh/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)。
 
 <div id="example-processing">
   ### 示例 {#example-processing}

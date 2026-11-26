@@ -248,7 +248,7 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 
 ## 처리 - 필터링, 변환 및 정보 보강 {#processing-filtering-transforming-enriching-self-configured}
 
-사용자는 수집 과정에서 이벤트 메시지를 필터링, 변환 및 보강해야 하는 경우가 거의 항상 있습니다. ClickStack 커넥터의 구성은 수정할 수 없으므로, 추가적인 이벤트 필터링 및 처리가 필요한 사용자에게는 다음 중 한 가지 방법을 권장합니다.
+사용자는 수집 과정에서 이벤트 메시지를 필터링, 변환 및 보강해야 하는 경우가 거의 항상 있습니다. 사용자는 [사용자 정의 구성](#extending-collector-config)을 통해 ClickStack 수집기에 프로세서와 파이프라인을 추가할 수 있습니다. 이러한 처리를 ClickStack 수집기 외부에서 수행하려는 사용자에게는 다음 중 한 가지 방법을 권장합니다.
 
 * 필터링과 처리를 수행하는 자체 OTel collector를 배포하고, OTLP를 통해 이벤트를 ClickStack 수집기로 전송하여 ClickHouse에 수집합니다.
 * 자체 OTel collector를 배포하고 ClickHouse 익스포터를 사용하여 이벤트를 ClickHouse로 직접 전송합니다.
@@ -257,7 +257,7 @@ OTel collector로 처리하는 경우, 변환은 gateway 인스턴스에서 수�
 
 OpenTelemetry는 다음과 같은 처리 및 필터링 기능을 지원합니다.
 
-* **프로세서(Processors)** - 프로세서는 [수신기가 수집한 데이터를 수정하거나 변환](https://opentelemetry.io/docs/collector/transforming-telemetry/)한 후 익스포터로 전송합니다. 프로세서는 collector 구성의 `processors` 섹션에 구성된 순서대로 적용됩니다. 프로세서는 선택 사항이지만, [일반적으로 최소한의 구성을 권장합니다](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors). ClickHouse와 함께 OTel collector를 사용하는 경우 프로세서를 다음으로 제한할 것을 권장합니다.
+* **프로세서(Processors)** - 프로세서는 [수신기가 수집한 데이터를 수정하거나 변환](https://opentelemetry.io/docs/collector/transforming-telemetry/)한 후 익스포터로 전송합니다. 프로세서는 수집기 설정의 `processors` 섹션에 구성된 순서대로 적용됩니다. 프로세서는 선택 사항이지만, [일반적으로 최소한의 구성을 권장합니다](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors). ClickHouse와 함께 OTel collector를 사용하는 경우 프로세서를 다음으로 제한할 것을 권장합니다.
 
 * [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md)는 collector의 메모리 부족 상황을 방지하는 데 사용됩니다. 권장 사항은 [리소스 추정](#estimating-resources-self-configured)을 참조하십시오.
 

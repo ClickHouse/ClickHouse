@@ -228,12 +228,12 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
   ## 처리 - 필터링, 변환 및 보강 {#processing-filtering-transforming-enriching}
 </div>
 
-사용자는 수집 과정에서 이벤트 메시지를 필터링, 변환, 보강해야 하는 경우가 거의 항상 있습니다. ClickStack connector의 구성은 수정할 수 없으므로, 추가적인 이벤트 필터링 및 처리가 필요한 경우에는 다음 중 하나를 권장합니다.
+사용자는 수집 과정에서 이벤트 메시지를 필터링, 변환, 보강해야 하는 경우가 거의 항상 있습니다. [사용자 정의 구성](#extending-collector-config)을 사용하면 ClickStack collector에 프로세서와 파이프라인을 추가할 수 있습니다. 이러한 처리를 ClickStack collector 외부에서 수행하려면 다음 중 하나를 권장합니다.
 
 * 필터링 및 처리를 수행하는 자체 OTel collector를 배포하고, 이벤트를 OTLP를 통해 ClickStack collector로 보내 ClickHouse에 수집되도록 합니다.
 * 자체 OTel collector를 배포하고, ClickHouse exporter를 사용해 이벤트를 ClickHouse로 직접 전송합니다.
 
-OTel collector로 처리를 수행하는 경우에는 변환 작업을 gateway 인스턴스에서 수행하고, agent 인스턴스에서 수행하는 작업은 최소화하는 것을 권장합니다. 이렇게 하면 서버에서 실행되는 엣지 agent에 필요한 리소스를 가능한 한 적게 유지할 수 있습니다. 일반적으로는 불필요한 네트워크 사용을 줄이기 위한 필터링, timestamp 설정(연산자를 통해), 그리고 agent에서 Context가 필요한 보강만 수행하는 경우가 많습니다. 예를 들어 gateway 인스턴스가 다른 Kubernetes cluster에 있는 경우, k8s 보강은 agent에서 수행해야 합니다.
+OTel collector로 처리를 수행하는 경우에는 변환 작업을 gateway 인스턴스에서 수행하고, 에이전트 인스턴스에서 수행하는 작업은 최소화하는 것을 권장합니다. 이렇게 하면 서버에서 실행되는 엣지 에이전트에 필요한 리소스를 가능한 한 적게 유지할 수 있습니다. 일반적으로는 불필요한 네트워크 사용을 줄이기 위한 필터링, timestamp 설정(연산자를 통해), 그리고 에이전트에서 Context가 필요한 보강만 수행하는 경우가 많습니다. 예를 들어 gateway 인스턴스가 다른 Kubernetes cluster에 있는 경우, k8s 보강은 에이전트에서 수행해야 합니다.
 
 OpenTelemetry는 다음과 같은 처리 및 필터링 기능을 지원하며, 이를 활용할 수 있습니다.
 

@@ -248,12 +248,12 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 
 ## 处理：过滤、转换和富化 {#processing-filtering-transforming-enriching-self-configured}
 
-用户在摄取过程中几乎总是需要对事件消息进行过滤、转换和富化。由于 ClickStack 连接器的配置无法修改，对于需要进一步过滤和处理事件的用户，我们建议采用以下任一方式：
+用户在摄取过程中几乎总是需要对事件消息进行过滤、转换和富化。用户可以通过[自定义配置](#extending-collector-config)向 ClickStack 采集器添加处理器和流水线。如果希望将这些处理放在 ClickStack 采集器之外，我们建议采用以下任一方式：
 
 * 部署自己的 OTel collector 执行过滤和处理，再通过 OTLP 将事件发送到 ClickStack 采集器，由其摄取到 ClickHouse。
 * 部署自己的 OTel collector，并使用 ClickHouse 导出器将事件直接发送到 ClickHouse。
 
-如果使用 OTel collector 进行处理，我们建议在 gateway 实例上执行转换，并尽量减少 agent 实例上的工作量。这样可以确保在边缘服务器上运行的 agent 占用尽可能少的资源。通常，用户在 agent 中只执行过滤 (以减少不必要的网络开销) 、时间戳设置 (通过操作员) 以及依赖上下文的富集。例如，如果 gateway 实例位于另一个 Kubernetes 集群中，则 k8s 富集必须在 agent 中完成。
+如果使用 OTel collector 进行处理，我们建议在 gateway 实例上执行转换，并尽量减少智能体实例上的工作量。这样可以确保在边缘服务器上运行的智能体占用尽可能少的资源。通常，用户在智能体中只执行过滤 (以减少不必要的网络开销) 、时间戳设置 (通过操作员) 以及依赖上下文的富集。例如，如果 gateway 实例位于另一个 Kubernetes 集群中，则 k8s 富集必须在智能体中完成。
 
 OpenTelemetry 提供以下处理和过滤功能：
 

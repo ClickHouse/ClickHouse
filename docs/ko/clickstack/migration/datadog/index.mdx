@@ -261,8 +261,10 @@ Open Source ClickStack에서는 스택 배포 시 생성되는 수집 key를 사
   ## 현재 마이그레이션할 수 있는 항목 {#what-you-can-migrate-today}
 </div>
 
-Datadog 수신기는 OpenTelemetry Collector Contrib의 알파 구성 요소이며, ClickStack collector 배포판에서는 실험적 기능으로 표시되어 있으므로 활성화하려면 기능 플래그가 필요합니다.
+Datadog 수신기는 OpenTelemetry Collector Contrib의 알파 구성 요소이며, ClickStack 수집기 배포판에서는 실험적 기능으로 표시되어 있으므로 활성화하려면 기능 플래그가 필요합니다.
 
-이 수신기는 **로그 및 트레이스** 워크로드를 중심으로 광범위하게 테스트되었으며, 이러한 시그널로 ClickStack을 평가할 때 권장됩니다. **메트릭**도 작동하지만 추가적인 테스트와 개발이 필요합니다. 현재 이 수신기는 Datadog의 v1 및 v2 메트릭 수집 엔드포인트를 지원하며, 더 최신 프로토콜 버전을 사용하는 에이전트는 지원되는 엔드포인트를 통해 메트릭을 전송하도록 명시적으로 구성해야 합니다.
+이 수신기는 **로그 및 trace** 워크로드를 중심으로 광범위하게 테스트되었으며, 이러한 시그널로 ClickStack을 평가할 때 권장됩니다. **메트릭**도 작동하지만 추가적인 테스트와 개발이 필요합니다. 현재 이 수신기는 Datadog의 v1 및 v2 메트릭 수집 엔드포인트를 지원하며, 더 최신 프로토콜 버전을 사용하는 에이전트는 지원되는 엔드포인트를 통해 메트릭을 전송하도록 명시적으로 구성해야 합니다.
 
-현재로서는 애플리케이션이 이미 Datadog SDKs를 사용하거나 인프라에서 Datadog 에이전트를 실행 중인 경우, 이 수신기를 사용해 ClickStack을 빠르게 평가할 수 있습니다. 두 파이프라인을 병렬로 실행하고, 데이터가 ClickStack에서 어떻게 표현되고 쿼리되는지 검증한 다음, 더 광범위한 마이그레이션을 진행할지 결정하십시오. 평가 결과 명확한 이점이 확인되면 동일한 아키텍처를 사용해 점진적인 마이그레이션도 진행할 수 있으며, 기존 Datadog 인스트루멘테이션은 그대로 유지한 채 시간이 지나면서 서비스를 OpenTelemetry로 옮길 수 있습니다.
+현재로서는 애플리케이션이 이미 Datadog SDKs를 사용하거나 인프라에서 Datadog 에이전트를 실행 중인 경우, 이 수신기를 사용해 ClickStack을 빠르게 평가할 수 있습니다. 두 파이프라인을 병렬로 실행하고, 데이터가 ClickStack에서 어떻게 표현되고 쿼리되는지 검증한 다음, 더 광범위한 마이그레이션을 진행할지 결정하십시오. 평가 결과 명확한 이점이 확인되면 동일한 아키텍처를 사용해 점진적인 마이그레이션도 진행할 수 있으며, 기존 Datadog instrumentation은 그대로 유지한 채 시간이 지나면서 서비스를 OpenTelemetry로 옮길 수 있습니다.
+
+애플리케이션에서 DogStatsD 사용자 지정 메트릭을 ClickStack 수집기로 직접 전송할 수도 있으며, collector는 수신한 trace에서 요청, 오류, 소요 시간 메트릭을 도출할 수 있습니다. 자세한 내용은 [StatsD 메트릭 수신](/ko/clickstack/ingesting-data/collector#statsd-receiver) 및 [스팬에서 메트릭 도출](/ko/clickstack/ingesting-data/collector#span-metrics)을 참조하십시오.

@@ -182,3 +182,5 @@ sudo launchctl kickstart -k system/com.datadoghq.agent
 Datadogレシーバーは実験的な機能です。Datadog のログ、トレース、およびサポート対象のメトリクスを、ClickHouse オブザーバビリティで使用される OpenTelemetry データモデルに変換します。上記の設定では v2 メトリクスインテークを選択しています。その他の Datadog バックエンドの機能は、この移行フローの対象外です。
 
 既存の Datadog インストルメンテーションはそのまま維持しつつ、アプリケーションを段階的に OpenTelemetry へ移行できます。
+
+セルフマネージドの ClickStack コレクターを使用する場合、アプリケーションから DogStatsD のカスタムメトリクスを collector に直接送信することもできます。また、collector ではトレースからリクエスト数、エラー数、所要時間のメトリクスを導出できます。詳しくは [StatsD メトリクスの受信](/ja/clickstack/self-configured/ingesting-data/collector#statsd-receiver) および [スパンからのメトリクスの導出](/ja/clickstack/self-configured/ingesting-data/collector#span-metrics) を参照してください。
