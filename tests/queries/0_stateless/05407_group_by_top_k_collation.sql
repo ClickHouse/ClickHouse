@@ -6,7 +6,8 @@
 -- final sort, on every path (single and composite keys, NULLs, threads, spilling, remote partial aggregation over
 -- both the query text and a serialized plan), and a collated key gets no dynamic filter.
 -- Every query runs with the optimization off and then on, so the reference holds identical pairs. The off run reads
--- in large blocks and does not spill, which does not change its result and keeps it cheap.
+-- in large blocks, does not spill and, on one thread, skips the adaptive aggregator, which does not change its result
+-- and keeps it cheap.
 -- Most cases mix keys that repeat with keys that the heap skips. Many tables begin with distinct filler keys m0, m1, ...,
 -- which under 'en' sort after a... and before Z..., so they are outside every tested result.
 
@@ -36,11 +37,11 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 
 SELECT 'single key';
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
 SELECT countIf(explain LIKE '%Top-K%collations=[en]%') FROM (EXPLAIN actions = 1
@@ -48,27 +49,27 @@ SELECT countIf(explain LIKE '%Top-K%collations=[en]%') FROM (EXPLAIN actions = 1
 
 SELECT 'nullable key';
 SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns ASC NULLS FIRST COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns ASC NULLS FIRST COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
 SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns DESC NULLS LAST COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns DESC NULLS LAST COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
 
 SELECT 'low cardinality key';
 SELECT lcs, count() FROM t_05407 GROUP BY lcs ORDER BY lcs ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT lcs, count() FROM t_05407 GROUP BY lcs ORDER BY lcs ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
 
 SELECT 'composite keys';
 SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s DESC COLLATE 'en', b ASC LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s DESC COLLATE 'en', b ASC LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
 SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_composite_later';
 
@@ -76,7 +77,7 @@ SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimizat
 -- of the two best `s`, so the selected set has no ties.
 SELECT 'key prefix';
 SELECT * FROM (SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT * FROM (SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
 SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
@@ -96,7 +97,7 @@ SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
     concat('f5', toString(number)))) AS s FROM numbers(42800))
     GROUP BY s ORDER BY s ASC COLLATE 'en', c ASC LIMIT 4)
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
     concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
@@ -108,7 +109,7 @@ SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
     concat('f5', toString(number)))) AS s FROM numbers(42800))
     GROUP BY s ORDER BY s ASC COLLATE 'en', c DESC LIMIT 4)
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
     concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
@@ -141,7 +142,8 @@ SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 
 
 -- After the fillers every row is a new key that ranks better than all before it, so the heap admits each one and the
 -- arena grows with their 2000-byte payloads until the table crosses the two-level byte threshold and spills. The flush
--- recreates the table and its heap; the result comes from the rows after the payloads.
+-- recreates the table and its heap; the result comes from the rows after the payloads. This is the ordinary external
+-- aggregation, so the adaptive aggregator is off.
 SELECT 'external aggregation';
 CREATE TABLE t_05407_spill (s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024, index_granularity_bytes = 0;
 INSERT INTO t_05407_spill SELECT multiIf(number < 33792, concat('m', toString(number)),
@@ -150,11 +152,11 @@ INSERT INTO t_05407_spill SELECT multiIf(number < 33792, concat('m', toString(nu
 FROM numbers(67888) SETTINGS max_insert_threads = 1;
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_05407_spill' AND active;
 SELECT s, count() FROM t_05407_spill GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM t_05407_spill GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 8000000,
     max_bytes_ratio_before_external_group_by = 0, max_bytes_before_external_group_by = 1, enable_group_by_top_k_optimization = 1,
-    log_comment = '05407_spill';
+    enable_adaptive_aggregator = 0, log_comment = '05407_spill';
 
 -- Both shards run as secondary queries with one stream each; the counts double.
 SELECT 'remote, query text';
@@ -183,7 +185,7 @@ SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 1, max_threads = 1
 SELECT 'dynamic filter';
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1,
-    max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+    max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1,
     max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_dynamic_filter';
@@ -201,21 +203,21 @@ SELECT 'repeated keys';
 -- 2991 keys, each about 10 times.
 SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_small';
 -- The same without `COLLATE`.
 SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
 GROUP BY s ORDER BY s ASC LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
 GROUP BY s ORDER BY s ASC LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_plain';
 -- Every key comes twice, in consecutive rows.
 SELECT s, count() FROM (SELECT concat('k', toString(intDiv(number, 2))) AS s FROM numbers(131072))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT concat('k', toString(intDiv(number, 2))) AS s FROM numbers(131072))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_repeats';
@@ -225,7 +227,7 @@ SELECT s, count() FROM (SELECT multiIf(number < 131072 AND number % 1000 = 7, ['
     number < 131072, concat('k', toString(intDiv(number, 2))), number < 163840, concat('u', toString(number)),
     ['a1', 'á0', 'a4', 'zz'][number % 4 + 1]) AS s FROM numbers(165840))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT multiIf(number < 131072 AND number % 1000 = 7, ['a0', 'a1', 'a2', 'a3'][intDiv(number, 1000) % 4 + 1],
     number < 131072, concat('k', toString(intDiv(number, 2))), number < 163840, concat('u', toString(number)),
     ['a1', 'á0', 'a4', 'zz'][number % 4 + 1]) AS s FROM numbers(165840))
@@ -233,7 +235,7 @@ GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_repeats_then_unique';
 -- A composite key aggregated with the serialized method.
 SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_serialized';
 -- Every key twice in two streams with the adaptive aggregator.
@@ -253,7 +255,7 @@ SELECT 'other aggregates';
 SELECT s, count(), sum(number), uniqExact(number) FROM (WITH intDiv(number, 3) AS j SELECT number, multiIf(number % 3 = 0,
     if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count(), sum(number), uniqExact(number) FROM (WITH intDiv(number, 3) AS j SELECT number, multiIf(number % 3 = 0,
     if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
@@ -261,7 +263,7 @@ SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimizat
 SELECT s FROM (WITH intDiv(number, 3) AS j SELECT multiIf(number % 3 = 0,
     if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s FROM (WITH intDiv(number, 3) AS j SELECT multiIf(number % 3 = 0,
     if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
@@ -274,7 +276,7 @@ SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(numb
     concat('a', toString(number % 5)), concat('n', toString(number % 2000))) AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, group_by_top_k_optimization_observation_rows = 1,
-    enable_group_by_top_k_optimization = 0;
+    enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
     concat('a', toString(number % 5)), concat('n', toString(number % 2000))) AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
@@ -284,7 +286,7 @@ SELECT s, count() FROM (SELECT if(number < 33792, concat('m', toString(number)),
     concat('l', leftPad(toString(99999 - number), 5, '0'))) AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, group_by_top_k_optimization_observation_rows = 1,
-    enable_group_by_top_k_optimization = 0;
+    enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT if(number < 33792, concat('m', toString(number)),
     concat('l', leftPad(toString(99999 - number), 5, '0'))) AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
@@ -294,7 +296,7 @@ SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(numb
     concat('a', toString(number % 5)), concat('n', toString(number))) AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, group_by_top_k_optimization_observation_rows = 1,
-    enable_group_by_top_k_optimization = 0;
+    enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
     concat('a', toString(number % 5)), concat('n', toString(number))) AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
@@ -304,7 +306,7 @@ SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(numb
     concat('a', toString(number % 5)), 'n') AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, group_by_top_k_optimization_observation_rows = 1,
-    enable_group_by_top_k_optimization = 0;
+    enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
     concat('a', toString(number % 5)), 'n') AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
@@ -314,7 +316,7 @@ SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_obs
 SELECT s, count() FROM (SELECT if(number < 32768, concat('m', toString(number)), 'm1') AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, group_by_top_k_optimization_observation_rows = 1,
-    enable_group_by_top_k_optimization = 0;
+    enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
 SELECT s, count() FROM (SELECT if(number < 32768, concat('m', toString(number)), 'm1') AS s FROM numbers(80000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
