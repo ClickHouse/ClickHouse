@@ -18,6 +18,12 @@ feature-unification = true
 [resolver]
 feature-unification = "workspace"
 
+# `zstd-sys` declares `links = "zstd"`: overriding its build script makes it link the `zstd` of ClickHouse (`ch_contrib::zstd`,
+# linked by `_ch_rust_workspace`) instead of compiling and bundling another copy. The crates use only the stable API and
+# `ZDICT_*`, which it builds.
+[target.@Rust_CARGO_TARGET_CACHED@.zstd]
+include = "@ClickHouse_SOURCE_DIR@/contrib/zstd/lib"
+
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 
