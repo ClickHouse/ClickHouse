@@ -481,8 +481,8 @@ namespace
                     /// and `wait` reaps before it closes anything, so it would never return.
                     /// Draining lets the command reach its own exit.
                     ///
-                    /// With `check_exit_code` a non-pooled command is waited for without a bound,
-                    /// as the blocking `wait` this replaces did: a command whose cleanup
+                    /// With `check_exit_code`, after its output is read in full, a non-pooled command
+                    /// is waited for without a bound, as the blocking `wait` this replaces did: a command whose cleanup
                     /// outlasts `command_termination_timeout` and then exits successfully passes,
                     /// as it always has. A pooled worker being discarded was never waited for, and
                     /// it gets `command_termination_timeout` and no more; one that does not exit
@@ -499,21 +499,18 @@ namespace
                     /// waits draw from one deadline (`remainingTerminationTimeoutMs`), so the
                     /// budget is spent once, here instead of there.
                     /// A downstream `LIMIT` can finish the port before the source reaches EOF.
-                    /// A producer that goes on writing is not kept alive by draining it: its
-                    /// stdout is closed after a limited amount of extra output, or once
-                    /// `command_termination_timeout` has passed, and it dies on `SIGPIPE`, which is
-                    /// not reported as its failure. The wait for its exit stays unbounded all the
-                    /// same, so a command that has stopped writing and takes its time to exit
-                    /// passes, as it does when it is read to the end. A command that neither
-                    /// writes nor exits is waited for until the query is killed - as the blocking
-                    /// `wait` did, which could not be killed.
+                    /// Such a command may never finish its output or exit on its own, so its exit
+                    /// status is not checked and cleanup is bounded by `command_termination_timeout`.
+                    /// Keep draining stderr, but close stdout after a limited amount of extra
+                    /// output or once the budget expires, so an endless producer is not kept alive.
+                    /// A fixed-size response already read in full still needs its status checked.
                     const bool output_abandoned = !finished
                         && (!configuration.read_fixed_number_of_rows || current_read_rows < configuration.number_of_rows_to_read);
                     waitForCommandExit(*command, timeout_command_out, /*close_inputs_first=*/ true,
                         {
                             .stderr_sink = {},
-                            .check_exit_status = check_exit_code,
-                            .unbounded_status_wait = !is_pooled,
+                            .check_exit_status = check_exit_code && !output_abandoned,
+                            .unbounded_status_wait = !is_pooled && !output_abandoned,
                             .limit_stdout_drain = output_abandoned,
                             .check_cancelled = queryKilledCheck(context),
                         },

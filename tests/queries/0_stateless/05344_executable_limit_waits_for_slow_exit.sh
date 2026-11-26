@@ -11,9 +11,8 @@ trap 'rm -rf "${SCRIPTS_DIR}"' EXIT
 printf '#!/usr/bin/env bash\nfor i in $(seq 1 100); do echo row; done\nsleep 2\nexit 0\n' > "${SCRIPTS_DIR}/slow_exit.sh"
 chmod +x "${SCRIPTS_DIR}/slow_exit.sh"
 
-# `LIMIT` stops reading before the command's output ends. The exit status of an `executable` command
-# is waited for without a bound all the same, as when its output is read to the end: a command that
-# has stopped writing and exits successfully, however long it takes, passes.
+# `LIMIT` stops reading before the command's output ends. The command gets its termination budget,
+# and its exit status does not affect the rows the query has already requested.
 $CLICKHOUSE_LOCAL --query "
     SELECT count() FROM (
         SELECT * FROM executable('slow_exit.sh', 'TabSeparated', 'value String',
@@ -45,13 +44,12 @@ $CLICKHOUSE_LOCAL --query "
         LIMIT 3)
 " -- --user_scripts_path="$SCRIPTS_DIR"
 
-# Any other exit status after the closing is still the command's own.
+# Reading the output in full still waits for the exit status, even beyond `command_termination_timeout`.
 printf '#!/usr/bin/env bash\nfor i in $(seq 1 100); do echo row; done\nsleep 2\nexit 3\n' > "${SCRIPTS_DIR}/slow_fail.sh"
 chmod +x "${SCRIPTS_DIR}/slow_fail.sh"
 
 $CLICKHOUSE_LOCAL --query "
     SELECT count() FROM (
         SELECT * FROM executable('slow_fail.sh', 'TabSeparated', 'value String',
-            SETTINGS check_exit_code = 1, command_termination_timeout = 1)
-        LIMIT 10)
+            SETTINGS check_exit_code = 1, command_termination_timeout = 1))
 " -- --user_scripts_path="$SCRIPTS_DIR" 2>&1 | grep -o 'CHILD_WAS_NOT_EXITED_NORMALLY' | head -1

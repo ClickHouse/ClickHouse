@@ -234,8 +234,7 @@ public:
     /// its output still reaches `stderr_sink`, but a non-zero or signalled exit is not raised.
     ///
     /// `unbounded_status_wait` is for the one caller that used to `wait` for a command with no
-    /// bound at all - the non-pooled command, whether its output has ended or a consumer abandoned
-    /// it (see `limit_stdout_drain` for how a command that keeps writing is ended then). With it, and with the status
+    /// bound at all - the non-pooled command whose output was read in full. With it, and with the status
     /// wanted, the wait for the exit status keeps that meaning whatever `command_termination_timeout`
     /// is: the output is drained, so a child blocked in `write` still gets to its exit, but a
     /// command that takes its time over cleanup is waited for exactly as before rather than failed
