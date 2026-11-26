@@ -7,12 +7,6 @@
 namespace DB
 {
 
-/// Settings of `CREATE ICEBERG WAREHOUSE` whose values are hidden in logs.
-bool isIcebergWarehouseSecretSetting(std::string_view name);
-
-/// Writes `name = value, ...` and hides values of secret settings unless `show_secrets` is set.
-void formatIcebergWarehouseSettings(const SettingsChanges & changes, WriteBuffer & ostr, const IAST::FormatSettings & settings);
-
 /// CREATE ICEBERG WAREHOUSE [IF NOT EXISTS] name SETTINGS base_location = '...', role_arn = '...' [, ...]
 class ASTCreateIcebergWarehouseQuery : public IAST
 {
@@ -31,6 +25,10 @@ public:
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+private:
+    /// Values of these settings are hidden in logs.
+    static bool isSecretSetting(std::string_view name);
 };
 
 }
