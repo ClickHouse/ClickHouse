@@ -117,9 +117,14 @@ std::optional<UInt64> DatabaseOrdinary::getCurrentRowCount() const
     if (database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
         return {};
 
-    /// Async database startup keeps not-yet-loaded tables outside `tables`. Complete it
-    /// before calculating an exact total for the row-accounted engines.
-    waitDatabaseStarted();
+    LoadTaskPtr task;
+    {
+        std::lock_guard lock(mutex);
+        task = startup_database_task;
+    }
+    if (task && std::ranges::any_of(task->goals(), [](const LoadJobPtr & job) { return job->status() == LoadStatus::PENDING; }))
+        return {};
+
     std::lock_guard lock(mutex);
     return getCurrentRowCountUnlocked();
 }

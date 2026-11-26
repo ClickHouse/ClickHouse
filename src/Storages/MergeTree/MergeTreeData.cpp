@@ -9787,6 +9787,7 @@ std::exception_ptr MergeTreeData::getDatabaseRowsLimitReachedException() const
     if (limit == 0)
         return nullptr;
 
+    database->waitDatabaseStarted();
     const UInt64 current_rows = database->getCurrentRowCount().value_or(0);
     if (current_rows < limit)
         return nullptr;
@@ -9823,6 +9824,7 @@ std::exception_ptr MergeTreeData::getDatabaseRowsLimitException(UInt64 incoming_
     if (limit == 0)
         return nullptr;
 
+    database->waitDatabaseStarted();
     const UInt64 current_rows = database->getCurrentRowCount().value_or(0);
     const UInt64 remaining_rows = current_rows > outgoing_rows ? current_rows - outgoing_rows : 0;
     if (incoming_rows > limit || remaining_rows > limit - incoming_rows)
