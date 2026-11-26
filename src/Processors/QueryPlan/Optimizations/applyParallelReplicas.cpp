@@ -681,23 +681,6 @@ public:
                 limit_node.children = {&partial_sorting_node};
                 fragment_root = &limit_node;
             }
-            /// `WITH TIES` leaves the sort unbounded too. The rows of the query come from the top rows with ties of each replica.
-            else if (const auto * limit_with_ties = limitWithTiesAboveSort())
-            {
-                auto & limit_node = nodes.emplace_back();
-                auto limit_step = std::make_unique<LimitStep>(
-                    fragment_root->step->getOutputHeader(),
-                    *limit_with_ties->getLimitWithOffset(),
-                    0,
-                    read_till_end,
-                    /*with_ties=*/true,
-                    limit_with_ties->getWithTiesDescription());
-                limit_step->markAsShardLimit();
-                limit_node.step = std::move(limit_step);
-                limit_node.step->setStepDescription("local top-N");
-                limit_node.children = {fragment_root};
-                fragment_root = &limit_node;
-            }
             /// `LIMIT -n` leaves the sort unbounded. The last `n` rows plus the offsets come from the last as many
             /// rows of each replica. The shape is that of the preliminary limit of query-based parallel replicas,
             /// `Offset(0)` included, so that automatic parallel replicas finds it in the single-node plan.
@@ -767,17 +750,6 @@ private:
             if (auto * node = stack[index - i].node; typeid_cast<const LimitStep *>(node->step.get()))
                 return node;
         return nullptr;
-    }
-
-    /// The `LIMIT ... WITH TIES` right above the sorted split, or `nullptr`.
-    [[nodiscard]] const LimitStep * limitWithTiesAboveSort() const
-    {
-        if (stack.size() < 3)
-            return nullptr;
-        const auto * limit = typeid_cast<const LimitStep *>(stack[stack.size() - 3].node->step.get());
-        if (!limit || !limit->withTies() || limit->getLimitWithOffset().value_or(0) == 0)
-            return nullptr;
-        return limit;
     }
 
     struct LocalNegativeLimit

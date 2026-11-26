@@ -1,4 +1,4 @@
--- `rows_before_limit_at_least` of `ORDER BY ... LIMIT`, positive, negative or `WITH TIES`, under plan-based parallel replicas counts the rows of the
+-- `rows_before_limit_at_least` of `ORDER BY ... LIMIT`, positive or negative, under plan-based parallel replicas counts the rows of the
 -- local replica too: its top-N is a shard limit.
 
 DROP TABLE IF EXISTS t_pr_rows_before_limit;
@@ -20,8 +20,6 @@ SETTINGS parallel_replicas_local_plan = 1;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 10000 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template
 SETTINGS parallel_replicas_local_plan = 0, optimize_read_in_order = 0;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id DESC LIMIT 1 OFFSET 3 FORMAT Template
-SETTINGS parallel_replicas_local_plan = 1;
-SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT 1 WITH TIES FORMAT Template
 SETTINGS parallel_replicas_local_plan = 1;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT -1 OFFSET 3 FORMAT Template
 SETTINGS parallel_replicas_local_plan = 1;
