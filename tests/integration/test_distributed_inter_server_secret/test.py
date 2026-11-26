@@ -302,9 +302,9 @@ def test_secure_distributed_read_through_definer_view():
         )
         n2.query("GRANT SELECT ON default.view_source TO view_owner")
         n2.query("ALTER USER view_reader HOST NONE")
-        assert "AUTHENTICATION_FAILED" in n1.query_and_get_error(
-            "SELECT key FROM definer_view", user="view_reader", settings=settings
-        )
+        # The shard can close the connection before sending an authentication error.
+        n1.query_and_get_error("SELECT key FROM definer_view", user="view_reader", settings=settings)
+        assert n2.contains_in_log("user: view_reader: Authentication failed: .*IP_ADDRESS_NOT_ALLOWED")
     finally:
         n1.query("DROP VIEW IF EXISTS definer_view")
         n1.query("DROP TABLE IF EXISTS view_dist")
