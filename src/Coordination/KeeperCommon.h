@@ -174,6 +174,9 @@ KeeperMoveMarkerParseResult readKeeperMoveMarker(const DiskPtr & disk, const std
 KeeperFileDigest computeKeeperFileDigest(ReadBuffer & input);
 KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string & path);
 
+/// The path of the move marker that `moveFileBetweenDisks` keeps next to the destination `destination_path`.
+std::string getKeeperMoveMarkerPath(const std::string & destination_path);
+
 /// Remove a Keeper file while holding a sync guard for its parent directory.
 void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path);
 

@@ -1454,15 +1454,18 @@ void KeeperSnapshotManager::cleanupCopiedMoveTarget(const SnapshotMoveCandidate 
 {
     try
     {
-        candidate.target_disk->removeFileIfExists(candidate.target_path);
-        LOG_DEBUG(log, "Removed rejected copied snapshot target {} from disk {}", candidate.target_path, candidate.target_disk->getName());
+        /// The destination goes first: without it, a leftover move marker is an orphan that startup
+        /// removes, while a destination without its marker could be accepted as a snapshot.
+        removeKeeperFileIfExists(candidate.target_disk, candidate.target_path);
+        removeKeeperFileIfExists(candidate.target_disk, getKeeperMoveMarkerPath(candidate.target_path));
+        LOG_DEBUG(log, "Removed unpublished snapshot target {} from disk {}", candidate.target_path, candidate.target_disk->getName());
     }
     catch (...)
     {
         tryLogCurrentException(
             log,
             fmt::format(
-                "Failed to remove rejected copied snapshot target {} from disk {}",
+                "Failed to remove unpublished snapshot target {} from disk {}",
                 candidate.target_path,
                 candidate.target_disk->getName()));
     }
@@ -1473,6 +1476,8 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
     const std::function<bool(const SnapshotMoveCandidate &)> & publish_moved_snapshot)
 {
     bool metadata_published = false;
+    /// Whether this move may have written the destination or its marker.
+    bool target_touched = true;
     try
     {
         const auto move_result = moveFileBetweenDisks(
@@ -1485,15 +1490,10 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
             log,
             keeper_context);
 
-        /// Callback rejection is reported only after the destination was validated and its marker was removed.
         if (!move_result)
         {
-            if (move_result.error() == KeeperMoveError::CallbackRejectedOrThrew)
-            {
-                if (!metadata_published)
-                    cleanupCopiedMoveTarget(candidate);
-            }
-            else
+            target_touched = move_result.error() != KeeperMoveError::FailedBeforeMarkerPublication;
+            if (move_result.error() != KeeperMoveError::CallbackRejectedOrThrew)
                 LOG_WARNING(
                     log,
                     "Failed to move snapshot {} from {} on disk {} to {} on disk {} at stage {}",
@@ -1509,6 +1509,12 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
     {
         tryLogCurrentException(log, fmt::format("Failed to move snapshot {}", candidate.log_idx));
     }
+
+    /// An unpublished destination must not survive, whatever stage the move failed at: the metadata
+    /// still points to the source, so retention removes only the source when it retires the snapshot,
+    /// and the destination with its marker would stay on the disk until restart.
+    if (!metadata_published && target_touched)
+        cleanupCopiedMoveTarget(candidate);
     return metadata_published;
 }
 

@@ -5946,6 +5946,77 @@ TEST_P(CoordinationTest, MovePublicationRejectionBranches)
     EXPECT_FALSE(manager.publishMovedSnapshotIfValid(candidate));
 }
 
+namespace
+{
+
+/// Fails the first `getFileSize` of a snapshot, which is the size check of a copied move destination.
+class SnapshotSizeCheckFailureDisk final : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    size_t getFileSize(const String & path) const override
+    {
+        if (path.starts_with("snapshot_") && !failed.exchange(true))
+            throw std::runtime_error("Injected snapshot size check failure");
+        return DB::DiskLocal::getFileSize(path);
+    }
+
+    mutable std::atomic<bool> failed{false};
+};
+
+}
+
+TEST_P(CoordinationTest, MoveSnapshotCandidateRemovesTargetAfterDestinationValidationFailure)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest rocks("./rocksdb");
+    ChangelogDirTest move_target("./snapshots_move_target");
+
+    auto ctx = makeContextForSnapshotApply(use_lsmt_storage, "./snapshots", "./rocksdb");
+    auto buf = makeSingleNodeSnapshotBuffer(ctx, 10, "/move_me", "data");
+
+    DB::KeeperSnapshotManager manager(3, ctx, true);
+    manager.serializeSnapshotBufferToDisk(*buf, 10);
+
+    auto target_disk = std::make_shared<SnapshotSizeCheckFailureDisk>("MoveTargetDisk", "./snapshots_move_target");
+
+    DB::SnapshotMoveCandidate candidate;
+    {
+        auto pin = manager.getSnapshotPin(10);
+        ASSERT_NE(pin, nullptr);
+        candidate = DB::SnapshotMoveCandidate{
+            .log_idx = 10,
+            .file_info = pin,
+            .source_disk = pin->disk,
+            .source_path = pin->path,
+            .target_disk = target_disk,
+            .target_path = pin->path};
+    }
+
+    const auto publish = [](const DB::SnapshotMoveCandidate & c)
+    {
+        c.file_info->disk = c.target_disk;
+        c.file_info->path = c.target_path;
+        return true;
+    };
+
+    /// The copy succeeds, and the validation of the destination fails. The metadata still points to
+    /// the source, so retention would never remove the destination and its marker: the move must.
+    EXPECT_FALSE(manager.moveSnapshotCandidate(candidate, publish));
+    EXPECT_TRUE(target_disk->failed.load());
+    EXPECT_EQ(candidate.file_info->disk, candidate.source_disk);
+    EXPECT_TRUE(fs::exists("./snapshots/" + candidate.source_path));
+    EXPECT_FALSE(fs::exists("./snapshots_move_target/" + candidate.target_path));
+    EXPECT_FALSE(fs::exists("./snapshots_move_target/tmp_" + candidate.target_path));
+
+    /// The next attempt moves the snapshot.
+    EXPECT_TRUE(manager.moveSnapshotCandidate(candidate, publish));
+    EXPECT_FALSE(fs::exists("./snapshots/" + candidate.source_path));
+    EXPECT_TRUE(fs::exists("./snapshots_move_target/" + candidate.target_path));
+    EXPECT_FALSE(fs::exists("./snapshots_move_target/tmp_" + candidate.target_path));
+}
+
 TEST_P(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
 {
     ChangelogDirTest snapshots("./snapshots");

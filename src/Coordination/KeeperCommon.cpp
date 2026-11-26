@@ -61,8 +61,7 @@ constexpr size_t keeper_move_marker_size = 33;
 
 std::string markerPathForDestination(const std::string & path_to)
 {
-    const fs::path destination(path_to);
-    return (destination.parent_path() / (std::string{tmp_keeper_file_prefix} + destination.filename().string())).generic_string();
+    return getKeeperMoveMarkerPath(path_to);
 }
 
 void syncLocalParentDirectory(const DiskPtr & disk, const std::string & path)
@@ -239,6 +238,12 @@ KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string
     settings.enable_filesystem_cache = false;
     auto input = disk->readFile(path, settings);
     return computeKeeperFileDigest(*input);
+}
+
+std::string getKeeperMoveMarkerPath(const std::string & destination_path)
+{
+    const fs::path destination(destination_path);
+    return (destination.parent_path() / (std::string{tmp_keeper_file_prefix} + destination.filename().string())).generic_string();
 }
 
 void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path)
