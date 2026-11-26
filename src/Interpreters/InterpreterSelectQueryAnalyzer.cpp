@@ -20,7 +20,6 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -663,17 +662,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
     /// would double-count the optimization phase.
     query_plan.optimize(optimization_settings);
-
-    /// Hashed after optimization, so it is the shape that runs, and before the pipeline is built,
-    /// which moves the `ActionsDAG` out of the steps. The log capture puts the hash of each step into
-    /// the plan it captures.
-    if (query_plan_hash_enabled || plan_log_capture)
-    {
-        QueryPlanShapeHashes shape_hashes = hashQueryPlanShape(query_plan);
-        query_plan_hash = shape_hashes.root;
-        if (plan_log_capture)
-            plan_log_capture->setShapeHashes(std::move(shape_hashes));
-    }
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
     return std::move(*query_plan.buildQueryPipeline(

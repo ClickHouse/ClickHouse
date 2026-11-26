@@ -1,7 +1,8 @@
 -- Tags: no-old-analyzer
 
--- Verifies `system.query_log.query_plan_hash`: equal for plans that differ only in their constants,
--- different when the plan differs, and the same value the plan document carries as `ShapeHash`.
+-- Verifies the `ShapeHash` of the plan in `system.query_log.query_plan`: equal for plans that differ
+-- only in their constants, and different when the plan differs. Every node carries the hash of its
+-- subtree, and the root's is the plan's.
 --
 -- Queries are told apart by `log_comment` rather than by a marker in the query text, because a
 -- marker literal would itself be part of the plan being hashed. Each group of queries is named by
@@ -17,7 +18,7 @@ INSERT INTO t_plan_hash SELECT number, number % 97, number % 13, toString(number
 CREATE TABLE t_plan_hash_right (k UInt64, c UInt32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_plan_hash_right SELECT number, number % 11 FROM numbers(500);
 
-SET log_query_plan_hash = 1;
+SET log_query_plans = 1;
 
 -- With parallel replicas, whether a query reads through the replicas can depend on its estimated
 -- row count, which differs between the constants below, and the hash would rightly report a
@@ -84,33 +85,21 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 'false', log_comm
 SELECT sum(c) FROM t_plan_hash AS l JOIN t_plan_hash_right AS r ON l.k = r.k
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 'false', log_comment = 'different_join_algorithm_2' FORMAT Null;
 
--- Capturing the plan does not change its shape, and fills the column on its own.
-SELECT count() FROM t_plan_hash WHERE a > 5 GROUP BY b SETTINGS log_comment = 'profiled_1' FORMAT Null;
-SELECT count() FROM t_plan_hash WHERE a > 6 GROUP BY b
-SETTINGS log_query_plan_hash = 0, log_query_plans = 1, log_comment = 'profiled_2' FORMAT Null;
-
-SELECT count() FROM t_plan_hash WHERE a > 5 SETTINGS log_query_plan_hash = 0, log_comment = 'off' FORMAT Null;
-
-SET log_query_plan_hash = 0;
+SET log_query_plans = 0;
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
     replaceRegexpOne(log_comment, '_[0-9]+$', '') AS group_name,
     count() AS queries,
-    uniqExact(query_plan_hash) AS hashes,
-    countIf(query_plan_hash = 0) AS missing
+    uniqExact(JSONExtractString(toJSONString(query_plan), 'ShapeHash')) AS hashes,
+    countIf(NOT match(JSONExtractString(toJSONString(query_plan), 'ShapeHash'), '^[0-9a-f]{16}$')) AS missing
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-  AND match(log_comment, '^(same|different|profiled|off)')
+  AND match(log_comment, '^(same|different)')
 GROUP BY group_name
 ORDER BY group_name;
 
--- The `QueryStart` row is written after the plan was hashed, so it has the hash too.
-SELECT 'query_start', uniqExact(query_plan_hash), countIf(query_plan_hash = 0)
-FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = 'same_width_1';
-
--- Every step of a captured plan carries the hash of its subtree, and the root's is the column's.
+-- Every step carries the hash of its subtree, and the root step's is the plan's.
 WITH
     toJSONString(query_plan) AS plan,
     JSONExtractArrayRaw(plan, 'Nodes') AS nodes,
@@ -119,9 +108,9 @@ SELECT
     'shape_hash',
     length(nodes) > 1,
     arrayAll(node -> match(JSONExtractString(node, 'ShapeHash'), '^[0-9a-f]{16}$'), nodes),
-    JSONExtractString(root, 'ShapeHash') = lower(leftPad(hex(query_plan_hash), 16, '0'))
+    JSONExtractString(root, 'ShapeHash') = JSONExtractString(plan, 'ShapeHash')
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'profiled_2';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'same_join_1';
 
 DROP TABLE t_plan_hash;
 DROP TABLE t_plan_hash_right;

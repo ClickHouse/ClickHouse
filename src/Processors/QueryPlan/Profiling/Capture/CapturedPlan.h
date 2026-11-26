@@ -48,6 +48,9 @@ struct CapturedPlan
 {
     /// Id of the root node
     String root_id;
+    /// Hash of the shape of the whole plan, see `hashQueryPlanShape`: equal for two plans that differ
+    /// only in their constants.
+    std::optional<UInt64> shape_hash;
     /// Output columns
     VectorWithMemoryTracking<String> output;
     /// Execution totals

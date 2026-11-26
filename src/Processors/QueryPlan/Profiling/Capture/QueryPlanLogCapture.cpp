@@ -7,6 +7,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteBufferFromString.h>
@@ -164,7 +165,8 @@ void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char 
         reason);
 }
 
-void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
+void QueryPlanLogCapture::capturePlanStructure(
+    const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, const QueryPlanShapeHashes & shape_hashes, size_t max_description_length)
 {
     /// One plan per query, and nothing is asked of this before it.
     chassert(!captured);
@@ -172,13 +174,11 @@ void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const Pret
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
     captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 
-    if (shape_hashes)
+    captured->shape_hash = shape_hashes.root;
+    for (auto & node : captured->nodes)
     {
-        for (auto & node : captured->nodes)
-        {
-            if (auto it = shape_hashes->steps.find(node.id); it != shape_hashes->steps.end())
-                node.shape_hash = it->second;
-        }
+        if (auto it = shape_hashes.steps.find(node.id); it != shape_hashes.steps.end())
+            node.shape_hash = it->second;
     }
 }
 

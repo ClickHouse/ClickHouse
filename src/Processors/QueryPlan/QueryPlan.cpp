@@ -39,6 +39,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/DistributedPlanLocalObject.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -266,12 +267,16 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         convertToDistributed(effective_settings);
 
     /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
-    /// into the `ExpressionActions`, and the names are derived from them. Only over the child plans
-    /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
-    /// capturing the plan change the work the query does.
+    /// into the `ExpressionActions`, and the names and the shape hashes are derived from them. Only
+    /// over the child plans the steps already hold, unlike `explainPlan`: asking a step to build one
+    /// would make capturing the plan change the work the query does.
     PrettyNamesPerPlan pretty_names;
+    QueryPlanShapeHashes shape_hashes;
     if (log_capture)
+    {
         pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
+        shape_hashes = hashQueryPlanShape(*this);
+    }
 
     struct Frame
     {
@@ -333,7 +338,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         {
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
-            log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
+            log_capture->capturePlanStructure(walk, pretty_names, shape_hashes, optimization_settings.max_step_description_length);
             last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
         }
         catch (...)

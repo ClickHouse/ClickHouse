@@ -268,6 +268,8 @@ JSONBuilder::ItemPtr capturedPlanToJSON(const CapturedPlan & captured)
     auto result = std::make_unique<JSONBuilder::JSONMap>();
     result->add("Version", QUERY_PLAN_JSON_VERSION);
     result->add("Root", captured.root_id);
+    if (captured.shape_hash)
+        result->add("ShapeHash", formatQueryPlanShapeHash(*captured.shape_hash));
 
     if (captured.execution_time_ns)
         result->add("ExecutionTimeNs", *captured.execution_time_ns);

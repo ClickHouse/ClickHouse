@@ -4,12 +4,12 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
 namespace DB
 {
 
 class QueryPipeline;
+struct QueryPlanShapeHashes;
 class StepProfiler;
 using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
@@ -23,17 +23,17 @@ public:
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
 
-    /// Hashes of the shape of the plan, which must have been computed from the plan the structure is
-    /// captured from, before its pipeline was built. Each captured step gets its own.
-    void setShapeHashes(QueryPlanShapeHashes shape_hashes_) { shape_hashes = std::move(shape_hashes_); }
-
     /// Records the shape of the plan as values. Called once the pipeline has been built, which is
     /// both the first moment the index analysis and the lazily built child plans exist, and the
     /// last moment the plan does. Nothing after this touches the plan.
     ///
     /// May throw: the caller starting the capture is what keeps a diagnostic from failing a
     /// query that would otherwise have run.
-    void capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length);
+    ///
+    /// `shape_hashes` must have been computed from the same plan, before its pipeline was built, like
+    /// `pretty_names`. Each captured step gets the hash of its subtree, and the plan the root's.
+    void capturePlanStructure(
+        const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, const QueryPlanShapeHashes & shape_hashes, size_t max_description_length);
 
     /// Forgets the captured plan, so that a query whose profiling could not be set up logs no
     /// plan at all rather than one that can never be given its statistics.
@@ -52,6 +52,5 @@ private:
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;
 
-    std::optional<QueryPlanShapeHashes> shape_hashes;
 };
 }
