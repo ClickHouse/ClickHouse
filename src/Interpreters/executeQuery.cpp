@@ -27,6 +27,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/copyData.h>
 
 #include <Processors/ProcessorsProfileLogInfo.h>
@@ -84,6 +85,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
@@ -205,6 +208,7 @@ namespace Setting
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 log_query_plans_max_size;
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
@@ -493,6 +497,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
         element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+        element.used_data_skipping_indices.insert(access_info.data_skipping_indices.begin(), access_info.data_skipping_indices.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
         element.used_row_policies.insert(access_info.row_policies.begin(), access_info.row_policies.end());
     }
@@ -557,7 +562,7 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
 static String httpRequestURLForLogging(const ContextPtr & context)
 {
     const String & url = context->getHTTPRequestURL();
-    return url.substr(0, url.find_first_of("?#"));
+    return String(stripQueryAndFragment(url));
 }
 
 String formatQueryForLogging(const String & query, const Settings & settings)
@@ -640,6 +645,7 @@ QueryLogElement logQueryStart(
             elem.query_columns = info.columns;
             elem.query_partitions = info.partitions;
             elem.query_projections = info.projections;
+            elem.used_data_skipping_indices = info.data_skipping_indices;
             elem.query_views = info.views;
             elem.used_row_policies = info.row_policies;
         }
@@ -755,7 +761,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline, const ContextPtr & context)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -779,6 +785,9 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
+
+    if (auto plan_log_capture = context->getPlanLogCapture())
+        plan_log_capture->captureStatistics(query_pipeline);
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
@@ -906,6 +915,130 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 }
 
 
+/// The document is written into a buffer that grows from here up to the limit, rather than
+/// starting at `DBMS_DEFAULT_BUFFER_SIZE`, which every plan would then allocate in full.
+static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
+
+/// A row whose plan could not be written says why, in place of the plan.
+static void writeQueryPlanError(String & query_plan, String reason)
+{
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
+    query_plan.clear();
+    try
+    {
+        WriteBufferFromString out(query_plan);
+        FlatJSONPlanRenderer::renderError(reason, out);
+        out.finalize();
+    }
+    catch (...)
+    {
+        /// Ok to swallow: writing the error itself failed. An empty column takes its default of an
+        /// empty JSON object; a half-written document would not be valid JSON.
+        query_plan.clear();
+    }
+}
+
+static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
+{
+    auto plan_log_capture = context->getPlanLogCapture();
+    if (!plan_log_capture)
+        return;
+
+    const auto & captured = plan_log_capture->getCapturedPlan();
+    if (!captured)
+        return;
+
+    /// Runs on the logging path of a query that has already returned its result, so failing to
+    /// write the plan must not fail the query. Producing the document is also the one part of
+    /// profiling that allocates in proportion to the plan, hence the blocker.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
+
+    try
+    {
+        /// A query decides how much text its own plan contains, so the document is written into a
+        /// buffer that cannot grow past the limit rather than measured once it already has.
+        /// `MemoryWriteBuffer` throws rather than allocate the chunk that would cross it.
+        MemoryWriteBuffer plan_buffer(max_size, PLAN_RENDER_INITIAL_CHUNK_SIZE);
+        FlatJSONPlanRenderer renderer;
+        renderer.render(*captured, plan_buffer);
+        plan_buffer.finalize();
+
+        WriteBufferFromString out(elem.query_plan);
+        copyData(*plan_buffer.tryGetReadBuffer(), out);
+        out.finalize();
+    }
+    catch (const WriteBuffer::CurrentBufferExhausted &)
+    {
+        /// Not logged: a plan over the limit is a query's own doing, not a fault of the server,
+        /// and the row carries the reason. The exception says only that a buffer ran out, naming
+        /// neither the plan nor the setting, so the message is written here instead.
+        writeQueryPlanError(
+            elem.query_plan,
+            fmt::format("The query plan does not fit in {} bytes, the limit set by log_query_plans_max_size", max_size));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+    }
+}
+
+/// Writes the bodies registered by `Context::addSQLSecurityOverriddenBody` as child rows of `elem`, without metrics.
+static void logSQLSecurityOverriddenBodies(
+    QueryLog & query_log, const QueryLogElement & elem, Context::QueryAccessInfo & access_info, UInt64 max_query_length)
+{
+    std::vector<std::shared_ptr<const Context::SQLSecurityOverriddenBody>> bodies;
+    {
+        std::lock_guard lock(access_info.mutex);
+        bodies.swap(access_info.sql_security_overridden_bodies);
+    }
+
+    for (const auto & body : bodies)
+    {
+        QueryLogElement row;
+        row.type = elem.type;
+        row.event_time = elem.event_time;
+        row.event_time_microseconds = elem.event_time_microseconds;
+        row.query_start_time = elem.query_start_time;
+        row.query_start_time_microseconds = elem.query_start_time_microseconds;
+        row.log_comment = elem.log_comment;
+        row.is_internal = elem.is_internal;
+        row.exception_code = elem.exception_code;
+        row.exception = elem.exception;
+
+        row.current_database = body->current_database;
+        row.query = body->query->formatForLogging(max_query_length);
+        row.normalized_query_hash = normalizedQueryHash(row.query, false);
+        row.query_kind = body->query->getQueryKind();
+
+        row.client_info = elem.client_info;
+        row.client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        row.client_info.current_query_id = toString(UUIDHelpers::generateV4());
+        row.client_info.current_user = body->user;
+
+        {
+            const auto & body_access_info = *body->access_info;
+            std::lock_guard lock(body_access_info.mutex);
+            row.query_databases = body_access_info.databases;
+            row.query_tables = body_access_info.tables;
+            row.query_columns = body_access_info.columns;
+            row.query_partitions = body_access_info.partitions;
+            row.query_projections = body_access_info.projections;
+            row.query_views = body_access_info.views;
+            row.used_row_policies = body_access_info.row_policies;
+        }
+
+        query_log.add([&](QueryLogElement & e) { e = row; });
+        logSQLSecurityOverriddenBodies(query_log, elem, *body->access_info, max_query_length);
+    }
+}
+
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -987,7 +1120,11 @@ static void logQueryFinishImpl(
                 elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (auto query_log = context->getQueryLog())
+            {
+                attachQueryPlan(context, elem);
                 query_log->add([&](QueryLogElement & e) { e = elem; });
+                logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
+            }
         }
 
         /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
@@ -1041,7 +1178,7 @@ void logQueryFinish(
     bool log_as_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
 
     /// The queries finished here (the deferred flush of asynchronous inserts, the tasks of a distributed
@@ -1165,7 +1302,9 @@ void logQueryException(
         if (settings[Setting::log_query_settings] && !elem.query_settings)
             elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
+        attachQueryPlan(context, elem);
         query_log->add([&](QueryLogElement & e) { e = elem; });
+        logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
     }
 
     if (query_span)
@@ -1333,7 +1472,9 @@ void logExceptionBeforeStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
+            attachQueryPlan(context, elem);
             query_log->add([&](QueryLogElement & e) { e = elem; });
+            logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
         }
         else if (!settings[Setting::log_queries])
         {
@@ -3497,6 +3638,11 @@ static BlockIO executeQueryImpl(
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
+                        /// A cache hit builds no plan and runs no pipeline, so there is nothing to
+                        /// capture.
+                        QueryPlanLogCapture::declineCapture(
+                            context, "the result came from the query result cache, so no plan was executed");
+
                         return true;
                     }
                 }
@@ -3532,6 +3678,9 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
+                    context->enablePlanLogCapture();
+
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
                         out_ast,
@@ -3540,6 +3689,12 @@ static BlockIO executeQueryImpl(
                             .setInternal(internal)
                             .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
                             .secondaryQueryRoot(!internal && is_secondary_query));
+
+                /// This assignment is done here instead of using the `context` that is available inside the Interpreters
+                /// to avoid situations where Interpreters are created inside the other interpreter and end up overwriting
+                /// the captured plan. For example: recursive CTEs
+                if (interpreter)
+                    interpreter->setPlanLogCapture(context->getPlanLogCapture());
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -3773,11 +3928,12 @@ static BlockIO executeQueryImpl(
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
-                                     query_result_cache_usage,
-                                     // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+                query_result_cache_usage,
+                context,
+                // Need to be cached, since will be changed after complete()
+                pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
             };
 
             /// The finish callback logs the query result
@@ -4273,6 +4429,45 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     }
 }
 
+/// Returns the AST fuzzer run for a query, or nothing when the fuzzer is off for it.
+static std::function<void()> makeASTFuzzerRunner(const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (flags.internal || context->getClientInfo().is_shared_catalog_internal || !ast)
+        return {};
+
+    Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
+    if (!(ast_fuzzer_runs_value > 0))
+        return {};
+
+    bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
+    return [ast, context, ast_fuzzer_runs_value, any_query]()
+    {
+        try
+        {
+            executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — propagate so CI sees it
+            tryLogCurrentException("ASTFuzzer");
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ASTFuzzer");
+        }
+    };
+}
+
+/// Runs the AST fuzzer from `BlockIO::onFinish`, after the query's own finish callbacks, so its `query_log` entry
+/// does not include the fuzzing.
+static void addASTFuzzerFinishCallback(BlockIO & io, const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (auto run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags))
+        io.finish_callbacks.emplace_back(
+            [run = std::move(run_ast_fuzzer)](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point) { run(); });
+}
+
 
 std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
@@ -4355,29 +4550,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         });
     }
 
-    const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-    if (!flags.internal && !is_shared_catalog_internal && ast)
-    {
-        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-        if (ast_fuzzer_runs_value > 0)
-        {
-            bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-            res.finish_callbacks.emplace_back(
-                [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
-                {
-                    try
-                    {
-                        executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                            throw; /// Oracle mismatch — propagate to abort the server
-                        tryLogCurrentException("ASTFuzzer");
-                    }
-                });
-        }
-    }
+    addASTFuzzerFinishCallback(res, ast, context, flags);
 
     return std::make_pair(std::move(ast), std::move(res));
 }
@@ -4722,7 +4895,9 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        /// One byte more than the limit detects a too long query; the limit may be the maximum of `size_t` already.
+        const size_t read_no_more = max_query_size == std::numeric_limits<size_t>::max() ? max_query_size : max_query_size + 1;
+        LimitReadBuffer limit(*istr, {.read_no_more = read_no_more});
         copyData(limit, out);
         out.finalize();
 
@@ -4980,6 +5155,9 @@ void executeQuery(
         return true;
     };
 
+    /// Run after `query_finish_callback`, which sends the HTTP response and releases the session, on both paths below.
+    std::function<void()> run_ast_fuzzer;
+
     try
     {
         if (pipeline.pushing())
@@ -5097,30 +5275,7 @@ void executeQuery(
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
-        const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-        if (!flags.internal && !is_shared_catalog_internal && ast)
-        {
-            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-            if (ast_fuzzer_runs_value > 0)
-            {
-                bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-                try
-                {
-                    executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                        throw; /// Oracle mismatch — propagate so CI sees it
-                    tryLogCurrentException("ASTFuzzer");
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ASTFuzzer");
-                }
-            }
-        }
-
+        run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags);
     }
     catch (...)
     {
@@ -5263,6 +5418,9 @@ void executeQuery(
 
         finishExecutedQuery(streams, finish_callback);
     }
+
+    if (run_ast_fuzzer)
+        run_ast_fuzzer();
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)

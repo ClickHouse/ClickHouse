@@ -2,7 +2,7 @@
 sidebarTitle: 'Fabi.ai'
 slug: /integrations/fabi.ai
 keywords: ['clickhouse', 'Fabi.ai', 'connecter', 'intégrer', 'notebook', 'UI', 'analyse']
-description: "Fabi.ai est une plateforme collaborative d'analyse de données tout-en-un. Vous pouvez tirer parti de SQL, Python, de l'IA et du no-code pour créer des tableaux de bord et des flux de données plus rapidement que jamais"
+description: "Fabi.ai est une plateforme collaborative d'analyse de données tout-en-un. Vous pouvez tirer parti de SQL, Python, de l'IA et du no-code pour créer des tableaux de bord et des flux de travail de données plus rapidement que jamais"
 title: 'Connecter ClickHouse à Fabi.ai'
 doc_type: 'guide'
 integration:
@@ -16,74 +16,54 @@ import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
 
-<a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> est une plateforme collaborative d’analyse de données tout-en-un. Vous pouvez tirer parti de SQL, Python, de l’IA et du no-code pour créer des tableaux de bord et des workflows de données plus rapidement que jamais. Associée à la puissance et à l’évolutivité de ClickHouse, elle vous permet de créer et de partager en quelques minutes votre premier tableau de bord très performant sur un vaste jeu de données.
+<a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> est une plateforme collaborative d’analyse de données tout-en-un. Vous pouvez tirer parti de SQL, Python, de l’IA et du no-code pour créer des tableaux de bord et des flux de travail de données plus rapidement que jamais. Associée à la puissance et à l’évolutivité de ClickHouse, elle vous permet de créer et de partager en quelques minutes votre premier tableau de bord très performant sur un vaste jeu de données.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Plateforme Fabi.ai d’exploration de données et de workflows](/images/integrations/data-visualization/fabi_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Plateforme d’exploration des données et de flux de travail de données Fabi.ai](/images/integrations/data-visualization/fabi_01.webp)
+  </Frame>
 </div>
 
 <div id="gather-your-connection-details">
-  ## Rassemblez vos informations de connexion
+  ## Rassemblez vos informations de connexion {#gather-your-connection-details}
 </div>
 
 <ConnectionDetails />
 
-<div id="connect-to-clickhouse">
-  ## Créez votre compte Fabi.ai et connectez ClickHouse
-</div>
+## Créez votre compte Fabi.ai et connectez ClickHouse {#connect-to-clickhouse}
 
-Connectez-vous à votre compte Fabi.ai ou créez-en un : https://app.fabi.ai/
+Connectez-vous à votre compte Fabi.ai ou créez-en un : https://app.fabi.ai/
 
 1. Lors de la création de votre compte, il vous sera demandé de connecter votre base de données. Si vous avez déjà un compte, cliquez sur le panneau des sources de données à gauche de n’importe quel Smartbook, puis sélectionnez Add Data Source.
 
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Ajouter une source de données](/images/integrations/data-visualization/fabi_02.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Ajouter une source de données](/images/integrations/data-visualization/fabi_02.webp)
+     </Frame>
    </div>
 
 2. Il vous sera ensuite demandé de saisir vos informations de connexion.
 
    <div className="ch-image-md">
-
-   <Frame>
-
-   ![Formulaire d’identifiants ClickHouse](/images/integrations/data-visualization/fabi_03.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Formulaire d’identifiants ClickHouse](/images/integrations/data-visualization/fabi_03.webp)
+     </Frame>
    </div>
 
-3. Félicitations ! Vous avez maintenant intégré ClickHouse à Fabi.ai.
+3. Félicitations ! Vous avez maintenant intégré ClickHouse à Fabi.ai.
 
-<div id="querying-clickhouse">
-  ## Interroger ClickHouse.
-</div>
+## Interroger ClickHouse. {#querying-clickhouse}
 
 Une fois Fabi.ai connecté à ClickHouse, accédez à n’importe quel [Smartbook](https://docs.fabi.ai/analysis_and_reporting/smartbooks) et créez une cellule SQL. Si une seule source de données est connectée à votre instance Fabi.ai, la cellule SQL utilisera automatiquement ClickHouse par défaut ; sinon, vous pouvez sélectionner la source à interroger dans la liste déroulante des sources.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Interroger ClickHouse](/images/integrations/data-visualization/fabi_04.webp)
-
-</Frame>
-
+  <Frame>
+    ![Interroger ClickHouse](/images/integrations/data-visualization/fabi_04.webp)
+  </Frame>
 </div>
 
 <div id="additional-resources">
-  ## Ressources supplémentaires
+  ## Ressources supplémentaires {#additional-resources}
 </div>
 
 Documentation de [Fabi.ai](https://www.fabi.ai) : https://docs.fabi.ai/introduction

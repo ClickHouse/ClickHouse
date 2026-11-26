@@ -6,7 +6,6 @@
 -- results stay correct. The tiny `index_granularity` with `index_granularity_bytes = 0` on a wide part,
 -- combined with a `PREWHERE` that keeps the second row of each granule, drives the rows_offset > 0 reads.
 
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 DROP TABLE IF EXISTS t_variant_discr_cow;
