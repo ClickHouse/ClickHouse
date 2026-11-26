@@ -14,6 +14,7 @@
 
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -94,6 +95,8 @@ struct Settings;
   * Additional rules about identifier binding.
   * Bind for identifier to entity means that identifier first part match some node during analysis.
   * If other parts of identifier cannot be resolved in that node, exception must be thrown.
+  * A qualifier that matches a table expression is the exception: on a miss the lookup continues,
+  * and the error message names that table expression if nothing else resolves.
   *
   * Example:
   * CREATE TABLE test_table (id UInt64, compound_value Tuple(value UInt64)) ENGINE=TinyLog;
@@ -159,6 +162,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);

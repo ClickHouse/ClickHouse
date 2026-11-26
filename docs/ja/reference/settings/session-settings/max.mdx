@@ -90,7 +90,9 @@ ClickHouse では、データはブロック単位で処理されます。ブロ
 
 秒単位で指定する、クエリの推定実行時間の上限です。各データブロックごとに、
 [`timeout_before_checking_execution_speed`](/ja/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-が経過した時点でチェックされます。
+が経過した時点でチェックされます。現在のクエリ実行速度からの外挿に基づいて
+判定されます。`timeout_before_checking_execution_speed` を 0 に設定した場合、この設定は
+チェックされません。
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -156,6 +158,8 @@ LIMIT がこの設定値を超える SELECT クエリでは、ベクトル類似
 **追加情報**
 
 このオプションでは、使用する設定によって結果が異なる場合があります。
+
+`parallel_replicas_mode` が `sampling_key` の場合、または複数の分片を持つクラスターでカスタムキーモードを使用する場合、各レプリカはその分片の結果のうち自身が担当する部分を返します。1つの分片の複数のレプリカが併用されるのは、イニシエーター自身がこれらの部分を集約または完全にソートする場合 (例: `GROUP BY` キーを持たない集約) に限られます。それ以外の場合、たとえば `distributed_aggregation_memory_efficient` を使用した `GROUP BY` や `ORDER BY` では、分片は1つのレプリカのみから読み取られます。
 
 ### `SAMPLE` キーを使用した並列処理 {#parallel-processing-using-sample-key}
 

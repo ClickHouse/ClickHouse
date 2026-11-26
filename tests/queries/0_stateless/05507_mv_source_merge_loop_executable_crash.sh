@@ -120,7 +120,7 @@ CREATE TABLE db_05507.dst (name String, block_rows UInt64, value UInt64) ENGINE 
 
 CREATE MATERIALIZED VIEW db_05507.mv_executable TO db_05507.dst AS
     SELECT 'executable' AS name, count() AS block_rows,
-        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05507.src WHERE x > 0))) AS value
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05507.src WHERE x > 0), SETTINGS command_read_timeout = 30000)) AS value
     FROM db_05507.src;
 
 INSERT INTO db_05507.src VALUES (1), (2), (3);
@@ -137,7 +137,7 @@ SELECT 'append_refresh', * FROM db_05507.dst ORDER BY name;
 TRUNCATE TABLE db_05507.dst;
 CREATE MATERIALIZED VIEW db_05507.rmv_read REFRESH EVERY 1 YEAR APPEND TO db_05507.dst EMPTY AS
     SELECT 'executable' AS name, count() AS block_rows,
-        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05507.src WHERE x > 0))) AS value
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05507.src WHERE x > 0), SETTINGS command_read_timeout = 30000)) AS value
     FROM db_05507.src;
 SYSTEM REFRESH VIEW db_05507.rmv_read;
 SYSTEM WAIT VIEW db_05507.rmv_read;

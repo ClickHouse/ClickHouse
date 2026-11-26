@@ -348,6 +348,8 @@ VectorWithMemoryTracking<std::pair<String, String>> JoinStepLogical::describeJoi
 
     description.emplace_back("Type", toString(join_operator.kind));
     description.emplace_back("Strictness", toString(join_operator.strictness));
+    if (join_operator.set_operation != JoinSetOperation::None)
+        description.emplace_back("Set operation", String(toString(join_operator.set_operation)));
     description.emplace_back("Locality", toString(join_operator.locality));
     description.emplace_back("Expression", formatJoinCondition(join_operator.expression));
     return description;
@@ -2067,6 +2069,47 @@ static void constructBlockNestedLoopJoinStep(
         nodes, makeDescription("Post Join Actions"));
 }
 
+/// `INTERSECT` compares all columns, so a joined row has the same values on both sides. Outputs the probe side columns
+/// under the names of the build side ones, so nothing after the join changes.
+static void outputFromProbe(
+    const JoinOperator & join_operator, JoinExpressionActions & expression_actions, ActionsDAG::NodeRawConstPtrs & actions_after_join)
+{
+    /// For each build side column, find the probe side column that its key compares it with.
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> probe_column_for;
+    for (const auto & key : join_operator.expression)
+    {
+        auto [op, left, right] = key.asBinaryPredicate();
+        if (left.fromRight())
+            std::swap(left, right);
+        const bool input_columns
+            = left.getNode()->type == ActionsDAG::ActionType::INPUT && right.getNode()->type == ActionsDAG::ActionType::INPUT;
+        if (op != JoinConditionOperator::NullSafeEquals || !left.fromLeft() || !right.fromRight() || !input_columns)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "A key of the join that executes `INTERSECT` does not compare a column of each side: {}", key.dump());
+        probe_column_for[right.getNode()] = left.getNode();
+    }
+
+    /// Replace each build side output by the probe side column with the same values. Other outputs, such as a constant
+    /// left when nothing of the result is used, stay.
+    auto dag = expression_actions.getActionsDAG();
+    for (auto & output : actions_after_join)
+    {
+        if (!JoinActionRef(output, expression_actions).fromRight())
+            continue;
+
+        const auto * column = output->type == ActionsDAG::ActionType::ALIAS ? output->children.front() : output;
+        auto it = probe_column_for.find(column);
+        if (it == probe_column_for.end() || !it->second->result_type->equals(*output->result_type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The output {} of the join that executes `INTERSECT` has no key with a probe side column of the same type",
+                output->result_name);
+
+        const auto * from_probe = &dag->addAlias(*it->second, output->result_name);
+        std::ranges::replace(dag->getOutputs(), output, from_probe);
+        output = from_probe;
+    }
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     VectorWithMemoryTracking<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -2074,7 +2117,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     JoinSettings join_settings,
     JoinAlgorithmParams join_algorithm_params,
     SortingStep::Settings sorting_settings,
-    const ActionsDAG::NodeRawConstPtrs & actions_after_join,
+    ActionsDAG::NodeRawConstPtrs actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,
     LogicalJoinInfo && logical_join_info,
@@ -2082,6 +2125,16 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const UnorderedMapWithMemoryTracking<String, ColumnStats> & right_relation_column_stats)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
+
+    /// The size limits of a join would truncate the result of a set operation. `Dynamic` keys are hashed the same way as
+    /// in the set operation.
+    if (join_operator.set_operation != JoinSetOperation::None)
+    {
+        join_settings.join_algorithms = {JoinAlgorithm::HASH};
+        join_settings.allow_dynamic_type_in_join_keys = true;
+        join_settings.max_rows_in_join = 0;
+        join_settings.max_bytes_in_join = 0;
+    }
 
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
@@ -2133,6 +2186,17 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
         planning_context.actions_after_join_map[node->result_name] = node->children.at(0);
+    }
+
+    if (join_operator.set_operation == JoinSetOperation::IntersectDistinct)
+    {
+        /// The outputs are columns of the first arm, or only a constant when nothing of the result is used.
+        const bool first_arm_is_left = std::ranges::none_of(
+            actions_after_join, [&](const auto * output) { return JoinActionRef(output, expression_actions).fromRight(); });
+
+        /// The build side of `INTERSECT` is needed only for the keys if the rows come from the probe side.
+        if (!first_arm_is_left)
+            outputFromProbe(join_operator, expression_actions, actions_after_join);
     }
 
     /// Selectivity estimates for the InequalityJoin key condition choice; only needed when the choice is
@@ -2635,17 +2699,31 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         return isString(removeNullable(removeLowCardinality(column.type)));
     });
-    if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
+    /// The row store and the packed `String` keys need the average sizes of the right columns.
+    const bool needs_right_column_avg_bytes
+        = join_settings.enable_hash_join_row_store || join_settings.enable_packed_string_keys_in_hash_join;
+    if (needs_right_column_avg_bytes && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
     {
-        auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(
-                  *children[1],
-                  QueryPlanOptimizations::RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
-                  .column_stats
-            : right_relation_column_stats;
+        /// A step taken over the wire has neither the statistics nor the row estimate of the right side. This host
+        /// estimates the read of the right side itself. The rows are used only for the choice of packed `String` keys.
+        const bool needs_local_rows = join_settings.enable_packed_string_keys_in_hash_join && !join_algorithm_params.rhs_size_estimation;
+        auto right_column_stats = right_relation_column_stats;
+        if (right_column_stats.empty() || needs_local_rows)
+        {
+            auto local_estimate = QueryPlanOptimizations::estimateReadRowsCount(
+                *children[1],
+                QueryPlanOptimizations::RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read});
+            if (needs_local_rows)
+                join_algorithm_params.local_rhs_rows_estimation = local_estimate.estimated_rows;
+            if (right_column_stats.empty())
+                right_column_stats = std::move(local_estimate.column_stats);
+        }
         QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
         for (const auto & [name, stats] : right_column_stats)
             table_join->setRightColumnAvgBytes(name, stats.avg_bytes);
+        for (const auto * output : right_dag.getOutputs())
+            if (!holdsInputValues(*output))
+                table_join->setRightColumnComputed(output->result_name);
     }
 
     JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
@@ -2732,6 +2810,9 @@ void JoinStepLogical::buildPhysicalJoin(
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+
+        join_step->join_algorithm_params->sender_estimated_small_right_side = join_step->sender_estimated_small_right_side;
+        join_step->join_algorithm_params->runtime_filter_keeps_matching_rows = join_step->runtime_filter_keeps_matching_rows;
 
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
@@ -3098,13 +3179,15 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     auto actions_dag = expression_actions.getActionsDAG();
     actions_dag->serialize(ctx.out, ctx.registry);
 
-    join_operator.serialize(ctx.out, actions_dag.get());
+    join_operator.serialize(ctx.out, actions_dag.get(), ctx.step_version);
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
     /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
     /// that the receiver does not take them again. Both bits stand for a decision that reads a row
     /// estimate, and estimates are deliberately not part of the plan format, so a receiver that
-    /// decided for itself would decide from an empty estimate and could decide differently. The byte
+    /// decided for itself would decide from an empty estimate and could decide differently. The one
+    /// exception is the packed-key bit: a receiver that has a row estimate of its own, from the
+    /// optimizer or from its read of the right side, decides from it and ignores the bit. The byte
     /// is left out of a plan cache key because it differs between the single-node and the
     /// parallel-replicas plan build, and those two builds have to hash alike.
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
@@ -3117,9 +3200,12 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         /// Only `full_sorting_merge` is ever planned.
         if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
             optimizer_flags |= 4;
-        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate.
-        if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
-            && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
+        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate. A step that came
+        /// over the wire has no estimate, so it passes on the bit it received.
+        if (join_settings.enable_packed_string_keys_in_hash_join
+            && (sender_estimated_small_right_side
+                || (right_relation.estimated_rows
+                    && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)))
             optimizer_flags |= 8;
         if (has_runtime_filters)
             optimizer_flags |= 16;
@@ -3171,7 +3257,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto right_header = ctx.input_headers.back();
     JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
-    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
+    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions, ctx.step_version);
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
@@ -3199,8 +3285,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
         if (optimizer_flags & 4)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
-        if (optimizer_flags & 8)
-            step->join_settings.enable_packed_string_keys_in_hash_join = false;
+        step->sender_estimated_small_right_side = bool(optimizer_flags & 8);
         step->has_runtime_filters = bool(optimizer_flags & 16);
     }
     return step;
@@ -3246,6 +3331,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->sender_estimated_small_right_side = sender_estimated_small_right_side;
+    result_step->runtime_filter_keeps_matching_rows = runtime_filter_keeps_matching_rows;
     result_step->has_runtime_filters = has_runtime_filters;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
@@ -3285,7 +3372,9 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    /// Version 1 adds the set operation of the join.
+    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN}};
+    registry.registerStep("Join", JoinStepLogical::deserialize, versions);
 }
 
 
