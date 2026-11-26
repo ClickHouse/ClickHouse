@@ -411,6 +411,7 @@ public:
 
     SinkToStoragePtr write(
         SharedHeader sample_block,
+        StorageMetadataPtr metadata_snapshot,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         const std::optional<FormatSettings> & format_settings,
@@ -425,6 +426,7 @@ public:
         /// external Iceberg readers such as Spark.
         return getMetadata()->write(
             sample_block,
+            metadata_snapshot,
             table_id,
             object_storage,
             shared_from_this(),
@@ -435,6 +437,7 @@ public:
 
     StorageWriteSessionPtr beginWrite(
         SharedHeader sample_block,
+        StorageMetadataPtr metadata_snapshot,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         const std::optional<FormatSettings> & format_settings,
@@ -445,6 +448,7 @@ public:
         /// The same format settings as in `write`.
         return getMetadata()->beginWrite(
             sample_block,
+            metadata_snapshot,
             table_id,
             object_storage,
             shared_from_this(),

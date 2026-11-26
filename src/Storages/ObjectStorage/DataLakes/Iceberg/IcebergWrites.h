@@ -29,6 +29,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 
 #include <Common/randomSeed.h>
@@ -184,7 +185,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        std::optional<Int32> planned_schema_id_);
 
     /// Removes the data files and manifests which were not committed.
     ~IcebergWriteSession() override;
@@ -196,13 +198,21 @@ public:
     /// The reference is valid while the session is alive. Thread-safe.
     MultipleFileWriter & addWriter(const ChunkPartitioner::PartitionKey & partition_key, DataFileUploads & data_file_uploads);
 
+    /// Adds the values a sink writes to the NDV statistics of the snapshot, if they are written. Thread-safe.
+    void updateColumnSketches(const Columns & columns);
+
+    const String & getWriteFormat() const { return write_format; }
+
 private:
     LoggerPtr log = getLogger("IcebergWriteSession");
     SharedHeader sample_block;
     ObjectStoragePtr object_storage;
     std::optional<FormatSettings> format_settings;
     Poco::JSON::Object::Ptr metadata;
-    Int64 current_schema_id;
+    /// The schema the query planned the inserted columns with; unset if the query pinned no table state.
+    const std::optional<Int32> planned_schema_id;
+    /// The current schema of the first read, which the data files are written with. A later attempt requires it unchanged.
+    Int64 current_schema_id = 0;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     KeyDescription sort_description;
@@ -214,6 +224,9 @@ private:
     std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
+    /// Of all the sinks.
+    std::mutex column_sketches_mutex;
+    std::optional<IcebergColumnSketches> column_sketches;
 
     struct PartitionWriter
     {
@@ -226,17 +239,25 @@ private:
     void removeDataFiles(PartitionWriter & partition_writer);
     /// Best-effort removal of the data files and manifests; never throws.
     void removeDataFilesAndManifests();
+    /// Reads the latest committed metadata: when the session begins to write the data files with it,
+    /// after a commit lost to a concurrent commit to make it the base of the next attempt.
+    void readLatestMetadata();
+    /// One commit attempt. Returns false if the attempt lost to a concurrent commit.
     bool initializeMetadata();
+    /// Waits `delay_ms` before the next commit attempt. Throws if the insert is cancelled or runs out of time meanwhile.
+    void waitBeforeCommitRetry(UInt64 delay_ms);
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
-    Int64 partition_spec_id;
+    Int64 partition_spec_id = 0;
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
+    /// A commit attempt may have published the snapshot referencing the written files, so they must not be removed.
+    bool commit_outcome_unknown = false;
 
     /// The writers of all the sinks. A list: the sinks keep references to them.
     std::mutex writers_mutex;
@@ -253,7 +274,7 @@ private:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
-    CompressionMethod metadata_compression_method;
+    CompressionMethod metadata_compression_method = CompressionMethod::None;
     /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
     String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;

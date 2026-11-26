@@ -18,3 +18,4 @@ SELECT\n    CAST(10000000000000000000., \'UInt256\'),\n    CAST(255, \'UInt8\'),
 SELECT CAST(\'-1\', \'Int128\'), CAST(\'[0.1, 0.2]\', \'Array(Decimal256(76))\'), CAST(\'255\', \'Decimal32(2)\'), CAST(\'5\', \'UInt128\'), CAST(\'0.1\', \'Decimal256(76)\'), CAST(\'1\', \'Int128\'), CAST(\'0\', \'UInt128\'), CAST(\'-0.\', \'Decimal32(2)\'), CAST(\'255\', \'UInt128\'), CAST(\'0.1\', \'Decimal32(2)\'), CAST(\'0\', \'UInt128\'), CAST(inf, \'Decimal32(2)\'), CAST(255, \'UInt8\'), CAST([1, NULL], \'Array(UInt8)\')	1
 -0	-0	-0	-0	0	0	0
 SELECT CAST(\'-0.0\', \'Float64\'), CAST(\'[-0.0, 0]\', \'Array(Decimal32(2))\'), CAST(\'-0.\', \'Decimal32(2)\'), CAST(\'0\', \'UInt8\')	1
+SELECT CAST(\'[0, 1]\', \'Array(Int128)\'), CAST(\'[1, NULL]\', \'Array(Nullable(Int128))\')	1

@@ -1,0 +1,1454 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+// Copied from proto/PulsarApi.proto of apache/pulsar-client-cpp at f71d7e99019d. Changed: the package (was
+// `pulsar.proto`). NOTICE of Apache Pulsar: Copyright 2017-2022 The Apache Software Foundation. This product includes
+// software developed at The Apache Software Foundation (http://www.apache.org/).
+syntax = "proto2";
+
+package DB.PulsarProto;
+option java_package = "org.apache.pulsar.common.api.proto";
+option optimize_for = LITE_RUNTIME;
+
+message Schema {
+    enum Type {
+        None = 0;
+        String = 1;
+        Json = 2;
+        Protobuf = 3;
+        Avro = 4;
+        Bool = 5;
+        Int8 = 6;
+        Int16 = 7;
+        Int32 = 8;
+        Int64 = 9;
+        Float = 10;
+        Double = 11;
+        Date = 12;
+        Time = 13;
+        Timestamp = 14;
+        KeyValue = 15;
+        Instant = 16;
+        LocalDate = 17;
+        LocalTime = 18;
+        LocalDateTime = 19;
+        ProtobufNative = 20;
+        AutoConsume = 21;
+        External = 22;
+    }
+
+    required string name = 1;
+    required bytes schema_data = 3;
+    required Type type = 4;
+    repeated KeyValue properties = 5;
+
+}
+
+message MessageIdData {
+    required uint64 ledgerId = 1;
+    required uint64 entryId  = 2;
+    optional int32 partition = 3 [default = -1];
+    optional int32 batch_index = 4 [default = -1];
+    repeated int64 ack_set = 5;
+    optional int32 batch_size = 6;
+
+    // For the chunk message id, we need to specify the first chunk message id.
+    optional MessageIdData first_chunk_message_id = 7;
+}
+
+message KeyValue {
+    required string key = 1;
+    required string value = 2;
+}
+
+message KeyLongValue {
+    required string key = 1;
+    required uint64 value = 2;
+}
+
+message IntRange {
+    required int32 start = 1;
+    required int32 end = 2;
+}
+
+message EncryptionKeys {
+    required string key = 1;
+    required bytes value = 2;
+    repeated KeyValue metadata = 3;
+}
+
+enum CompressionType {
+    NONE   = 0;
+    LZ4    = 1;
+    ZLIB   = 2;
+    ZSTD   = 3;
+    SNAPPY   = 4;
+}
+
+enum ProducerAccessMode {
+    Shared = 0; // By default multiple producers can publish on a topic
+    Exclusive = 1; // Require exclusive access for producer. Fail immediately if there's already a producer connected.
+    WaitForExclusive = 2; // Producer creation is pending until it can acquire exclusive access
+    ExclusiveWithFencing = 3; // Require exclusive access for producer. Fence out old producer.
+}
+
+message MessageMetadata {
+    required string producer_name   = 1;
+    required uint64 sequence_id     = 2;
+    required uint64 publish_time    = 3;
+    repeated KeyValue properties    = 4;
+
+    // Property set on replicated message,
+    // includes the source cluster name
+    optional string replicated_from = 5;
+    //key to decide partition for the msg
+    optional string partition_key   = 6;
+    // Override namespace's replication
+    repeated string replicate_to    = 7;
+    optional CompressionType compression = 8 [default = NONE];
+    optional uint32 uncompressed_size = 9 [default = 0];
+    // Removed below checksum field from Metadata as
+    // it should be part of send-command which keeps checksum of header + payload
+    //optional sfixed64 checksum = 10;
+    // differentiate single and batch message metadata
+    optional int32 num_messages_in_batch = 11 [default = 1];
+
+    // the timestamp that this event occurs. it is typically set by applications.
+    // if this field is omitted, `publish_time` can be used for the purpose of `event_time`.
+    optional uint64 event_time = 12 [default = 0];
+    // Contains encryption key name, encrypted key and metadata to describe the key
+    repeated EncryptionKeys encryption_keys = 13;
+    // Algorithm used to encrypt data key
+    optional string encryption_algo = 14;
+    // Additional parameters required by encryption
+    optional bytes encryption_param = 15;
+    optional bytes schema_version = 16;
+
+    optional bool partition_key_b64_encoded = 17 [ default = false ];
+    // Specific a key to overwrite the message key which used for ordering dispatch in Key_Shared mode.
+    optional bytes ordering_key = 18;
+
+    // Mark the message to be delivered at or after the specified timestamp
+    optional int64 deliver_at_time = 19;
+
+    // Identify whether a message is a "marker" message used for
+    // internal metadata instead of application published data.
+    // Markers will generally not be propagated back to clients
+    optional int32 marker_type = 20;
+
+    // transaction related message info
+    optional uint64 txnid_least_bits = 22;
+    optional uint64 txnid_most_bits = 23;
+
+    /// Add highest sequence id to support batch message with external sequence id
+    optional uint64 highest_sequence_id = 24 [default = 0];
+
+    // Indicate if the message payload value is set
+    optional bool null_value = 25 [default = false];
+    optional string uuid = 26;
+    optional int32 num_chunks_from_msg = 27;
+    optional int32 total_chunk_msg_size = 28;
+    optional int32 chunk_id = 29;
+
+    // Indicate if the message partition key is set
+    optional bool null_partition_key = 30 [default = false];
+
+    // Indicates the indexes of messages retained in the batch after compaction. When a batch is compacted,
+    // some messages may be removed (compacted out). For example, if the original batch contains:
+    // `k0 => v0, k1 => v1, k2 => v2, k1 => null`, the compacted batch will retain only `k0 => v0` and `k2 => v2`.
+    // In this case, this field will be set to `[0, 2]`, and the payload buffer will only include the retained messages.
+    //
+    // Note: Batches compacted by older versions of the compaction service do not include this field. For such batches,
+    // the `compacted_out` field in `SingleMessageMetadata` must be checked to identify and filter out compacted
+    // messages (e.g., `k1 => v1` and `k1 => null` in the example above).
+    repeated int32 compacted_batch_indexes = 31;
+    optional bytes schema_id = 32;
+
+    // PIP-486 scalable-topic entry-bucketing. The effective entry-bucket hash range covered by this
+    // entry: the smallest and largest entry-bucket hash (the low 16 bits of the key's Murmur3_32 hash)
+    // among the batched messages, both bounds inclusive. Set only by scalable-topic (segment://)
+    // producers; the broker routes the whole entry to the consumer owning that bucket on the segment.
+    optional uint32 entry_hash_min = 33;
+    optional uint32 entry_hash_max = 34;
+}
+
+message SingleMessageMetadata {
+    repeated KeyValue properties    = 1;
+    optional string partition_key   = 2;
+    required int32 payload_size    = 3;
+    optional bool compacted_out     = 4 [default = false];
+
+    // the timestamp that this event occurs. it is typically set by applications.
+    // if this field is omitted, `publish_time` can be used for the purpose of `event_time`.
+    optional uint64 event_time = 5 [default = 0];
+    optional bool partition_key_b64_encoded = 6 [ default = false ];
+    // Specific a key to overwrite the message key which used for ordering dispatch in Key_Shared mode.
+    optional bytes ordering_key = 7;
+    // Allows consumer retrieve the sequence id that the producer set.
+    optional uint64 sequence_id = 8;
+    // Indicate if the message payload value is set
+    optional bool null_value = 9 [ default = false ];
+    // Indicate if the message partition key is set
+    optional bool null_partition_key = 10 [ default = false];
+}
+
+// metadata added for entry from broker
+message BrokerEntryMetadata {
+    optional uint64 broker_timestamp = 1;
+    optional uint64 index = 2;
+}
+
+enum ServerError {
+    UnknownError        = 0;
+    MetadataError       = 1; // Error with ZK/metadata
+    PersistenceError    = 2; // Error writing reading from BK
+    AuthenticationError = 3; // Non valid authentication
+    AuthorizationError  = 4; // Not authorized to use resource
+
+    ConsumerBusy        = 5; // Unable to subscribe/unsubscribe because
+                             // other consumers are connected
+    ServiceNotReady     = 6; // Any error that requires client retry operation with a fresh lookup
+    ProducerBlockedQuotaExceededError = 7; // Unable to create producer because backlog quota exceeded
+    ProducerBlockedQuotaExceededException = 8; // Exception while creating producer because quota exceeded
+    ChecksumError = 9; // Error while verifying message checksum
+    UnsupportedVersionError = 10; // Error when an older client/version doesn't support a required feature
+    TopicNotFound = 11; // Topic not found
+    SubscriptionNotFound = 12; // Subscription not found
+    ConsumerNotFound = 13; // Consumer not found
+    TooManyRequests = 14; // Error with too many simultaneously request
+    TopicTerminatedError = 15; // The topic has been terminated
+
+    ProducerBusy         = 16; // Producer with same name is already connected
+    InvalidTopicName = 17; // The topic name is not valid
+
+    IncompatibleSchema = 18; // Specified schema was incompatible with topic schema
+    ConsumerAssignError = 19; // Dispatcher assign consumer error
+
+    TransactionCoordinatorNotFound = 20; // Transaction coordinator not found error
+    InvalidTxnStatus = 21; // Invalid txn status error
+    NotAllowedError = 22; // Not allowed error
+
+    TransactionConflict = 23; // Ack with transaction conflict
+    TransactionNotFound = 24; // Transaction not found
+
+    ProducerFenced = 25; // When a producer asks and fail to get exclusive producer access,
+                         // or loses the eclusive status after a reconnection, the broker will
+                         // use this error to indicate that this producer is now permanently
+                         // fenced. Applications are now supposed to close it and create a
+                         // new producer
+}
+
+enum AuthMethod {
+    AuthMethodNone   = 0;
+    AuthMethodYcaV1  = 1;
+    AuthMethodAthens = 2;
+}
+
+// Each protocol version identify new features that are
+// incrementally added to the protocol
+enum ProtocolVersion {
+    v0 = 0;  // Initial versioning
+    v1 = 1;  // Added application keep-alive
+    v2 = 2;  // Added RedeliverUnacknowledgedMessages Command
+    v3 = 3;  // Added compression with LZ4 and ZLib
+    v4 = 4;  // Added batch message support
+    v5 = 5;  // Added disconnect client w/o closing connection
+    v6 = 6;  // Added checksum computation for metadata + payload
+    v7 = 7;  // Added CommandLookupTopic - Binary Lookup
+    v8 = 8;  // Added CommandConsumerStats - Client fetches broker side consumer stats
+    v9 = 9;  // Added end of topic notification
+    v10 = 10;// Added proxy to broker
+    v11 = 11;// C++ consumers before this version are not correctly handling the checksum field
+    v12 = 12;// Added get topic's last messageId from broker
+             // Added CommandActiveConsumerChange
+             // Added CommandGetTopicsOfNamespace
+    v13 = 13; // Schema-registry : added avro schema format for json
+    v14 = 14; // Add CommandAuthChallenge and CommandAuthResponse for mutual auth
+              // Added Key_Shared subscription
+    v15 = 15; // Add CommandGetOrCreateSchema and CommandGetOrCreateSchemaResponse
+    v16 = 16; // Add support for broker entry metadata
+    v17 = 17; // Added support ack receipt
+    v18 = 18; // Add client support for broker entry metadata
+    v19 = 19; // Add CommandTcClientConnectRequest and CommandTcClientConnectResponse
+    v20 = 20; // Add client support for topic migration redirection CommandTopicMigrated
+    v21 = 21; // Carry the AUTO_CONSUME schema to the Broker after this version
+}
+
+message CommandConnect {
+    required string client_version = 1; // The version of the client. Proxy should forward client's client_version.
+    optional AuthMethod auth_method = 2; // Deprecated. Use "auth_method_name" instead.
+    optional string auth_method_name = 5;
+    optional bytes auth_data = 3;
+    optional int32 protocol_version = 4 [default = 0];
+
+    // Client can ask to be proxyied to a specific broker
+    // This is only honored by a Pulsar proxy
+    optional string proxy_to_broker_url = 6;
+
+    // Original principal that was verified by
+    // a Pulsar proxy. In this case the auth info above
+    // will be the auth of the proxy itself
+    optional string original_principal = 7;
+
+    // Original auth role and auth Method that was passed
+    // to the proxy. In this case the auth info above
+    // will be the auth of the proxy itself
+    optional string original_auth_data = 8;
+    optional string original_auth_method = 9;
+
+    // Feature flags
+    optional FeatureFlags feature_flags = 10;
+
+    optional string proxy_version = 11; // Version of the proxy. Should only be forwarded by a proxy.
+}
+
+// Please also add a new enum for the class "PulsarClientException.FailedFeatureCheck" when adding a new feature flag.
+message FeatureFlags {
+  optional bool supports_auth_refresh = 1 [default = false];
+  optional bool supports_broker_entry_metadata = 2 [default = false];
+  optional bool supports_partial_producer = 3 [default = false];
+  optional bool supports_topic_watchers = 4 [default = false];
+  optional bool supports_get_partitioned_metadata_without_auto_creation = 5 [default = false];
+  optional bool supports_repl_dedup_by_lid_and_eid = 6 [default = false];
+  optional bool supports_topic_watcher_reconcile = 7 [default = false];
+  optional bool supports_scalable_topics = 8 [default = false];
+  optional bool supports_tc_metadata_discovery = 9 [default = false];
+}
+
+message CommandConnected {
+    required string server_version = 1;
+    optional int32 protocol_version = 2 [default = 0];
+    optional int32 max_message_size = 3;
+    optional FeatureFlags feature_flags = 4;
+}
+
+message CommandAuthResponse {
+    optional string client_version = 1; // The version of the client. Proxy should forward client's client_version.
+    optional AuthData response = 2;
+    optional int32 protocol_version = 3 [default = 0];
+}
+
+message CommandAuthChallenge {
+    optional string server_version = 1;
+    optional AuthData challenge = 2;
+    optional int32 protocol_version = 3 [default = 0];
+}
+
+// To support mutual authentication type, such as Sasl, reuse this command to mutual auth.
+message AuthData {
+    optional string auth_method_name = 1;
+    optional bytes auth_data = 2;
+}
+
+enum KeySharedMode {
+    AUTO_SPLIT = 0;
+    STICKY = 1;
+}
+
+message KeySharedMeta {
+    required KeySharedMode keySharedMode = 1;
+    repeated IntRange hashRanges = 3;
+    optional bool allowOutOfOrderDelivery = 4 [default = false];
+}
+
+message CommandSubscribe {
+    enum SubType {
+        Exclusive = 0;
+        Shared    = 1;
+        Failover  = 2;
+        Key_Shared = 3;
+    }
+    required string topic        = 1;
+    required string subscription = 2;
+    required SubType subType     = 3;
+
+    required uint64 consumer_id  = 4;
+    required uint64 request_id   = 5;
+    optional string consumer_name = 6;
+    optional int32 priority_level = 7;
+
+    // Signal wether the subscription should be backed by a
+    // durable cursor or not
+    optional bool durable = 8 [default = true];
+
+    // If specified, the subscription will position the cursor
+    // markd-delete position  on the particular message id and
+    // will send messages from that point
+    optional MessageIdData start_message_id = 9;
+
+    /// Add optional metadata key=value to this consumer
+    repeated KeyValue metadata = 10;
+
+    optional bool read_compacted = 11;
+
+    optional Schema schema = 12;
+    enum InitialPosition {
+        Latest   = 0;
+        Earliest = 1;
+    }
+    // Signal whether the subscription will initialize on latest
+    // or not -- earliest
+    optional InitialPosition initialPosition = 13 [default = Latest];
+
+    // Mark the subscription as "replicated". Pulsar will make sure
+    // to periodically sync the state of replicated subscriptions
+    // across different clusters (when using geo-replication).
+    optional bool replicate_subscription_state = 14;
+
+    // If true, the subscribe operation will cause a topic to be
+    // created if it does not exist already (and if topic auto-creation
+    // is allowed by broker.
+    // If false, the subscribe operation will fail if the topic
+    // does not exist.
+    optional bool force_topic_creation = 15 [default = true];
+
+    // If specified, the subscription will reset cursor's position back
+    // to specified seconds and  will send messages from that point
+    optional uint64 start_message_rollback_duration_sec = 16 [default = 0];
+
+    optional KeySharedMeta keySharedMeta = 17;
+
+    repeated KeyValue subscription_properties = 18;
+
+    // The consumer epoch, when exclusive and failover consumer redeliver unack message will increase the epoch
+    optional uint64 consumer_epoch = 19;
+}
+
+message CommandPartitionedTopicMetadata {
+    required string topic            = 1;
+    required uint64 request_id       = 2;
+    // TODO - Remove original_principal, original_auth_data, original_auth_method
+    // Original principal that was verified by
+    // a Pulsar proxy.
+    optional string original_principal = 3;
+
+    // Original auth role and auth Method that was passed
+    // to the proxy.
+    optional string original_auth_data = 4;
+    optional string original_auth_method = 5;
+    optional bool metadata_auto_creation_enabled = 6 [default = true];
+}
+
+message CommandPartitionedTopicMetadataResponse {
+    enum LookupType {
+        Success  = 0;
+        Failed   = 1;
+    }
+    optional uint32 partitions            = 1;  // Optional in case of error
+    required uint64 request_id            = 2;
+    optional LookupType response          = 3;
+    optional ServerError error            = 4;
+    optional string message               = 5;
+}
+
+message CommandLookupTopic {
+    required string topic            = 1;
+    required uint64 request_id       = 2;
+    optional bool authoritative      = 3 [default = false];
+
+    // TODO - Remove original_principal, original_auth_data, original_auth_method
+    // Original principal that was verified by
+    // a Pulsar proxy.
+    optional string original_principal = 4;
+
+    // Original auth role and auth Method that was passed
+    // to the proxy.
+    optional string original_auth_data = 5;
+    optional string original_auth_method = 6;
+    //
+    optional string advertised_listener_name = 7;
+    // The properties used for topic lookup
+    repeated KeyValue properties = 8;
+}
+
+message CommandLookupTopicResponse {
+    enum LookupType {
+        Redirect = 0;
+        Connect  = 1;
+        Failed   = 2;
+    }
+
+    optional string brokerServiceUrl      = 1; // Optional in case of error
+    optional string brokerServiceUrlTls   = 2;
+    optional LookupType response          = 3;
+    required uint64 request_id            = 4;
+    optional bool authoritative           = 5 [default = false];
+    optional ServerError error            = 6;
+    optional string message               = 7;
+
+    // If it's true, indicates to the client that it must
+    // always connect through the service url after the
+    // lookup has been completed.
+    optional bool proxy_through_service_url = 8 [default = false];
+}
+
+/// Create a new Producer on a topic, assigning the given producer_id,
+/// all messages sent with this producer_id will be persisted on the topic
+message CommandProducer {
+    required string topic         = 1;
+    required uint64 producer_id   = 2;
+    required uint64 request_id    = 3;
+
+    /// If a producer name is specified, the name will be used,
+    /// otherwise the broker will generate a unique name
+    optional string producer_name = 4;
+
+    optional bool encrypted       = 5 [default = false];
+
+    /// Add optional metadata key=value to this producer
+    repeated KeyValue metadata    = 6;
+
+    optional Schema schema = 7;
+
+    // If producer reconnect to broker, the epoch of this producer will +1
+    optional uint64 epoch = 8 [default = 0];
+
+    // Indicate the name of the producer is generated or user provided
+    // Use default true here is in order to be forward compatible with the client
+    optional bool user_provided_producer_name = 9 [default = true];
+
+    // Require that this producers will be the only producer allowed on the topic
+    optional ProducerAccessMode producer_access_mode = 10 [default = Shared];
+
+    // Topic epoch is used to fence off producers that reconnects after a new
+    // exclusive producer has already taken over. This id is assigned by the
+    // broker on the CommandProducerSuccess. The first time, the client will
+    // leave it empty and then it will always carry the same epoch number on
+    // the subsequent reconnections.
+    optional uint64 topic_epoch = 11;
+
+    optional bool txn_enabled = 12 [default = false];
+
+    // Name of the initial subscription of the topic.
+    // If this field is not set, the initial subscription will not be created.
+    // If this field is set but the broker's `allowAutoSubscriptionCreation`
+    // is disabled, the producer will fail to be created.
+    optional string initial_subscription_name = 13;
+}
+
+message CommandSend {
+    required uint64 producer_id = 1;
+    required uint64 sequence_id = 2;
+    optional int32 num_messages = 3 [default = 1];
+    optional uint64 txnid_least_bits = 4 [default = 0];
+    optional uint64 txnid_most_bits = 5 [default = 0];
+
+    /// Add highest sequence id to support batch message with external sequence id
+    optional uint64 highest_sequence_id = 6 [default = 0];
+    optional bool is_chunk     =7 [default = false];
+
+    // Specify if the message being published is a Pulsar marker or not
+    optional bool marker = 8 [default = false];
+
+    // Message id of this message, currently is used in replicator for shadow topic.
+    optional MessageIdData message_id = 9;
+}
+
+message CommandSendReceipt {
+    required uint64 producer_id = 1;
+    required uint64 sequence_id = 2;
+    optional MessageIdData message_id = 3;
+    optional uint64 highest_sequence_id = 4 [default = 0];
+}
+
+message CommandSendError {
+    required uint64 producer_id = 1;
+    required uint64 sequence_id = 2;
+    required ServerError error  = 3;
+    required string message     = 4;
+}
+
+message CommandMessage {
+    required uint64 consumer_id       = 1;
+    required MessageIdData message_id = 2;
+    optional uint32 redelivery_count  = 3 [default = 0];
+    repeated int64 ack_set = 4;
+    optional uint64 consumer_epoch = 5;
+}
+
+message CommandAck {
+    enum AckType {
+        Individual = 0;
+        Cumulative = 1;
+    }
+
+    required uint64 consumer_id       = 1;
+    required AckType ack_type         = 2;
+
+    // In case of individual acks, the client can pass a list of message ids
+    repeated MessageIdData message_id = 3;
+
+    // Acks can contain a flag to indicate the consumer
+    // received an invalid message that got discarded
+    // before being passed on to the application.
+    enum ValidationError {
+        UncompressedSizeCorruption = 0;
+        DecompressionError = 1;
+        ChecksumMismatch = 2;
+        BatchDeSerializeError = 3;
+        DecryptionError = 4;
+    }
+
+    optional ValidationError validation_error = 4;
+    repeated KeyLongValue properties = 5;
+
+    optional uint64 txnid_least_bits = 6 [default = 0];
+    optional uint64 txnid_most_bits = 7 [default = 0];
+    optional uint64 request_id = 8;
+}
+
+message CommandAckResponse {
+    required uint64 consumer_id = 1;
+    optional uint64 txnid_least_bits  = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional ServerError error = 4;
+    optional string message = 5;
+    optional uint64 request_id = 6;
+}
+
+// changes on active consumer
+message CommandActiveConsumerChange {
+        required uint64 consumer_id    = 1;
+        optional bool is_active     = 2 [default = false];
+}
+
+message CommandFlow {
+    required uint64 consumer_id       = 1;
+
+    // Max number of messages to prefetch, in addition
+    // of any number previously specified
+    required uint32 messagePermits     = 2;
+}
+
+message CommandUnsubscribe {
+    required uint64 consumer_id = 1;
+    required uint64 request_id  = 2;
+    optional bool force         = 3 [default = false];
+}
+
+// Reset an existing consumer to a particular message id
+message CommandSeek {
+    required uint64 consumer_id = 1;
+    required uint64 request_id  = 2;
+
+    optional MessageIdData message_id = 3;
+    optional uint64 message_publish_time = 4;
+}
+
+// Message sent by broker to client when a topic
+// has been forcefully terminated and there are no more
+// messages left to consume
+message CommandReachedEndOfTopic {
+    required uint64 consumer_id = 1;
+}
+
+message CommandTopicMigrated {
+	enum ResourceType {
+        Producer = 0;
+        Consumer = 1;
+    }
+    required uint64 resource_id = 1;
+    required ResourceType resource_type = 2;
+    optional string brokerServiceUrl      = 3;
+    optional string brokerServiceUrlTls   = 4;
+
+}
+
+
+message CommandCloseProducer {
+    required uint64 producer_id = 1;
+    required uint64 request_id = 2;
+    optional string assignedBrokerServiceUrl = 3;
+    optional string assignedBrokerServiceUrlTls = 4;
+}
+
+message CommandCloseConsumer {
+    required uint64 consumer_id = 1;
+    required uint64 request_id = 2;
+    optional string assignedBrokerServiceUrl = 3;
+    optional string assignedBrokerServiceUrlTls = 4;
+}
+
+message CommandRedeliverUnacknowledgedMessages {
+    required uint64 consumer_id = 1;
+    repeated MessageIdData message_ids = 2;
+    optional uint64 consumer_epoch = 3;
+}
+
+message CommandSuccess {
+    required uint64 request_id = 1;
+    optional Schema schema = 2;
+}
+
+/// Response from CommandProducer
+message CommandProducerSuccess {
+    required uint64 request_id    = 1;
+    required string producer_name = 2;
+
+    // The last sequence id that was stored by this producer in the previous session
+    // This will only be meaningful if deduplication has been enabled.
+    optional int64  last_sequence_id = 3 [default = -1];
+    optional bytes schema_version = 4;
+
+    // The topic epoch assigned by the broker. This field will only be set if we
+    // were requiring exclusive access when creating the producer.
+    optional uint64 topic_epoch = 5;
+
+    // If producer is not "ready", the client will avoid to timeout the request
+    // for creating the producer. Instead it will wait indefinitely until it gets
+    // a subsequent  `CommandProducerSuccess` with `producer_ready==true`.
+    optional bool producer_ready = 6 [default = true];
+}
+
+message CommandError {
+    required uint64 request_id  = 1;
+    required ServerError error = 2;
+    required string message    = 3;
+}
+
+// Commands to probe the state of connection.
+// When either client or broker doesn't receive commands for certain
+// amount of time, they will send a Ping probe.
+message CommandPing {
+}
+message CommandPong {
+}
+
+message CommandConsumerStats {
+        required uint64 request_id         = 1;
+        // required string topic_name         = 2;
+        // required string subscription_name  = 3;
+        required uint64 consumer_id        = 4;
+}
+
+message CommandConsumerStatsResponse {
+        required uint64 request_id              = 1;
+        optional ServerError error_code         = 2;
+        optional string error_message           = 3;
+
+        /// Total rate of messages delivered to the consumer. msg/s
+        optional double msgRateOut                  = 4;
+
+        /// Total throughput delivered to the consumer. bytes/s
+        optional double msgThroughputOut            = 5;
+
+        /// Total rate of messages redelivered by this consumer. msg/s
+        optional double msgRateRedeliver            = 6;
+
+        /// Name of the consumer
+        optional string consumerName                = 7;
+
+        /// Number of available message permits for the consumer
+        optional uint64 availablePermits            = 8;
+
+        /// Number of unacknowledged messages for the consumer
+        optional uint64 unackedMessages             = 9;
+
+        /// Flag to verify if consumer is blocked due to reaching threshold of unacked messages
+        optional bool blockedConsumerOnUnackedMsgs  = 10;
+
+        /// Address of this consumer
+        optional string address                     = 11;
+
+        /// Timestamp of connection
+        optional string connectedSince              = 12;
+
+        /// Whether this subscription is Exclusive or Shared or Failover
+        optional string type                        = 13;
+
+        /// Total rate of messages expired on this subscription. msg/s
+        optional double msgRateExpired              = 14;
+
+        /// Number of messages in the subscription backlog
+        optional uint64 msgBacklog                  = 15;
+
+        /// Total rate of messages ack. msg/s
+        optional double messageAckRate              = 16;
+}
+
+message CommandGetLastMessageId {
+    required uint64 consumer_id = 1;
+    required uint64 request_id  = 2;
+}
+
+message CommandGetLastMessageIdResponse {
+    required MessageIdData last_message_id = 1;
+    required uint64 request_id  = 2;
+    optional MessageIdData consumer_mark_delete_position = 3;
+}
+
+message CommandGetTopicsOfNamespace {
+    enum Mode {
+        PERSISTENT = 0;
+        NON_PERSISTENT = 1;
+        ALL = 2;
+    }
+    required uint64 request_id    = 1;
+    required string namespace    = 2;
+    optional Mode mode = 3 [default = PERSISTENT];
+    optional string topics_pattern = 4;
+    optional string topics_hash    = 5;
+    // Context properties from the client
+    repeated KeyValue properties = 6;
+}
+
+message CommandGetTopicsOfNamespaceResponse {
+    required uint64 request_id    = 1;
+    repeated string topics         = 2;
+    // true iff the topic list was filtered by the pattern supplied by the client
+    optional bool   filtered       = 3 [default = false];
+    // hash computed from the names of matching topics
+    optional string topics_hash    = 4;
+    // if false, topics is empty and the list of matching topics has not changed
+    optional bool   changed        = 5 [default = true];
+}
+
+message CommandWatchTopicList {
+    required uint64 request_id     = 1;
+    required uint64 watcher_id     = 2;
+    required string namespace      = 3;
+    required string topics_pattern = 4;
+    // Only present when the client reconnects:
+    optional string topics_hash    = 5;
+}
+
+message CommandWatchTopicListSuccess {
+    required uint64 request_id     = 1;
+    required uint64 watcher_id     = 2;
+    repeated string topic          = 3;
+    required string topics_hash    = 4;
+}
+
+message CommandWatchTopicUpdate {
+    required uint64 watcher_id     = 1;
+    repeated string new_topics     = 2;
+    repeated string deleted_topics = 3;
+    required string topics_hash    = 4;
+}
+
+message CommandWatchTopicListClose {
+    required uint64 request_id     = 1;
+    required uint64 watcher_id     = 2;
+}
+
+/// --- Scalable topic commands ---
+
+enum SegmentState {
+    ACTIVE = 0;
+    SEALED = 1;
+}
+
+message SegmentInfoProto {
+    required uint64 segment_id       = 1;
+    required uint32 hash_start       = 2;
+    required uint32 hash_end         = 3;
+    required SegmentState state      = 4;
+    repeated uint64 parent_ids       = 5;
+    repeated uint64 child_ids        = 6;
+    required uint64 created_at_epoch = 7;
+    optional uint64 sealed_at_epoch  = 8;
+    // Wall-clock millis at create / seal time. Used for retention-based segment GC
+    // and timestamp-based seek; epoch above is a DAG generation number, not a clock.
+    required uint64 created_at_ms    = 9;
+    optional uint64 sealed_at_ms     = 10;
+
+    // Legacy-segment marker. When set, this segment is not managed by the scalable-topic
+    // controller and has no segment://... topic of its own — it wraps the named, externally
+    // managed persistent://... topic instead. Used by the synthetic-layout response the
+    // broker returns for a regular (partitioned or non-partitioned) topic that has not yet
+    // been migrated to a scalable topic. When absent, the segment URI is computed normally
+    // from the scalable topic name and segment_id (segment://<topic>/<descriptor>).
+    optional string legacy_topic_name = 11;
+
+    // PIP-486: entry-bucket split points — the ascending, inclusive start hashes of buckets 1..N-1
+    // within the 16-bit entry-bucket hash ring (bucket 0 implicitly starts at 0x0000). The segment is
+    // divided into entry_bucket_splits_count + 1 buckets; an empty list means a single bucket spanning
+    // the whole ring. Splits may be uneven (e.g. to balance buckets by traffic). Producers bucket their
+    // batches accordingly and the broker routes by bucket.
+    repeated uint32 entry_bucket_splits = 12;
+}
+
+message SegmentBrokerAddress {
+    required uint64 segment_id     = 1;
+    required string broker_url     = 2;
+    optional string broker_url_tls = 3;
+}
+
+message ScalableTopicDAG {
+    required uint64 epoch                           = 1;
+    repeated SegmentInfoProto segments              = 2;
+    repeated SegmentBrokerAddress segment_brokers   = 3;
+    optional string controller_broker_url           = 4;
+    optional string controller_broker_url_tls       = 5;
+}
+
+// Client -> Broker: Request scalable topic metadata and initiate watch session
+message CommandScalableTopicLookup {
+    required uint64 session_id = 1;   // Client-assigned session ID
+    // Any of "topic://t/n/x", "persistent://t/n/x", or a short form like
+    // "my-topic" (normalized by the broker to persistent://public/default/my-topic).
+    // The broker resolves the input to the canonical topic://... identity and
+    // returns it in CommandScalableTopicUpdate.resolved_topic_name.
+    required string topic      = 2;
+    // What to do when the scalable topic is missing on lookup: if true, create it (subject to
+    // broker/namespace auto-creation policy); if false, fail not-found instead of creating it.
+    // Namespace (multi-topic) consumers set this false so a deleted topic is never resurrected by
+    // a reconnecting per-topic watch. Defaults to true to preserve the create-on-lookup behavior
+    // for explicit single-topic producers/consumers (and for older clients that don't set it).
+    optional bool create_if_missing = 3 [default = true];
+}
+
+// Broker -> Client: Used for BOTH initial response and subsequent pushed updates
+message CommandScalableTopicUpdate {
+    required uint64 session_id         = 1;
+    optional ScalableTopicDAG dag      = 2;
+
+    optional ServerError error         = 3;
+    optional string message            = 4;
+
+    // Canonical scalable-topic identity (always "topic://t/n/x") that the client
+    // should use for downstream operations. Set on every success response,
+    // including for inputs that were given as persistent://... or short-form.
+    // Absent on error responses.
+    optional string resolved_topic_name = 5;
+}
+
+// Client -> Broker: Close the DAG watch session
+message CommandScalableTopicClose {
+    required uint64 session_id = 1;
+}
+
+// Kind of scalable consumer registering with the controller leader.
+// QueueConsumer never registers — it attaches directly to all active and sealed
+// segment topics — so it does not appear here.
+enum ScalableConsumerType {
+    STREAM     = 0;
+    CHECKPOINT = 1;
+}
+
+// A single segment assigned to a scalable consumer.
+message ScalableAssignedSegment {
+    required uint64 segment_id             = 1;
+    required uint32 hash_start             = 2;
+    required uint32 hash_end               = 3;
+    // Fully-qualified segment:// topic name the consumer should attach to.
+    required string segment_topic          = 4;
+    // PIP-486: the entry-bucket hash ranges (16-bit, inclusive) this consumer owns within the
+    // segment. Empty means the consumer owns the whole segment (single bucket) and subscribes
+    // Shared; non-empty means the segment is shared by bucket, and the consumer subscribes
+    // Key_Shared STICKY declaring exactly these ranges.
+    repeated IntRange bucket_ranges        = 5;
+}
+
+// An assignment of active segments to a single consumer. Carries the layout epoch
+// it was computed from so the client can reject stale updates.
+message ScalableConsumerAssignment {
+    required uint64 layout_epoch                    = 1;
+    repeated ScalableAssignedSegment segments       = 2;
+}
+
+// Client -> Broker: register as an ordered (Stream) or external (Checkpoint) consumer
+// on a scalable topic and request the initial segment assignment. The broker leader
+// persists the consumer registration and returns the current assignment.
+message CommandScalableTopicSubscribe {
+    required uint64 request_id                  = 1;
+    required string topic                       = 2;  // e.g. "topic://tenant/ns/my-topic"
+    required string subscription                = 3;
+    required string consumer_name               = 4;
+    required uint64 consumer_id                 = 5;
+    required ScalableConsumerType consumer_type = 6;
+}
+
+// Broker -> Client: response to CommandScalableTopicSubscribe. On success, carries
+// the initial ScalableConsumerAssignment. On failure, error + message are populated
+// and the assignment is absent.
+message CommandScalableTopicSubscribeResponse {
+    required uint64 request_id                 = 1;
+    optional ServerError error                 = 2;
+    optional string message                    = 3;
+    optional ScalableConsumerAssignment assignment = 4;
+}
+
+// Broker -> Client: push a new assignment to a subscribed consumer after a rebalance
+// (triggered by a peer joining/leaving the subscription or by a segment split/merge).
+message CommandScalableTopicAssignmentUpdate {
+    required uint64 consumer_id                = 1;
+    required ScalableConsumerAssignment assignment = 2;
+}
+
+// Multi-topic consumer watcher: subscribes to the union of scalable topics in a
+// namespace that match a (possibly empty) set of property filters. The broker keeps
+// pushing updates as topics enter or leave the matching set. See
+// `multi-topic-consumer-design.md` for the full design.
+
+// Client -> Broker: open a watch session.
+message CommandWatchScalableTopics {
+    required uint64 watch_id          = 1;   // Client-assigned watch ID
+    required string namespace         = 2;   // tenant/namespace
+    // Optional AND filters; empty list means "match all topics in the namespace".
+    repeated KeyValue property_filters = 3;
+    // Hash of the topics the client believes are currently in its set. Sent on
+    // reconnect; absent on first subscribe. If it matches the broker's freshly
+    // computed hash, the broker skips emitting the initial Snapshot — the client's
+    // local state is already correct and future Diffs will flow as usual. Same
+    // hash function as CommandGetTopicsOfNamespace (CRC32C over sorted topics).
+    optional string current_hash       = 4;
+}
+
+// Snapshot of the full matching set. Sent on initial subscribe and on every
+// reconnect-resync. The client replaces its local set with this list.
+message ScalableTopicsSnapshot {
+    repeated string topics = 1;
+}
+
+// Incremental membership change. Apply removed before added when both are present.
+message ScalableTopicsDiff {
+    repeated string added   = 1;
+    repeated string removed = 2;
+}
+
+// Broker -> Client: either Snapshot or Diff (mutually exclusive via oneof). When the
+// initial subscribe fails, neither variant is set and `error`/`message` carry the
+// failure reason.
+message CommandWatchScalableTopicsUpdate {
+    required uint64 watch_id              = 1;
+
+    oneof event {
+        ScalableTopicsSnapshot snapshot = 2;
+        ScalableTopicsDiff diff         = 3;
+    }
+
+    optional ServerError error            = 4;
+    optional string message               = 5;
+}
+
+// Client -> Broker: close the watch session.
+message CommandWatchScalableTopicsClose {
+    required uint64 watch_id = 1;
+}
+
+/// --- Transaction-coordinator assignment watch ---
+// The scalable-topics transaction coordinator's discovery surface. The client opens one watch
+// and the broker replies with the full (partition -> leader) map, then pushes a fresh full
+// snapshot whenever any partition's leader changes. There is no point lookup and no diff: the
+// map is bounded (parallelism, ~16) and changes rarely, so always sending the whole snapshot is
+// simpler and removes a class of apply-ordering / drift bugs. Gated by the
+// supports_tc_metadata_discovery feature flag.
+
+// Client -> Broker: open the assignment watch.
+message CommandWatchTcAssignments {
+    required uint64 watch_id = 1;   // client-assigned
+}
+
+// One (partition -> leader) entry. A partition currently mid-election is simply absent from the
+// snapshot; the client parks any transaction routed there until a later snapshot fills it in.
+message TcAssignment {
+    required uint64 tc_id                  = 1;   // TC partition = TxnID.mostSigBits
+    optional string broker_service_url     = 2;
+    optional string broker_service_url_tls = 3;
+}
+
+// Full map. Sent on initial watch and again, in full, on every change. The client replaces its
+// local map wholesale — no merge, no ordering rules. parallelism lets the client size its handler
+// array without a separate metadata read.
+message TcAssignmentsSnapshot {
+    required uint32 parallelism       = 1;
+    repeated TcAssignment assignments = 2;
+}
+
+// Broker -> Client: the current full snapshot, or (on initial-watch failure) an error.
+message CommandWatchTcAssignmentsUpdate {
+    required uint64 watch_id                 = 1;
+    optional TcAssignmentsSnapshot snapshot  = 2;
+    optional ServerError error               = 3;
+    optional string message                  = 4;
+}
+
+// Client -> Broker: close the watch.
+message CommandWatchTcAssignmentsClose {
+    required uint64 watch_id = 1;
+}
+
+message CommandGetSchema {
+    required uint64 request_id = 1;
+    required string topic      = 2;
+
+    optional bytes schema_version = 3;
+}
+
+message CommandGetSchemaResponse {
+    required uint64 request_id      = 1;
+    optional ServerError error_code = 2;
+    optional string error_message   = 3;
+
+    optional Schema schema          = 4;
+    optional bytes schema_version   = 5;
+}
+
+message CommandGetOrCreateSchema {
+    required uint64 request_id      = 1;
+    required string topic           = 2;
+    required Schema schema          = 3;
+    optional string producerName    = 4;
+}
+
+message CommandGetOrCreateSchemaResponse {
+    required uint64 request_id      = 1;
+    optional ServerError error_code = 2;
+    optional string error_message   = 3;
+
+    optional bytes schema_version   = 4;
+}
+
+/// --- transaction related ---
+
+enum TxnAction {
+    COMMIT = 0;
+    ABORT = 1;
+}
+
+message CommandTcClientConnectRequest {
+    required uint64 request_id = 1;
+    required uint64 tc_id = 2 [default = 0];
+    // Route to the scalable-topics (PIP-473) coordinator. See CommandNewTxn.scalable.
+    optional bool scalable = 3 [default = false];
+}
+
+message CommandTcClientConnectResponse {
+    required uint64 request_id = 1;
+    optional ServerError error  = 2;
+    optional string message     = 3;
+}
+
+message CommandNewTxn {
+    required uint64 request_id = 1;
+    // Transaction timeout in milliseconds. Despite the field number's legacy name history, the value
+    // has always been carried in milliseconds (the client sends unit.toMillis(...) and both
+    // coordinators consume it as ms); the field is named accordingly to avoid confusion.
+    optional uint64 txn_ttl_millis = 2 [default = 0];
+    optional uint64 tc_id = 3 [default = 0];
+    // When true, route to the metadata-driven (scalable-topics, PIP-473) transaction coordinator
+    // instead of the legacy one. Set by v5 clients; absent for v4 clients. Lets both coordinators
+    // serve their own clients on the same cluster.
+    optional bool scalable = 4 [default = false];
+}
+
+message CommandNewTxnResponse {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional ServerError error = 4;
+    optional string message = 5;
+}
+
+message CommandAddPartitionToTxn {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    repeated string partitions = 4;
+    // Route to the scalable-topics (PIP-473) coordinator. See CommandNewTxn.scalable.
+    optional bool scalable = 5 [default = false];
+}
+
+message CommandAddPartitionToTxnResponse {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional ServerError error = 4;
+    optional string message = 5;
+}
+
+message Subscription {
+    required string topic = 1;
+    required string subscription = 2;
+}
+message CommandAddSubscriptionToTxn {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    repeated Subscription subscription = 4;
+    // Route to the scalable-topics (PIP-473) coordinator. See CommandNewTxn.scalable.
+    optional bool scalable = 5 [default = false];
+}
+
+message CommandAddSubscriptionToTxnResponse {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional ServerError error = 4;
+    optional string message = 5;
+}
+
+message CommandEndTxn {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional TxnAction txn_action = 4;
+    // Route to the scalable-topics (PIP-473) coordinator. See CommandNewTxn.scalable.
+    optional bool scalable = 5 [default = false];
+}
+
+message CommandEndTxnResponse {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional ServerError error = 4;
+    optional string message = 5;
+}
+
+message CommandEndTxnOnPartition {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional string topic = 4;
+    optional TxnAction txn_action = 5;
+    optional uint64 txnid_least_bits_of_low_watermark = 6;
+}
+
+message CommandEndTxnOnPartitionResponse {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional ServerError error = 4;
+    optional string message = 5;
+}
+
+message CommandEndTxnOnSubscription {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional Subscription subscription= 4;
+    optional TxnAction txn_action = 5;
+    optional uint64 txnid_least_bits_of_low_watermark = 6;
+}
+
+message CommandEndTxnOnSubscriptionResponse {
+    required uint64 request_id = 1;
+    optional uint64 txnid_least_bits = 2 [default = 0];
+    optional uint64 txnid_most_bits = 3 [default = 0];
+    optional ServerError error = 4;
+    optional string message = 5;
+}
+
+message BaseCommand {
+    enum Type {
+        CONNECT     = 2;
+        CONNECTED   = 3;
+        SUBSCRIBE   = 4;
+
+        PRODUCER    = 5;
+
+        SEND        = 6;
+        SEND_RECEIPT= 7;
+        SEND_ERROR  = 8;
+
+        MESSAGE     = 9;
+        ACK         = 10;
+        FLOW        = 11;
+
+        UNSUBSCRIBE = 12;
+
+        SUCCESS     = 13;
+        ERROR       = 14;
+
+        CLOSE_PRODUCER = 15;
+        CLOSE_CONSUMER = 16;
+
+        PRODUCER_SUCCESS = 17;
+
+        PING = 18;
+        PONG = 19;
+
+        REDELIVER_UNACKNOWLEDGED_MESSAGES = 20;
+
+        PARTITIONED_METADATA           = 21;
+        PARTITIONED_METADATA_RESPONSE  = 22;
+
+        LOOKUP           = 23;
+        LOOKUP_RESPONSE  = 24;
+
+        CONSUMER_STATS        = 25;
+        CONSUMER_STATS_RESPONSE    = 26;
+
+        REACHED_END_OF_TOPIC = 27;
+
+        SEEK = 28;
+
+        GET_LAST_MESSAGE_ID = 29;
+        GET_LAST_MESSAGE_ID_RESPONSE = 30;
+
+        ACTIVE_CONSUMER_CHANGE = 31;
+
+
+        GET_TOPICS_OF_NAMESPACE             = 32;
+        GET_TOPICS_OF_NAMESPACE_RESPONSE     = 33;
+
+        GET_SCHEMA = 34;
+        GET_SCHEMA_RESPONSE = 35;
+
+        AUTH_CHALLENGE = 36;
+        AUTH_RESPONSE = 37;
+
+        ACK_RESPONSE = 38;
+
+        GET_OR_CREATE_SCHEMA = 39;
+        GET_OR_CREATE_SCHEMA_RESPONSE = 40;
+
+        // transaction related
+        NEW_TXN = 50;
+        NEW_TXN_RESPONSE = 51;
+
+        ADD_PARTITION_TO_TXN = 52;
+        ADD_PARTITION_TO_TXN_RESPONSE = 53;
+
+        ADD_SUBSCRIPTION_TO_TXN = 54;
+        ADD_SUBSCRIPTION_TO_TXN_RESPONSE = 55;
+
+        END_TXN = 56;
+        END_TXN_RESPONSE = 57;
+
+        END_TXN_ON_PARTITION = 58;
+        END_TXN_ON_PARTITION_RESPONSE = 59;
+
+        END_TXN_ON_SUBSCRIPTION = 60;
+        END_TXN_ON_SUBSCRIPTION_RESPONSE = 61;
+        TC_CLIENT_CONNECT_REQUEST = 62;
+        TC_CLIENT_CONNECT_RESPONSE = 63;
+
+        WATCH_TOPIC_LIST = 64;
+        WATCH_TOPIC_LIST_SUCCESS = 65;
+        WATCH_TOPIC_UPDATE = 66;
+        WATCH_TOPIC_LIST_CLOSE = 67;
+
+        TOPIC_MIGRATED = 68;
+
+        SCALABLE_TOPIC_LOOKUP  = 70;
+        SCALABLE_TOPIC_UPDATE  = 71;
+        SCALABLE_TOPIC_CLOSE   = 72;
+
+        SCALABLE_TOPIC_SUBSCRIBE              = 73;
+        SCALABLE_TOPIC_SUBSCRIBE_RESPONSE     = 74;
+        SCALABLE_TOPIC_ASSIGNMENT_UPDATE      = 75;
+
+        WATCH_SCALABLE_TOPICS                 = 76;
+        WATCH_SCALABLE_TOPICS_UPDATE          = 77;
+        WATCH_SCALABLE_TOPICS_CLOSE           = 78;
+
+        WATCH_TC_ASSIGNMENTS                  = 79;
+        WATCH_TC_ASSIGNMENTS_UPDATE           = 80;
+        WATCH_TC_ASSIGNMENTS_CLOSE            = 81;
+    }
+
+
+    required Type type = 1;
+
+    optional CommandConnect connect          = 2;
+    optional CommandConnected connected      = 3;
+
+    optional CommandSubscribe subscribe      = 4;
+    optional CommandProducer producer        = 5;
+    optional CommandSend send                = 6;
+    optional CommandSendReceipt send_receipt = 7;
+    optional CommandSendError send_error     = 8;
+    optional CommandMessage message          = 9;
+    optional CommandAck ack                  = 10;
+    optional CommandFlow flow                = 11;
+    optional CommandUnsubscribe unsubscribe  = 12;
+
+    optional CommandSuccess success          = 13;
+    optional CommandError error              = 14;
+
+    optional CommandCloseProducer close_producer = 15;
+    optional CommandCloseConsumer close_consumer = 16;
+
+    optional CommandProducerSuccess producer_success = 17;
+    optional CommandPing ping = 18;
+    optional CommandPong pong = 19;
+    optional CommandRedeliverUnacknowledgedMessages redeliverUnacknowledgedMessages = 20;
+
+    optional CommandPartitionedTopicMetadata  partitionMetadata                 = 21;
+    optional CommandPartitionedTopicMetadataResponse partitionMetadataResponse  = 22;
+
+    optional CommandLookupTopic lookupTopic                    = 23;
+    optional CommandLookupTopicResponse lookupTopicResponse    = 24;
+
+    optional CommandConsumerStats consumerStats                         = 25;
+    optional CommandConsumerStatsResponse consumerStatsResponse         = 26;
+
+    optional CommandReachedEndOfTopic reachedEndOfTopic  = 27;
+
+    optional CommandSeek seek = 28;
+
+    optional CommandGetLastMessageId getLastMessageId = 29;
+    optional CommandGetLastMessageIdResponse getLastMessageIdResponse = 30;
+
+    optional CommandActiveConsumerChange active_consumer_change = 31;
+
+    optional CommandGetTopicsOfNamespace getTopicsOfNamespace = 32;
+    optional CommandGetTopicsOfNamespaceResponse getTopicsOfNamespaceResponse = 33;
+
+    optional CommandGetSchema getSchema = 34;
+    optional CommandGetSchemaResponse getSchemaResponse = 35;
+
+    optional CommandAuthChallenge authChallenge = 36;
+    optional CommandAuthResponse authResponse = 37;
+
+    optional CommandAckResponse ackResponse = 38;
+
+    optional CommandGetOrCreateSchema getOrCreateSchema = 39;
+    optional CommandGetOrCreateSchemaResponse getOrCreateSchemaResponse = 40;
+
+    // transaction related
+    optional CommandNewTxn newTxn = 50;
+    optional CommandNewTxnResponse newTxnResponse = 51;
+    optional CommandAddPartitionToTxn addPartitionToTxn= 52;
+    optional CommandAddPartitionToTxnResponse addPartitionToTxnResponse = 53;
+    optional CommandAddSubscriptionToTxn addSubscriptionToTxn = 54;
+    optional CommandAddSubscriptionToTxnResponse addSubscriptionToTxnResponse = 55;
+    optional CommandEndTxn endTxn = 56;
+    optional CommandEndTxnResponse endTxnResponse = 57;
+    optional CommandEndTxnOnPartition endTxnOnPartition = 58;
+    optional CommandEndTxnOnPartitionResponse endTxnOnPartitionResponse = 59;
+    optional CommandEndTxnOnSubscription endTxnOnSubscription = 60;
+    optional CommandEndTxnOnSubscriptionResponse endTxnOnSubscriptionResponse = 61;
+    optional CommandTcClientConnectRequest tcClientConnectRequest = 62;
+    optional CommandTcClientConnectResponse tcClientConnectResponse = 63;
+
+    optional CommandWatchTopicList watchTopicList = 64;
+    optional CommandWatchTopicListSuccess watchTopicListSuccess = 65;
+    optional CommandWatchTopicUpdate watchTopicUpdate = 66;
+    optional CommandWatchTopicListClose watchTopicListClose = 67;
+
+    optional CommandTopicMigrated topicMigrated = 68;
+
+    optional CommandScalableTopicLookup scalableTopicLookup   = 70;
+    optional CommandScalableTopicUpdate scalableTopicUpdate    = 71;
+    optional CommandScalableTopicClose scalableTopicClose      = 72;
+
+    optional CommandScalableTopicSubscribe scalableTopicSubscribe                     = 73;
+    optional CommandScalableTopicSubscribeResponse scalableTopicSubscribeResponse     = 74;
+    optional CommandScalableTopicAssignmentUpdate scalableTopicAssignmentUpdate       = 75;
+
+    optional CommandWatchScalableTopics watchScalableTopics                           = 76;
+    optional CommandWatchScalableTopicsUpdate watchScalableTopicsUpdate               = 77;
+    optional CommandWatchScalableTopicsClose watchScalableTopicsClose                 = 78;
+
+    optional CommandWatchTcAssignments watchTcAssignments                             = 79;
+    optional CommandWatchTcAssignmentsUpdate watchTcAssignmentsUpdate                 = 80;
+    optional CommandWatchTcAssignmentsClose watchTcAssignmentsClose                   = 81;
+}

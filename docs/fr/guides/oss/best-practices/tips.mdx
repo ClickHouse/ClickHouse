@@ -10,9 +10,7 @@ import SelfManaged from '/snippets/fr/_self_managed_only_automated.mdx';
 
 <SelfManaged />
 
-<div id="cpu-scaling-governor">
-  ## Gouverneur de fréquence du CPU
-</div>
+## Gouverneur de fréquence du CPU {#cpu-scaling-governor}
 
 Utilisez toujours le gouverneur `performance`. Le gouverneur `on-demand` fonctionne nettement moins bien lorsque la charge reste constamment élevée.
 
@@ -20,16 +18,12 @@ Utilisez toujours le gouverneur `performance`. Le gouverneur `on-demand` fonctio
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-<div id="cpu-limitations">
-  ## Limitations du CPU
-</div>
+## Limitations du CPU {#cpu-limitations}
 
 Les processeurs peuvent surchauffer. Utilisez `dmesg` pour vérifier si la fréquence d’horloge du CPU a été limitée à cause d’une surchauffe.
 Cette limitation peut également être imposée de l’extérieur, au niveau du datacenter. Vous pouvez utiliser `turbostat` pour la surveiller sous charge.
 
-<div id="ram">
-  ## RAM
-</div>
+## RAM {#ram}
 
 Pour de petits volumes de données (jusqu&#39;à ~200 Go de données compressées), il est préférable d&#39;utiliser autant de mémoire que de données.
 Pour de grands volumes de données et pour le traitement de requêtes interactives (en ligne), vous devez utiliser une quantité raisonnable de RAM (128 Go ou plus) afin que la partie active des données tienne dans le cache de pages.
@@ -44,9 +38,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Utilisez `perf top` pour surveiller le temps que le noyau consacre à la gestion de la mémoire.
 Les huge pages permanentes n&#39;ont pas non plus besoin d&#39;être allouées.
 
-<div id="using-less-than-16gb-of-ram">
-  ### Utilisation de moins de 16 GB de RAM
-</div>
+### Utilisation de moins de 16 GB de RAM {#using-less-than-16gb-of-ram}
 
 La quantité de RAM recommandée est de 32 GB ou plus.
 
@@ -66,9 +58,7 @@ Notes supplémentaires :
 * Pour vider la mémoire mise en cache par l’allocateur mémoire, vous pouvez exécuter la commande `SYSTEM JEMALLOC PURGE`.
 * Nous ne recommandons pas d&#39;utiliser les intégrations S3 ou Kafka sur des machines disposant de peu de mémoire, car elles nécessitent une quantité importante de mémoire pour les buffers.
 
-<div id="storage-subsystem">
-  ## Sous-système de stockage
-</div>
+## Sous-système de stockage {#storage-subsystem}
 
 Si votre budget permet d&#39;utiliser des SSD, utilisez des SSD.
 Sinon, utilisez des HDD. Des disques SATA à 7 200 tr/min feront l&#39;affaire.
@@ -76,9 +66,7 @@ Sinon, utilisez des HDD. Des disques SATA à 7 200 tr/min feront l&#39;affaire
 Privilégiez un grand nombre de serveurs équipés de disques locaux plutôt qu&#39;un plus petit nombre de serveurs reliés à des baies de disques.
 En revanche, pour stocker des archives rarement interrogées, les baies conviennent.
 
-<div id="raid">
-  ## RAID
-</div>
+## RAID {#raid}
 
 Lorsque vous utilisez des HDD, vous pouvez les configurer en RAID-10, RAID-5, RAID-6 ou RAID-50.
 Sous Linux, le RAID logiciel est préférable (avec `mdadm`).
@@ -109,9 +97,7 @@ Pour les HDD, activez le cache d’écriture.
 
 Assurez-vous que [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\)) est activé pour les disques NVME et SSD sur votre système d’exploitation (généralement via une tâche cron ou un service systemd).
 
-<div id="file-system">
-  ## Système de fichiers
-</div>
+## Système de fichiers {#file-system}
 
 Ext4 est l’option la plus fiable. Définissez l’option de montage `noatime`. XFS fonctionne également bien.
 La plupart des autres systèmes de fichiers devraient aussi convenir.
@@ -123,24 +109,18 @@ Il est déconseillé d’utiliser des systèmes de fichiers chiffrés, car vous 
 
 Bien que ClickHouse puisse fonctionner sur NFS, ce n’est pas l’idéal.
 
-<div id="linux-kernel">
-  ## Noyau Linux
-</div>
+## Noyau Linux {#linux-kernel}
 
 N&#39;utilisez pas de noyau Linux obsolète.
 
-<div id="network">
-  ## Réseau
-</div>
+## Réseau {#network}
 
 Si vous utilisez IPv6, augmentez la taille du cache de routage.
 Le noyau Linux antérieur à la version 3.2 présentait de nombreux problèmes dans son implémentation d’IPv6.
 
 Utilisez si possible un réseau d’au moins 10 Gb/s. Un réseau à 1 Gb/s fonctionnera également, mais il sera nettement moins performant pour mettre à jour des répliques contenant des dizaines de téraoctets de données, ou pour traiter des requêtes distribuées avec une grande quantité de données intermédiaires.
 
-<div id="huge-pages">
-  ## Huge Pages
-</div>
+## Huge Pages {#huge-pages}
 
 Réglez toujours les transparent huge pages sur `madvise`. Sur les anciens noyaux (avant la version 5.9), un réglage de THP sur `always` peut entraîner une dégradation importante des performances : le noyau passe trop de temps à défragmenter la mémoire, en particulier sur les systèmes dotés de plus de 64 Go de RAM. Le noyau 5.9 a introduit la compaction proactive, qui gère bien mieux les THP, mais ClickHouse affiche toujours un avertissement au démarrage si THP est défini sur `always` ; `madvise` reste donc le réglage recommandé, quelle que soit la version du noyau.
 
@@ -156,9 +136,7 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 Après cela, exécutez la commande `sudo update-grub`, puis redémarrez pour appliquer les changements.
 
-<div id="hypervisor-configuration">
-  ## Configuration de l’hyperviseur
-</div>
+## Configuration de l’hyperviseur {#hypervisor-configuration}
 
 Si vous utilisez OpenStack, définissez
 
@@ -179,15 +157,13 @@ dans la configuration XML.
 C’est important pour que ClickHouse puisse récupérer les bonnes informations avec l’instruction `cpuid`.
 Sinon, vous risquez d’avoir des plantages `Illegal instruction` si l’hyperviseur s’exécute sur d’anciens modèles de CPU.
 
-<div id="zookeeper">
-  ## ClickHouse Keeper et ZooKeeper
-</div>
+## ClickHouse Keeper et ZooKeeper {#zookeeper}
 
 ClickHouse Keeper est recommandé en remplacement de ZooKeeper pour les clusters ClickHouse. Consultez la documentation de [ClickHouse Keeper](/fr/guides/oss/deployment-and-scaling/keeper/index)
 
 Si vous souhaitez continuer à utiliser ZooKeeper, il est préférable d&#39;utiliser une version récente de ZooKeeper — 3.4.9 ou ultérieure. La version fournie avec les distributions Linux stables peut être obsolète.
 
-Vous ne devez jamais utiliser de scripts écrits manuellement pour transférer des données entre différents clusters ZooKeeper, car le résultat sera incorrect pour les nœuds séquentiels. N&#39;utilisez jamais l&#39;utilitaire &quot;zkcopy&quot; pour la même raison : https://github.com/ksprojects/zkcopy/issues/15
+Vous ne devez jamais utiliser de scripts écrits manuellement pour transférer des données entre différents clusters ZooKeeper, car le résultat sera incorrect pour les nœuds séquentiels. N&#39;utilisez jamais l&#39;utilitaire &quot;zkcopy&quot; pour la même raison : https://github.com/ksprojects/zkcopy/issues/15
 
 Si vous souhaitez scinder un cluster ZooKeeper existant en deux, la bonne méthode consiste à augmenter le nombre de ses répliques, puis à le reconfigurer en deux clusters indépendants.
 
@@ -196,15 +172,15 @@ Pour les environnements de production, nous recommandons d&#39;utiliser des serv
 
 Vous pouvez avoir des observateurs ZooKeeper dans un ensemble, mais les serveurs ClickHouse ne doivent pas interagir avec eux.
 
-Ne modifiez pas le paramètre `minSessionTimeout` : des valeurs élevées peuvent affecter la stabilité des redémarrages de ClickHouse.
+Ne modifiez pas le paramètre `minSessionTimeout` : des valeurs élevées peuvent affecter la stabilité des redémarrages de ClickHouse.
 
-Avec les paramètres par défaut, ZooKeeper est une bombe à retardement :
+Avec les paramètres par défaut, ZooKeeper est une bombe à retardement :
 
 > Le serveur ZooKeeper ne supprime pas les fichiers des anciens snapshots et logs avec la configuration par défaut (voir `autopurge`), et cela relève de la responsabilité de l&#39;opérateur.
 
 Cette bombe doit être désamorcée.
 
-La configuration ZooKeeper (3.5.1) ci-dessous est utilisée dans un grand environnement de production :
+La configuration ZooKeeper (3.5.1) ci-dessous est utilisée dans un grand environnement de production :
 
 zoo.cfg:
 
@@ -253,12 +229,12 @@ preAllocSize=131072
 # is started. The default snapCount is 100000.
 snapCount=3000000
 
-# If this option is defined, requests will be will logged to a trace file named
+# If this option is defined, requests will be logged to a trace file named
 # traceFile.year.month.day.
 #traceFile=
 
 # Leader accepts client connections. Default value is "yes". The leader machine
-# coordinates updates. For higher update throughput at thes slight expense of
+# coordinates updates. For higher update throughput at the slight expense of
 # read throughput the leader can be configured to not accept clients and focus
 # on coordination.
 leaderServes=yes
@@ -267,7 +243,7 @@ standaloneEnabled=false
 dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.cfg.dynamic
 ```
 
-Version de Java :
+Version de Java :
 
 ```text
 openjdk 11.0.5-shenandoah 2019-10-15
@@ -337,14 +313,10 @@ script
 end script
 ```
 
-<div id="antivirus-software">
-  ## Logiciel antivirus
-</div>
+## Logiciel antivirus {#antivirus-software}
 
 Si vous utilisez un logiciel antivirus, configurez-le pour qu’il ignore les dossiers contenant les fichiers de données de ClickHouse (`/var/lib/clickhouse`) ; sinon, les performances risquent d’être dégradées et vous pourriez rencontrer des erreurs inattendues lors de l’ingestion des données et des fusions en arrière-plan.
 
-<div id="related-content">
-  ## Contenus associés
-</div>
+## Contenus associés {#related-content}
 
 * [Vous débutez avec ClickHouse ? Voici 13 « péchés mortels » et comment les éviter](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

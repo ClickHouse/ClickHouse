@@ -30,6 +30,19 @@ function finished_in_query_log()
     echo "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$1' AND type = 'QueryFinish'"
 }
 
+# Prints whether the client of the background query $1 got its answer in less than half the time the query ran.
+# The client wrote how long it waited, in seconds, to $CLICKHOUSE_TMP/$1.time.
+function answered_before_finished()
+{
+    local query_id=$1 waited
+    waited=$(<"$CLICKHOUSE_TMP/$query_id.time")
+    wait_for_query_log "$(finished_in_query_log "$query_id")"
+    $CLICKHOUSE_CLIENT --param_waited "$waited" -q "
+        SELECT if(2000 * toFloat64OrNull({waited:String}) < query_duration_ms, 'answered before it finished',
+            'answered after ' || {waited:String} || ' s, finished in ' || toString(query_duration_ms) || ' ms')
+        FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
+}
+
 function shared_native_and_http_tests()
 {
     local run=$1
@@ -41,23 +54,18 @@ function shared_native_and_http_tests()
     echo '--- CREATE TABLE AS SELECT returns as soon as the SELECT has started'
     local slow_select="SELECT number AS n FROM numbers(5) WHERE NOT ignore(sleepEachRow(1)) SETTINGS max_block_size = 1"
     local ctas_id="ctas_${run}_${CLICKHOUSE_DATABASE}"
-    out=$($run "CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$ctas_id")
+    out=$(${run}_timed "CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$ctas_id")
     [[ -z "$out" ]] && echo "no output"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = '$ctas_id'"
-    echo "still populating after the client returned"
 
     echo '--- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started'
     local replace_id="replace_${run}_${CLICKHOUSE_DATABASE}"
     $CLICKHOUSE_CLIENT -q "CREATE TABLE t_replace_slow_${run} (n UInt64) ENGINE = MergeTree ORDER BY n"
-    out=$($run "CREATE OR REPLACE TABLE t_replace_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$replace_id")
+    out=$(${run}_timed "CREATE OR REPLACE TABLE t_replace_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$replace_id")
     [[ -z "$out" ]] && echo "no output"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = '$replace_id'"
-    echo "still populating after the client returned"
 
     echo '--- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started'
-    out=$($run "EXECUTE AS default CREATE TABLE t_execute_as_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "execute_as_$ctas_id")
+    out=$(${run}_timed "EXECUTE AS default CREATE TABLE t_execute_as_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "execute_as_$ctas_id")
     [[ -z "$out" ]] && echo "no output"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = 'execute_as_$ctas_id'"
 
     echo '--- INSERT SELECT in background: no output, rows land, attributed in query_log'
     local insert_id="insert_${run}_${CLICKHOUSE_DATABASE}"
@@ -140,11 +148,14 @@ function shared_native_and_http_tests()
     [[ -z "$out" ]] && echo "no output"
     $CLICKHOUSE_CLIENT -q "DROP DATABASE $other_database"
 
-    echo '--- the CREATE ... AS SELECT queries above fill their tables'
+    echo '--- the CREATE ... AS SELECT queries above fill their tables, and their clients got the answer before they finished'
     wait_for "count() = 5 FROM t_ctas_slow_${run}"
     echo "created with rows"
     wait_for "count() = 5 FROM t_replace_slow_${run}"
     echo "replaced with rows"
     wait_for "count() = 5 FROM t_execute_as_slow_${run}"
+    answered_before_finished "$ctas_id"
+    answered_before_finished "$replace_id"
+    answered_before_finished "execute_as_$ctas_id"
     $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}; DROP TABLE t_replace_slow_${run}; DROP TABLE t_execute_as_slow_${run}"
 }

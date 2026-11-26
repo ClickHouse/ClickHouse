@@ -155,6 +155,7 @@ public:
     /// The table is written only through a session: `write` is not implemented.
     StorageWriteSessionPtr beginWrite(
         SharedHeader sample_block,
+        StorageMetadataPtr metadata_snapshot,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,

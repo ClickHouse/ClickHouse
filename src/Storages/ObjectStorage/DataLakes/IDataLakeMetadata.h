@@ -174,6 +174,7 @@ public:
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
         const StorageID & /*table_id*/,
         ObjectStoragePtr /*object_storage*/,
         StorageObjectStorageConfigurationPtr /*configuration*/,
@@ -187,6 +188,7 @@ public:
     /// See `IStorage::beginWrite`. nullptr if the sinks from `write` finish their part of the insert themselves.
     virtual StorageWriteSessionPtr beginWrite(
         SharedHeader /*sample_block*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
         const StorageID & /*table_id*/,
         ObjectStoragePtr /*object_storage*/,
         StorageObjectStorageConfigurationPtr /*configuration*/,

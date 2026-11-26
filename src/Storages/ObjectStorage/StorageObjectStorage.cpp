@@ -1103,7 +1103,7 @@ StorageWriteSessionPtr StorageObjectStorage::createWriteSession(
 
     checkWriteIsPossible(*configuration);
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    return configuration->beginWrite(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+    return configuration->beginWrite(sample_block, metadata_snapshot, storage_id, object_storage, format_settings, local_context, catalog);
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1124,7 +1124,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     checkWriteIsPossible(*configuration);
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+        return configuration->write(sample_block, metadata_snapshot, storage_id, object_storage, format_settings, local_context, catalog);
 
     /// Not a data lake, just raw object storage
 
