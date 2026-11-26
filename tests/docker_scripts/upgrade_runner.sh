@@ -1047,6 +1047,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
+# `PartMovesBetweenShardsOrchestrator` + `NO_SUCH_DATA_PART` on the shard of `05565_part_move_to_shard_source_part_removed`
+#       is that test's move, whose part it removes on purpose: the stress phase can stop the file before its
+#       `KILL PART_MOVE_TO_SHARD`, and the upgraded server retries the move every 3 seconds. Requires the orchestrator, the
+#       fixture's destination shard and the code together, so a failed move of any other table still fails this job.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1140,6 +1144,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
+    | grep -av -e "(PartMovesBetweenShardsOrchestrator): .*Code: 232\. DB::Exception: Part [^ ]* is not active on replica [^ ]*, it cannot be attached on shard /clickhouse/05565_part_move_to_shard_source_part_removed_[^/]*/dst\. (NO_SUCH_DATA_PART)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
