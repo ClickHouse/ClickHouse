@@ -519,21 +519,22 @@ public:
 
             if (lazy.kind == LazySource::Kind::MergeTree)
             {
-                /// Both in order, so they are followed at once.
-                auto next_unneeded = unneeded.begin();
+                /// What the read can read lazily once it is pruned of `unneeded`, which is what `assembleSource` prunes it of.
+                /// A column the plan keeps that the read did not read before - a join keeps a column of a side for the number
+                /// of its rows - is read twice now: where the read cannot read it twice, or the source does not read columns
+                /// twice (see `mayReadTwice`), it crosses the `LIMIT` instead.
+                const auto & merge_tree = typeid_cast<const ReadFromMergeTree &>(*merged.sources[source].plan_node->step);
+                const auto readable = merge_tree.getLazilyReadablePositions(unneeded);
+                VectorWithMemoryTracking<size_t> read_twice;
                 size_t kept_index = 0;
                 for (size_t index = 0; index < lazy.positions.size(); ++index)
                 {
                     const size_t position = lazy.positions[index];
-                    while (next_unneeded != unneeded.end() && *next_unneeded < position)
-                        ++next_unneeded;
-
-                    /// The main read keeps a column the plan needs, and the lazy read can read it again.
-                    const bool is_unneeded = next_unneeded != unneeded.end() && *next_unneeded == position;
-                    if (is_unneeded || lazy.may_read_twice)
+                    const bool is_read_twice = std::ranges::binary_search(readable.read_twice, position);
+                    if (std::ranges::binary_search(readable.positions, position) && (!is_read_twice || lazy.may_read_twice))
                     {
-                        if (!is_unneeded && !std::ranges::binary_search(lazy.read_twice, position))
-                            lazy.read_twice.insert(std::ranges::upper_bound(lazy.read_twice, position), position);
+                        if (is_read_twice)
+                            read_twice.push_back(position);
 
                         lazy.positions[kept_index] = position;
                         lazy.inputs[kept_index] = lazy.inputs[index];
@@ -545,6 +546,7 @@ public:
                 }
                 lazy.positions.resize(kept_index);
                 lazy.inputs.resize(kept_index);
+                lazy.read_twice = std::move(read_twice);
             }
             else
             {

@@ -129,6 +129,16 @@ SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
     SETTINGS apply_mutations_on_fly = 1)
 WHERE explain LIKE '%Lazily read columns%';
 
+SELECT '-- a column the join keeps for the number of rows of its side, with a data mutation applied on the fly';
+-- Nothing below the LIMIT needs `m`, but the join keeps it as the first column of its side; it cannot be read twice.
+SELECT count() FROM (
+    SELECT t.k, mut.m FROM (SELECT k FROM l WHERE k < 10) AS t CROSS JOIN mut ORDER BY t.k LIMIT 3)
+SETTINGS apply_mutations_on_fly = 1, cross_to_inner_join_rewrite = 0;
+SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
+    SELECT t.k, mut.m FROM (SELECT k FROM l WHERE k < 10) AS t CROSS JOIN mut ORDER BY t.k LIMIT 3
+    SETTINGS apply_mutations_on_fly = 1, cross_to_inner_join_rewrite = 0)
+WHERE explain LIKE '%Lazily read columns%';
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE j;

@@ -78,3 +78,5 @@ Lazily read columns: rheavy
 10	10
 Lazily read columns: heavy
 Lazily read columns: rheavy
+-- a column the join keeps for the number of rows of its side, with a data mutation applied on the fly
+3
