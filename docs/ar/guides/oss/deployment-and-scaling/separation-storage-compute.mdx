@@ -8,7 +8,7 @@ keywords: ['التخزين', 'الحوسبة', 'معمارية', 'قابلية �
 ---
 
 <div id="overview">
-  ## نظرة عامة
+  ## نظرة عامة {#overview}
 </div>
 
 يشرح هذا الدليل كيف يمكنك استخدام ClickHouse وS3 لتنفيذ معمارية تفصل بين التخزين والحوسبة.
@@ -27,7 +27,7 @@ keywords: ['التخزين', 'الحوسبة', 'معمارية', 'قابلية �
 
 <Steps>
   <Step title="استخدم S3 كقرص لـ ClickHouse" id="1-use-s3-as-a-clickhouse-disk">
-    ### إنشاء قرص
+### إنشاء قرص {#creating-a-disk}
 
     أنشئ ملفًا جديدًا في الدليل `config.d` الخاص بـ ClickHouse لتخزين تهيئة التخزين:
 
@@ -155,13 +155,9 @@ keywords: ['التخزين', 'الحوسبة', 'معمارية', 'قابلية �
     إذا سار كل شيء بنجاح، فأنت تستخدم الآن ClickHouse مع فصل التخزين عن الحوسبة!
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![مثال على حاوية S3 باستخدام فصل الحوسبة عن التخزين](/images/guides/s3_bucket_example.webp)
-
-    </Frame>
-
+      <Frame>
+        ![مثال على حاوية S3 باستخدام فصل الحوسبة عن التخزين](/images/guides/s3_bucket_example.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -179,7 +175,7 @@ keywords: ['التخزين', 'الحوسبة', 'معمارية', 'قابلية �
 </Steps>
 
 <div id="further-reading">
-  ## للمزيد من القراءة
+  ## للمزيد من القراءة {#further-reading}
 </div>
 
 * [محرك الجداول SharedMergeTree](/ar/products/cloud/features/infrastructure/shared-merge-tree)

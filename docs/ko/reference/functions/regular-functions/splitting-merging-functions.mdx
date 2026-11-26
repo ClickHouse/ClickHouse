@@ -138,7 +138,7 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 도입 버전: v26.7.0
 
-Naive Bayes 딕셔너리([`NAIVE_BAYES`](/ko/reference/statements/create/dictionary/layouts/naive-bayes) 레이아웃)와 동일한 토큰화 방식을 사용해 텍스트를 n-그램으로 분할합니다. 모드는 `byte`, `codepoint`, `token`이며, 필요하면 경계 패딩을 적용할 수 있습니다. 이 함수는 해당 딕셔너리가 사용하는 미리 집계된 `(ngram, class_id, count)` 학습 데이터를 생성할 때 사용하십시오. 이렇게 하면 학습 n-그램이 쿼리 시점에 [`naiveBayesClassifier`](/ko/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier)가 생성하는 결과와 정확히 일치합니다.
+Naive Bayes 딕셔너리([`NAIVE_BAYES`](/ko/reference/statements/create/dictionary/layouts/naive-bayes) 레이아웃)와 동일한 토큰화 방식을 사용해 텍스트를 n-그램으로 분할합니다. 모드는 `byte`, `codepoint`, `token`이며, 필요하면 경계 패딩을 적용할 수 있습니다. 이 함수는 해당 딕셔너리가 사용하는 미리 집계된 `(ngram, class_id, count)` 학습 데이터를 생성할 때 사용하십시오. 이렇게 하면 학습 n-그램이 쿼리 시점에 [`naiveBayesClassifier`](/ko/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier)가 생성하는 결과와 정확히 일치합니다.
 
 **구문**
 
@@ -424,7 +424,7 @@ SELECT splitByNonAlpha('user@domain.com');
 * 정규식은 비어 있지 않지만 원래 문자열이 비어 있는 경우
 
 <Note>
-  설정 [`splitby_max_substrings_includes_remaining_string`](/ko/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (기본값: `0`)은 인수 `max_substrings > 0`일 때 결과 배열의 마지막 요소에 남은 문자열을 포함할지 여부를 제어합니다.
+  설정 [`splitby_max_substrings_includes_remaining_string`](/ko/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (기본값: `0`)은 인수 `max_substrings > 0`일 때 결과 배열의 마지막 원소에 남은 문자열을 포함할지 여부를 제어합니다.
 </Note>
 
 **구문**

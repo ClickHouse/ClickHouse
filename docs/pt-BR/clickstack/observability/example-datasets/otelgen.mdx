@@ -1,0 +1,190 @@
+---
+slug: /clickstack/observability/example-datasets/otelgen
+title: 'Gere dados sintéticos de OpenTelemetry com o otelgen'
+sidebarTitle: 'Dados sintéticos com o otelgen'
+description: 'Use o otelgen para enviar logs, rastros e métricas sintéticos ao ClickHouse Observability totalmente gerenciado'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'otelgen', 'dados sintéticos', 'OpenTelemetry', 'teste', 'logs', 'rastros', 'métricas', 'observabilidade']
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta Beta" />
+
+    [`otelgen`](https://github.com/krzko/otelgen) é uma pequena CLI em Go que gera logs, rastros e métricas OTLP sintéticos. Use-a para enviar dados de teste ao ClickHouse Observability totalmente gerenciado e explorar os resultados em Busca e no Chart Explorer.
+
+    <Steps>
+      <Step title="Pré-requisitos" id="prerequisites-managed">
+        Você precisa de um serviço ClickHouse Observability totalmente gerenciado já existente e de acesso de rede ao endpoint de telemetria gerenciada dele. Consulte o [guia de primeiros passos do serviço totalmente gerenciado](/pt-BR/clickstack/observability/getting-started).
+      </Step>
+
+      <Step title="Instale o otelgen" id="install-otelgen-managed">
+        Instale com o Homebrew:
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        Ou instale com Go:
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step title="Defina as variáveis de ambiente" id="set-env-vars-managed">
+        Abra seu serviço ClickHouse Observability e acesse **Team Settings → Managed Telemetry**. Copie o **OTLP HTTP endpoint** e a **API key**.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Managed Telemetry em Team Settings mostrando o endpoint OTLP HTTP e a chave de API mascarados](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        Defina o endpoint apenas com o host e a porta, removendo o prefixo `https://`. Por exemplo, `https://YOUR_OTEL_ENDPOINT:4318` passa a ser `YOUR_OTEL_ENDPOINT:4318`. Não acrescente um caminho de sinal, como `/v1/logs`.
+
+        ```shell
+        export OTEL_ENDPOINT='YOUR_OTEL_ENDPOINT:4318'
+        printf "API key: "
+        read -r -s OTEL_API_KEY
+        printf "\n"
+        export OTEL_API_KEY
+        ```
+
+        Os comandos abaixo usam `--protocol http` sem `--insecure`, portanto o `otelgen` se conecta via HTTPS com verificação de certificados. Remover `https://` do argumento do endpoint não desativa o TLS. A chave de API de telemetria gerenciada autentica cada requisição.
+      </Step>
+
+      <Step title="Gere rastros" id="generate-traces-managed">
+        Envie uma rápida rajada de rastros com múltiplos spans:
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` define a quantidade de rastros por segundo e `--duration`, a duração da execução em segundos. Omita `--insecure` para que a conexão use HTTPS com verificação de certificados.
+      </Step>
+
+      <Step title="Gere logs" id="generate-logs-managed">
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 \
+          logs multi --duration 10
+        ```
+      </Step>
+
+      <Step title="Gere métricas" id="generate-metrics-managed">
+        Execute o comando a seguir para gerar métricas e, após alguns segundos, pressione `Ctrl+C` para interrompê-lo.
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 \
+          metrics sum
+        ```
+
+        O `otelgen` também oferece os subcomandos `gauge`, `histogram`, `up-down-counter` e `exponential-histogram` em `metrics`.
+      </Step>
+
+      <Step title="Verifique no ClickHouse Observability" id="verify-managed">
+        No seu serviço ClickHouse Observability, abra **Search** e alterne entre as fontes **Logs** e **Traces** para confirmar a chegada de novos eventos. Defina o intervalo de tempo como **Last 15 minutes** e procure pelo nome de serviço padrão `otelgen`.
+
+        Abra o **Chart Explorer**, selecione **Metrics** e crie um gráfico de `otelgen.metrics.sum` para verificar a ingestão de métricas.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    [`otelgen`](https://github.com/krzko/otelgen) é uma pequena CLI em Go que gera logs, rastros e métricas OTLP sintéticos. Use-a para confirmar que um Coletor OpenTelemetry do ClickStack existente está aceitando dados e que os eventos aparecem na UI de observabilidade.
+
+    Este guia pressupõe que o coletor já esteja em execução, com endpoints OTLP nas portas `4317` (gRPC) e `4318` (HTTP).
+
+    <Steps>
+      <Step title="Pré-requisitos" id="prerequisites-managed-self-configured">
+        Este guia pressupõe que você concluiu o [Guia de primeiros passos do ClickHouse Observability — Autogerenciado](/pt-BR/clickstack/self-configured/getting-started/managed) e que tem um coletor OpenTelemetry em execução, com os endpoints OTLP gRPC (`4317`) e HTTP (`4318`) acessíveis a partir da máquina em que você executa o `otelgen`. Se você [protegeu o coletor](/pt-BR/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) com um `OTLP_AUTH_TOKEN`, tenha esse valor em mãos.
+      </Step>
+
+      <Step title="Instalar o otelgen" id="install-otelgen-managed-self-configured">
+        Instale com o Homebrew:
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        Ou instale com Go:
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step title="Definir variáveis de ambiente" id="set-env-vars-managed-self-configured">
+        Exporte o endpoint do coletor e, se o coletor estiver protegido, o token de autenticação:
+
+        ```shell
+        export OTEL_ENDPOINT=<host>:4317
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        Use o host e a porta do seu coletor. Para um coletor em execução na mesma máquina, o valor é `localhost:4317`.
+
+        <Info>
+          **Coletor sem proteção**
+
+          Por padrão, o Coletor OpenTelemetry do ClickStack não exige autenticação. Se você não seguiu as instruções de [Protegendo o coletor](/pt-BR/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) para definir um `OTLP_AUTH_TOKEN`, ignore o `OTLP_AUTH_TOKEN` aqui e remova a flag `--header` dos comandos abaixo.
+        </Info>
+      </Step>
+
+      <Step title="Gerar rastros" id="generate-traces-managed-self-configured">
+        Envie uma rajada curta de rastros com múltiplos spans:
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` define o número de rastros por segundo e `--duration`, a duração da execução em segundos. `--insecure` desativa o TLS na conexão gRPC, o que é necessário ao apontar o `otelgen` para a porta OTLP sem criptografia do coletor.
+      </Step>
+
+      <Step title="Gerar logs" id="generate-logs-managed-self-configured">
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          logs multi
+        ```
+      </Step>
+
+      <Step title="Gerar métricas" id="generate-metrics-managed-self-configured">
+        Os subcomandos de métricas ignoram `--duration`. Execute o comando e pressione `Ctrl+C` após alguns segundos para interrompê-lo.
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 \
+          metrics sum
+        ```
+
+        O `otelgen` também oferece os subcomandos `gauge`, `histogram`, `up-down-counter` e `exponential-histogram` em `metrics`.
+      </Step>
+
+      <Step title="Verificar na UI de observabilidade" id="verify-managed-self-configured">
+        Abra a UI de observabilidade pelo console do ClickHouse Cloud. Na visualização `Search`, alterne a fonte entre `Logs` e `Traces` para confirmar a chegada de novos eventos. Defina o intervalo de tempo como `Last 15 minutes`. Abra o `Chart Explorer`, selecione `Metrics` e crie um gráfico com um dos nomes de métricas gerados pelo `otelgen` (por exemplo, `otelgen.metrics.sum`) para verificar a ingestão de métricas.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

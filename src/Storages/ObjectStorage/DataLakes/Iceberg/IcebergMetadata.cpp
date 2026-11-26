@@ -2213,6 +2213,7 @@ void IcebergMetadata::addDeleteTransformers(
 
 SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
+    StorageMetadataPtr metadata_snapshot,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
@@ -2223,7 +2224,12 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+        /// The schema the query planned the inserted columns with, pinned in the metadata snapshot like for a read.
+        std::optional<Int32> planned_schema_id;
+        if (metadata_snapshot && metadata_snapshot->datalake_table_state)
+            planned_schema_id = std::get<Iceberg::TableStateSnapshot>(*metadata_snapshot->datalake_table_state).schema_id;
+        return std::make_shared<IcebergStorageSink>(
+            object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, planned_schema_id);
     }
     else
     {

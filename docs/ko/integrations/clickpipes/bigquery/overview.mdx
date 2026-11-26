@@ -11,7 +11,7 @@ import IntroClickPipe from '/snippets/ko/_intro.mdx';
 <IntroClickPipe />
 
 <div id="features">
-  ## 기능
+  ## 기능 {#features}
 </div>
 
 ### 초기 적재 {#initial-load}
@@ -46,67 +46,61 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
   [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends)와 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)는 [BigQuery 타임 트래블 기간](https://docs.cloud.google.com/bigquery/docs/time-travel) 내의 원본 테이블 변경 사항만 읽을 수 있습니다. 이 기간은 기본적으로 7일이며 2일까지 단축할 수 있습니다. 복제가 이 기간을 초과해 지연되면 초기 적재를 새로 실행하여 전체 데이터 사본을 복원하세요. BigQuery는 세 가지 방식 모두에서 실행하는 쿼리에 요금을 부과합니다. [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)를 위해 변경 이력을 활성화하면 BigQuery 저장소 비용도 추가됩니다.
 </Note>
 
-<div id="data-type-mapping">
-  ## 데이터 타입 매핑
-</div>
+## 데이터 타입 매핑 {#data-type-mapping}
 
 [BigQuery 데이터 타입](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
 
-| BigQuery 데이터 타입   | ClickHouse 데이터 타입 | 세부 정보                                           |
-| ----------------- | ----------------- | ----------------------------------------------- |
-| `BOOL`            | `Bool`            |                                                 |
-| `INT64`           | `Int64`           |                                                 |
-| `FLOAT64`         | `Float64`         |                                                 |
-| `NUMERIC`         | `Decimal(P, S)`   | 정밀도는 최대 38, scale은 최대 9입니다. 정밀도와 scale이 유지됩니다.  |
-| `BIGNUMERIC`      | `Decimal(P, S)`   | 정밀도는 최대 76, scale은 최대 38입니다. 정밀도와 scale이 유지됩니다. |
-| `STRING`          | `String`          |                                                 |
-| `BYTES`           | `String`          |                                                 |
-| `JSON`            | `String` (JSON)   |                                                 |
-| `DATE`            | `Date`            |                                                 |
-| `TIME`            | `String`          | 마이크로초 정밀도입니다.                                   |
-| `DATETIME`        | `DateTime`        | 마이크로초 정밀도입니다.                                   |
-| `TIMESTAMP`       | `DateTime64(6)`   | 마이크로초 정밀도입니다.                                   |
-| `GEOGRAPHY`       | `String`          |                                                 |
-| `GEOMETRY`        | `String`          |                                                 |
-| `UUID`            | `String`          |                                                 |
-| `ARRAY<T>`        | `Array(T)`        |                                                 |
-| `ARRAY<DATE>`     | `Array(Date)`     |                                                 |
-| `STRUCT` (RECORD) | `String`          |                                                 |
+| BigQuery 데이터 타입   | ClickHouse 데이터 타입      | 세부 정보                                                                                                                                                                                 |
+| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOOL`            | `Bool`                 |                                                                                                                                                                                       |
+| `INT64`           | `Int64`                |                                                                                                                                                                                       |
+| `FLOAT64`         | `Float64`              |                                                                                                                                                                                       |
+| `NUMERIC`         | `Decimal(P, S)`        | 정밀도와 소수 자릿수(scale)가 그대로 유지됩니다. 매개변수를 지정하지 않으면 기본값은 `Decimal(38, 9)`입니다.                                                                                                               |
+| `BIGNUMERIC`      | `Decimal(P, S)`        | 정밀도와 소수 자릿수(scale)가 그대로 유지됩니다. 매개변수를 지정하지 않으면 기본값은 `Decimal(76, 38)`입니다.                                                                                                              |
+| `STRING`          | `String`               |                                                                                                                                                                                       |
+| `BYTES`           | `String`               |                                                                                                                                                                                       |
+| `JSON`            | `String`               |                                                                                                                                                                                       |
+| `DATE`            | `Date32`               |                                                                                                                                                                                       |
+| `TIME`            | `DateTime64(6)`        | 하루 중 시각을 유닉스 에포크 기준 오프셋으로 표현합니다. ClickHouse 서비스에서 [`enable_time_time64_type`](/ko/reference/settings/session-settings/enable#enable_time_time64_type) 설정이 활성화되어 있으면 `Time64(6)`으로 매핑됩니다. |
+| `DATETIME`        | `DateTime64(6)`        | 마이크로초 정밀도입니다. `DATETIME`에는 시간대 정보가 없으므로 UTC로 저장됩니다.                                                                                                                                   |
+| `TIMESTAMP`       | `DateTime64(6)`        | 마이크로초 정밀도입니다.                                                                                                                                                                         |
+| `GEOGRAPHY`       | `String`               | WKT 포맷입니다.                                                                                                                                                                            |
+| `INTERVAL`        | `String`               |                                                                                                                                                                                       |
+| `RANGE`           | `String`               |                                                                                                                                                                                       |
+| `STRUCT` (RECORD) | `String`               | JSON 객체로 직렬화됩니다.                                                                                                                                                                      |
+| `ARRAY<T>`        | `Array(T)`             | 원소 타입은 아래에 나열된 경우를 제외하고 위의 매핑을 따릅니다.                                                                                                                                                  |
+| `ARRAY<DATE>`     | `Array(Date)`          |                                                                                                                                                                                       |
+| `ARRAY<TIME>`     | `Array(DateTime64(6))` |                                                                                                                                                                                       |
+| `ARRAY<JSON>`     | `String`               | JSON 배열로 직렬화됩니다.                                                                                                                                                                      |
+| `ARRAY<STRUCT>`   | `Array(String)`        | 각 원소는 JSON 객체로 직렬화됩니다.                                                                                                                                                                |
 
 <div id="access-control">
-  ## 접근 제어
+  ## 접근 제어 {#access-control}
 </div>
 
 <div id="authentication">
-  ### 인증
+  ### 인증 {#authentication}
 </div>
 
-<a id="service-account-credentials" />
-#### 서비스 계정 자격 증명
+#### 서비스 계정 자격 증명 {#service-account-credentials}
 
 ClickPipes는 [서비스 계정 키](https://docs.cloud.google.com/iam/docs/keys-create-delete)를 사용해 Google Cloud 프로젝트에 인증합니다. ClickPipes가 BigQuery에서 데이터를 내보내고, 이를 스테이징 GCS 버킷에 적재한 뒤 ClickHouse에서 읽을 수 있도록, 필요한 최소한의 [권한](#permissions)만 부여된 전용 서비스 계정을 생성하는 것을 권장합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![BigQuery 및 Cloud Storage 권한이 있는 서비스 계정 키 생성](/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp)
-
-</Frame>
-
+  <Frame>
+    ![BigQuery 및 Cloud Storage 권한을 부여한 서비스 계정 키 생성](/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp)
+  </Frame>
 </div>
 
-<a id="gcp-workload-identity" />
-#### GCP workload identity (베타)
+#### GCP Workload Identity (베타) {#gcp-workload-identity}
 
-[GCP workload identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity)에 따라 ClickPipes 서비스 컨텍스트에서 관리형 서비스 계정을 확인하십시오. 이 계정에 아래의 [BigQuery 및 GCS 역할](#permissions)을 부여한 다음, `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 인증을 사용하여 파이프를 생성하십시오. 이 인증 메서드를 사용할 때는 서비스 계정 자격 증명을 제공하지 마십시오.
+[GCP Workload Identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity)에 따라 ClickPipes 서비스 컨텍스트에서 관리형 서비스 계정을 확인하십시오. 해당 계정에 아래의 [BigQuery 및 GCS 역할](#permissions)을 부여한 다음, `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 인증을 사용하여 파이프를 생성하십시오. 이 인증 메서드를 사용할 때는 서비스 계정 자격 증명을 제공하지 마십시오.
 
 <div id="permissions">
-  ### 권한
+  ### 권한 {#permissions}
 </div>
 
-<a id="bigquery" />
-#### BigQuery
+#### BigQuery {#bigquery}
 
 ClickPipes에서 사용하는 서비스 계정에는 직접 제공한 계정이든 Workload Identity를 통해 관리되는 계정이든 관계없이 다음 BigQuery 역할이 필요합니다.
 
@@ -122,7 +116,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage
+  #### Cloud Storage {#cloud-storage}
 </div>
 
 서비스 계정에는 다음 Cloud Storage 역할이 있어야 합니다.

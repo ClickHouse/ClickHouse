@@ -2443,7 +2443,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
-    expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -4180,6 +4179,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                 }
 
+                /// A qualifier that matches a table expression names it, see `tryResolveIdentifierFromTableExpression`.
+                if (from_clause_hint.empty())
+                {
+                    if (auto qualifying = IdentifierResolver::tryFindTableExpressionByQualifier(unresolved_identifier, scope); qualifying.node)
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
+                            unresolved_identifier.getFullName(),
+                            IdentifierResolver::describeTableExpressionForErrorMessage(qualifying.node, *qualifying.data),
+                            getHintsErrorMessageSuffix(hints),
+                            scope.scope_node->formatASTForErrorMessage());
+                }
+
                 /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
                 /// the actionable part of the message does not end up behind it. The optional `FROM`-clause
                 /// hint is still attached via `addMessage` to keep the number of placeholders in
@@ -4712,7 +4722,12 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     expanded_keys.reserve(key_list.size());
     for (auto const & key : key_list)
     {
-        if (auto * function = key->as<FunctionNode>(); function != nullptr && function->getFunctionName() == "tuple")
+        const auto * function = key->as<FunctionNode>();
+        /// a `tuple` that the query does not write is folded into a constant when its arguments are constants
+        if (const auto * constant = key->as<ConstantNode>(); constant && constant->hasSourceExpression() && !constant->getSourceExpression()->hasOriginalAST())
+            function = constant->getSourceExpression()->as<FunctionNode>();
+
+        if (function != nullptr && function->getFunctionName() == "tuple")
         {
             std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(expanded_keys));
         }

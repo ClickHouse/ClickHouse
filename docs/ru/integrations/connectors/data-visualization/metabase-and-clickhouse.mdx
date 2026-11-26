@@ -20,20 +20,14 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 Metabase — это простой в использовании инструмент с открытым исходным кодом и удобным интерфейсом для работы с данными. Metabase — это Java-приложение, которое можно запустить, просто <a href="https://www.metabase.com/start/oss/jar" target="_blank">скачав JAR-файл</a> и выполнив команду `java -jar metabase.jar`. Metabase подключается к ClickHouse с помощью JDBC-драйвера, который нужно скачать и поместить в папку `plugins`:
 
-<div id="goal">
-  ## Цель
-</div>
+## Цель {#goal}
 
 В этом руководстве вы будете задавать вопросы к данным в ClickHouse через Metabase и визуализировать полученные ответы. Один из результатов будет выглядеть так:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Визуализация круговой диаграммы в Metabase с данными из ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
-
-</Frame>
-
+  <Frame>
+    ![Визуализация круговой диаграммы в Metabase с данными из ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
+  </Frame>
 </div>
 
 <p />
@@ -69,13 +63,9 @@ Metabase — это простой в использовании инструм�
     3. Если драйвер установлен правильно, в выпадающем меню **Database type** появится **ClickHouse**:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Выбор базы данных в Metabase, где ClickHouse доступен как один из вариантов](/images/integrations/data-visualization/metabase_01.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Выбор базы данных в Metabase, где ClickHouse доступен как один из вариантов](/images/integrations/data-visualization/metabase_01.webp)
+         </Frame>
        </div>
 
     4. Укажите для своей базы данных **Display name** — это параметр Metabase, поэтому можно использовать любое имя.
@@ -83,13 +73,9 @@ Metabase — это простой в использовании инструм�
     5. Введите сведения о подключении к базе данных ClickHouse. Включите защищённое подключение, если ваш сервер ClickHouse настроен на использование SSL. Например:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Форма сведений о подключении в Metabase для базы данных ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Форма сведений о подключении в Metabase для базы данных ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
+         </Frame>
        </div>
 
     6. Нажмите кнопку **Save**, и Metabase просканирует базу данных на наличие таблиц.
@@ -101,25 +87,17 @@ Metabase — это простой в использовании инструм�
     2. В правом верхнем углу нажмите меню **+ New** и обратите внимание, что вы можете задавать вопросы, выполнять SQL-запросы и создавать панель мониторинга:
 
        <div className="ch-image-sm">
-
-       <Frame>
-
-       ![Меню New в Metabase с вариантами создания вопросов, SQL-запросов и панелей мониторинга](/images/integrations/data-visualization/metabase_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Меню New в Metabase с вариантами создания вопросов, SQL-запросов и панелей мониторинга](/images/integrations/data-visualization/metabase_03.webp)
+         </Frame>
        </div>
 
     3. Например, вот SQL-запрос, выполненный к таблице `uk_price_paid`, который возвращает среднюю цену покупки по годам с 1995 по 2022:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Редактор SQL в Metabase, показывающий запрос к данным UK price paid](/images/integrations/data-visualization/metabase_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Редактор SQL в Metabase, показывающий запрос к данным UK price paid](/images/integrations/data-visualization/metabase_04.webp)
+         </Frame>
        </div>
   </Step>
 
@@ -127,43 +105,31 @@ Metabase — это простой в использовании инструм�
     1. Нажмите **+ New** и выберите **Question**. Обратите внимание, что вопрос можно построить, начав с базы данных и таблицы. Например, следующий вопрос задаётся к таблице `uk_price_paid` в базе данных `default`. Вот простой вопрос, который вычисляет среднюю цену по городам в графстве Greater Manchester:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Интерфейс конструктора вопросов Metabase с данными UK price paid](/images/integrations/data-visualization/metabase_06.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Интерфейс конструктора вопросов Metabase с данными UK price paid](/images/integrations/data-visualization/metabase_06.webp)
+         </Frame>
        </div>
 
     2. Нажмите кнопку **Visualize**, чтобы увидеть результаты в табличном виде.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Визуализация Metabase, показывающая табличные результаты средних цен по городам](/images/integrations/data-visualization/metabase_07.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Визуализация Metabase, показывающая табличные результаты средних цен по городам](/images/integrations/data-visualization/metabase_07.webp)
+         </Frame>
        </div>
 
     3. Под результатами нажмите кнопку **Visualization**, чтобы изменить визуализацию на столбчатую диаграмму (или любой другой доступный вариант):
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Круговая диаграмма в Metabase со средней ценой по городам в Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Круговая диаграмма в Metabase со средней ценой по городам в Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
+         </Frame>
        </div>
   </Step>
 </Steps>
 
 <div id="learn-more">
-  ## Узнайте больше
+  ## Узнайте больше {#learn-more}
 </div>
 
 Дополнительную информацию о Metabase и создании панелей мониторинга можно найти, <a href="https://www.metabase.com/docs/latest/" target="_blank">обратившись к документации Metabase</a>.
