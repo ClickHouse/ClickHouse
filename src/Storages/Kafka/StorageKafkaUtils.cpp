@@ -17,6 +17,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -116,6 +117,10 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
+            /// The named collection is checked every time, also when the definition is read back from metadata
+            /// (server startup, short `ATTACH`): the collection can change after the table is created.
+            KafkaConfigLoader::checkNamedCollection(*named_collection);
+
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
