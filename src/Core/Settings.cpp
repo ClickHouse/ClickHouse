@@ -10373,10 +10373,17 @@ When the setting is enabled, a dotted table path such as `db.ns.table` in a tabl
 of database `db`, the same as the quoted name ``db.`ns.table` ``. Without the setting a query that reads from such
 a table expression is rejected with `INVALID_IDENTIFIER` and the quoted name has to be used. The check is made by
 the analyzer on the table expression as written. Statements that name their target table directly (`INSERT`,
-`CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the setting. So do definitions
-that are stored (queries of views and materialized views, column expressions, `ALTER` commands, SQL functions):
-they keep the quoted name. Statements that the server rewrites before analysis, such as `SHOW ... WHERE`, may
-accept the path as well.
+`CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the setting. Statements that
+the server rewrites before analysis, such as `SHOW ... WHERE` or a mutation, may accept the path as well.
+A definition that is stored (the query of a view or a materialized view, a constraint, a SQL function) is checked
+like a query, each time it is analysed and with the settings in effect there: those of the user who reads the view,
+inserts into the table or calls the function. A table `TTL` is analysed with the server settings, and a refreshable
+materialized view is not refreshed with the settings of the session that created it, so a session setting does not
+apply to them. To make a definition independent of these settings, use the quoted name or add
+`SETTINGS allow_experimental_table_namespaces = 1` to the query inside it; the clause is ignored for a user
+with `readonly = 1`, the quoted name works for everyone. A definition is stored with the quoted name, so once it
+is loaded from the stored text (after a restart or `ATTACH`) a path in a table expression of it no longer needs
+the setting.
 When the setting is enabled, the analyzer additionally:
 - resolves a two-part name `a.b` in a table expression as table `b` of database `a`, and also as table `a.b`
   of the current database if that database supports table namespaces (a data lake catalog) and `a` is not

@@ -101,9 +101,6 @@ public:
     /// The only part of a 1-part name, otherwise the parts after the database joined with dots.
     String getTableName() const;
 
-    /// Turns `{db, ns, t}` into `{db, "ns.t"}`; `full_name` and `children` stay the same.
-    void foldTablePath();
-
     ASTPtr getTable() const;
     ASTPtr getDatabase() const;
 
@@ -115,8 +112,5 @@ public:
 protected:
     void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
-
-/// Calls `foldTablePath` on every `ASTTableIdentifier` in `ast`, including `ast` itself.
-void foldTablePaths(IAST & ast);
 
 }

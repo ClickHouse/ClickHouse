@@ -807,8 +807,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
-    /// A stored definition does not depend on the reader's `allow_experimental_table_namespaces`.
-    foldTablePaths(*alter.command_list);
 
     auto segments = parseAlterCommandSegments(alter, table, getContext());
     validateSegmentsCombination(segments);

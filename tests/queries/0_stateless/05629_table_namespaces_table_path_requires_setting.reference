@@ -2,11 +2,9 @@
 A1: Code: 703
 A2: Code: 703
 A3: Code: 703
--- T: statements that name their target and stored definitions accept the path
+-- T: statements that name their target accept the path
 T1: ok
 T2: 1
-T3: ok
-T4: 1
 -- S: SELECT scoping
 S1: 1
 S2: 1
@@ -25,19 +23,24 @@ S8b: Code: 703
 S8c: Code: 703
 S9: Code: 703
 S10: 1
--- U: SQL function
-U1: 1
 -- V: stored definitions
-V1a: 1
 CREATE VIEW db.v\n(\n    `x` UInt64\n)\nAS SELECT x\nFROM db.`ns.t`
-V1b: ok
-V1c: ok
-V1d: 1
 V2a: ok
 V2b: 1
-V3a: ok
-V3b: 1
 D1: Code: 630
+-- C: a definition with the SETTINGS clause does not depend on the setting of its user
+C1a: ok
+C1b: 1
+C1c: ok
+C1d: ok
+C1e: 1
+C2a: ok
+C2b: ok
+C2c: 1
+C3a: ok
+C3b: 2
+C4a: ok
+C4b: ok
 -- F: formatting is not checked
 F1a: CREATE TABLE a.`b.c` (`x` UInt64) ENGINE = Memory
 F1b: SELECT * FROM a.`b.c`

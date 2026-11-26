@@ -141,8 +141,6 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
         query->if_not_exists = false;
         query->or_replace = false;
         FunctionNameNormalizer::visit(query->function_core.get());
-        /// A stored definition does not depend on the reader's `allow_experimental_table_namespaces`.
-        foldTablePaths(*query->function_core);
 
         {
             SelectIntersectExceptQueryVisitor::Data data{context->getSettingsRef()[Setting::intersect_default_mode], context->getSettingsRef()[Setting::except_default_mode]};

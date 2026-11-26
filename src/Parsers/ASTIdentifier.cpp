@@ -471,13 +471,6 @@ String ASTTableIdentifier::getTableName() const
     return table_name;
 }
 
-void ASTTableIdentifier::foldTablePath()
-{
-    if (name_parts.size() <= 2)
-        return;
-    name_parts = {name_parts[0], getTableName()};
-}
-
 ASTPtr ASTTableIdentifier::getTable() const
 {
     if (name_parts.size() == 2)
@@ -538,14 +531,6 @@ void ASTTableIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const Format
         formatIdentifierElement(ostr, settings, name_parts[0]);
     ostr << '.';
     settings.writeIdentifier(ostr, getTableName(), /*ambiguous=*/false);
-}
-
-void foldTablePaths(IAST & ast)
-{
-    if (auto * table_identifier = ast.as<ASTTableIdentifier>())
-        table_identifier->foldTablePath();
-    for (const auto & child : ast.children)
-        foldTablePaths(*child);
 }
 
 String getIdentifierName(const IAST * ast)
