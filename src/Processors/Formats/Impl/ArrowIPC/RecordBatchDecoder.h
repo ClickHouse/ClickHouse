@@ -6,6 +6,7 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -20,35 +21,45 @@ namespace DB::ArrowIPC
 {
 
 /// Where a field sits for the requested-type rules of `RecordBatchDecoder::decodeField`: its dotted column
-/// name and the number of List/Map levels above it. Together with the requested types of the header, the
-/// position determines the type hint a field resolves, and with it how its values decode.
+/// name and the number of List/Map levels above it. The requested types of the header are looked up by this
+/// name, for the field itself when its parent gives it no hint, and for the fields below it.
 struct FieldPosition
 {
     String path;
     size_t list_depth = 0;
+    /// Below a union, `path` and `list_depth` count from the union child, and no requested type applies (see
+    /// `RecordBatchDecoder::decodeUnion`). This keeps such a field apart from a field outside the union whose
+    /// position reads the same.
+    bool below_union = false;
 
     bool operator==(const FieldPosition &) const = default;
 };
 
 /// A field encoding a dictionary, as far as decoding the dictionary's values is concerned: the field's
-/// position and the requested type hint it resolves there (null when it resolves none).
+/// position and the requested type hint it resolves there (null when it resolves none). The hint decides how
+/// the field itself decodes, and the position the hints looked up below it. Fields at one position can resolve
+/// different hints: a field named `t.u` takes the type requested for `t.u`, while the child `u` of a struct `t`
+/// takes the type of `u` in a requested `t Tuple(...)`.
 struct DictionaryUse
 {
     FieldPosition position;
     DataTypePtr hint;
+
+    /// The two uses decode the values the same way.
+    bool operator==(const DictionaryUse & other) const;
 };
 
 using DictionaryUses = VectorWithMemoryTracking<DictionaryUse>;
 
-/// Decoded dictionary values (from `DictionaryBatch` messages), keyed by Arrow dictionary id and by the
-/// position of the field they were decoded for. Referenced by `RecordBatchDecoder` when materializing
-/// dictionary-encoded (LowCardinality) fields.
+/// Decoded dictionary values (from `DictionaryBatch` messages), keyed by Arrow dictionary id and by the use
+/// they were decoded for. Referenced by `RecordBatchDecoder` when materializing dictionary-encoded
+/// (LowCardinality) fields.
 class DictionaryRegistry
 {
 public:
     /// Each dictionary use stores its decoded values and their resulting ClickHouse type. Requested hints
     /// affect the value representation, so fields sharing a dictionary id are decoded and stored separately
-    /// for each requested position. Dictionary entries may be null regardless of the referencing field's
+    /// for each distinct use. Dictionary entries may be null regardless of the referencing field's
     /// nullability; each field applies its own nullability when materializing these values.
     struct Values
     {
@@ -72,20 +83,20 @@ public:
         }
     };
 
-    /// Replaces (or, for delta batches, appends to) the values of dictionary `id` decoded for the field at
-    /// `position`. A delta batch is decoded for the same positions as its base and must decode to the same
-    /// column layout there, so referenced values can be gathered into a common output column.
-    void set(Int64 id, const FieldPosition & position, Values values, bool is_delta);
-    [[nodiscard]] const Dictionary & get(Int64 id, const FieldPosition & position) const;
+    /// Replaces (or, for delta batches, appends to) the values of dictionary `id` decoded for `use`. A delta
+    /// batch is decoded for the same uses as its base and must decode to the same column layout there, so
+    /// referenced values can be gathered into a common output column.
+    void set(Int64 id, const DictionaryUse & use, Values values, bool is_delta);
+    [[nodiscard]] const Dictionary & get(Int64 id, const DictionaryUse & use) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
     void clear() { dictionaries.clear(); }
 
 private:
-    /// The decodings of one dictionary, keyed by `positionKey`.
-    using DictionariesByPosition = UnorderedMapWithMemoryTracking<String, Dictionary>;
-    static String positionKey(const FieldPosition & position);
+    /// The decodings of one dictionary, keyed by `useKey`.
+    using DictionariesByUse = UnorderedMapWithMemoryTracking<String, Dictionary>;
+    static String useKey(const DictionaryUse & use);
 
-    UnorderedMapWithMemoryTracking<Int64, DictionariesByPosition> dictionaries;
+    UnorderedMapWithMemoryTracking<Int64, DictionariesByUse> dictionaries;
 };
 
 /// Rows whose values are semantically absent: null at this or an ancestor level, in a list range no
@@ -108,6 +119,13 @@ size_t rawByteWidth(const WhichDataType & which);
 /// not one of those types, or when any visible row is not exactly the target width — the column is
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
+
+/// Reinterpret the raw bytes of a fixed_size_binary column (`ColumnFixedString`) as a UUID, IPv6, or big
+/// integer, matching the ClickHouse Arrow writer (which stores those types as fixed_size_binary) and the
+/// library reader. Returns nullptr when `to_no_null` is not one of those types. Throws on a width mismatch:
+/// a wrong-width value is corrupt for these fixed-width targets (the library reader rejects it too), and
+/// letting it fall through to `castColumn` would text-parse the bytes.
+MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, const DataTypePtr & to_no_null);
 
 /// Decodes a column the writer had no Arrow mapping for and wrote with `serializeBinary`, back into the type
 /// its `clickhouse.opaque` tag names. Returns null when the field is not one, or names a type other than
@@ -204,6 +222,23 @@ public:
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
 
+    /// A record batch whose layout is given directly rather than by a `RecordBatch` message: the pre-ordered field
+    /// nodes, the buffers each pointing to its own memory, and the variadic buffer counts of the view fields. This is
+    /// how a batch of the Arrow C data interface is decoded (see `ArrowCData`). Dictionary-encoded fields are not
+    /// supported here, as they have no record batch of their own.
+    struct ExternalBatch
+    {
+        Int64 length = 0;
+        VectorWithMemoryTracking<flatbuf::FieldNode> nodes;
+        VectorWithMemoryTracking<Slice> buffers;
+        VectorWithMemoryTracking<Int64> variadic_counts;
+    };
+
+    /// Decodes all fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
+    /// for the duration of the call only: the decoded columns own their data.
+    DecodedColumns decodeExternalBatch(
+        const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
+
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
     /// hint (`use`), following the same rules as inline values. `target_types_` supplies requested subcolumn
     /// types. The returned null map preserves entry validity independently of the resulting column type.
@@ -225,10 +260,10 @@ public:
 
     /// For every dictionary id the kept top-level fields reference (all fields when `keep_top_level_fields`
     /// is null; at any nesting, including dictionaries nested in another dictionary's values), the distinct
-    /// positions of the fields encoding it, each with the requested type hint decoding a record batch would
-    /// resolve there. A dictionary batch is decoded before any record batch and has no field position of
-    /// its own, so the caller decodes the dictionary's values once per use collected here (see
-    /// `decodeDictionaryValues`); each field then finds the values decoded for its own position in the
+    /// uses of the fields encoding it: their positions, each with the requested type hint decoding a record
+    /// batch would resolve there. A dictionary batch is decoded before any record batch and has no field
+    /// position of its own, so the caller decodes the dictionary's values once per use collected here (see
+    /// `decodeDictionaryValues`); each field then finds the values decoded for its own use in the
     /// `DictionaryRegistry`, exactly as if they were inline in a record batch. Ids absent from the result
     /// belong only to unrequested fields.
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> collectDictionaryUses(
@@ -321,18 +356,22 @@ private:
     /// `target_hint`, `path`, `list_depth` and `lookup_types` exactly as `decodeField` does while decoding,
     /// records a use for a dictionary-encoded field, and derives each child's position as `decodeInner` /
     /// `decodeUnion` do, without consuming nodes or buffers. The children of a dictionary-encoded field are
-    /// walked like any other's: `decodeDictionaryValues` decodes them at these same positions.
+    /// walked like any other's: `decodeDictionaryValues` decodes them at these same positions. Below a union
+    /// (`below_union`) nothing is looked up in `lookup_types`, as in `decodeUnion`.
     void collectDictionaryUses(
-        const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+        const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool below_union,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
         UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const;
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
-    /// validity buffer), so this function needs no separate null map for the indices. `path` and
-    /// `list_depth` are the field's position, which selects the dictionary values decoded for it.
+    /// validity buffer), so this function needs no separate null map for the indices. `use` selects the
+    /// dictionary values decoded for the field (see `dictionaryUse`).
     ColumnPtr decodeDictionary(
         const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
-        const String & path, size_t list_depth);
+        const DictionaryUse & use);
+    /// The use of the dictionary of a field at `path`, `list_depth` lists below the top level, with the hint
+    /// `target_hint` from its parent: the use `collectDictionaryUses` records for the field.
+    [[nodiscard]] DictionaryUse dictionaryUse(const DataTypePtr & target_hint, const String & path, size_t list_depth) const;
     [[nodiscard]] ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.
@@ -392,11 +431,19 @@ private:
     const FormatSettings & settings;
     const DictionaryRegistry & registry;
 
-    /// State valid only during a single decode call.
-    const flatbuf::RecordBatch * current_batch = nullptr;
+    /// Points the node cursor at the nodes and length of `batch`, or clears them for null.
+    void setBatchNodes(const flatbuf::RecordBatch * batch);
+
+    /// State valid only during a single decode call: the field nodes and the row count of the current batch.
+    const flatbuf::FieldNode * current_nodes = nullptr;
+    size_t current_num_nodes = 0;
+    Int64 current_length = 0;
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
+    /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used
+    /// below one: `target_types` is not consulted there.
+    bool decoding_below_union = false;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     VectorWithMemoryTracking<Slice> buffer_slices;
     /// Total bytes across `buffer_slices`; bounds allocations sized by untrusted FieldNode lengths

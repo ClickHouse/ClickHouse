@@ -24,25 +24,17 @@ doc_type: 'guide'
 **Connect with MCP**를 선택합니다:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Connect 모달에서 MCP 선택](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
-
-</Frame>
-
+  <Frame>
+    ![Connect 모달에서 MCP 선택](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
+  </Frame>
 </div>
 
 서비스에서 MCP를 활성화하려면 버튼을 켭니다. MCP를 활성화하거나 비활성화하려면 `control-plane:service:manage-mcp` 권한이 필요합니다([Console 역할 및 권한](/ko/products/cloud/reference/security/console-roles#console-permissions) 참조):
 
 <div className="ch-image-md">
-
-<Frame>
-
-![MCP 서버 활성화](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
-
-</Frame>
-
+  <Frame>
+    ![MCP 서버 활성화](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
+  </Frame>
 </div>
 
 표시된 URL을 복사합니다. 이 URL은 아래와 동일합니다:
@@ -52,7 +44,7 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## 개발용 원격 MCP 설정
+  ## 개발용 원격 MCP 설정 {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 아래에서 IDE 또는 도구를 선택하고 해당 설정 안내를 따르십시오.
@@ -72,7 +64,17 @@ MCP 클라이언트가 원격 호스트나 헤드리스 호스트에서 실행�
    ```
 
    이 명령은 새 키 ID와 시크릿을 한 번만 출력하므로 시크릿 관리 시스템에 저장하십시오. `--ip-allow`를 지정하지 않으면 키의 IP 허용 목록이 비어 있어 모든 액세스가 거부됩니다.
-3. 원격 호스트에서 시크릿 관리 시스템을 통해 자격 증명을 제공하고 HTTP Basic 인증(authorization) 값을 생성합니다.
+3. MCP 클라이언트가 쿼리해야 하는 각 ClickHouse 서비스마다 범용 Query API 엔드포인트를 구성하십시오.
+
+   * 서비스가 활성 상태인지 확인한 다음 **Settings** &gt; **Query API Endpoints**를 엽니다.
+   * **Allow use of Query API Endpoints**를 켭니다.
+   * 범용 엔드포인트가 없으면 **Enable generic query API Endpoint**를 선택합니다. MCP에 사용할 API Key를 선택하고, 필요한 데이터에 대한 읽기 액세스 권한이 있는 데이터베이스 역할을 선택한 후 엔드포인트를 생성합니다.
+   * 범용 엔드포인트가 이미 있으면 해당 엔드포인트를 편집하여 허용된 키 목록에 MCP용 API Key를 추가합니다. 엔드포인트에 연결된 모든 키의 쿼리 액세스 범위는 해당 엔드포인트의 데이터베이스 역할에 따라 결정됩니다.
+
+   API Key로 `list_databases`, `list_tables`, `run_select_query`를 호출하려면 이 서비스 수준 설정이 필요합니다. 조직 및 서비스 권한만으로는 엔드포인트의 API Key 바인딩과 데이터베이스 역할을 대신할 수 없습니다. 서비스당 한 번만 구성하면 되며, MCP 도구별로 저장된 쿼리나 별도의 엔드포인트를 만들 필요는 없습니다.
+
+   `get_services_list`는 성공하지만 쿼리 도구에서 서비스를 찾을 수 없다거나 자격 증명에 액세스 권한이 없다는 오류가 발생하면, 범용 엔드포인트가 활성화되어 있고 동일한 API Key가 포함되어 있는지 확인하십시오. OAuth 클라이언트는 로그인한 사용자의 SQL 콘솔 접근 권한을 사용하므로 이 API Key 설정이 필요하지 않습니다.
+4. 원격 호스트에서 시크릿 관리 시스템을 통해 자격 증명을 제공하고 HTTP Basic 인증(authorization) 값을 생성합니다.
 
 ```bash
 export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
@@ -86,7 +88,7 @@ export CH_AUTH="Basic $(
 )"
 ```
 
-4. MCP 클라이언트를 선택하고 원격 MCP 서버를 추가하십시오.
+5. MCP 클라이언트를 선택하고 원격 MCP 서버를 추가하십시오.
 
 <Tabs>
   <Tab title="Claude Code" id="headless-auth-claude-code">
@@ -150,7 +152,7 @@ export CH_AUTH="Basic $(
 이 API Key 방식에서는 브라우저나 별도의 `clickhousectl` 로그인이 필요하지 않습니다. 같은 호스트에서 `clickhousectl`도 사용한다면 `clickhousectl` 역시 동일한 `CLICKHOUSE_CLOUD_API_KEY` 및 `CLICKHOUSE_CLOUD_API_SECRET` 변수를 읽으며, 이 변수들이 브라우저 로그인보다 우선 적용됩니다.
 
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 현재 작업 디렉터리에서 다음 명령을 실행하여 Claude Code에 ClickHouse Cloud MCP 서버 구성을 추가하십시오:
@@ -174,7 +176,7 @@ claude
 `clickhouse-cloud`를 선택하고 ClickHouse Cloud 자격 증명으로 OAuth 인증을 진행하세요.
 
 <div id="claude-web">
-  ### Claude 웹 UI
+  ### Claude 웹 UI {#claude-web}
 </div>
 
 1. **Customize** &gt; **Connectors**로 이동하세요
@@ -184,7 +186,7 @@ claude
 5. OAuth를 통해 ClickHouse Cloud 자격 증명으로 인증하세요
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. [Cursor Marketplace](https://cursor.com/marketplace)에서 MCP 서버를 둘러보고 설치합니다.
@@ -192,7 +194,7 @@ claude
 3. OAuth로 인증합니다.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 다음 구성을 `.vscode/mcp.json` 파일에 추가하십시오:
@@ -211,7 +213,7 @@ claude
 자세한 내용은 [Visual Studio Code 문서](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)를 참고하십시오.
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 다음 구성에 맞게 `mcp_config.json` 파일을 수정하세요:
@@ -230,7 +232,7 @@ claude
 자세한 내용은 [Windsurf docs](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp)를 참고하십시오.
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 ClickHouse를 사용자 지정 서버로 추가합니다.
@@ -250,7 +252,7 @@ ClickHouse를 사용자 지정 서버로 추가합니다.
 자세한 내용은 [Zed docs](https://zed.dev/docs/ai/mcp#as-custom-servers)를 참조하십시오.
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 CLI를 사용해 ClickHouse Cloud MCP 서버를 추가하려면 다음 명령을 실행하세요:
@@ -260,7 +262,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## 예시 사용
+  ## 예시 사용 {#example-usage}
 </div>
 
 연결되면 자연어 프롬프트를 통해 ClickHouse Cloud와 상호작용할 수 있습니다.
@@ -268,7 +270,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 사용 가능한 도구의 전체 목록은 [도구 참고](/ko/products/cloud/features/ai-ml/remote-mcp#available-tools)를 참조하십시오.
 
 <div id="exploring-data">
-  ### 데이터 살펴보기
+  ### 데이터 살펴보기 {#exploring-data}
 </div>
 
 먼저 어떤 항목을 사용할 수 있는지 확인합니다:
@@ -281,7 +283,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;이름이 `events_`로 시작하는 모든 테이블을 나열하세요&quot; | `list_tables` (`like` filter 사용) |
 
 <div id="running-queries">
-  ### 분석 쿼리 실행
+  ### 분석 쿼리 실행 {#running-queries}
 </div>
 
 자연어로 질문하면 에이전트가 이를 SQL로 변환합니다:
@@ -295,7 +297,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 `run_select_query` 도구는 `SELECT` SQL 문만 허용합니다. 모든 쿼리는 읽기 전용입니다.
 
 <div id="managing-services">
-  ### 서비스 및 인프라 관리
+  ### 서비스 및 인프라 관리 {#managing-services}
 </div>
 
 ClickHouse Cloud 리소스를 한눈에 파악할 수 있습니다:
@@ -309,7 +311,7 @@ ClickHouse Cloud 리소스를 한눈에 파악할 수 있습니다:
 | &quot;이 서비스에는 어떤 ClickPipes가 구성되어 있나요?&quot; | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### 비용 모니터링
+  ### 비용 모니터링 {#monitoring-costs}
 </div>
 
 | 프롬프트                                      | 호출되는 도구                                              |
@@ -318,7 +320,7 @@ ClickHouse Cloud 리소스를 한눈에 파악할 수 있습니다:
 | &quot;3월 1일부터 3월 15일까지 일별 비용을 보여주세요&quot; | `get_organization_cost` (`from_date` 및 `to_date` 사용) |
 
 <div id="related-content">
-  ## 관련 콘텐츠
+  ## 관련 콘텐츠 {#related-content}
 </div>
 
 * [ClickHouse 에이전트 스킬](https://github.com/ClickHouse/agent-skills)

@@ -18,7 +18,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="overview">
-  ## 개요
+  ## 개요 {#overview}
 </div>
 
 Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요청 로그를 Amazon S3와 같은 대상으로 내보냅니다. 이러한 로그를 ClickStack으로 전달하면 다음과 같은 작업을 수행할 수 있습니다.
@@ -44,13 +44,13 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 </Info>
 
 <div id="existing-cloudflare">
-  ## 기존 Cloudflare Logpush 통합
+  ## 기존 Cloudflare Logpush 통합 {#existing-cloudflare}
 </div>
 
 이 섹션에서는 Cloudflare Logpush가 로그를 S3로 내보내도록 이미 구성되어 있다고 가정합니다. 아직 구성하지 않았다면 먼저 [Cloudflare의 AWS S3 설정 가이드](https://developers.cloudflare.com/logs/get-started/enable-destinations/aws-s3/)를 따르십시오.
 
 <div id="prerequisites">
-  ### 사전 요구 사항
+  ### 사전 요구 사항 {#prerequisites}
 </div>
 
 * **ClickHouse Cloud 서비스**가 실행 중이어야 합니다 (ClickPipes는 Cloud 전용 기능이므로 ClickStack OSS에서는 사용할 수 없습니다)
@@ -69,13 +69,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     2. **Source**: Amazon S3
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
+      </Frame>
     </div>
 
     **연결:**
@@ -93,13 +89,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     * **Ordering**: 사전식 순서
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Continuous ingestion](/images/clickstack/cloudflare/continuous-ingestion.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Continuous ingestion](/images/clickstack/cloudflare/continuous-ingestion.webp)
+      </Frame>
     </div>
 
     Cloudflare Logpush는 날짜 기반 이름(예: `20250127/...`)으로 파일을 기록하므로 자연스럽게 사전식 순서를 따릅니다. ClickPipes는 30초마다 새 파일을 폴링하고, 마지막으로 처리한 파일보다 이름이 큰 파일을 수집합니다.
@@ -109,13 +101,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     **Parse information**을 클릭합니다. ClickPipes가 로그 파일을 샘플링해 스키마를 자동으로 감지합니다. 매핑된 컬럼을 검토하고 필요에 따라 타입을 조정합니다. 대상 테이블의 **정렬 키**를 정의합니다. Cloudflare logs에는 `(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)`가 적절한 선택입니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Parse information](/images/clickstack/cloudflare/parse-information.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Parse information](/images/clickstack/cloudflare/parse-information.webp)
+      </Frame>
     </div>
 
     **Complete Setup**을 클릭합니다.
@@ -125,31 +113,23 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     </Note>
   </Step>
 
-  <Step title="HyperDX 데이터 소스 구성" id="configure-source">
-    ClickPipes는 Cloudflare 로그를 Cloudflare의 기본 필드 이름을 사용하는 플랫 테이블로 수집합니다. HyperDX에서 이 로그를 보려면 Cloudflare 컬럼을 HyperDX의 로그 보기에 매핑하는 사용자 지정 데이터 소스를 구성하십시오.
+  <Step title="ClickStack UI 데이터 소스 구성" id="configure-source">
+    ClickPipes는 Cloudflare 로그를 Cloudflare의 기본 필드 이름을 사용하는 플랫 테이블로 수집합니다. ClickStack UI에서 이 로그를 보려면 Cloudflare 컬럼을 ClickStack UI의 로그 보기에 매핑하는 사용자 지정 데이터 소스를 구성하십시오.
 
-    1. HyperDX → **Team Settings** → **Sources**를 엽니다
+    1. ClickStack UI → **Team Settings** → **Sources**를 엽니다
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![소스 추가](/images/clickstack/cloudflare/add-source.webp)
-
-    </Frame>
-
+      <Frame>
+        ![소스 추가](/images/clickstack/cloudflare/add-source.webp)
+      </Frame>
     </div>
 
     2. **Add source**를 클릭하고 다음 설정을 구성합니다. 모든 필드에 액세스하려면 **Configure Optional Fields**를 클릭합니다:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![선택 필드 구성](/images/clickstack/cloudflare/configure-optional-fields.webp)
-
-    </Frame>
-
+      <Frame>
+        ![선택 필드 구성](/images/clickstack/cloudflare/configure-optional-fields.webp)
+      </Frame>
     </div>
 
     | Setting                            | Value                                                                                                                                                                                                                                                                                                             |
@@ -170,19 +150,15 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     3. **Save Source**를 클릭합니다
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![소스 저장](/images/clickstack/cloudflare/save-source.webp)
-
-    </Frame>
-
+      <Frame>
+        ![소스 저장](/images/clickstack/cloudflare/save-source.webp)
+      </Frame>
     </div>
 
-    이렇게 하면 데이터 변환이나 중복 없이 Cloudflare의 기본 컬럼이 HyperDX의 로그 뷰어에 직접 매핑됩니다. **Body**에는 `GET /api/v1/users 200`과 같은 요청 요약이 표시되며, 모든 Cloudflare 필드를 검색 가능한 속성으로 사용할 수 있습니다.
+    이렇게 하면 데이터 변환이나 중복 없이 Cloudflare의 기본 컬럼이 ClickStack UI의 로그 뷰어에 직접 매핑됩니다. **Body**에는 `GET /api/v1/users 200`과 같은 요청 요약이 표시되며, 모든 Cloudflare 필드를 검색 가능한 속성으로 사용할 수 있습니다.
   </Step>
 
-  <Step title="HyperDX에서 데이터 확인" id="verify-hyperdx">
+  <Step title="ClickStack UI에서 데이터 확인" id="verify-hyperdx">
     **검색** 보기로 이동하여 **Cloudflare Logs** 소스를 선택합니다. 데이터가 포함되도록 시간 범위를 설정합니다. 다음과 같은 로그 항목이 표시되어야 합니다.
 
     * Body 컬럼의 요청 요약(예: `GET /api/v1/users 200`)
@@ -190,38 +166,28 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     * `http.status_code`, `client.country`, `cache.status`, `bot.score`와 같은 검색 가능한 속성
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![검색 보기](/images/clickstack/cloudflare/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![검색 보기](/images/clickstack/cloudflare/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![로그 보기](/images/clickstack/cloudflare/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![로그 보기](/images/clickstack/cloudflare/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## 데모 데이터세트
-</div>
+## 데모 데이터세트 {#demo-dataset}
 
 프로덕션 Cloudflare Logpush를 구성하기 전에 통합을 테스트하려는 사용자를 위해, 실제와 유사한 HTTP 요청 로그가 포함된 샘플 데이터세트를 제공합니다.
 
 <Steps>
   <Step title="데모 데이터세트로 ClickPipes 시작" id="start-demo">
     1. ClickHouse Cloud 콘솔 → **데이터 소스** → **Create ClickPipe**
-    2. **Source**: Amazon S3
-    3. **Authentication**: Public
+    2. **소스**: Amazon S3
+    3. **인증**: Public
     4. **S3 file path**: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/cloudflare/cloudflare-http-logs.json`
     5. **Incoming data**를 클릭합니다
     6. 포맷으로 **JSON**을 선택합니다
@@ -232,8 +198,8 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     이 데이터세트에는 여러 국가의 트래픽, 캐시 적중 및 미적중, API 및 정적 에셋 요청, 오류 응답, 보안 이벤트 등 실제와 유사한 패턴을 포함한 24시간 분량의 HTTP 요청 로그 항목 5,000개가 들어 있습니다.
   </Step>
 
-  <Step title="HyperDX 데이터 소스 구성" id="configure-demo-source">
-    [`cloudflare_http_logs` 테이블을 가리키는 HyperDX 소스를 만들려면 데이터 소스 구성 단계](#configure-source)를 따르십시오. 프로덕션 통합 섹션에서 이미 소스를 구성했다면 이 단계는 필요하지 않습니다.
+  <Step title="ClickStack UI 데이터 소스 구성" id="configure-demo-source">
+    [데이터 소스 구성 단계](#configure-source)를 따라 `cloudflare_http_logs` 테이블을 가리키는 ClickStack UI 소스를 만드십시오. 프로덕션 통합 섹션에서 이미 소스를 구성했다면 이 단계는 필요하지 않습니다.
   </Step>
 
   <Step title="데모 데이터 확인" id="verify-demo">
@@ -242,41 +208,31 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     -- 5000을 반환해야 합니다
     ```
 
-    HyperDX의 **검색** 뷰로 이동한 다음 **Cloudflare Logs** 소스를 선택하고 시간 범위를 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**으로 설정합니다.
+    ClickStack UI의 **검색** 뷰로 이동한 다음 **Cloudflare Logs** 소스를 선택하고 시간 범위를 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**으로 설정합니다.
 
     요청 요약, 검색 가능한 Cloudflare 속성, HTTP 상태 코드를 기준으로 한 심각도 수준이 포함된 로그 항목이 표시되어야 합니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![검색 뷰](/images/clickstack/cloudflare/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![검색 뷰](/images/clickstack/cloudflare/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![로그 뷰](/images/clickstack/cloudflare/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![로그 뷰](/images/clickstack/cloudflare/log-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **시간대 표시**
 
-      HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터는 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** 범위에 해당합니다. 넓은 시간 범위를 사용하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
+      ClickStack UI는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터는 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** 범위에 해당합니다. 넓은 시간 범위를 사용하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 대시보드 및 시각화
-</div>
+## 대시보드 및 시각화 {#dashboards}
 
 <Steps>
   <Step title="대시보드 구성 파일 다운로드" id="download">
@@ -284,54 +240,42 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
   </Step>
 
   <Step title="대시보드 가져오기" id="import-dashboard">
-    1. HyperDX → **Dashboards** → **Import Dashboard**
+    1. ClickStack UI → **대시보드** → **대시보드 가져오기**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![대시보드 가져오기](/images/clickstack/cloudflare/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![대시보드 가져오기](/images/clickstack/cloudflare/import-dashboard.webp)
+      </Frame>
     </div>
 
     2. `cloudflare-logs-dashboard.json` 업로드 → **Finish Import**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![대시보드 가져오기](/images/clickstack/cloudflare/finish-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![대시보드 가져오기](/images/clickstack/cloudflare/finish-import.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="대시보드 보기" id="view-dashboard">
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![예시 대시보드](/images/clickstack/cloudflare/example-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![예시 대시보드](/images/clickstack/cloudflare/example-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
-      데모 데이터세트는 시간 범위를 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.
+      데모 데이터세트는 시간 범위를 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**&#xB85C; 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 <div id="no-data">
-  ### ClickHouse에 데이터가 나타나지 않는 경우
+  ### ClickHouse에 데이터가 나타나지 않는 경우 {#no-data}
 </div>
 
 테이블이 생성되었고 데이터가 들어 있는지 확인하세요:
@@ -343,27 +287,23 @@ SELECT count() FROM cloudflare_http_logs;
 
 테이블이 존재하지만 비어 있으면 ClickPipes에서 오류를 확인하십시오: ClickHouse Cloud 콘솔 → **데이터 소스** → 해당 ClickPipe → **로그**. 비공개 버킷의 인증 문제는 [S3 ClickPipes access control 문서](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)를 참조하십시오.
 
-<div id="no-hyperdx">
-  ### HyperDX에 로그가 표시되지 않는 경우
-</div>
+### ClickStack UI에 로그가 표시되지 않는 경우 {#no-hyperdx}
 
-데이터가 ClickHouse에는 있지만 HyperDX에서 보이지 않는다면 source 구성을 확인하세요:
+데이터가 ClickHouse에는 있지만 ClickStack UI에서 보이지 않는다면 데이터 소스 구성을 확인하세요:
 
-* HyperDX → **Team Settings** → **Sources** 아래에 `cloudflare_http_logs`용 source가 있는지 확인하세요
-* **Timestamp Column**이 `toDateTime(EdgeStartTimestamp / 1000000000)`로 설정되어 있는지 확인하세요 — Cloudflare timestamp는 나노초 단위이므로 변환해야 합니다
-* HyperDX의 시간 범위에 해당 데이터가 포함되어 있는지 확인하세요. 데모 데이터세트의 경우 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**을 사용하세요
+* ClickStack UI → **Team Settings** → **소스** 아래에 `cloudflare_http_logs`용 소스가 있는지 확인하세요
+* **Timestamp Column**이 `toDateTime(EdgeStartTimestamp / 1000000000)`로 설정되어 있는지 확인하세요 — Cloudflare 타임스탬프는 나노초 단위이므로 변환해야 합니다
+* ClickStack UI의 시간 범위에 해당 데이터가 포함되어 있는지 확인하세요. 데모 데이터세트의 경우 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**을 사용하세요
 
 <div id="next-steps">
-  ## 다음 단계
+  ## 다음 단계 {#next-steps}
 </div>
 
 * 보안 이벤트(WAF 차단, 봇 트래픽 급증, 오류율 임계값)를 위한 [알림](/ko/clickstack/features/alerts)을 설정합니다
 * 데이터 규모에 맞게 [보존 정책](/ko/clickstack/managing/ttl)을 최적화합니다
 * 특정 사용 사례(API 성능, 캐시 최적화, 지역별 트래픽 분석)에 맞는 추가 대시보드를 생성합니다
 
-<div id="going-to-production">
-  ## 프로덕션 환경으로 전환
-</div>
+## 프로덕션 환경으로 전환 {#going-to-production}
 
 이 가이드는 공개 데모 데이터세트를 사용해 Cloudflare 로그를 수집하는 방법을 보여줍니다. 프로덕션 배포에서는 Cloudflare Logpush가 자체 S3 버킷에 쓰도록 구성하고, 안전한 액세스를 위해 [IAM role 기반 인증](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)을 사용하여 ClickPipes를 설정하십시오. 스토리지 비용과 수집량을 줄이려면 필요한 [Logpush 필드](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)만 선택하십시오. 파일을 더 체계적으로 관리하려면 Logpush에서 일별 하위 폴더를 활성화하고, 하위 디렉터리 전체를 일치시키려면 ClickPipes 경로 패턴에 `**/*`를 사용하십시오.
 

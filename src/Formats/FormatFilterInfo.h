@@ -2,11 +2,15 @@
 
 #include <Formats/ColumnNameMaps.h>
 #include <exception>
+#include <functional>
+#include <map>
 #include <mutex>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -52,6 +56,7 @@ struct FormatTopKFilterInfo
     bool track_row_group_best_values = false;
     /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
     bool filter_rows = true;
+    Names columns_deciding_threshold;
 };
 
 /// Throws INCORRECT_DATA if `type` at `path`, or any field nested in it, has no id in `field_ids` (a `ColumnMapper` storage encoding).
@@ -109,6 +114,49 @@ public:
     [[nodiscard]] bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
     [[nodiscard]] bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
+    /// Iceberg `initial-default` of a field: the value of the field absent from a data file, of its type in the data lake schema.
+    struct IcebergInitialDefault
+    {
+        Field value;
+        DataTypePtr type;
+    };
+
+    /// Iceberg `initial-default` of fields, keyed like the storage encoding.
+    void setIcebergInitialDefaults(std::unordered_map<String, IcebergInitialDefault> && iceberg_initial_defaults_)
+    {
+        iceberg_initial_defaults = std::move(iceberg_initial_defaults_);
+    }
+    [[nodiscard]] const Field * getIcebergInitialDefault(const String & path) const
+    {
+        auto it = iceberg_initial_defaults.find(path);
+        return it == iceberg_initial_defaults.end() ? nullptr : &it->second.value;
+    }
+    /// The `initial-default` of the field `field` as a value of `type`, the type that a reader reads the field with. It can have only
+    /// some of the elements of a struct, at any depth (a read of some of its subcolumns): they are taken from the default by name.
+    /// If `path` is a subcolumn of the field (`l.y` of a list of structs `l`), the subcolumn of the field's default.
+    [[nodiscard]] std::optional<Field> getIcebergInitialDefault(const String & field, const String & path, const DataTypePtr & type) const;
+    void removeIcebergInitialDefault(const String & path) { iceberg_initial_defaults.erase(path); }
+    [[nodiscard]] bool hasIcebergInitialDefaults() const { return !iceberg_initial_defaults.empty(); }
+    /// 0 if there are no defaults.
+    [[nodiscard]] UInt64 getIcebergInitialDefaultsHash() const;
+
+    /// The path of the struct that has the field `path` of the storage encoding, empty for a top-level field, or nullptr for a list
+    /// element or a map key or value. A field name can have dots, so `t.s.j` can be the field `s.j` of `t` or the field `j` of `t.s`.
+    void setIcebergStructPaths(std::unordered_map<String, String> && iceberg_struct_paths_)
+    {
+        iceberg_struct_paths = std::move(iceberg_struct_paths_);
+    }
+    [[nodiscard]] const String * getIcebergStructPath(const String & path) const
+    {
+        auto it = iceberg_struct_paths.find(path);
+        return it == iceberg_struct_paths.end() ? nullptr : &it->second;
+    }
+    /// The path of the struct, list or map that has the field `path`, empty for a top-level field.
+    [[nodiscard]] String getIcebergParentPath(const String & path) const;
+    /// The field of the storage encoding that is the subcolumn path `path` or has it as a subcolumn (the longest such prefix,
+    /// reached from the top level through structs only), empty if none.
+    [[nodiscard]] String getIcebergFieldPath(const String & path) const;
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     [[nodiscard]] std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
@@ -121,6 +169,8 @@ private:
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
+    std::unordered_map<String, IcebergInitialDefault> iceberg_initial_defaults;
+    std::unordered_map<String, String> iceberg_struct_paths;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
@@ -188,6 +238,8 @@ struct FormatFilterInfo
     /// Once all its filters are built, the format may skip the row groups whose statistics cannot contain
     /// a key of them. Only the Parquet format uses it.
     std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+    /// Whether checking it on pages may read a column index that the Parquet metadata cache cannot keep.
+    bool join_runtime_filter_reads_uncached_column_index = false;
 
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;
@@ -202,6 +254,24 @@ private:
     std::mutex join_runtime_filter_mutex;
     bool join_runtime_filter_key_condition_built TSA_GUARDED_BY(join_runtime_filter_mutex) = false;
     std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition TSA_GUARDED_BY(join_runtime_filter_mutex);
+
+public:
+    using SetHashes = std::shared_ptr<const VectorWithMemoryTracking<UInt64>>;
+
+    /// Hashes of an `IN` set column, computed by `compute` once per query. `hash_kind` must identify all their other inputs.
+    SetHashes getOrComputeSetHashes(const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute);
+
+private:
+    struct SetHashesEntry
+    {
+        /// Keeps the column alive, so that its address is not reused by another column.
+        ColumnPtr set_column;
+        std::once_flag computed;
+        SetHashes hashes;
+    };
+
+    std::mutex set_hashes_mutex;
+    std::map<std::pair<const IColumn *, String>, std::shared_ptr<SetHashesEntry>> set_hashes;
 
 public:
     /// True if the format may skip rows of the file.
