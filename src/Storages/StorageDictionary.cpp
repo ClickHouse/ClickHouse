@@ -2,6 +2,8 @@
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
@@ -11,12 +13,17 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <QueryPipeline/Pipe.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Dictionaries/SystemDictionaryUUIDs.h>
+#endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Core/ServerSettings.h>
 
 
@@ -40,6 +47,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -68,8 +76,14 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
     if (dictionary_structure.id)
     {
-        if (validate_id_type && dictionary_structure.id->type->getTypeId() != TypeIndex::UInt64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", dictionary_structure.id->type->getFamilyName());
+        if (validate_id_type)
+        {
+            /// A simple key is always materialized as `UInt64`, so a `LowCardinality` wrapper around it is equivalent.
+            const auto & id_type = removeLowCardinality(dictionary_structure.id->type);
+
+            if (id_type->getTypeId() != TypeIndex::UInt64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", id_type->getFamilyName());
+        }
 
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
     }
@@ -107,12 +121,21 @@ StorageDictionary::StorageDictionary(
     const String & comment,
     Location location_,
     ContextPtr context_)
-    : IStorage(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
+    : StorageWithCommonVirtualColumns(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageDictionary::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -145,6 +168,10 @@ StorageDictionary::StorageDictionary(
         Location::SameDatabaseAndNameAsDictionary,
         context_)
 {
+#if CLICKHOUSE_CLOUD
+    if (table_id.database_name == "system")
+        SystemDictionaryUUIDs::instance().add(table_id.uuid);
+#endif
     configuration = dictionary_configuration;
 
     auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
@@ -153,6 +180,10 @@ StorageDictionary::StorageDictionary(
 
 StorageDictionary::~StorageDictionary()
 {
+#if CLICKHOUSE_CLOUD
+    if (getStorageID().database_name == "system")
+        SystemDictionaryUUIDs::instance().remove(getStorageID().uuid);
+#endif
     removeDictionaryConfigurationFromRepository();
 }
 
@@ -184,27 +215,33 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const size_t threads)
 {
-    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
+    auto dictionary = getDictionary(local_context);
+    return dictionary->read(column_names, max_block_size, threads);
+}
 
+void StorageDictionary::checkDictionaryAccess(const StorageID & dictionary_id, const ContextPtr & local_context)
+{
     /**
      * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
      * If none of these conditions are met - we ask to grant a dictGet.
      */
-    bool has_dict_get = local_context->getAccess()->isGranted(
-        AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-    bool has_select = local_context->getAccess()->isGranted(
-        AccessType::SELECT, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-    if (!has_dict_get && !has_select)
-        local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-
-    return dictionary->read(column_names, max_block_size, threads);
+    auto dictionary_database = IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id);
+    const auto & access = local_context->getAccess();
+    if (!access->isGranted(AccessType::dictGet, dictionary_database, dictionary_id.getTableName())
+        && !access->isGranted(AccessType::SELECT, dictionary_database, dictionary_id.getTableName()))
+        local_context->checkAccess(AccessType::dictGet, dictionary_database, dictionary_id.getTableName());
 }
 
-std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
+std::shared_ptr<const IDictionary> StorageDictionary::getDictionary(const ContextPtr & query_context) const
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
+    const auto & external_loader = getContext()->getExternalDictionariesLoader();
+
+    /// Check access before loading the dictionary, because loading contacts the dictionary source,
+    /// and load the dictionary that passed the check.
+    auto dictionary = external_loader.resolveDictionary(registered_dictionary_name, query_context);
+    checkDictionaryAccess(dictionary.id, query_context);
+    return external_loader.getDictionary(dictionary, query_context);
 }
 
 void StorageDictionary::shutdown(bool)
@@ -242,7 +279,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
+    chassert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
     if (location != Location::SameDatabaseAndNameAsDictionary)
         return;
 
@@ -250,7 +287,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
     bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
     bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
-    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
+    chassert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -305,14 +342,15 @@ void StorageDictionary::checkAlterIsPossible(const AlterCommands & commands, Con
     }
 }
 
-void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder)
+void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder, DDLGuardPtr & ddl_guard)
 {
-    IStorage::alter(params, alter_context, lock_holder);
+    IStorage::alter(params, alter_context, lock_holder, ddl_guard);
 
     if (location == Location::Custom)
         return;
 
-    auto new_comment = getInMemoryMetadataPtr()->comment;
+    auto metadata_snapshot = getInMemoryMetadataPtr(alter_context, false);
+    auto new_comment = metadata_snapshot->comment;
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -329,6 +367,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
 }
 
+void registerStorageDictionary(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory)
 {
     factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)
@@ -349,9 +388,24 @@ void registerStorageDictionary(StorageFactory & factory)
 
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
+
+            /// The overrides of stored keys of a named collection need the same privilege as in table engines.
+            /// The dictionary is loaded later with the global context, so the user's privileges are checked here.
+            Poco::Util::AbstractConfiguration::Keys source_keys;
+            abstract_dictionary_configuration->keys("dictionary.source", source_keys);
+            if (source_keys.empty() || source_keys.size() > 2)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected one or two child elements in the source of dictionary {}",
+                    dictionary_id.getNameForLogs());
+            /// The source type is chosen as in `DictionarySourceFactory::create`.
+            const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
+            checkNamedCollectionOverridesInDictionarySource(
+                *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
+            bool lazy_load = external_dictionaries_loader.getObjectLazyLoadOverride(*abstract_dictionary_configuration, "dictionary")
+                .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
@@ -373,14 +427,118 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (args.mode <= LoadingStrictnessLevel::CREATE)
         {
-            const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
+            /// The user creating the table must be allowed to read the dictionary. Check it before loading the dictionary,
+            /// because loading contacts the dictionary source. The name is resolved with the query context,
+            /// like when the table is read.
+            const auto & external_loader = local_context->getExternalDictionariesLoader();
+            auto resolved_dictionary = external_loader.resolveDictionary(dictionary_name, local_context);
+            StorageDictionary::checkDictionaryAccess(resolved_dictionary.id, local_context);
+            const auto & dictionary = external_loader.getDictionary(resolved_dictionary, local_context);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }
 
         return std::make_shared<StorageDictionary>(
             args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
-    });
+    },
+    SecretArgumentsSpec{},
+    {},
+    Documentation{
+        .description = R"DOCS_MD(
+The `Dictionary` engine displays the [dictionary](/reference/statements/create/dictionary) data as a ClickHouse table.
+
+## Example {#example}
+
+As an example, consider a dictionary of `products` with the following configuration:
+
+```xml
+<dictionaries>
+    <dictionary>
+        <name>products</name>
+        <source>
+            <odbc>
+                <table>products</table>
+                <connection_string>DSN=some-db-server</connection_string>
+            </odbc>
+        </source>
+        <lifetime>
+            <min>300</min>
+            <max>360</max>
+        </lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>product_id</name>
+            </id>
+            <attribute>
+                <name>title</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>
+```
+
+Query the dictionary data:
+
+```sql
+SELECT
+    name,
+    type,
+    key,
+    attribute.names,
+    attribute.types,
+    bytes_allocated,
+    element_count,
+    source
+FROM system.dictionaries
+WHERE name = 'products'
+```
+
+```text
+┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
+│ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
+└──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
+```
+
+You can use the [dictGet\*](/reference/functions/regular-functions/ext-dict-functions) functions to get the dictionary data in this format.
+
+This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
+
+Syntax:
+
+```sql
+CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
+```
+
+Usage example:
+
+```sql
+CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
+```
+
+Ok
+
+Take a look at what's in the table.
+
+```sql
+SELECT * FROM products LIMIT 1;
+```
+
+```text
+┌────product_id─┬─title───────────┐
+│        152689 │ Some item       │
+└───────────────┴─────────────────┘
+```
+
+**See Also**
+
+- [Dictionary function](/reference/functions/table-functions/dictionary)
+)DOCS_MD",
+        .syntax = "ENGINE = Dictionary(dictionary_name)"});
 }
 
 }

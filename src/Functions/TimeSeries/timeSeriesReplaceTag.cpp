@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// matches the regular expression `regex` against the value of the tag `src_tag`.
 /// If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
 /// together with the original tags in the input.
-class FunctionTimeSeriesReplaceTag : public IFunction
+class FunctionTimeSeriesReplaceTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesReplaceTag";
@@ -26,18 +26,29 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesReplaceTag>(context); }
     explicit FunctionTimeSeriesReplaceTag(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 5; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 5; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Function timeSeriesReplaceTag uses information stored in the query context, it's deterministic in the scope of the current query.
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    [[nodiscard]] bool isStateful() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(UInt64, const String, const String, const String, const String) -> UInt64";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
@@ -58,12 +69,19 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 4);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
         auto replacement = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 2);
-        auto src_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 3);
+
+        /// We need to allow empty src_tag here.
+        /// Empty src_tag is allowed in PromQL label_replace() — Prometheus validates only the
+        /// destination label name, but not the source label name, and reads a missing source label as "".
+        /// Also there is a known trick - label_replace(v, new_tag_name, new_tag_value, "", "")
+        /// adds a new tag with constant value.
+        auto src_tag = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 3);
+
         auto regex = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 4);
 
         auto new_groups = tags_collector->replaceTag(old_groups, dest_tag, replacement, src_tag, regex);

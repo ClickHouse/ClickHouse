@@ -4,10 +4,12 @@
 #include <Poco/Logger.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/SecretString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/InvalidateQueryResponse.h>
 
 
 namespace DB
@@ -23,7 +25,7 @@ public:
     {
         const std::string host;
         const std::string user;
-        const std::string password;
+        const SecretString password;
         const std::string proto_send_chunked;
         const std::string proto_recv_chunked;
         const std::string quota_key;
@@ -79,10 +81,12 @@ private:
 
     std::string doInvalidateQuery(const std::string & request) const;
 
+    ContextMutablePtr createQueryContext() const;
+
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
     ExternalQueryBuilderPtr query_builder;
     Block sample_block;
     ContextMutablePtr context;

@@ -52,12 +52,21 @@ public:
       */
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
-        return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
+        /// Per the doc comment above, the underlying columns may be shared. `assumeMutable` here
+        /// would `chassert(use_count() == 1)` and abort, while `IColumn::mutate` would deep-clone
+        /// and break callers like `recursiveRemoveLowCardinality` that rely on offsets aliasing the
+        /// original `ColumnArray`. Bypass the assertion via `const_cast` + `getPtr` — equivalent to
+        /// the old `assumeMutable` fast path. The result is returned as `Ptr` (immutable), and any
+        /// mutation must go through `IColumn::mutate`, which deep-clones shared sub-columns at the
+        /// proper time.
+        return ColumnArray::create(
+            const_cast<IColumn *>(nested_column.get())->getPtr(),
+            const_cast<IColumn *>(offsets_column.get())->getPtr());
     }
 
     static Ptr create(const ColumnPtr & nested_column)
     {
-        return ColumnArray::create(nested_column->assumeMutable());
+        return ColumnArray::create(const_cast<IColumn *>(nested_column.get())->getPtr());
     }
 
     template <typename ... Args>
@@ -76,15 +85,20 @@ public:
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return data->isFixedAndContiguous(); }
     bool isDefaultAt(size_t n) const override;
+    UInt64 getNumberOfDefaultRows() const override;
+
+    /// All arrays are empty iff every offset is zero.
+    bool hasOnlyTypeDefaults() const override;
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -95,10 +109,13 @@ public:
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertFrom(const IColumn & src_, size_t n) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
     void insertDefault() override;
+    void insertManyDefaults(size_t length) override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void filter(const Filter & filt) override;
@@ -122,7 +139,7 @@ public:
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -130,7 +147,6 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool hasEqualOffsets(const ColumnArray & other) const;
@@ -184,6 +200,7 @@ public:
         data->forEachMutableSubcolumnRecursively(callback);
     }
 
+    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(offsets);
@@ -205,7 +222,16 @@ public:
         return false;
     }
 
-    void finalize() override { data->finalize(); }
+    void finalize() override
+    {
+        /// A row-input format serializer can retain a `ColumnPtr` to `data` while the
+        /// owning `ColumnArray` is finalized. Mutating the slot through `IColumn::mutate`
+        /// would replace it with a clone and leave that retained reference pointing to a
+        /// different column. The serializer owns this bounded sharing and mutates the
+        /// nested column in place.
+        const auto & data_ref = data;
+        const_cast<IColumn &>(*data_ref).finalize();
+    }
     bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
@@ -213,8 +239,8 @@ public:
     size_t getNumberOfDimensions() const;
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { data->fixDynamicStructure(); }
 
     bool dynamicStructureEquals(const IColumn & rhs) const override
@@ -224,6 +250,9 @@ public:
         return false;
     }
 
+    bool hasStatistics() const override { return data->hasStatistics(); }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+
 private:
     WrappedPtr data;
     WrappedPtr offsets;
@@ -231,20 +260,12 @@ private:
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
 
-
     /// Multiply values if the nested column is ColumnVector<T>.
     template <typename T>
     ColumnPtr replicateNumber(const Offsets & replicate_offsets) const;
 
     /// Multiply the values if the nested column is ColumnString. The code is too complicated.
     ColumnPtr replicateString(const Offsets & replicate_offsets) const;
-
-    /** Non-constant arrays of constant values are quite rare.
-      * Most functions can not work with them, and does not create such columns as a result.
-      * An exception is the function `replicate` (see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
-      * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
-      */
-    ColumnPtr replicateConst(const Offsets & replicate_offsets) const;
 
     /** The following is done by simply replicating of nested columns.
       */

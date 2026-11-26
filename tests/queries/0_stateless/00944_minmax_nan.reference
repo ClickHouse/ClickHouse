@@ -1,5 +1,3 @@
--- Test for issue #75523
-
 -- { echo }
 
 DROP TABLE IF EXISTS tab;

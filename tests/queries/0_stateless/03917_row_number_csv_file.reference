@@ -1,0 +1,72 @@
+--- File: a + _row_number, parallel_parsing=0
+10	0
+20	1
+30	2
+40	3
+50	4
+--- File: a + _row_number, parallel_parsing=1
+10	0
+20	1
+30	2
+40	3
+50	4
+--- File: _row_number only, parallel_parsing=0
+0
+1
+2
+3
+4
+--- File: _row_number only, parallel_parsing=1
+0
+1
+2
+3
+4
+--- S3: a + _row_number, parallel_parsing=0
+10	0
+20	1
+30	2
+40	3
+50	4
+--- S3: a + _row_number, parallel_parsing=1
+10	0
+20	1
+30	2
+40	3
+50	4
+--- S3: _row_number only, parallel_parsing=0
+0
+1
+2
+3
+4
+--- S3: _row_number only, parallel_parsing=1
+0
+1
+2
+3
+4
+--- URL: a + _row_number, parallel_parsing=0
+10	0
+20	1
+30	2
+40	3
+50	4
+--- URL: a + _row_number, parallel_parsing=1
+10	0
+20	1
+30	2
+40	3
+50	4
+--- URL: _row_number only, parallel_parsing=0
+0
+1
+2
+3
+4
+--- URL: _row_number only, parallel_parsing=1
+0
+1
+2
+3
+4

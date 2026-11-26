@@ -2,6 +2,7 @@
 
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 /** Range between fields, used for index analysis
   * (various arithmetic on intervals of various forms).
@@ -28,7 +29,7 @@ struct FieldRef : public Field
     /// Create as reference to field in block.
     FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_);
 
-    bool isExplicit() const { return columns == nullptr; }
+    [[nodiscard]] bool isExplicit() const { return columns == nullptr; }
 
     ColumnsWithTypeAndName * columns = nullptr;
     size_t row_idx = 0;
@@ -39,7 +40,7 @@ struct FieldRef : public Field
 struct Range;
 
 /// A series of ranges which may overlap.
-using Ranges = std::vector<Range>;
+using Ranges = VectorWithMemoryTracking<Range>;
 
 /** Range with open or closed ends; possibly unbounded.
   */
@@ -59,8 +60,13 @@ public:
 
     static Range createWholeUniverse();
     static Range createWholeUniverseWithoutNull();
+    static Range createWholeUniverseTypeAware(const DataTypePtr & type);
     static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
     static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
+    /// Same, but bounded within the given universe instead of (-inf, +inf): the unconstrained side takes
+    /// arbitrary universe's bound (e.g. a column's partition minmax) rather than -/+ infinity.
+    static Range createRightBounded(const FieldRef & right_point, bool right_included, const Range & universe);
+    static Range createLeftBounded(const FieldRef & left_point, bool left_included, const Range & universe);
 
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
@@ -71,32 +77,32 @@ public:
       */
     void shrinkToIncludedIfPossible();
 
-    bool empty() const;
+    [[nodiscard]] bool empty() const;
 
     /// x contained in the range
-    bool contains(const FieldRef & x) const;
+    [[nodiscard]] bool contains(const FieldRef & x) const;
 
     /// x is to the left
-    bool rightThan(const FieldRef & x) const;
+    [[nodiscard]] bool rightThan(const FieldRef & x) const;
 
     /// x is to the right
-    bool leftThan(const FieldRef & x) const;
+    [[nodiscard]] bool leftThan(const FieldRef & x) const;
 
     /// completely right than x
-    bool rightThan(const Range & x) const;
+    [[nodiscard]] bool rightThan(const Range & x) const;
     /// completely left than x
-    bool leftThan(const Range & x) const;
+    [[nodiscard]] bool leftThan(const Range & x) const;
 
     /// range like [1, 2]
-    bool fullBounded() const;
+    [[nodiscard]] bool fullBounded() const;
     /// (-inf, +inf)
-    bool isInfinite() const;
+    [[nodiscard]] bool isInfinite() const;
 
-    bool isBlank() const;
+    [[nodiscard]] bool isBlank() const;
 
-    bool intersectsRange(const Range & r) const;
+    [[nodiscard]] bool intersectsRange(const Range & r) const;
 
-    bool containsRange(const Range & r) const;
+    [[nodiscard]] bool containsRange(const Range & r) const;
 
     /// Invert left and right
     void invert();
@@ -104,23 +110,23 @@ public:
     /// Invert the range.
     /// Example:
     ///     [1, 3] -> (-inf, 1), (3, +inf)
-    Ranges invertRange() const;
+    [[nodiscard]] Ranges invertRange() const;
 
-    std::optional<Range> intersectWith(const Range & r) const;
-    std::optional<Range> unionWith(const Range & r) const;
+    [[nodiscard]] std::optional<Range> intersectWith(const Range & r) const;
+    [[nodiscard]] std::optional<Range> unionWith(const Range & r) const;
 
     /// If near by r, they can be combined to a continuous range.
     /// TODO If field is integer, case like [2, 3], [4, 5] is excluded.
-    bool nearByWith(const Range & r) const;
+    [[nodiscard]] bool nearByWith(const Range & r) const;
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
 };
 
 Range intersect(const Range & a, const Range & b);
 
 /** Hyperrectangle is a product of ranges: each range across each coordinate.
   */
-using Hyperrectangle = std::vector<Range>;
+using Hyperrectangle = VectorWithMemoryTracking<Range>;
 
 Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b);
 String toString(const Hyperrectangle & x);

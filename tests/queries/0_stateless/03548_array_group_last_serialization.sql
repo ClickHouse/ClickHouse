@@ -1,3 +1,5 @@
+SET optimize_trivial_insert_select = 0;
+
 DROP VIEW IF EXISTS mv0;
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;

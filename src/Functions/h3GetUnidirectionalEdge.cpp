@@ -16,51 +16,44 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdge : public IFunction
+class FunctionH3GetUnidirectionalEdge final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdge";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetUnidirectionalEdge>(); }
+    H3Validator validator;
 
-    std::string getName() const override { return name; }
+    explicit FunctionH3GetUnidirectionalEdge(const ContextPtr & context) : validator(context) {}
 
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdge>(context); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] std::string getName() const override { return name; }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        arg = arguments[1].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 2, getName());
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(UInt64, UInt64) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -96,11 +89,10 @@ public:
         {
             const UInt64 origin = data_hindex_origin[row];
             const UInt64 dest = data_hindex_dest[row];
+            UInt64 res = 0;
 
-            validateH3Cell(origin);
-            validateH3Cell(dest);
-
-            UInt64 res = getUnidirectionalEdge(origin, dest);
+            if (validator.validateCell(origin) && validator.validateCell(dest))
+                res = getUnidirectionalEdge(origin, dest);
             dst_data[row] = res;
         }
 
@@ -112,8 +104,9 @@ public:
     /// 'NEW_DIGIT_III' defined in '../contrib/h3/src/h3lib/lib/algos.c:121:24
     __attribute__((no_sanitize_address)) static UInt64 getUnidirectionalEdge(const UInt64 origin, const UInt64 dest)
     {
-        const UInt64 res = cellsToDirectedEdge(origin, dest);
-        return res;
+        H3Index edge = 0;
+        cellsToDirectedEdge(origin, dest, &edge);
+        return edge;
     }
 };
 
@@ -129,8 +122,8 @@ Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin 
         {"origin", "The origin H3 cell index.", {"UInt64"}},
         {"destination", "The destination H3 cell index.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the H3 unidirectional edge index.", {"UInt64"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT h3GetUnidirectionalEdge(599686042433355775, 599686030622195711)", "1248204388774707199"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the H3 unidirectional edge index for adjacent cells, or `0` when both inputs are valid cells that do not form a directed edge. Throws an exception if either input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting).", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT h3GetUnidirectionalEdge(599686042433355775, 599686043507097599)", "1248204388774707199"}};
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

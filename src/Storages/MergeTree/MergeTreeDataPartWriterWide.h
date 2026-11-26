@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -10,7 +11,7 @@ namespace DB
 struct StreamNameAndMark
 {
     String stream_name;
-    MarkInCompressedFile mark;
+    MarkInCompressedFile mark{};
 };
 
 using StreamsWithMarks = std::vector<StreamNameAndMark>;
@@ -31,7 +32,6 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -39,7 +39,7 @@ public:
         MergeTreeIndexGranularityPtr index_granularity_,
         WrittenOffsetSubstreams * written_offset_substreams_);
 
-    void write(const Block & block, const IColumnPermutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
     void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
@@ -47,7 +47,7 @@ public:
     void finish(bool sync) final;
     void cancel() noexcept override;
 
-    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
 
     static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
@@ -75,7 +75,8 @@ private:
         ISerialization::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
 
-    /// Take offsets from column and return as MarkInCompressed file with stream name
+    /// Take offsets from column and return as MarkInCompressed file with stream name.
+    /// `offset_substreams` are the offsets streams already written in this block, skipped here.
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & name_and_type,
         const WrittenOffsetSubstreams & offset_substreams);
@@ -93,9 +94,13 @@ private:
         const NameAndTypePair & name_and_type,
         WrittenOffsetSubstreams & offset_substreams);
 
-    void addStreams(
-        const NameAndTypePair & name_and_type,
-        const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
+
+    /// The stream count is derived from the substreams inventory and read by addStreams(), so the
+    /// three initializations must happen in this order.
+    void initStreamsAndSubstreamsIfNeeded();
+
+    void initStreamsToOpenCount();
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -116,13 +121,35 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    void initColumnsSubstreamsIfNeeded(const Block & block);
+    /// Gives every column an empty serialize call with granule_is_complete set, for a granule
+    /// that adjustLastMarkIfNeedAndFlushToDisk completed without a call carrying its rows.
+    void completeGranuleWithoutRows();
 
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    /// Settings with the getters and callbacks bound to the streams of the column.
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
+        const NameAndTypePair & name_and_type, const WrittenOffsetSubstreams & offset_substreams) const;
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+    [[nodiscard]] ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;
-    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
+
+    /// A stream of a column resolved once in `addStreams`; its name is `stream->escaped_column_name`. The list of
+    /// a column is in the order of `enumerateStreams`, without the ephemeral substreams and without the offsets
+    /// streams written before this writer (`written_offset_substreams`).
+    struct ResolvedStream
+    {
+        MergeTreeWriterStream * stream = nullptr;
+        /// ArraySizes substream; the columns of a Nested type share it and write it once per block.
+        bool is_offsets = false;
+        UInt64 min_compress_block_size = 0;
+    };
+    using ResolvedStreams = std::vector<ResolvedStream>;
+
+    [[nodiscard]] const ResolvedStreams & getResolvedStreams(const String & column_name) const;
+
+    /// The stream of `substream_path` of `column`, or null for an offsets stream written before this writer
+    /// (`written_offset_substreams`). Throws for a stream `addStreams` did not register.
+    [[nodiscard]] const ResolvedStream * resolveStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
@@ -132,10 +159,19 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 
-    /// Some long column names may be replaced to hashes.
-    /// Below are mapping from original stream name to actual
-    /// stream name (probably hash of the stream) and vice versa.
-    std::unordered_map<String, String> full_name_to_stream_name;
+    /// The streams of every column, filled in addStreams. The set of streams of a column and their names do not
+    /// change while the part is written (they are enumerated from the fixed `block_sample`), so the per-granule
+    /// functions iterate this list instead of enumerating the substreams and building the stream names again.
+    std::unordered_map<String, ResolvedStreams> resolved_streams_by_column;
+
+    /// The same streams by full stream name, for the getters the serialization calls with a substream path.
+    std::unordered_map<String, ResolvedStream> resolved_streams_by_full_name;
+
+    /// Full names of the offsets streams written before this writer (`written_offset_substreams`). They have no
+    /// stream in this writer, and `resolveStream` returns null for them instead of failing.
+    NameSet written_before_full_names;
+
+    /// Some long stream names are replaced with hashes. Maps the actual stream name, possibly a hash, to the full one.
     std::unordered_map<String, String> stream_name_to_full_name;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
@@ -150,7 +186,9 @@ private:
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
 
-    String already_written_stream_holder;
+    /// Number of streams opened for the whole part. Peak write memory scales with this rather than
+    /// with the number of columns, since one column can own thousands of substreams.
+    std::optional<size_t> streams_to_open_in_part;
 };
 
 }

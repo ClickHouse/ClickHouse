@@ -5,11 +5,11 @@
 --   Fixed text, N      -> FixedString(N), because ClickHouse treats CHAR(N) as variable-length String
 --   Variable text, N   -> String
 --   Date               -> Date
---
+
 -- The spec requires that the chosen type for each datatype definition is applied consistently across all columns, except for Identifier
 -- columns: at SF > 300 some identifiers may exceed the 4-byte integer range, and the spec permits using a wider type for only that column.
 -- This schema has not been tested at SF > 300; some Identifier columns may need to be upgraded to a wider type.
---
+
 -- Primary keys are per section 1.4.1 of the TPC-H specification.
 
 CREATE TABLE nation (

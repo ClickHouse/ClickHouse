@@ -49,40 +49,33 @@ namespace ErrorCodes
   * IPv6NumToString (num) - See below.
   * IPv6StringToNum(string) - Convert, for example, '::1' to 1 and vice versa.
   */
-class FunctionIPv6NumToString : public IFunction
+class FunctionIPv6NumToString final : public IFunction
 {
 public:
     static constexpr auto name = "IPv6NumToString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6NumToString>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * arg_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        const auto * arg_ipv6 = checkAndGetDataType<DataTypeIPv6>(arguments[0].get());
-        if (!arg_ipv6 && !(arg_string && arg_string->getN() == IPV6_BINARY_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}, expected IPv6 or FixedString({})",
-                arguments[0]->getName(), getName(), IPV6_BINARY_LENGTH
-            );
-
-        return std::make_shared<DataTypeString>();
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads, so a
+        /// wrong-width FixedString is rejected at analysis time on every path.
+        return "(IPv6 | FixedString(16)) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
         const auto * col_ipv6 = checkAndGetColumn<ColumnIPv6>(column.get());
@@ -130,49 +123,34 @@ public:
 };
 
 
-class FunctionCutIPv6 : public IFunction
+class FunctionCutIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "cutIPv6";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCutIPv6>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!checkAndGetDataType<DataTypeIPv6>(arguments[0].get()))
-        {
-            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-            if (!ptr || ptr->getN() != IPV6_BINARY_LENGTH)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of argument 1 of function {}, expected FixedString({})",
-                                arguments[0]->getName(), getName(), toString(IPV6_BINARY_LENGTH));
-        }
-
-        if (!WhichDataType(arguments[1]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 2 of function {}",
-                            arguments[1]->getName(), getName());
-
-        if (!WhichDataType(arguments[2]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 3 of function {}",
-                            arguments[2]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads. The
+        /// two byte-count arguments are always constant (see `getArgumentsThatAreAlwaysConstant`).
+        return "(IPv6 | FixedString(16), const UInt8, const UInt8) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -268,7 +246,7 @@ private:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv6StringToNum : public IFunction
+class FunctionIPv6StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -282,35 +260,35 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override
     {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
-
-        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+            return "(MaybeNullable(StringOrFixedString)) -> Nullable(FixedString(16))";
+        else
+            return
+                "(Nullable(StringOrFixedString)) -> Nullable(FixedString(16))"
+                " OR (StringOrFixedString) -> FixedString(16)";
+    }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         ColumnPtr column = arguments[0].column;
         ColumnPtr null_map_column;
@@ -348,11 +326,11 @@ private:
 /** If mask_tail_octets > 0, the last specified number of octets will be filled with "xxx".
   */
 template <size_t mask_tail_octets, typename Name>
-class FunctionIPv4NumToString : public IFunction
+class FunctionIPv4NumToString final : public IFunction
 {
 private:
     template <typename ArgType>
-    ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         using ColumnType = ColumnVector<ArgType>;
 
@@ -389,36 +367,28 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return mask_tail_octets == 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return mask_tail_octets == 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        WhichDataType arg_type(arguments[0]);
-        if (!(arg_type.isIPv4() || arg_type.isUInt8() || arg_type.isUInt16() || arg_type.isUInt32()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv4 or UInt8 or UInt16 or UInt32",
-                arguments[0]->getName(), getName()
-            );
-
-        return std::make_shared<DataTypeString>();
+        return "(IPv4 | UInt8 | UInt16 | UInt32) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & ret_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & ret_type, size_t input_rows_count) const override
     {
 
         switch (arguments[0].type->getTypeId())
@@ -439,7 +409,7 @@ public:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv4StringToNum : public IFunction
+class FunctionIPv4StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -453,35 +423,35 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override
     {
-        if (!isString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = std::make_shared<DataTypeUInt32>();
-
-        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+            return "(MaybeNullable(String)) -> Nullable(UInt32)";
+        else
+            return
+                "(Nullable(String)) -> Nullable(UInt32)"
+                " OR (String) -> UInt32";
+    }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         ColumnPtr column = arguments[0].column;
         ColumnPtr null_map_column;
@@ -516,38 +486,29 @@ private:
 };
 
 
-class FunctionIPv4ToIPv6 : public IFunction
+class FunctionIPv4ToIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "IPv4ToIPv6";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4ToIPv6>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// for backward compatibility IPv4ToIPv6 is overloaded, and result type depends on type of argument -
-    ///   if it is UInt32 (presenting IPv4) then result is FixedString(16), if IPv4 - result is IPv6
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// For backward compatibility IPv4ToIPv6 is overloaded: UInt32 → FixedString(16), IPv4 → IPv6.
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * dt_uint32 = checkAndGetDataType<DataTypeUInt32>(arguments[0].get());
-        const auto * dt_ipv4 = checkAndGetDataType<DataTypeIPv4>(arguments[0].get());
-        if (!dt_uint32 && !dt_ipv4)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}", arguments[0]->getName(), getName()
-            );
-
-        if (dt_uint32)
-            return std::make_shared<DataTypeFixedString>(16);
-        return std::make_shared<DataTypeIPv6>();
+        return
+            "(UInt32) -> FixedString(16)"
+            " OR (IPv4) -> IPv6";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -600,31 +561,29 @@ private:
     }
 };
 
-class FunctionMACNumToString : public IFunction
+class FunctionMACNumToString final : public IFunction
 {
 public:
     static constexpr auto name = "MACNumToString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMACNumToString>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    /// Not injective: only the low 6 bytes of the argument are formatted, the higher two bytes are ignored,
+    /// so 2^64 possible inputs are mapped onto 2^48 possible outputs.
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!WhichDataType(arguments[0]).isUInt64())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected UInt64",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(UInt64) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
@@ -647,9 +606,9 @@ public:
         writeHexByteUppercase(static_cast<UInt8>(mac), &out[15]);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -733,38 +692,34 @@ struct ParseOUIImpl
 
 
 template <typename Impl>
-class FunctionMACStringTo : public IFunction
+class FunctionMACStringTo final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(String) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -799,7 +754,7 @@ public:
     }
 };
 
-class FunctionIPv6CIDRToRange : public IFunction
+class FunctionIPv6CIDRToRange final : public IFunction
 {
 private:
 
@@ -838,37 +793,22 @@ public:
     static constexpr auto name = "IPv6CIDRToRange";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6CIDRToRange>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * ipv6 = checkAndGetDataType<DataTypeIPv6>(arguments[0].get());
-        const auto * str = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        if (!ipv6 && !(str && str->getN() == IPV6_BINARY_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv6 or FixedString({})",
-                arguments[0]->getName(), getName(), IPV6_BINARY_LENGTH
-            );
-
-        const DataTypePtr & second_argument = arguments[1];
-        if (!isUInt8(second_argument))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected UInt8",
-                second_argument->getName(), getName()
-            );
-
-        DataTypePtr element = std::make_shared<DataTypeIPv6>();
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width the implementation reads
+        /// (16 raw bytes per row); a narrower FixedString is rejected at analysis time, avoiding
+        /// out-of-bounds reads.
+        return "(IPv6 | FixedString(16), UInt8) -> Tuple(IPv6, IPv6)";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_type_name_cidr = arguments[1];
         const ColumnPtr & column_cidr = col_type_name_cidr.column;
@@ -892,15 +832,24 @@ public:
         const auto * col_const_str_in = checkAndGetColumnConst<ColumnFixedString>(column_ip.get());
         const auto * col_str_in = checkAndGetColumn<ColumnFixedString>(column_ip.get());
 
-        std::function<const char *(size_t)> get_ip_data;
+        /// Take the data pointers before the loop: a per-row call through `std::function` or to a member of the
+        /// column (checked by Clang CFI on every call) keeps the loop from being optimized.
+        const char * ip_data = nullptr;
+        size_t ip_step = 0;
         if (col_const_ip_in)
-            get_ip_data = [col_const_ip_in](size_t) { return col_const_ip_in->getDataAt(0).data(); };
+            ip_data = col_const_ip_in->getDataAt(0).data();
         else if (col_const_str_in)
-            get_ip_data = [col_const_str_in](size_t) { return col_const_str_in->getDataAt(0).data(); };
+            ip_data = col_const_str_in->getDataAt(0).data();
         else if (col_ip_in)
-            get_ip_data = [col_ip_in](size_t i) { return reinterpret_cast<const char *>(&col_ip_in->getData()[i]); };
+        {
+            ip_data = reinterpret_cast<const char *>(col_ip_in->getData().data());
+            ip_step = IPV6_BINARY_LENGTH;
+        }
         else if (col_str_in)
-            get_ip_data = [col_str_in](size_t i) { return reinterpret_cast<const char *>(&col_str_in->getChars().data()[i * IPV6_BINARY_LENGTH]); };
+        {
+            ip_data = reinterpret_cast<const char *>(col_str_in->getChars().data());
+            ip_step = IPV6_BINARY_LENGTH;
+        }
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -919,15 +868,21 @@ public:
 
         static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
 
+        char * res_lower = reinterpret_cast<char *>(vec_res_lower_range.data());
+        char * res_upper = reinterpret_cast<char *>(vec_res_upper_range.data());
+        const UInt8 * cidr_data = col_const_cidr_in ? nullptr : col_cidr_in->getData().data();
+        const UInt8 const_cidr = col_const_cidr_in ? col_const_cidr_in->getValue<UInt8>() : 0;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt8 cidr = col_const_cidr_in
-                        ? col_const_cidr_in->getValue<UInt8>()
-                        : col_cidr_in->getData()[i];
-
+            UInt8 cidr = cidr_data ? cidr_data[i] : const_cidr;
             cidr = std::min(cidr, max_cidr_mask);
 
-            applyCIDRMask(get_ip_data(i), reinterpret_cast<char *>(&vec_res_lower_range[i]), reinterpret_cast<char *>(&vec_res_upper_range[i]), cidr);
+            applyCIDRMask(
+                ip_data + i * ip_step,
+                res_lower + i * IPV6_BINARY_LENGTH,
+                res_upper + i * IPV6_BINARY_LENGTH,
+                cidr);
         }
 
         return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
@@ -935,7 +890,7 @@ public:
 };
 
 
-class FunctionIPv4CIDRToRange : public IFunction
+class FunctionIPv4CIDRToRange final : public IFunction
 {
 private:
     static std::pair<UInt32, UInt32> applyCIDRMask(UInt32 src, UInt8 bits_to_keep)
@@ -953,7 +908,7 @@ private:
     }
 
     template <typename ArgType>
-    ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         using ColumnType = ColumnVector<ArgType>;
         const auto & col_type_name_ip = arguments[0];
@@ -977,18 +932,41 @@ private:
         auto & vec_res_upper_range = col_res_upper_range->getData();
         vec_res_upper_range.resize(input_rows_count);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if ((!col_const_ip_in && !col_ip_in) || (!col_const_cidr_in && !col_cidr_in))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal columns {}, {} of arguments of function {}",
+                column_ip->getName(), column_cidr->getName(), getName()
+            );
+
+        /// Take the data pointers and constants before the loop and specialize it for each combination of constant
+        /// arguments: a per-row call to a member of the column (checked by Clang CFI on every call) keeps the loop
+        /// from being vectorized.
+        const ArgType * ip_data = col_const_ip_in ? nullptr : col_ip_in->getData().data();
+        const ArgType const_ip = col_const_ip_in ? col_const_ip_in->template getValue<ArgType>() : ArgType{};
+        const UInt8 * cidr_data = col_const_cidr_in ? nullptr : col_cidr_in->getData().data();
+        const UInt8 const_cidr = col_const_cidr_in ? col_const_cidr_in->getValue<UInt8>() : 0;
+        IPv4 * __restrict res_lower = vec_res_lower_range.data();
+        IPv4 * __restrict res_upper = vec_res_upper_range.data();
+
+        auto execute = [&]<bool ip_is_const, bool cidr_is_const>()
         {
-            ArgType ip = col_const_ip_in
-                        ? col_const_ip_in->template getValue<ArgType>()
-                        : col_ip_in->getData()[i];
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const ArgType ip = ip_is_const ? const_ip : ip_data[i];
+                const UInt8 cidr = cidr_is_const ? const_cidr : cidr_data[i];
+                std::tie(res_lower[i], res_upper[i]) = applyCIDRMask(ip, cidr);
+            }
+        };
 
-            UInt8 cidr = col_const_cidr_in
-                         ? col_const_cidr_in->getValue<UInt8>()
-                         : col_cidr_in->getData()[i];
-
-            std::tie(vec_res_lower_range[i], vec_res_upper_range[i]) = applyCIDRMask(ip, cidr);
-        }
+        if (col_const_ip_in && col_const_cidr_in)
+            execute.template operator()<true, true>();
+        else if (col_const_ip_in)
+            execute.template operator()<true, false>();
+        else if (col_const_cidr_in)
+            execute.template operator()<false, true>();
+        else
+            execute.template operator()<false, false>();
 
         return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
     }
@@ -997,37 +975,19 @@ public:
     static constexpr auto name = "IPv4CIDRToRange";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4CIDRToRange>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        WhichDataType arg_type(arguments[0]);
-        if (!(arg_type.isIPv4() || arg_type.isUInt8() || arg_type.isUInt16() || arg_type.isUInt32()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv4 or UInt8 or UInt16 or UInt32",
-                arguments[0]->getName(), getName()
-            );
-
-
-        const DataTypePtr & second_argument = arguments[1];
-        if (!isUInt8(second_argument))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected UInt8",
-                second_argument->getName(), getName()
-            );
-
-        DataTypePtr element = DataTypeFactory::instance().get("IPv4");
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        return "(IPv4 | UInt8 | UInt16 | UInt32, UInt8) -> Tuple(IPv4, IPv4)";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & ret_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & ret_type, size_t input_rows_count) const override
     {
         if (arguments[1].type->getTypeId() != TypeIndex::UInt8)
             throw Exception(
@@ -1052,30 +1012,27 @@ public:
     }
 };
 
-class FunctionIsIPv4String : public IFunction
+class FunctionIsIPv4String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv4String";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPv4String>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        return std::make_shared<DataTypeUInt8>();
+        return "(String) -> UInt8";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnString * input_column = checkAndGetColumn<ColumnString>(arguments[0].column.get());
 
@@ -1109,38 +1066,32 @@ public:
     }
 };
 
-class FunctionIsIPv6String : public IFunction
+class FunctionIsIPv6String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv6String";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPv6String>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(String) -> UInt8";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnString * input_column = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!input_column)
@@ -1234,7 +1185,7 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
     factory.registerFunction<FunctionIPv4ToIPv6>(documentation_ipv4toipv6);
 
     FunctionDocumentation::Description description_macnumtostring = R"(
-Interprets a [`UInt64`](/sql-reference/data-types/int-uint) number as a MAC address in big endian format.
+Interprets a [`UInt64`](/reference/data-types/int-uint) number as a MAC address in big endian format.
 Returns the corresponding MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form) as string.
     )";
     FunctionDocumentation::Syntax syntax_macnumtostring = "MACNumToString(num)";
@@ -1250,7 +1201,7 @@ SELECT MACNumToString(149809441867716) AS mac_address;
         )",
         R"(
 ┌─mac_address───────┐
-│ 88:00:11:22:33:44 │
+│ 88:40:3A:91:07:C4 │
 └───────────────────┘
         )"
     }
@@ -1445,7 +1396,7 @@ Interprets the input using big-endian byte ordering.
     FunctionDocumentation::Examples example_ipv4numtostring = {
     {
         "Usage example",
-        "IPv4NumToString(3232235521)",
+        "SELECT IPv4NumToString(3232235521)",
         "192.168.0.1"
     }
     };
@@ -1468,24 +1419,19 @@ similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the 
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
-FROM test.hits
+FROM VALUES('ClientIP UInt32',
+    (toUInt32(toIPv4('83.149.9.10'))), (toUInt32(toIPv4('83.149.9.11'))), (toUInt32(toIPv4('83.149.9.12'))),
+    (toUInt32(toIPv4('217.118.81.5'))), (toUInt32(toIPv4('217.118.81.6'))),
+    (toUInt32(toIPv4('213.87.129.1'))))
 GROUP BY k
-ORDER BY c DESC
-LIMIT 10
+ORDER BY c DESC, k
         )",
         R"(
-┌─k──────────────┬─────c─┐
-│ 83.149.9.xxx   │ 26238 │
-│ 217.118.81.xxx │ 26074 │
-│ 213.87.129.xxx │ 25481 │
-│ 83.149.8.xxx   │ 24984 │
-│ 217.118.83.xxx │ 22797 │
-│ 78.25.120.xxx  │ 22354 │
-│ 213.87.131.xxx │ 21285 │
-│ 78.25.121.xxx  │ 20887 │
-│ 188.162.65.xxx │ 19694 │
-│ 83.149.48.xxx  │ 17406 │
-└────────────────┴───────┘
+┌─k──────────────┬─c─┐
+│ 83.149.9.xxx   │ 3 │
+│ 217.118.81.xxx │ 2 │
+│ 213.87.129.xxx │ 1 │
+└────────────────┴───┘
         )"
     }
     };
@@ -1508,7 +1454,7 @@ If the IPv4 address has an invalid format, an exception is thrown.
     FunctionDocumentation::Examples examples_ipv4stringtonum = {
     {
         "Usage example",
-        "IPv4StringToNum('192.168.0.1')",
+        "SELECT IPv4StringToNum('192.168.0.1')",
         "3232235521"
     }
     };
@@ -1600,55 +1546,51 @@ SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 
      {
          "IPv6 with hits analysis",
          R"(
+CREATE TABLE hits_all (EventDate Date, ClientIP6 FixedString(16)) ENGINE = Memory;
+
+INSERT INTO hits_all SELECT today(), IPv6StringToNum(addr) FROM VALUES('addr String',
+    ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'),
+    ('2a02:6b8:0:fff::ff'), ('2a02:6b8:0:fff::ff'),
+    ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'),
+    ('::ffff:37.143.222.4'));
+
+-- The addresses that are not an IPv4 address mapped into the IPv6 space.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today() AND substring(ClientIP6, 1, 12) != unhex('00000000000000000000FFFF')
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
          )",
          R"(
-┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
-│ 2a02:2168:aaa:bbbb::2                   │ 24695 │
-│ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
-│ 2a02:6b8:0:fff::ff                      │ 16389 │
-│ 2a01:4f8:111:6666::2                    │ 16016 │
-│ 2a02:2168:888:222::1                    │ 15896 │
-│ 2a01:7e00::ffff:ffff:ffff:222           │ 14774 │
-│ 2a02:8109:eee:ee:eeee:eeee:eeee:eeee    │ 14443 │
-│ 2a02:810b:8888:888:8888:8888:8888:8888  │ 14345 │
-│ 2a02:6b8:0:444:4444:4444:4444:4444      │ 14279 │
-│ 2a01:7e00::ffff:ffff:ffff:ffff          │ 13880 │
-└─────────────────────────────────────────┴───────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+└───────────────────────┴───┘
         )"
     },
     {
         "IPv6 mapped IPv4 addresses",
         R"(
+-- Without the filter, the mapped IPv4 addresses show up as well.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today()
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
         )",
         R"(
-┌─IPv6NumToString(ClientIP6)─┬──────c─┐
-│ ::ffff:94.26.111.111       │ 747440 │
-│ ::ffff:37.143.222.4        │ 529483 │
-│ ::ffff:5.166.111.99        │ 317707 │
-│ ::ffff:46.38.11.77         │ 263086 │
-│ ::ffff:79.105.111.111      │ 186611 │
-│ ::ffff:93.92.111.88        │ 176773 │
-│ ::ffff:84.53.111.33        │ 158709 │
-│ ::ffff:217.118.11.22       │ 154004 │
-│ ::ffff:217.118.11.33       │ 148449 │
-│ ::ffff:217.118.11.44       │ 148243 │
-└────────────────────────────┴────────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ ::ffff:94.26.111.111  │ 4 │
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+│ ::ffff:37.143.222.4   │ 1 │
+└───────────────────────┴───┘
         )"
     }
     };
@@ -1676,11 +1618,10 @@ HEX can be uppercase or lowercase.
     {
         "Basic example",
         R"(
-SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
+SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
         )",
         R"(
 ┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
-│ notaddress │ ::                                   │
 │ 127.0.0.1  │ ::ffff:127.0.0.1                     │
 │ 1111::ffff │ 1111::ffff                           │
 └────────────┴──────────────────────────────────────┘
@@ -1742,7 +1683,7 @@ SELECT
         )",
         R"(
 ┌─valid───────┬─invalid─┐
-│ 2001:db8::1 │    ᴺᵁᴸᴸ │
+│ 2001:db8::1 │ ᴺᵁᴸᴸ    │
 └─────────────┴─────────┘
         )"
     }

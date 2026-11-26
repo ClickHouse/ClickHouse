@@ -1,7 +1,6 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <filesystem>
 #include <Common/re2.h>
 
 #if USE_HDFS
@@ -136,7 +135,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
     hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
-    const String & user_info = uri.getUserInfo();
+    std::string_view user_info = uri.getUserInfo();
     String user;
     if (!user_info.empty() && user_info.front() != ':')
     {

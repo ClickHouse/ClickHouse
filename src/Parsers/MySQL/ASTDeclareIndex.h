@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 
@@ -39,7 +38,7 @@ protected:
 class ParserDeclareIndex : public IParserBase
 {
 protected:
-    const char * getName() const override { return "index declaration"; }
+    [[nodiscard]] const char * getName() const override { return "index declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

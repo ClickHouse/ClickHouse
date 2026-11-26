@@ -1,0 +1,243 @@
+---
+description: 'توثيق دوال Geometry'
+sidebarTitle: 'Geometry'
+slug: /sql-reference/functions/geo/geometry
+title: 'دوال للتعامل مع Geometry'
+doc_type: 'reference'
+---
+
+## Geometry {#geometry}
+
+تتيح لك دوال Geometry حساب المحيط والمساحة والطول للأنواع الهندسية مثل POLYGON وLINESTRING وMULTIPOLYGON وMULTILINESTRING وRING وPOINT. استخدم الأشكال الهندسية ضمن النوع Geometry. إذا كانت قيمة الإدخال هي `NULL`، فستُرجع جميع الدوال أدناه القيمة 0.
+
+## perimeterCartesian {#perimetercartesian}
+
+يحسب محيط كائن من نوع Geometry المحدد في نظام الإحداثيات الديكارتي (المسطح).
+
+**البنية**
+
+```sql
+perimeterCartesian(geom)
+```
+
+**الوسائط**
+
+* `geom` — كائن من نوع Geometry. [Geometry](/ar/reference/data-types/geo).
+
+**القيم المُعادة**
+
+* Number — محيط الكائن بوحدات نظام الإحداثيات. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT perimeterCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterCartesian(geom)─┐
+│ 4.0                      │
+└──────────────────────────┘
+```
+
+## areaCartesian {#areacartesian}
+
+تحسب مساحة كائن من نوع Geometry المُعطى في نظام الإحداثيات الديكارتية.
+
+**الصيغة**
+
+```sql
+areaCartesian(geom)
+```
+
+**الوسيطات**
+
+* `geom` — كائن من نوع Geometry. [Geometry](/ar/reference/data-types/geo).
+
+**القيم المُعادة**
+
+* عدد — مساحة الكائن بوحدات نظام الإحداثيات. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaCartesian(geom)─┐
+│ -1                  │
+└─────────────────────┘
+```
+
+## perimeterSpherical {#perimeterspherical}
+
+يحسب محيط كائن من نوع Geometry على سطح كرة.
+
+**الصيغة**
+
+```sql
+perimeterSpherical(geom)
+```
+
+**الوسيطات**
+
+* `geom` — كائن من نوع Geometry. [Geometry](/ar/reference/data-types/geo).
+
+**القيم المُعادة**
+
+* عدد — المحيط على كرة نصف قطرها 1، بوحدة الراديان (الإحداثيات هي خط الطول وخط العرض بالدرجات). للحصول على الطول، اضرب الناتج في نصف قطر الكرة؛ فمثلًا اضربه في 6371 للحصول على الطول بالكيلومترات على سطح الأرض. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
+SELECT perimeterSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterSpherical(geom)─┐
+│      0.06981051179132045 │
+└──────────────────────────┘
+```
+
+## areaSpherical {#areaspherical}
+
+يحسب مساحة كائن من نوع Geometry على سطح كرة.
+
+**الصيغة**
+
+```sql
+areaSpherical(geom)
+```
+
+**الوسيطات**
+
+* `geom` — نوع Geometry. [Geometry](/ar/reference/data-types/geo).
+
+**القيم المُعادة**
+
+* عدد — المساحة على كرة نصف قطرها 1، مقيسةً بوحدة الستراديان (الإحداثيات هي خط الطول وخط العرض بالدرجات). اضرب الناتج في مربع نصف قطر الكرة للحصول على المساحة. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaSpherical(geom)────┐
+│ -0.0003046096848622019 │
+└────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+تحسب طول خطوط كائن Geometry في نظام الإحداثيات الديكارتي (المسطح)، أي مجموع المسافات بين النقاط المتتالية.
+يساوي طول `MultiLineString` مجموع أطوال خطوطه، أما `Ring` فيُقاس بوصفه الخط المار بنقاطه، وكذلك مصفوفة النقاط التي لا تحمل اسم نوع، إذ يكون نوعها `Ring`.
+لا طول للنقاط والمضلعات ومتعددات المضلعات، لذا تُعيد الدالة القيمة 0 لها. لحساب محيط المضلع، استخدم [perimeterCartesian](#perimetercartesian).
+لقياس مصفوفة من مصفوفات النقاط، حوّلها إلى `MultiLineString`، لأن نوعها يكون `Polygon` إذا لم يُحدَّد اسم النوع.
+
+الاسم البديل: `ST_Length`.
+
+**الصيغة**
+
+```sql
+lengthCartesian(geom)
+```
+
+**الوسيطات**
+
+* `geom` — كائن Geometry. [Geometry](/ar/reference/data-types/geo).
+
+**القيم المُعادة**
+
+* رقم — طول الخطوط مقيسًا بوحدات نظام الإحداثيات. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+تحسب طول الخطوط في كائن Geometry على سطح كرة، حيث تُعطى النقاط على هيئة (خط الطول، خط العرض) بالدرجات.
+النتيجة زاوية بالراديان، وهي تمثّل الطول على كرة نصف قطرها 1، على غرار نتيجة [perimeterSpherical](#perimeterspherical).
+للحصول على طول تقريبي بالأمتار، اضربها في متوسط نصف قطر الأرض البالغ 6371008.8 متر، أو استخدم [lengthSpheroid](#lengthspheroid) للحصول على طول دقيق.
+وعلى غرار [lengthCartesian](#lengthcartesian)، تُعيد 0 للنقاط والمضلعات ومتعددات المضلعات.
+
+**الصيغة**
+
+```sql
+lengthSpherical(geom)
+```
+
+**الوسيطات**
+
+* `geom` — كائن Geometry. [Geometry](/ar/reference/data-types/geo).
+
+**القيم المُعادة**
+
+* رقم — طول الخطوط بالراديان. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+تحسب طول خطوط كائن Geometry بالأمتار على المجسم الإهليلجي WGS84، وهو نموذج الأرض الذي يعتمده نظام GPS، حيث تُعطى النقاط بصيغة (خط الطول، خط العرض) بالدرجات.
+يمثّل كل مقطع أقصر مسار بين نقطتيه على المجسم الإهليلجي (خطًا جيوديسيًا)، ويُحسب باستخدام خوارزمية Karney، كما في GeographicLib.
+وعلى غرار [lengthCartesian](#lengthcartesian)، تُعيد 0 للنقاط والمضلعات ومتعددات المضلعات.
+أما الإحداثيات المخزّنة بصيغة (خط العرض، خط الطول)، مثل مدخلات `ST_Length_Spheroid` في DuckDB، فبدّلها أولًا باستخدام [flipCoordinates](/ar/reference/functions/regular-functions/geo/flipCoordinates)، وإلا كانت النتيجة طول خط مختلف.
+إذا كانت قيمة أحد الإحداثيات NaN أو لا نهائية، أو كان خط العرض خارج النطاق [-90, 90]، فإن النتيجة تكون NaN.
+
+**الصيغة**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**الوسيطات**
+
+* `geom` — كائن Geometry. [Geometry](/ar/reference/data-types/geo).
+
+**القيم المُعادة**
+
+* رقم — طول الخطوط بالأمتار. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+طول خط يمتد من لندن إلى برلين مرورًا بباريس:
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
+```

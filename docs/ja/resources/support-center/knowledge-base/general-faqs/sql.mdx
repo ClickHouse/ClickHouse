@@ -1,0 +1,51 @@
+---
+title: 'ClickHouse はどの SQL 構文をサポートしていますか？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/sql
+description: 'ClickHouse は SQL 構文を 100% サポートします'
+doc_type: 'reference'
+keywords: ['SQL 構文', 'ANSI SQL']
+---
+
+ClickHouse は、次のような機能を含め、SQL 構文を完全にサポートしています。
+
+* SQL/JSON および JSON データ型 (SQL-2023)
+* ウィンドウ関数 (SQL-2003)
+* 共通テーブル式と再帰クエリ (SQL-1999)
+* ROLLUP、CUBE、GROUPING SETS (SQL-1999)
+* RBAC の完全サポート (SQL-1999)
+* 相関サブクエリ (SQL-1992);
+
+このサポートは、TPC-H および TPC-DS ベンチマーク、ならびに SQLTest によって検証されています。
+
+ClickHouse は、後に ISO/IEC によって標準化されることになる多くの機能を、それに先立って導入しました。たとえば次のようなものがあります。
+
+* 条件付き集約関数
+* `any` 集約関数
+* `least` と `greatest`
+* `GROUP BY ALL`
+* 別名の拡張的な利用
+* 数値リテラル内のアンダースコア
+
+ClickHouse は、利便性を大きく向上させる改良を導入することで SQL を拡張しています。
+
+* 別名の制限のない利用
+* WITH Clause 内の別名
+* 集約関数コンビネータ
+* パラメーター化集約関数
+* 近似集約関数
+* ネイティブおよび big integer の数値型、拡張精度 decimal
+* Array 操作用の高階関数
+* ARRAY JOIN Clause と arrayJoin 関数
+* 配列集約
+* LIMIT BY Clause
+* GROUP BY WITH TOTALS
+* AS OF JOIN
+* ANY/ALL JOIN
+* JSON の自然な構文
+* カラムリスト末尾のカンマ
+* FROM ... SELECT の順序
+* 型安全なクエリパラメータとパラメーター化ビュー
+
+これらの一部は、すでに ClickHouse ユーザーが利用できる一方で、今後の SQL 標準に取り入れられる可能性があります。

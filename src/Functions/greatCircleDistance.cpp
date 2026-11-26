@@ -2,11 +2,14 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/PerformanceAdaptors.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/TargetSpecific.h>
 #include <cmath>
+#include <memory>
 #include <numbers>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -110,7 +113,7 @@ struct Impl
         return f;
     }
 
-    T fastCos(T x)
+    [[nodiscard]] T fastCos(T x) const
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -119,7 +122,7 @@ struct Impl
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
 
-    T fastSin(T x)
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW T fastSin(T x) const
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -130,7 +133,7 @@ struct Impl
 
     /// fast implementation of asin(sqrt(x))
     /// max error in floats 0.00369%, in doubles 0.00072%
-    T fastAsinSqrt(T x)
+    [[nodiscard]] T fastAsinSqrt(T x) const
     {
         if (x < T(0.122))
         {
@@ -149,18 +152,26 @@ struct Impl
     }
 };
 
-template <typename T> Impl<T> impl;
+/// Built on first use: computing the tables with `sin`/`cos`/`asin` in a static initializer would run before `main`.
+template <typename T>
+const Impl<T> & impl()
+{
+    static const Impl<T> instance;
+    return instance;
+}
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 namespace
 {
 
+/// Takes the tables as an argument, so the caller looks them up (with the initialization guard
+/// of `impl`) once per block and not for every row.
 template <Method method, typename T>
-T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
+T distance(const Impl<T> & tables, T lon1deg, T lat1deg, T lon2deg, T lat2deg)
 {
-    T lat_diff = impl<T>.degDiff(lat1deg - lat2deg);
-    T lon_diff = impl<T>.degDiff(lon1deg - lon2deg);
+    T lat_diff = tables.degDiff(lat1deg - lat2deg);
+    T lon_diff = tables.degDiff(lon1deg - lon2deg);
 
     if (lon_diff < 13)
     {
@@ -173,7 +184,7 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
         T latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
-        size_t latitude_midpoint_index = impl<T>.toIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
+        size_t latitude_midpoint_index = tables.toIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
@@ -184,23 +195,23 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
         {
             k_lat = 1;
 
-            k_lon = impl<T>.sphere_metric_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lon = tables.sphere_metric_lut[latitude_midpoint_index]
+                + (tables.sphere_metric_lut[latitude_midpoint_index + 1] - tables.sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
             k_lat = sqr(T(EARTH_DIAMETER) * T(PI) / T(360.0));
 
-            k_lon = impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lon = tables.sphere_metric_meters_lut[latitude_midpoint_index]
+                + (tables.sphere_metric_meters_lut[latitude_midpoint_index + 1] - tables.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::WGS84_METERS)
         {
-            k_lat = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lat = tables.wgs84_metric_meters_lut[latitude_midpoint_index * 2]
+                + (tables.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - tables.wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
 
-            k_lon = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lon = tables.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
+                + (tables.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - tables.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
@@ -211,13 +222,13 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
     static constexpr T RAD_IN_DEG = T(PI / 180.0);
     static constexpr T RAD_IN_DEG_HALF = T(PI / 360.0);
 
-    T a = sqr(impl<T>.fastSin(lat_diff * RAD_IN_DEG_HALF))
-        + impl<T>.fastCos(lat1deg * RAD_IN_DEG) * impl<T>.fastCos(lat2deg * RAD_IN_DEG) * sqr(impl<T>.fastSin(lon_diff * RAD_IN_DEG_HALF));
+    T a = sqr(tables.fastSin(lat_diff * RAD_IN_DEG_HALF))
+        + tables.fastCos(lat1deg * RAD_IN_DEG) * tables.fastCos(lat2deg * RAD_IN_DEG) * sqr(tables.fastSin(lon_diff * RAD_IN_DEG_HALF));
 
     if constexpr (method == Method::SPHERE_DEGREES)
-        return (T(360.0) / T(PI)) * impl<T>.fastAsinSqrt(a);
+        return (T(360.0) / T(PI)) * tables.fastAsinSqrt(a);
     else
-        return T(EARTH_DIAMETER) * impl<T>.fastAsinSqrt(a);
+        return T(EARTH_DIAMETER) * tables.fastAsinSqrt(a);
 }
 
 }
@@ -248,6 +259,18 @@ private:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// All 4 args must be numeric (lat1, lon1, lat2, lon2). The result type is
+    /// `Float64` when any argument is `Float64` and the `geo_distance_returns_
+    /// float64_on_float64_arguments` setting is on (the default); otherwise
+    /// `Float32`. The two underlying classes (`SPHERE_DEGREES`/`SPHERE_METERS`
+    /// vs. `WGS84_METERS`) share this rule.
+    String getSignatureString() const override
+    {
+        if (always_float32)
+            return "(Number, Number, Number, Number) -> Float32";
+        return "(A : Number, B : Number, C : Number, D : Number) -> selectIf(anyFloat64(A, B, C, D), Float64, Float32)";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -304,9 +327,11 @@ private:
         auto & dst_data = assert_cast<ColumnVector<T> &>(*dst).getData();
         dst_data.resize(input_rows_count);
 
+        const auto & tables = impl<T>();
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             dst_data[row_num] = distance<method>(
+                tables,
                 col_lon1->getData()[row_num], col_lat1->getData()[row_num],
                 col_lon2->getData()[row_num], col_lat2->getData()[row_num]);
         }
@@ -329,29 +354,30 @@ private:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
     explicit FunctionGeoDistance(ContextPtr context)
-        : TargetSpecific::Default::FunctionGeoDistance<method>(context), selector(context)
+        : TargetSpecific::Default::FunctionGeoDistance<method>(context)
     {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionGeoDistance<method>>(context);
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            TargetSpecific::x86_64_v3::FunctionGeoDistance<method>>(context);
-        selector.registerImplementation<TargetArch::x86_64_v4,
-            TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
-    #endif
+#if USE_X86_64_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
+            return;
+        }
+#endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionGeoDistance<method>>(context);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -360,7 +386,7 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 }
@@ -385,9 +411,9 @@ This function returns the angle in degrees between two points on a sphere.
                 "Basic usage",
                 "SELECT greatCircleAngle(0, 0, 45, 0) AS angle",
                 R"(
-┌─angle─┐
-│    45 │
-└───────┘
+┌────angle─┐
+│ 44.99998 │
+└──────────┘
                 )"
             }
         };
@@ -414,7 +440,7 @@ Calculates the distance between two points on the Earth's surface using [the gre
                 "SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance",
                 R"(
 ┌─greatCircleDistance─┐
-│            14128352 │
+│  14128352.575065022 │
 └─────────────────────┘
                 )"
             }
@@ -444,9 +470,9 @@ Technical note: for close enough points it calculates the distance using planar 
                 "Basic usage",
                 "SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance",
                 R"(
-┌─geoDistance─┐
-│   212458.73 │
-└─────────────┘
+┌────────geoDistance─┐
+│ 212458.82819586992 │
+└────────────────────┘
                 )"
             }
         };

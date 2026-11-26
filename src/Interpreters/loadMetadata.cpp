@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -20,6 +21,7 @@
 
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -81,6 +83,7 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
+    interpreter.setIsMetadataReplay(true);
     if (!create)
     {
         interpreter.setForceAttach(true);
@@ -181,7 +184,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
             backQuote(actual_name));
     }
 }
-void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
+static void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
 {
     for (const auto & restoring_database_name : restoring_database_names)
     {
@@ -191,9 +194,9 @@ void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std
         String name_quoted = backQuoteIfNeed(restoring_database_name);
         drop_context->setSetting("force_remove_data_recursively_on_drop", false);
 
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(drop_context);
+            query_scope = QueryScope::create(drop_context);
 
         String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
 
@@ -386,9 +389,9 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
         create_database_query_context->makeQueryContext();
         create_database_query_context->setCurrentQueryId("");
 
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(create_database_query_context);
+            query_scope = QueryScope::create(create_database_query_context);
 
         String create_database_query = fmt::format("CREATE DATABASE IF NOT EXISTS {}", tmp_name_quoted);
 
@@ -397,7 +400,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     }
 
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
-    assert(tmp_database->getEngineName() == "Atomic");
+    chassert(tmp_database->getEngineName() == "Atomic");
 
     size_t num_tables = 0;
     std::unordered_set<String> inner_mv_tables;
@@ -437,9 +440,9 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
         move_table_query_context->setCurrentQueryId("");
 
         String move_table_query = fmt::format("RENAME TABLE {} TO {}", qualified_quoted_name, tmp_qualified_quoted_name);
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(move_table_query_context);
+            query_scope = QueryScope::create(move_table_query_context);
 
         auto res = executeQuery(move_table_query, std::move(move_table_query_context), QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
@@ -456,9 +459,9 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
         drop_query_context->setCurrentQueryId("");
         drop_query_context->setSetting("force_remove_data_recursively_on_drop", false);
 
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(drop_query_context);
+            query_scope = QueryScope::create(drop_query_context);
 
         String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
         auto res = executeQuery(drop_query, std::move(drop_query_context), QueryFlags{ .internal = true }).second;
@@ -470,9 +473,9 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     rename_query_context->setCurrentQueryId("");
 
     String rename_query = fmt::format("RENAME DATABASE {} TO {}", tmp_name_quoted, name_quoted);
-    CurrentThread::QueryScope query_scope;
+    QueryScope query_scope;
     if (!CurrentThread::getGroup())
-        query_scope = CurrentThread::QueryScope::create(rename_query_context);
+        query_scope = QueryScope::create(rename_query_context);
 
     auto res = executeQuery(rename_query, std::move(rename_query_context), QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
@@ -544,15 +547,14 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         /// Reload database just in case (and update logger name)
         String detach_query = fmt::format("DETACH DATABASE {}", backQuoteIfNeed(database_name));
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(detach_query_context);
+            query_scope = QueryScope::create(detach_query_context);
 
         auto res = executeQuery(detach_query, std::move(detach_query_context), QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
 
         /// Unlock UUID mapping, because it will be locked again on database reload.
-        /// It's safe to do during metadata loading, because cleanup task is not started yet.
         DatabaseCatalog::instance().removeUUIDMappingFinally(db_uuid);
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
@@ -612,11 +614,11 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     context->removeWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED);
 }
 
-LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database, bool persistent_system_database)
 {
     auto component_guard = Coordination::setCurrentComponent("loadMetadataSystem");
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE,
-        context->getApplicationType() == Context::ApplicationType::SERVER ? "Atomic" : "Memory");
+        context->getApplicationType() == Context::ApplicationType::SERVER || persistent_system_database ? "Atomic" : "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
 

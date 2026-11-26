@@ -10,8 +10,6 @@ class InterpreterSelectQuery;
 class QueryPlan;
 class Block;
 
-using Blocks = std::vector<Block>;
-
 /** Interprets one or multiple SELECT queries inside UNION/UNION ALL/UNION DISTINCT chain.
   */
 class InterpreterSelectWithUnionQuery : public IInterpreterUnionOrSelectQuery
@@ -38,8 +36,8 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreLimits() const override { return options.ignore_limits; }
-    bool ignoreQuota() const override { return options.ignore_quota; }
+    [[nodiscard]] bool ignoreLimits() const override { return options.ignore_limits; }
+    [[nodiscard]] bool ignoreQuota() const override { return options.ignore_quota; }
 
     static SharedHeader getSampleBlock(
         const ASTPtr & query_ptr_,
@@ -49,9 +47,7 @@ public:
 
     void ignoreWithTotals() override;
 
-    bool supportsTransactions() const override { return true; }
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
+    [[nodiscard]] bool supportsTransactions() const override { return true; }
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;

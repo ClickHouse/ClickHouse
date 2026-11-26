@@ -1,0 +1,111 @@
+Token mode — positive text
+0
+0
+(0,0.9986)
+[(0,0.9986),(1,0.0014)]
+Token mode — negative text
+1
+1
+(1,0.9986)
+[(1,0.9986),(0,0.0014)]
+Byte mode — English text
+0
+0
+(0,1)
+[(0,1),(1,0)]
+Byte mode — Dutch text
+1
+1
+(1,0.9974)
+[(1,0.9974),(0,0.0026)]
+Codepoint mode — Latin text
+0
+0
+(0,1)
+[(0,1),(1,0)]
+Codepoint mode — Cyrillic text
+1
+1
+(1,1)
+[(1,1),(0,0)]
+Explicit priors
+1
+1
+(1,0.55)
+[(1,0.55),(0,0.45)]
+0
+0
+(0,0.99)
+[(0,0.99),(1,0.01)]
+Proportional priors
+0
+0
+(0,0.99)
+[(0,0.99),(1,0.01)]
+1
+1
+(1,0.99)
+[(1,0.99),(0,0.01)]
+Small alpha
+0
+0
+(0,0.999)
+[(0,0.999),(1,0.001)]
+1
+1
+(1,0.999)
+[(1,0.999),(0,0.001)]
+Batch dictGet
+awful worst	1
+bad terrible hate	1
+excellent wonderful	0
+good great love	0
+Batch naiveBayesClassifier
+awful worst	1
+bad terrible hate	1
+excellent wonderful	0
+good great love	0
+Batch naiveBayesClassifierWithProb
+awful worst	(1,0.9767)
+bad terrible hate	(1,0.9987)
+excellent wonderful	(0,0.9655)
+good great love	(0,0.9987)
+Batch naiveBayesClassifierWithAllProbs
+awful worst	[(1,0.9767),(0,0.0233)]
+bad terrible hate	[(1,0.9987),(0,0.0013)]
+excellent wonderful	[(0,0.9655),(1,0.0345)]
+good great love	[(0,0.9987),(1,0.0013)]
+Reload dictionary
+0
+0
+(0,0.99)
+[(0,0.99),(1,0.01)]
+Membership via dictHas
+1
+1
+Duplicate ngram accumulation
+0
+1
+(0,0.9443)
+[(0,0.9443),(1,0.0557)]
+Probability invariants
+1
+2
+1
+1
+Read training rows
+alpha	0	3
+beta	0	2
+gamma	1	4
+Still classifies
+0
+Read training rows with class_id as the second attribute
+alpha	3	0
+gamma	4	1
+Function equals dictGet on the configured class attribute name
+1
+1
+Zero-count rows do not change the model
+1
+1
+1

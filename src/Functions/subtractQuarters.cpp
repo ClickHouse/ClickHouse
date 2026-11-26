@@ -42,9 +42,9 @@ SELECT
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
         )",
         R"(
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};

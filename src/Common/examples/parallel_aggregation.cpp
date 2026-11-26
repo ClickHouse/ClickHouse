@@ -3,6 +3,7 @@
 #include <mutex>
 #include <atomic>
 #include <cmath>
+#include <Examples/clickhouse_examples.h>
 
 #if defined(__x86_64__)
 #include <immintrin.h>
@@ -22,6 +23,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 
+#include <Common/CacheLine.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
@@ -29,6 +31,16 @@
 /// Usage example:
 /// for file in UserID URLHash RefererHash WatchID Title SearchPhrase URLDomain ClientIP RegionID; do echo -e "\n---------------------- $file ----------------------\n"; for method in 22 506 507; do ./src/Common/examples/parallel_aggregation 90000000 64 $method < src/Common/examples/${file}.bin; done; done
 
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
+
+namespace
+{
 
 using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
 using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
@@ -40,14 +52,6 @@ using Source = std::vector<Key>;
 
 using Map = HashMap<Key, Value>;
 using MapTwoLevel = TwoLevelHashMap<Key, Value>;
-
-
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
-}
 
 struct SmallLock
 {
@@ -78,9 +82,9 @@ struct SmallLock
     }
 };
 
-struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
+struct alignas(DB::CH_CACHE_LINE_SIZE) AlignedSmallLock : public SmallLock
 {
-    char dummy[64 - sizeof(SmallLock)];
+    char dummy[DB::CH_CACHE_LINE_SIZE - sizeof(SmallLock)];
 };
 
 /// A hash map cell that includes an embedded spinlock for concurrent access
@@ -270,8 +274,8 @@ public:
     /// Increment value for key, using tryEmplace
     bool tryIncrement(const Key & key)
     {
-        Cell * found;
-        bool inserted;
+        Cell * found = nullptr;
+        bool inserted = {};
         if (tryEmplace(key, found, inserted))
         {
             found->lock.lock();
@@ -285,8 +289,8 @@ public:
     /// Blocking increment
     void increment(const Key & key)
     {
-        Cell * found;
-        bool inserted;
+        Cell * found = nullptr;
+        bool inserted = {};
         emplace(key, found, inserted);
         found->lock.lock();
         ++found->getMapped();
@@ -296,8 +300,8 @@ public:
     /// Access operator (creates default if not exists)
     Mapped & operator[](const Key & key)
     {
-        Cell * found;
-        bool inserted;
+        Cell * found = nullptr;
+        bool inserted = {};
         emplace(key, found, inserted);
         return found->getMapped();
     }
@@ -350,7 +354,7 @@ public:
 
         Cell() : probe_distance(EMPTY_MARKER) {}
 
-        bool isEmpty() const { return probe_distance == EMPTY_MARKER; }
+        [[nodiscard]] bool isEmpty() const { return probe_distance == EMPTY_MARKER; }
         void setEmpty() { probe_distance = EMPTY_MARKER; }
     };
 
@@ -360,9 +364,9 @@ private:
     size_t m_size = 0;
     Hash hash_func;
 
-    size_t mask() const { return (1ULL << size_degree) - 1; }
-    size_t capacity() const { return 1ULL << size_degree; }
-    size_t idealPosition(size_t hash_value) const { return hash_value & mask(); }
+    [[nodiscard]] size_t mask() const { return (1ULL << size_degree) - 1; }
+    [[nodiscard]] size_t capacity() const { return 1ULL << size_degree; }
+    [[nodiscard]] size_t idealPosition(size_t hash_value) const { return hash_value & mask(); }
 
     void resize()
     {
@@ -378,7 +382,7 @@ private:
                 Cell * result = nullptr;
                 bool inserted = false;
                 emplaceNoResize(cell.key, result, inserted);
-                assert(result != nullptr);
+                chassert(result != nullptr);
                 if (inserted)
                     result->value = cell.value;
                 else
@@ -463,7 +467,7 @@ public:
         buf.resize(1ULL << size_degree);
     }
 
-    size_t size() const { return m_size; }
+    [[nodiscard]] size_t size() const { return m_size; }
 
     /// Prefetch for a key
     void prefetch(const Key & key) const
@@ -567,8 +571,8 @@ public:
 
     Mapped & operator[](const Key & key)
     {
-        Cell * cell;
-        bool inserted;
+        Cell * cell = nullptr;
+        bool inserted = {};
         emplace(key, cell, inserted);
         return cell->value;
     }
@@ -595,7 +599,7 @@ public:
         Cell & operator*() const { return *ptr; }
         Cell * operator->() const { return ptr; }
 
-        const Key & getKey() const { return ptr->key; }
+        [[nodiscard]] const Key & getKey() const { return ptr->key; }
         Mapped & getMapped() { return ptr->value; }
     };
 
@@ -636,7 +640,7 @@ private:
     static size_t H1(size_t hash) { return hash >> 7; }
     static int8_t H2(size_t hash) { return hash & 0x7F; }  /// 7 bits, always positive
 
-    size_t mask() const { return capacity - 1; }
+    [[nodiscard]] size_t mask() const { return capacity - 1; }
 
 #if defined(__x86_64__)
     /// Find matching positions in a group using SSE
@@ -723,7 +727,7 @@ public:
         slots.resize(capacity);
     }
 
-    size_t size() const { return m_size; }
+    [[nodiscard]] size_t size() const { return m_size; }
 
     void prefetch(const Key & key) const
     {
@@ -749,8 +753,8 @@ public:
         {
             if (old_ctrl[i] >= 0)  /// Not empty or deleted
             {
-                Slot * result;
-                bool inserted;
+                Slot * result = nullptr;
+                bool inserted = {};
                 emplace(old_slots[i].key, result, inserted);
                 if (inserted)
                     result->value = old_slots[i].value;
@@ -848,8 +852,8 @@ public:
 
     Mapped & operator[](const Key & key)
     {
-        Slot * slot;
-        bool inserted;
+        Slot * slot = nullptr;
+        bool inserted = {};
         emplace(key, slot, inserted);
         return slot->value;
     }
@@ -884,7 +888,7 @@ public:
         Slot & operator*() const { return slot_base[idx]; }
         Slot * operator->() const { return &slot_base[idx]; }
 
-        const Key & getKey() const { return slot_base[idx].key; }
+        [[nodiscard]] const Key & getKey() const { return slot_base[idx].key; }
         Mapped & getMapped() { return slot_base[idx].value; }
     };
 
@@ -930,9 +934,9 @@ public:
         return (hash_value >> (64 - 8)) & 0xFF;  /// Top 8 bits
     }
 
-    size_t hash(const Key & key) const { return hash_func(key); }
+    [[nodiscard]] size_t hash(const Key & key) const { return hash_func(key); }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         size_t result = 0;
         for (size_t i = 0; i < NUM_BUCKETS; ++i)
@@ -1001,9 +1005,9 @@ public:
         return (hash_value >> (64 - 8)) & 0xFF;  /// Top 8 bits
     }
 
-    size_t hash(const Key & key) const { return hash_func(key); }
+    [[nodiscard]] size_t hash(const Key & key) const { return hash_func(key); }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         size_t result = 0;
         for (size_t i = 0; i < NUM_BUCKETS; ++i)
@@ -1114,15 +1118,15 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
     {
         if (prev_it != end && *it == *prev_it)
         {
-            assert(found != nullptr);
+            chassert(found != nullptr);
             ++found->getMapped();
             continue;
         }
         prev_it = it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
-        assert(found != nullptr);
+        chassert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -1209,7 +1213,7 @@ void aggregate2PrefetchSeq(MapTwoLevel & map, Source::const_iterator begin, Sour
         first = false;
         prev_key = *it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
         ++found->getMapped();
     }
@@ -1225,7 +1229,7 @@ void aggregate2PrefetchSeq(MapTwoLevel & map, Source::const_iterator begin, Sour
         first = false;
         prev_key = *it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
         ++found->getMapped();
     }
@@ -1240,16 +1244,16 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
     {
         if (!first && *it == *prev_it)
         {
-            assert(found != nullptr);
+            chassert(found != nullptr);
             ++found->getMapped();
             continue;
         }
         first = false;
         prev_it = it;
 
-        bool inserted;
+        bool inserted = {};
         map.emplace(*it, found, inserted);
-        assert(found != nullptr);
+        chassert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -1323,8 +1327,8 @@ void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const
 
     for (auto it = begin; it != end; ++it)
     {
-        Map::LookupResult found;
-        bool inserted;
+        Map::LookupResult found = {};
+        bool inserted = {};
         local_map.emplace(*it, found, inserted);
         ++found->getMapped();
 
@@ -1399,8 +1403,8 @@ void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_itera
             ++local_map[*it];
         else
         {
-            MapSmallLocks::Cell * cell;
-            bool inserted;
+            MapSmallLocks::Cell * cell = nullptr;
+            bool inserted = {};
 
             if (global_map.tryEmplace(*it, cell, inserted))
             {
@@ -1564,8 +1568,9 @@ void mergeTwoLevelSwiss(MapTwoLevelSwiss * maps, size_t num_threads, size_t buck
 }
 #endif
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleParallelAggregation(int argc, char ** argv)
 {
     size_t n = std::stol(argv[1]);
     size_t num_threads = std::stol(argv[2]);

@@ -1,9 +1,10 @@
-#ifdef OS_LINUX /// Because of 'rt_tgsigqueueinfo' functions and RT signals.
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <poll.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <chrono>
 #include <mutex>
-#include <filesystem>
 #include <unordered_map>
 #include <memory>
 
@@ -13,19 +14,20 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
-#include <Common/SymbolIndex.h>
 #include <Common/ErrnoException.h>
+
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -35,8 +37,24 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <sys/syscall.h>
 
+#ifdef OS_LINUX
+#include <filesystem>
+#include <IO/ReadBufferFromFile.h>
+#include <sys/syscall.h>
+#endif
+
+#ifdef OS_DARWIN
+#include <mach/mach.h>
+#include <pthread.h>
+#endif
+
+/// `errno` from glibc expands as `#define errno (*__errno_location())` and
+/// triggers `-Wdisabled-macro-expansion`. The macro is referenced in many
+/// places below (signal handler, errno checks after libc calls), so we keep
+/// the suppression file-wide rather than wrapping every single use.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -51,7 +69,6 @@ namespace ErrorCodes
     extern const int CANNOT_MANIPULATE_SIGSET;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
 }
 
@@ -59,29 +76,36 @@ namespace ErrorCodes
 namespace
 {
 
+/** Notes:
+  * Only one collection of stack traces can run at the moment of time.
+  * This is ensured by the mutex below, which StackTraceSource holds while it fills one block only:
+  * a single query plan can read this table more than once, on one thread.
+  * On Linux, we obtain information about threads by sending signal and receiving info from the signal handler.
+  * Information is passed via global variables and pipe is used for signaling.
+  * Actually we can send all information via pipe, but we read from it with timeout just in case,
+  * so it's convenient to use it only for signaling.
+  */
+std::timed_mutex mutex;
+
+constexpr size_t max_query_id_size = 128;
+
+#ifdef OS_LINUX
 // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
 std::atomic<pid_t> server_pid;
-const int STACK_TRACE_SERVICE_SIGNAL = SIGRTMIN;
 
 std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 std::atomic<int> data_ready_num = 0;
 std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
 
-/** Notes:
-  * Only one query from the table can be processed at the moment of time.
-  * This is ensured by the mutex in StorageSystemStackTraceSource.
-  * We obtain information about threads by sending signal and receiving info from the signal handler.
-  * Information is passed via global variables and pipe is used for signaling.
-  * Actually we can send all information via pipe, but we read from it with timeout just in case,
-  * so it's convenient to use it only for signaling.
-  */
-std::mutex mutex;
+/// strsignal is not thread-safe and the description never changes, so it is resolved once.
+const std::string signal_description = strsignal(STACK_TRACE_SERVICE_SIGNAL); /// NOLINT(concurrency-mt-unsafe)
 
 StackTrace stack_trace{NoCapture{}};
 
-constexpr size_t max_query_id_size = 128;
 char query_id_data[max_query_id_size];
 size_t query_id_size = 0;
+
+Int64 untracked_memory_data = 0;
 
 LazyPipeFDs notification_pipe;
 
@@ -109,14 +133,28 @@ void signalHandler(int, siginfo_t * info, void * context)
     if (!signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire))
         return;
 
+    /// Re-check under the latch: a handler delayed past the reader's timeout must not overwrite the next thread's data.
+    const bool still_expected = notification_num == sequence_num.load(std::memory_order_acquire);
+    if (!still_expected)
+    {
+        signal_latch.store(false, std::memory_order_release);
+        errno = saved_errno;
+        return;
+    }
+
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+    /// The ucontext StackTrace constructor recovers internally from a fault while unwinding the
+    /// target thread (e.g. off a frame-pointer-less libsystem frame or a fiber stack on macOS),
+    /// yielding an empty trace instead of crashing the server.
     stack_trace = StackTrace(signal_context);
 
     auto query_id = CurrentThread::getQueryId();
     query_id_size = std::min(query_id.size(), max_query_id_size);
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
+
+    untracked_memory_data = current_thread ? current_thread->untracked_memory.load() : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -134,19 +172,33 @@ void signalHandler(int, siginfo_t * info, void * context)
 /// Wait for data in pipe and read it.
 bool wait(int timeout_ms)
 {
+    /// Deduct the time actually spent rather than one millisecond per `EINTR`: the old counter gave up
+    /// long before the deadline under dense signals, needed thousands of interruptions to expire under
+    /// sparse ones, and - because it tested for equality with zero - could step past zero into
+    /// `poll(fd, 1, -1)`, waiting forever. Same accounting as `ReadBufferFromFileDescriptor::poll`.
+    const UInt64 timeout_microseconds = timeout_ms > 0 ? static_cast<UInt64>(timeout_ms) * 1000 : 0;
+    int remaining_ms = timeout_ms;
+    Stopwatch watch;
+
     while (true)
     {
         int fd = notification_pipe.fds_rw[0];
         pollfd poll_fd{fd, POLLIN, 0};
 
-        int poll_res = poll(&poll_fd, 1, timeout_ms);
+        int poll_res = poll(&poll_fd, 1, remaining_ms);
         if (poll_res < 0)
         {
             if (errno == EINTR)
             {
-                --timeout_ms;   /// Quite a hacky way to update timeout. Just to make sure we avoid infinite waiting.
-                if (timeout_ms == 0)
+                /// No positive deadline to exhaust (a non-blocking probe, or an indefinite wait):
+                /// retry the probe instead of letting a signal decide the outcome.
+                if (timeout_microseconds == 0)
+                    continue;
+
+                const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+                if (elapsed_microseconds >= timeout_microseconds)
                     return false;
+                remaining_ms = static_cast<int>((timeout_microseconds - elapsed_microseconds + 999) / 1000);
                 continue;
             }
 
@@ -176,8 +228,11 @@ bool wait(int timeout_ms)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
     }
 }
+#endif
 
 using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
+
+#ifdef OS_LINUX
 ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, LoggerPtr log)
 {
     ThreadIdToName tid_to_name;
@@ -195,10 +250,10 @@ ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, Contex
             readEscapedStringUntilEOL(thread_name, comm);
             comm.close();
         }
-        catch (const Exception & e)
+        catch (const ErrnoException & e)
         {
             /// Ignore TOCTOU error
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            if (e.getErrno() == ENOENT || e.getErrno() == ESRCH)
                 continue;
             throw;
         }
@@ -259,25 +314,82 @@ bool isSignalBlocked(UInt64 tid, int signal)
         line = line.substr(strlen("SigBlk:"));
         line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
 
-        UInt64 sig_blk;
+        UInt64 sig_blk = 0;
         if (parseHexNumber(line, sig_blk))
-            return sig_blk & signal;
+            return sig_blk & (1ULL << (signal - 1));
     }
-    catch (const Exception & e)
+    catch (const ErrnoException & e)
     {
         /// Ignore TOCTOU error
-        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+        if (e.getErrno() != ENOENT && e.getErrno() != ESRCH)
             throw;
     }
 
     return false;
 }
+#endif
 
-/// Send a signal to every thread and wait for result.
+#ifdef OS_DARWIN
+ThreadIdToName getFilteredThreadNames(
+    const ActionsDAG::Node * predicate,
+    ContextPtr context,
+    const PaddedPODArray<UInt64> & thread_ids,
+    const std::unordered_map<UInt64, mach_port_t, DefaultHash<UInt64>> & tid_to_mach_thread,
+    LoggerPtr log)
+{
+    ThreadIdToName tid_to_name;
+    MutableColumnPtr all_thread_names = ColumnString::create();
+
+    Stopwatch watch;
+    for (UInt64 tid : thread_ids)
+    {
+        auto it = tid_to_mach_thread.find(tid);
+        if (it == tid_to_mach_thread.end())
+            continue;
+
+        /// Null once the thread has exited.
+        pthread_t thread = pthread_from_mach_thread_np(it->second);
+        char name_buf[256];
+        if (!thread || pthread_getname_np(thread, name_buf, sizeof(name_buf)) != 0)
+            continue;
+
+        String thread_name(name_buf);
+        tid_to_name[tid] = thread_name;
+        all_thread_names->insert(thread_name);
+    }
+    LOG_TRACE(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
+
+    Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+    ColumnPtr thread_names = std::move(block.getByPosition(0).column);
+
+    std::unordered_set<String> filtered_thread_names;
+    for (size_t i = 0; i != thread_names->size(); ++i)
+    {
+        const auto & thread_name = thread_names->getDataAt(i);
+        filtered_thread_names.emplace(thread_name);
+    }
+
+    for (auto it = tid_to_name.begin(); it != tid_to_name.end();)
+    {
+        if (!filtered_thread_names.contains(it->second))
+            it = tid_to_name.erase(it);
+        else
+            ++it;
+    }
+
+    return tid_to_name;
+}
+#endif
+
+/// Linux: send a signal to every thread and wait for result.
 /// We must wait for every thread one by one sequentially,
 ///  because there is a limit on number of queued signals in OS and otherwise signals may get lost.
 /// Also, non-RT signals are not delivered if previous signal is handled right now (by default; but we use RT signals).
-class StackTraceSource : public ISource
+/// macOS: stop every thread in turn with `thread_suspend` and read its stack and state directly. No
+/// signal is sent: one delivered to a thread waiting on a Darwin psynch lock can make the lock lose
+/// the wakeup and deadlock the process (Apple FB24027930).
+class StackTraceSource final : public ISource
 {
 public:
     StackTraceSource(
@@ -296,23 +408,40 @@ public:
         , pipe_read_timeout_ms(
               static_cast<int>(context->getSettingsRef()[Setting::storage_system_stack_trace_pipe_read_timeout_ms].totalMilliseconds()))
         , log(log_)
+#ifdef OS_LINUX
         , proc_it("/proc/self/task")
-        /// It shouldn't be possible to do concurrent reads from this table.
-        , lock(mutex)
-        , signal_str(strsignal(STACK_TRACE_SERVICE_SIGNAL)) /// NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
+#endif
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
-        send_signal = names_set.contains("trace") || names_set.contains("query_id");
+        send_signal = names_set.contains("trace") || names_set.contains("query_id") || names_set.contains("untracked_memory");
         read_thread_names = names_set.contains("thread_name");
+
+#ifdef OS_DARWIN
+        enumerateThreads();
+#endif
     }
+
+#ifdef OS_DARWIN
+    ~StackTraceSource() override
+    {
+        for (const auto & [tid, mach_thread] : tid_to_mach_thread)
+            mach_port_deallocate(mach_task_self(), mach_thread);
+    }
+#endif
 
     String getName() const override { return "StackTrace"; }
 
 protected:
     Chunk generate() override
     {
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
+        /// The signal protocol passes data through process-global state, so collections must not
+        /// overlap. One block at a time is enough, and one plan may read this table twice on one thread.
+        std::unique_lock lock(mutex, std::defer_lock);
+        while (!lock.try_lock_for(std::chrono::milliseconds(50)))
+            if (isCancelled())
+                return {};
+
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -329,10 +458,19 @@ protected:
         /// NOTE: This is racy, so you may get incorrect thread_name.
         ThreadIdToName thread_names;
         if (read_thread_names)
+        {
+#ifdef OS_LINUX
             thread_names = getFilteredThreadNames(predicate, context, thread_ids_data, log);
+#else
+            thread_names = getFilteredThreadNames(predicate, context, thread_ids_data, tid_to_mach_thread, log);
+#endif
+        }
 
         for (UInt64 tid : thread_ids_data)
         {
+            if (isCancelled())
+                return {};
+
             size_t res_index = 0;
 
             String thread_name;
@@ -350,9 +488,11 @@ protected:
                 res_columns[res_index++]->insert(tid);
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
+                res_columns[res_index++]->insertDefault();
             }
             else
             {
+#ifdef OS_LINUX
                 /// NOTE: This check is racy (thread can be
                 /// destroyed/replaced/...), but it is OK, since only the
                 /// following could happen:
@@ -363,10 +503,10 @@ protected:
                 bool signal_blocked = isSignalBlocked(tid, STACK_TRACE_SERVICE_SIGNAL);
                 if (!signal_blocked)
                 {
-                    ++signals_sent;
+                    ++threads_captured;
                     Stopwatch watch;
                     SCOPE_EXIT({
-                        signals_sent_ms += watch.elapsedMilliseconds();
+                        threads_captured_ms += watch.elapsedMilliseconds();
 
                         /// Signed integer overflow is undefined behavior in both C and C++. However, according to
                         /// C++ standard, Atomic signed integer arithmetic is defined to use two's complement; there
@@ -399,25 +539,20 @@ protected:
                         Array arr;
                         arr.reserve(stack_trace_size - stack_trace_offset);
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                        {
-                            const void * virtual_addr = frame_pointers[i];
-                            const auto * object = symbol_index.findObject(virtual_addr);
-                            uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-                            uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
-                            arr.emplace_back(physical_addr);
-                        }
+                            arr.emplace_back(StackTrace::resolveAddressForStorage(frame_pointers[i]));
 
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);
                         res_columns[res_index++]->insertData(query_id_data, query_id_size);
                         res_columns[res_index++]->insert(arr);
+                        res_columns[res_index++]->insert(untracked_memory_data);
 
                         continue;
                     }
                 }
 
                 if (signal_blocked)
-                    LOG_DEBUG(log, "Thread {} ({}) blocks SIG{} signal", tid, thread_name, signal_str);
+                    LOG_DEBUG(log, "Thread {} ({}) blocks SIG{} signal", tid, thread_name, signal_description);
                 else
                     LOG_DEBUG(log, "Cannot obtain a stack trace for thread {} ({})", tid, thread_name);
 
@@ -425,9 +560,74 @@ protected:
                 res_columns[res_index++]->insert(tid);
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
+                res_columns[res_index++]->insertDefault();
+#else
+                ++threads_captured;
+                Stopwatch watch;
+                SCOPE_EXIT({ threads_captured_ms += watch.elapsedMilliseconds(); });
+
+                auto it = tid_to_mach_thread.find(tid);
+                if (it == tid_to_mach_thread.end())
+                    continue;
+                auto handle = StackTrace::ThreadHandle::fromMachThread(it->second);
+                if (!handle)
+                    continue; /// the thread has exited
+
+                StackTrace stack_trace{NoCapture{}};
+                char query_id_data[max_query_id_size];
+                size_t query_id_size = 0;
+                Int64 untracked_memory = 0;
+
+                if (handle->thread == pthread_self())
+                {
+                    stack_trace = StackTrace();
+                    auto query_id = CurrentThread::getQueryId();
+                    query_id_size = std::min(query_id.size(), max_query_id_size);
+                    memcpy(query_id_data, query_id.data(), query_id_size);
+                    untracked_memory = CurrentThread::isInitialized() ? CurrentThread::get().untracked_memory.load() : 0;
+                }
+                else
+                {
+                    /// Taken before the thread is stopped, so the stopped thread can never hold it. No
+                    /// allocation may happen until the thread is resumed: it may hold malloc's lock.
+                    auto [registry_lock, thread_status] = ThreadStatus::findByThreadId(tid);
+                    StackTrace::SuspendedThread suspended(*handle);
+                    stack_trace = suspended.captureStackTrace();
+                    if (suspended.isSuspended() && thread_status)
+                    {
+                        auto query_id = thread_status->getQueryId();
+                        query_id_size = std::min(query_id.size(), max_query_id_size);
+                        memcpy(query_id_data, query_id.data(), query_id_size);
+                        untracked_memory = thread_status->untracked_memory.load();
+                    }
+                }
+
+                if (stack_trace.getSize() != 0)
+                {
+                    Array arr;
+                    arr.reserve(stack_trace.getSize());
+                    for (size_t i = 0; i < stack_trace.getSize(); ++i)
+                        arr.emplace_back(StackTrace::resolveAddressForStorage(stack_trace.getFramePointers()[i]));
+
+                    res_columns[res_index++]->insert(thread_name);
+                    res_columns[res_index++]->insert(tid);
+                    res_columns[res_index++]->insertData(query_id_data, query_id_size);
+                    res_columns[res_index++]->insert(arr);
+                    res_columns[res_index++]->insert(untracked_memory);
+                    continue;
+                }
+
+                LOG_DEBUG(log, "Cannot obtain a stack trace for thread {} ({})", tid, thread_name);
+
+                res_columns[res_index++]->insert(thread_name);
+                res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
+                res_columns[res_index++]->insertDefault();
+                res_columns[res_index++]->insertDefault();
+#endif
             }
         }
-        LOG_TRACE(log, "Send signal to {} threads (total), took {} ms", signals_sent, signals_sent_ms);
+        LOG_TRACE(log, "Captured stack traces of {} threads (total), took {} ms", threads_captured, threads_captured_ms);
 
         UInt64 num_rows = res_columns.at(0)->size();
         Chunk chunk(std::move(res_columns), num_rows);
@@ -447,19 +647,66 @@ private:
 
     LoggerPtr log;
 
+#ifdef OS_LINUX
     std::filesystem::directory_iterator proc_it;
     std::filesystem::directory_iterator end;
+#elif defined(OS_DARWIN)
+    /// The ports are held until the source is destroyed: a port of a thread that has exited meanwhile
+    /// stays valid and just makes the Mach calls fail, unlike its pthread_t, which dangles.
+    std::unordered_map<UInt64, mach_port_t, DefaultHash<UInt64>> tid_to_mach_thread;
+    PaddedPODArray<UInt64> enumerated_tids;
+    size_t tid_index = 0;
 
-    size_t signals_sent = 0;
-    size_t signals_sent_ms = 0;
+    void enumerateThreads()
+    {
+        thread_act_array_t thread_list;
+        mach_msg_type_number_t thread_count;
+        kern_return_t kr = task_threads(mach_task_self(), &thread_list, &thread_count);
+        if (kr != KERN_SUCCESS)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "task_threads failed: {}", mach_error_string(kr));
 
-    std::unique_lock<std::mutex> lock;
-    const char * signal_str;
+        /// Every port right is released exactly once: by the map's owner (the destructor) once stored,
+        /// here otherwise. The destructor does not run if this constructor-time call throws.
+        mach_msg_type_number_t i = 0;
+        SCOPE_EXIT({
+            for (; i < thread_count; ++i)
+                mach_port_deallocate(mach_task_self(), thread_list[i]);
+            vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(thread_list), sizeof(thread_act_t) * thread_count);
+        });
+
+        try
+        {
+            for (; i < thread_count; ++i)
+            {
+                pthread_t pt = pthread_from_mach_thread_np(thread_list[i]);
+                uint64_t tid = 0;
+                if (!pt || pthread_threadid_np(pt, &tid) != 0)
+                {
+                    mach_port_deallocate(mach_task_self(), thread_list[i]);
+                    continue;
+                }
+                enumerated_tids.push_back(tid);
+                tid_to_mach_thread[tid] = thread_list[i]; /// throws only before storing; the SCOPE_EXIT then releases port i
+            }
+        }
+        catch (...)
+        {
+            for (const auto & [tid, mach_thread] : tid_to_mach_thread)
+                mach_port_deallocate(mach_task_self(), mach_thread);
+            tid_to_mach_thread.clear();
+            throw;
+        }
+    }
+#endif
+
+    size_t threads_captured = 0;
+    size_t threads_captured_ms = 0;
 
     ColumnPtr getFilteredThreadIds()
     {
         MutableColumnPtr all_thread_ids = ColumnUInt64::create();
 
+#ifdef OS_LINUX
         size_t i = 0;
         /// There is no better way to enumerate threads in a process other than looking into procfs.
         for (; i < max_block_size && proc_it != end; ++proc_it, ++i)
@@ -467,6 +714,13 @@ private:
             pid_t tid = parse<pid_t>(proc_it->path().filename());
             all_thread_ids->insert(tid);
         }
+#elif defined(OS_DARWIN)
+        size_t i = 0;
+        for (; i < max_block_size && tid_index < enumerated_tids.size(); ++tid_index, ++i)
+        {
+            all_thread_ids->insert(enumerated_tids[tid_index]);
+        }
+#endif
 
         Block block { ColumnWithTypeAndName(std::move(all_thread_ids), std::make_shared<DataTypeUInt64>(), "thread_id") };
         VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
@@ -478,7 +732,7 @@ private:
 class ReadFromSystemStackTrace : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromSystemStackTrace"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemStackTrace"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -517,7 +771,7 @@ private:
 
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , log(getLogger("StorageSystemStackTrace"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -525,10 +779,14 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Except on FreeBSD, addresses inside the main ClickHouse binary "
+            "are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
+#ifdef OS_LINUX
     notification_pipe.open();
 
     /// Setup signal handler.
@@ -537,18 +795,40 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     sa.sa_sigaction = signalHandler;
     sa.sa_flags = SA_SIGINFO;
 
+    /// On macOS, sigemptyset and sigaddset are macros that always return 0.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
     if (sigemptyset(&sa.sa_mask))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
     if (sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
+    /// This handler captures through StackTrace(ucontext), sharing one thread-local async-unwind recovery
+    /// (asynchronous_stack_unwinding + sigjmp_buf in StackTrace) with the query profiler and the debug
+    /// SIGTSTP stack dumper. Block their signals (SIGUSR1/SIGUSR2 profilers, SIGTSTP) while it runs so
+    /// none can nest and clobber that buffer, which would make the next fault's siglongjmp jump to the
+    /// wrong frame (or, if SIGTSTP cleared the flag on return, turn a recoverable unwind fault into a
+    /// fatal crash).
+    if (sigaddset(&sa.sa_mask, SIGUSR1) || sigaddset(&sa.sa_mask, SIGUSR2) || sigaddset(&sa.sa_mask, SIGTSTP))
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
+#pragma clang diagnostic pop
+
     if (sigaction(STACK_TRACE_SERVICE_SIGNAL, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+#endif
 }
 
 
-void StorageSystemStackTrace::read(
+VirtualColumnsDescription StorageSystemStackTrace::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemStackTrace::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -567,5 +847,11 @@ void StorageSystemStackTrace::read(
 }
 
 }
+
+#pragma clang diagnostic pop
+
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStackTrace) }
 
 #endif

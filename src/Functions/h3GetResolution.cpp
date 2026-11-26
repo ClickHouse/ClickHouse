@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -9,8 +9,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -23,33 +21,38 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetResolution : public IFunction
+class FunctionH3GetResolution final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetResolution";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetResolution>(); }
+    H3Validator validator;
 
-    std::string getName() const override { return name; }
+    explicit FunctionH3GetResolution(const ContextPtr & context) : validator(context) {}
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetResolution>(context); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] std::string getName() const override { return name; }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{{"h3Index", &isUInt64, nullptr, "UInt64"}};
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        return "(UInt64) -> UInt8";
+    }
 
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -74,7 +77,9 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            auto res = static_cast<UInt8>(getResolution(hindex));
+            UInt8 res = 0;
+            if (validator.validateCell(hindex))
+                res = static_cast<UInt8>(getResolution(hindex));
 
             dst_data[row] = res;
         }
@@ -95,7 +100,7 @@ Returns the resolution of the [H3](#h3-index) index.
         {"index", "Hexagon index number.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the resolution of the H3 index with range `[0, 15]`.",
+        "Returns the resolution of the H3 index with range `[0, 15]`. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting).",
         {"UInt8"}
     };
     FunctionDocumentation::Examples examples = {

@@ -27,3 +27,7 @@ select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in (8193, 163
 
 -- Corner cases
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [materialize('all_1_1_0')]); -- { serverError BAD_ARGUMENTS }
+
+-- Constant expressions (non-literal) should be evaluated via evaluateConstantExpressionAsLiteral
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [concat('all', '_1_1_0')]);
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [toString('all_1_1_0')]);

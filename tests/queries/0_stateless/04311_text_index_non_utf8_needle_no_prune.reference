@@ -1,0 +1,20 @@
+-- multiSearchAny with a non-UTF-8 needle must not prune the matching granule (expect 1 and 1)
+1
+1
+-- multiSearchAnyUTF8 with a non-UTF-8 needle must not prune the matching granule (expect 1 and 1)
+1
+1
+-- match with a non-UTF-8 pattern must not prune the matching granule (expect 1 and 1)
+1
+1
+-- multiMatchAny rejects a non-UTF-8 pattern; the index must raise the same exception, not prune
+-- one non-UTF-8 needle in the OR-set disables pruning for the whole multiSearchAny (expect 1 and 1)
+1
+1
+-- valid UTF-8 needles still use the index and return the matching rows
+2
+3
+3
+-- a valid multi-byte UTF-8 needle is code-point aligned and matches through the index (expect 1 and 1)
+1
+1

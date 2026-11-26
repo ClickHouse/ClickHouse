@@ -1,0 +1,243 @@
+---
+description: 'Geometry 関数のドキュメント'
+sidebarTitle: 'Geometry'
+slug: /sql-reference/functions/geo/geometry
+title: 'Geometry を扱う関数'
+doc_type: 'reference'
+---
+
+## Geometry {#geometry}
+
+Geometry 関数では、POLYGON、LINESTRING、MULTIPOLYGON、MULTILINESTRING、RING、POINT などの幾何型の周長、面積、長さを計算できます。ジオメトリは Geometry 型で使用します。入力値が `NULL` の場合、以下のすべての関数は 0 を返します。
+
+## perimeterCartesian {#perimetercartesian}
+
+デカルト座標系 (平面) における、指定されたGeometryオブジェクトの周長を計算します。
+
+**構文**
+
+```sql
+perimeterCartesian(geom)
+```
+
+**引数**
+
+* `geom` — Geometry オブジェクト。[Geometry](/ja/reference/data-types/geo)。
+
+**戻り値**
+
+* 数値 — 座標系の単位で表したオブジェクトの周長。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT perimeterCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterCartesian(geom)─┐
+│ 4.0                      │
+└──────────────────────────┘
+```
+
+## areaCartesian {#areacartesian}
+
+指定されたGeometryオブジェクトの面積をデカルト座標系で計算します。
+
+**構文**
+
+```sql
+areaCartesian(geom)
+```
+
+**引数**
+
+* `geom` — Geometryオブジェクト。[Geometry](/ja/reference/data-types/geo)。
+
+**戻り値**
+
+* 数値 — オブジェクトの面積 (座標系の単位) 。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaCartesian(geom)─┐
+│ -1                  │
+└─────────────────────┘
+```
+
+## perimeterSpherical {#perimeterspherical}
+
+球面上の Geometry オブジェクトの周長を計算します。
+
+**構文**
+
+```sql
+perimeterSpherical(geom)
+```
+
+**引数**
+
+* `geom` — Geometryオブジェクト。[Geometry](/ja/reference/data-types/geo)。
+
+**戻り値**
+
+* 数値 — 半径 1 の球面上における周長 (ラジアン単位。座標は度単位の経度・緯度) 。長さに換算するには球の半径を掛けます。たとえば、地球上の長さをキロメートル単位で求める場合は 6371 を掛けます。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
+SELECT perimeterSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterSpherical(geom)─┐
+│      0.06981051179132045 │
+└──────────────────────────┘
+```
+
+## areaSpherical {#areaspherical}
+
+球面上のGeometryオブジェクトの面積を計算します。
+
+**構文**
+
+```sql
+areaSpherical(geom)
+```
+
+**引数**
+
+* `geom` — Geometry。[Geometry](/ja/reference/data-types/geo)。
+
+**戻り値**
+
+* 数値 — 半径1の球面上における面積 (単位はステラジアン。座標は度単位の経度と緯度) 。実際の面積を求めるには、球の半径の2乗を掛けます。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaSpherical(geom)────┐
+│ -0.0003046096848622019 │
+└────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+デカルト (フラット) 座標系において、Geometry オブジェクトの線の長さ、すなわち連続する点の間の距離の合計を計算します。
+`MultiLineString` では各線の長さの合計となり、`Ring` はその点を結ぶ線として測定されます。型名のない点の配列も `Ring` 型となるため、同様に扱われます。
+点、ポリゴン、マルチポリゴンには長さがないため、この関数は 0 を返します。ポリゴンの周長を求めるには [perimeterCartesian](#perimetercartesian) を使用してください。
+点の配列の配列を測定するには、`MultiLineString` にキャストしてください。型名がない場合は `Polygon` 型となります。
+
+別名: `ST_Length`。
+
+**構文**
+
+```sql
+lengthCartesian(geom)
+```
+
+**引数**
+
+* `geom` — Geometry オブジェクト。[Geometry](/ja/reference/data-types/geo)。
+
+**戻り値**
+
+* 数値 — 座標系の単位で表した線の長さ。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+球面上における Geometry オブジェクトの線の長さを計算します。点は度単位の (経度, 緯度) で指定します。
+結果はラジアン単位の角度で、[perimeterSpherical](#perimeterspherical) の結果と同様に、半径 1 の球面上での長さを表します。
+メートル単位の近似値を得るには、地球の平均半径である 6371008.8 メートルを掛けてください。正確な値が必要な場合は [lengthSpheroid](#lengthspheroid) を使用してください。
+[lengthCartesian](#lengthcartesian) と同様に、点、ポリゴン、マルチポリゴンに対しては 0 を返します。
+
+**構文**
+
+```sql
+lengthSpherical(geom)
+```
+
+**引数**
+
+* `geom` — Geometry オブジェクト。[Geometry](/ja/reference/data-types/geo)。
+
+**戻り値**
+
+* 数値 — 線の長さ (ラジアン単位) 。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+Geometry オブジェクトに含まれる線の長さを、GPS で使用される地球モデルである WGS84 回転楕円体上でメートル単位で計算します。点は度単位の (経度, 緯度) で指定します。
+各セグメントは回転楕円体上の 2 点間の最短経路 (測地線) であり、GeographicLib と同様に Karney のアルゴリズムで計算されます。
+[lengthCartesian](#lengthcartesian) と同様に、点、ポリゴン、マルチポリゴンに対しては 0 を返します。
+DuckDB の `ST_Length_Spheroid` の入力のように (緯度, 経度) の順で保存された座標は、先に [flipCoordinates](/ja/reference/functions/regular-functions/geo/flipCoordinates) で入れ替えてください。入れ替えないと、別の線の長さが結果として返されます。
+座標が NaN または無限大の場合、あるいは緯度が [-90, 90] の範囲外の場合、結果は NaN になります。
+
+**構文**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**引数**
+
+* `geom` — Geometry オブジェクト。[Geometry](/ja/reference/data-types/geo)。
+
+**戻り値**
+
+* 数値 — 線の長さ (メートル単位) 。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+ロンドンからパリを経由してベルリンに至る線の長さ：
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
+```

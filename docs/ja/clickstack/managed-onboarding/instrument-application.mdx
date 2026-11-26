@@ -1,0 +1,55 @@
+---
+slug: /use-cases/observability/clickstack/instrument-application
+title: 'ClickHouse オブザーバビリティを使って 5 分でアプリケーションをインストルメントする'
+sidebarTitle: 'アプリケーションをインストルメントする'
+description: 'Node.js アプリケーションを OpenTelemetry でインストルメントし、ログ、メトリクス、トレースを自前の collector 経由でセルフマネージド環境の ClickHouse オブザーバビリティに送信します'
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'self-managed', 'ClickHouse Observability', 'sdk', 'nodejs', 'agent']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import InstrumentApplication from '/snippets/ja/clickstack/_instrument_application.mdx';
+
+<Note>
+  **セルフマネージドのルートを選択しています**
+
+  [セルフマネージド エクスペリエンス](/ja/clickstack/self-configured/overview) を使用して、ClickHouse オブザーバビリティをご自身でセットアップする方法を選択しました。このルートでは、OpenTelemetry collector の運用、ClickHouse Cloud サービスへのインジェストの管理、スキーマのチューニング、warehouse を使用したインジェストとクエリのワークロードの分離をご自身で行います。詳しくは [OpenTelemetry collector](/ja/clickstack/self-configured/ingesting-data/collector)、[パフォーマンスチューニング](/ja/clickstack/self-configured/managing/performance-tuning)、[読み取りと書き込みのワークロードの分離](/ja/clickstack/self-configured/managing/isolating-read-write) を参照してください。
+
+  インジェスト、スキーマ、コンピュートを ClickHouse に任せられるサーバーレス エクスペリエンスをご希望の場合は、デフォルトの ClickHouse オブザーバビリティ エクスペリエンスを使用し、[OpenTelemetry によるアプリケーションのインストルメント](/ja/clickstack/managed-onboarding/instrument-application-serverless) の手順に従ってください。
+</Note>
+
+このガイドでは、小規模な Node.js アプリケーションを OpenTelemetry でインストルメントし、そのログ、メトリクス、トレース、セッションリプレイを、ご自身で運用している collector を介して ClickHouse オブザーバビリティに送信する手順を説明します。バックエンドのインストルメントにあたって、アプリケーションのソースコードを変更する必要は一切ありません。
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) は、ClickHouse の公開デモでホストされている HackerNews データセットにクエリを実行する Node.js アプリです。すべてのチャート、テーブル、検索ボックスが実際の ClickHouse クエリに基づいているため、どの操作でもトレースが生成され、そのメインスパンはバックエンドから ClickHouse への HTTPS 呼び出しになります。
+
+このガイドは、[OpenTelemetry Collector のセットアップ](/ja/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) を完了済みであり、このアプリケーションを実行するマシンから接続可能な ClickStack コレクターが稼働していることを前提としています。デプロイ時に設定した `OTLP_AUTH_TOKEN` とあわせて、**その OTLP エンドポイントを必ず控えておいてください**。これらの値は、インストルメントの前に `.env` に設定します。
+
+## 前提条件 {#prerequisites}
+
+* このマシンからアクセス可能な ClickStack コレクター。まだデプロイしていない場合は、先に [OpenTelemetry Collector のセットアップ](/ja/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) の手順に従ってください。
+* その collector の OTLP/HTTP エンドポイント (通常はポート `4318`) と、そこに設定した `OTLP_AUTH_TOKEN`。これらを `OTEL_EXPORTER_OTLP_ENDPOINT` および `OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>` として使用します。
+* Node 18+ と npm。
+
+## リポジトリをクローンする {#clone-the-repository}
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)をクローンし、依存関係をインストールして、環境変数テンプレートをコピーします。
+
+```bash
+git clone https://github.com/ClickHouse/hn-news-analyzer.git
+cd hn-news-analyzer
+npm install
+cp .env.example .env
+```
+
+次の手順で `.env` を設定し、このディレクトリからインストルメントします。
+
+<InstrumentApplication />
+
+## 関連情報 {#further-reading}
+
+* [Kubernetes の監視](/ja/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): クラスターからログ、インフラメトリクス、Kubernetes イベントを収集します。
+* [AWS CloudWatch ログの監視](/ja/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry の CloudWatch receiver 経由で CloudWatch ログを転送します。
+* [セッションリプレイ](/ja/clickstack/observability/features/session-replay#self-managed): 機能概要、SDK オプション、プライバシー制御。
+* [本番環境への移行](/ja/clickstack/self-configured/managing/production): 本番環境へ移行する際の推奨事項。

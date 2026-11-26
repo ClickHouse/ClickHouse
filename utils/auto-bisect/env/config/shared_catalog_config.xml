@@ -1,0 +1,7 @@
+<clickhouse>
+    <shared_database_catalog>
+        <cluster_name>default</cluster_name>
+        <drop_lock_duration_seconds>60</drop_lock_duration_seconds>
+    </shared_database_catalog>
+    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+</clickhouse>

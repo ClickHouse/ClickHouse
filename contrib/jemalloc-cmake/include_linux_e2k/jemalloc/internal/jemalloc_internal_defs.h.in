@@ -5,19 +5,19 @@
  * public APIs to be prefixed.  This makes it possible, with some care, to use
  * multiple allocators simultaneously.
  */
-#undef JEMALLOC_PREFIX
-#undef JEMALLOC_CPREFIX
+#define JEMALLOC_PREFIX "je_"
+#define JEMALLOC_CPREFIX ""
 
 /*
  * Define overrides for non-standard allocator-related functions if they are
  * present on the system.
  */
-#undef JEMALLOC_OVERRIDE___LIBC_CALLOC
-#undef JEMALLOC_OVERRIDE___LIBC_FREE
-#undef JEMALLOC_OVERRIDE___LIBC_MALLOC
-#undef JEMALLOC_OVERRIDE___LIBC_MEMALIGN
-#undef JEMALLOC_OVERRIDE___LIBC_REALLOC
-#undef JEMALLOC_OVERRIDE___LIBC_VALLOC
+/* #undef JEMALLOC_OVERRIDE___LIBC_CALLOC */
+/* #undef JEMALLOC_OVERRIDE___LIBC_FREE */
+/* #undef JEMALLOC_OVERRIDE___LIBC_MALLOC */
+/* #undef JEMALLOC_OVERRIDE___LIBC_MEMALIGN */
+/* #undef JEMALLOC_OVERRIDE___LIBC_REALLOC */
+/* #undef JEMALLOC_OVERRIDE___LIBC_VALLOC */
 #undef JEMALLOC_OVERRIDE___POSIX_MEMALIGN
 
 /*
@@ -125,6 +125,14 @@
 
 /* Non-empty if the tls_model attribute is supported. */
 #undef JEMALLOC_TLS_MODEL
+
+/*
+ * Route TSD thread-local address computation through a noinline
+ * optimization-barrier accessor so the compiler cannot cache it across a
+ * user-space context switch (fibers migrating between OS threads).  See
+ * tsd_tls_addr.h.
+ */
+#define JEMALLOC_EXPERIMENTAL_FIBER_SAFE_TLS
 
 /*
  * JEMALLOC_DEBUG enables assertions and other sanity checks, and disables
@@ -356,7 +364,7 @@
 #undef JEMALLOC_CONFIG_MALLOC_CONF
 
 /* If defined, jemalloc takes the malloc/free/etc. symbol names. */
-#undef JEMALLOC_IS_MALLOC
+/* #undef JEMALLOC_IS_MALLOC */
 
 /*
  * Defined if strerror_r returns char * if _GNU_SOURCE is defined.
@@ -364,6 +372,6 @@
 #undef JEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE
 
 /* Performs additional safety checks when defined. */
-#undef JEMALLOC_OPT_SAFETY_CHECKS
+/* #undef JEMALLOC_OPT_SAFETY_CHECKS */
 
 #endif /* JEMALLOC_INTERNAL_DEFS_H_ */

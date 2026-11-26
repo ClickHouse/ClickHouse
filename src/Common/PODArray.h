@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <base/getPageSize.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
@@ -10,7 +8,6 @@
 #include <Common/memcpySmall.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -79,7 +76,7 @@ void protectMemoryRegion(void * addr, size_t len, int prot);
 /// The amount of memory occupied by the num_elements of the elements.
 inline size_t byte_size(size_t num_elements, size_t element_size)
 {
-    size_t amount;
+    size_t amount = 0;
     if (__builtin_mul_overflow(num_elements, element_size, &amount))
         throw_alloc_error();
     return amount;
@@ -88,7 +85,7 @@ inline size_t byte_size(size_t num_elements, size_t element_size)
 /// Minimum amount of memory to allocate for num_elements, including padding.
 inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
 {
-    size_t amount;
+    size_t amount = 0;
     if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))
         throw_alloc_error();
     return amount;
@@ -172,12 +169,12 @@ protected:
         c_end_of_storage = allocated + bytes - pad_right;
     }
 
-    bool isInitialized() const
+    [[nodiscard]] bool isInitialized() const
     {
         return (c_start != null) && (c_end != null) && (c_end_of_storage != null);
     }
 
-    bool isAllocatedFromStack() const
+    [[nodiscard]] bool isAllocatedFromStack() const
     {
         static constexpr size_t stack_threshold = TAllocator::getStackThreshold();
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
@@ -228,9 +225,9 @@ protected:
 #endif
 
 public:
-    bool empty() const { return c_end == c_start; }
-    size_t size() const { return (c_end - c_start) / ELEMENT_SIZE; }
-    size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
+    [[nodiscard]] bool empty() const { return c_end == c_start; }
+    [[nodiscard]] size_t size() const { return (c_end - c_start) / ELEMENT_SIZE; }
+    [[nodiscard]] size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
 
     /// This method is safe to use only for information about memory usage.
     size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; } /// NOLINT
@@ -317,7 +314,7 @@ public:
         const char * ptr_end = reinterpret_cast<const char *>(&*from_end);
 
         /// Also it's safe if the range is empty.
-        assert(!((ptr_begin >= c_start && ptr_begin < c_end) || (ptr_end > c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
+        chassert(!((ptr_begin >= c_start && ptr_begin < c_end) || (ptr_end > c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
 #endif
     }
 
@@ -391,33 +388,33 @@ public:
     }
 
     T * data() { return t_start(); }
-    const T * data() const { return t_start(); }
+    [[nodiscard]] const T * data() const { return t_start(); }
 
     /// The index is signed to access -1th element without pointer overflow.
     T & operator[] (ssize_t n)
     {
         /// <= size, because taking address of one element past memory range is Ok in C++ (expression like &arr[arr.size()] is perfectly valid).
-        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        chassert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
         return t_start()[n];
     }
 
     const T & operator[] (ssize_t n) const
     {
-        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        chassert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
         return t_start()[n];
     }
 
     T & front()             { return t_start()[0]; }
     T & back()              { return t_end()[-1]; }
-    const T & front() const { return t_start()[0]; }
-    const T & back() const  { return t_end()[-1]; }
+    [[nodiscard]] const T & front() const { return t_start()[0]; }
+    [[nodiscard]] const T & back() const  { return t_end()[-1]; }
 
     iterator begin()              { return t_start(); }
     iterator end()                { return t_end(); }
-    const_iterator begin() const  { return t_start(); }
-    const_iterator end() const    { return t_end(); }
-    const_iterator cbegin() const { return t_start(); }
-    const_iterator cend() const   { return t_end(); }
+    [[nodiscard]] const_iterator begin() const  { return t_start(); }
+    [[nodiscard]] const_iterator end() const    { return t_end(); }
+    [[nodiscard]] const_iterator cbegin() const { return t_start(); }
+    [[nodiscard]] const_iterator cend() const   { return t_end(); }
 
     /// Same as resize, but zeroes new elements.
     void resize_fill(size_t n) /// NOLINT
@@ -494,8 +491,8 @@ public:
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(rhs.front())>>);
 
-        assert(from_end >= from_begin);
-        assert(from_end <= rhs.size());
+        chassert(from_end >= from_begin);
+        chassert(from_end <= rhs.size());
 
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
@@ -553,7 +550,7 @@ public:
         size_t end_index = from_end - begin();
         size_t copy_size = end_index - start_index;
 
-        assert(start_index <= end_index);
+        chassert(start_index <= end_index);
 
         size_t required_capacity = this->size() + copy_size;
         if (required_capacity > this->capacity())

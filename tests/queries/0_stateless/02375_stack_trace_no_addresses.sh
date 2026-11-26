@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CONFIG="${CLICKHOUSE_TMP}/config.xml"
 
-echo "
+cat <<EOF >"${CONFIG}"
 <clickhouse>
     <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
     <profiles>
@@ -26,12 +26,12 @@ echo "
         <default></default>
     </quotas>
 </clickhouse>
-" > "${CONFIG}"
+EOF
 
 ${CLICKHOUSE_LOCAL} --query "SELECT throwIf(1)" --stacktrace --config-file "${CONFIG}" 2>&1 | grep -c -F '@ 0x'
 
-sed -i 's/<show_addresses_in_stack_traces>false/<show_addresses_in_stack_traces>true/' "${CONFIG}"
+sed 's/<show_addresses_in_stack_traces>false/<show_addresses_in_stack_traces>true/' "${CONFIG}" >"$CONFIG.1"
 
-${CLICKHOUSE_LOCAL} --query "SELECT throwIf(1)" --stacktrace --config-file "${CONFIG}" 2>&1 | grep -c -F '@ 0x' | grep -c -v '^0$'
+${CLICKHOUSE_LOCAL} --query "SELECT throwIf(1)" --stacktrace --config-file "${CONFIG}.1" 2>&1 | grep -c -F '@ 0x' | grep -c -v '^0$'
 
-rm "${CONFIG}"
+rm "${CONFIG}" "$CONFIG.1"

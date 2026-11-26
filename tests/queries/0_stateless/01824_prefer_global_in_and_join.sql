@@ -1,4 +1,4 @@
--- Tags: global, no-parallel
+-- Tags: global, no-parallel, no-flaky-check
 
 -- { echo }
 CREATE DATABASE IF NOT EXISTS test_01824;

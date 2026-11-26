@@ -4,10 +4,14 @@
 
 #if USE_AWS_S3
 #include <IO/S3Settings.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/ObjectStorage/S3/Serde.h>
+#endif
+#include <Parsers/IAST_fwd.h>
+#include <Common/SecretString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
@@ -75,6 +79,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
 
     S3::URI url;
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
     String path_suffix;
@@ -97,32 +102,42 @@ public:
 
     StorageS3Configuration() = default;
 
-    ObjectStorageType getType() const override { return type; }
-    std::string getTypeName() const override { return type_name; }
-    std::string getEngineName() const override { return url.storage_name; }
-    std::string getNamespaceType() const override { return namespace_name; }
-
-    const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
-
-    Path getRawPath() const override { return url.key; }
-    const String & getRawURI() const override { return url.uri_str; }
-
-    const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override
+    void setInitializationAsBigLake(
+        const String & client_id_, std::string_view client_secret_, std::string_view refresh_token_, std::string_view service_account_key_)
     {
-        keys = paths;
+        biglake_adc_client_id = client_id_;
+        biglake_adc_client_secret = client_secret_;
+        biglake_adc_refresh_token = refresh_token_;
+        biglake_service_account_key = service_account_key_;
     }
 
-    String getNamespace() const override { return url.bucket; }
-    String getDataSourceDescription() const override;
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    [[nodiscard]] ObjectStorageType getType() const override { return type; }
 
-    bool isArchive() const override { return url.archive_pattern.has_value(); }
-    std::string getPathInArchive() const override;
+    [[nodiscard]] std::string getTypeName() const override { return type_name; }
+    [[nodiscard]] std::string getEngineName() const override { return url.storage_name; }
+    [[nodiscard]] std::string getNamespaceType() const override { return namespace_name; }
+
+    [[nodiscard]] bool supportsFullyQualifiedPaths() const override { return isDataLakeConfiguration(); }
+
+    [[nodiscard]] const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
+
+    [[nodiscard]] std::map<String, String> getExplicitRequestSettings() const override { return explicit_request_settings; }
+
+    [[nodiscard]] Path getRawPath() const override { return url.key; }
+    void setRawPath(const Path & path) override { url.key = path.path; }
+    [[nodiscard]] std::string_view getRawURI() const override { return url.uri_str; }
+
+    [[nodiscard]] String getNamespace() const override { return url.bucket; }
+    [[nodiscard]] String getDataSourceDescription() const override;
+    [[nodiscard]] String getDataSourceDescriptionForNamespace(const String & object_namespace) const override;
+    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+
+    [[nodiscard]] bool isArchive() const override { return url.archive_pattern.has_value(); }
+    [[nodiscard]] std::string getPathInArchive() const override;
 
     void check(ContextPtr context) override;
     void validateNamespace(const String & name) const override;
-    bool isStaticConfiguration() const override { return static_configuration; }
+    [[nodiscard]] bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
@@ -138,9 +153,10 @@ public:
     S3::URI url;
 
 
-    Paths keys;
+    Paths keys TSA_GUARDED_BY(paths_mutex);
 
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
@@ -148,7 +164,18 @@ public:
     /// If from config - it can be changed with config reload.
     bool static_configuration = true;
 
+    String biglake_adc_client_id;
+    SecretString biglake_adc_client_secret;
+    SecretString biglake_adc_refresh_token;
+    SecretString biglake_service_account_key;
+
 protected:
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }
+    void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex)
+    {
+        keys = paths;
+    }
+
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:

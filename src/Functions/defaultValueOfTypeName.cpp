@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -14,11 +15,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+
 namespace
 {
 
 /// Returns global default value for type name (example: 0 for numeric types, '' for String).
-class FunctionDefaultValueOfTypeName : public IFunction
+class FunctionDefaultValueOfTypeName final : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";
@@ -27,35 +29,40 @@ public:
         return std::make_shared<FunctionDefaultValueOfTypeName>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// No declarative signature. The result type is the type *named by the argument value*,
+    /// so resolving it through `typeFromString(t)` in the signature would run inside
+    /// `applyFunctionSignature`'s `SuppressQueryFactoriesInfoScope` and hide the user-supplied
+    /// type from `query_log.used_data_type_families`. Resolve it explicitly here so the lookup
+    /// is attributed (see `01656_test_query_log_factories_info`).
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
-        if (!col_type_const || !isString(arguments.front().type))
+        if (!col_type_const || !isString(removeLowCardinality(arguments.front().type)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
                 getName());
 
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType & type = *result_type;
         return type.createColumnConst(input_rows_count, type.getDefault());

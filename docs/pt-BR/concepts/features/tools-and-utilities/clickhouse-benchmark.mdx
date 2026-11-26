@@ -1,0 +1,209 @@
+---
+description: 'Documentação para clickhouse-benchmark '
+sidebarTitle: 'clickhouse-benchmark'
+slug: /operations/utilities/clickhouse-benchmark
+title: 'clickhouse-benchmark'
+doc_type: 'reference'
+---
+
+Conecta-se a um servidor ClickHouse e envia repetidamente as consultas especificadas.
+
+**Sintaxe**
+
+```bash
+$ clickhouse-benchmark --query ["single query"] [keys]
+```
+
+ou
+
+```bash
+$ echo "single query" | clickhouse-benchmark [keys]
+```
+
+ou
+
+```bash
+$ clickhouse-benchmark [keys] <<< "single query"
+```
+
+Se você quiser enviar um conjunto de consultas, crie um arquivo de texto e coloque cada consulta em uma linha separada nesse arquivo. Por exemplo:
+
+```sql
+SELECT * FROM system.numbers LIMIT 10000000;
+SELECT 1;
+```
+
+Em seguida, envie este arquivo para a entrada padrão do `clickhouse-benchmark`:
+
+```bash
+clickhouse-benchmark [keys] < queries_file;
+```
+
+## Opções de linha de comando {#clickhouse-benchmark-command-line-options}
+
+* `--query=QUERY` — Consulta a ser executada. Se esse parâmetro não for informado, o `clickhouse-benchmark` lerá as consultas da entrada padrão.
+* `--query_id=ID` — ID da consulta.
+* `--query_id_prefix=ID_PREFIX` — Prefixo do ID da consulta.
+* `--queries-format=FORMAT` — Formato das consultas lidas da entrada padrão. Valores possíveis: `tsv` (padrão, uma consulta com tabulação escapada por linha) e `script` (analisa a entrada como um script com várias consultas separadas por ponto e vírgula). Limitação de `script`: consultas `INSERT ... FORMAT` devem estar em uma única linha.
+* `-c N`, `--concurrency=N` — Número de consultas que o `clickhouse-benchmark` envia simultaneamente. Valor padrão: 1.
+* `-C N`, `--max_concurrency=N` — Aumenta gradualmente o número de consultas paralelas até o valor especificado, gerando um relatório para cada nível de concorrência.
+* `--precise` — Habilita relatórios precisos por intervalo com métricas ponderadas.
+* `-d N`, `--delay=N` — Intervalo, em segundos, entre relatórios intermediários (para desativar os relatórios, defina 0). Valor padrão: 1.
+* `-h HOST`, `--host=HOST` — Host do servidor. Valor padrão: `localhost`. No [modo de comparação](#clickhouse-benchmark-comparison-mode), você pode usar várias chaves `-h`.
+* `-i N`, `--iterations=N` — Número total de consultas. Valor padrão: 0 (repetir indefinidamente).
+* `-r`, `--randomize` — Executa as consultas em ordem aleatória se houver mais de uma consulta de entrada.
+* `--arrival-rate=R` — Habilita o [modo open-loop](#clickhouse-benchmark-open-loop-mode): as consultas chegam em momentos aleatórios, a uma taxa média de `R` consultas por segundo. Uma lista de taxas separadas por vírgula, como `--arrival-rate=5,10,20`, executa o benchmark para cada taxa, uma após a outra, e gera um relatório por taxa; exige `--iterations` ou `--timelimit`.
+* `--max-in-flight=N` — Número máximo de consultas executadas simultaneamente no modo open-loop. Valor padrão: 256.
+* `--seed=N` — Seed do gerador aleatório usado para os tempos de chegada, a ordem das consultas com `--randomize` e a escolha do servidor no modo open-loop. A mesma seed com as mesmas opções reproduz a mesma execução. Os tempos de chegada dependem apenas da seed e da taxa, e não das consultas nem dos servidores; assim, é possível comparar diferentes combinações de consultas ou servidores com o mesmo cronograma de chegadas. Padrão: uma seed aleatória, exibida no início da execução no modo open-loop.
+* `--per-query` — Exibe, ao final, estatísticas de cada consulta: o número de consultas e de erros, QPS, percentis de latência, a latência máxima e o tempo médio de CPU de uma consulta no servidor.
+* `-s`, `--secure` — Usa conexão `TLS`.
+* `-t N`, `--timelimit=N` — Limite de tempo em segundos. O `clickhouse-benchmark` para de enviar consultas quando o limite de tempo especificado é atingido. Valor padrão: 0 (limite de tempo desativado).
+* `--port=N` — Porta do servidor. Valor padrão: 9000. No [modo de comparação](#clickhouse-benchmark-comparison-mode), você pode usar várias chaves `--port`.
+* `--confidence=N` — Nível de confiança para o teste t. Valores possíveis: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99,5%). Valor padrão: 5. No [modo de comparação](#clickhouse-benchmark-comparison-mode), o `clickhouse-benchmark` executa o [teste t de Student para duas amostras independentes](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) para determinar se as duas distribuições não diferem no nível de confiança selecionado.
+* `--cumulative` — Exibe dados cumulativos em vez de dados por intervalo.
+* `--database=DATABASE_NAME` — nome do banco de dados do ClickHouse. Valor padrão: `default`.
+* `--user=USERNAME` — Nome de usuário do ClickHouse. Valor padrão: `default`.
+* `--password=PSWD` — Senha do usuário do ClickHouse. Valor padrão: string vazia.
+* `--stacktrace` — Saída de stack traces. Quando essa chave é definida, o `clickhouse-benchmark` exibe os stack traces das exceções.
+* `--stage=WORD` — Estágio do processamento da consulta no servidor. O ClickHouse interrompe o processamento da consulta e retorna uma resposta ao `clickhouse-benchmark` no estágio especificado. Valores possíveis: `complete`, `fetch_columns`, `with_mergeable_state`. Valor padrão: `complete`.
+* `--roundrobin` — Em vez de comparar consultas entre diferentes `--host`/`--port`, escolhe aleatoriamente um `--host`/`--port` para cada consulta e a envia para ele.
+* `--reconnect=N` — Controla o comportamento de reconexão. Valores possíveis: 0 (nunca reconectar), 1 (reconectar a cada consulta) ou N (reconectar após cada N consultas). Valor padrão: 0.
+* `--max-consecutive-errors=N` — Número de erros consecutivos permitidos. Valor padrão: 0.
+* `--ignore-error`,`--continue_on_errors` — Continua o teste mesmo que as consultas falhem.
+* `--client-side-time` — Exibe o tempo incluindo a comunicação de rede em vez do tempo no servidor; observe que, para versões do servidor anteriores à 22.8, sempre exibimos o tempo do cliente.
+* `--proto-caps` — Habilita/desabilita o uso de chunks na transferência de dados. Opções (podem ser separadas por vírgula): `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Valor padrão: `notchunked`.
+* `--help` — Mostra a mensagem de ajuda.
+* `--verbose` — Aumenta a verbosidade da mensagem de ajuda.
+
+Se quiser aplicar algumas [configurações](/pt-BR/concepts/features/configuration/settings/overview) às consultas, passe-as como uma chave `--<session setting name>= SETTING_VALUE`. Por exemplo, `--max_memory_usage=1048576`.
+
+## Opções de variáveis de ambiente {#clickhouse-benchmark-environment-variable-options}
+
+O nome de usuário, a senha e o host podem ser definidos por meio das variáveis de ambiente `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` e `CLICKHOUSE_HOST`.
+Os argumentos de linha de comando `--user`, `--password` ou `--host` têm prioridade sobre as variáveis de ambiente.
+
+## Saída {#clickhouse-benchmark-output}
+
+Por padrão, o `clickhouse-benchmark` apresenta um relatório a cada intervalo de `--delay`.
+
+Exemplo de relatório:
+
+```text
+Queries executed: 10.
+
+localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, result RPS: 67721584.984, result MiB/s: 516.675.
+
+0.000%      0.145 sec.
+10.000%     0.146 sec.
+20.000%     0.146 sec.
+30.000%     0.146 sec.
+40.000%     0.147 sec.
+50.000%     0.148 sec.
+60.000%     0.148 sec.
+70.000%     0.148 sec.
+80.000%     0.149 sec.
+90.000%     0.150 sec.
+95.000%     0.150 sec.
+99.000%     0.150 sec.
+99.900%     0.150 sec.
+99.990%     0.150 sec.
+```
+
+No relatório, você pode encontrar:
+
+* Número de consultas no campo `Queries executed:`.
+
+* String de status contendo (nesta ordem):
+
+  * Endpoint do servidor ClickHouse.
+  * Número de consultas processadas.
+  * QPS: Quantas consultas o servidor executou por segundo durante um período especificado no argumento `--delay`.
+  * RPS: Quantas linhas o servidor lê por segundo durante um período especificado no argumento `--delay`.
+  * MiB/s: Quantos mebibytes o servidor lê por segundo durante um período especificado no argumento `--delay`.
+  * result RPS: Quantas linhas o servidor adicionou ao resultado de uma consulta por segundo durante um período especificado no argumento `--delay`.
+  * result MiB/s. Quantos mebibytes o servidor adicionou ao resultado de uma consulta por segundo durante um período especificado no argumento `--delay`.
+
+* Percentis do tempo de execução das consultas.
+
+## Modo open-loop {#clickhouse-benchmark-open-loop-mode}
+
+Por padrão, o `clickhouse-benchmark` opera em malha fechada: cada um dos `--concurrency` clientes envia a próxima consulta assim que a anterior retorna. Quando o servidor fica mais lento, ele recebe menos consultas, de modo que a carga se adapta ao servidor.
+
+Com `--arrival-rate`, a carga não depende do servidor. As consultas chegam em momentos aleatórios a uma taxa média fixa, como requisições de muitos usuários independentes: o tempo entre duas chegadas é um valor aleatório com distribuição exponencial e média `1 / R` (um processo de Poisson). Cada consulta é enviada no momento de sua chegada, mesmo que as consultas anteriores ainda estejam em execução.
+
+No máximo `--max-in-flight` consultas são executadas simultaneamente. Uma chegada que encontra todas elas ocupadas aguarda em uma fila client-side até que uma delas termine. A latência de uma consulta é medida da mesma forma que na malha fechada (consulte `--client-side-time`), portanto não inclui o tempo de espera na fila. O número de chegadas enfileiradas é informado separadamente.
+
+A opção `--iterations` define o número de chegadas; o `clickhouse-benchmark` aguarda a conclusão de todas elas. A opção `--timelimit` interrompe as chegadas ao atingir o limite de tempo; as consultas em andamento são concluídas, e as chegadas na fila são informadas como não enviadas.
+
+O relatório contém mais duas linhas, por exemplo:
+
+```text
+Arrivals: 1061, target rate: 100.000/s, achieved rate: 106.100/s, queued: 0 (max queue size 0).
+In flight: mean 0.223, max 4 of 256.
+```
+
+* `Arrivals`: O número de chegadas.
+* `target rate`: A taxa definida por `--arrival-rate`.
+* `achieved rate`: O número de chegadas dividido pela duração do processo de chegadas. Difere da taxa-alvo por um erro aleatório, que é menor em execuções mais longas.
+* `queued`: O número de chegadas que encontraram todos os slots de `--max-in-flight` ocupados e aguardaram na fila client-side, além do comprimento máximo dessa fila.
+* `not sent`: O número de chegadas que ainda estavam na fila quando a execução foi interrompida. É exibido somente quando diferente de zero.
+* `In flight`: A média ponderada pelo tempo e o número máximo de consultas executadas simultaneamente.
+
+Com chegadas em open-loop, o QPS acompanha a taxa de chegadas e, portanto, diz pouco sobre o custo da carga. No modo open-loop, a string de status de cada servidor também contém:
+
+* `CPU`: O tempo de CPU das consultas no servidor por segundo, em núcleos.
+* `CPU per query`: O tempo médio de CPU de uma consulta no servidor, em segundos.
+
+Ambos incluem as consultas que falharam durante a execução (com `--ignore-error`), pois elas também geram carga no servidor.
+
+O tempo de CPU é a soma dos eventos de criação de perfil `UserTimeMicroseconds` e `SystemTimeMicroseconds` que o servidor envia para cada consulta; assim, ele abrange as threads que executam a consulta e é uma aproximação do seu custo total de CPU. Em uma consulta distribuída, ele é somado em todos os servidores em que a consulta é executada, pois o iniciador encaminha os eventos de criação de perfil dos servidores remotos. Se o servidor não enviar eventos de criação de perfil (por exemplo, com `--send_profile_events=0`), a string de status exibe `CPU: not reported by the server`.
+
+Para executar uma carga de trabalho mista, execute vários processos `clickhouse-benchmark` ao mesmo tempo, um por classe de consultas. Cada processo reporta as estatísticas da sua própria classe. Atribua a cada processo seu próprio `--seed`, ou nenhum: processos com o mesmo seed geram a mesma sequência aleatória e, por isso, suas chegadas coincidem (ou, com taxas diferentes, são cópias em escala umas das outras). Com seeds independentes, as chegadas combinadas de todos os processos também formam um processo de Poisson.
+
+Exemplos:
+
+```bash
+# 100 queries per second for 10 seconds; the lines above are from this run.
+$ clickhouse-benchmark --arrival-rate=100 --seed=42 --timelimit=10 --query "SELECT sum(number) FROM numbers(1000000)"
+
+# A sweep over four rates, 60 seconds each, with per-query statistics.
+$ clickhouse-benchmark --arrival-rate=5,10,20,40 --timelimit=60 --randomize --per-query < queries.tsv
+```
+
+## Modo de comparação {#clickhouse-benchmark-comparison-mode}
+
+`clickhouse-benchmark` pode comparar o desempenho de dois servidores ClickHouse em execução.
+
+Para usar o modo de comparação, especifique os endpoints de ambos os servidores usando dois pares de opções `--host` e `--port`. As opções são associadas pela posição na lista de argumentos; o primeiro `--host` é associado ao primeiro `--port` e assim por diante. O `clickhouse-benchmark` estabelece conexões com ambos os servidores e, em seguida, envia consultas. Cada consulta é direcionada a um servidor selecionado aleatoriamente. Os resultados são exibidos em uma tabela.
+
+## Exemplo {#clickhouse-benchmark-example}
+
+```bash
+$ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
+```
+
+```text
+Loaded 1 queries.
+
+Queries executed: 5.
+
+localhost:9001, queries 2, QPS: 3.764, RPS: 75446929.370, MiB/s: 575.614, result RPS: 37639659.982, result MiB/s: 287.168.
+localhost:9000, queries 3, QPS: 3.815, RPS: 76466659.385, MiB/s: 583.394, result RPS: 38148392.297, result MiB/s: 291.049.
+
+0.000%          0.258 sec.      0.250 sec.
+10.000%         0.258 sec.      0.250 sec.
+20.000%         0.258 sec.      0.250 sec.
+30.000%         0.258 sec.      0.267 sec.
+40.000%         0.258 sec.      0.267 sec.
+50.000%         0.273 sec.      0.267 sec.
+60.000%         0.273 sec.      0.267 sec.
+70.000%         0.273 sec.      0.267 sec.
+80.000%         0.273 sec.      0.269 sec.
+90.000%         0.273 sec.      0.269 sec.
+95.000%         0.273 sec.      0.269 sec.
+99.000%         0.273 sec.      0.269 sec.
+99.900%         0.273 sec.      0.269 sec.
+99.990%         0.273 sec.      0.269 sec.
+
+No difference proven at 99.5% confidence
+```

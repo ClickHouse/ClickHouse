@@ -8,9 +8,19 @@
 namespace DB
 {
 
-/** Replace Nullable key_columns to corresponding nested columns.
-  * In 'null_map' return a map of positions where at least one column was NULL.
-  * @returns ownership column of null_map.
+/// Combine two `ColumnUInt8` null maps of equal size. A null pointer represents a map with no NULLs.
+/// Reuse the first column when it is exclusively owned, or share the other column when one map is absent.
+ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs);
+
+/// The outer null map of a column that can hold NULLs (`ColumnUInt8`, 1 = the value is NULL), or a null
+/// pointer for a column that cannot. A NULL inside a value, such as a NULL field of a tuple, is not an outer
+/// NULL. `Variant` and `Dynamic` encode NULLs with the `NULL` discriminator, and `LowCardinality` with the
+/// index of the NULL in its dictionary, rather than a separate null map, so theirs is reconstructed.
+ColumnPtr getOuterNullMap(const IColumn & column);
+
+/** Replace `Nullable` key columns with their nested columns and combine their outer null maps.
+  * A NULL field inside a non-null tuple is part of the key value and does not make the key NULL.
+  * Set `null_map` to the combined map and return the column that owns it.
   */
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map);
 
@@ -36,15 +46,30 @@ bool canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(const DataTy
   */
 DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 
+/** This function marks rows of an extracted subcolumn as `NULL` in place, according to the null map of the
+  * outer `Nullable` column. It processes the suffix of `column` that starts at `column_offset`, that is the
+  * rows `[column_offset, column->size())`. For the `i`-th row of that suffix it marks the row as `NULL` when
+  * `parent_null_map[parent_null_map_offset + i]` is set. The parent null map's offset is separate because
+  * the suffix can sit at a different position in the parent null map than it does in the subcolumn. The
+  * column must be able to represent `NULL` itself, so it must be a `ColumnNullable`, a `ColumnVariant`, a
+  * `ColumnDynamic`, or a `ColumnLowCardinality` with a nullable dictionary, and it must be exclusively owned
+  * by the caller.
+  */
+void applyParentNullMapToExtractedSubcolumn(
+    IColumn & column,
+    const NullMap & parent_null_map,
+    size_t column_offset,
+    size_t parent_null_map_offset);
+
 struct NullableSubcolumnCreator : public ISerialization::ISubcolumnCreator
 {
     const ColumnPtr null_map;
 
     explicit NullableSubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
 
-    DataTypePtr create(const DataTypePtr & prev) const override;
-    SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const override;
-    ColumnPtr create(const ColumnPtr & prev) const override;
+    [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+    [[nodiscard]] SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const override;
+    [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
 };
 
 }

@@ -7,6 +7,9 @@
 namespace BuzzHouse
 {
 
+/// Replaced by the partition id in the path of a partitioned write
+static const constexpr String PARTITION_STR = "{_partition_id}";
+
 enum class ColumnSpecial
 {
     NONE = 0,
@@ -58,7 +61,8 @@ enum class LakeFormat
 {
     All = 0,
     Iceberg = 1,
-    DeltaLake = 2
+    DeltaLake = 2,
+    Paimon = 3
 };
 
 enum class LakeStorage
@@ -78,15 +82,12 @@ enum class LakeCatalog
     Unity = 4
 };
 
-extern const std::vector<std::vector<OutFormat>> outFormats;
-extern const std::unordered_map<OutFormat, InFormat> outIn;
-extern const std::vector<std::vector<InOutFormat>> inOutFormats;
 
 struct SQLColumn
 {
 public:
-    uint32_t cname = 0;
-    SQLType * tp = nullptr;
+    String cname;
+    std::unique_ptr<SQLType> tp;
     ColumnSpecial special = ColumnSpecial::NONE;
     std::optional<bool> nullable;
     std::optional<DModifier> dmod;
@@ -95,20 +96,12 @@ public:
     SQLColumn(const SQLColumn & c)
     {
         this->cname = c.cname;
-        this->tp = c.tp->typeDeepCopy();
+        this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
     }
-    SQLColumn(SQLColumn && c) noexcept
-    {
-        this->cname = c.cname;
-        this->tp = c.tp;
-        c.tp = nullptr;
-        this->special = c.special;
-        this->nullable = c.nullable;
-        this->dmod = c.dmod;
-    }
+    SQLColumn(SQLColumn && c) noexcept = default;
     SQLColumn & operator=(const SQLColumn & c)
     {
         if (this == &c)
@@ -116,117 +109,143 @@ public:
             return *this;
         }
         this->cname = c.cname;
-        delete this->tp;
-        this->tp = c.tp->typeDeepCopy();
+        this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
         return *this;
     }
-    SQLColumn & operator=(SQLColumn && c) noexcept
-    {
-        if (this == &c)
-        {
-            return *this;
-        }
-        this->cname = c.cname;
-        delete this->tp;
-        this->tp = c.tp;
-        c.tp = nullptr;
-        this->special = c.special;
-        this->nullable = std::optional<bool>(c.nullable);
-        this->dmod = std::optional<DModifier>(c.dmod);
-        return *this;
-    }
-    ~SQLColumn() { delete tp; }
+    SQLColumn & operator=(SQLColumn && c) noexcept = default;
+    ~SQLColumn() = default;
 
-    bool canBeInserted() const;
+    [[nodiscard]] bool canBeInserted() const;
 
-    String getColumnName() const;
+    [[nodiscard]] String getColumnName() const;
 };
 
-struct SQLIndex
+struct WithCluster
 {
 public:
-    uint32_t iname = 0;
+    String name;
+    std::optional<String> cluster;
+
+    [[nodiscard]] const std::optional<String> & getCluster() const { return cluster; }
+
+    void setName(SQLIdentifier * f) const;
 };
 
-struct SQLDatabase
+struct SQLDatabase : WithCluster
 {
 public:
     bool random_engine = false;
     String keeper_path;
     String shard_name;
     String replica_name;
-    uint32_t dname = 0;
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
     uint32_t backup_number = 0;
-    DatabaseEngineValues deng;
-    std::optional<String> cluster;
+    DatabaseEngineValues deng{};
     DetachStatus attached = DetachStatus::ATTACHED;
     IntegrationCall integration = IntegrationCall::None;
     /// For DataLakeCatalog
     LakeCatalog catalog = LakeCatalog::None;
     LakeStorage storage = LakeStorage::All;
     LakeFormat format = LakeFormat::All;
+    /// For Cluster and Remote, the database they proxy (for Overlay, its first source)
+    String proxy_target;
 
     static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d);
 
-    static void setName(Database * db, uint32_t name);
+    static void setName(SQLIdentifier * db, const String & name);
 
-    bool isAtomicDatabase() const;
+    [[nodiscard]] bool isReplicatedDatabase() const;
 
-    bool isMemoryDatabase() const;
+    [[nodiscard]] bool isSharedDatabase() const;
 
-    bool isReplicatedDatabase() const;
+    [[nodiscard]] bool isBackupDatabase() const;
 
-    bool isSharedDatabase() const;
+    [[nodiscard]] bool isOrdinaryDatabase() const;
 
-    bool isBackupDatabase() const;
+    [[nodiscard]] bool isDataLakeCatalogDatabase() const;
 
-    bool isOrdinaryDatabase() const;
+    [[nodiscard]] bool isClusterDatabase() const;
 
-    bool isDataLakeCatalogDatabase() const;
+    [[nodiscard]] bool isRemoteDatabase() const;
 
-    bool isReplicatedOrSharedDatabase() const;
+    [[nodiscard]] bool isOverlayDatabase() const;
 
-    const std::optional<String> & getCluster() const;
+    /// Cluster, Remote, RemoteSecure or Overlay: a read-through view of databases elsewhere
+    [[nodiscard]] bool isProxyDatabase() const;
 
-    bool isAttached() const;
+    [[nodiscard]] bool isReplicatedOrSharedDatabase() const;
 
-    bool isDettached() const;
+    [[nodiscard]] bool isAttached() const;
 
-    void setName(Database * db) const;
+    [[nodiscard]] bool isDettached() const;
 
-    String getName() const;
+    void setName(SQLIdentifier * db) const;
 
-    String getSparkCatalogName() const;
+    [[nodiscard]] String getName() const;
+
+    [[nodiscard]] String getSparkCatalogName() const;
 
     void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
 
     void finishDatabaseSpecification(DatabaseEngine * de);
 };
 
-struct SQLBase
+/// Bundles a table engine value with its optional engine option (Replicated/Shared), so the main
+/// engine and an alias/distributed sub-engine can be classified through the same helpers.
+struct TableEngineDescriptor
+{
+    TableEngineValues value = TableEngineValues::Null;
+    std::optional<TableEngineOption> option;
+    bool is_deterministic = false;
+    /// An insert into a UNIQUE KEY table overwrites the rows with the same key
+    bool has_unique_key = false;
+
+    TableEngineDescriptor() = default;
+    explicit TableEngineDescriptor(const TableEngineValues value_)
+        : value(value_)
+    {
+    }
+
+    [[nodiscard]] bool isMergeTreeFamily() const;
+
+    [[nodiscard]] bool isLogFamily() const;
+
+    [[nodiscard]] bool isShared() const;
+
+    [[nodiscard]] bool isReplicated() const;
+
+    [[nodiscard]] bool supportsFinal() const;
+
+    [[nodiscard]] bool hasSignColumn() const;
+
+    [[nodiscard]] bool hasVersionColumn() const;
+
+    [[nodiscard]] bool areInsertsAppends() const;
+
+    [[nodiscard]] bool isDeterministic() const { return is_deterministic; }
+};
+
+struct SQLBase : WithCluster
 {
 public:
-    String prefix;
+    uint32_t counter = 0;
     bool is_temp = false;
-    bool is_deterministic = false;
-    bool has_metadata = false;
     bool has_partition_by = false;
     bool has_order_by = false;
     bool random_engine = false;
     bool can_run_merges = true;
-    uint32_t tname = 0;
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster;
     std::optional<String> file_comp;
     std::optional<String> partition_strategy;
     std::optional<String> partition_columns_in_data_file;
+    /// The PARTITION BY of an Iceberg table, which `system.tables` does not show
+    std::optional<String> iceberg_partition_key;
     std::optional<String> storage_class_name;
     std::optional<String> host_params;
     std::optional<String> bucket_path;
@@ -238,18 +257,14 @@ public:
     String replica_table;
     String replica_name;
     DetachStatus attached = DetachStatus::ATTACHED;
-    std::optional<TableEngineOption> toption;
-    TableEngineValues teng = TableEngineValues::Null;
-    TableEngineValues sub = TableEngineValues::Null;
+    TableEngineDescriptor engine;
+    std::optional<TableEngineDescriptor> subengine;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    std::optional<InOutFormat> file_format;
+    std::optional<String> file_format;
     IntegrationCall integration = IntegrationCall::None;
 
     SQLBase() = default;
-    explicit SQLBase(const String && p)
-        : prefix(p)
-    {
-    }
+    explicit SQLBase(const String && n) { name = n; }
     virtual ~SQLBase() = default;
     SQLBase(const SQLBase &) = default;
     SQLBase & operator=(const SQLBase &) = default;
@@ -258,149 +273,145 @@ public:
 
     static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b);
 
-    static bool supportsFinal(TableEngineValues teng);
+    /// Assign a synthetic sub-engine that does not correspond to a concrete target table
+    /// (Distributed placeholder, ExternalDistributed remote kind, random engine). It inherits this
+    /// table's determinism so isDeterministic() is not dragged to false by the descriptor default.
+    void setSyntheticSubengine(const TableEngineValues sub_value)
+    {
+        subengine = TableEngineDescriptor{sub_value};
+        subengine->is_deterministic = engine.is_deterministic;
+    }
 
-    bool isMergeTreeFamily() const;
+    [[nodiscard]] bool isDeterministic() const;
 
-    bool isLogFamily() const;
+    [[nodiscard]] bool isMergeTreeFamily(bool as_alias = false) const;
 
-    bool isSharedMergeTree() const;
+    [[nodiscard]] bool isLogFamily(bool as_alias = false) const;
 
-    bool isReplicatedMergeTree() const;
+    [[nodiscard]] bool isSharedMergeTree(bool as_alias = false) const;
 
-    bool isReplicatedOrSharedMergeTree() const;
+    [[nodiscard]] bool isReplicatedMergeTree(bool as_alias = false) const;
 
-    bool isShared() const;
+    [[nodiscard]] bool isReplicatedOrSharedMergeTree(bool as_alias = false) const;
 
-    bool isFileEngine() const;
+    [[nodiscard]] bool isShared(bool as_alias = false) const;
 
-    bool isJoinEngine() const;
+    /// The engine is `v`, or with `as_alias` an `Alias` of a `v` table
+    [[nodiscard]] bool hasEngine(const TableEngineValues v, const bool as_alias) const
+    {
+        return engine.value == v
+            || (as_alias && engine.value == TableEngineValues::Alias && subengine.has_value() && subengine->value == v);
+    }
 
-    bool isNullEngine() const;
+    [[nodiscard]] bool isFileEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::File, as_alias); }
+    [[nodiscard]] bool isSummingMergeTree(const bool as_alias = false) const { return hasEngine(TableEngineValues::SummingMergeTree, as_alias); }
+    [[nodiscard]] bool isJoinEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Join, as_alias); }
+    [[nodiscard]] bool isNullEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Null, as_alias); }
+    [[nodiscard]] bool isSetEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Set, as_alias); }
+    [[nodiscard]] bool isBufferEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Buffer, as_alias); }
+    [[nodiscard]] bool isRocksEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::EmbeddedRocksDB, as_alias); }
+    [[nodiscard]] bool isMySQLEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isPostgreSQLEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isSQLiteEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::SQLite, as_alias); }
+    [[nodiscard]] bool isMongoDBEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::MongoDB, as_alias); }
+    [[nodiscard]] bool isRedisEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Redis, as_alias); }
+    [[nodiscard]] bool isS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::S3, as_alias); }
+    [[nodiscard]] bool isS3QueueEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::S3Queue, as_alias); }
+    [[nodiscard]] bool isAnyS3Engine(bool as_alias = false) const;
+    [[nodiscard]] bool isAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::AzureBlobStorage, as_alias); }
+    [[nodiscard]] bool isAzureQueueEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::AzureQueue, as_alias); }
+    [[nodiscard]] bool isAnyAzureEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyQueueEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isHudiEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Hudi, as_alias); }
+    [[nodiscard]] bool isDeltaLakeS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::DeltaLakeS3, as_alias); }
+    [[nodiscard]] bool isDeltaLakeAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::DeltaLakeAzure, as_alias); }
+    [[nodiscard]] bool isDeltaLakeLocalEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::DeltaLakeLocal, as_alias); }
+    [[nodiscard]] bool isAnyDeltaLakeEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isIcebergS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::IcebergS3, as_alias); }
+    [[nodiscard]] bool isIcebergAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::IcebergAzure, as_alias); }
+    [[nodiscard]] bool isIcebergLocalEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::IcebergLocal, as_alias); }
+    [[nodiscard]] bool isAnyIcebergEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isPaimonS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::PaimonS3, as_alias); }
+    [[nodiscard]] bool isPaimonAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::PaimonAzure, as_alias); }
+    [[nodiscard]] bool isPaimonLocalEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::PaimonLocal, as_alias); }
+    [[nodiscard]] bool isAnyPaimonEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyLakeEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isOnS3() const;
+    [[nodiscard]] bool isOnAzure() const;
+    [[nodiscard]] bool isOnLocal() const;
+    [[nodiscard]] bool isMergeEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Merge, as_alias); }
+    [[nodiscard]] bool isDistributedEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Distributed, as_alias); }
+    [[nodiscard]] bool isRemoteSecureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::RemoteSecure, as_alias); }
+    [[nodiscard]] bool isAnyRemoteEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isDictionaryEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Dictionary, as_alias); }
+    [[nodiscard]] bool isGenerateRandomEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::GenerateRandom, as_alias); }
+    [[nodiscard]] bool isURLEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::URL, as_alias); }
+    [[nodiscard]] bool isKeeperMapEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::KeeperMap, as_alias); }
+    [[nodiscard]] bool isExternalDistributedEngine(const bool as_alias = false) const
+    {
+        return hasEngine(TableEngineValues::ExternalDistributed, as_alias);
+    }
+    [[nodiscard]] bool isMaterializedPostgreSQLEngine(const bool as_alias = false) const
+    {
+        return hasEngine(TableEngineValues::MaterializedPostgreSQL, as_alias);
+    }
+    [[nodiscard]] bool isArrowFlightEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::ArrowFlight, as_alias); }
+    [[nodiscard]] bool isAliasEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Alias, as_alias); }
+    [[nodiscard]] bool isKafkaEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Kafka, as_alias); }
+    [[nodiscard]] bool isNATSEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::NATS, as_alias); }
+    [[nodiscard]] bool isRabbitMQEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::RabbitMQ, as_alias); }
 
-    bool isSetEngine() const;
+    /// Kafka, NATS or RabbitMQ: a broker that la Casa del Dolor feeds
+    [[nodiscard]] bool isAnyStreamingEngine(bool as_alias = false) const;
 
-    bool isBufferEngine() const;
+    /// The name la Casa del Dolor gives the engine of a table it handles
+    [[nodiscard]] String getDolorEngineName() const;
 
-    bool isRocksEngine() const;
+    [[nodiscard]] bool isTimeSeriesEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::TimeSeries, as_alias); }
 
-    bool isMemoryEngine() const;
+    [[nodiscard]] bool isFileLogEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::FileLog, as_alias); }
 
-    bool isMySQLEngine() const;
+    [[nodiscard]] bool isNotTruncableEngine() const;
 
-    bool isPostgreSQLEngine() const;
+    [[nodiscard]] bool isEngineReplaceable() const;
 
-    bool isSQLiteEngine() const;
+    [[nodiscard]] bool isAnotherRelationalDatabaseEngine() const;
 
-    bool isMongoDBEngine() const;
+    [[nodiscard]] bool hasDatabasePeer() const;
 
-    bool isRedisEngine() const;
+    [[nodiscard]] bool hasMySQLPeer() const;
 
-    bool isS3Engine() const;
+    [[nodiscard]] bool hasPostgreSQLPeer() const;
 
-    bool isS3QueueEngine() const;
+    [[nodiscard]] bool hasSQLitePeer() const;
 
-    bool isAnyS3Engine() const;
+    [[nodiscard]] bool hasClickHousePeer() const;
 
-    bool isAzureEngine() const;
+    [[nodiscard]] bool isAttached() const;
 
-    bool isAzureQueueEngine() const;
+    [[nodiscard]] bool isDettached() const;
 
-    bool isAnyAzureEngine() const;
+    [[nodiscard]] String getDatabaseName() const;
 
-    bool isAnyQueueEngine() const;
+    [[nodiscard]] String getBaseName(bool full = true) const;
 
-    bool isHudiEngine() const;
+    [[nodiscard]] String getFullName(bool setdbname) const;
 
-    bool isDeltaLakeS3Engine() const;
-
-    bool isDeltaLakeAzureEngine() const;
-
-    bool isDeltaLakeLocalEngine() const;
-
-    bool isAnyDeltaLakeEngine() const;
-
-    bool isIcebergS3Engine() const;
-
-    bool isIcebergAzureEngine() const;
-
-    bool isIcebergLocalEngine() const;
-
-    bool isAnyIcebergEngine() const;
-
-    bool isOnS3() const;
-
-    bool isOnAzure() const;
-
-    bool isOnLocal() const;
-
-    bool isMergeEngine() const;
-
-    bool isDistributedEngine() const;
-
-    bool isDictionaryEngine() const;
-
-    bool isGenerateRandomEngine() const;
-
-    bool isURLEngine() const;
-
-    bool isKeeperMapEngine() const;
-
-    bool isExternalDistributedEngine() const;
-
-    bool isMaterializedPostgreSQLEngine() const;
-
-    bool isArrowFlightEngine() const;
-
-    bool isAliasEngine() const;
-
-    bool isKafkaEngine() const;
-
-    bool isNotTruncableEngine() const;
-
-    bool isEngineReplaceable() const;
-
-    bool isAnotherRelationalDatabaseEngine() const;
-
-    bool hasDatabasePeer() const;
-
-    bool hasMySQLPeer() const;
-
-    bool hasPostgreSQLPeer() const;
-
-    bool hasSQLitePeer() const;
-
-    bool hasClickHousePeer() const;
-
-    const std::optional<String> & getCluster() const;
-
-    bool isAttached() const;
-
-    bool isDettached() const;
-
-    String getDatabaseName() const;
-
-    String getTableName(bool full = true) const;
-
-    String getFullName(bool setdbname) const;
-
-    String getSparkCatalogName() const;
+    [[nodiscard]] String getSparkCatalogName() const;
 
     void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
 
-    String getTablePath(const FuzzConfig & fc) const;
+    [[nodiscard]] String getTablePath() const;
 
-    String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool allow_not_deterministic) const;
+    String getTablePath(RandomGenerator & rg, bool allow_not_deterministic) const;
 
-    String getMetadataPath(const FuzzConfig & fc) const;
+    [[nodiscard]] LakeCatalog getLakeCatalog() const;
 
-    LakeCatalog getLakeCatalog() const;
+    [[nodiscard]] LakeStorage getPossibleLakeStorage() const;
 
-    LakeStorage getPossibleLakeStorage() const;
+    [[nodiscard]] LakeFormat getPossibleLakeFormat() const;
 
-    LakeFormat getPossibleLakeFormat() const;
-
-    static void setName(ExprSchemaTable * est, const String & prefix, bool setdbname, std::shared_ptr<SQLDatabase> database, uint32_t name);
+    static void setName(ExprSchemaTable * est, const String & name, bool setdbname, std::shared_ptr<SQLDatabase> database);
 
     void setName(ExprSchemaTable * est, bool setdbname) const;
 
@@ -412,72 +423,84 @@ struct SQLTable : SQLBase
 public:
     uint32_t col_counter = 0;
     uint32_t idx_counter = 0;
+    uint32_t hidx_counter = 0;
     uint32_t proj_counter = 0;
+    uint32_t hproj_counter = 0;
     uint32_t constr_counter = 0;
-    std::unordered_map<uint32_t, SQLColumn> cols;
-    std::unordered_map<uint32_t, SQLColumn> staged_cols;
-    std::unordered_map<uint32_t, SQLIndex> idxs;
-    std::unordered_map<uint32_t, SQLIndex> staged_idxs;
-    std::unordered_set<uint32_t> projs;
-    std::unordered_set<uint32_t> staged_projs;
-    std::unordered_set<uint32_t> constrs;
-    std::unordered_set<uint32_t> staged_constrs;
-    std::unordered_map<uint32_t, String> frozen_partitions;
+    std::unordered_map<String, SQLColumn> cols;
+    std::unordered_map<String, SQLColumn> staged_cols;
+    std::unordered_map<String, String> frozen_partitions;
+    /// Names of hypothetical (WHAT-IF) indexes and projections created on this table. They are
+    /// session scoped on the server, so this is best effort only.
+    std::unordered_set<String> hypothetical_indexes;
+    std::unordered_set<String> hypothetical_projections;
 
     SQLTable()
         : SQLBase("t")
     {
     }
 
-    size_t numberOfInsertableColumns(bool all) const;
+    [[nodiscard]] size_t numberOfInsertableColumns(bool all) const;
 
-    bool supportsFinal() const;
+    [[nodiscard]] bool supportsFinal(bool as_alias = false) const;
 
-    bool hasSignColumn() const;
+    [[nodiscard]] bool hasSignColumn(bool as_alias = false) const;
 
-    bool hasVersionColumn() const;
+    [[nodiscard]] bool hasVersionColumn(bool as_alias = false) const;
 
-    bool areInsertsAppends() const;
+    [[nodiscard]] bool areInsertsAppends(bool as_alias = false) const;
 };
 
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
+    bool is_materialized = false;
+    bool is_refreshable = false;
+    bool has_with_cols = false;
     uint32_t staged_ncols = 0;
-    std::unordered_set<uint32_t> cols;
+    std::unordered_set<String> cols;
 
     SQLView()
         : SQLBase("v")
     {
     }
 
-    bool supportsFinal() const;
+    [[nodiscard]] bool supportsFinal() const;
 };
 
 struct SQLDictionary : SQLBase
 {
 public:
-    std::unordered_map<uint32_t, SQLColumn> cols;
+    std::unordered_map<String, SQLColumn> cols;
 
     SQLDictionary()
         : SQLBase("d")
     {
     }
 
-    bool supportsFinal() const;
+    [[nodiscard]] bool supportsFinal() const;
 };
 
-struct SQLFunction
+struct SQLFunction : WithCluster
 {
 public:
     bool is_deterministic = false;
-    uint32_t fname = 0, nargs = 0;
-    std::optional<String> cluster;
+    uint32_t nargs = 0;
+};
 
-    const std::optional<String> & getCluster() const;
+struct SQLPolicy : WithCluster
+{
+public:
+    bool is_row = true;
+    String table_key;
+    /// USING predicate stored at creation time; absent means the policy allows all rows.
+    std::optional<WhereStatement> where_expr;
+    /// True when the policy was created with `TO buzzhouse_oracle_role` — eligible for the row policy oracle.
+    bool targets_oracle_role = false;
 
-    void setName(Function * f) const;
+    SQLPolicy() = default;
+    SQLPolicy(const SQLPolicy & other) = default;
+    SQLPolicy & operator=(const SQLPolicy & other) = default;
 };
 
 struct ColumnPathChainEntry
@@ -510,11 +533,15 @@ public:
     {
     }
 
-    const String & getBottomName() const;
+    [[nodiscard]] const String & getBottomName() const;
 
-    SQLType * getBottomType() const;
+    /// Returns the bottom name as a backtick-quoted SQL identifier: `escaped_name`.
+    [[nodiscard]] String getBottomNameSQL() const;
 
-    String columnPathRef(const String & quote = "`") const;
+    [[nodiscard]] SQLType * getBottomType() const;
+
+    /// The dotted path inside `quote`, each name escaped for it, or raw with an empty `quote`
+    [[nodiscard]] String columnPathRef(const String & quote = "`") const;
 };
 
 }

@@ -1,3 +1,4 @@
+import re
 import time
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -12,6 +13,22 @@ def started_cluster():
         cluster.add_instance(
             "test_disk_checker",
             main_configs=["config.xml"],
+            with_minio=False,
+            with_zookeeper=False,
+            with_remote_database_disk=False,
+            stay_alive=True,
+        )
+        # An embedded Keeper gives one configured disk two DiskLocal objects.
+        cluster.add_instance(
+            "test_disk_checker_keeper",
+            main_configs=["config_keeper.xml"],
+            with_minio=False,
+            with_zookeeper=False,
+            with_remote_database_disk=False,
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "test_disk_checker_unusable_path",
             with_minio=False,
             with_zookeeper=False,
             with_remote_database_disk=False,
@@ -48,6 +65,36 @@ def test_disk_checker_started_log(started_cluster):
     wait_condition(lambda: assert_log_exists('test2'), lambda x: x, max_attempts=10, delay=1)
 
 
+def test_two_check_threads_for_one_disk_use_distinct_check_files(started_cluster):
+    """Two check threads on one disk must probe distinct files, otherwise their writes and
+    unlinks collide and the self-check reports a healthy disk as failing and broken.
+    """
+    node = cluster.instances["test_disk_checker_keeper"]
+    disk = "shared_with_keeper"
+
+    # Without two startups there is no collision to detect and the rest passes vacuously.
+    wait_condition(
+        func=lambda: int(node.count_in_log(f"Disk check for disk {disk} started")),
+        condition=lambda value: value == 2,
+        max_attempts=30,
+        delay=1,
+    )
+
+    check_files = node.grep_in_log(
+        f"Disk check for disk {disk} started", filename="clickhouse-server.log"
+    )
+    names = set(re.findall(r"clickhouse_disk_checker_[0-9a-f-]+", check_files))
+    assert len(names) == 2, f"expected two distinct check files, got {names}"
+
+    # Give the two threads time to overlap on their probes.
+    time.sleep(15)
+
+    errors = node.count_in_log(f"<Error> {disk}::DiskLocalCheckThread")
+    assert int(errors) == 0, f"disk check reported {errors} errors for a healthy disk"
+
+    assert get_metric_value(node, "BrokenDisks") == 0
+
+
 def test_disk_readonly_status(started_cluster):
     try:
         node = cluster.instances["test_disk_checker"]
@@ -62,7 +109,7 @@ def test_disk_readonly_status(started_cluster):
                 node.exec_in_container(["mount", "-o", "remount,ro,bind", disk_path])
                 mount_read_only_succeded = True
                 break;
-            except Exception as err:
+            except Exception:
                 time.sleep(0.42);
         assert mount_read_only_succeded;
 
@@ -124,3 +171,123 @@ def test_disk_broken_status(started_cluster):
             node.exec_in_container(["mv", f"{disk_path}_broken", disk_path])
         except:
             pass
+
+
+def test_server_starts_with_unusable_local_disk_path(started_cluster):
+    """A local disk whose directory cannot be created is marked broken at startup, and the access
+    check must be skipped for it, otherwise the server does not start at all.
+    """
+    node = cluster.instances["test_disk_checker_unusable_path"]
+
+    # A regular file in the middle of the path makes `create_directories` fail even for root.
+    node.exec_in_container(["bash", "-c", "touch /var/lib/clickhouse/not_a_directory"])
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/unusable_disk.xml << 'EOF'
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <unusable>
+                <type>local</type>
+                <path>/var/lib/clickhouse/not_a_directory/disk/</path>
+            </unusable>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+EOF""",
+        ]
+    )
+
+    node.restart_clickhouse()
+
+    assert node.query("SELECT is_broken FROM system.disks WHERE name = 'unusable'") == "1\n"
+    assert node.contains_in_log("Skip access check for disk unusable (disk is broken)")
+
+
+def test_broken_local_disk_is_skipped(started_cluster):
+    """Operations that look for a table's files on every disk must skip a broken disk."""
+    node = cluster.instances["test_disk_checker_unusable_path"]
+
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -sfn loop_b /var/lib/clickhouse/loop_a && ln -sfn loop_a /var/lib/clickhouse/loop_b",
+        ]
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/looped_disk.xml << 'EOF'
+<clickhouse>
+    <enable_system_unfreeze>true</enable_system_unfreeze>
+    <storage_configuration>
+        <disks>
+            <looped>
+                <type>local</type>
+                <path>/var/lib/clickhouse/loop_a/disk/</path>
+            </looped>
+            <spare>
+                <type>local</type>
+                <path>/var/lib/clickhouse/spare_disk/</path>
+            </spare>
+        </disks>
+        <policies>
+            <with_looped>
+                <volumes>
+                    <main><disk>default</disk></main>
+                    <broken><disk>looped</disk></broken>
+                    <last><disk>spare</disk></last>
+                </volumes>
+                <move_factor>0</move_factor>
+            </with_looped>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+EOF""",
+        ]
+    )
+
+    node.restart_clickhouse()
+    assert node.query("SELECT is_broken FROM system.disks WHERE name = 'looped'") == "1\n"
+
+    node.query("CREATE TABLE t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    t_uuid = node.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 't'").strip()
+    t_spare = f"/var/lib/clickhouse/spare_disk/store/{t_uuid[:3]}/{t_uuid}"
+    node.exec_in_container(["bash", "-c", f"mkdir -p {t_spare}/sentinel"])
+    node.query("DROP TABLE t SYNC", settings={"max_execution_time": 30})
+    assert node.exec_in_container(["bash", "-c", f"[ -e {t_spare} ] && echo present || echo absent"]) == "absent\n"
+
+    node.query(
+        "CREATE DATABASE ordinary_db ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query("CREATE TABLE ordinary_db.t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    ordinary_spare = "/var/lib/clickhouse/spare_disk/data/ordinary_db/t"
+    node.exec_in_container(["bash", "-c", f"mkdir -p {ordinary_spare}/sentinel"])
+    node.query("DROP TABLE ordinary_db.t")
+    assert node.exec_in_container(["bash", "-c", f"[ -e {ordinary_spare} ] && echo present || echo absent"]) == "absent\n"
+    node.query("DROP DATABASE ordinary_db")
+
+    node.query(
+        "CREATE TABLE t2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
+    )
+    node.query("INSERT INTO t2 VALUES (1)")
+    part = node.query("SELECT name FROM system.parts WHERE table = 't2' AND active").strip()
+    node.query(f"ALTER TABLE t2 MOVE PART '{part}' TO DISK 'spare'")
+    node.query(f"ALTER TABLE t2 DETACH PART '{part}'")
+    assert node.query("SELECT count() FROM system.detached_parts WHERE table = 't2'") == "1\n"
+    node.query(f"ALTER TABLE t2 ATTACH PART '{part}'")
+    assert node.query("SELECT count() FROM t2") == "1\n"
+
+    frozen = node.query("SELECT name FROM system.parts WHERE table = 't2' AND active").strip()
+    node.query("ALTER TABLE t2 FREEZE WITH NAME 'looped_backup'")
+    node.query("ALTER TABLE t2 FREEZE WITH NAME 'looped_backup_2'")
+    assert frozen in node.query(
+        "ALTER TABLE t2 UNFREEZE WITH NAME 'looped_backup'", settings={"alter_partition_verbose_result": 1}
+    )
+    assert frozen in node.query("SYSTEM UNFREEZE WITH NAME 'looped_backup_2'")
+    node.query("DROP TABLE t2 SYNC", settings={"max_execution_time": 30})

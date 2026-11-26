@@ -5,8 +5,10 @@
 #if USE_JEMALLOC
 
 #    include <memory>
+#    include <optional>
 #    include <string>
-#    include <vector>
+#    include <Common/UnorderedMapWithMemoryTracking.h>
+#    include <Common/VectorWithMemoryTracking.h>
 #    include <Core/SettingsEnums.h>
 #    include <IO/ReadBufferFromFile.h>
 #    include <Processors/ISource.h>
@@ -17,13 +19,14 @@ namespace DB
 /// Source that reads a jemalloc heap profile file and outputs lines according to the requested format.
 ///
 /// Supported formats:
-/// - Raw:        streams lines directly from the heap profile file.
-/// - Symbolized: produces a "jeprof --raw" compatible output with embedded symbols (jeprof format).
+/// - Raw:        streams lines from the heap profile file, with stack addresses converted by
+///               `sanitizeJemallocStackLine` and without the memory map. `jeprof` reads it with the binary.
+/// - Symbolized: produces a "jeprof --raw" compatible output with embedded symbols (jeprof format), over the Raw lines.
 /// - Collapsed:  produces FlameGraph-compatible collapsed stacks.
 ///
 /// The Symbolized and Collapsed formats support a symbolize_with_inline flag: when true, inline
 /// frames are resolved; when false they are skipped.
-class JemallocProfileSource : public ISource
+class JemallocProfileSource final : public ISource
 {
 public:
     JemallocProfileSource(
@@ -32,7 +35,10 @@ public:
         size_t max_block_size_,
         JemallocProfileFormat mode_,
         bool symbolize_with_inline_,
-        bool collapsed_use_count_ = false);
+        bool collapsed_use_count_,
+        bool remove_file_);
+
+    ~JemallocProfileSource() override;
 
     String getName() const override { return "JemallocProfile"; }
 
@@ -62,13 +68,13 @@ private:
     JemallocProfileFormat mode;
     bool symbolize_with_inline;
     bool collapsed_use_count;
+    bool remove_file;
 
     /// For Symbolized mode streaming
     SymbolizedPhase symbolized_phase = SymbolizedPhase::CollectingAddresses;
-    std::vector<UInt64> addresses;        /// Collected addresses to symbolize
+    /// Collected addresses to symbolize: the published address and the runtime address to resolve
+    VectorWithMemoryTracking<std::pair<UInt64, UInt64>> addresses;
     size_t current_address_index = 0;
-    std::vector<std::string> profile_lines;  /// Raw profile lines for heap section
-    size_t current_profile_line_index = 0;
 
     /// Track what we've output in header phases
     bool symbol_header_line_output = false;
@@ -76,17 +82,48 @@ private:
     bool heap_separator_output = false;
     bool heap_header_output = false;
 
-    /// For Collapsed mode: processed lines (need aggregation, can't stream)
-    std::vector<std::string> collapsed_lines;
-    size_t current_collapsed_line_index = 0;
+    /// For Collapsed mode: aggregated stacks streamed directly from the map
+    struct CollapsedState
+    {
+        UnorderedMapWithMemoryTracking<std::string, UInt64> stack_to_metric;
+        UnorderedMapWithMemoryTracking<std::string, UInt64>::const_iterator iter;
 
-
+        CollapsedState() = default;
+        CollapsedState(const CollapsedState &) = delete;
+        CollapsedState & operator=(const CollapsedState &) = delete;
+        CollapsedState(CollapsedState &&) = delete;
+        CollapsedState & operator=(CollapsedState &&) = delete;
+    };
+    std::optional<CollapsedState> collapsed_state;
 };
+
+/// Parse stack addresses from a jemalloc profile line starting with '@'.
+/// Returns empty vector if the line doesn't start with '@'.
+/// The first address is kept as-is; subsequent ones are decremented by 1
+/// (they are return addresses, so we subtract 1 to point inside the call instruction).
+/// `fully_parsed` (when given) reports whether the whole line was consumed;
+/// on a malformed token the parsed prefix is still returned - strict callers
+/// must check the flag, best-effort callers may ignore it.
+VectorWithMemoryTracking<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed = nullptr);
+
+/// Rewrite a stack line of a heap profile for publishing: addresses in the main binary become offsets in it,
+/// and the others become 0, as in `system.trace_log.trace`. Runtime addresses must not leave the server.
+std::string sanitizeJemallocStackLine(std::string_view line);
+
+/// Parse the sampling interval from a jemalloc heap_v2 header line ("heap_v2/N").
+/// Returns 0 if the header doesn't match heap_v2 format or the value is not a valid integer.
+UInt64 parseJemallocSamplingInterval(std::string_view header);
 
 /// Convenience wrapper: runs JemallocProfileSource and writes every output line to output_filename.
 void symbolizeJemallocHeapProfile(
     const std::string & input_filename,
     const std::string & output_filename,
+    JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
+    bool symbolize_with_inline = true);
+
+/// Like symbolizeJemallocHeapProfile but returns the result as a string.
+std::string symbolizeJemallocHeapProfileToString(
+    const std::string & input_filename,
     JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
     bool symbolize_with_inline = true);
 

@@ -1,0 +1,203 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-cloud-v1
+title: 'Implantações em Cloud com Helm (v1.x)'
+description: 'Configurações específicas de Cloud para implantar o ClickStack no GKE, EKS e AKS com o Chart do Helm v1.x'
+doc_type: 'guide'
+keywords: ['ClickStack GKE', 'ClickStack EKS', 'ClickStack AKS', 'implantação de Kubernetes na nuvem', 'implantação em produção']
+---
+
+<Warning>
+  **Descontinuado — chart v1.x**
+
+  Esta página documenta implantações em Cloud para o Chart do Helm v1.x com template inline, que está em modo de manutenção. Para o chart v2.x, consulte [Implantações em Cloud com Helm](/pt-BR/clickstack/deployment/helm-cloud). Para migrar, consulte o [guia de upgrade](/pt-BR/clickstack/deployment/helm-upgrade).
+</Warning>
+
+Este guia aborda configurações específicas de Cloud para implantar o ClickStack em serviços gerenciados do Kubernetes. Para a instalação básica, consulte o [guia principal de implantação com Helm](/pt-BR/clickstack/deployment/helm-v1).
+
+<div id="google-kubernetes-engine-gke">
+  ## Google Kubernetes Engine (GKE)
+</div>
+
+Ao implantar no GKE, pode ser necessário sobrescrever alguns valores devido ao comportamento de rede específico do provedor de nuvem.
+
+<div id="loadbalancer-dns-resolution-issue">
+  ### Problema de resolução de DNS do LoadBalancer
+</div>
+
+O serviço LoadBalancer do GKE pode causar problemas internos de resolução de DNS, em que a comunicação entre pods passa a resolver para IPs externos em vez de permanecer dentro da rede do cluster. Isso afeta especificamente a conexão do OTel collector com o servidor OpAMP.
+
+**Sintomas:**
+
+* logs do OTel collector mostrando erros de &quot;connection refused&quot; com endereços IP do cluster
+* Falhas de conexão com o OpAMP, como: `dial tcp 34.118.227.30:4320: connect: connection refused`
+
+**Solução:**
+
+Use o nome de domínio totalmente qualificado (FQDN) na URL do servidor OpAMP:
+
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set hyperdx.frontendUrl="http://your-external-ip-or-domain.com" \
+  --set otel.opampServerUrl="http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+```
+
+<div id="other-gke-considerations">
+  ### Outras considerações sobre o GKE
+</div>
+
+```yaml
+# values-gke.yaml
+hyperdx:
+  frontendUrl: "http://34.123.61.99"  # Use o IP externo do seu LoadBalancer
+
+otel:
+  opampServerUrl: "http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+
+# Ajuste para a rede de pods do GKE, se necessário
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.8.0.0/16"  # O GKE geralmente usa este intervalo
+      - "10.0.0.0/8"   # Fallback para outras configurações
+```
+
+<div id="amazon-eks">
+  ## Amazon EKS
+</div>
+
+Para implantações no Amazon EKS, considere estas configurações comuns:
+
+```yaml
+# values-eks.yaml
+hyperdx:
+  frontendUrl: "http://your-alb-domain.com"
+
+# EKS normalmente usa estes CIDRs de pod
+clickhouse:
+  config:
+    clusterCidrs:
+      - "192.168.0.0/16"
+      - "10.0.0.0/8"
+
+# Habilitar entrada para produção
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+```
+
+<div id="azure-aks">
+  ## Azure AKS
+</div>
+
+Para implantações no AKS:
+
+```yaml
+# values-aks.yaml
+hyperdx:
+  frontendUrl: "http://your-azure-lb.com"
+
+# Rede de pods do AKS
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.244.0.0/16"  # CIDR de pod comum do AKS
+      - "10.0.0.0/8"
+```
+
+<div id="production-cloud-deployment-checklist">
+  ## Checklist de implantação em produção no Cloud
+</div>
+
+Antes de implantar o ClickStack em produção em qualquer provedor de nuvem:
+
+* [ ] Configure corretamente o `frontendUrl` com seu domínio ou IP externo
+* [ ] Configure a Entrada com TLS para acesso via HTTPS
+* [ ] Substitua `otel.opampServerUrl` por um FQDN se estiver enfrentando problemas de conexão (especialmente no GKE)
+* [ ] Ajuste `clickhouse.config.clusterCidrs` para o CIDR da sua rede de pods
+* [ ] Configure armazenamento persistente para workloads de produção
+* [ ] Defina requisições e limites de recursos adequados
+* [ ] Habilite monitoramento e alertas
+* [ ] Configure backup e recuperação de desastres
+* [ ] Implemente um gerenciamento adequado de segredos
+
+<div id="production-best-practices">
+  ## Boas práticas de produção
+</div>
+
+<div id="resource-management">
+  ### Gerenciamento de recursos
+</div>
+
+```yaml
+hyperdx:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+```
+
+<div id="high-availability">
+  ### Alta disponibilidade
+</div>
+
+```yaml
+hyperdx:
+  replicaCount: 3
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - clickstack
+            topologyKey: kubernetes.io/hostname
+```
+
+<div id="persistent-storage">
+  ### Armazenamento persistente
+</div>
+
+Certifique-se de que os volumes persistentes estejam configurados para retenção de dados:
+
+```yaml
+clickhouse:
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "fast-ssd"  # Use a classe de armazenamento específica do provedor de cloud
+```
+
+**Classes de armazenamento específicas para Cloud:**
+
+* **GKE**: `pd-ssd` ou `pd-balanced`
+* **EKS**: `gp3` ou `io2`
+* **AKS**: `managed-premium` ou `managed-csi`
+
+<div id="browser-compatibility-notes">
+  ### Observações sobre compatibilidade com navegadores
+</div>
+
+Para implantações com apenas HTTP (desenvolvimento/teste), alguns navegadores podem exibir erros da API de criptografia devido aos requisitos de contexto seguro. Para implantações de produção, sempre use HTTPS com certificados TLS adequados por meio da configuração de Entrada.
+
+Consulte [configuração de Entrada](/pt-BR/clickstack/deployment/helm-configuration-v1#ingress-setup) para ver as instruções de configuração de TLS.
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+* [Guia de configuração (v1.x)](/pt-BR/clickstack/deployment/helm-configuration-v1) - chaves de API, Secrets e Entrada
+* [Opções de implantação (v1.x)](/pt-BR/clickstack/deployment/helm-deployment-options-v1) - configuração de sistemas externos
+* [Guia principal do Helm (v1.x)](/pt-BR/clickstack/deployment/helm-v1) - instalação básica
+* [Implantações na Cloud (v2.x)](/pt-BR/clickstack/deployment/helm-cloud) - guia da Cloud v2.x
+* [Guia de upgrade](/pt-BR/clickstack/deployment/helm-upgrade) - migração de v1.x para v2.x

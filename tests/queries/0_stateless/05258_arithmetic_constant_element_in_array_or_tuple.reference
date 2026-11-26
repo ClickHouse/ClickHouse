@@ -1,0 +1,20 @@
+[NULL]
+[NULL]	[null]
+[NULL]	[null]
+[NULL,NULL]	[]
+[NULL,NULL]	[]
+[NULL]	[NULL]
+[NULL]	[NULL]
+[[NULL]]
+[[NULL]]
+[NULL]
+[NULL]
+[NULL]
+
+[]
+(0,1)	(0,-1)
+(1,1)	(1,-1)
+(1,1)	(1,1,0)
+(1,2)	(1,1,1)
+2020-01-01 01:00:00
+2020-01-02 01:00:00

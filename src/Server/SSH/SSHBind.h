@@ -35,6 +35,9 @@ public:
     // Sets host key for a server. It can be set only one time for each key type.
     // If you provide different keys of one type, the first one will be overwritten.
     void setHostKey(const std::string & key_path);
+    // Sets the server banner (the "softwareversion" part of the SSH identification
+    // string sent right after the "SSH-2.0-" prefix, see RFC 4253 section 4.2).
+    void setBanner(const std::string & banner);
     // Passes external socket to ssh_bind
     void setFd(int fd);
     // Listens on a socket. If it was passed via setFd just read hostkeys

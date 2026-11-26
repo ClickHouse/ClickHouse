@@ -37,7 +37,6 @@ struct Packet
     String columns_description;
     Progress progress;
     ProfileInfo profile_info;
-    std::vector<UUID> part_uuids;
 
     /// The part of parallel replicas protocol
     std::optional<InitialAllRangesAnnouncement> announcement;
@@ -74,7 +73,7 @@ public:
         LOCAL
     };
 
-    virtual Type getConnectionType() const = 0;
+    [[nodiscard]] virtual Type getConnectionType() const = 0;
 
     virtual void setDefaultDatabase(const String & database) = 0;
 
@@ -90,7 +89,7 @@ public:
 
     virtual const String & getDescription(bool with_extra = false) const = 0;  /// NOLINT
 
-    virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
+    [[nodiscard]] virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
 
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
@@ -114,18 +113,23 @@ public:
 
     /// Whether the client needs to read and send the data for the INSERT.
     /// False if the server will read the data through other means (in particular if clickhouse-local added input reading step directly into the query pipeline).
-    virtual bool isSendDataNeeded() const { return true; }
+    [[nodiscard]] virtual bool isSendDataNeeded() const { return true; }
 
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
+    /// Send all scalars.
+    virtual void sendScalarsData(Scalars & data) = 0;
+
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
+
+    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;
 
     /// Check, if has data in read buffer.
-    virtual bool hasReadPendingData() const = 0;
+    [[nodiscard]] virtual bool hasReadPendingData() const = 0;
 
     /// Checks if there is input data in connection and reads packet ID.
     virtual std::optional<UInt64> checkPacket(size_t timeout_microseconds) = 0;
@@ -134,13 +138,22 @@ public:
     virtual Packet receivePacket() = 0;
     virtual UInt64 receivePacketType() = 0;
 
-    /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
+    /// If not connected yet - then connect. If cannot connect - throw an exception.
+    /// Does not ping an already-established connection: a connection that the server has closed
+    /// while it was idle in the pool is detected and recovered when the query is sent.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;
 
-    virtual bool isConnected() const = 0;
+    [[nodiscard]] virtual bool isConnected() const = 0;
 
-    /// Check if connection is still active with ping request.
+    /// Check if connection is still active with ping request. The round trip also synchronizes the
+    /// client with the server: after it returns, everything the server has already sent (including
+    /// a close) has been observed. Use it to recover from a protocol desynchronization.
     virtual bool checkConnected(const ConnectionTimeouts & /*timeouts*/) = 0;
+
+    /// The same, but without a round trip. It only reports a failure that is already visible on the
+    /// socket, so it must not be used to recover from a desynchronization - only to skip a
+    /// connection that is known to be unusable before sending the next request.
+    virtual bool checkConnectedWithoutRoundTrip() = 0;
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state
@@ -152,6 +165,16 @@ public:
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
 
     virtual void setFormatSettings(const FormatSettings &) {}
+
+    /// Set a callback to check for query cancellation (e.g. Ctrl+C).
+    /// Used by LocalConnection to enable cancellation during query analysis.
+    virtual void setCancelCallback(std::function<bool()>) {}
+
+    /// The client created an output (format and buffers) for the result of the current query.
+    virtual void onQueryOutputCreated() {}
+
+    /// The client has released that output.
+    virtual void onQueryOutputReleased() {}
 };
 
 using ServerConnectionPtr = std::unique_ptr<IServerConnection>;

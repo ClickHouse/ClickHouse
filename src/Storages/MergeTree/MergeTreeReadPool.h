@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -77,6 +76,10 @@ public:
 private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
+    /// Per part, the number of granules in a stripe of the columns cache, or 0 when the part is
+    /// not read through the cache. The ranges are cut at the ends of stripes, see `ColumnsCacheStripes`.
+    std::vector<size_t> columns_cache_stripe_marks;
+
     mutable std::mutex mutex;
 
     /// State to track numbers of slow reads.
@@ -98,7 +101,7 @@ private:
     {
         struct PartIndexAndRange
         {
-            size_t part_idx;
+            size_t part_idx{};
             MarkRanges ranges;
         };
 
@@ -108,6 +111,33 @@ private:
 
     std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
     std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
+    /// The marks of all threads that no task has taken yet.
+    size_t remaining_marks TSA_GUARDED_BY(mutex) = 0;
+
+    /// Returns the size of the tasks that are cut now from a part whose task size is `min_marks_per_task`:
+    /// that size, or `PoolSettings::min_marks_per_task_at_read_end`, if it is set, once at most one task per
+    /// thread is left in the pool. A thread that has read its share takes tasks from the shares of other
+    /// threads, so at the end of the read the threads that still read their last tasks work alone, and
+    /// smaller last tasks let all threads finish together. One task per thread is about what the other
+    /// threads read while a thread reads one task, so a task of the larger size, which is cut before that
+    /// point, ends while the pool still has marks. The marks are counted over the whole pool and not per
+    /// share, because shares are read at different speeds, so the marks left at the end of the read belong to
+    /// the slowest shares. The rest of the read keeps the larger tasks, because every task has a fixed cost
+    /// and ends in a short block.
+    /// For example, 64 threads with tasks of 24 marks get tasks of 8 marks once 1,536 marks are left.
+    size_t adjustTaskSizeToReadEnd(size_t min_marks_per_task) const TSA_REQUIRES(mutex);
+
+    /// Cuts the next portion of marks to read from the per-thread queues (possibly stealing from
+    /// another thread's queue when the own one is exhausted). Returns false if there is no more work.
+    /// Outputs the queue and the intended task size so that the caller can continue cutting from
+    /// the same part with cutMoreRangesToRead when the ranges refiner drops a part of the cut.
+    bool cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part);
+
+    /// Cuts up to need_marks more marks of the same part, or returns false if the part
+    /// is not on top of the given thread's queue anymore.
+    bool cutMoreRangesToRead(size_t thread_idx, size_t part_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part);
+
+    void cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part) TSA_REQUIRES(mutex);
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

@@ -1,9 +1,14 @@
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
@@ -11,6 +16,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 namespace Setting
 {
@@ -52,82 +62,192 @@ DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const Da
     return makeNullableOrLowCardinalityNullableSafe(type);
 }
 
+ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs)
+{
+    if (!lhs)
+        return rhs;
+    if (!rhs)
+        return lhs;
+
+    if (lhs->size() != rhs->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge null maps with different sizes: {} and {}", lhs->size(), rhs->size());
+
+    MutableColumnPtr result = IColumn::mutate(std::move(lhs));
+    auto & result_null_map = assert_cast<ColumnUInt8 &>(*result).getData();
+    const auto & rhs_null_map = assert_cast<const ColumnUInt8 &>(*rhs).getData();
+
+    for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+        result_null_map[i] |= rhs_null_map[i];
+
+    return result;
+}
+
+ColumnPtr getOuterNullMap(const IColumn & column)
+{
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
+        return column_nullable->getNullMapColumnPtr();
+    if (const auto * column_dynamic = checkAndGetColumn<ColumnDynamic>(&column))
+        return column_dynamic->getVariantColumn().createNullMap();
+    if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(&column))
+        return column_variant->createNullMap();
+    if (const auto * column_low_cardinality = checkAndGetColumn<ColumnLowCardinality>(&column);
+        column_low_cardinality && column_low_cardinality->nestedIsNullable())
+    {
+        const size_t null_index = column_low_cardinality->getDictionary().getNullValueIndex();
+        auto null_map = ColumnUInt8::create(column_low_cardinality->size());
+        auto & null_map_data = null_map->getData();
+        for (size_t row = 0; row < null_map_data.size(); ++row)
+            null_map_data[row] = column_low_cardinality->getIndexAt(row) == null_index;
+        return null_map;
+    }
+    return nullptr;
+}
+
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map)
 {
     ColumnPtr null_map_holder;
-
-    auto addNullMap = [&](const ColumnNullable * column_nullable)
-    {
-        if (!null_map_holder)
-        {
-            /// First nullable column: just take its null map as the base
-            null_map_holder = column_nullable->getNullMapColumnPtr();
-        }
-        else
-        {
-            /// Subsequent nullable columns: OR their null maps into the accumulated one
-            MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
-
-            PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
-            const PaddedPODArray<UInt8> & other_null_map = column_nullable->getNullMapData();
-
-            for (size_t i = 0, size = mutable_null_map.size(); i < size; ++i)
-                mutable_null_map[i] |= other_null_map[i];
-
-            null_map_holder = std::move(mutable_null_map_holder);
-        }
-    };
-
     for (auto & column : key_columns)
     {
-        if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*column))
+        if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
         {
-            /// Top-level Nullable(...) always contributes to the combined null map
-            addNullMap(column_nullable);
+            null_map_holder = mergeNullMaps(std::move(null_map_holder), column_nullable->getNullMapColumnPtr());
 
-            const IColumn * nested_column = &column_nullable->getNestedColumn();
-            column = nested_column;
-
-            /// Special case: Nullable(Tuple(...))
-            /// If the nested column is a tuple, also fold in null maps of nullable tuple elements
-            if (const auto * tuple = checkAndGetColumn<ColumnTuple>(nested_column))
-            {
-                const auto & tuple_columns = tuple->getColumns();
-                for (const auto & element : tuple_columns)
-                {
-                    if (const auto * elem_nullable = checkAndGetColumn<ColumnNullable>(element.get()))
-                    {
-                        addNullMap(elem_nullable);
-                    }
-                }
-            }
+            /** Only the top-level null map says whether the key of a row is NULL. Folding in the null
+              * maps of the elements of a `Nullable(Tuple(Nullable(T), ...))` would make a row whose tuple
+              * merely *contains* a NULL a NULL key: the hash-family joins would drop it, while the merge
+              * algorithms - which compare the nested tuples - keep it, so the result of a join would depend
+              * on `join_algorithm`, and `IN` would never match such a row. The NULLs of the elements are
+              * part of the key and are compared as any other value, exactly as they are for a
+              * `Tuple(Nullable(T), ...)` that is not wrapped in `Nullable`.
+              */
+            column = &column_nullable->getNestedColumn();
         }
     }
 
     null_map = null_map_holder ? &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
-
     return null_map_holder;
+}
+
+
+void applyParentNullMapToExtractedSubcolumn(
+    IColumn & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset)
+{
+    chassert(column_offset <= column.size());
+    const size_t length = column.size() - column_offset;
+    chassert(parent_null_map_offset + length <= parent_null_map.size());
+
+    /// A non-nullable `LowCardinality(T)` read from disk has no NULL placeholder in its dictionary, so
+    /// promote it to `LowCardinality(Nullable(T))` in place. The extracted subcolumn's type is
+    /// `LowCardinality(Nullable(T))` (see `create(DataTypePtr)`), so this keeps the (type, column) pair
+    /// consistent even for ranges that contain no parent NULLs (handled before the early-out below).
+    if (auto * low_cardinality_to_promote = typeid_cast<ColumnLowCardinality *>(&column);
+        low_cardinality_to_promote && !low_cardinality_to_promote->nestedIsNullable())
+        low_cardinality_to_promote->convertDictionaryToNullableInplace();
+
+    /// When no row of the range is NULL in the parent, the subcolumn already holds the correct values and
+    /// nothing needs to be marked NULL.
+    if (memoryIsZero(parent_null_map.data(), parent_null_map_offset, parent_null_map_offset + length))
+        return;
+
+    /// Build a keep-mask that covers only the applied range: zero for the rows that are NULL in the parent
+    /// and one elsewhere.
+    IColumn::Filter keep_mask(length);
+    for (size_t i = 0; i < length; ++i)
+        keep_mask[i] = !parent_null_map[parent_null_map_offset + i];
+
+    if (auto * nullable = typeid_cast<ColumnNullable *>(&column))
+    {
+        nullable->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    if (auto * variant = typeid_cast<ColumnVariant *>(&column))
+    {
+        variant->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    if (auto * dynamic = typeid_cast<ColumnDynamic *>(&column))
+    {
+        dynamic->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(&column))
+    {
+        low_cardinality->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR, "Cannot apply the parent null map to subcolumn {} that cannot represent NULL values", column.getName());
 }
 
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
-    if (!canExtractedSubcolumnsBeInsideNullable(prev))
-        return prev;
-    return makeNullableSafe(prev);
+    /// Wrap into `Nullable(...)` when possible, or `LowCardinality(Nullable(T))` for a non-nullable
+    /// `LowCardinality(T)` element (which cannot be wrapped in plain `Nullable`) so it can still
+    /// represent the outer column's NULLs. Returns `prev` unchanged for types that can do neither.
+    return makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(prev);
 }
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
     if (prev_type && !canExtractedSubcolumnsBeInsideNullable(prev_type))
+    {
+        /// The extracted subcolumn cannot be wrapped into Nullable, but some types can represent NULL
+        /// themselves: Nullable (possibly inside LowCardinality), Dynamic and Variant. For them return a
+        /// serialization that also reads the outer null map and marks the corresponding rows as NULL in
+        /// the subcolumn's own null representation.
+        ///
+        /// A non-nullable `LowCardinality(T)` cannot represent NULL as-is, but its extracted subcolumn's
+        /// type is promoted to `LowCardinality(Nullable(T))` (see `create(DataTypePtr)`). Wrap the original
+        /// (non-nullable) serialization so the on-disk stream layout is unchanged; the wrapper reads the
+        /// `LowCardinality(T)` column and `applyParentNullMapToExtractedSubcolumn` promotes it to
+        /// `LowCardinality(Nullable(T))` before folding in the outer null map, keeping the read
+        /// (type, column) pair consistent with the in-memory one. `prev_type` is passed to the wrapper in
+        /// that case, because the promoted result column is not the on-disk representation to deserialize
+        /// into.
+        if (canContainNull(*prev_type))
+            return SerializationNullableWithParentNullMap::create(prev_serialization);
+        if (prev_type->lowCardinality())
+            return SerializationNullableWithParentNullMap::create(prev_serialization, prev_type);
         return prev_serialization;
-    return std::make_shared<SerializationNullable>(prev_serialization);
+    }
+
+    return SerializationNullable::create(prev_serialization);
 }
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
+
+    if (null_map)
+    {
+        const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+        /// The extracted subcolumn cannot be wrapped into Nullable, but if it can already represent NULL
+        /// itself, mark rows that are NULL in the outer column as NULL in it.
+        if (canContainNull(*prev))
+        {
+            auto mutable_column = IColumn::mutate(prev);
+            applyParentNullMapToExtractedSubcolumn(*mutable_column, outer_null_map_data, 0, 0);
+            return mutable_column;
+        }
+
+        /// A non-nullable `LowCardinality(T)` cannot represent NULL as-is, but it can once promoted to
+        /// `LowCardinality(Nullable(T))` -- which is what the type `create(DataTypePtr)` returns. Promote the
+        /// column the same way with `cloneNullable()` before folding in the outer null map, so the extracted
+        /// (type, column) pair stays consistent.
+        if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()))
+        {
+            auto mutable_column = prev_lc->cloneNullable();
+            applyParentNullMapToExtractedSubcolumn(*mutable_column, outer_null_map_data, 0, 0);
+            return mutable_column;
+        }
+    }
+
     return prev;
 }
 

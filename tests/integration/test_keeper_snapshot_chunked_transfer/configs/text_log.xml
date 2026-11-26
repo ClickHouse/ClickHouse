@@ -1,0 +1,8 @@
+<clickhouse>
+    <text_log>
+        <level>debug</level>
+        <max_size_rows>50000</max_size_rows>
+        <reserved_size_rows>1024</reserved_size_rows>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </text_log>
+</clickhouse>

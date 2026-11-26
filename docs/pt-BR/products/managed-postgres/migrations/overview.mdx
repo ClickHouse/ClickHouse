@@ -1,0 +1,73 @@
+---
+slug: /cloud/managed-postgres/migrations/overview
+sidebarTitle: 'Visão geral'
+title: 'Migração de dados para o ClickHouse Managed Postgres'
+description: 'Compare as quatro opções de migração para o ClickHouse Managed Postgres e escolha a que melhor se adapta ao seu banco de dados de origem e aos seus requisitos de indisponibilidade.'
+keywords: ['managed postgres', 'migração', 'migração postgres', 'clickpipes', 'peerdb', 'pg_dump', 'pg_restore', 'replicação lógica']
+doc_type: 'guide'
+---
+
+Você pode migrar do seu provedor de Postgres atual para o ClickHouse Managed Postgres
+de quatro maneiras diferentes. A melhor opção depende de você precisar de replicação
+contínua, da origem da migração e de quanto tempo de indisponibilidade sua
+aplicação pode tolerar durante a transição.
+
+<Info>
+  Está migrando de um banco de dados que não seja Postgres, como o MySQL? [Entre em contato conosco](https://clickhouse.com/company/contact)
+  para discutir sua migração.
+</Info>
+
+| Método                                                                                     | Replicação contínua (CDC) | Onde é executado             | Mais indicado para                                                                                     |
+| ------------------------------------------------------------------------------------------ | ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [ClickPipes](/pt-BR/products/managed-postgres/migrations/clickpipes)                             | Sim                       | console do ClickHouse Cloud  | A maioria das migrações — assistente guiado com carga inicial e CDC prontos para uso                   |
+| [PeerDB](/pt-BR/products/managed-postgres/migrations/peerdb)                                     | Sim                       | Auto-hospedado (Docker)      | Origens ou fluxos de trabalho não cobertos pela UI do ClickPipes                                       |
+| [pg&#95;dump and pg&#95;restore](/pt-BR/products/managed-postgres/migrations/pg_dump-pg_restore) | Não                       | Sua máquina local            | Migrações pontuais de conjuntos de dados pequenos ou estáticos, quando a indisponibilidade é aceitável |
+| [replicação lógica](/pt-BR/products/managed-postgres/migrations/logical-replication)             | Sim                       | Postgres de origem e destino | Controle direto sobre a replicação nativa do Postgres, sem ferramentas de terceiros                    |
+
+## ClickPipes {#clickpipes}
+
+[ClickPipes](/pt-BR/products/managed-postgres/migrations/clickpipes) é a opção recomendada
+para a maioria das migrações. Ele funciona inteiramente no console do ClickHouse Cloud
+e orienta você na conexão com a origem, na exportação e importação do
+schema e no início de uma carga inicial com ou sem CDC. Conectores de origem pré-configurados
+dão suporte a Amazon RDS, Aurora, Supabase, Google Cloud SQL, Azure
+Flexible Server, Neon, Crunchy Bridge, TimescaleDB e qualquer instância
+genérica do Postgres.
+
+## PeerDB {#peerdb}
+
+[PeerDB](/pt-BR/products/managed-postgres/migrations/peerdb) é uma ferramenta de migração
+auto-hospedada que você executa via Docker. Use-a quando sua origem ou fluxo de trabalho não se adequar
+ao assistente do ClickPipes — por exemplo, quando você precisar automatizar por script a criação de peers
+em vários bancos de dados ou executar a migração inteiramente dentro da sua própria rede.
+O PeerDB não migra índices, restrições nem triggers automaticamente; você
+os recria no destino depois que os dados chegam.
+
+## pg_dump and pg_restore {#pg-dump-pg-restore}
+
+[pg&#95;dump and pg&#95;restore](/pt-BR/products/managed-postgres/migrations/pg_dump-pg_restore)
+capturam um snapshot da origem e o restauram no destino. Não há
+replicação contínua, então as operações de escrita devem ser interrompidas na origem durante todo o período do dump
+e da restauração. Essa é a escolha certa para conjuntos de dados pequenos ou estáticos, ou
+ambientes não produtivos em que uma janela de manutenção seja aceitável.
+
+## Replicação lógica {#logical-replication}
+
+[A replicação lógica](/pt-BR/products/managed-postgres/migrations/logical-replication)
+usa publicações e assinaturas nativas do Postgres para transmitir alterações da
+origem ao destino. Você mesmo configura `wal_level`, slots de replicação e
+o privilégio `REPLICATION` — nenhuma ferramenta de terceiros intermedeia o
+processo. Escolha esse caminho quando quiser controle total sobre os mecanismos
+de replicação ou quando as regras do seu ambiente não permitirem ferramentas de
+migração externas.
+
+## Após a migração {#after-migration}
+
+Quando os dados estiverem sendo transferidos, use a [validação de dados](/pt-BR/products/managed-postgres/migrations/data-validation)
+para confirmar que as contagens de linhas e o conteúdo correspondem entre a origem e o destino antes de
+redirecionar o tráfego da aplicação. O [FAQ sobre migrações](/pt-BR/products/managed-postgres/migrations/faq)
+aborda erros comuns e as etapas de recuperação.
+
+## Migração do Supabase {#supabase}
+
+Se você estiver migrando do Supabase, consulte o [guia de migração do Supabase para o ClickHouse Managed Postgres](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) para conferir um passo a passo.

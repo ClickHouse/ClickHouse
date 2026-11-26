@@ -1,0 +1,11 @@
+CREATE TABLE default.alter_modify_column_ttl_without_type
+(
+    `uid` Int16,
+    `name` String TTL age + toIntervalDay(1),
+    `age` Date
+)
+ENGINE = MergeTree
+ORDER BY uid
+SETTINGS index_granularity = 8192
+1	
+2	valid

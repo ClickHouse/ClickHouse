@@ -3,6 +3,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -13,10 +14,15 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+#include <Disks/DiskFromAST.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
 
@@ -27,6 +33,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
+#include <unordered_set>
 
 
 namespace fs = std::filesystem;
@@ -53,7 +60,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 StorageJoin::StorageJoin(
@@ -78,13 +84,14 @@ StorageJoin::StorageJoin(
     , strictness(strictness_)
     , overwrite(overwrite_)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     for (const auto & key : key_names)
         if (!metadata_snapshot->getColumns().hasPhysical(key))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    /// Filled from one thread, then shared unchanged. A `SELECT` from the table can read only the serial map layout.
+    join = HashJoin::create(table_join, std::make_shared<const Block>(getRightSampleBlock()), HashJoinBuildLayout::oneBucket(1), overwrite);
     restore();
     optimizeUnlocked();
 }
@@ -145,7 +152,11 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
+    {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join->shrinkStoredBlocksToFit(dummy, true);
+    }
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -166,7 +177,11 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = HashJoin::create(
+            table_join, std::make_shared<const Block>(getRightSampleBlock()), HashJoinBuildLayout::oneBucket(1), overwrite);
+    }
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -184,13 +199,14 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     std::lock_guard mutate_lock(mutate_mutex);
 
     constexpr auto tmp_backup_file_name = "tmp/mut.bin";
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
 
     auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
 
-    auto new_data = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    auto new_data
+        = HashJoin::create(table_join, std::make_shared<const Block>(getRightSampleBlock()), HashJoinBuildLayout::oneBucket(1), overwrite);
 
     // New scope controls lifetime of pipeline.
     {
@@ -203,7 +219,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, true);
+            Block block_to_insert = block;
+            convertRightBlock(block_to_insert);
+            new_data->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
             if (persistent)
                 backup_stream.write(block);
         }
@@ -212,7 +230,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    join = std::move(new_data);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(new_data);
+    }
+    setCurrentQueryMemoryDriftExpected();
     increment = 1;
 
     if (persistent)
@@ -240,7 +262,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Table '{}' has incompatible type of JOIN", getStorageID().getNameForLogs());
 
@@ -258,6 +280,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     const auto & join_on = analyzed_join->getOnlyClause();
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
+
+    /// The prebuilt join is reused as is (see reuseJoinedData below), so it cannot serve an
+    /// expression the query derived: the names are unqualified, the saved block has a different
+    /// layout and the maps variant may differ.
+    if (analyzed_join->getMixedJoinExpression())
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+            "ON section of JOIN with a condition involving columns from both tables is not implemented for the Join table engine");
 
     const auto & key_names_right = join_on.key_names_right;
     const auto & key_names_left = join_on.key_names_left;
@@ -301,7 +330,8 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Block right_sample_block;
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)));
+    HashJoinPtr join_clone
+        = HashJoin::create(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)), HashJoinBuildLayout::oneBucket(1));
 
     RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     join_clone->setLock(holder);
@@ -329,7 +359,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addBlockToJoin(block_to_insert, true);
+    join->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -338,11 +368,39 @@ size_t StorageJoin::getSize(ContextPtr context) const
     return join->getTotalRowCount();
 }
 
+namespace
+{
+
+/// Whether a read of the table returns every stored row of a key rather than one row per key.
+constexpr bool readsAllRowsOfKey(JoinKind kind, JoinStrictness strictness)
+{
+    return strictness == JoinStrictness::All || (kind == JoinKind::Right && strictness != JoinStrictness::RightAny);
+}
+
+}
+
 std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
-    return join->getTotalRowCount();
+    if (!readsAllRowsOfKey(join->getKind(), join->getStrictness()))
+        return join->getTotalRowCount();
+
+    /// getTotalRowCount counts keys, so the rows of each key are summed here.
+    const auto data = join->getJoinedData();
+    const HashJoinTable & table = *data->tables.front();
+    if (!table.holds<HashJoin::MapsAll>())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin keeps every row of a key in a map that is not MapsAll");
+
+    UInt64 rows = 0;
+    auto count_rows = [&](const auto &, const RowRefList & mapped)
+    {
+        rows += mapped.rows();
+        return size_t(0);
+    };
+    HashJoinTable::Cursor cursor;
+    table.forEachCell<HashJoin::MapsAll>(cursor, std::numeric_limits<size_t>::max(), count_rows);
+    return rows;
 }
 
 std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
@@ -373,6 +431,7 @@ void StorageJoin::convertRightBlock(Block & block) const
         JoinCommon::convertColumnToNullable(col);
 }
 
+void registerStorageJoin(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory)
 {
     auto has_builtin_fn = [](std::string_view name)
@@ -410,6 +469,14 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const auto & setting : args.storage_def->settings->changes)
             {
+                /// These settings are read here rather than applied to a `BaseSettings`, so there is no
+                /// settings schema to check the value-less form `SETTINGS name` against - it stands for
+                /// `name = true` and is only meaningful for the Bool ones. Without this check
+                /// `SETTINGS max_rows_in_join` would silently become `max_rows_in_join = 1`.
+                if (setting.shorthand && setting.name != "join_use_nulls" && setting.name != "join_any_take_last_row"
+                    && setting.name != "any_join_distinct_right_table_keys" && setting.name != "persistent")
+                    BaseSettingsHelpers::throwValuelessSettingIsNotBool(setting.name);
+
                 if (setting.name == "join_use_nulls")
                     join_use_nulls = setting.value;
                 else if (setting.name == "max_rows_in_join")
@@ -423,7 +490,10 @@ void registerStorageJoin(StorageFactory & factory)
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
                 else if (setting.name == "disk")
+                {
+                    DiskFromAST::ensureDiskIsNotInline(setting.value);
                     disk_name = setting.value.safeGet<String>();
+                }
                 else if (setting.name == "persistent")
                 {
                     persistent = setting.value.safeGet<bool>();
@@ -433,7 +503,7 @@ void registerStorageJoin(StorageFactory & factory)
             }
         }
 
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.getDisk(disk_name);
 
         if (engine_args.size() < 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -519,46 +589,179 @@ void registerStorageJoin(StorageFactory & factory)
     factory.registerStorage(
         "Join",
         creator_fn,
+        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = has_builtin_fn,
-        });
+            .stores_data_on_disk = true,
+            .supports_temporary = true,
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+Optional prepared data structure for usage in [JOIN](/reference/statements/select/join) operations.
+
+<Note>
+In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
+</Note>
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
+```
+
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+
+## Engine parameters {#engine-parameters}
+
+### `join_strictness` {#join_strictness}
+
+`join_strictness` – [JOIN strictness](/reference/statements/select/join#supported-types-of-join).
+
+### `join_type` {#join_type}
+
+`join_type` – [JOIN type](/reference/statements/select/join#supported-types-of-join).
+
+### Key columns {#key-columns}
+
+`k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
+
+Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters do not match, ClickHouse does not throw an exception and may return incorrect data.
+
+## Specifics and recommendations {#specifics-and-recommendations}
+
+### Data storage {#data-storage}
+
+`Join` table data is always located in the RAM. When inserting rows into a table, ClickHouse writes data blocks to the directory on the disk so that they can be restored when the server restarts.
+
+If the server restarts incorrectly, the data block on the disk might get lost or damaged. In this case, you may need to manually delete the file with damaged data.
+
+### Selecting and Inserting Data {#selecting-and-inserting-data}
+
+You can use `INSERT` queries to add data to the `Join`-engine tables. If the table was created with the `ANY` strictness, data for duplicate keys are ignored. With the `ALL` strictness, all rows are added.
+
+Main use-cases for `Join`-engine tables are following:
+
+- Place the table to the right side in a `JOIN` clause.
+- Call the [joinGet](/reference/functions/regular-functions/other-functions#joinGet) function, which lets you extract data from the table the same way as from a dictionary.
+
+### Deleting data {#deleting-data}
+
+`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/reference/statements/alter/index#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
+
+### Limitations and settings {#join-limitations-and-settings}
+
+When creating a table, the following settings are applied:
+
+#### `join_use_nulls` {#join_use_nulls}
+
+[join_use_nulls](/reference/settings/session-settings/join#join_use_nulls)
+
+#### `max_rows_in_join` {#max_rows_in_join}
+
+[max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
+
+#### `max_bytes_in_join` {#max_bytes_in_join}
+
+[max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join)
+
+#### `join_overflow_mode` {#join_overflow_mode}
+
+[join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
+
+#### `join_any_take_last_row` {#join_any_take_last_row}
+
+[join_any_take_last_row](/reference/settings/session-settings/join#join_any_take_last_row)
+#### `join_use_nulls` {#join_use_nulls-1}
+
+#### Persistent {#persistent}
+
+Disables persistency for the Join and [Set](/reference/engines/table-engines/special/set) table engines.
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.
+
+The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
+
+A [row policy](/reference/statements/create/row-policy) on a `Join`-engine table filters a plain `SELECT` from it, but a `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so while a policy applies to the table such queries fail with `ACCESS_DENIED`.
+
+The `Join`-engine allows to specify [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/reference/statements/select/index) query should have the same `join_use_nulls` value.
+
+## Usage examples {#example}
+
+Creating the left-side table:
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+```
+
+```sql
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
+```
+
+Creating the right-side `Join` table:
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+```
+
+```sql
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
+```
+
+Joining the tables:
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
+```
+
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │               0 │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+As an alternative, you can retrieve data from the `Join` table, specifying the join key value:
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1));
+```
+
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+Deleting a row from the `Join` table:
+
+```sql
+ALTER TABLE id_val_join DELETE WHERE id = 3;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  21 │
+└────┴─────┘
+```
+)DOCS_MD",
+            .syntax = "ENGINE = Join(join_strictness, join_type, k1[, k2, ...])",
+            .related = {"Set"}});
 }
 
-namespace
-{
-
-template <typename T>
-const char * rawData(T & t)
-{
-    return reinterpret_cast<const char *>(&t);
-}
-
-template <typename T>
-size_t rawSize(T &)
-{
-    return sizeof(T);
-}
-
-template <>
-const char * rawData(const std::string_view & t)
-{
-    /// We must return a non-null pointer for empty strings because ColumnNullable::insertData
-    /// treats nullptr as NULL. Empty string_views used as "zero keys" in hash tables have
-    /// data() == nullptr, but they represent empty strings, not NULLs.
-    static constexpr char empty_string[] = "";
-    return t.data() ? t.data() : empty_string;
-}
-
-template <>
-size_t rawSize(const std::string_view & t)
-{
-    return t.size();
-}
-
-}
-
-class JoinSource : public ISource
+class JoinSource final : public ISource
 {
 public:
     JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
@@ -568,19 +771,21 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
-        if (!join->getTableJoin().oneDisjunct())
+        const auto & table_join = join->getTableJoin();
+        if (!table_join.oneDisjunct())
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
 
         column_indices.resize(sample_block->columns());
 
         auto & saved_block = join->getJoinedData()->sample_block;
+        std::unordered_map<String, size_t> key_output_positions;
 
         for (size_t i = 0; i < sample_block->columns(); ++i)
         {
             const auto & [_, type, name] = sample_block->getByPosition(i);
             if (join->right_table_keys.has(name))
             {
-                key_pos = i;
+                key_output_positions.emplace(name, i);
                 const auto & column = join->right_table_keys.getByName(name);
                 restored_block.insert(column);
             }
@@ -593,6 +798,21 @@ public:
                 restored_block.insert(column);
             }
         }
+
+        /// The output position of each key, in clause order. It comes from the clause and not from
+        /// `right_table_keys`, which deduplicates a repeated key name while the packed key does not.
+        const auto & key_names_right = table_join.getOnlyClause().key_names_right;
+
+        is_key_column.assign(sample_block->columns(), false);
+        for (const auto & key_name : key_names_right)
+        {
+            auto & output = key_outputs.emplace_back();
+            if (auto it = key_output_positions.find(key_name); it != key_output_positions.end())
+            {
+                output = it->second;
+                is_key_column[it->second] = true;
+            }
+        }
     }
 
     String getName() const override { return "Join"; }
@@ -600,16 +820,23 @@ public:
 protected:
     Chunk generate() override
     {
-        if (join->data->columns.empty())
+        if (join->data->build_streams.front().columns.empty())
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(
+        if (!dispatchJoinShape(
                 join->kind,
                 join->strictness,
-                join->data->maps.front(),
-                join->preferUseMapsAll(),
-                [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
+                join->getMapsKind(),
+                [&]<JoinKind kind, JoinStrictness strictness, typename Maps>()
+                {
+                    /// `StorageJoin` reads the right rows back out of the maps, so it never stores them
+                    /// in a map that keeps none.
+                    if constexpr (SetJoinMaps<Maps>)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
+                    else
+                        chunk = createChunk<kind, strictness, Maps>();
+                }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
     }
@@ -623,31 +850,19 @@ private:
     Block restored_block; /// sample_block with parent column types
 
     ColumnNumbers column_indices;
-    std::optional<size_t> key_pos;
+    /// One entry per engine key argument, in clause order: the position of the key in the output, if it is selected.
+    std::vector<std::optional<size_t>> key_outputs;
+    /// Indexed by output column position, so the fill loops test a column in constant time.
+    std::vector<bool> is_key_column;
 
-    std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
-
+    HashJoinTable::Cursor position;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    Chunk createChunk(const Maps & maps)
+    Chunk createChunk()
     {
         MutableColumns mut_columns = restored_block.cloneEmpty().mutateColumns();
 
-        size_t rows_added = 0;
-
-        switch (join->data->type)
-        {
-#define M(TYPE)                                           \
-    case HashJoin::Type::TYPE:                                \
-        rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE, mut_columns); \
-        break;
-            APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
-#undef M
-
-            default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys of type {} in StorageJoin", join->data->type);
-        }
-
+        const size_t rows_added = fillColumns<KIND, STRICTNESS, Maps>(mut_columns);
         if (!rows_added)
             return {};
 
@@ -674,88 +889,56 @@ private:
         return Chunk(std::move(columns), num_rows);
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Map>
-    size_t fillColumns(const Map & map, MutableColumns & columns)
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
+    size_t fillColumns(MutableColumns & columns)
+    {
+        const StoredBlock * const * stored_columns = join->getJoinedData()->stored_columns_index->blocksData();
+
+        return join->data->tables.front()->readCells<Maps>(
+            position,
+            max_block_size,
+            key_outputs,
+            columns,
+            [&]([[maybe_unused]] const auto & mapped) -> size_t
+            {
+                if constexpr (STRICTNESS == JoinStrictness::Asof)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
+                else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS))
+                    return fillAll(columns, column_indices, is_key_column, mapped, stored_columns);
+                else
+                    return fillOne(columns, column_indices, is_key_column, mapped, stored_columns);
+            });
+    }
+
+    template <typename Mapped>
+    static size_t fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, const std::vector<bool> & is_key_column,
+                          const Mapped & mapped, const StoredBlock * const * stored_columns)
+    {
+        /// The mapped value of MapsOne is a single encoded ref; the mapped value of MapsAll
+        /// (RightAny under preferUseMapsAll) is a tagged ref list whose first element is taken.
+        const UInt64 ref_word = firstRefWord(mapped);
+        const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
+        for (size_t j = 0; j < columns.size(); ++j)
+            if (!is_key_column[j])
+                columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
+        return 1;
+    }
+
+    template <typename Mapped>
+    static size_t fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, const std::vector<bool> & is_key_column,
+                          const Mapped & mapped, const StoredBlock * const * stored_columns)
     {
         size_t rows_added = 0;
-
-        if (!position)
-            position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())),
-                [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
-
-        auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());
-        auto end = map.end();
-
-        for (; it != end; ++it)
+        for (auto ref_it = mapped.begin(); ref_it.ok(); ++ref_it)
         {
-            if constexpr (STRICTNESS == JoinStrictness::RightAny)
-            {
-                fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::All)
-            {
-                fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Any)
-            {
-                if constexpr (KIND == JoinKind::Left || KIND == JoinKind::Inner)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Semi)
-            {
-                if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Anti)
-            {
-                if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
-            }
-            else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
-
-            if (rows_added >= max_block_size)
-            {
-                ++it;
-                break;
-            }
-        }
-
-        return rows_added;
-    }
-
-    template <typename Map>
-    static void fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added)
-    {
-        for (size_t j = 0; j < columns.size(); ++j)
-            if (j == key_pos)
-                columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
-            else
-                columns[j]->insertFrom(*it->getMapped().columns_info->columns[column_indices[j]], it->getMapped().row_num);
-        ++rows_added;
-    }
-
-    template <typename Map>
-    static void fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added)
-    {
-        for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
-        {
+            const UInt64 ref_word = *ref_it;
+            const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
             for (size_t j = 0; j < columns.size(); ++j)
-                if (j == key_pos)
-                    columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
-                else
-                    columns[j]->insertFrom(*ref_it->columns_info->columns[column_indices[j]], ref_it->row_num);
+                if (!is_key_column[j])
+                    columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
             ++rows_added;
         }
+        return rows_added;
     }
 };
 

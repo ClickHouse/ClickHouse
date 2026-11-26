@@ -10,7 +10,7 @@ class Roaring;
 namespace DB
 {
 
-class DeletionVectorTransform : public DB::ISimpleTransform
+class DeletionVectorTransform final : public DB::ISimpleTransform
 {
 public:
     using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;

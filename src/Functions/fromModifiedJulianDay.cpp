@@ -2,9 +2,11 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -23,15 +25,15 @@ namespace DB
     }
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunction
+    class ExecutableFunctionFromModifiedJulianDay final : public IExecutableFunction
     {
     public:
-        String getName() const override
+        [[nodiscard]] String getName() const override
         {
             return Name::name;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             using ColVecType = typename FromDataType::ColumnType;
             const ColVecType & col_from = checkAndGetColumn<ColVecType>(*arguments[0].column);
@@ -54,15 +56,19 @@ namespace DB
             WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                int64_t day = 0;
+                if (!accurate::convertNumeric<typename FromDataType::FieldType, int64_t, false>(vec_from[i], day))
+                    day = std::numeric_limits<int64_t>::max();
+
                 if constexpr (nullOnErrors)
                 {
                     GregorianDate gd;
-                    (*vec_null_map_to)[i] = !(gd.tryInit(static_cast<int64_t>(vec_from[i])) && gd.tryWrite(write_buffer));
+                    (*vec_null_map_to)[i] = !(gd.tryInit(day) && gd.tryWrite(write_buffer));
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
-                    GregorianDate gd(static_cast<int64_t>(vec_from[i]));
+                    GregorianDate gd(day);
                     gd.write(write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
@@ -75,14 +81,14 @@ namespace DB
                 return col_to;
         }
 
-        bool useDefaultImplementationForConstants() const override
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override
         {
             return true;
         }
     };
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class FunctionBaseFromModifiedJulianDay : public IFunctionBase
+    class FunctionBaseFromModifiedJulianDay final : public IFunctionBase
     {
     public:
         explicit FunctionBaseFromModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -111,7 +117,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -126,6 +132,17 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple out-of-range inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
+            /// The input is cast to int64_t internally; for types that don't fully fit,
+            /// large values overflow, breaking monotonicity.
+            using T = typename FromDataType::FieldType;
+            constexpr bool fits_in_int64 =
+                (is_signed_v<T> && sizeof(T) <= sizeof(Int64))
+                || (is_unsigned_v<T> && sizeof(T) < sizeof(Int64));
+            if constexpr (!fits_in_int64)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true, };
         }
 
@@ -135,7 +152,7 @@ namespace DB
     };
 
     template <typename Name, bool nullOnErrors>
-    class FromModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
+    class FromModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -153,7 +170,10 @@ namespace DB
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
             DataTypes argument_types = { arguments[0].type };
-            const DataTypePtr & from_type_not_null = removeNullable(arguments[0].type);
+            /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+            /// otherwise `callOnBasicType` does not recognize the integer and the function throws
+            /// "must be integral" on a `LowCardinality` integer it can perfectly well convert.
+            const DataTypePtr from_type_not_null = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
 
             FunctionBasePtr base;
             auto call = [&](const auto & types) -> bool
@@ -181,18 +201,12 @@ namespace DB
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            if (!isInteger(arguments[0]))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
-            }
-
-            DataTypePtr base_type = std::make_shared<DataTypeString>();
             if constexpr (nullOnErrors)
-                return std::make_shared<DataTypeNullable>(base_type);
+                return "(Integer) -> Nullable(String)";
             else
-                return base_type;
+                return "(Integer) -> String";
         }
 
         size_t getNumberOfArguments() const override
@@ -202,7 +216,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 
@@ -258,12 +272,12 @@ SELECT fromModifiedJulianDayOrNull(58849);
 SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
         )",
             R"(
-┌─fromModified⋯Null(58849)─┐
-│ 2020-01-01               │
-└──────────────────────────┘
-┌─fromModified⋯l(60000000)─┐
-│ ᴺᵁᴸᴸ                     │
-└──────────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+┌─fromModifiedJulianDayOrNull(60000000)─┐
+│ ᴺᵁᴸᴸ                                  │
+└───────────────────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};

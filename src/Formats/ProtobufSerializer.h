@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_PROTOBUF
+#include <Common/VectorWithMemoryTracking.h>
 #   include <Columns/IColumn_fwd.h>
 #   include <Core/NamesAndTypes.h>
 #   include <Formats/ProtobufSchemas.h>
@@ -16,7 +17,7 @@ class ProtobufReader;
 class ProtobufWriter;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 using Strings = std::vector<String>;
 class WriteBuffer;
 
@@ -29,7 +30,7 @@ public:
     virtual void setColumns(const ColumnPtr * columns, size_t num_columns) = 0;
     virtual void writeRow(size_t row_num) = 0;
     virtual void finalizeWrite() {}
-    virtual void reset() {}
+    virtual void resetState() {}
 
     virtual void setColumns(const MutableColumnPtr * columns, size_t num_columns) = 0;
     virtual void startReading() {}
@@ -41,7 +42,7 @@ public:
     static std::unique_ptr<ProtobufSerializer> create(
         const Strings & column_names,
         const DataTypes & data_types,
-        std::vector<size_t> & missing_column_indices,
+        VectorWithMemoryTracking<size_t> & missing_column_indices,
         const ProtobufSchemas::DescriptorHolder & descriptor,
         bool with_length_delimiter,
         bool with_envelope,

@@ -1,0 +1,214 @@
+---
+description: 'Guide de configuration et de gestion des quotas d’utilisation des ressources dans ClickHouse'
+sidebarTitle: 'Quotas'
+slug: /operations/quotas
+title: 'Quotas'
+doc_type: 'guide'
+---
+
+<Info>
+  **Quotas dans ClickHouse Cloud**
+
+  Les quotas sont pris en charge dans ClickHouse Cloud, mais ils doivent être créés à l’aide de la [syntaxe DDL](/fr/reference/statements/create/quota). L’approche de configuration XML décrite ci-dessous n’est **pas prise en charge**.
+</Info>
+
+Les quotas vous permettent de limiter l’utilisation des ressources sur une période donnée ou d’en suivre l’usage.
+Les quotas sont configurés dans la configuration utilisateur, généralement dans &#39;users.xml&#39;.
+
+Le système dispose également d’une fonctionnalité permettant de limiter la complexité d’une requête individuelle. Voir la section [Restrictions sur la complexité des requêtes](/fr/concepts/features/configuration/settings/query-complexity).
+
+Contrairement aux restrictions sur la complexité des requêtes, les quotas :
+
+* imposent des restrictions sur un ensemble de requêtes pouvant être exécutées sur une période donnée, au lieu de limiter une seule requête ;
+* prennent en compte les ressources consommées sur tous les serveurs distants dans le cadre du traitement distribué des requêtes.
+
+Examinons la section du fichier &#39;users.xml&#39; qui définit les quotas.
+
+```xml
+<!-- Quotas -->
+<quotas>
+    <!-- Quota name. -->
+    <default>
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+        <interval>
+            <!-- Length of the interval. -->
+            <duration>3600</duration>
+
+            <!-- Unlimited. Just collect data for the specified time interval. -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+</quotas>
+```
+
+Par défaut, le quota suit la consommation des ressources heure par heure, sans limiter l’utilisation.
+La consommation des ressources calculée pour chaque intervalle est consignée dans le journal du serveur après chaque requête.
+
+```xml
+<statbox>
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+    <interval>
+        <!-- Length of the interval. -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+Pour le quota &#39;statbox&#39;, des restrictions sont définies pour chaque heure et pour chaque période de 24 heures (86 400 secondes). L’intervalle de temps est compté à partir d’un point fixe dans le temps, défini par l’implémentation. Autrement dit, la période de 24 heures ne commence pas nécessairement à minuit.
+
+Lorsque l’intervalle prend fin, toutes les valeurs collectées sont réinitialisées. Pour l’heure suivante, le calcul du quota repart de zéro.
+
+Voici les quantités pouvant être limitées :
+
+`queries` – Le nombre total de requêtes.
+
+`query_selects` – Le nombre total de requêtes SELECT.
+
+`query_inserts` – Le nombre total de requêtes INSERT.
+
+`errors` – Le nombre de requêtes ayant levé une exception.
+
+`result_rows` – Le nombre total de lignes renvoyées en résultat.
+
+`result_bytes` - La taille totale des lignes renvoyées en résultat.
+
+`read_rows` – Le nombre total de lignes lues dans les tables pour exécuter la requête sur l’ensemble des serveurs distants.
+
+`read_bytes` - La taille totale lue depuis les tables pour exécuter la requête sur l’ensemble des serveurs distants.
+
+`written_bytes` - La taille totale d’une opération d’écriture.
+
+`written_rows` - Le nombre total de lignes écrites par les requêtes `INSERT`.
+
+`execution_time` – Le temps d’exécution total des requêtes, en secondes (temps réel).
+
+`failed_sequential_authentications` - Le nombre total d’erreurs d’authentification séquentielles.
+
+`queries_per_normalized_hash` – Nombre maximal d&#39;exécutions d&#39;une même requête normalisée. Les requêtes normalisées sont des requêtes dont les littéraux ont été remplacés par des caractères de substitution : `SELECT 1` et `SELECT 2` sont donc considérées comme la même requête normalisée. Cette limite est suivie séparément pour chaque modèle de requête normalisé distinct.
+
+Outre les quantités prédéfinies ci-dessus, il est possible de définir une limite sur n&#39;importe quel événement de profilage (voir la table [system.events](/fr/reference/system-tables/events)) en utilisant le nom de l&#39;événement comme étiquette, par exemple :
+
+```xml
+<interval>
+    <duration>86400</duration>
+    <!-- At most 100000 S3 GET requests and 50 failed queries per day. -->
+    <S3GetObject>100000</S3GetObject>
+    <FailedQuery>50</FailedQuery>
+</interval>
+```
+
+Il est également possible d&#39;obtenir le même résultat avec la syntaxe DDL :
+
+```sql
+CREATE QUOTA s3_reads FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery = 50 TO my_user;
+```
+
+Contrairement aux quantités prédéfinies, les événements de profilage sont comptabilisés une seule fois par requête, au moment où celle-ci se termine (avec succès ou en erreur) : une requête qui dépasse la limite peut tout de même aller jusqu’à son terme, et les requêtes suivantes sont rejetées jusqu’à la fin de l’intervalle. La consommation est indiquée dans la colonne `profile_events` de la table [system.quotas&#95;usage](/fr/reference/system-tables/quotas_usage). Les événements de profilage accumulés en dehors des requêtes (par exemple, lors des fusions en arrière-plan) ne sont pas imputés aux quotas.
+
+Pour une requête distribuée, les événements de profilage que les serveurs distants renvoient à l’initiateur sont imputés au quota de l’utilisateur à l’origine de la requête, en plus des événements locaux. Les serveurs distants envoient toujours ces rapports pour une requête distribuée, quelle que soit la valeur du paramètre `send_profile_events` dans la requête, dans sa clause `SETTINGS` ou dans les contraintes de paramètres de l’utilisateur sur le serveur distant ; un utilisateur ne peut donc pas les désactiver. Cela s’applique également à un `INSERT` synchrone dans une table `Distributed` ou dans la fonction de table `remote`, pour lequel un serveur distant transmet ses événements de profilage une fois qu’il a reçu toutes les données ; les envois en arrière-plan des tables `Distributed` avec `distributed_foreground_insert = 0` ne relèvent d’aucune requête utilisateur et ne sont pas imputés. Le vidage différé des [insertions asynchrones](/fr/reference/settings/session-settings/async-insert#async_insert) est imputé au quota de l’utilisateur qui a soumis les insertions, dans le même bucket que celui utilisé pour vérifier ces insertions (pour un quota indexé par `ip_address` ou `forwarded_ip_address`, le bucket de l’adresse du client ; pour un quota indexé par `normalized_query_hash`, le bucket de l’`INSERT` soumis), et non à la requête qui déclenche le vidage, comme `SYSTEM FLUSH ASYNC INSERT QUEUE`. Si un serveur distant qui reçoit un `INSERT` distribué le met en file d’attente en tant qu’insertion asynchrone, le vidage différé est imputé localement sur ce serveur, au quota de l’utilisateur sous l’identité duquel l’initiateur se connecte, et n’est pas remonté à l’initiateur. Rien n’est comptabilisé deux fois : les lignes que l’initiateur d’un `INSERT` distribué envoie à un serveur distant sont imputées une seule fois dans `InsertedRows` et `InsertedBytes`, tandis que les écritures supplémentaires du serveur distant, par exemple dans les target tables de vues matérialisées, sont imputées en sus.
+
+Si la limite est dépassée pour au moins un intervalle de temps, une exception est levée avec un message indiquant quelle restriction a été dépassée, pour quel intervalle, et quand commence le nouvel intervalle (c’est-à-dire à partir de quand les requêtes peuvent de nouveau être envoyées).
+
+<Note>
+  **Requêtes exclues de la comptabilisation des quotas**
+
+  Afin de pouvoir consulter la configuration et l’utilisation des quotas même lorsqu’un quota est épuisé, les requêtes `SELECT` qui lisent exclusivement l’une des tables système suivantes ne sont pas imputées aux quotas et ne sont pas soumises aux limites de complexité des requêtes :
+
+  * `system.quotas`
+  * `system.quota_limits`
+  * `system.quota_usage`
+  * `system.quotas_usage`
+  * `system.one`
+</Note>
+
+Les quotas peuvent utiliser la fonctionnalité de « clé de quota » pour suivre la consommation de ressources de plusieurs clés de manière indépendante. En voici un exemple :
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
+    -->
+    <keyed />
+</web_global>
+```
+
+Vous pouvez également définir les quotas en fonction du hash de la requête normalisée, afin que chaque modèle de requête distinct dispose de son propre quota indépendant. Dans la configuration XML, cela s&#39;écrit `<keyed_by_normalized_query_hash />`:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+On peut exprimer la même chose avec la syntaxe DDL :
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+Dans cet exemple, l’utilisateur peut exécuter jusqu’à 100 fois par heure chaque requête normalisée distincte. `SELECT number FROM numbers(1)` et `SELECT number FROM numbers(2)` partagent le même bucket (car elles ont la même forme normalisée), mais `SELECT number, number FROM numbers(1)` utilise un bucket distinct.
+
+Le quota est attribué aux utilisateurs dans la section &#39;users&#39; de la configuration. Voir la section &quot;Droits d&#39;accès&quot;.
+
+Pour le traitement distribué des requêtes, les quantités cumulées sont stockées sur le serveur émetteur de la requête. Ainsi, si l’utilisateur passe à un autre serveur, le quota y repartira de zéro.
+
+Lorsque le serveur redémarre, les quotas sont réinitialisés.
+
+<div id="related-content">
+  ## Contenu connexe {#related-content}
+</div>
+
+* Blog : [Développer des applications monopage avec ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

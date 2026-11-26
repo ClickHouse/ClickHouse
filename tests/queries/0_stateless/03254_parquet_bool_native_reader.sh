@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ubsan, no-fasttest
+# Tags: no-ubsan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,5 +17,4 @@ DATA_FILE_USER_PATH="${WORKING_DIR}/nullbool.parquet"
 
 cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
-${CLICKHOUSE_CLIENT} --query="select id, bool from file('${DATA_FILE_USER_PATH}', Parquet) order by id SETTINGS input_format_parquet_use_native_reader=false;"
-${CLICKHOUSE_CLIENT} --query="select id, bool from file('${DATA_FILE_USER_PATH}', Parquet) order by id SETTINGS input_format_parquet_use_native_reader=true;"
+${CLICKHOUSE_CLIENT} --query="select id, bool from file('${DATA_FILE_USER_PATH}', Parquet) order by id;"

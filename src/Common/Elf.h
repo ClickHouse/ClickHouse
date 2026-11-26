@@ -19,6 +19,7 @@ enum class ProgramHeaderType : uint32_t
 {
     NOTE = 4,
     DYNAMIC = 2,
+    LOAD = 1,
 };
 
 enum class NameHeaderType : uint32_t
@@ -29,8 +30,11 @@ enum class NameHeaderType : uint32_t
 enum class DynamicTableTag : int64_t
 {
     Null = 0,
+    NEEDED = 1,
     STRTAB = 5,
     SYMTAB = 6,
+    RPATH = 15,
+    RUNPATH = 29,
     GNU_HASH = 0x6ffffef5,
 };
 
@@ -122,11 +126,11 @@ public:
     struct Section
     {
         const ElfSectionHeader & header;
-        const char * name() const;
+        [[nodiscard]] const char * name() const;
 
-        const char * begin() const;
-        const char * end() const;
-        size_t size() const;
+        [[nodiscard]] const char * begin() const;
+        [[nodiscard]] const char * end() const;
+        [[nodiscard]] size_t size() const;
 
         Section(const ElfSectionHeader & header_, const Elf & elf_);
 
@@ -157,12 +161,13 @@ public:
 private:
     std::string path; // just for error messages
     std::optional<MMapReadBufferFromFile> in;
-    size_t elf_size;
-    const char * mapped;
-    const ElfHeader * header;
-    const ElfSectionHeader * section_headers;
-    const ElfProgramHeader * program_headers;
+    size_t elf_size{};
+    const char * mapped{};
+    const ElfHeader * header{};
+    const ElfSectionHeader * section_headers{};
+    const ElfProgramHeader * program_headers{};
     const char * section_names = nullptr;
+    size_t section_names_size = 0; // bytes available starting at `section_names`, for bounds checking
 
     void init(const char * data, size_t size, const std::string & path_);
 };

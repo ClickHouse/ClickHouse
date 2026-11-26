@@ -1,0 +1,98 @@
+---
+slug: /use-cases/observability/clickstack/sdks/aws_lambda
+description: '适用于 ClickStack 的 AWS Lambda - ClickHouse 可观测性技术栈'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickStack', '可观测性', 'aws-lambda', 'lambda-layers']
+---
+
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+对于使用异步处理程序的 Node.js 函数，请使用 ClickStack Node.js SDK。对于其他运行时或基于回调函数的处理程序，请使用下文所述的 OpenTelemetry Lambda 层。
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Node.js 异步处理程序 {#nodejs-async-handlers}
+
+请使用满足 SDK 最低版本要求 (Node.js 22.15) 的 Lambda Node.js 运行时。安装该 SDK，并将其打包到部署软件包中：
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+设置以下 Lambda 环境变量，以便在处理器加载之前初始化 SDK，并为您的服务命名：
+
+```text
+NODE_OPTIONS=--import @clickhouse/clickstack-node/register
+OTEL_SERVICE_NAME=my-lambda-function
+```
+
+使用 `withFlush` 包装异步处理器，确保已缓冲的遥测数据在调用返回前完成导出：
+
+```javascript
+// index.mjs
+import { withFlush } from '@clickhouse/clickstack-node';
+
+export const handler = withFlush(async (event) => {
+  console.log('request received');
+  return { statusCode: 200, body: 'OK' };
+});
+```
+
+将函数的处理器设置为 `index.handler`。如果对函数进行打包，请将 SDK 和已插桩的依赖项保留为外部依赖，并将它们包含在部署包中。在此设置下，请勿再额外启用自动插桩 Lambda 层。
+
+在 Lambda 函数的环境配置中设置以下目标端变量。您的函数必须能够访问该端点。SDK 会在调用截止时间之前完成刷写；`withFlush` 不支持基于回调函数的处理程序。
+
+### 配置目标端 {#configure-destination}
+
+为 ClickStack 采集器设置 OTLP HTTP 端点和摄取密钥。如果采集器未配置 TLS，请使用 `http://`。有关采集器的配置方法，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## 其他运行时和处理程序 {#other-runtimes-and-handlers}
+
+请参照官方 [Lambda 自动插桩说明](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/)，根据您的运行时、架构和 AWS 区域选择相应的层，并配置插桩包装器。
+
+添加并配置 [OpenTelemetry 收集器 Lambda 层](https://opentelemetry.io/docs/platforms/faas/lambda-collector/)。按照上游文档的说明，让应用程序 SDK 的导出器继续指向本地采集器。然后按下文说明配置采集器的出站连接。
+
+### 配置 Lambda 采集器的目标端 {#configure-lambda-collector-destination}
+
+在 Lambda 函数的环境变量中设置 `CLICKHOUSE_OTLP_ENDPOINT` 和 `CLICKHOUSE_INGESTION_API_KEY`，然后将以下导出器添加到采集器配置中。
+
+将 `CLICKHOUSE_OTLP_ENDPOINT` 设置为 ClickStack 采集器的 OTLP HTTP 端点，并将 `CLICKHOUSE_INGESTION_API_KEY` 设置为该采集器的摄取密钥。请确保您的 Lambda 函数可以访问该端点。
+
+```yaml
+exporters:
+  otlphttp/clickhouse:
+    endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+    headers:
+      Authorization: "${env:CLICKHOUSE_INGESTION_API_KEY}"
+```
+
+在每个需要发送数据的信号管道中，将 `otlphttp/clickhouse` 添加到 `exporters` 列表。例如，使用上游的 `otlp` 接收器时：
+
+```yaml
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+```
+
+将这些设置合并到您的采集器配置中，并保留其中原有的接收器和处理器设置。按照上游采集器的设置说明，将该配置与您的函数一同打包，并将 `OPENTELEMETRY_COLLECTOR_CONFIG_URI` 设置为该配置文件所在的路径，例如 `/var/task/collector.yaml`。
+
+## 验证摄取 {#verify-ingestion}
+
+部署并调用您的函数。在 ClickStack 中选择一个较近的时间范围，然后在 Traces 中找到该函数的服务名称。如果您的插桩还会发出日志和指标信号，请同时查看 Logs 和 Metrics；仅添加管道并不会自动启用这些信号的采集。
+
+有关 layer 配置和故障排查，请参阅 [OpenTelemetry Lambda 文档](https://github.com/open-telemetry/opentelemetry-lambda)。

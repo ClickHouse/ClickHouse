@@ -2,6 +2,8 @@
 
 #if defined(OS_LINUX)
 
+#include <Common/FailPoint.h>
+#include <Common/Exception.h>
 #include <Common/ProcfsMetricsProvider.h>
 #include <Common/hasLinuxCapability.h>
 
@@ -62,6 +64,16 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char taskstats_counters_reset_throw[];
+}
+
+namespace ErrorCodes
+{
+extern const int FAULT_INJECTED;
+}
 
 const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
 {
@@ -127,6 +139,10 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
 
 void TasksStatsCounters::reset()
 {
+    fiu_do_on(FailPoints::taskstats_counters_reset_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in TasksStatsCounters::reset");
+    });
     if (stats_getter)
         stats = stats_getter();
 }
@@ -381,6 +397,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
         disablePerfEvent(fd);
         releasePerfEvent(fd);
         fd = -1;
+        previous_values[i] = PerfEventValue{};
     }
 
     if (events_to_open.empty())
@@ -424,6 +441,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
         int & fd = thread_events_descriptors_holder.descriptors[i];
         // disable by default to add as little extra time as possible
         fd = openPerfEventDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config);
+        previous_values[i] = PerfEventValue{};
 
         if (fd == -1 && errno != ENOENT)
         {
@@ -543,6 +561,16 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // Account for counter multiplexing. time_running and time_enabled are
         // not reset by PERF_EVENT_IOC_RESET, so we don't use it and calculate
         // deltas from old values.
+        //
+        // Recreating the descriptors does reset them, though, and then the previous values are
+        // larger than the current ones. Every delta of the period is meaningless in that case, and
+        // publishing the wrapped ones puts about 1.8e19 into PerfMinEnabledTime, so skip the period.
+        // The current values are stored for the next one either way.
+        if (current_value.time_enabled < previous_value.time_enabled
+            || current_value.time_running < previous_value.time_running
+            || current_value.value < previous_value.value)
+            continue;
+
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
         const auto scaled_value = static_cast<Float64>(current_value.value - previous_value.value) * static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
@@ -578,6 +606,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
 void PerfEventsCounters::closeEventDescriptors()
 {
     thread_events_descriptors_holder.releaseResources();
+    std::fill_n(previous_values, NUMBER_OF_RAW_EVENTS, PerfEventValue{});
 }
 
 PerfDescriptorsHolder::PerfDescriptorsHolder()

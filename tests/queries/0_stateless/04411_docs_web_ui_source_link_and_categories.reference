@@ -1,0 +1,7 @@
+SELECT name, type, description, source
+https://github.com/ClickHouse/ClickHouse/blob/master/
+'Compression Codec'
+'Profile Event'
+'Current Metric'
+'Asynchronous Metric'
+'System Table'

@@ -1,0 +1,5 @@
+join with a skip-index filter and a JIT-eligible expression matches single-node
+500	12475500
+500	12475500
+worker tasks run with the unsupported settings disabled
+0	0

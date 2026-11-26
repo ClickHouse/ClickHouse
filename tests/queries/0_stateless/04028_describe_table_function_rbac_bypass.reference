@@ -1,0 +1,13 @@
+--- DESCRIBE url() without READ ON URL ---
+ACCESS_DENIED
+--- DESCRIBE file() without READ ON FILE ---
+ACCESS_DENIED
+--- CREATE TABLE AS url() without READ ON URL ---
+ACCESS_DENIED
+--- Grant READ ON URL ---
+x
+secret
+--- Grant READ ON FILE ---
+x
+secret
+--- Cleanup ---

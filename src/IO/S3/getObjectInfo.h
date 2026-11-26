@@ -7,17 +7,14 @@
 #include <base/types.h>
 #include <IO/S3/Client.h>
 
-namespace DB
-{
-using ObjectAttributes = std::map<std::string, std::string>;
-}
-
 namespace DB::S3
 {
 
 struct ObjectInfo
 {
     size_t size = 0;
+    /// Checks if Content-Length was present in the HEAD response and we can rely on its result
+    bool is_size_known = true;
     time_t last_modification_time = 0;
     String etag;
     ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`
@@ -43,8 +40,8 @@ ObjectInfo getObjectInfo(
 
 ObjectAttributes getObjectTags(
     const S3::Client & client,
-    const String & bucket,
-    const String & key,
+    std::string_view bucket,
+    std::string_view key,
     const String & version_id = {});
 
 size_t getObjectSize(

@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Common/PODArray_fwd.h>
 
 #include <memory>
@@ -24,6 +26,8 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 struct KeyDescription;
 
 class ASTProjectionSelectQuery;
+
+struct MergeTreeSettings;
 
 /// Description of projections for Storage
 struct ProjectionDescription
@@ -51,7 +55,7 @@ struct ProjectionDescription
     /// Columns which are required for query_ast.
     Names required_columns;
 
-    Names getRequiredColumns() const { return required_columns; }
+    [[nodiscard]] Names getRequiredColumns() const { return required_columns; }
 
     /// Sample block with projection columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;
@@ -72,28 +76,50 @@ struct ProjectionDescription
     std::vector<size_t> partition_value_indices;
 
     bool with_parent_part_offset = false;
+    bool with_block_number = false;
+    bool with_block_offset = false;
 
+    /// If not null, this projection is treated as a specialized index. It triggers specific calculation and application
+    /// logic during query execution to optimize data access paths.
     ProjectionIndexPtr index;
 
-    std::optional<UInt64> index_granularity;
-    std::optional<UInt64> index_granularity_bytes;
+    /// Optional SETTINGS overrides for the projection.
+    SettingsChanges settings_changes;
+
+    /// Cache whether index_granularity or index_granularity_bytes is overridden to avoid re-scanning the changes list
+    /// during data writing.
+    bool has_index_granularity_overrides = false;
+
+    /// WHERE clause AST for filtered projections (Issue #74234).
+    /// When set, only rows matching this predicate are materialized into the projection.
+    /// The optimizer will use a projection only if the query's WHERE implies this condition.
+    ASTPtr where_clause_ast;
 
     /// Parse projection from definition AST
-    static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    static ProjectionDescription getProjectionFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context,
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH,
+        /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
+        bool attach_short_syntax = true);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
         const ASTProjectionSelectQuery & query,
         const ColumnsDescription & columns,
-        ContextPtr query_context);
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context,
+        const MergeTreeSettings & projection_settings);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
-        ASTPtr partition_columns,
+        const ASTPtr & partition_columns,
         const Names & minmax_columns,
         const KeyDescription & primary_key,
-        ContextPtr query_context);
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context);
 
     ProjectionDescription() = default;
 
@@ -104,18 +130,12 @@ struct ProjectionDescription
     ProjectionDescription & operator=(const ProjectionDescription & other) = delete;
     ProjectionDescription & operator=(ProjectionDescription && other) = default;
 
-    ProjectionDescription clone() const;
-
-    void loadSettings(const SettingsChanges & changes);
+    [[nodiscard]] ProjectionDescription clone() const;
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
 
-    /// Recalculate projection with new columns because projection expression may change
-    /// if something change in columns.
-    void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context);
-
-    bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+    [[nodiscard]] bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
     /**
      * @brief Calculates the projection result for a given input block.
@@ -138,10 +158,9 @@ struct ProjectionDescription
 
     /// Same as but ignores additional index-specific metadata or structures.
     /// Only the query AST is used to compute the output block.
-    Block
-    calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
+    Block calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
-    String getDirectoryName() const { return name + ".proj"; }
+    [[nodiscard]] String getDirectoryName() const { return name + ".proj"; }
 };
 
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
@@ -153,33 +172,45 @@ struct ProjectionsDescription : public IHints<>
     ProjectionsDescription(ProjectionsDescription && other) = default;
     ProjectionsDescription & operator=(ProjectionsDescription && other) = default;
 
-    ProjectionsDescription clone() const;
+    [[nodiscard]] ProjectionsDescription clone() const;
 
     /// Convert description to string
-    String toString() const;
+    [[nodiscard]] String toString() const;
     /// Parse description from string
-    static ProjectionsDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context);
-
-    /// Return common expression for all stored projections
-    ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;
+    static ProjectionsDescription parse(
+        const String & str,
+        const ColumnsDescription & columns,
+        const KeyDescription * parent_partition_key,
+        const ContextPtr & query_context);
 
     bool operator==(const ProjectionsDescription & other) const { return projections == other.projections; }
     bool operator!=(const ProjectionsDescription & other) const { return !(*this == other); }
 
-    auto begin() const { return projections.begin(); }
-    auto end() const { return projections.end(); }
+    [[nodiscard]] auto begin() const { return projections.begin(); }
+    [[nodiscard]] auto end() const { return projections.end(); }
 
-    size_t size() const { return projections.size(); }
-    bool empty() const { return projections.empty(); }
+    [[nodiscard]] size_t size() const { return projections.size(); }
+    [[nodiscard]] bool empty() const { return projections.empty(); }
 
-    bool has(const String & projection_name) const;
-    const ProjectionDescription & get(const String & projection_name) const;
+    [[nodiscard]] bool has(const String & projection_name) const;
+    [[nodiscard]] const ProjectionDescription & get(const String & projection_name) const;
 
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
 
-    std::vector<String> getAllRegisteredNames() const override;
+    /// Replace an existing projection in place, keeping its position (for `ALTER TABLE ... MODIFY PROJECTION`).
+    void replace(ProjectionDescription && projection);
+
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+
+    /// Declarations that could not be analyzed when the table was loaded at server startup. They are kept
+    /// verbatim so that a rewrite of the CREATE query still contains them, and are deliberately absent from the
+    /// accessors above: a consumer that needs an analyzed `ProjectionDescription` cannot reach one.
+    void addUnavailable(ASTPtr definition_ast);
+    [[nodiscard]] const ASTs & getUnavailableDefinitions() const { return unavailable; }
+    [[nodiscard]] Names getUnavailableNames() const;
+    [[nodiscard]] bool hasUnavailable() const { return !unavailable.empty(); }
 
 private:
     /// Keep the sequence of columns and allow to lookup by name.
@@ -188,6 +219,7 @@ private:
 
     Container projections;
     Map map;
+    ASTs unavailable;
 };
 
 }

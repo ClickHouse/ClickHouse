@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/CurrentThreadHelpers.h>
 
 namespace DB
@@ -6,7 +7,7 @@ namespace DB
 
 bool currentThreadHasGroup()
 {
-    return DB::CurrentThread::getGroup() != nullptr;
+    return DB::CurrentThread::hasGroup();
 }
 
 LogsLevel currentThreadLogsLevel()

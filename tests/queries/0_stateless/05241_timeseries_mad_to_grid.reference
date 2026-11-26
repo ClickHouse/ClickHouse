@@ -1,0 +1,42 @@
+-- an outlier barely changes the result: {1, 2, 3, 4} and {1, 2, 3, 4, 100} both give 1
+[0,0.5,1,1,1]
+-- the samples can be passed as arrays or as an array of (timestamp, value) tuples, Float32 values are accepted
+[0,0.5,1,1,1]
+[0,0.5,1,1,1]
+[0,0.5,1,1,1]	Array(Nullable(Float64))
+-- rows excluded by a condition or hidden by a NULL are ignored: without the sample 3 the windows are {1}, {1, 2}, {1, 2}, {1, 2, 4}, {1, 2, 4, 100}
+[0,0.5,0.5,1,1.5]
+[0,0.5,0.5,1,1.5]
+-- partial states merge into the same result, also after a round trip through a table
+[0,0.5,1,1,1]
+[0,0.5,1,1,1]
+-- sliding window: samples leave the window as the grid advances
+[0,5,4,2,2,2.5,2.5,2]
+-- a window of 64 buckets: the values 1..110 equal the timestamps, so every window holds 64 consecutive integers
+[16,16,16,16,16,16,16,16,16,16,16]
+-- a step larger than the window: some samples are in no window
+[0.5,0,0]
+-- a window without samples stays NULL
+[0,NULL]
+-- samples with the same timestamp are collapsed into the greatest value, a NaN loses to any real value
+[0,1.5,1]
+-- a NaN sample anywhere in the window gives NaN: [1, NaN, 3], [1, NaN, 3, 4] and [NaN, 1, 2, 3]
+[nan]
+[nan]
+[nan]
+-- the windows without the NaN sample are not affected: [NaN], [NaN, 1], [1, 2] and [2] give NaN, NaN, 0.5 and 0
+[nan,nan,0.5,0]
+-- infinite samples with a finite median have infinite deviations, which sort last
+[1]
+[1]
+[1]
+[2]
+-- the median of the deviations interpolated between a finite and an infinite deviation is +Inf, like in Prometheus
+[inf]
+-- an infinite median gives NaN: the deviations of the samples equal to it are Inf - Inf
+[nan]
+[nan]
+[nan]
+-- a median interpolated between -Inf and +Inf is NaN, and so is the result
+[nan]
+-- invalid arguments

@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -112,33 +114,35 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
-    settings.out << prefix << "Filter column: " << filter_column_name;
-    if (remove_filter)
-        settings.out << " (removed)";
-    settings.out << '\n';
-    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
+    const String & prefix = settings.detail_prefix;
 
-    if (actions_dag)
+    settings.out << prefix << "Filter column: ";
+
+    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
+
+    if (!settings.pretty && remove_filter)
+        settings.out << " (removed)";
+
+    settings.out << '\n';
+    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)) << '\n';
+
+    if (!settings.compact && actions_dag)
     {
         bool first = true;
-        if (actions_dag)
+        auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+        for (const auto & action : expression->getActions())
         {
-            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-            for (const auto & action : expression->getActions())
-            {
-                settings.out << prefix << (first ? "Actions: "
-                                                : "         ");
-                first = false;
-                settings.out << action.toString() << '\n';
-            }
+            settings.out << prefix << (first ? "Actions: "
+                                            : "         ");
+            first = false;
+            settings.out << action.toString() << '\n';
         }
     }
 }
 
 void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Mode", totalsModeToString(totals_mode, auto_include_threshold));
+    map.add("Mode", totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)));
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
@@ -162,7 +166,7 @@ void TotalsHavingStep::updateOutputHeader()
             getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
-void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
     settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
@@ -182,12 +186,12 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    serializeAggregateDescriptions(aggregates, ctx.out);
+    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (actions_dag)
     {
-        writeStringBinary(filter_column_name, ctx.out);
-        actions_dag->serialize(ctx.out, ctx.registry);
+        ctx.writeColumnName(filter_column_name);
+        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
     }
 }
 
@@ -196,7 +200,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool final = bool(flags & 1);
@@ -205,7 +209,8 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     bool remove_filter_column = bool(flags & 8);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in);
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedFinalizedAggregates(aggregates, *ctx.input_headers.front());
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;
@@ -213,7 +218,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     {
         readStringBinary(filter_column_name, ctx.in);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     }
 
     return std::make_unique<TotalsHavingStep>(
@@ -228,6 +233,12 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
         final);
 }
 
+QueryPlanStepPtr TotalsHavingStep::clone() const
+{
+    return std::make_unique<TotalsHavingStep>(*this);
+}
+
+void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);

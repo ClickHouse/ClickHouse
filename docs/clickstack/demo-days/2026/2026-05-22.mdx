@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-22
+title: 'Demo days - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'ClickStack demo days for 2026-05-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## ClickCannon data generation update {#clickcannon-data-generation-update}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) is the tool we use internally for sizing exercises: generating large volumes of OpenTelemetry data while issuing concurrent queries to estimate the resources customers need for a given ingest and query workload. At OpenHouse we announced it publicly, and Spencer walked through the latest iteration.
+
+Rather than pre-configuring data on disk, you can now configure the generator inline. Enable it, set how many threads, how many rows per block, how many rows per second in total, and a few memory constraints. There is no need to stage two terabytes of test data on disk first, which is what made the tool hard to share before.
+
+We will be pointing more users at ClickCannon for their own sizing efforts. The repo lives at [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon).
+
+## Date input for full-screen tiles and source-scoped filters {#date-input-for-full-screen-tiles-and-source-scoped-filters}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Two related dashboard improvements landed together. When you full-screen a single tile, you now get a dedicated time picker and granularity selector that is independent from the dashboard's own time range. That means you can zoom in on a long history for one specific metric (say, one chart on the ClickHouse cluster dashboard) without forcing every other tile on the dashboard to refresh. The dashboard name now also appears in the browser tab title.
+
+The second piece is source scoping for dashboard filters. Filters can be limited so they only broadcast to tiles backed by specific sources, instead of being applied globally across every tile. On a mixed-source dashboard that combines, say, logs and traces, you can keep a filter from leaking into a tile where it does not belong.
+
+**Related PRs:** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: Minor dashboard improvements, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
+
+## Text index recognised on lower(Body) {#text-index-recognised-on-lower-body}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A small but real correctness fix for case-insensitive search. If your source has a text index defined on `lower(Body)` without a preprocessor argument, the query planner previously generated a `hasAllTokens(Body, ...)` condition. Because that expression did not match the index expression, the text index was not used and the query fell back to a scan.
+
+The query is now generated as `hasAllTokens(lower(Body), ...)`, which matches the index expression. Case-insensitive search on sources configured this way is now correctly accelerated by the text index.
+
+**Related PRs:** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: support text index on lower(Body) with no preprocessor
+
+## Simpler event deltas experience {#simpler-event-deltas-experience}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Event Deltas used to require an extra step. You had to click a button to enter comparison mode before dragging a selection on the heatmap. That step is gone: distribution bars appear immediately on load, and the moment you drag a region on the heatmap the bars switch into selection-vs-background comparison mode. Click outside the selection and it drops back to the all-spans view.
+
+The original change went into OSS some weeks ago, but a piece of it was missing from Managed ClickStack. That gap has now been closed so the simpler flow is the same across both editions.
+
+**Related PRs:** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: always-on attribute distribution mode
+
+## Dashboard table of contents and bulk collapse {#dashboard-table-of-contents-and-bulk-collapse}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Once dashboards grow past a handful of sections (which we want, because sections are how you organise a large dashboard) navigating them becomes painful. Tom added a right-rail table of contents that lists every section and lets you jump between them directly. There is also a bulk collapse and expand control that hides every section's contents at once, so you can scan the structure of a long dashboard without scrolling through all of it.
+
+Still in draft form, but already useful on the multi-section dashboards we ship for ClickHouse cluster and Kubernetes views.
+
+**Related PRs:** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): add Table of Contents right rail with bulk collapse/expand
+
+## Column resize persisted across sessions {#column-resize-persisted-across-sessions}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A customer report from yesterday: when you resize a column in a results table, that sizing should stick. It now does. Resize widths are stored in local storage, keyed per table ID, so different tables keep independent column layouts. Close the browser, come back later, the columns are still the way you left them. Adding or removing a column from the table does not reset the widths of the other columns either.
+
+**Related PRs:** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) fix: persist column widths in search results table

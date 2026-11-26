@@ -3,7 +3,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +10,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 
@@ -54,7 +52,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionsMultiStringSearch : public IFunction
+class FunctionsMultiStringSearch final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -72,12 +70,23 @@ public:
         , reject_expensive_hyperscan_regexps(reject_expensive_hyperscan_regexps_)
     {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Declarative signature — `Impl::ResultType` is one of `UInt8`, `UInt64` or
+    /// `Array(UInt8)` depending on the variant (any-match / first-index /
+    /// all-indices), driven by `Impl::is_column_array`.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (Impl::is_column_array)
+            return "(String, Array(String)) -> Array(" + String(DataTypeNumber<typename Impl::ResultType>{}.getName()) + ")";
+        else
+            return "(String, Array(String)) -> " + String(DataTypeNumber<typename Impl::ResultType>{}.getName());
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -89,18 +98,18 @@ public:
         return Impl::getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & haystack_ptr = arguments[0].column;
         const ColumnPtr & needles_ptr = arguments[1].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
         const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
-        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
+        chassert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
         const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
-        assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
+        chassert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
 
         if (col_haystack_const && col_needles_vector)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);

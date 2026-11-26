@@ -4,7 +4,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/logger_useful.h>
@@ -24,7 +24,7 @@ namespace ErrorCodes
 }
 
 // KV store using (Zoo|CH)Keeper
-class StorageKeeperMap final : public IStorage, public IKeyValueEntity, WithContext
+class StorageKeeperMap final : public StorageWithCommonVirtualColumns, public IKeyValueEntity, WithContext
 {
     friend class ReadFromKeeperMap;
 public:
@@ -38,7 +38,7 @@ public:
         UInt64 keys_limit_,
         bool override_metadata);
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -47,6 +47,8 @@ public:
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         size_t num_streams) override;
+
+    static VirtualColumnsDescription createVirtuals();
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
@@ -68,7 +70,6 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    bool supportsParallelInsert() const override { return true; }
     bool supportsDelete() const override { return true; }
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -136,7 +137,7 @@ private:
 
     TableStatus getTableStatus(const ContextPtr & context) const;
 
-    bool isMetadataStringEqual(
+    bool isMetadataStringCompatible(
         const std::string & zk_metadata_string,
         const std::string & local_metadata_string,
         bool throw_on_error) const;

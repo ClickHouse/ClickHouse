@@ -41,17 +41,17 @@ public:
         BIG = '>',
         NONE = '|',
     };
-    NumpyDataTypeIndex type_index;
+    NumpyDataTypeIndex type_index{};
 
     explicit NumpyDataType(Endianness endianness_) : endianness(endianness_) {}
     virtual ~NumpyDataType() = default;
 
-    Endianness getEndianness() const { return endianness; }
+    [[nodiscard]] Endianness getEndianness() const { return endianness; }
 
-    virtual NumpyDataTypeIndex getTypeIndex() const = 0;
-    virtual size_t getSize() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented"); }
+    [[nodiscard]] virtual NumpyDataTypeIndex getTypeIndex() const = 0;
+    [[nodiscard]] virtual size_t getSize() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented"); }
     virtual void setSize(size_t) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function setSize is not implemented"); }
-    virtual String str() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented"); }
+    [[nodiscard]] virtual String str() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented"); }
 
 protected:
     Endianness endianness;
@@ -73,12 +73,13 @@ public:
         }
     }
 
-    NumpyDataTypeIndex getTypeIndex() const override
+    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override
     {
         return type_index;
     }
-    bool isSigned() const { return is_signed; }
-    String str() const override
+    [[nodiscard]] size_t getSize() const override { return size; }
+    [[nodiscard]] bool isSigned() const { return is_signed; }
+    [[nodiscard]] String str() const override
     {
         WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
@@ -107,11 +108,12 @@ public:
         }
     }
 
-    NumpyDataTypeIndex getTypeIndex() const override
+    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override
     {
         return type_index;
     }
-    String str() const override
+    [[nodiscard]] size_t getSize() const override { return size; }
+    [[nodiscard]] String str() const override
     {
         WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
@@ -131,10 +133,10 @@ public:
         type_index = NumpyDataTypeIndex::String;
     }
 
-    NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    size_t getSize() const override { return size; }
+    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
+    [[nodiscard]] size_t getSize() const override { return size; }
     void setSize(size_t size_) override { size = size_; }
-    String str() const override
+    [[nodiscard]] String str() const override
     {
         WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
@@ -151,11 +153,13 @@ class NumpyDataTypeUnicode : public NumpyDataType
 public:
     NumpyDataTypeUnicode(Endianness endianness_, size_t size_) : NumpyDataType(endianness_), size(size_)
     {
+        if (size > std::numeric_limits<size_t>::max() / 4)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Numpy Unicode element size {} is too large", size);
         type_index = NumpyDataTypeIndex::Unicode;
     }
 
-    NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    size_t getSize() const override { return size * 4; }
+    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
+    [[nodiscard]] size_t getSize() const override { return size * 4; }
 private:
     size_t size;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 
 
@@ -21,8 +22,8 @@ class BinaryFormatReader final : public FormatWithNamesAndTypesReader
 public:
     BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
-    bool readFieldImpl(IColumn & column, const SerializationPtr & serialization);
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
+    bool readFieldImpl(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization);
 
     void skipField(size_t file_column) override;
 
@@ -30,14 +31,14 @@ public:
     void skipTypes() override;
     void skipHeaderRow();
 
-    std::vector<String> readNames() override;
-    std::vector<String> readTypes() override;
-    std::vector<String> readHeaderRow();
+    VectorWithMemoryTracking<String> readNames() override;
+    VectorWithMemoryTracking<String> readTypes() override;
+    VectorWithMemoryTracking<String> readHeaderRow();
 
 private:
     /// Data types read from input data.
     DataTypes read_data_types;
-    UInt64 read_columns;
+    UInt64 read_columns{};
 };
 
 template <bool with_defaults = false>
@@ -46,7 +47,7 @@ class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes<Binary
 public:
     BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "BinaryRowInputFormat"; }
+    [[nodiscard]] String getName() const override { return "BinaryRowInputFormat"; }
 
     /// RowInputFormatWithNamesAndTypes implements logic with DiagnosticInfo, but
     /// in this format we cannot provide any DiagnosticInfo, because here we have
@@ -56,7 +57,7 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 };
 
-class BinaryWithNamesAndTypesSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class BinaryWithNamesAndTypesSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

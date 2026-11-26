@@ -1,0 +1,42 @@
+-- literal substrings present in exactly one row
+[2]	1
+[3]	1
+-- needles that match nothing
+[]	1
+-- empty needle is always true and disables pruning
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14]	1
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14]	1
+-- short needles (shorter than the ngram size) disable pruning but stay correct
+[2]	1
+[5,6,7,8,10,11,12,13,14]	1
+-- catch-all regexes disable pruning
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14]	1
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14]	1
+-- regex metacharacters: any char, optional, fixed-length runs
+[11,12]	1
+[5,6,7,11,12]	1
+[7,10,13,14]	1
+[10,13,14]	1
+[7,10,13,14]	1
+-- character classes and anchors on a Unicode haystack
+[9]	1
+-- patterns that must not match the aaaa haystack
+[]	1
+-- a needle containing a null byte (the pattern is truncated at the null, so it matches any a)
+[5,6,7,8,10,11,12,13,14]	1
+-- url-like literal needle
+[10]	1
+-- substrings spanning apparent word boundaries (the ngrams tokenizer advantage)
+[14]	1
+[13]	1
+-- an empty needle array never matches
+[]	1
+-- literal needles prune granules, while catch-all / too-short / class-only patterns do not
+Granules: 14/14
+Granules: 1/14
+Granules: 14/14
+Granules: 1/14
+Granules: 14/14
+Granules: 14/14
+-- force_data_skipping_indices accepts literal needles but rejects a catch-all
+2

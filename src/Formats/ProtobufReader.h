@@ -33,9 +33,13 @@ public:
     void readString(String & str);
     void readStringAndAppend(PaddedPODArray<UInt8> & str);
 
-    bool eof() const { return in->eof(); }
+    [[nodiscard]] bool eof() const { return in->eof(); }
 
     void setReadBuffer(ReadBuffer & in_) { in = &in_; }
+
+    /// Drop all message-bounds tracking so the next startMessage starts fresh.
+    /// Does not touch the underlying ReadBuffer.
+    void resetState();
 
 private:
     void readBinary(void * data, size_t size);
@@ -45,7 +49,7 @@ private:
 
     UInt64 ALWAYS_INLINE readVarint()
     {
-        char c;
+        char c = 0;
         in->readStrict(c);
         UInt64 first_byte = static_cast<UInt8>(c);
         ++cursor;
@@ -58,6 +62,7 @@ private:
     void ignoreVarint();
     void ignoreGroup();
     [[noreturn]] void throwUnknownFormat() const;
+    [[nodiscard]] Int64 addLengthToCursor(UInt64 length) const;
 
     ReadBuffer * in;
     Int64 cursor = 0;

@@ -2,12 +2,14 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** Calculates StringViewHash from stdin. For debugging.
   */
 
-int main(int, char **)
+int mainEntryExampleStringRefHash(int, char **)
 {
     using namespace DB;
 

@@ -11,10 +11,17 @@ namespace DB
 /// implementation of serializeBinaryBulkWithMultipleStreams/deserializeBinaryBulkWithMultipleStreams).
 class SerializationReplicated final : public ISerialization
 {
-public:
+private:
     explicit SerializationReplicated(const SerializationPtr & nested_);
 
+public:
+    static UInt128 getHash(const SerializationPtr & nested_);
+    static SerializationPtr create(const SerializationPtr & nested_);
+
+    bool supportsPooling() const override { return nested->supportsPooling(); }
+
     KindStack getKindStack() const override;
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -43,8 +50,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -73,6 +79,9 @@ public:
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
+    void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
     const SerializationPtr & getNested() const { return nested; }
 private:
     struct SubcolumnCreator : public ISubcolumnCreator
@@ -81,9 +90,9 @@ private:
 
         explicit SubcolumnCreator(const ColumnPtr & indexes_) : indexes(indexes_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     template <typename Reader>

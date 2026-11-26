@@ -1,11 +1,15 @@
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/Sources/JemallocProfileSource.h>
 
 #if USE_JEMALLOC
 
+#    include <cmath>
+#    include <limits>
 #    include <list>
 #    include <mutex>
 #    include <ranges>
-#    include <unordered_set>
 #    include <Columns/ColumnString.h>
 #    include <Core/Defines.h>
 #    include <DataTypes/DataTypeString.h>
@@ -16,13 +20,15 @@
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <QueryPipeline/QueryPipeline.h>
-#    include <base/hex.h>
+#    include <Common/Hex.h>
 #    include <Common/FramePointers.h>
 #    include <Common/MemoryTrackerSwitcher.h>
 #    include <Common/StackTrace.h>
 #    include <Common/StringUtils.h>
+#    include <Common/filesystemHelpers.h>
 #    include <Common/getExecutablePath.h>
 #    include <base/defines.h>
+#    include <Common/SipHash.h>
 
 namespace DB
 {
@@ -63,16 +69,126 @@ std::optional<UInt64> parseHexAddress(std::string_view & src)
     return address;
 }
 
+/// The addresses of a stack line as written by jemalloc, i.e. callers are return addresses.
+VectorWithMemoryTracking<UInt64> parseStackReturnAddresses(std::string_view line, bool * fully_parsed)
+{
+    VectorWithMemoryTracking<UInt64> result;
+    std::string_view sv = line;
+    if (!sv.empty() && sv[0] == '@')
+    {
+        sv.remove_prefix(1);
+        while (!sv.empty())
+        {
+            trimLeft(sv);
+            if (sv.empty())
+                break;
+            auto address = parseHexAddress(sv);
+            if (!address.has_value())
+                break;
+            result.push_back(*address);
+        }
+    }
+    if (fully_parsed)
+        *fully_parsed = sv.empty();
+    return result;
+}
+
+}
+
+VectorWithMemoryTracking<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
+{
+    auto result = parseStackReturnAddresses(line, fully_parsed);
+    for (size_t i = 1; i < result.size(); ++i)
+        --result[i];
+    return result;
+}
+
+std::string sanitizeJemallocStackLine(std::string_view line)
+{
+    /// The output keeps the return addresses: `jeprof` subtracts 1 from the callers itself.
+    std::string result = "@";
+    for (UInt64 address : parseStackReturnAddresses(line, nullptr))
+        result += fmt::format(" {:#x}", StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(address)));
+    return result;
+}
+
+UInt64 parseJemallocSamplingInterval(std::string_view header)
+{
+    static constexpr std::string_view prefix = "heap_v2/";
+    if (!header.starts_with(prefix))
+        return 0;
+    header.remove_prefix(prefix.size());
+    trim(header);
+    if (header.empty())
+        return 0;
+    UInt64 result = 0;
+    ReadBufferFromMemory buf(header.data(), header.size());
+    if (!tryReadIntText(result, buf) || !buf.eof())
+        return 0;
+    return result;
+}
+
+namespace
+{
+
+/// Apply Poisson sampling correction as jeprof does for heap_v2 profiles.
+/// Each allocation is sampled with probability 1-exp(-size/interval), so the correction
+/// factor is 1/(1-exp(-mean_size/interval)).
+/// Uses std::expm1 to avoid catastrophic cancellation for small ratios where
+/// 1-exp(-x) loses precision, and guards against non-finite results to prevent
+/// undefined behavior in std::llround.
+/// Returns the scaled metric value.
+UInt64 applySamplingCorrection(UInt64 count, UInt64 bytes, UInt64 sampling_interval, bool use_count)
+{
+    if (sampling_interval == 0 || count == 0)
+        return use_count ? count : bytes;
+
+    if (bytes == 0)
+        return use_count ? count : 0;
+
+    double mean_size = static_cast<double>(bytes) / static_cast<double>(count);
+    double ratio = mean_size / static_cast<double>(sampling_interval);
+    double denom = -std::expm1(-ratio); /// accurate even for tiny ratio
+
+    if (denom <= 0.0) /// defensive: shouldn't happen after expm1, but clamp
+        return use_count ? count : bytes;
+
+    double scale = 1.0 / denom;
+    double metric = use_count ? static_cast<double>(count) : static_cast<double>(bytes);
+    double corrected = metric * scale;
+
+    if (!std::isfinite(corrected) || corrected < 0.0 || corrected > static_cast<double>(std::numeric_limits<Int64>::max()))
+        return use_count ? count : bytes;
+
+    return static_cast<UInt64>(std::llround(corrected));
+}
+
 /// Simple LRU cache: evicts the least-recently-used entry when the capacity is exceeded.
+/// Key includes both the address and the symbolize_with_inline flag so that queries
+/// with different inline settings don't silently reuse each other's results.
+/// Value is a shared_ptr to avoid copying the symbol vector on every cache hit.
 struct SymbolizationLRUCache
 {
-    using Value = std::vector<std::string>;
-    using List = std::list<std::pair<UInt64, Value>>;
+    using Key = std::pair<UInt64, bool>;
+    using Value = std::shared_ptr<const VectorWithMemoryTracking<std::string>>;
+
+    struct KeyHash
+    {
+        size_t operator()(const Key & k) const
+        {
+            SipHash hash;
+            hash.update(k.first);
+            hash.update(k.second);
+            return hash.get64();
+        }
+    };
+
+    using List = ListWithMemoryTracking<std::pair<Key, Value>>;
 
     explicit SymbolizationLRUCache(size_t max_size_) : max_size(max_size_) {}
 
-    /// Returns a copy of the cached value on hit (moves the entry to the front), or nullopt on miss.
-    std::optional<Value> get(UInt64 key)
+    /// Returns the cached value on hit (moves the entry to the front), or nullopt on miss.
+    std::optional<Value> get(const Key & key)
     {
         std::lock_guard lock(mutex);
         auto it = index.find(key);
@@ -82,36 +198,88 @@ struct SymbolizationLRUCache
         return it->second->second;
     }
 
-    void put(UInt64 key, Value value)
+    /// Inserts a new entry (or updates existing) and returns the stored shared_ptr.
+    Value put(const Key & key, VectorWithMemoryTracking<std::string> value)
     {
+        /// The cache is shared by all queries, so its entries are charged to the global tracker only.
         MemoryTrackerSwitcher switcher(&total_memory_tracker);
+        auto shared = std::make_shared<const VectorWithMemoryTracking<std::string>>(std::move(value));
         std::lock_guard lock(mutex);
         auto it = index.find(key);
         if (it != index.end())
         {
-            it->second->second = std::move(value);
+            it->second->second = shared;
             lru.splice(lru.begin(), lru, it->second);
-            return;
+            return shared;
         }
-        lru.emplace_front(key, std::move(value));
-        index.emplace(key, lru.begin());
+        lru.emplace_front(key, shared);
+        try
+        {
+            index.emplace(key, lru.begin());
+        }
+        catch (...)
+        {
+            /// Keep `lru` and `index` in step, otherwise the entry would stay in `lru` unreachable.
+            lru.pop_front();
+            throw;
+        }
         if (lru.size() > max_size)
         {
             index.erase(lru.back().first);
             lru.pop_back();
         }
+        return shared;
     }
-
 
 private:
     const size_t max_size;
 
     mutable std::mutex mutex;
     List lru TSA_GUARDED_BY(mutex);
-    std::unordered_map<UInt64, List::iterator> index TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
 };
 
 SymbolizationLRUCache symbolization_cache(/*max_size=*/ 100'000);
+
+/// Reads the next line of a heap profile in the form that can be published: stack addresses are converted by
+/// `sanitizeJemallocStackLine`, and the memory map (`MAPPED_LIBRARIES:` to the end) is never returned.
+/// Returns false at the end of the publishable part.
+bool readPublishableLine(ReadBuffer & in, std::string & line)
+{
+    if (in.eof())
+        return false;
+    line.clear();
+    readStringUntilNewlineInto(line, in);
+    in.tryIgnore(1);
+    if (line.starts_with("MAPPED_LIBRARIES:"))
+        return false;
+    if (line.starts_with('@'))
+        line = sanitizeJemallocStackLine(line);
+    return true;
+}
+
+/// Resolve a single address to its symbol names, using the global cache.
+/// Frames are stored in callback order (inline-first when enabled).
+/// Callers reverse at output time as needed.
+SymbolizationLRUCache::Value resolveAddress(UInt64 address, bool symbolize_with_inline)
+{
+    auto key = SymbolizationLRUCache::Key{address, symbolize_with_inline};
+    if (auto cached = symbolization_cache.get(key))
+        return *cached;
+
+    FramePointers fp;
+    fp[0] = reinterpret_cast<void *>(address);
+    VectorWithMemoryTracking<std::string> frame_symbols;
+    StackTrace::forEachFrame(
+        fp, 0, 1,
+        [&](const StackTrace::Frame & frame)
+        {
+            frame_symbols.push_back(frame.symbol.value_or("??"));
+        },
+        symbolize_with_inline);
+
+    return symbolization_cache.put(key, std::move(frame_symbols));
+}
 
 }
 
@@ -121,14 +289,22 @@ JemallocProfileSource::JemallocProfileSource(
     size_t max_block_size_,
     JemallocProfileFormat mode_,
     bool symbolize_with_inline_,
-    bool collapsed_use_count_)
+    bool collapsed_use_count_,
+    bool remove_file_)
     : ISource(header_)
     , filename(filename_)
     , max_block_size(max_block_size_)
     , mode(mode_)
     , symbolize_with_inline(symbolize_with_inline_)
     , collapsed_use_count(collapsed_use_count_)
+    , remove_file(remove_file_)
 {
+}
+
+JemallocProfileSource::~JemallocProfileSource()
+{
+    if (remove_file)
+        FS::tryDelete(filename, getLogger("JemallocProfileSource"));
 }
 
 Chunk JemallocProfileSource::generate()
@@ -152,26 +328,20 @@ Chunk JemallocProfileSource::generateRaw()
     if (!file_input)
         file_input = std::make_unique<ReadBufferFromFile>(filename);
 
-    /// Stream directly from file
-    if (file_input->eof())
-    {
-        is_finished = true;
-        return {};
-    }
-
     auto column = ColumnString::create();
-
-    for (size_t rows = 0; rows < max_block_size && !file_input->eof(); ++rows)
+    std::string line;
+    while (column->size() < max_block_size)
     {
-        std::string line;
-        readStringUntilNewlineInto(line, *file_input);
-        file_input->tryIgnore(1);
-
+        if (!readPublishableLine(*file_input, line))
+        {
+            is_finished = true;
+            break;
+        }
         column->insertData(line.data(), line.size());
     }
 
-    if (file_input->eof())
-        is_finished = true;
+    if (column->empty())
+        return {};
 
     size_t num_rows = column->size();
     Columns columns;
@@ -229,33 +399,16 @@ Chunk JemallocProfileSource::generateSymbolized()
                     break;
                 }
 
-                UInt64 address = addresses[current_address_index++];
+                const auto [published_address, runtime_address] = addresses[current_address_index++];
 
-                std::vector<std::string> symbols;
-                if (auto cached = symbolization_cache.get(address))
-                    symbols = std::move(*cached);
-
-                if (symbols.empty())
-                {
-                    FramePointers fp;
-                    fp[0] = reinterpret_cast<void *>(address);
-
-                    auto symbolize_callback = [&](const StackTrace::Frame & frame)
-                    {
-                        symbols.push_back(frame.symbol.value_or("??"));
-                    };
-
-                    bool resolve_inlines = symbolize_with_inline;
-                    StackTrace::forEachFrame(fp, 0, 1, symbolize_callback, /* fatal= */ resolve_inlines);
-                    symbolization_cache.put(address, symbols);
-                }
+                auto symbols = resolveAddress(runtime_address, symbolize_with_inline);
 
                 std::string symbol_line;
                 WriteBufferFromString out(symbol_line);
-                writePointerHex(reinterpret_cast<const void *>(address), out);
+                writePointerHex(reinterpret_cast<const void *>(published_address), out);
 
                 std::string_view separator(" ");
-                for (const auto & symbol : std::ranges::reverse_view(symbols))
+                for (const auto & symbol : std::ranges::reverse_view(*symbols))
                 {
                     writeString(separator, out);
                     writeString(symbol, out);
@@ -299,17 +452,20 @@ Chunk JemallocProfileSource::generateSymbolized()
 
         if (symbolized_phase == SymbolizedPhase::OutputtingHeap)
         {
-            /// Stream heap lines from stored profile
-            while (current_profile_line_index < profile_lines.size() && column->size() < max_block_size)
-            {
-                const auto & line = profile_lines[current_profile_line_index++];
-                column->insertData(line.data(), line.size());
-            }
+            /// Re-read the profile file to stream heap lines (avoids storing all lines in memory)
+            if (!file_input)
+                file_input = std::make_unique<ReadBufferFromFile>(filename);
 
-            if (current_profile_line_index >= profile_lines.size())
+            std::string line;
+            while (column->size() < max_block_size)
             {
-                symbolized_phase = SymbolizedPhase::Done;
-                is_finished = true;
+                if (!readPublishableLine(*file_input, line))
+                {
+                    symbolized_phase = SymbolizedPhase::Done;
+                    is_finished = true;
+                    break;
+                }
+                column->insertData(line.data(), line.size());
             }
 
             break; /// Chunk is full or done
@@ -339,7 +495,8 @@ void JemallocProfileSource::collectAddresses()
 {
     ReadBufferFromFile in(filename);
 
-    std::unordered_set<UInt64> unique_addresses;
+    /// The published address (as in the heap section) to a runtime address to symbolize.
+    UnorderedMapWithMemoryTracking<UInt64, UInt64> unique_addresses;
     std::string line;
 
     while (!in.eof())
@@ -354,47 +511,32 @@ void JemallocProfileSource::collectAddresses()
         readStringUntilNewlineInto(line, in);
         in.tryIgnore(1);
 
-        profile_lines.push_back(line);
-
-        if (line.empty())
-            continue;
-
-        /// Stack traces start with '@' followed by hex addresses
-        if (line[0] == '@')
+        for (UInt64 addr : parseJemallocStackAddresses(line))
         {
-            std::string_view line_addresses(line.data() + 1, line.size() - 1);
-
-            bool first = true;
-            while (!line_addresses.empty())
-            {
-                trimLeft(line_addresses);
-                if (line_addresses.empty())
-                    break;
-
-                auto address = parseHexAddress(line_addresses);
-                if (!address.has_value())
-                    break;
-
-                unique_addresses.insert(first ? address.value() : address.value() - 1);
-                first = false;
-            }
+            /// Frames outside the main binary are published as 0, which has no symbol.
+            if (UInt64 published = StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(addr)))
+                unique_addresses.emplace(published, addr);
         }
     }
 
-    /// Convert set to vector for iteration
+    /// Sorted for deterministic output
     addresses.assign(unique_addresses.begin(), unique_addresses.end());
+    std::sort(addresses.begin(), addresses.end());
 }
 
 Chunk JemallocProfileSource::generateCollapsed()
 {
-    /// For collapsed mode, we need to aggregate first, so we still use vector approach
-    if (collapsed_lines.empty())
+    /// Aggregate all stacks on the first call
+    if (!collapsed_state)
     {
-        ReadBufferFromFile in(filename);
+        collapsed_state.emplace();
+        auto & state = *collapsed_state;
 
-        std::unordered_map<std::string, UInt64> stack_to_metric;
+        ReadBufferFromFile in(filename);
         std::string line;
-        std::vector<UInt64> current_stack;
+        VectorWithMemoryTracking<UInt64> current_stack;
+        bool has_stack = false;
+        UInt64 sampling_interval = 0;
 
         while (!in.eof())
         {
@@ -411,27 +553,26 @@ Chunk JemallocProfileSource::generateCollapsed()
             if (line.empty())
                 continue;
 
+            /// Parse sampling interval from heap_v2/N header (first non-empty line)
+            if (sampling_interval == 0 && line.starts_with("heap_v2/"))
+            {
+                sampling_interval = parseJemallocSamplingInterval(line);
+                continue;
+            }
+
+            /// Fragmentation profiling records are not allocation counters;
+            /// skip them without touching the pending stack.
+            std::string_view trimmed(line);
+            trimLeft(trimmed);
+            if (trimmed.starts_with("f:") || trimmed.starts_with("frag_util:"))
+                continue;
+
             if (line[0] == '@')
             {
-                current_stack.clear();
-                std::string_view line_addresses(line.data() + 1, line.size() - 1);
-
-                bool first = true;
-                while (!line_addresses.empty())
-                {
-                    trimLeft(line_addresses);
-                    if (line_addresses.empty())
-                        break;
-
-                    auto address = parseHexAddress(line_addresses);
-                    if (!address.has_value())
-                        break;
-
-                    current_stack.push_back(first ? address.value() : address.value() - 1);
-                    first = false;
-                }
+                current_stack = parseJemallocStackAddresses(line);
+                has_stack = true;
             }
-            else if (!current_stack.empty() && line.find(':') != std::string::npos)
+            else if (has_stack && line.contains(':'))
             {
                 /// Each allocation record follows its `@` stack line in the jemalloc heap profile format:
                 ///
@@ -441,37 +582,37 @@ Chunk JemallocProfileSource::generateCollapsed()
                 ///
                 /// The record has the form `<thread>: <live_count>: <live_bytes> [<alloc_count>: <alloc_bytes>]`,
                 /// where the bracketed pair holds the cumulative (total) counts since profiling started.
-                /// We extract either <live_bytes> (between the 2nd and 3rd colon) or <live_count>
-                /// (between the 1st and 2nd colon) depending on the `collapsed_use_count` setting.
+                /// We extract both <live_count> and <live_bytes> to apply Poisson sampling correction,
+                /// then report the requested metric (bytes or count).
 
                 size_t first_colon = line.find(':');
                 size_t second_colon = line.find(':', first_colon + 1);
 
                 if (second_colon != std::string::npos)
                 {
-                    std::string_view metric_str;
-                    if (collapsed_use_count)
-                    {
-                        /// <live_count>: between 1st and 2nd colon
-                        metric_str = std::string_view(line.data() + first_colon + 1, second_colon - first_colon - 1);
-                    }
-                    else
-                    {
-                        /// <live_bytes>: between 2nd colon and opening bracket (or end of line)
-                        size_t bracket_pos = line.find('[', second_colon);
-                        size_t end_pos = (bracket_pos != std::string::npos) ? bracket_pos : line.size();
-                        metric_str = std::string_view(line.data() + second_colon + 1, end_pos - second_colon - 1);
-                    }
-                    trim(metric_str);
+                    /// <live_count>: between 1st and 2nd colon
+                    std::string_view count_str(line.data() + first_colon + 1, second_colon - first_colon - 1);
+                    trim(count_str);
+                    UInt64 live_count = parseInt<UInt64>(count_str);
 
-                    UInt64 metric = parseInt<UInt64>(metric_str);
+                    /// <live_bytes>: between 2nd colon and opening bracket (or end of line)
+                    size_t bracket_pos = line.find('[', second_colon);
+                    size_t end_pos = (bracket_pos != std::string::npos) ? bracket_pos : line.size();
+                    std::string_view bytes_str(line.data() + second_colon + 1, end_pos - second_colon - 1);
+                    trim(bytes_str);
+                    UInt64 live_bytes = parseInt<UInt64>(bytes_str);
+
+                    /// Apply Poisson sampling correction (same algorithm as jeprof's AdjustSamples).
+                    UInt64 metric = applySamplingCorrection(live_count, live_bytes, sampling_interval, collapsed_use_count);
 
                     if (metric > 0)
                     {
-                        /// Symbolize stack
-                        std::vector<std::string> all_symbols;
-
-                        /// Reverse stack to get root->leaf order
+                        /// Build collapsed stack string: reverse stack to get root->leaf order,
+                        /// and for each address reverse the resolved frames (stored inline-first)
+                        /// so that the main frame comes first within each address.
+                        std::string stack_str;
+                        WriteBufferFromString out(stack_str);
+                        bool first_symbol = true;
                         for (UInt64 address : std::ranges::reverse_view(current_stack))
                         {
                             if (isCancelled())
@@ -480,78 +621,55 @@ Chunk JemallocProfileSource::generateCollapsed()
                                 return {};
                             }
 
-                            std::vector<std::string> addr_symbols;
-                            if (auto cached = symbolization_cache.get(address))
-                                addr_symbols = std::move(*cached);
-                            if (!addr_symbols.empty())
+                            auto symbols = resolveAddress(address, symbolize_with_inline);
+                            for (const auto & symbol : std::ranges::reverse_view(*symbols))
                             {
-                                for (const auto & symbol : addr_symbols)
-                                    all_symbols.push_back(symbol);
-                            }
-                            else
-                            {
-                                FramePointers fp;
-                                fp[0] = reinterpret_cast<void *>(address);
-
-                                std::vector<std::string> frame_symbols;
-                                auto symbolize_callback = [&](const StackTrace::Frame & frame)
-                                {
-                                    frame_symbols.push_back(frame.symbol.value_or("??"));
-                                };
-
-                                bool resolve_inlines = symbolize_with_inline;
-                                StackTrace::forEachFrame(fp, 0, 1, symbolize_callback, /* fatal= */ resolve_inlines);
-
-                                /// Store in cache (in reverse order for easier reuse)
-                                for (const auto & symbol : std::ranges::reverse_view(frame_symbols))
-                                {
-                                    addr_symbols.push_back(symbol);
-                                    all_symbols.push_back(symbol);
-                                }
-                                symbolization_cache.put(address, addr_symbols);
+                                if (!first_symbol)
+                                    writeChar(';', out);
+                                first_symbol = false;
+                                writeString(symbol, out);
                             }
                         }
-
-                        /// Build collapsed stack string
-                        std::string stack_str;
-                        bool first_symbol = true;
-                        for (const auto & symbol : all_symbols)
-                        {
-                            if (!first_symbol)
-                                stack_str += ';';
-                            first_symbol = false;
-                            stack_str += symbol;
-                        }
+                        /// jemalloc writes a bare `@` when it could not unwind the stack.
+                        if (current_stack.empty())
+                            writeString("[unknown]", out);
+                        out.finalize();
 
                         /// Aggregate metric for same stack
-                        stack_to_metric[stack_str] += metric;
+                        state.stack_to_metric[stack_str] += metric;
                     }
                 }
 
                 current_stack.clear();
+                has_stack = false;
             }
         }
 
-        /// Store aggregated stacks as lines
-        for (const auto & [stack, metric] : stack_to_metric)
-        {
-            collapsed_lines.push_back(fmt::format("{} {}", stack, metric));
-        }
+        state.iter = state.stack_to_metric.begin();
     }
 
-    /// Stream from collapsed lines
-    if (current_collapsed_line_index >= collapsed_lines.size())
+    auto & state = *collapsed_state;
+
+    /// Stream directly from the aggregated map
+    if (state.iter == state.stack_to_metric.end())
     {
         is_finished = true;
+        collapsed_state.reset();
         return {};
     }
 
     auto column = ColumnString::create();
 
-    for (size_t rows = 0; rows < max_block_size && current_collapsed_line_index < collapsed_lines.size(); ++rows)
+    for (size_t rows = 0; rows < max_block_size && state.iter != state.stack_to_metric.end(); ++rows, ++state.iter)
     {
-        const auto & line = collapsed_lines[current_collapsed_line_index++];
-        column->insertData(line.data(), line.size());
+        auto formatted = fmt::format("{} {}", state.iter->first, state.iter->second);
+        column->insertData(formatted.data(), formatted.size());
+    }
+
+    if (state.iter == state.stack_to_metric.end())
+    {
+        is_finished = true;
+        collapsed_state.reset();
     }
 
     size_t num_rows = column->size();
@@ -561,11 +679,14 @@ Chunk JemallocProfileSource::generateCollapsed()
     return Chunk(std::move(columns), num_rows);
 }
 
-void symbolizeJemallocHeapProfile(
+namespace
+{
+
+void pullProfileLines(
     const std::string & input_filename,
-    const std::string & output_filename,
     JemallocProfileFormat format,
-    bool symbolize_with_inline)
+    bool symbolize_with_inline,
+    WriteBuffer & out)
 {
     Block header;
     header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "line"});
@@ -574,11 +695,12 @@ void symbolizeJemallocHeapProfile(
         std::make_shared<const Block>(std::move(header)),
         DEFAULT_BLOCK_SIZE,
         format,
-        symbolize_with_inline);
+        symbolize_with_inline,
+        /* collapsed_use_count= */ false,
+        /* remove_file= */ false);
 
     QueryPipeline pipeline(std::move(source));
     PullingPipelineExecutor executor(pipeline);
-    WriteBufferFromFile out(output_filename);
     Block block;
     while (executor.pull(block))
     {
@@ -590,7 +712,29 @@ void symbolizeJemallocHeapProfile(
             writeChar('\n', out);
         }
     }
+}
+
+}
+
+void symbolizeJemallocHeapProfile(
+    const std::string & input_filename,
+    const std::string & output_filename,
+    JemallocProfileFormat format,
+    bool symbolize_with_inline)
+{
+    WriteBufferFromFile out(output_filename);
+    pullProfileLines(input_filename, format, symbolize_with_inline, out);
     out.finalize();
+}
+
+std::string symbolizeJemallocHeapProfileToString(
+    const std::string & input_filename,
+    JemallocProfileFormat format,
+    bool symbolize_with_inline)
+{
+    WriteBufferFromOwnString out;
+    pullProfileLines(input_filename, format, symbolize_with_inline, out);
+    return std::move(out.str());
 }
 
 }

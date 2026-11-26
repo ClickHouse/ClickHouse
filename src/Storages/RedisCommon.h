@@ -5,6 +5,7 @@
 #include <Poco/Redis/Array.h>
 #include <Poco/Types.h>
 
+#include <Common/SecretString.h>
 #include <Core/Defines.h>
 #include <base/BorrowedObjectPool.h>
 #include <Core/Names.h>
@@ -20,7 +21,6 @@ enum class RedisStorageType : uint8_t
 {
     SIMPLE,
     HASH_MAP,
-    UNKNOWN
 };
 
 
@@ -33,16 +33,15 @@ String serializeStorageType(RedisStorageType storage_type);
 struct RedisConfiguration
 {
     String host;
-    uint32_t port;
-    uint32_t db_index;
-    String password;
-    RedisStorageType storage_type;
-    uint32_t pool_size;
+    uint32_t port{};
+    uint32_t db_index{};
+    SecretString password;
+    RedisStorageType storage_type{};
+    uint32_t pool_size{};
 };
 
 static uint32_t DEFAULT_REDIS_DB_INDEX = 0;
 static uint32_t DEFAULT_REDIS_POOL_SIZE = 16;
-static String DEFAULT_REDIS_PASSWORD;
 
 using RedisCommand = Poco::Redis::Command;
 using RedisArray = Poco::Redis::Array;

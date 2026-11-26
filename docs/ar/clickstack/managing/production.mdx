@@ -1,0 +1,131 @@
+---
+slug: /use-cases/observability/clickstack/production
+title: 'الانتقال إلى الإنتاج'
+sidebarTitle: 'الإنتاج'
+description: 'الانتقال إلى الإنتاج باستخدام ClickStack'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'الإنتاج', 'النشر', 'أفضل الممارسات', 'العمليات']
+---
+
+عند نشر ClickStack Open Source في بيئة الإنتاج، يُنصح بمراعاة الممارسات التالية المتعلقة بالأمان والاستقرار والإعداد.
+
+## أمان الشبكة والمنافذ {#network-security}
+
+بشكل افتراضي، يكشف Docker Compose المنافذ على المضيف، مما يجعلها قابلة للوصول من خارج الحاوية - حتى لو كانت أدوات مثل `ufw` (جدار الحماية المبسّط) مُفعَّلة. يعود هذا السلوك إلى حزمة شبكات Docker، التي يمكنها تجاوز قواعد جدار الحماية على مستوى المضيف ما لم يُضبط ذلك صراحةً.
+
+**التوصية:**
+
+اعرض المنافذ الضرورية لبيئة الإنتاج فحسب، وتشمل عادةً نقاط نهاية OTLP وخادم API والواجهة الأمامية.
+
+على سبيل المثال، احذف تعيينات المنافذ غير الضرورية أو علّق عليها في ملف `docker-compose.yml` الخاص بك:
+
+```yaml
+ports:
+  - "4317:4317"  # OTLP gRPC
+  - "4318:4318"  # OTLP HTTP
+  - "8080:8080"  # Only if needed for the API
+# Avoid exposing internal ports like ClickHouse 8123 or MongoDB 27017.
+```
+
+راجع [توثيق شبكات Docker](https://docs.docker.com/network/) للاطلاع على تفاصيل عزل الحاويات وتقوية ضوابط الوصول.
+
+## تهيئة secret الخاص بالـ session {#session-secret}
+
+في بيئة الإنتاج، يجب تعيين قيمة قوية وعشوائية لمتغير البيئة `EXPRESS_SESSION_SECRET` في واجهة مستخدم ClickStack، وذلك لحماية بيانات الـ session ومنع التلاعب بها.
+
+إليك طريقة إضافته إلى ملف `docker-compose.yml` ضمن خدمة التطبيق:
+
+```yaml
+  app:
+    image: ${IMAGE_NAME_HDX}:${IMAGE_VERSION}
+    ports:
+      - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
+      - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
+    environment:
+      FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
+      HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+      HYPERDX_API_PORT: ${HYPERDX_API_PORT}
+      HYPERDX_APP_PORT: ${HYPERDX_APP_PORT}
+      HYPERDX_APP_URL: ${HYPERDX_APP_URL}
+      HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+      MINER_API_URL: 'http://miner:5123'
+      MONGO_URI: 'mongodb://db:27017/hyperdx'
+      NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:${HYPERDX_API_PORT}
+      OTEL_SERVICE_NAME: 'hdx-oss-api'
+      USAGE_STATS_ENABLED: ${USAGE_STATS_ENABLED:-true}
+      EXPRESS_SESSION_SECRET: "super-secure-random-string"
+    networks:
+      - internal
+    depends_on:
+      - ch-server
+      - db1
+```
+
+يمكنك توليد قيمة سرية قوية باستخدام `openssl`:
+
+```shell
+openssl rand -hex 32
+```
+
+تجنّب إيداع الأسرار في نظام التحكم بالإصدارات. في بيئة الإنتاج، يُستحسن استخدام أدوات لإدارة متغيرات البيئة (مثل Docker Secrets أو HashiCorp Vault أو إعدادات CI/CD الخاصة بكل بيئة).
+
+## تأمين إدخال البيانات {#secure-ingestion}
+
+يجب أن يتم إدخال جميع البيانات عبر منافذ OTLP التي يتيحها جامع البيانات OpenTelemetry (OTel) في توزيعة ClickStack. ويتطلب ذلك افتراضيًا مفتاح API آمنًا لاستيعاب البيانات يُنشأ عند بدء التشغيل. هذا المفتاح مطلوب عند إرسال البيانات إلى منافذ OTel، ويمكنك العثور عليه في واجهة مستخدم ClickStack ضمن `Team Settings → API Keys`.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![مفاتيح استيعاب البيانات](/images/use-cases/observability/ingestion-keys.webp)
+  </Frame>
+</div>
+
+كما يُوصى بتفعيل TLS لنقاط نهاية OTLP.
+
+### إنشاء مستخدم للإدخال {#create-a-database-ingestion-user-oss}
+
+يُوصى بإنشاء مستخدم مخصص لـ OTel collector لإدخال البيانات في ClickHouse، والتأكد من توجيه عملية الإدخال إلى قاعدة بيانات محددة، مثل `otel`. راجع [&quot;إنشاء مستخدم إدخال&quot;](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user) لمزيد من التفاصيل.
+
+## ClickHouse {#clickhouse}
+
+ينبغي للمستخدمين الذين يديرون مثيل ClickHouse الخاص بهم بأنفسهم الالتزام بأفضل الممارسات التالية.
+
+### أفضل ممارسات الأمان {#self-managed-security}
+
+إذا كنت تدير مثيل ClickHouse الخاص بك بنفسك، فمن الضروري تمكين **TLS** وفرض المصادقة واتباع أفضل الممارسات لتحصين الوصول. راجع [منشور المدونة هذا](https://www.wiz.io/blog/clickhouse-and-wiz) للاطلاع على أمثلة واقعية لأخطاء التهيئة وكيفية تجنّبها.
+
+يوفّر ClickHouse OSS ميزات أمان قوية جاهزة للاستخدام، لكنها تتطلب تهيئة:
+
+* **استخدم TLS** عبر `tcp_port_secure` و`<openSSL>` في `config.xml`. راجع [guides/sre/configuring-tls](/ar/concepts/features/security/tls/configuring-tls).
+* **عيّن كلمة مرور قوية** للمستخدم `default` أو عطّله.
+* **تجنّب إتاحة ClickHouse خارجيًا** ما لم يكن ذلك مقصودًا صراحةً. افتراضيًا، يرتبط ClickHouse بـ `localhost` فقط ما لم يُعدَّل `listen_host`.
+* **استخدم طرق المصادقة** مثل كلمات المرور أو الشهادات أو مفاتيح SSH أو [آليات المصادقة الخارجية](/ar/concepts/features/security/external-authenticators/index).
+* **قيّد الوصول** باستخدام تصفية عناوين IP والعبارة `HOST`. راجع [sql-reference/statements/create/user#user-host](/ar/reference/statements/create/user#user-host).
+* **مكّن التحكم في الوصول المستند إلى الأدوار (RBAC)** لمنح صلاحيات دقيقة. راجع [operations/access-rights](/ar/concepts/features/security/access-rights).
+* **افرض الحصص والحدود** باستخدام [الحصص](/ar/concepts/features/configuration/server-config/quotas) و[ملفات تعريف الإعدادات](/ar/concepts/features/configuration/settings/settings-profiles) وأوضاع القراءة فقط.
+* **شفّر البيانات المخزّنة** واستخدم تخزينًا خارجيًا آمنًا. راجع [operations/storing-data](/ar/concepts/features/configuration/server-config/storing-data) و[cloud/security/CMEK](/ar/products/cloud/guides/security/cmek).
+* **تجنّب تضمين بيانات الاعتماد مباشرةً في الشيفرة.** استخدم [المجموعات المسمّاة](/ar/concepts/features/configuration/server-config/named-collections) أو أدوار IAM في ClickHouse Cloud.
+* **دقّق الوصول والاستعلامات** باستخدام [سجلات النظام](/ar/reference/system-tables/query_log) و[سجلات الجلسات](/ar/reference/system-tables/session_log).
+
+راجع أيضًا [آليات المصادقة الخارجية](/ar/concepts/features/security/external-authenticators/index) و[إعدادات تعقيد الاستعلام](/ar/concepts/features/configuration/settings/query-complexity) لإدارة المستخدمين وفرض حدود على الاستعلامات والموارد.
+
+### صلاحيات المستخدم لواجهة مستخدم ClickStack {#user-permissions}
+
+يجب أن يُضبط `readonly = 2` لمستخدم ClickHouse المخصص لواجهة مستخدم ClickStack. فالواجهة تضبط إعداداتها الخاصة، مثل `date_time_output_format`، في كل استعلام، كما تضبط مخططات SQL المباشر بدورها `readonly = 2`، ولذلك تفشل هذه الاستعلامات لدى المستخدم الذي يملك `readonly = 1` مع ظهور الخطأ `Cannot modify '...' setting in readonly mode`. ومع `readonly = 2` تستطيع الواجهة أيضًا ضبط `max_rows_to_read` و`read_overflow_mode` و`cancel_http_readonly_queries_on_client_close`؛ وإذا قيّدت `max_rows_to_read`، فاسمح بمليون صف على الأقل. أما `wait_end_of_query` فهي مَعلمة في واجهة HTTP وليست إعدادًا، لذا لا تتطلب منح أي أذونات.
+
+على سبيل المثال:
+
+```sql
+CREATE USER clickstack_ui IDENTIFIED BY '<password>' SETTINGS readonly = 2;
+GRANT SELECT ON default.* TO clickstack_ui;
+```
+
+يمتلك المستخدم `default` هذه الصلاحيات افتراضيًا في كلٍّ من OSS وClickHouse Cloud، لكننا نوصي بإنشاء مستخدم مخصص لهذا الغرض.
+
+## ضبط مدة البقاء (TTL) {#configure-ttl}
+
+تأكد من [ضبط مدة البقاء (TTL)](/ar/clickstack/managing/ttl) [بالشكل المناسب](/ar/clickstack/managing/ttl#modifying-ttl) لنشر ClickStack لديك. يتحكم هذا الإعداد في مدة الاحتفاظ بالبيانات - وقد تحتاج القيمة الافتراضية البالغة 30 يومًا إلى تعديل.
+
+## إرشادات MongoDB {#mongodb-guidelines}
+
+اتبع [قائمة التحقق الأمنية الرسمية الخاصة بـ MongoDB](https://www.mongodb.com/docs/manual/administration/security-checklist/).

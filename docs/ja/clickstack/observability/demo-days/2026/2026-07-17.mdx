@@ -1,0 +1,92 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-17
+title: 'デモデイズ - 2026-07-17'
+sidebarTitle: '2026-07-17'
+description: '2026-07-17 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## チャートのツールチップの改善 {#chart-tooltip-improvements}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/EsnGp9RPSKM" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack のチャートのツールチップの使い勝手が大幅に向上しました。チャートをクリックすると、マウスを離してもツールチップが消えずにその場に固定されるため、データをじっくり確認できます。固定されたツールチップには系列内のすべての値が表示され、値の数が多い場合も切り詰められることなく、リストをスクロールして確認できます。
+
+さらに、お客様からのフィードバックを受けて、ツールチップから値を直接コピーできるようになりました。これまでは必要なデータが表示されていても取得する手段がありませんでしたが、現在は値をクリックするだけでクリップボードにコピーされます。
+
+これらの機能は Recharts のアップグレードによって実現されています。ツールチップはチャート自身のコンテナ内ではなく、ポータル経由でレンダリングされるようになりました。この変更が特に効果を発揮するのは、多数のチャートが密集して配置されたダッシュボードです。ツールチップが隣接するチャートによって押しつぶされたり、クリッピングされたりすることがなくなりました。
+
+**関連するプルリクエスト:** [#2642](https://github.com/hyperdxio/hyperdx/pull/2642) feat(charts): pin chart tooltip on click with inline drill-down actions
+
+## PR から MCP 評価を実行する {#running-mcp-evals-from-a-pr}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/YcDm1Mnw-Qc" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでローカルでしか実行できなかった MCP 評価を、チームが GitHub の PR から直接実行できるようになりました。これにより、コード変更が MCP の品質にどう影響するかを、マージ前に誰でも確認できます。今回はその最初のバージョンで、評価パイプラインを CI に組み込み、評価が自動で実行されて統合スコアが PR 上に報告されるようにしました。
+
+ClickStack の MCP 評価フレームワークの仕組みについて詳しくは、ブログ記事 [benchmarking the ClickStack MCP server with HDX evals](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals) を参照してください。
+
+**関連するプルリクエスト:** [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CI skeleton — run MCP evals end to end in GitHub Actions
+
+## MCPサーバーでのメトリクスのサポート {#metrics-support-in-the-mcp-server}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GqJWQN3P86c" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+MCPサーバーが、ログとトレースに加えてメトリクスも扱えるようになりました。あわせて、MCPサーバーがメトリクスをどの程度うまく活用できているかを測定する評価フレームワークも用意されています。今回の変更では、ClickStack がサポートする5種類のメトリクス型 (gauge、sum、histogram、exponential histogram、summary) のジェネレーターが追加されたほか、解決にメトリクスが不可欠な評価シナリオも新たに加わりました。たとえば、ログとトレースだけでは事実上原因を特定できない JVM のメモリリークなどです。
+
+初期の結果では、メトリクス対応の MCPサーバーは、Standard SQL のみに対応した MCPサーバーと比べて、これらのシナリオを明らかに短時間で解決しています。これは主に、回答にたどり着くまでに必要なツール呼び出しの回数が少ないためです。まだ調整の余地はあります (同一のメトリクスでも表記が異なると、LLM のパターンマッチングがうまく機能しないシナリオもあります) が、方向性は明確です。エージェントがメトリクスに直接アクセスできるようになったことで、これまで不可能だった調査が実現できるようになります。
+
+**関連するプルリクエスト:** [#2645](https://github.com/hyperdxio/hyperdx/pull/2645) feat(evals): support metric types and seeding
+
+## データソース選択コントロールの改善 {#source-picker-improvements}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/XTQygZSMUTs" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、目的のログソースを選ぶには、一覧をスクロールしながら見当をつけるしかありませんでした。ログソースの多いインスタンスでは、ドロップダウンを開いても、どのログソースが選択中なのかを視覚的に判別する手がかりがありませんでした。今回の更新により、既存の複数選択と同じ表示方式で、現在選択中のログソースの横にチェックマークが表示されるようになりました。これで、クエリを実行する前に、どのログソースが有効かを一目で確認できます。
+
+小さな変更ですが、作業中に何度も生じる「あれ、今どれを見ているんだっけ？」という小さな迷いを解消します。
+
+**関連するプルリクエスト:** [#2651](https://github.com/hyperdxio/hyperdx/pull/2651) feat(app): clarify selected source in source picker
+
+## チャートビルダーからSQLへの変換 {#chart-builder-to-sql-conversion}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IBNdi1rgiTc" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでは、ビジュアルなクエリビルダーから生のSQLモードに切り替えると、一から作り直す必要がありました。ビルダーでフィルタやgroup-byを組み合わせてクエリを作成したものの、ビルダーでは表現できない処理が必要になった場合、SQLモードに移行すると空のエディタから始めることになっていました。
+
+今後は、SQLモードに切り替えると、チャートのレンダリングと同じパイプラインでビルダーのクエリが処理されます。そのため、SQLモードを開いた時点で、ハードコードされた値ではなく適切なマクロを使用した同等のクエリがすでに記述されています。逆方向の変換 (SQLからビルダーへ) はまだ実装されていませんが、ロードマップに含まれています。
+
+**関連するプルリクエスト:** [#2634](https://github.com/hyperdxio/hyperdx/pull/2634) feat: Auto-convert builder charts to Raw SQL, [#2666](https://github.com/hyperdxio/hyperdx/pull/2666) fix(charts): Keep selected source when switching from builder to SQL mode
+
+## 新しいフィルタ取得メカニズム {#new-filter-fetching-mechanism}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/z31cAIJA3B4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+利用可能なフィルタ値の一覧を取得する処理に、よりスマートなルーティング層が導入されました。新しい仕組みでは、固定された単一の戦略に頼るのではなく、スキーマで利用できる要素 (特にテキストインデックスの有無) を確認したうえで、フィルタ一覧を構築する最も効率的な方法を選択します。
+
+テキストインデックスが利用可能な場合、ClickStack はロールアップテーブルにフォールバックせず、テキストインデックスに対して直接クエリを実行します。これにより、維持すべきロールアップが減るほか、従来の方式で一部のお客様が直面していたメモリ逼迫のリスクも低減されます。なお、この機能には ClickHouse 26.3 が必要です。まだこのバージョンを使用していない環境では、アップグレードするまで既存のロールアップベースの方式が引き続き使用され、アップグレード後は自動的に新しい方式に切り替わります。
+
+**関連するプルリクエスト:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## RUM ダッシュボードの改善 {#improved-rum-dashboard}
+
+*デモ担当者: [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/roNhRzLvXro" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ブラウザーRUM ダッシュボードで色分け表示が利用できるようになり、各色の意味を説明する Markdown の凡例も追加されました (この凡例は今後さらにわかりやすく改善していく予定です) 。エラーが発生したセッション数などを表示する数値タイルは、設定可能なしきい値に基づいて色分けされるようになりました。これにより、問題のある箇所が無機質な数値の中に埋もれることなく、ひと目で把握できます。
+
+**関連 プルリクエスト:** [#2671](https://github.com/hyperdxio/hyperdx/pull/2671) feat(dashboards): color-code Browser RUM web vitals, page-load &amp; error tiles

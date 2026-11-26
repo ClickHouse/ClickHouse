@@ -7,6 +7,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/InvalidateQueryResponse.h>
 
 
 namespace Poco
@@ -73,7 +74,7 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
-    QueryPipeline loadFromQuery(const Poco::URI & uri, const Block & required_sample_block, const std::string & query) const;
+    QueryPipeline loadFromQuery(const Block & required_sample_block, const std::string & query) const;
 
     LoggerPtr log;
 
@@ -83,7 +84,7 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
 
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;

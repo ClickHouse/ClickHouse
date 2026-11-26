@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Joins.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>

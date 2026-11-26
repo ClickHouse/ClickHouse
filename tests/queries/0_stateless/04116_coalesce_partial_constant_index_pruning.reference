@@ -1,0 +1,68 @@
+--- N=3 middle constant: `coalesce(a, 42, b)` -> `coalesce(a, 42)` after normalization ---
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+22528
+22528
+Granules: 1024/1024
+--- N=3 NULL literal in middle: `coalesce(a, NULL, b)` -> `coalesce(a, b)` ---
+Granules: 1024/1024
+Skip
+Name: b_idx
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+Skip
+Name: <Combined skip indexes>
+Granules: 800/1024
+34133
+34133
+34133
+--- N=3 trailing constant, FALSE tail branch: `(isNull(a) AND isNull(b) AND 1000000 < 42)` drops ---
+Granules: 1024/1024
+Skip
+Name: b_idx
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+Skip
+Name: <Combined skip indexes>
+Granules: 1024/1024
+28672
+28672
+--- N=3 trailing constant, TRUE tail branch: `(isNull(a) AND isNull(b) AND 0 >= 0)` stays ---
+65536
+65536
+--- N=4 with constant at position 3: `coalesce(a, b, 42, d)` -> `coalesce(a, b, 42)` ---
+Name: b_idx
+Name: a_idx
+Name: <Combined skip indexes>
+5052
+5052
+--- Flipped operand form: `42 = coalesce(a, 100, b)` ---
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+682
+682
+--- Each ordered operator with trailing constant and semantics cross-check ---
+5052
+5052
+6826
+6826
+19524
+19524
+7509
+7509
+20206
+20206
+--- ifNull(a, 42) covered by the same rewrite ---
+22528
+22528
+--- Negative regressions: non-rewriteable ops must still return correct results ---
+43008
+0

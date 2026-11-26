@@ -12,6 +12,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/obfuscateQueries.h>
@@ -22,10 +23,13 @@
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/StorageFactory.h>
@@ -34,6 +38,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
+#include <Compression/CompressionFactory.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -57,10 +67,9 @@ namespace
 {
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
-
 extern const char * auto_time_zones[];
+
+int mainEntryClickHouseFormat(int argc, char ** argv);
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
@@ -76,10 +85,12 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("hilite,highlight", "add syntax highlight with ANSI terminal escape sequences (can also use --highlight)")
             ("oneline", "format in single line")
             ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
+            ("wrap_width", po::value<size_t>()->default_value(0), "wrap multiline queries at this display width (0 disables wrapping)")
             ("quiet,q", "just check syntax, no output on success")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
             ("backslash", "add a backslash at the end of each line of the formatted query")
+            ("no_rainbow_parentheses", "bypass highlighting of matching parentheses in distinct colors")
             ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
@@ -96,9 +107,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
+            std::cout << "Usage: clickhouse format [options] < query" << std::endl;
             std::cout << desc << std::endl;
-            return 1;
+            return 0;
         }
 
         bool hilite = options.contains("hilite");
@@ -106,8 +117,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool quiet = options.contains("quiet");
         bool multiple = options.contains("multiquery");
         size_t max_line_length = options["max_line_length"].as<size_t>();
+        size_t wrap_width = options["wrap_width"].as<size_t>();
         bool obfuscate = options.contains("obfuscate");
         bool backslash = options.contains("backslash");
+        bool rainbow_parentheses = !options.contains("no_rainbow_parentheses");
         bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
         bool semicolon_inline = options.contains("semicolons_inline");
@@ -165,6 +178,18 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             readStringUntilEOF(query, in);
         }
 
+        /// The obfuscator needs every known name, and hiding secrets needs the engines, which declare them.
+        registerInterpreters();
+        registerFunctions();
+        registerAggregateFunctions();
+        registerWindowFunctions();
+        registerTableFunctions();
+        registerDatabases();
+        registerStorages();
+        registerFormats();
+        registerDictionaries();
+        setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
+
         if (obfuscate)
         {
             WordMap obfuscated_words_map;
@@ -176,25 +201,27 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
-            registerInterpreters();
-            registerFunctions();
-            registerAggregateFunctions();
-            registerTableFunctions();
-            registerDatabases();
-            registerStorages();
-            registerFormats();
-
             std::unordered_set<std::string> additional_names;
 
             auto all_known_storage_names = StorageFactory::instance().getAllRegisteredNames();
             auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
             auto all_known_settings = Settings().getAllRegisteredNames();
             auto all_known_merge_tree_settings = MergeTreeSettings().getAllRegisteredNames();
+            auto all_known_index_types = MergeTreeIndexFactory::instance().getAllRegisteredNames();
+            auto all_known_codecs = CompressionCodecFactory::instance().getAllRegisteredNames();
+            auto all_known_database_engines = DatabaseFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_layouts = DictionaryFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_sources = DictionarySourceFactory::instance().getAllRegisteredNames();
 
             additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
             additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
             additional_names.insert(all_known_settings.begin(), all_known_settings.end());
             additional_names.insert(all_known_merge_tree_settings.begin(), all_known_merge_tree_settings.end());
+            additional_names.insert(all_known_index_types.begin(), all_known_index_types.end());
+            additional_names.insert(all_known_codecs.begin(), all_known_codecs.end());
+            additional_names.insert(all_known_database_engines.begin(), all_known_database_engines.end());
+            additional_names.insert(all_known_dict_layouts.begin(), all_known_dict_layouts.end());
+            additional_names.insert(all_known_dict_sources.begin(), all_known_dict_sources.end());
 
             for (auto * it = auto_time_zones; *it; ++it)
             {
@@ -219,6 +246,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
                 if (FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
+                    || WindowFunctionFactory::instance().isWindowFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
@@ -268,7 +296,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     const char * this_query_end = find_first_symbols<'\n'>(insert_query->data, end);
                     insert_query->end = this_query_end;
                     pos = this_query_end;
-                    insert_query_payload = getReadBufferFromASTInsertQuery(res);
+                    insert_query_payload = getReadBufferFromASTInsertQuery(res, context);
                 }
 
                 if (!quiet)
@@ -277,16 +305,14 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
 
-                        WriteBufferFromOwnString query_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(query_buf, settings);
-                        String formatted_query = query_buf.str();
+                        String formatted_query = formatASTWithWrapping(*res, settings, wrap_width);
 #if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
+                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
 #endif
                         str_buf.write(formatted_query.data(), formatted_query.size());
 
@@ -335,12 +361,19 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(str_buf, settings);
+                        String formatted_query = formatASTWithWrapping(*res, settings, wrap_width);
+                        str_buf.write(formatted_query.data(), formatted_query.size());
 
-                        String formatted_query = str_buf.str();
+                        if (insert_query_payload)
+                        {
+                            str_buf.write(' ');
+                            copyData(*insert_query_payload, str_buf);
+                        }
+
+                        formatted_query = str_buf.str();
 #if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
+                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
 #endif
                         WriteBufferFromOStream res_cout(std::cout, 4096);
 
@@ -355,8 +388,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         }
 
                         res_cout.finalize();
-                        if (multiple)
+                        if (multiple && !insert_query_payload)
                             std::cout << " \\\n;\n";
+                        else if (multiple && insert_query_payload)
+                            std::cout << "\n";
                         std::cout << std::endl;
                     }
                 }

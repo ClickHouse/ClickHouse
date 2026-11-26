@@ -2,12 +2,13 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 
 /// Internal temporary storage for table function mergeTreeIndex(...)
-class StorageMergeTreeIndex final : public IStorage
+class StorageMergeTreeIndex final : public StorageWithCommonVirtualColumns
 {
 public:
     static const ColumnWithTypeAndName part_name_column;
@@ -15,14 +16,16 @@ public:
     static const ColumnWithTypeAndName rows_in_granule_column;
     static const Block virtuals_sample_block;
 
+    /// `source_metadata_snapshot_` must be the metadata `columns` were built from.
     StorageMergeTreeIndex(
         const StorageID & table_id_,
         const StoragePtr & source_table_,
+        const StorageMetadataPtr & source_metadata_snapshot_,
         const ColumnsDescription & columns,
         bool with_marks_,
         bool with_minmax_);
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -34,6 +37,8 @@ public:
 
     String getName() const override { return "MergeTreeIndex"; }
 
+    static VirtualColumnsDescription createVirtuals();
+
 private:
     friend class ReadFromMergeTreeIndex;
 
@@ -41,6 +46,9 @@ private:
     bool with_marks;
     bool with_minmax;
 
+    /// The source metadata the exposed columns, `key_sample_block` and `minmax_sample_block` are built from. The access
+    /// check in `readImpl` resolves subcolumns against it, so it authorizes the columns this storage actually returns.
+    StorageMetadataPtr source_metadata_snapshot;
     MergeTreeData::DataPartsVector data_parts;
     SharedHeader key_sample_block;
     SharedHeader minmax_sample_block;

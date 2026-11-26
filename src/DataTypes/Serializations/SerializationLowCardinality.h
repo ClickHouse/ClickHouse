@@ -8,14 +8,23 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-class SerializationLowCardinality : public ISerialization
+class SerializationLowCardinality final : public ISerialization
 {
 private:
     DataTypePtr dictionary_type;
+    /// Serialization of the nested column.
+    SerializationPtr nested_serialization;
+    /// Serialization of the dictionary type.
+    /// It can differ from the nested serialization for nullable types.
     SerializationPtr dict_inner_serialization;
 
-public:
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
+
+public:
+    static UInt128 getHash(const DataTypePtr & dictionary_type);
+    static SerializationPtr create(const DataTypePtr & dictionary_type);
+
+    bool supportsPooling() const override { return dict_inner_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -44,8 +53,7 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-            ColumnPtr & column,
-            size_t rows_offset,
+            IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,

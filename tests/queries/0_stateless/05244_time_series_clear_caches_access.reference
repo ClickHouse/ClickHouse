@@ -1,0 +1,2 @@
+--- without the grant the statement is denied before the table is looked up ---
+--- with the grant the statement runs, and the errors about the table appear ---

@@ -1,0 +1,78 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nextjs
+description: 'ClickStack 向け Next.js SDK - ClickHouse オブザーバビリティ スタック'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプリケーション監視']
+---
+
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Next.js のデプロイ環境に応じて、サーバー側のインストルメンテーションを選択してください。
+
+* **セルフホスト、Node.js ランタイム:** ClickStack Node.js SDK を使用します。
+* **Vercel または Edge ランタイム:** `@vercel/otel` を使用します。
+
+ブラウザーのテレメトリーとセッションリプレイについては、[ブラウザー SDK ガイド](/ja/clickstack/ingesting-data/sdks/browser)を参照してください。
+
+<ClickStackIntegrates signals={['traces']} />
+
+## セルフホスト環境の Next.js {#self-hosted-nextjs}
+
+Node.js 22.15 以降を使用し、SDK をインストールします。
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+プロジェクトのルート (アプリケーションで `src` ディレクトリを使用している場合は `src` 内) に `instrumentation.ts` を作成します。SDK の初期化は Node.js ランタイムでのみ行うようにします。
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@clickhouse/clickstack-node');
+    init();
+  }
+}
+```
+
+SDK がサーバーバンドルの外部で読み込まれるよう、既存の Next.js の設定の `serverExternalPackages` に SDK を追加します。
+
+```javascript
+// next.config.mjs
+export default {
+  serverExternalPackages: ['@clickhouse/clickstack-node'],
+};
+```
+
+以下で宛先を設定し、`OTEL_SERVICE_NAME` を設定してアプリケーションを識別できるようにしてください。あわせて SDK をプリロードしたり、別の OpenTelemetry SDK を初期化したりしないでください。その他のオプションについては、[Node.js ガイド](/ja/clickstack/ingesting-data/sdks/nodejs)を参照してください。
+
+終了処理やデプロイ時の考慮事項については、[SDK の Next.js 向けガイダンス](https://github.com/ClickHouse/clickstack-node#nextjs)を参照してください。
+
+## Vercel および Edge ランタイム {#vercel-or-edge}
+
+[Next.js の OpenTelemetry セットアップ手順](https://nextjs.org/docs/app/guides/open-telemetry)に従って `@vercel/otel` を使用してください。上記の ClickStack Node.js SDK による初期化の代わりに、こちらのセットアップを使用します。
+
+以下の接続設定を使用して [OTLP エクスポート](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration)を設定します。サンプルの宛先やシグナル固有のエンドポイントのオーバーライドはすべて置き換え、変数はデプロイメントの設定で指定してください。
+
+Vercel のデプロイメントですでにトレーシングのインテグレーションを使用している場合は、この宛先向けに[カスタムエクスポーター](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters)を設定してください。エンドポイントの環境変数を設定するだけでは、既存のインテグレーションはオーバーライドされません。
+
+## 宛先を設定する {#configure-destination}
+
+どちらのインストルメンテーションオプションを使用する場合も、サービス名を設定します。
+
+```shell
+export OTEL_SERVICE_NAME='my-nextjs-app'
+```
+
+ClickStack コレクターの OTLP HTTP エンドポイントとインジェストキーを設定します。コレクターで TLS が設定されていない場合は、`http://` を使用してください。コレクターのセットアップについては、[OpenTelemetry によるデータの取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## インジェストの確認 {#verify-ingestion}
+
+アプリケーションを起動し、サーバーサイドでレンダリングされるページまたは API ルートにリクエストを送信します。ClickStack で直近の時間範囲を選択し、Traces でアプリケーションのサービス名を確認します。

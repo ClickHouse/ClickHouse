@@ -1,0 +1,58 @@
+-- array.size0 from view (inlined)
+0
+2
+3
+-- tuple elements from view (inlined)
+hello	10
+world	20
+foo	30
+-- nullable.null from view (inlined)
+0
+0
+1
+-- map subcolumns from view (inlined)
+['c']
+['a','b']
+['d','e','f']
+[3]
+[1,2]
+[4,5,6]
+-- array.size0 from view (not inlined)
+0
+2
+3
+-- tuple elements from view (not inlined)
+hello	10
+world	20
+foo	30
+-- nullable.null from view (not inlined)
+0
+0
+1
+-- map subcolumns from view (not inlined)
+['c']
+['a','b']
+['d','e','f']
+[3]
+[1,2]
+[4,5,6]
+-- subcolumns from view with type conversion (inlined)
+0
+1
+2
+aaa	1
+bbb	2
+ccc	3
+0
+0
+1
+-- subcolumns from view with type conversion (not inlined)
+0
+1
+2
+aaa	1
+bbb	2
+ccc	3
+0
+0
+1

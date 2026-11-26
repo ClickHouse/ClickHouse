@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SecretString.h>
 #include <Storages/UVLoop.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
@@ -10,13 +11,13 @@ namespace DB
 struct RabbitMQConfiguration
 {
     String host;
-    UInt16 port;
+    UInt16 port{};
     String username;
-    String password;
+    SecretString password;
     String vhost;
 
-    bool secure;
-    String connection_string;
+    bool secure{};
+    SecretString connection_string;
 };
 
 class RabbitMQConnection
@@ -40,6 +41,7 @@ public:
 
     /// RabbitMQHandler is thread safe. Any public methods can be called concurrently.
     RabbitMQHandler & getHandler() { return event_handler; }
+    const RabbitMQHandler & getHandler() const { return event_handler; }
 
     String connectionInfoForLog() const;
 

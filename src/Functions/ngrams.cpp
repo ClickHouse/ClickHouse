@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/TokenizerFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -15,7 +16,7 @@
 namespace DB
 {
 
-class FunctionNgrams : public IFunction
+class FunctionNgrams final : public IFunction
 {
 public:
 
@@ -26,45 +27,40 @@ public:
         return std::make_shared<FunctionNgrams>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isVariadic() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{1}; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"s", &isStringOrFixedString, nullptr, "String or FixedString"},
-            {"N", &isNativeUInt, &isColumnConst, "const UInt8/16/32/64"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return "(StringOrFixedString, const NativeUInt) -> Array(String)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto column_offsets = ColumnArray::ColumnOffsets::create();
 
         Field ngram_argument_value;
         arguments[1].column->get(0, ngram_argument_value);
-        auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
-        NgramsTokenizer tokenizer(ngram_value);
+        FieldVector params;
+        params.push_back(ngram_argument_value);
+
+        auto ngram_tokenizer = TokenizerFactory::instance().get(NgramsTokenizer::getExternalName(), params);
 
         auto result_column_string = ColumnString::create();
 
         auto input_column = arguments[0].column;
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-            executeImpl(tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(*ngram_tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-            executeImpl(tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(*ngram_tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
 
         return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
     }

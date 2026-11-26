@@ -1,0 +1,228 @@
+---
+slug: /whats-new/security-changelog
+sidebarTitle: 'Changelog de segurança'
+title: 'Changelog de segurança'
+description: 'Changelog de segurança com detalhes sobre atualizações e mudanças relacionadas à segurança'
+doc_type: 'changelog'
+keywords: ['segurança', 'CVE', 'vulnerabilidades', 'correções de segurança', 'patches']
+---
+
+## Corrigido no ClickHouse v26.10.3.7, 2026-10-30 {#fixed-in-clickhouse-cve-2026-116366}
+
+### [CVE-2026-116366](https://www.cve.org/cverecord?id=CVE-2026-116366) {#cve-2026-116366}
+
+Foi identificado um problema no Servidor do ClickHouse que, sob determinadas condições, poderia permitir que um usuário não autenticado com acesso à rede executasse código arbitrário no Servidor do ClickHouse.
+
+A correção foi disponibilizada nas seguintes versões de código aberto: v26.3.62.3-lts, v26.8.36.3-lts, v26.9.27.3-stable, v26.10.3.7-stable.
+
+Uma correção para esta vulnerabilidade foi aplicada a todas as implantações do ClickHouse Cloud e BYOC.
+
+Créditos: [Elshad Toklayev](https://github.com/endorphin13).
+
+## Corrigido no ClickHouse v25.1.5.5, 2025-01-05 {#fixed-in-clickhouse-release-2025-01-05}
+
+### [CVE-2025-1385](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5phv-x8x4-83x5) {#CVE-2025-1385}
+
+Quando o recurso de library bridge está habilitado, o clickhouse-library-bridge expõe uma API HTTP em localhost. Isso permite que o clickhouse-server carregue dinamicamente uma biblioteca a partir de um caminho especificado e a execute em um processo isolado. Em combinação com a funcionalidade de motores de tabela do ClickHouse, que permite o upload de arquivos para diretórios específicos, um servidor configurado incorretamente pode ser explorado por um invasor com privilégios para acessar ambos os motores de tabela, permitindo a execução de código arbitrário no servidor ClickHouse.
+
+A correção foi incluída nas seguintes versões open-source: v24.3.18.6, v24.8.14.27, v24.11.5.34, v24.12.5.65, v25.1.5.5
+
+O ClickHouse Cloud não é afetado por essa vulnerabilidade.
+
+Créditos: [Arseniy Dugin](https://github.com/ZerLes)
+
+## Corrigido no lançamento ClickHouse v24.5, 2024-08-01 {#fixed-in-clickhouse-release-2024-08-01}
+
+### [CVE-2024-6873](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-432f-r822-j66f) {#CVE-2024-6873}
+
+É possível redirecionar o fluxo de execução do processo do servidor ClickHouse por meio de um vetor não autenticado, enviando uma requisição especialmente criada para a interface nativa do servidor ClickHouse. Esse redirecionamento se limita ao que estiver disponível em uma faixa de 256 bytes de memória no momento da execução. Essa vulnerabilidade foi identificada por meio do nosso programa de bug bounty, e nenhum código conhecido de Proof of Concept para Remote Code Execution (RCE) foi produzido ou explorado.
+
+A correção foi disponibilizada nas seguintes versões open-source: v23.8.15.35-lts, v24.3.4.147-lts, v24.4.2.141-stable, v24.5.1.1763, v24.6.1.4423-stable
+
+O ClickHouse Cloud usa um versionamento diferente, e uma correção para essa vulnerabilidade foi aplicada a todas as instâncias executando a v24.2 ou superior.
+
+Créditos:  malacupa (pesquisador independente)
+
+## Corrigido no ClickHouse v24.1, 2024-01-30 {#fixed-in-clickhouse-release-24-01-30}
+
+### [CVE-2024-22412](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-45h5-f7g3-gr8r) {#CVE-2024-22412}
+
+Ao alternar entre funções de usuário ao usar o ClickHouse com o cache de consultas habilitado, existe o risco de obter dados incorretos. O ClickHouse recomenda que usuários de versões vulneráveis do ClickHouse não usem o cache de consultas quando a aplicação alterna dinamicamente entre diferentes funções.
+
+A correção foi disponibilizada nas seguintes versões open-source: v24.1.1.2048, v24.1.8.22-stable, v23.12.6.19-stable, v23.8.12.13-lts, v23.3.22.3-lts
+
+O ClickHouse Cloud usa um versionamento diferente, e a correção para essa vulnerabilidade foi aplicada na v24.0.2.54535.
+
+Créditos: Evan Johnson e Alan Braithwaite, da equipe da Runreveal - mais informações estão disponíveis [neste post do blog deles](https://blog.runreveal.com/cve-2024-22412-behind-the-bug-a-classic-caching-problem-in-the-clickhouse-query-cache/).
+
+## Corrigido no ClickHouse v23.10.5.20, 2023-11-26 {#fixed-in-clickhouse-release-23-10-5-20-2023-11-26}
+
+### [CVE-2023-47118](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-g22g-p6q2-x39v) {#CVE-2023-47118}
+
+Uma vulnerabilidade de heap buffer overflow que afeta a interface nativa, executada por padrão na porta 9000/tcp. Um invasor, ao acionar um bug no codec de compressão T64, pode fazer com que o processo do servidor ClickHouse seja encerrado. Essa vulnerabilidade pode ser explorada sem necessidade de autenticação.
+
+A correção foi disponibilizada nas seguintes versões open-source: v23.10.2.13, v23.9.4.11, v23.8.6.16, v23.3.16.7
+
+O ClickHouse Cloud usa um versionamento diferente, e a correção para essa vulnerabilidade foi aplicada na v23.9.2.47475.
+
+Créditos:  malacupa (pesquisador independente)
+
+### [CVE-2023-48298](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-qw9f-qv29-8938) {#CVE-2023-48298}
+
+Uma vulnerabilidade de underflow de inteiro no codec de compressão FPC. Um invasor pode usá-la para fazer o processo do servidor ClickHouse falhar. Essa vulnerabilidade pode ser explorada sem necessidade de autenticação.
+
+A correção foi incluída nas seguintes versões open-source: v23.10.4.25, v23.9.5.29, v23.8.7.24, v23.3.17.13.
+
+O ClickHouse Cloud usa um versionamento diferente, e a correção para essa vulnerabilidade foi aplicada na v23.9.2.47475.
+
+Créditos:  malacupa (pesquisador independente)
+
+### [CVE-2023-48704](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5rmf-5g48-xv63) {#CVE-2023-48704}
+
+Uma vulnerabilidade de heap buffer overflow que afeta a interface nativa executada por padrão na porta 9000/tcp. Um invasor, ao acionar um bug no codec Gorilla, pode fazer com que o processo do servidor ClickHouse seja encerrado. Essa vulnerabilidade pode ser explorada sem necessidade de autenticação.
+
+A correção foi disponibilizada nas seguintes versões open-source: v23.10.5.20, v23.9.6.20, v23.8.8.20, v23.3.18.15.
+
+O ClickHouse Cloud adota um versionamento diferente, e uma correção para essa vulnerabilidade foi aplicada na v23.9.2.47551.
+
+Créditos:  malacupa (pesquisador independente)
+
+## Corrigido na versão 22.9.1.2603 do ClickHouse, 2022-09-22 {#fixed-in-clickhouse-release-22-9-1-2603-2022-9-22}
+
+### CVE-2022-44011 {#CVE-2022-44011}
+
+Foi descoberta uma vulnerabilidade de heap buffer overflow no servidor ClickHouse. Um usuário mal-intencionado com permissão para carregar dados no servidor ClickHouse poderia provocar a queda do servidor ClickHouse ao inserir um objeto CapnProto malformado.
+
+A correção foi aplicada às versões 22.9.1.2603, 22.8.2.11, 22.7.4.16, 22.6.6.16, 22.3.12.19
+
+Créditos: Kiojj (pesquisador independente)
+
+### CVE-2022-44010 {#CVE-2022-44010}
+
+Foi descoberta uma vulnerabilidade de heap buffer overflow no servidor ClickHouse. Um invasor poderia enviar uma solicitação HTTP especialmente criada ao Endpoint HTTP (em escuta na porta 8123 por padrão), causando um heap buffer overflow que faz o processo do servidor ClickHouse falhar. Esse ataque não requer autenticação.
+
+A correção foi incluída nas versões 22.9.1.2603, 22.8.2.11, 22.7.4.16, 22.6.6.16, 22.3.12.19
+
+Créditos: Kiojj (pesquisador independente)
+
+## Corrigido no ClickHouse 21.10.2.15, 2021-10-18 {#fixed-in-clickhouse-release-21-10-2-215-2021-10-18}
+
+### CVE-2021-43304 {#cve-2021-43304}
+
+heap buffer overflow no codec de compressão LZ4 do ClickHouse ao processar uma consulta maliciosa. Não há verificação de que as operações de cópia no loop `LZ4::decompressImpl` e, em especial, a operação de cópia arbitrária `wildCopy<copy_amount>(op, ip, copy_end)` não excedam os limites do buffer de destino.
+
+Créditos: Equipe de Pesquisa de Segurança da JFrog
+
+### CVE-2021-43305 {#cve-2021-43305}
+
+heap buffer overflow no codec de compressão LZ4 do ClickHouse ao analisar uma consulta maliciosa. Não há verificação de que as operações de cópia no loop `LZ4::decompressImpl` e, em especial, a operação de cópia arbitrária `wildCopy<copy_amount>(op, ip, copy_end)` não excedam os limites do buffer de destino. Esse problema é muito semelhante ao CVE-2021-43304, mas a operação de cópia vulnerável está em outra chamada de `wildCopy`.
+
+Créditos: JFrog Security Research Team
+
+### CVE-2021-42387 {#cve-2021-42387}
+
+Leitura fora dos limites do heap no codec de compressão LZ4 do ClickHouse ao processar uma consulta maliciosa. Como parte do loop de LZ4::decompressImpl(), um valor sem sinal de 16 bits fornecido pelo usuário (&#39;offset&#39;) é lido a partir dos dados comprimidos. Mais tarde, o offset é usado para determinar o comprimento de uma operação de cópia, sem verificar os limites superiores da origem dessa operação.
+
+Créditos: JFrog Security Research Team
+
+### CVE-2021-42388 {#cve-2021-42388}
+
+Leitura fora dos limites do heap no codec de compressão LZ4 do ClickHouse durante o parsing de uma consulta maliciosa. Como parte do loop de LZ4::decompressImpl(), um valor sem sinal de 16 bits fornecido pelo usuário (&#39;offset&#39;) é lido dos dados comprimidos. Posteriormente, o offset é usado no comprimento de uma operação de cópia, sem verificar os limites inferiores da origem dessa operação.
+
+Créditos: JFrog Security Research Team
+
+### CVE-2021-42389 {#cve-2021-42389}
+
+Divisão por zero no codec de compressão Delta do ClickHouse ao processar uma consulta maliciosa. O primeiro byte do buffer comprimido é usado em uma operação de módulo sem antes verificar se é 0.
+
+Créditos: Equipe de Pesquisa em Segurança da JFrog
+
+### CVE-2021-42390 {#cve-2021-42390}
+
+Divisão por zero no codec de compressão DeltaDouble do ClickHouse ao processar uma consulta maliciosa. O primeiro byte do buffer comprimido é usado em uma operação de módulo sem verificar se é 0.
+
+Créditos: Equipe de Pesquisa em Segurança da JFrog
+
+### CVE-2021-42391 {#cve-2021-42391}
+
+Divisão por zero no codec de compressão Gorilla do ClickHouse ao processar uma consulta maliciosa. O primeiro byte do buffer compactado é usado em uma operação de módulo sem antes verificar se ele é 0.
+
+Créditos: JFrog Security Research Team
+
+## Corrigido no ClickHouse 21.4.3.21, 2021-04-12 {#fixed-in-clickhouse-release-21-4-3-21-2021-04-12}
+
+### CVE-2021-25263 {#cve-2021-25263}
+
+Um invasor com o privilégio CREATE DICTIONARY pode ler um arquivo arbitrário fora do diretório permitido.
+
+A correção foi incluída nas versões 20.8.18.32-lts, 21.1.9.41-stable, 21.2.9.41-stable, 21.3.6.55-lts, 21.4.3.21-stable e posteriores.
+
+Créditos: [Vyacheslav Egoshin](https://twitter.com/vegoshin)
+
+## Corrigido no lançamento do ClickHouse 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
+
+### CVE-2019-15024 {#cve-2019-15024}
+
+Um invasor com acesso de escrita ao ZooKeeper e que consiga executar um servidor personalizado acessível na rede em que o ClickHouse está em execução pode criar um servidor malicioso que atuará como uma réplica do ClickHouse e registrá-lo no ZooKeeper. Quando outra réplica buscar uma parte de dados da réplica maliciosa, ela poderá forçar o clickhouse-server a gravar em um caminho arbitrário no sistema de arquivos.
+
+Créditos: Eldar Zaitov da equipe de Segurança da Informação da Yandex
+
+### CVE-2019-16535 {#cve-2019-16535}
+
+Uma leitura OOB, uma escrita OOB e um underflow de inteiro em algoritmos de descompressão podem ser explorados para obter RCE ou causar DoS por meio do protocolo nativo.
+
+Créditos: Eldar Zaitov, da equipe de Segurança da Informação da Yandex
+
+### CVE-2019-16536 {#cve-2019-16536}
+
+Um estouro de pilha que pode levar a DoS pode ser provocado por um cliente autenticado malicioso.
+
+Créditos: Eldar Zaitov, da equipe de Segurança da Informação da Yandex
+
+## Corrigido no lançamento 19.13.6.1 do ClickHouse, de 2019-09-20 {#fixed-in-clickhouse-release-19-13-6-1-2019-09-20}
+
+### CVE-2019-18657 {#cve-2019-18657}
+
+A função de tabela `url` tinha uma vulnerabilidade que permitia ao invasor injetar cabeçalhos HTTP arbitrários na requisição.
+
+Créditos: [Nikita Tikhomirov](https://github.com/NSTikhomirov)
+
+## Corrigido no lançamento 18.12.13 do ClickHouse, 2018-09-10 {#fixed-in-clickhouse-release-18-12-13-2018-09-10}
+
+### CVE-2018-14672 {#cve-2018-14672}
+
+Funções para carregar modelos CatBoost permitiam path traversal e a leitura de arquivos arbitrários por meio de mensagens de erro.
+
+Créditos: Andrey Krasichkov, da equipe de Segurança da Informação da Yandex
+
+## Corrigido no lançamento 18.10.3 do ClickHouse, 2018-08-13 {#fixed-in-clickhouse-release-18-10-3-2018-08-13}
+
+### CVE-2018-14671 {#cve-2018-14671}
+
+O unixODBC permitia carregar bibliotecas compartilhadas arbitrárias do sistema de arquivos, o que levou a uma vulnerabilidade de execução remota de código.
+
+Créditos: Andrey Krasichkov e Evgeny Sidorov, da equipe de Segurança da Informação da Yandex
+
+## Corrigido no Lançamento do ClickHouse 1.1.54388, 2018-06-28 {#fixed-in-clickhouse-release-1-1-54388-2018-06-28}
+
+### CVE-2018-14668 {#cve-2018-14668}
+
+A função de tabela &quot;remote&quot; permitia caracteres arbitrários nos campos &quot;user&quot;, &quot;password&quot; e &quot;default&#95;database&quot;, o que levou a ataques de falsificação de requisições entre protocolos.
+
+Créditos: Andrey Krasichkov da equipe de Segurança da Informação da Yandex
+
+## Corrigido no lançamento do ClickHouse 1.1.54390, 2018-07-06 {#fixed-in-clickhouse-release-1-1-54390-2018-07-06}
+
+### CVE-2018-14669 {#cve-2018-14669}
+
+O cliente MySQL do ClickHouse tinha a funcionalidade &quot;LOAD DATA LOCAL INFILE&quot; habilitada, o que permitia que um banco de dados MySQL malicioso lesse arquivos arbitrários no servidor ClickHouse conectado.
+
+Créditos: Andrey Krasichkov e Evgeny Sidorov, da equipe de Segurança da Informação da Yandex
+
+## Corrigido no lançamento do ClickHouse 1.1.54131, 2017-01-10 {#fixed-in-clickhouse-release-1-1-54131-2017-01-10}
+
+### CVE-2018-14670 {#cve-2018-14670}
+
+Uma configuração incorreta no pacote deb pode levar ao uso não autorizado do banco de dados.
+
+Créditos: National Cyber Security Centre (NCSC) do Reino Unido

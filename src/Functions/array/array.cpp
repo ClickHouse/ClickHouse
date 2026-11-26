@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -12,46 +13,84 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 /// array(c1, c2, ...) - create an array.
-class FunctionArray : public IFunction
+class FunctionArray final : public IFunction
 {
 public:
     static constexpr auto name = "array";
 
-    explicit FunctionArray(bool use_variant_as_common_type_ = false) : use_variant_as_common_type(use_variant_as_common_type_) {}
+    explicit FunctionArray(bool use_variant_as_common_type_ = false, bool allow_lossy_numeric_supertype_ = false)
+        : use_variant_as_common_type(use_variant_as_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
+    {}
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionArray>(
+            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     /// array(..., Nothing, ...) -> Array(..., Nothing, ...)
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// `array(x1, x2, ..., xN)` — N=0 yields `Array(Nothing)` (empty array literal);
+    /// non-empty yields `Array(leastSupertype{,OrVariant}(x1, ..., xN))`. The
+    /// `leastSupertypeOrVariant` branch is selected when `use_variant_as_common_type`
+    /// is enabled (the default).
+    [[nodiscard]] String getSignatureString() const override
+    {
+        /// The zero-arg overload can't be folded into the variadic form: with
+        /// `[T1], ...` the "skip optional" branch leaves `T1` unbound and the
+        /// return expression `leastSupertype(T1, ...)` fails as "T1 was not
+        /// captured." Keep the two alternatives separate.
+        if (use_variant_as_common_type)
+            return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
+        return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertype(T1, ...))";
+    }
+
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (use_variant_as_common_type)
-            return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments));
+            return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments, allow_lossy_numeric_supertype));
 
-        return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
+        return std::make_shared<DataTypeArray>(getLeastSupertype(arguments, allow_lossy_numeric_supertype));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const size_t num_elements = arguments.size();
 
@@ -86,10 +125,11 @@ public:
             column_ptrs[i] = columns_holder[i].get();
         }
 
-        /// Create and fill the result array.
-        auto out = ColumnArray::create(elem_type->createColumn());
-        IColumn & out_data = out->getData();
-        IColumn::Offsets & out_offsets = out->getOffsets();
+        /// Fill the nested column and the offsets, and only then create the result array.
+        auto out_data_column = elem_type->createColumn();
+        auto out_offsets_column = ColumnArray::ColumnOffsets::create();
+        IColumn & out_data = *out_data_column;
+        IColumn::Offsets & out_offsets = out_offsets_column->getData();
 
         /// Fill out_offsets
         out_offsets.resize_exact(input_rows_count);
@@ -106,7 +146,7 @@ public:
             out_data.insertRangeFrom(*column_ptrs[0], 0, input_rows_count);
         else
             execute(column_ptrs, out_data, input_rows_count);
-        return out;
+        return ColumnArray::create(std::move(out_data_column), std::move(out_offsets_column));
     }
 
 private:
@@ -132,7 +172,7 @@ private:
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         using Container = ColumnVectorOrDecimal<T>::Container;
-        std::vector<const Container *> containers(columns.size(), nullptr);
+        VectorWithMemoryTracking<const Container *> containers(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnVectorOrDecimal<T> * concrete_column = checkAndGetColumn<ColumnVectorOrDecimal<T>>(columns[i]);
@@ -146,11 +186,19 @@ private:
         Container & out_container = concrete_out_data.getData();
         out_container.resize_exact(columns.size() * input_rows_count);
 
+        /// `containers` has an element for every column, so the loop below indexes it without checks.
+        const Container * const * containers_data = containers.data();
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
+            /// At x86-64-v3 the loop and SLP vectorizers widen the per-column scatter into AVX2 gathers / packed stores
+            /// for typical small `columns.size()` (1-4), which regresses array literal construction by 10-20% vs scalar
+            /// stores. Disabling unrolling and vectorization keeps the simple per-element copy.
+#if defined(__clang__) && defined(__AVX2__)
+#pragma clang loop unroll(disable) vectorize(disable)
+#endif
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
-                out_container[base + col_i] = (*containers[col_i])[row_i];
+                out_container[base + col_i] = (*containers_data[col_i])[row_i];
         }
         return true;
     }
@@ -158,7 +206,7 @@ private:
     bool executeString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         size_t total_bytes = 0;
-        std::vector<const ColumnString *> concrete_columns(columns.size(), nullptr);
+        VectorWithMemoryTracking<const ColumnString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnString * concrete_column = checkAndGetColumn<ColumnString>(columns[i]);
@@ -176,12 +224,13 @@ private:
         out_offsets.resize_exact(input_rows_count * columns.size());
 
         size_t cur_out_offset = 0;
+        const ColumnString * const * concrete_columns_data = concrete_columns.data();
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
+                std::string_view ref = concrete_columns_data[col_i]->getDataAt(row_i);
                 memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data(), ref.size());
                 cur_out_offset += ref.size();
                 out_offsets[base + col_i] = cur_out_offset;
@@ -192,7 +241,7 @@ private:
 
     bool executeFixedString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        std::vector<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
+        VectorWithMemoryTracking<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnFixedString * concrete_column = checkAndGetColumn<ColumnFixedString>(columns[i]);
@@ -210,11 +259,12 @@ private:
         out_chars.resize_exact(total_bytes);
 
         size_t curr_out_offset = 0;
+        const ColumnFixedString * const * concrete_columns_data = concrete_columns.data();
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
+                std::string_view ref = concrete_columns_data[col_i]->getDataAt(row_i);
                 memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data(), n);
                 curr_out_offset += n;
             }
@@ -274,19 +324,58 @@ private:
 
     bool executeGeneric(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
+        if (executeArrays(columns, out_data, input_rows_count))
+            return true;
+
         for (size_t i = 0; i < input_rows_count; ++i)
             for (const auto * column : columns)
                 out_data.insertFrom(*column, i);
         return true;
     }
 
+    /// Elements that are arrays: fill the offsets directly and copy the nested data by ranges, with one virtual
+    /// call per element instead of two (`ColumnArray::insertFrom` and the `insertRangeFrom` of its data).
+    static bool executeArrays(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count)
+    {
+        auto * out_array = typeid_cast<ColumnArray *>(&out_data);
+        if (!out_array)
+            return false;
 
-    String getName() const override
+        VectorWithMemoryTracking<const ColumnArray *> arrays;
+        arrays.reserve(columns.size());
+        for (const auto * column : columns)
+        {
+            const auto * array = typeid_cast<const ColumnArray *>(column);
+            if (!array)
+                return false;
+            arrays.push_back(array);
+        }
+
+        auto & out_offsets = out_array->getOffsets();
+        auto & out_nested = out_array->getData();
+        out_offsets.reserve(out_offsets.size() + input_rows_count * arrays.size());
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            for (const auto * array : arrays)
+            {
+                const auto & offsets = array->getOffsets();
+                const size_t offset = offsets[ssize_t(i) - 1];
+                const size_t size = offsets[i] - offset;
+                out_nested.insertRangeFrom(array->getData(), offset, size);
+                out_offsets.push_back(out_offsets.back() + size);
+            }
+        }
+        return true;
+    }
+
+
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
     bool use_variant_as_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
 };
 
 
@@ -319,9 +408,9 @@ SELECT array(toInt32(1), toUInt16(2), toInt8(3)) AS a, toTypeName(a)
 SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a)
     )",
 R"(
-Received exception from server (version 25.4.3):
-Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
-There is no supertype for types Int32, DateTime, Int8 ...
+┌─a───────────────────────────┬─toTypeName(a)─────────────────────────┐
+│ [5,'1998-06-16 00:00:00',5] │ Array(Variant(DateTime, Int32, Int8)) │
+└─────────────────────────────┴───────────────────────────────────────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

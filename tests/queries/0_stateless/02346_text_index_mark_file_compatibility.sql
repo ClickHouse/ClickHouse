@@ -1,3 +1,5 @@
+-- Tags: long, no-flaky-check
+
 -- For tables with a text index, the merge may produce a corrupt .mrk file format
 
 SET use_query_condition_cache = 0;

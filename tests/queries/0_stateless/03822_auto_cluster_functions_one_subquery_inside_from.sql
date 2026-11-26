@@ -1,7 +1,8 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on Minio
+SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer=1;
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1;
 SET max_parallel_replicas=4;
 SET cluster_for_parallel_replicas='test_cluster_two_shards';

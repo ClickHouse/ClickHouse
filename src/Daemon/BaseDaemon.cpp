@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
@@ -36,10 +37,13 @@
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/CoverageCollection.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getConfigPath.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/Elf.h>
@@ -70,6 +74,7 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
+        extern const int NOT_IMPLEMENTED;
     }
 }
 
@@ -114,12 +119,24 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 void BaseDaemon::loadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
-      *  then we use config from 'config.xml' file in current directory,
+      *  then we use config from the 'config.xml', 'config.yaml' or 'config.yml' file in current directory,
       *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
-      *  instead of using files specified in config.xml.
+      *  instead of using files specified in the config.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", getDefaultConfigFileName());
+    if (config().has("config-file"))
+    {
+        /// An explicitly requested configuration file is used as is: substituting a different file for it
+        /// would silently start the server with a configuration the user did not ask for.
+        config_path = config().getString("config-file");
+    }
+    else
+    {
+        /// A configuration file can be written in XML or in YAML, so the default one is looked up with
+        /// every supported extension, not only with `.xml`.
+        config_path = getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
+    }
+
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
@@ -127,15 +144,17 @@ void BaseDaemon::loadConfiguration()
 }
 
 
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+    : original_working_directory(fs::current_path())
+{
+}
 
 
 BaseDaemon::~BaseDaemon()
 {
     try
     {
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-        signal_listener_thread.join();
+        stopSignalListener();
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -187,7 +206,7 @@ void BaseDaemon::closeFDs()
     {
         /// in /proc/self/fd directory filenames are numeric file descriptors.
         /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
-        std::vector<int> fds;
+        VectorWithMemoryTracking<int> fds;
         for (const auto & path : fs::directory_iterator(proc_path))
             fds.push_back(parse<int>(path.path().filename()));
 
@@ -248,13 +267,9 @@ void BaseDaemon::initialize(Application & self)
 
     loadConfiguration();
 
-#if USE_JEMALLOC
-    Jemalloc::setup(
-        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
+#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
+    /// As early as possible, so that the coverage of the startup (and of its failure) is attributed too.
+    initCoverageFromEnvironment(config().getString("logger.log", ""));
 #endif
 
     /// This must be done before creation of any files (including logs).
@@ -268,19 +283,34 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
+    /// It decrypts the encrypted elements of the configuration, so that the values read from `config` below are
+    /// plain. It also writes the preprocessed configuration into the `path` of the configuration file, which may be
+    /// hidden by the isolation of the filesystem in `beforeStartingThreads`.
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
 #if USE_SSL
     , true // skip loading encryption keys from ZK
 #endif
     );
 
+    /// No thread but the background threads of jemalloc has been started up to this point, and `Jemalloc::setup`
+    /// below configures them.
+    beforeStartingThreads();
+
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
+        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
+        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
+        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
+        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
+#endif
 
 #if defined(OS_LINUX)
     /// Configure RLIMIT_SIGPENDING
     /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
     if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
     {
-        struct rlimit rlim;
+        struct rlimit rlim{};
         if (getrlimit(RLIMIT_SIGPENDING, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -349,8 +379,8 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd;
-            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
+            int fd = creat(stderr_path.c_str(), 0600);
+            if (fd == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {
@@ -359,18 +389,26 @@ void BaseDaemon::initialize(Application & self)
             }
         }
 
+        /// musl defines `stderr` and `stdout` as recursive macros `(stderr)` / `(stdout)`,
+        /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
         setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
+#pragma clang diagnostic pop
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
         std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+#pragma clang diagnostic pop
     }
 
     /// Change path for logging.
@@ -395,8 +433,12 @@ void BaseDaemon::initialize(Application & self)
     if (should_setup_watchdog)
         setupWatchdog();
 
-    /// Create pid file.
-    if (config().has("pid"))
+    /// Create pid file. With the filesystem isolation, the supervisor outside of it has created it, with its own PID,
+    /// and it sends the signals it gets to this process from now on.
+    const auto filesystem_isolation = getFilesystemIsolationStatus();
+    if (filesystem_isolation && filesystem_isolation->created_pid_namespace)
+        registerFilesystemIsolationServingProcess();
+    else if (config().has("pid"))
         pid_file.emplace(config().getString("pid"), StatusFile::write_pid);
 
     if (is_daemon)
@@ -467,19 +509,57 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    build_id = SymbolIndex::instance().getBuildIDHex();
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+    /// for - and the blocking read of that pipe is all the listener thread does.
+    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
 #endif
 
-    signal_listener_thread.start(*signal_listener);
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    /// Without building the symbol index: the signal listener builds it in the background (see `SignalListener::run`).
+    build_id = SymbolIndex::getSelfBuildIDHex();
+#endif
+
+    startSignalListener();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
     if (!executable_path.empty())
         stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
+#endif
+}
+
+void BaseDaemon::startSignalListener()
+{
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
+    /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
+    /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
+    /// mask at creation (doing it inside `SignalListener::run` would leave a window right after the start),
+    /// and restore the mask of this thread afterwards.
+    ///
+    /// This is what makes it possible to keep every thread out of the signal handling path for a while:
+    /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
+    BlockSignalsScope block_signals(asynchronousHandledSignals());
+    signal_listener_thread.start(*signal_listener);
+    signal_listener_thread_started = true;
+#endif
+}
+
+void BaseDaemon::stopSignalListener()
+{
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    if (!signal_listener_thread_started)
+        return;
+
+    /// `isRunning` only reports that Poco still has a runnable target. A listener which has already
+    /// returned still has a joinable native thread, so always join a started listener. Only send the
+    /// stop request while it can still consume it.
+    if (signal_listener_thread.isRunning())
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    signal_listener_thread_started = false;
 #endif
 }
 
@@ -525,36 +605,23 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
     Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
-void BaseDaemon::handleSignal(int signal_id)
+void BaseDaemon::onTerminateRequestSignal()
 {
-    if (!(signal_id == SIGINT ||
-        signal_id == SIGQUIT ||
-        signal_id == SIGTERM))
-        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
-    std::lock_guard lock(signal_handler_mutex);
-    {
-        ++terminate_signals_counter;
-        signal_event.notify_all();
-    }
-
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
-    if (terminate_signals_counter >= 2)
-    {
-        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
-        call_default_signal_handler(signal_id);
-        /// If the above did not help.
-        _exit(128 + signal_id);
-    }
 }
 
 void BaseDaemon::waitForTerminationRequest()
 {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
-    std::unique_lock<std::mutex> lock(signal_handler_mutex);
-    signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
+    signal_listener->waitForTerminationRequest();
+#else
+    /// There is no listener without signals, and nothing could deliver a termination request to it
+    /// anyway: waiting here would block forever. Daemon-style entry points are not supported on
+    /// such a platform, so say so instead of hanging or dereferencing a null listener.
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Waiting for a termination request requires POSIX signals, which this platform does not have");
+#endif
 }
 
 
@@ -584,10 +651,10 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
-        /// Temporarily close the logging thread and open it in each process later
+        /// Temporarily close the logging thread and reopen it in the child process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
-            async_channel->close();
+            async_channel->closeAndJoinThreads();
         pid = fork();
 
 #if USE_JEMALLOC
@@ -604,7 +671,8 @@ void BaseDaemon::setupWatchdog()
         }
 #endif
 
-        if (async_channel)
+        /// The watchdog logs synchronously: it calls `_exit` right after logging how the child ended.
+        if (async_channel && pid == 0)
             async_channel->open();
 
         if (-1 == pid)
@@ -737,7 +805,7 @@ void BaseDaemon::setupWatchdog()
             _exit(WEXITSTATUS(status));
         }
 
-        int exit_code;
+        int exit_code = 0;
 
         if (WIFSIGNALED(status))
         {
@@ -786,6 +854,10 @@ String BaseDaemon::getStoredBinaryHash() const
 #if defined(OS_LINUX)
 void systemdNotify(const std::string_view & command)
 {
+    /// With the filesystem isolation, through the supervisor outside of it, which is the main process for systemd.
+    if (notifyFilesystemIsolationSupervisor(command))
+        return;
+
     const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
 
     if (path == nullptr)
@@ -800,7 +872,7 @@ void systemdNotify(const std::string_view & command)
 
     const size_t len = strlen(path);
 
-    struct sockaddr_un addr;
+    struct sockaddr_un addr{};
 
     addr.sun_family = AF_UNIX;
 

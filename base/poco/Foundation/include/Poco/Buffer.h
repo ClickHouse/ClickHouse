@@ -155,7 +155,8 @@ public:
                 if (preserveContent)
                 {
                     std::size_t newSz = _used < newCapacity ? _used : newCapacity;
-                    std::memcpy(ptr, _ptr, newSz * sizeof(T));
+                    if (newSz > 0)
+                        std::memcpy(ptr, _ptr, newSz * sizeof(T));
                 }
             }
             delete[] _ptr;

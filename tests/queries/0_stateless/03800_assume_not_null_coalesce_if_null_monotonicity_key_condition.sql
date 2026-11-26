@@ -1,6 +1,9 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+-- Disable implicit `basic` statistics: this test asserts key-condition pruning, not statistics pruning.
+
+SET explain_query_plan_default = 'legacy';
 
 -- { echoOn }
 
@@ -19,7 +22,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree()
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, auto_statistics_types = '';
 
 INSERT INTO test VALUES
     (1, toDateTime64('2024-12-28 00:00:00', 3)),
@@ -103,7 +106,7 @@ CREATE TABLE test_non_null
 )
 ENGINE = MergeTree()
 ORDER BY ts
-SETTINGS index_granularity = 1, allow_nullable_key = 1;
+SETTINGS index_granularity = 1, allow_nullable_key = 1, auto_statistics_types = '';
 
 INSERT INTO test_non_null VALUES
     (toDateTime64('2026-01-01 00:00:00', 3)),
@@ -157,7 +160,7 @@ CREATE TABLE test_null
 )
 ENGINE = MergeTree()
 ORDER BY ts
-SETTINGS index_granularity = 1, allow_nullable_key = 1;
+SETTINGS index_granularity = 1, allow_nullable_key = 1, auto_statistics_types = '';
 
 INSERT INTO test_null VALUES
     (toDateTime64('2026-01-01 00:00:00', 3)),
@@ -211,7 +214,7 @@ CREATE TABLE test_null_rev
 )
 ENGINE = MergeTree()
 ORDER BY (ts DESC)
-SETTINGS index_granularity = 1, allow_nullable_key = 1, allow_experimental_reverse_key = 1;
+SETTINGS index_granularity = 1, allow_nullable_key = 1, allow_experimental_reverse_key = 1, auto_statistics_types = '';
 
 INSERT INTO test_null_rev VALUES
     (toDateTime64('2026-01-01 00:00:00', 3)),
@@ -269,7 +272,7 @@ CREATE TABLE test_lc_left_inf
 )
 ENGINE = MergeTree()
 ORDER BY (a, ts)
-SETTINGS index_granularity = 1, allow_nullable_key = 1;
+SETTINGS index_granularity = 1, allow_nullable_key = 1, auto_statistics_types = '';
 
 INSERT INTO test_lc_left_inf VALUES
     (1, 0),

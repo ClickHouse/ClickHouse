@@ -1,0 +1,142 @@
+---
+title: 'ClickHouseでJOINを使用する'
+sidebarTitle: '概要'
+description: 'ClickHouseにおけるJOINの種類とstrictness。'
+keywords: ['JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'ANY JOIN', 'ASOF JOIN', 'JOIN strictness']
+slug: /guides/joining-tables
+doc_type: 'guide'
+---
+
+この概要では、JOIN の種類と strictness について説明します。構文の詳細については、[`JOIN` 句のリファレンス](/ja/reference/statements/select/join)を参照してください。最適化に関する具体的な指針と実例については、[JOIN を最小限に抑えて最適化する](/ja/concepts/best-practices/minimize-optimize-joins)を参照してください。
+
+## JOINの種類とstrictness {#join-types-and-strictness}
+
+すべての JOIN には種類と strictness があります。種類は、一致しない行のうちどの行を結果に含めるかを決定し、strictness は、各行に対していくつの一致を返すかを決定します。JOIN の実行に使用できるアルゴリズムは、この両方によって決まります。完全な構文や、その他の `SEMI`、`ANTI`、`CROSS`、`PASTE` JOIN については、[`JOIN` 句リファレンス](/ja/reference/statements/select/join#supported-types-of-join)を参照してください。
+
+### `INNER JOIN` {#inner-join}
+
+<div className="ch-image-sm">
+  <Frame>
+    ![INNER JOIN のベン図：結合キーが一致する左テーブルと右テーブルの行の積集合のみが、一致する行のデカルト積として返される](/images/guides/join-algorithms/inner-join.png)
+  </Frame>
+</div>
+
+`INNER JOIN` は、結合キーが一致する行のペアごとに、左側の行のカラムと右側の行のカラムを組み合わせたものを返します。ある行に一致する行が複数ある場合は、それらすべてが返されるため、結果には同じキーを持つ行のデカルト積が含まれます。`INNER` キーワードは省略可能です。
+
+### `LEFT`、`RIGHT`、`FULL OUTER JOIN` {#outer-join}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![LEFT、RIGHT、FULL OUTER JOIN のベン図: いずれも一致する行のデカルト積に加えて、左テーブル、右テーブル、または両方のテーブルの一致しない行を返す](/images/guides/join-algorithms/outer-join.png)
+  </Frame>
+</div>
+
+外部結合は、`INNER JOIN` と同じ行に加えて、一致しない行も返します。
+
+* `LEFT OUTER JOIN` は、一致しない左テーブルの各行も返します。その際、右テーブルのカラムにはデフォルト値が入ります。
+* `RIGHT OUTER JOIN` は、一致しない右テーブルの各行も返します。その際、左テーブルのカラムにはデフォルト値が入ります。
+* `FULL OUTER JOIN` は、両方のテーブルの一致しない行を返します。
+
+[`join_use_nulls`](/ja/reference/settings/session-settings/join#join_use_nulls) 設定を有効にすると、ClickHouse はデフォルト値の代わりに `NULL` を返します。`OUTER` キーワードは省略可能です。
+
+### `ALL` および `ANY` の strictness {#all-and-any-strictness}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![LEFT、RIGHT、INNER ANY JOIN のベン図: いずれもデカルト積を生成せずに一致する行を返し、LEFT と RIGHT ではそれぞれ左テーブルまたは右テーブルの一致しない行も返す](/images/guides/join-algorithms/any-join.png)
+  </Frame>
+</div>
+
+`ALL` strictness の場合、JOIN は前述の JOIN の種類で説明したとおり、すべての一致を返します。`ANY` strictness の場合、JOIN は各行につき最大 1 件の一致しか返さず、デカルト積は生成されません。
+
+* `LEFT ANY JOIN` は、左側の各行を 1 回ずつ返し、一致する右側の行 1 件、またはデフォルト値と組み合わせます。
+* `RIGHT ANY JOIN` は、右側の各行を 1 回ずつ返し、一致する左側の行 1 件、またはデフォルト値と組み合わせます。
+* `INNER ANY JOIN` は、一致する行のみを返し、いずれのテーブルの行も最大 1 回までしか使用しません。
+
+一致する行が複数ある場合に、`ANY` がそのうちどの行を返すかは定義されていません。どの行を採用するかは、[`join_any_take_last_row`](/ja/reference/settings/session-settings/join#join_any_take_last_row) 設定で変更できます。`ANY FULL` JOIN はサポートされていません。クエリで strictness が指定されていない場合は、[`join_default_strictness`](/ja/reference/settings/session-settings/join#join_default_strictness) 設定が適用されます。
+
+次のクエリは `LEFT ANY JOIN` の例です。右側のテーブルには、キー `2` と `3` についてそれぞれ 2 行ずつ含まれています。
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+`ALL` strictness では、キー `2` と `3` がそれぞれ右側の2行と一致するため、同じクエリで5行が返されます。`INNER ANY JOIN` では、キー `2` と `3` の行のみが返されます。
+
+### `ASOF JOIN` {#asof-join}
+
+<div className="ch-image-sm">
+  <Frame>
+    ![ASOF JOIN のベン図：結合キーが完全一致しない行同士が結合され、デカルト積を生じることなく各行について最も近い一致が返される](/images/guides/join-algorithms/asof-join.png)
+  </Frame>
+</div>
+
+`ASOF JOIN` は、完全一致しない行同士を結合します。ClickHouse において `ASOF` は strictness の一種であり、`INNER` または `LEFT` JOIN と組み合わせて使用します。`ON` 句には、等価条件に加えて、`>`、`>=`、`<`、`<=` のいずれかを使用する最も近い一致の条件を 1 つだけ含めます。ClickHouse は左側の各行について、等価条件を満たす右側の行の中から、最も近い一致の条件に照らして最も近い行を選択します。左側の各行が結合される右側の行は、最大 1 行です。
+
+`ASOF JOIN` は主に時系列データで使用されます。次のクエリは、各取引に対し、同じ銘柄で取引時刻以前の最新の気配値を結合します。
+
+```sql
+WITH
+    trades AS (SELECT * FROM VALUES('symbol String, volume UInt32, time DateTime',
+        ('ABC', 200, '2023-02-22 14:09:05'),
+        ('ABC', 300, '2023-02-22 14:09:28'))),
+    quotes AS (SELECT * FROM VALUES('symbol String, time DateTime, price Decimal(10, 2)',
+        ('ABC', '2023-02-22 14:09:00', 32.11),
+        ('ABC', '2023-02-22 14:09:10', 32.12),
+        ('ABC', '2023-02-22 14:09:20', 32.15),
+        ('ABC', '2023-02-22 14:09:30', 32.20)))
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades AS t
+ASOF LEFT JOIN quotes AS q ON t.symbol = q.symbol AND t.time >= q.time
+ORDER BY trade_time;
+```
+
+```response
+┌─symbol─┬─volume─┬──────────trade_time─┬──closest_quote_time─┬─quote_price─┬─final_price─┐
+│ ABC    │    200 │ 2023-02-22 14:09:05 │ 2023-02-22 14:09:00 │       32.11 │        6422 │
+│ ABC    │    300 │ 2023-02-22 14:09:28 │ 2023-02-22 14:09:20 │       32.15 │        9645 │
+└────────┴────────┴─────────────────────┴─────────────────────┴─────────────┴─────────────┘
+```
+
+`14:09:05` の取引は `14:09:00` の気配値と結合され、`14:09:28` の取引は `14:09:20` の気配値と結合されます。`14:09:10` と `14:09:30` の気配値は、どの取引に対しても直前の最も近い気配値には該当しません。
+
+最も近い一致カラムでサポートされるカラム型および `USING` 構文については、[ASOF JOIN の使用方法](/ja/reference/statements/select/join#asof-join-usage)を参照してください。
+
+## 関連情報 {#continue-reading}
+
+* [ClickHouse における JOIN の実行方法](/ja/concepts/features/operations/select/join-execution)
+* [JOIN アルゴリズム](/ja/concepts/features/operations/select/join-algorithms)
+* [JOIN のメモリ管理とスピル](/ja/concepts/features/operations/select/join-memory-management)
+* [JOIN の設定](/ja/concepts/features/operations/select/join-settings)
+
+## 関連資料 {#further-reading}
+
+* [`JOIN` 句リファレンス](/ja/reference/statements/select/join)
+* [JOIN の最小化と最適化](/ja/concepts/best-practices/minimize-optimize-joins)
+* [辞書](/ja/concepts/features/dictionaries)
+* [`Join` テーブルエンジン](/ja/reference/engines/table-engines/special/join)
+* [ClickHouse: SQL の結合を完全サポートする超高速 DBMS (第1部) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
+* [ClickHouse の結合の内部構造: ハッシュ結合、並列ハッシュ結合、Grace Hash Join (第2部) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
+* [ClickHouse の結合の内部構造: 完全ソートマージ結合、部分マージ結合 (第3部) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
+* [ClickHouse の結合の内部構造: 直接結合 (第4部) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)

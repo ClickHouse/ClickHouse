@@ -1,0 +1,14 @@
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression
+      ReadFromMergeTree (p)
+      Indexes:
+        PrimaryKey
+          Keys:
+            b
+          Condition: (b in [10, 10])
+          Parts: 3/3
+          Granules: 4/100
+          Search Algorithm: binary search
+        Ranges: 3
+10	10	1_2_2_0	1	34	00000000-0000-0000-0000-000000000000	1	2	default	(1)

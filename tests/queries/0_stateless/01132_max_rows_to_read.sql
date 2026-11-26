@@ -55,12 +55,24 @@ INSERT INTO row_limits_fail_fast SELECT number + 20000, toString(number) FROM nu
 -- to keep the number of parts predictable
 SYSTEM STOP MERGES row_limits_fail_fast;
 
+-- The exact count optimization computes the result from primary key analysis without reading data,
+-- so count() queries bypass the max_rows_to_read limit. This requires projection optimization to be
+-- enabled (it is by default, but CI may randomize it off).
+-- The exact count optimization also requires implicit projections (minmax_count_projection),
+-- because the code path that sets only_count_column is gated behind can_use_minmax_projection.
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+
 SET max_rows_to_read = 1000;
 SET read_overflow_mode = 'throw';
+SET use_primary_key = 1; -- range pruning is essential to the row-limit logic below
 
--- Should fail fast during PK filtering - query selects more rows than limit
-SELECT count() FROM row_limits_fail_fast WHERE key < 500000; -- { serverError TOO_MANY_ROWS }
+-- count() queries use exact count optimization and bypass the limit
+SELECT count() FROM row_limits_fail_fast WHERE key < 500000;
 SELECT count() FROM row_limits_fail_fast WHERE key < 500;
+
+-- Non-count queries should still fail fast during PK filtering
+SELECT * FROM row_limits_fail_fast WHERE key < 500000 FORMAT Null; -- { serverError TOO_MANY_ROWS }
 
 -- Test with specific key ranges
 SELECT count() FROM row_limits_fail_fast WHERE key BETWEEN 1000 AND 1500;
@@ -73,11 +85,11 @@ SELECT * FROM row_limits_fail_fast WHERE key < 200 FORMAT Null; -- { serverError
 SET max_rows_to_read = 150;
 SELECT count() FROM row_limits_fail_fast WHERE key IN (1, 2, 3, 4, 5);
 
--- Test with max_rows_to_read_leaf
+-- Test with max_rows_to_read_leaf - count() still bypasses via exact count optimization
 SET max_rows_to_read = 0;
 SET max_rows_to_read_leaf = 1000;
 SET read_overflow_mode_leaf = 'throw';
-SELECT count() FROM row_limits_fail_fast WHERE key < 500000; -- { serverError TOO_MANY_ROWS }
+SELECT count() FROM row_limits_fail_fast WHERE key < 500000;
 
 -- Reset and test break mode still works and we fail fast
 SET max_rows_to_read = 600;
@@ -85,11 +97,12 @@ SET max_rows_to_read_leaf = 0;
 SET read_overflow_mode = 'break';
 SELECT count() FROM row_limits_fail_fast WHERE key < 500;
 
--- Test fail-fast with multiple threads
+-- Test fail-fast with multiple threads - count() bypasses via exact count, SELECT * should still throw
 SET max_threads = 4;
 SET read_overflow_mode = 'throw';
 SET max_rows_to_read = 500;
-SELECT count() FROM row_limits_fail_fast WHERE key < 100000; -- { serverError TOO_MANY_ROWS }
+SELECT count() FROM row_limits_fail_fast WHERE key < 100000;
+SELECT * FROM row_limits_fail_fast WHERE key < 100000 FORMAT Null; -- { serverError TOO_MANY_ROWS }
 
 -- But should succeed when actual filtered result is small
 SELECT count() FROM row_limits_fail_fast WHERE key < 400;

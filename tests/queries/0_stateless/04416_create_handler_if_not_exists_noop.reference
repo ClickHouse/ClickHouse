@@ -1,0 +1,5 @@
+created
+noop_regexp
+noop_type
+1	SELECT 1 AS original
+dropped

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -76,7 +75,7 @@ struct PartitionCommand
     static std::optional<PartitionCommand> parse(const ASTAlterCommand * command);
     /// Convert type of the command to string (use not only type, but also
     /// different flags)
-    std::string typeToString() const;
+    [[nodiscard]] std::string typeToString() const;
 };
 
 using PartitionCommands = std::vector<PartitionCommand>;

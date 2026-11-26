@@ -1,0 +1,147 @@
+---
+slug: /best-practices/select-data-types
+sidebarTitle: '选择数据类型'
+title: '选择数据类型'
+description: '介绍如何在 ClickHouse 中选择数据类型'
+keywords: ['数据类型']
+doc_type: 'reference'
+---
+
+import NullableColumns from '/snippets/zh/_avoid_nullable_columns.mdx';
+
+ClickHouse 查询性能的核心原因之一在于其高效的数据压缩。磁盘上的数据越少，I/O 开销就越低，查询和写入也就越快。ClickHouse 的列式架构会自然地将相似数据排列在一起，使压缩算法和编解码器能够大幅减少数据体积。要最大化这些压缩收益，谨慎选择合适的数据类型至关重要。
+
+ClickHouse 中的压缩效率主要取决于三个因素：排序键、数据类型和编解码器，它们都通过表 schema 定义。选择合适的数据类型，可以立即提升存储效率和查询性能。
+
+一些简单明了的指导原则可以显著优化 schema：
+
+* **使用严格类型：** 始终为列选择正确的数据类型。数值和日期字段应使用相应的数值和日期类型，而不是通用的 String 类型。这可以确保过滤和聚合的语义正确。
+
+* **避免 Nullable 列：** Nullable 列需要维护额外的列来跟踪 NULL 值，因此会引入额外开销。只有在明确需要区分空值和 NULL 状态时才应使用 Nullable。否则，默认值或等效的零值通常就足够了。有关为什么除非必要否则应避免使用此类型的更多信息，请参阅 [避免 Nullable 列](/zh/concepts/best-practices/select-data-type#avoid-nullable-columns)。
+
+* **尽量降低数值精度：** 选择位宽尽可能小、但仍能容纳预期数据范围的数值类型。例如，如果不需要负值，且范围落在 0–65535 之间，则应优先使用 [UInt16 而不是 Int32](/zh/reference/data-types/int-uint)。
+
+* **优化日期和时间精度：** 选择能够满足查询需求的、粒度尽可能粗的日期或日期时间类型。对于仅包含日期的字段，使用 Date 或 Date32；除非确实需要毫秒级或更高精度，否则优先使用 DateTime 而不是 DateTime64。
+
+* **利用 LowCardinality 和专用类型：** 对于唯一值少于约 10,000 个的列，使用 LowCardinality 类型可以通过字典编码显著减少存储占用。同样，只有当列值严格为定长字符串时才应使用 FixedString (例如国家或货币代码) ；而对于可能值集合有限的列，则优先使用枚举类型，以实现更高效的存储和内置的数据验证。
+
+* **使用枚举进行数据验证：** 枚举类型可用于高效编码枚举值。根据需要存储的唯一值数量，枚举可以是 8 位或 16 位。如果你需要写入时验证 (未声明的值会被拒绝) ，或者希望执行能够利用枚举值自然顺序的查询，可以考虑使用它。例如，某个反馈列可包含用户响应 Enum(&#39;:(&#39; = 1, &#39;:|&#39; = 2, &#39;:)&#39; = 3)。
+
+<div id="example">
+  ## 示例
+</div>
+
+ClickHouse 提供了内置工具，可简化类型优化。例如，schema 推断可以自动识别初始类型。以公开提供的 Parquet 格式 Stack Overflow 数据集为例，通过 [`DESCRIBE`](/zh/reference/statements/describe-table) 命令执行简单的 schema 推断，即可获得一个初始的、尚未优化的 schema。
+
+<Note>
+  默认情况下，ClickHouse 会将这些映射为对应的 Nullable 类型。这样做更合适，因为 schema 仅基于部分行的样本。
+</Note>
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────────────┬─type──────────────────────────────┐
+│ Id                         │ Nullable(Int64)                   │
+│ PostTypeId                 │ Nullable(Int64)                   │
+│ AcceptedAnswerId           │ Nullable(Int64)                   │
+│ CreationDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ Score                      │ Nullable(Int64)                   │
+│ ViewCount                  │ Nullable(Int64)                   │
+│ Body                       │ Nullable(String)                  │
+│ OwnerUserId                │ Nullable(Int64)                   │
+│ OwnerDisplayName           │ Nullable(String)                  │
+│ LastEditorUserId           │ Nullable(Int64)                   │
+│ LastEditorDisplayName      │ Nullable(String)                  │
+│ LastEditDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ LastActivityDate           │ Nullable(DateTime64(3, 'UTC'))    │
+│ Title                      │ Nullable(String)                  │
+│ Tags                       │ Nullable(String)                  │
+│ AnswerCount                │ Nullable(Int64)                   │
+│ CommentCount               │ Nullable(Int64)                   │
+│ FavoriteCount              │ Nullable(Int64)                   │
+│ ContentLicense             │ Nullable(String)                  │
+│ ParentId                   │ Nullable(String)                  │
+│ CommunityOwnedDate         │ Nullable(DateTime64(3, 'UTC'))    │
+│ ClosedDate                 │ Nullable(DateTime64(3, 'UTC'))    │
+└────────────────────────────┴───────────────────────────────────┘
+
+22 rows in set. Elapsed: 0.130 sec.
+```
+
+<Note>
+  请注意，下面我们使用 glob pattern `*.parquet` 读取 `stackoverflow/parquet/posts` 文件夹中的所有文件。
+</Note>
+
+将前面的一些简单规则应用到 posts 表后，我们可以为每一列确定最优类型：
+
+| 列                       | 是否为数值型 | 最小值、最大值                                                      | 唯一值      | NULL 值数量 | 注释                                                 | 优化后的类型                                                                                                                                                       |
+| ----------------------- | ------ | ------------------------------------------------------------ | -------- | -------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | 是      | 1, 8                                                         | 8        | 否        |                                                    | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | 是      | 0, 78285170                                                  | 12282094 | 是        | 区分 NULL 和 0 值                                      | UInt32                                                                                                                                                       |
+| `CreationDate`          | 否      | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *        | 否        | 无需毫秒级粒度，请使用 DateTime                               | DateTime                                                                                                                                                     |
+| `Score`                 | 是      | -217, 34970                                                  | 3236     | 否        |                                                    | Int32                                                                                                                                                        |
+| `ViewCount`             | 是      | 2, 13962748                                                  | 170867   | 否        |                                                    | UInt32                                                                                                                                                       |
+| `Body`                  | 否      | -                                                            | *        | 否        |                                                    | String                                                                                                                                                       |
+| `OwnerUserId`           | 是      | -1, 4056915                                                  | 6256237  | 是        |                                                    | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | 否      | -                                                            | 181251   | 是        | 将 Null 视为空字符串                                      | String                                                                                                                                                       |
+| `LastEditorUserId`      | 是      | -1, 9999993                                                  | 1104694  | 是        | 0 是未使用的值，可用于表示 NULL                                | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | 否      | *                                                            | 70952    | 是        | 将 Null 视为空字符串。已测试 LowCardinality，未带来收益             | String                                                                                                                                                       |
+| `LastEditDate`          | 否      | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -        | 否        | 无需毫秒粒度，使用 DateTime 即可                              | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | 否      | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *        | 否        | 不需要毫秒级精度，使用 DateTime                               | DateTime                                                                                                                                                     |
+| `Title`                 | 否      | -                                                            | *        | 否        | 将 NULL 视为空字符串                                      | String                                                                                                                                                       |
+| `标签`                    | 否      | -                                                            | *        | 否        | 将 NULL 视为空字符串                                      | String                                                                                                                                                       |
+| `AnswerCount`           | 是      | 0, 518                                                       | 216      | 否        | 将 Null 和 0 视为相同值                                   | UInt16                                                                                                                                                       |
+| `CommentCount`          | 是      | 0, 135                                                       | 100      | 否        | 将 NULL 和 0 视为相同值                                   | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | 是      | 0, 225                                                       | 6        | 是        | 将 NULL 和 0 视为相同值                                   | UInt8                                                                                                                                                        |
+| `ContentLicense`        | 否      | -                                                            | 3        | 否        | LowCardinality 的性能优于 FixedString                   | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | 否      | *                                                            | 20696028 | 是        | 将 NULL 视为空字符串                                      | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | 否      | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -        | 是        | 对于 NULL，可考虑使用默认值 1970-01-01。无需毫秒粒度，使用 DateTime 即可  | DateTime                                                                                                                                                     |
+| `ClosedDate`            | 否      | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *        | 是        | 对于 NULL，可考虑将默认值设为 1970-01-01。无需毫秒粒度，使用 DateTime 即可 | DateTime                                                                                                                                                     |
+
+<Info>
+  **提示**
+
+  确定列的合适类型，需要了解其数值范围和唯一值的数量。要找出所有列的取值范围以及不同值的数量，可以使用这个简单的查询：`SELECT * APPLY min, * APPLY max, * APPLY uniq FROM table FORMAT Vertical`。我们建议仅对较小的数据子集执行此操作，因为这样做的开销可能较大。
+</Info>
+
+这样会得到如下按类型优化后的 schema：
+
+```sql
+CREATE TABLE posts
+(
+   Id Int32,
+   PostTypeId Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 
+   'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   AcceptedAnswerId UInt32,
+   CreationDate DateTime,
+   Score Int32,
+   ViewCount UInt32,
+   Body String,
+   OwnerUserId Int32,
+   OwnerDisplayName String,
+   LastEditorUserId Int32,
+   LastEditorDisplayName String,
+   LastEditDate DateTime,
+   LastActivityDate DateTime,
+   Title String,
+   Tags String,
+   AnswerCount UInt16,
+   CommentCount UInt8,
+   FavoriteCount UInt8,
+   ContentLicense LowCardinality(String),
+   ParentId String,
+   CommunityOwnedDate DateTime,
+   ClosedDate DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+<div id="avoid-nullable-columns">
+  ## 避免使用 Nullable 列
+</div>
+
+<NullableColumns />

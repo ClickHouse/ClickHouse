@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Silk/FiberMutex.h>
 #include <Common/logger_useful.h>
 
 #include <base/defines.h>
@@ -83,7 +84,12 @@ public:
         const String & operator*() & { return resolved_host; }
         const String & operator*() const & { return resolved_host; }
 
-        void setFail();
+        /// Mark the address as failed in the pool. Also suppresses the destructor's success callback.
+        /// With `refresh`, the host is resolved again right away.
+        void setFail(bool refresh = true);
+        /// Suppress the destructor's success callback without reporting a failure to the pool.
+        /// Use when the address was selected via `resolve` but never actually attempted
+        void setUnused();
         ~Entry();
 
     private:
@@ -99,7 +105,8 @@ public:
         const Poco::Net::IPAddress address;
         const String resolved_host;
 
-        bool fail = false;
+        /// When true, the destructor will not call `pool->setSuccess`.
+        bool skip_success_callback = false;
     };
 
     /// can throw NetException(ErrorCodes::DNS_ERROR, ...), Exception(ErrorCodes::BAD_ARGUMENTS, ...)
@@ -123,7 +130,7 @@ protected:
     WeakPtr getWeakFromThis();
 
     void setSuccess(const Poco::Net::IPAddress & address);
-    void setFail(const Poco::Net::IPAddress & address);
+    void setFail(const Poco::Net::IPAddress & address, bool refresh);
 
     struct Record
     {
@@ -145,7 +152,7 @@ protected:
         Poco::Timestamp fail_time = 0;
         size_t consecutive_fail_count = 0;
 
-        size_t weight_prefix_sum;
+        size_t weight_prefix_sum{};
 
         bool operator <(const Record & r) const
         {
@@ -157,7 +164,7 @@ protected:
             return address == r.address;
         }
 
-        size_t getWeight() const
+        [[nodiscard]] size_t getWeight() const
         {
             if (failed)
                 return 0;
@@ -191,10 +198,19 @@ protected:
             return was_ok;
         }
 
-        void setSuccess()
+        /// Returns true if the address was failed and is now cleared, so the caller can
+        /// adjust the banned-count metric. A successful connection proves the address is
+        /// reachable, so it must be un-banned even if it was handed out while failed (the
+        /// all-banned zero-weight branch in `selectBest` can do that under a transient race).
+        bool setSuccess()
         {
+            bool was_failed = failed;
+
+            failed = false;
             consecutive_fail_count = 0;
             ++usage;
+
+            return was_failed;
         }
     };
 
@@ -240,9 +256,17 @@ public:
     void dropCache();
 
     HostResolver::Ptr getResolver(const String & host);
+
+    /// Pre-populate the pool with a resolver for `host`, replacing any cached entry.
+    /// For tests: allows simulating multi-address DNS responses without injecting into
+    /// the real `DNSResolver`, so the `prepareNewConnection` retry path can be exercised
+    /// deterministically.
+    void injectResolverForTest(const String & host, HostResolver::Ptr resolver);
 private:
-    std::mutex mutex;
+    Silk::FiberMutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);
+    /// Incremented by `dropCache`, so that the resolutions which started before the drop are not cached.
+    UInt64 generation TSA_GUARDED_BY(mutex) = 0;
 };
 
 }

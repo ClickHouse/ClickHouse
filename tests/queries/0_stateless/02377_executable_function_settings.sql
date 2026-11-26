@@ -1,3 +1,5 @@
+
+-- EXPLAIN SYNTAX with the analyzer does not call parseArguments
 EXPLAIN SYNTAX SELECT * from executable('', 'JSON', 'data String');
 SELECT '--------------------';
 EXPLAIN SYNTAX SELECT * from executable('', 'JSON', 'data String', SETTINGS max_command_execution_time=100);

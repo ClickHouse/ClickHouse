@@ -1,0 +1,30 @@
+>> additive_forward_compat
+	no
+string1	string1
+>> dead_value_tolerance
+	string2	string2
+string1		string1
+>> rejected_column_tag_missing_from_enum
+>> rejected_missing_omitted_marker
+>> nested_additive_forward_compat
+outer_string1	string1	string1
+outer_string2		no
+>> repeated_additive_forward_compat
+['item1','item2']	[10,0]	['int_value','omitted']
+>> empty_additive_forward_compat
+unknown
+>> empty_rejected_missing_omitted_marker
+>> empty_only_omitted_marker_is_supported
+unknown
+>> empty_only_omitted_marker_with_other_columns
+id2	unknown
+>> non_empty_unmaterialized_branch_presence_is_preserved
+10.10.2025	buy
+10.10.2025	sell
+2024-06-01	sell
+>> non_empty_unmaterialized_branch_falls_back_to_omitted
+10.10.2025	buy
+10.10.2025	omitted
+>> non_empty_branch_with_nested_payload_uses_normal_path
+10.10.2025		sell
+10.10.2025	dell	buy

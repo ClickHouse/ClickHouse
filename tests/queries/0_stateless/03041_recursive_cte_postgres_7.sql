@@ -32,15 +32,13 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 WITH RECURSIVE foo AS
     (SELECT 1 AS i
     UNION ALL
        (SELECT i+1 FROM foo WHERE i < 10
           UNION ALL
        SELECT i+1 FROM foo WHERE i < 5)
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 
 WITH RECURSIVE foo AS
     (SELECT 1 AS i
@@ -49,7 +47,7 @@ WITH RECURSIVE foo AS
        (SELECT i+1 FROM foo WHERE i < 10
           UNION ALL
        SELECT i+1 FROM foo WHERE i < 5) AS t
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 
 WITH RECURSIVE foo AS
     (SELECT 1 AS i
@@ -57,7 +55,7 @@ WITH RECURSIVE foo AS
        (SELECT i+1 FROM foo WHERE i < 10
           EXCEPT
        SELECT i+1 FROM foo WHERE i < 5)
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 
 WITH RECURSIVE foo AS
     (SELECT 1 AS i
@@ -65,7 +63,7 @@ WITH RECURSIVE foo AS
        (SELECT i+1 FROM foo WHERE i < 10
           INTERSECT
        SELECT i+1 FROM foo WHERE i < 5)
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 
 --
 -- test for nested-recursive-WITH bug
@@ -80,7 +78,7 @@ WITH RECURSIVE t AS (
     UNION ALL
     SELECT j+1 FROM t WHERE j < 10
 )
-SELECT * FROM t;
+SELECT * FROM t ORDER BY ALL;
 
 --
 -- Test CTEs read in non-initialization orders
@@ -110,6 +108,6 @@ WITH RECURSIVE
       UNION ALL SELECT * FROM effect
     )
   )
-SELECT * FROM iter;
+SELECT * FROM iter ORDER BY ALL;
 
 -- { echoOff }

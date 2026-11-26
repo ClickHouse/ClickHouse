@@ -1,0 +1,13 @@
+-- prepare files
+-- ls
+ls_test_file_.1
+ls_test_file_.2
+ls_test_file_.3
+OK
+-- ls;
+ls_test_file_.1
+ls_test_file_.2
+ls_test_file_.3
+OK
+-- ls x
+OK

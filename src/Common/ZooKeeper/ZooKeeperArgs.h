@@ -3,6 +3,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/GetPriorityForLoadBalancing.h>
+#include <Common/SecretString.h>
 #include <unordered_map>
 
 namespace Poco::Util
@@ -29,6 +30,10 @@ struct ZooKeeperArgs
     /// hosts_string -- comma separated [secure://]host:port list
     ZooKeeperArgs(const String & hosts_string); /// NOLINT(google-explicit-constructor)
     ZooKeeperArgs() = default;
+    /// Memberwise comparison. ZooKeeper::configChanged uses it to compare args parsed from
+    /// config; any field below that is set out-of-band (server settings, runtime session state
+    /// such as last_zxid_seen) must be excluded from the comparison there, otherwise every
+    /// config reload spuriously recreates the session.
     bool operator == (const ZooKeeperArgs &) const = default;
 
     String zookeeper_name = "zookeeper";
@@ -36,7 +41,7 @@ struct ZooKeeperArgs
     Strings hosts;
     Strings availability_zones;
     String auth_scheme;
-    String identity;
+    DB::SecretString identity;
     String chroot;
     String sessions_path = "/clickhouse/sessions";
     String client_availability_zone;
@@ -44,6 +49,8 @@ struct ZooKeeperArgs
     UInt64 num_connection_retries = 2;
     int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
+    /// Max serialized request size in bytes on the client side; 0 == unlimited.
+    UInt64 max_request_size = 0;
     bool enable_fault_injections_during_startup = false;
     double send_fault_probability = 0.0;
     double recv_fault_probability = 0.0;
@@ -56,7 +63,7 @@ struct ZooKeeperArgs
     bool pass_opentelemetry_tracing_context = false;
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
-    String password;
+    DB::SecretString password;
 
     bool enforce_component_tracking = false;
 

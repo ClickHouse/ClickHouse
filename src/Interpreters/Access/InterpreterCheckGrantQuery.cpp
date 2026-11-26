@@ -18,8 +18,10 @@ BlockIO InterpreterCheckGrantQuery::execute()
 
     /// Collect access rights elements which will be checked.
     AccessRightsElements & elements_to_check_grant = query.access_rights_elements;
+    elements_to_check_grant.throwIfFilterIsNotCompilable();
     String current_database = getContext()->getCurrentDatabase();
     elements_to_check_grant.replaceEmptyDatabase(current_database);
+    elements_to_check_grant.eraseNotGrantable();
 
     auto current_user_access = getContext()->getAccess();
     bool is_granted = current_user_access->isGranted(elements_to_check_grant);
@@ -31,6 +33,7 @@ BlockIO InterpreterCheckGrantQuery::execute()
     return res;
 }
 
+void registerInterpreterCheckGrantQuery(InterpreterFactory & factory);
 void registerInterpreterCheckGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

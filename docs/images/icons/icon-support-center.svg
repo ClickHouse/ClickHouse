@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" role="img" aria-label="support">
+<style>
+  path { stroke: rgb(80, 80, 80); }
+  @media (prefers-color-scheme: dark) {
+    path { stroke: rgb(200, 200, 200); }
+  }
+</style>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2Z" clip-rule="evenodd"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.467 11.504v-.207c0-.678.419-1.045.839-1.327.41-.276.82-.636.82-1.3a1.659 1.659 0 0 0-3.318 0M10.466 13.843a.148.148 0 0 0-.15.15.15.15 0 1 0 .15-.15"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18 6h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-1"></path>
+</svg>

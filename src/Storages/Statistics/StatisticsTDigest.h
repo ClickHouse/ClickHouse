@@ -14,13 +14,14 @@ public:
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
 
-    void serialize(WriteBuffer & buf) override;
-    void deserialize(ReadBuffer & buf) override;
+    void serialize(WriteBuffer & buf, StatisticsFileVersion version) override;
+    void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
-    Float64 estimateLess(const Field & val) const override;
-    Float64 estimateEqual(const Field & val) const override;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
+    [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;
 
-    String getNameForLogs() const override { return "TDigest"; }
+    [[nodiscard]] String getNameForLogs() const override { return "TDigest"; }
+    [[nodiscard]] size_t allocatedBytes() const override;
 
 private:
     QuantileTDigest<Float64> t_digest;

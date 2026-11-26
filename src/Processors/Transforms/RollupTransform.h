@@ -30,6 +30,8 @@ protected:
     std::unique_ptr<Aggregator> output_aggregator;
 
     Block intermediate_header;
+    /// The header of a generated chunk after `finalizeChunk`, without `__grouping_set`.
+    const Block finalized_header;
 
     Chunks consumed_chunks;
     Chunk current_chunk;
@@ -37,7 +39,7 @@ protected:
 
 /// Takes blocks after grouping, with non-finalized aggregate functions.
 /// Calculates subtotals and grand totals values for a set of columns.
-class RollupTransform : public GroupByModifierTransform
+class RollupTransform final : public GroupByModifierTransform
 {
 public:
     RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params, bool use_nulls_);

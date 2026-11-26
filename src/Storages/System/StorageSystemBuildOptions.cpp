@@ -1,8 +1,15 @@
 #include <Storages/System/StorageSystemBuildOptions.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
+
+#include "config.h"
+
+#if USE_VORTEX
+#include <vortex_ffi.h>
+#endif
 
 extern const char * auto_config_build[];
 
@@ -25,6 +32,14 @@ void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, ContextPt
         res_columns[0]->insert(it[0]);
         res_columns[1]->insert(it[1]);
     }
+
+#if USE_VORTEX
+    res_columns[0]->insert("VORTEX_VERSION");
+    res_columns[1]->insert(vortex_ffi_version());
+#endif
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemBuildOptions) }

@@ -19,19 +19,20 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for the unary operator.
-    void checkArgumentTypes(const PQT::UnaryOperator * operator_node, const SQLQueryPiece & argument, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::UnaryOperator * operator_node, const SQLQueryPiece & argument, const ConverterContext & context)
     {
         const auto & operator_name = operator_node->operator_name;
         if (!(operator_name == "+" || operator_name == "-"))
         {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Unknown unary operator with name {}", operator_name);
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "{} is not implemented", operator_node->getTypeAndName());
         }
 
         if (!(argument.type == ResultType::SCALAR || argument.type == ResultType::INSTANT_VECTOR))
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Operator '{}' expects an argument of type {} or {}, but expression {} has type {}",
-                            operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR,
+                            "{} expects an argument of type {} or {}, but expression {} has type {}",
+                            operator_node->getTypeAndName(), ResultType::SCALAR, ResultType::INSTANT_VECTOR,
                             getPromQLText(argument, context), argument.type);
         }
     }
@@ -39,7 +40,7 @@ namespace
 
 
 SQLQueryPiece applyUnaryOperator(
-    const PQT::UnaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context)
+    const PrometheusQueryTree::UnaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, argument, context);
     const auto & operator_name = operator_node->operator_name;
@@ -114,7 +115,8 @@ SQLQueryPiece applyUnaryOperator(
         }
 
         case StoreMethod::CONST_STRING:
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
             /// (see checkArgumentTypes()).

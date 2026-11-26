@@ -13,9 +13,9 @@ REGISTER_FUNCTION(ToStartOfTenMinutes)
     FunctionDocumentation::Description description = R"(
 Rounds down a date with time to the start of the nearest ten-minute interval.
 
-:::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
-:::
+<Note>
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 toStartOfTenMinutes(datetime)
@@ -23,7 +23,7 @@ toStartOfTenMinutes(datetime)
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "A date with time.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest ten-minute interval", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest ten-minute interval.", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Example", R"(
 SELECT

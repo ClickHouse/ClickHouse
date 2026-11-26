@@ -1,0 +1,10 @@
+=== Arrow ===
+-- inferred types --
+IntervalNanosecond	IntervalMicrosecond	IntervalMillisecond	IntervalSecond	Int64	Int64	Int64	Int64	Int64	Int64	Int64
+-- values --
+3	4	5	6	7	8	9	10	11	12	13
+=== ArrowStream ===
+-- inferred types --
+IntervalNanosecond	IntervalMicrosecond	IntervalMillisecond	IntervalSecond	Int64	Int64	Int64	Int64	Int64	Int64	Int64
+-- values --
+3	4	5	6	7	8	9	10	11	12	13

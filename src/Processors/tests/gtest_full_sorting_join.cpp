@@ -7,6 +7,7 @@
 #include <Poco/AutoPtr.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 
@@ -14,7 +15,7 @@
 
 #include <Interpreters/TableJoin.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -23,6 +24,7 @@
 
 
 #include <QueryPipeline/QueryPipeline.h>
+#include <base/sanitizer_defs.h>
 
 using namespace DB;
 
@@ -681,6 +683,12 @@ catch (Exception & e)
     throw;
 }
 
+/// The attribute column carries the two's complement of `-10 * t`; the wrap is the encoding.
+static UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW negativeAttribute(UInt64 t)
+{
+    return -10 * t;
+}
+
 TEST_F(FullSortingJoinTest, AsofGreaterGeneratedTestData)
 try
 {
@@ -726,10 +734,10 @@ try
         for (size_t i = 0; i < num_left_rows; ++i)
         {
             left_t += std::uniform_int_distribution<>(1, 10)(rng);
-            left_source_builder.addRow({k1, k2, left_t, -10 * left_t});
+            left_source_builder.addRow({k1, k2, left_t, negativeAttribute(left_t)});
 
             if (join_kind == JoinKind::Left)
-                expected.push_back(-10 * left_t);
+                expected.push_back(negativeAttribute(left_t));
         }
 
         if (std::bernoulli_distribution(0.1)(rng))

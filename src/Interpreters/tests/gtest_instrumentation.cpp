@@ -17,6 +17,15 @@ TEST(InstrumentationManager, shouldPatchFunction)
 
     ASSERT_TRUE(InstrumentationManager::shouldPatchFunction("QueryMetricLog::startQuery",
         "DB::something<bool>::otherClass<MyClass>::QueryMetricLog::startQuery"));
+
+    /// The search string appears first inside template args, then again outside.
+    /// shouldPatchFunction must not stop at the first (rejected) match.
+    ASSERT_TRUE(InstrumentationManager::shouldPatchFunction("Foo::bar",
+        "Wrapper<DB::Foo::bar(int)>::helper::DB::Foo::bar(float)"));
+
+    /// Both occurrences are inside template args — should still be false.
+    ASSERT_FALSE(InstrumentationManager::shouldPatchFunction("Foo::bar",
+        "Wrapper<DB::Foo::bar(int)>::helper<DB::Foo::bar(float)>::baz()"));
 }
 
 #endif

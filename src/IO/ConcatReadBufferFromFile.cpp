@@ -110,13 +110,13 @@ off_t ConcatReadBufferFromFile::getPosition()
 {
     size_t current_pos = current_start_pos;
     if (current < buffers.size())
-        current_pos += buffers[current].in->getPosition() + offset();
+        current_pos += buffers[current].in->getPosition() + (pos - buffers[current].in->position());
     return current_pos;
 }
 
 off_t ConcatReadBufferFromFile::seek(off_t off, int whence)
 {
-    off_t new_position;
+    off_t new_position = 0;
     off_t current_position = getPosition();
     if (whence == SEEK_SET)
         new_position = off;
@@ -139,12 +139,13 @@ off_t ConcatReadBufferFromFile::seek(off_t off, int whence)
     }
 
     off_t change_position = new_position - current_position;
-    if ((working_buffer.begin() <= pos + change_position) && (pos + change_position <= working_buffer.end()))
+    /// Compare pointer differences: `pos + change_position` is undefined if it leaves the buffer or `pos` is null (after EOF).
+    if (pos && working_buffer.begin() - pos <= change_position && change_position <= working_buffer.end() - pos)
     {
         /// Position is still inside the same working buffer.
         pos += change_position;
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
         return new_position;
     }
 

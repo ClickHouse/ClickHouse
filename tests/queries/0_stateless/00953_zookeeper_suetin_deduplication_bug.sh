@@ -31,13 +31,12 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 3, 'h
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 3 rows
 
-# Get the resolved ZK table path (with macros expanded) to query both directories.
+# Get the resolved ZK table path (with macros expanded) to query the deduplication directory.
 zk_path=$($CLICKHOUSE_CLIENT --query="SELECT replica_path FROM system.replicas WHERE database = currentDatabase() AND table = 'elog'" | sed 's|/replicas/.*||')
 
-# Wait for BOTH blocks/ and deduplication_hashes/ directories to be cleaned up to window size.
-# With COMPATIBLE_DOUBLE_HASHES (default), each insert creates entries in both directories.
-# We must wait for both to be cleaned, because the cleanup thread processes them sequentially
-# and an insert between the two cleanups can cause them to have different entry counts.
+# Wait for the deduplication_hashes/ directory to be cleaned up to the window size.
+# With new_unified_hash (the default), inserts create deduplication entries only there
+# (the legacy blocks/ directory is no longer written).
 wait_for_cleanup() {
     local dir=$1
     local expected=$2
@@ -55,21 +54,18 @@ wait_for_cleanup() {
     fi
 }
 
-wait_for_cleanup "blocks" 2
 wait_for_cleanup "deduplication_hashes" 2
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 1, 'hello')"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 4 rows
 
-wait_for_cleanup "blocks" 2
 wait_for_cleanup "deduplication_hashes" 2
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'hello')"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 5 rows
 
-wait_for_cleanup "blocks" 2
 wait_for_cleanup "deduplication_hashes" 2
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'hello')"

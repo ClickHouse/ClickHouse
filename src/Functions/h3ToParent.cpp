@@ -14,7 +14,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
 }
@@ -22,44 +21,38 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToParent : public IFunction
+class FunctionH3ToParent final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToParent";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToParent>(); }
+    H3Validator validator;
 
-    std::string getName() const override { return name; }
+    explicit FunctionH3ToParent(const ContextPtr & context) : validator(context) {}
 
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToParent>(context); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] std::string getName() const override { return name; }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        arg = arguments[1].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 2, getName());
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(UInt64, UInt8) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -104,8 +97,13 @@ public:
                     getName(),
                     toString(MAX_H3_RES));
 
-            validateH3Cell(hindex);
-            UInt64 res = cellToParent(hindex, resolution);
+            UInt64 res = 0;
+            if (validator.validateCell(hindex))
+            {
+                H3Index parent = 0;
+                if (!cellToParent(hindex, resolution, &parent))
+                    res = parent;
+            }
 
             dst_data[row] = res;
         }

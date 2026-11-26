@@ -1,0 +1,189 @@
+---
+title: 'JSON 내보내기'
+slug: /integrations/data-formats/json/exporting
+description: 'ClickHouse에서 JSON 데이터를 내보내는 방법'
+keywords: ['json', 'clickhouse', '포맷', '내보내기']
+doc_type: 'guide'
+---
+
+가져오기에 사용하는 거의 모든 JSON 포맷은 내보내기에도 사용할 수 있습니다. 가장 널리 쓰이는 형식은 [`JSONEachRow`](/ko/reference/formats/JSON/JSONEachRow)입니다:
+
+```sql
+SELECT * FROM sometable FORMAT JSONEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":245}
+{"path":"1-krona","month":"2017-01-01","hits":4}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":3}
+```
+
+또는 컬럼 이름을 생략하여 디스크 공간을 절약할 수 있는 [`JSONCompactEachRow`](/ko/reference/formats/JSON/JSONCompactEachRow)를 사용할 수 있습니다:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+<div id="overriding-data-types-as-strings">
+  ## 데이터 타입을 문자열로 재정의하기
+</div>
+
+ClickHouse는 데이터 타입을 준수하므로 JSON을 표준에 맞게 내보냅니다. 하지만 모든 값을 문자열로 인코딩해야 하는 경우에는 [JSONStringsEachRow](/ko/reference/formats/JSON/JSONStringsEachRow) 포맷을 사용할 수 있습니다:
+
+```sql
+SELECT * FROM sometable FORMAT JSONStringsEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":"245"}
+{"path":"1-krona","month":"2017-01-01","hits":"4"}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":"3"}
+```
+
+이제 `hits` 숫자 컬럼은 문자열로 인코딩됩니다. 문자열로 내보내기는 모든 JSON* 포맷에서 지원되므로, `JSONStrings\*` 및 `JSONCompactStrings\*` 포맷을 살펴보십시오:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactStringsEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", "245"]
+["1-krona", "2017-01-01", "4"]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", "3"]
+```
+
+<div id="exporting-metadata-together-with-data">
+  ## 데이터와 함께 메타데이터 내보내기
+</div>
+
+애플리케이션에서 널리 사용되는 일반 [JSON](/ko/reference/formats/JSON/JSON) 포맷은 결과 데이터뿐 아니라 컬럼 타입과 쿼리 통계도 함께 내보냅니다:
+
+```sql
+SELECT * FROM sometable FORMAT JSON
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                {
+                        "path": "Bob_Dolman",
+                        "month": "2016-11-01",
+                        "hits": 245
+                },
+                ...
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000497457,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+[JSONCompact](/ko/reference/formats/JSON/JSONCompact) 포맷은 동일한 메타데이터를 출력하지만, 데이터 자체는 더 간결한 형태로 표시합니다:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompact
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                ["Bob_Dolman", "2016-11-01", 245],
+                ["1-krona", "2017-01-01", 4],
+                ["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.00074981,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+모든 값을 문자열로 인코딩하려면 [`JSONStrings`](/ko/reference/formats/JSON/JSONStrings) 또는 [`JSONCompactStrings`](/ko/reference/formats/JSON/JSONCompactStrings) 변형을 사용하는 것이 좋습니다.
+
+<div id="compact-way-to-export-json-data-and-structure">
+  ## JSON 데이터와 구조를 내보내는 간결한 방법
+</div>
+
+데이터와 그 구조를 함께 더 효율적으로 내보내려면 [`JSONCompactEachRowWithNamesAndTypes`](/ko/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes) 포맷을 사용하십시오:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRowWithNamesAndTypes
+```
+
+```response
+["path", "month", "hits"]
+["String", "Date", "UInt32"]
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+컬럼 이름과 타입이 들어 있는 2개의 헤더 행이 앞에 붙는 compact JSON 포맷을 사용합니다. 그런 다음 이 포맷을 사용해 데이터를 다른 ClickHouse 인스턴스(또는 다른 앱)로 적재할 수 있습니다.
+
+<div id="exporting-json-to-a-file">
+  ## 파일로 JSON 내보내기
+</div>
+
+내보낸 JSON 데이터를 파일로 저장하려면 [INTO OUTFILE](/ko/reference/statements/select/into-outfile) 절을 사용할 수 있습니다:
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 2.220 sec. Processed 36.84 million rows, 1.27 GB (16.60 million rows/s., 572.47 MB/s.)
+```
+
+ClickHouse는 약 3,700만 개의 레코드를 JSON 파일로 내보내는 데 단 2초밖에 걸리지 않았습니다. 또한 `COMPRESSION` 절을 사용해 내보내는 동안 즉시 압축을 적용할 수도 있습니다:
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json.gz' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 22.680 sec. Processed 36.84 million rows, 1.27 GB (1.62 million rows/s., 56.02 MB/s.)
+```
+
+시간은 더 걸리지만, 훨씬 더 작은 압축 파일이 생성됩니다:
+
+```bash
+2.2G    out.json
+576M    out.json.gz
+```

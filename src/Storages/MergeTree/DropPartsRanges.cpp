@@ -52,7 +52,7 @@ void DropPartsRanges::removeDropPart(const ReplicatedMergeTreeLogEntryPtr & entr
                         entry->typeToString());
 
     auto it = drop_ranges.find(entry->znode_name);
-    assert(it != drop_ranges.end());
+    chassert(it != drop_ranges.end());
     drop_ranges.erase(it);
 }
 

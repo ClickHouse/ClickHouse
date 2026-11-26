@@ -1,0 +1,91 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArrayIf'
+title: 'uniqArrayIf'
+description: 'Exemplo de uso do combinador uniqArrayIf'
+keywords: ['uniq', 'array', 'if', 'combinador', 'exemplos', 'uniqArrayIf']
+sidebarTitle: 'uniqArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+Os combinadores [`Array`](/pt-BR/reference/functions/aggregate-functions/combinators#-array) e [`If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if) podem ser aplicados à função [`uniq`](/pt-BR/reference/functions/aggregate-functions/uniq)
+para contar o número de valores únicos em arrays nas linhas em que a
+condição é verdadeira, usando a função de combinador de agregação `uniqArrayIf`.
+
+<Note>
+  -`If` e -`Array` podem ser combinados. No entanto, `Array` deve vir primeiro, seguido de `If`.
+</Note>
+
+Isso é útil quando você quer contar elementos únicos em um array com base em
+condições específicas sem precisar usar `arrayJoin`.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+<div id="count-unique-products">
+  ### Contar produtos únicos visualizados por tipo de segmento e nível de engajamento
+</div>
+
+Neste exemplo, usaremos uma tabela com dados de sessões de compra dos usuários para contar o
+número de produtos únicos visualizados por usuários de um segmento específico, usando como
+métrica de engajamento o tempo gasto na sessão.
+
+```sql title="Query"
+CREATE TABLE user_shopping_sessions
+(
+    session_date Date,
+    user_segment String,
+    viewed_products Array(String),
+    session_duration_minutes Int32
+) ENGINE = Memory;
+
+INSERT INTO user_shopping_sessions VALUES
+    ('2024-01-01', 'new_customer', ['smartphone_x', 'headphones_y', 'smartphone_x'], 12),
+    ('2024-01-01', 'returning', ['laptop_z', 'smartphone_x', 'tablet_a'], 25),
+    ('2024-01-01', 'new_customer', ['smartwatch_b', 'headphones_y', 'fitness_tracker'], 8),
+    ('2024-01-02', 'returning', ['laptop_z', 'external_drive', 'laptop_z'], 30),
+    ('2024-01-02', 'new_customer', ['tablet_a', 'keyboard_c', 'tablet_a'], 15),
+    ('2024-01-02', 'premium', ['smartphone_x', 'smartwatch_b', 'headphones_y'], 22);
+
+-- Contar produtos únicos visualizados por tipo de segmento e nível de engajamento
+SELECT 
+    session_date,
+    -- Contar produtos únicos visualizados em sessões longas por novos clientes
+    uniqArrayIf(viewed_products, user_segment = 'new_customer' AND session_duration_minutes > 10) AS new_customer_engaged_products,
+    -- Contar produtos únicos visualizados por clientes recorrentes
+    uniqArrayIf(viewed_products, user_segment = 'returning') AS returning_customer_products,
+    -- Contar produtos únicos visualizados em todas as sessões
+    uniqArray(viewed_products) AS total_unique_products
+FROM user_shopping_sessions
+GROUP BY session_date
+ORDER BY session_date
+FORMAT Vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+session_date:                2024-01-01
+new_customer⋯ed_products:    2
+returning_customer_products: 3
+total_unique_products:       6
+
+Row 2:
+──────
+session_date:                2024-01-02
+new_customer⋯ed_products:    2
+returning_customer_products: 2
+total_unique_products:       7
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`uniq`](/pt-BR/reference/functions/aggregate-functions/uniq)
+* [`combinador Array`](/pt-BR/reference/functions/aggregate-functions/combinators#-array)
+* [`combinador If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if)

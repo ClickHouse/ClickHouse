@@ -31,6 +31,16 @@ class SafeThread(threading.Thread):
 
     def join(self, timeout=None):
         super().join(timeout)
+        # If the thread is still alive after the timeout, fail fast
+        # instead of returning silently. Otherwise the caller moves on
+        # to the next thread.join(timeout), which can stack up many
+        # 70-second waits and trip the 900-second pytest-timeout long
+        # after the real failure happened.
+        if self.is_alive():
+            raise RuntimeError(
+                f"Thread did not finish within {timeout}s — likely stuck "
+                "(check ZooKeeper connectivity and DDL queue state)"
+            )
         if self.exception:
             raise self.exception
 
@@ -168,9 +178,13 @@ def test_smoke():
     check_log()
 
 
+# 20 parallel `DROP DATABASE IF EXISTS ... ON CLUSTER` is enough to exercise
+# the DDL coordination path and catch the `Node exists` race the test guards
+# against. Going higher (the test used to spawn 50) saturates ZooKeeper under
+# sanitizer builds and causes spurious connection-loss failures.
 def test_smoke_parallel():
     threads = []
-    for _ in range(50):
+    for _ in range(20):
         threads.append(SafeThread(target=execute_smoke_query))
     for thread in threads:
         thread.start()
@@ -179,9 +193,13 @@ def test_smoke_parallel():
     check_log()
 
 
+# 30 threads still exercises queueing on `cluster_b` (pool_size = 20).
+# Going higher (the test used to spawn 90) saturates ZooKeeper under
+# sanitizer builds, and the resulting connection losses make the test
+# stall long enough to trip the 900-second pytest-timeout.
 def test_smoke_parallel_dict_reload():
     threads = []
-    for _ in range(90):
+    for _ in range(30):
         threads.append(SafeThread(target=execute_reload_dictionary_slow_dict_3))
     for thread in threads:
         thread.start()

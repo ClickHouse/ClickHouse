@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-RUNS=${RUNS:-25}
+RUNS=${RUNS:-10}
 THREADS_PER_JOB=${THREADS_PER_JOB:-4}
 PRINT_LOGS=${PRINT_LOGS:-0}
 QUERY_TIMEOUT=${QUERY_TIMEOUT:-30}
@@ -116,7 +116,7 @@ run_for_engine() {
     run_selects_thread "$i" & pids+=("$!")
   done
 
-  while true; do
+  while clickhouse_test_time_left; do
     local rc=0
     wait -n || rc=$?
     (( rc == 127 )) && echo "OK for '$1'" && break

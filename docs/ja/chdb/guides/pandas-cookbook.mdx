@@ -1,0 +1,629 @@
+---
+title: 'Pandas クックブック'
+sidebarTitle: 'Pandas クックブック'
+slug: /chdb/guides/pandas-cookbook
+description: '一般的な pandas のパターンと、それに対応する DataStore での書き方'
+keywords: ['chdb', 'datastore', 'pandas', 'クックブック', 'パターン', '例']
+doc_type: 'guide'
+---
+
+一般的な pandas のパターンと、それに対応する DataStore での書き方を紹介します。ほとんどのコードはそのまま動作します！
+
+<div id="loading">
+  ## データの読み込み
+</div>
+
+<div id="read-csv">
+  ### CSVを読み込む
+</div>
+
+```python
+# Pandas
+import pandas as pd
+df = pd.read_csv("data.csv")
+
+# DataStore - 同じです！
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+```
+
+<div id="read-multiple-files">
+  ### 複数のファイルを読み込む
+</div>
+
+```python
+# Pandas
+import glob
+dfs = [pd.read_csv(f) for f in glob.glob("data/*.csv")]
+df = pd.concat(dfs)
+
+# DataStore - glob パターンを使用したより効率的な方法
+df = pd.read_csv("data/*.csv")
+```
+
+***
+
+<div id="filtering">
+  ## フィルタリング
+</div>
+
+<div id="single-condition">
+  ### 1つの条件
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df[df['age'] > 25]
+df[df['city'] == 'NYC']
+df[df['name'].str.contains('John')]
+```
+
+<div id="multiple-conditions">
+  ### 複数条件
+</div>
+
+```python
+# AND
+df[(df['age'] > 25) & (df['city'] == 'NYC')]
+
+# OR
+df[(df['age'] < 18) | (df['age'] > 65)]
+
+# NOT
+df[~(df['status'] == 'inactive')]
+```
+
+<div id="using-query">
+  ### query() を使用する
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.query('age > 25 and city == "NYC"')
+df.query('salary > 50000')
+```
+
+<div id="isin">
+  ### isin()
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df[df['city'].isin(['NYC', 'LA', 'SF'])]
+```
+
+<div id="between">
+  ### between()
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df[df['age'].between(18, 65)]
+```
+
+***
+
+<div id="selecting">
+  ## カラムの選択
+</div>
+
+<div id="single-column-select">
+  ### 1つのカラム
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['name']
+df.name  # 属性アクセス
+```
+
+<div id="multiple-columns-select">
+  ### 複数カラム
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df[['name', 'age', 'city']]
+```
+
+<div id="select-and-filter">
+  ### 選択とフィルタ
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df[df['age'] > 25][['name', 'salary']]
+
+# DataStore は SQL スタイルもサポート
+df.filter(df['age'] > 25).select('name', 'salary')
+```
+
+***
+
+<div id="sorting">
+  ## ソート
+</div>
+
+<div id="single-column-sort">
+  ### 単一カラム
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.sort_values('salary')
+df.sort_values('salary', ascending=False)
+```
+
+<div id="multiple-columns-sort">
+  ### 複数のカラム
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.sort_values(['city', 'salary'], ascending=[True, False])
+```
+
+<div id="get-top-bottom-n">
+  ### 上位/下位 N を取得
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.nlargest(10, 'salary')
+df.nsmallest(5, 'age')
+```
+
+***
+
+<div id="groupby">
+  ## GroupBy と集計
+</div>
+
+<div id="simple-groupby">
+  ### 基本的なGroupBy
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.groupby('city')['salary'].mean()
+df.groupby('city')['salary'].sum()
+df.groupby('city').size()  # カウント
+```
+
+<div id="multiple-aggregations">
+  ### 複数の集計
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.groupby('city')['salary'].agg(['sum', 'mean', 'count'])
+
+df.groupby('city').agg({
+    'salary': ['sum', 'mean'],
+    'age': ['min', 'max']
+})
+```
+
+<div id="named-aggregations">
+  ### 名前付き集計
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.groupby('city').agg(
+    total_salary=('salary', 'sum'),
+    avg_salary=('salary', 'mean'),
+    employee_count=('id', 'count')
+)
+```
+
+<div id="multiple-groupby-keys">
+  ### 複数の GroupBy キー
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.groupby(['city', 'department'])['salary'].mean()
+```
+
+***
+
+<div id="joining">
+  ## データの結合
+</div>
+
+<div id="inner-join">
+  ### 内部結合
+</div>
+
+```python
+# Pandas
+pd.merge(df1, df2, on='id')
+
+# DataStore - 同じAPI
+pd.merge(df1, df2, on='id')
+
+# DataStore でもサポート
+df1.join(df2, on='id')
+```
+
+<div id="left-join">
+  ### 左外部結合
+</div>
+
+```python
+# Pandas と DataStore - 同一
+pd.merge(df1, df2, on='id', how='left')
+```
+
+<div id="join-on-different-columns">
+  ### 異なるカラムでJOIN
+</div>
+
+```python
+# Pandas と DataStore - 同一
+pd.merge(df1, df2, left_on='emp_id', right_on='id')
+```
+
+<div id="concat">
+  ### 連結
+</div>
+
+```python
+# Pandas と DataStore - 同一
+pd.concat([df1, df2, df3])
+pd.concat([df1, df2], axis=1)
+```
+
+***
+
+<div id="string">
+  ## 文字列操作
+</div>
+
+<div id="case-conversion">
+  ### 大文字・小文字変換
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['name'].str.upper()
+df['name'].str.lower()
+df['name'].str.title()
+```
+
+<div id="substring">
+  ### 部分文字列
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['name'].str[:3]        # 最初の3文字
+df['name'].str.slice(0, 3)
+```
+
+<div id="search">
+  ### 検索
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['name'].str.contains('John')
+df['name'].str.startswith('A')
+df['name'].str.endswith('son')
+```
+
+<div id="replace">
+  ### Replace
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['text'].str.replace('old', 'new')
+df['text'].str.replace(r'\d+', '', regex=True)  # 数字を削除
+```
+
+<div id="split">
+  ### 分割
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['name'].str.split(' ')
+df['name'].str.split(' ', expand=True)
+```
+
+<div id="length">
+  ### 長さ
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['name'].str.len()
+```
+
+***
+
+<div id="datetime">
+  ## DateTime の演算
+</div>
+
+<div id="extract-components">
+  ### 部分の抽出
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['date'].dt.year
+df['date'].dt.month
+df['date'].dt.day
+df['date'].dt.dayofweek
+df['date'].dt.hour
+```
+
+<div id="formatting">
+  ### フォーマット
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['date'].dt.strftime('%Y-%m-%d')
+```
+
+***
+
+<div id="missing">
+  ## 欠損データ
+</div>
+
+<div id="check-missing">
+  ### 欠損値の確認
+</div>
+
+```python
+# Pandas と DataStore では同じ
+df['col'].isna()
+df['col'].notna()
+df.isna().sum()
+```
+
+<div id="drop-missing">
+  ### 欠損値を除外
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.dropna()
+df.dropna(subset=['col1', 'col2'])
+```
+
+<div id="fill-missing">
+  ### 欠損値の補完
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.fillna(0)
+df.fillna({'col1': 0, 'col2': 'Unknown'})
+df.fillna(method='ffill')
+```
+
+***
+
+<div id="new-columns">
+  ## 新しいカラムを作成する
+</div>
+
+<div id="simple-assignment">
+  ### 基本的な代入
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['total'] = df['price'] * df['quantity']
+df['age_group'] = df['age'] // 10 * 10
+```
+
+<div id="using-assign">
+  ### assign() を使用する
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df = df.assign(
+    total=df['price'] * df['quantity'],
+    is_adult=df['age'] >= 18
+)
+```
+
+<div id="conditional-where-mask">
+  ### 条件処理 (where/mask)
+</div>
+
+```python
+# Pandas と DataStore は同一
+df['status'] = df['age'].where(df['age'] >= 18, 'minor')
+```
+
+<div id="apply-for-custom-logic">
+  ### カスタムロジック用の apply()
+</div>
+
+```python
+# 動作しますが、pandas の実行がトリガーされます
+df['category'] = df['amount'].apply(lambda x: 'high' if x > 1000 else 'low')
+
+# DataStore の代替手段（遅延実行のまま）
+df['category'] = (
+    df.when(df['amount'] > 1000, 'high')
+      .otherwise('low')
+)
+```
+
+***
+
+<div id="reshaping">
+  ## 整形
+</div>
+
+<div id="pivot-table">
+  ### ピボットテーブル
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.pivot_table(
+    values='amount',
+    index='region',
+    columns='product',
+    aggfunc='sum'
+)
+```
+
+<div id="melt-unpivot">
+  ### Melt (アンピボット)
+</div>
+
+```python
+# Pandas と DataStore は同じ
+df.melt(
+    id_vars=['name'],
+    value_vars=['score1', 'score2', 'score3'],
+    var_name='test',
+    value_name='score'
+)
+```
+
+<div id="explode">
+  ### Explode
+</div>
+
+```python
+# PandasとDataStore - 同一
+df.explode('tags')  # 配列カラムを展開
+```
+
+***
+
+<div id="window">
+  ## ウィンドウ関数
+</div>
+
+<div id="rolling">
+  ### 移動
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['rolling_avg'] = df['price'].rolling(window=7).mean()
+df['rolling_sum'] = df['amount'].rolling(window=30).sum()
+```
+
+<div id="expanding">
+  ### 拡大
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['cumsum'] = df['amount'].expanding().sum()
+df['cummax'] = df['amount'].expanding().max()
+```
+
+<div id="shift">
+  ### Shift
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['prev_value'] = df['value'].shift(1)   # ラグ
+df['next_value'] = df['value'].shift(-1)  # リード
+```
+
+<div id="diff">
+  ### 差分
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df['change'] = df['value'].diff()
+df['pct_change'] = df['value'].pct_change()
+```
+
+***
+
+<div id="output">
+  ## 出力
+</div>
+
+<div id="to-csv">
+  ### CSV形式
+</div>
+
+```python
+# Pandas と DataStore - 同一
+df.to_csv("output.csv", index=False)
+```
+
+<div id="to-parquet">
+  ### Parquet に出力
+</div>
+
+```python
+# PandasとDataStore - 同一
+df.to_parquet("output.parquet")
+```
+
+<div id="to-pandas-dataframe">
+  ### pandas DataFrame に変換
+</div>
+
+```python
+# DataStore 固有
+pandas_df = ds.to_df()
+pandas_df = ds.to_pandas()
+```
+
+***
+
+<div id="extras">
+  ## DataStore の拡張機能
+</div>
+
+<div id="view-sql">
+  ### SQLを表示
+</div>
+
+```python
+# DataStoreのみ
+print(ds.to_sql())
+```
+
+<div id="explain-plan">
+  ### 実行計画の確認
+</div>
+
+```python
+# DataStore のみ
+ds.explain()
+```
+
+<div id="clickhouse-functions">
+  ### ClickHouse の関数
+</div>
+
+```python
+# DataStore のみ - 追加アクセサ
+df['domain'] = df['url'].url.domain()
+df['json_value'] = df['data'].json.get_string('key')
+df['ip_valid'] = df['ip'].ip.is_ipv4_string()
+```
+
+<div id="universal-uri">
+  ### ユニバーサルURI
+</div>
+
+```python
+# DataStore のみ - どこからでも読み取り可能
+ds = DataStore.uri("s3://bucket/data.parquet")
+ds = DataStore.uri("mysql://user:pass@host/db/table")
+```

@@ -5,11 +5,20 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 # Print details to output
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COMPILER_TARGET} --sysroot=${CMAKE_SYSROOT}
-    OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
-    COMMAND_ERROR_IS_FATAL ANY
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+if (OS_WASM)
+    # `emcc` knows its own target and sysroot, and rejects being passed an empty one.
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
+        OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+else ()
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COMPILER_TARGET} --sysroot=${CMAKE_SYSROOT}
+        OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+endif ()
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
@@ -28,20 +37,26 @@ if (LINKER_NAME MATCHES "gold")
     message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
 endif ()
 
+# Tools are taken from the compiler's own directory first, so that they belong to the same toolchain.
+get_filename_component (COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+
 macro(ch_find_program var)
     if (USING_DUMMY_LAUNCHERS)
         set(${var} "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
     else()
         unset(${var})
-        find_program(${var} ${ARGN})
+        find_program(${var} ${ARGN} PATHS "${COMPILER_BIN_DIR}" NO_DEFAULT_PATH)
+        if (NOT ${var})
+            find_program(${var} ${ARGN})
+        endif()
     endif()
 endmacro()
 
 if (NOT LINKER_NAME)
-    if (OS_LINUX AND NOT ARCH_S390X)
+    if (OS_LINUX)
         ch_find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     elseif (OS_DARWIN)
-        ch_find_program (LLD_PATH NAMES "ld")
+        ch_find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld" "ld")
         # Duplicate libraries passed to the linker is not a problem.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()
@@ -63,7 +78,10 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-elseif (NOT ARCH_S390X AND NOT OS_FREEBSD AND NOT OS_SUNOS)
+elseif (OS_WASM)
+    # `emcc` drives `wasm-ld` itself and takes no `--ld-path`.
+    message(STATUS "Using linker: <wasm-ld, through emcc>")
+elseif (NOT OS_FREEBSD AND NOT OS_SUNOS)
     message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
 else ()
     message(STATUS "Using linker: <default>")
@@ -94,8 +112,19 @@ message(STATUS "Using install-name-tool: ${CMAKE_INSTALL_NAME_TOOL}")
 ch_find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy")
 if (OBJCOPY_PATH)
     message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
+    # The Rust symbol post-processing scripts are invoked with CMAKE_OBJCOPY, so keep it in sync with
+    # the objcopy resolved above, as is already done for CMAKE_AR and CMAKE_RANLIB.
+    set (CMAKE_OBJCOPY "${OBJCOPY_PATH}")
 else ()
     message (FATAL_ERROR "Cannot find objcopy.")
+endif ()
+
+# nm (used by helper scripts that inspect symbol tables, e.g. cmake/localize_rust_c_symbols.sh)
+ch_find_program (NM_PATH NAMES "llvm-nm-${COMPILER_VERSION_MAJOR}" "llvm-nm" "nm")
+if (NM_PATH)
+    message (STATUS "Using nm: ${NM_PATH}")
+else ()
+    message (FATAL_ERROR "Cannot find nm.")
 endif ()
 
 # Strip

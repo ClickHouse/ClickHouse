@@ -1,3 +1,6 @@
+-- Tags: no-async-insert
+-- - no-async-insert -- with wait_for_async_insert=0 the INSERT is fire-and-forget, so the constraint error is raised in the background flush and never reaches the client, breaking the { serverError } assertion.
+
 CREATE TABLE check_constraint (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO TABLE check_constraint (c0) VALUES (1);
 ALTER TABLE check_constraint ADD CONSTRAINT c0 CHECK (SELECT 1);

@@ -234,3 +234,92 @@ FROM test_string
 WHERE match(CAST(string_col, 'FixedString(40)'), toFixedString('^11.', 4)) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 ORDER BY text
 SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+DROP TABLE IF EXISTS test_lc_fixedstring;
+
+CREATE TABLE test_lc_fixedstring
+(
+    lc_fs_col LowCardinality(FixedString(40)),
+    text String
+)
+ENGINE = MergeTree
+ORDER BY lc_fs_col
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_lc_fixedstring SELECT fixed_string_col, text FROM test;
+
+-- LowCardinality(FixedString) key tests (PR #99001)
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE startsWith(lc_fs_col, '11')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE startsWith(CAST(lc_fs_col, 'String'), '11')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE lc_fs_col LIKE '11%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE CAST(lc_fs_col, 'String') LIKE '11%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE lc_fs_col NOT LIKE '99%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE CAST(lc_fs_col, 'String') NOT LIKE '99%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE match(lc_fs_col, '^11.')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE match(CAST(lc_fs_col, 'String'), '^11.')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE startsWith(CAST(lc_fs_col, 'LowCardinality(String)'), '11')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE CAST(lc_fs_col, 'LowCardinality(String)') LIKE '11%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE CAST(lc_fs_col, 'LowCardinality(String)') NOT LIKE '99%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test_lc_fixedstring
+WHERE match(CAST(lc_fs_col, 'LowCardinality(String)'), '^11.')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+DROP TABLE IF EXISTS test_lc_fixedstring;

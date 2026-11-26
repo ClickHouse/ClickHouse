@@ -1,5 +1,6 @@
 -- Tags: replica, distributed
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_mode = 'sampling_key';
 SET max_parallel_replicas = 2;

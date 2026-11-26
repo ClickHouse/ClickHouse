@@ -1,0 +1,39 @@
+<Tabs>
+  <Tab title="Claude Code" icon="/images/logo-claudecode-color.svg">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}>Run in your terminal:</p>
+    <CodeBlock language="bash">{`claude mcp add clickhouse-docs -- npx -y mintlify-mcp --doc-url https://clickhouse.com/docs`}</CodeBlock>
+  </Tab>
+  <Tab title="Claude Desktop" icon="/images/logo-claude.svg">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}>Add to <code>claude_desktop_config.json</code>:</p>
+    <CodeBlock language="json">{`{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mintlify-mcp", "--doc-url", "https://clickhouse.com/docs"]
+    }
+  }
+}`}</CodeBlock>
+  </Tab>
+  <Tab title="Cursor" icon="/images/logo-cursor.webp">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}>Add to <code>.cursor/mcp.json</code>:</p>
+    <CodeBlock language="json">{`{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mintlify-mcp", "--doc-url", "https://clickhouse.com/docs"]
+    }
+  }
+}`}</CodeBlock>
+  </Tab>
+  <Tab title="Windsurf" icon="/images/logo-windsurf.svg">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}>Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
+    <CodeBlock language="json">{`{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mintlify-mcp", "--doc-url", "https://clickhouse.com/docs"]
+    }
+  }
+}`}</CodeBlock>
+  </Tab>
+</Tabs>

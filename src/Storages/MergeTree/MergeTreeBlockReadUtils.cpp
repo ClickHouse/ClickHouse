@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -9,6 +10,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -25,10 +27,20 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
+namespace FailPoints
+{
+    extern const char patch_parts_reverse_column_order[];
 }
 
 namespace
@@ -39,10 +51,10 @@ bool hasMaterializedTextIndex(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const String & virtual_column_name)
 {
-    if (!storage_snapshot->virtual_columns)
+    if (storage_snapshot->metadata->virtuals.empty())
         return false;
 
-    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name);
+    const auto * virtual_column = storage_snapshot->metadata->virtuals.tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     if (!virtual_column)
         return false;
 
@@ -94,21 +106,37 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
 
-        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+        auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetPhysical(column_name_in_part);
+
+        bool share_nested = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
         if (column_in_part
             /// If the column was dropped by a pending mutation that hasn't been applied yet,
             /// the data in this part is stale. Treat it as missing so that the default value is used.
             /// This can happen if the column was dropped and then re-added with the same name.
-            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part)))
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
-            if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
+            /// Resolved against the serialization the part holds for the column - which it always does, the column
+            /// comes from its own list - instead of a newly built one.
+            if (!column_in_storage->isSubcolumn()
+                || column_in_part->type->tryGetSubcolumnType(
+                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
             {
                 add_column(column_name);
                 return true;
             }
+
+            /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
+            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            add_column(column_in_storage->getNameInStorage());
+            return true;
         }
-        else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
+        else if (isTextIndexVirtualColumn(column_name_in_part)
+            && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part)
+            && canReadTextIndexInPart(alter_conversions))
         {
             /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
@@ -118,7 +146,14 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->getDefault(column_name);
+    auto column_default = storage_snapshot->getDefault(column_name);
+
+    /// A subcolumn does not have its own default expression: it is extracted from the evaluated
+    /// default of the column in storage (see IMergeTreeReader::evaluateMissingDefaults),
+    /// so the columns required by that expression must be read as well.
+    if (!column_default && column_in_storage && column_in_storage->isSubcolumn())
+        column_default = storage_snapshot->getDefault(column_in_storage->getNameInStorage());
+
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
         return false;
@@ -136,6 +171,12 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
+{
+    /// Patches are joined by the keys read in the first step, which the text index reader cannot read.
+    return !alter_conversions || !alter_conversions->hasPatches();
 }
 
 /** If some of the requested columns are not in the part,
@@ -158,7 +199,7 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withVirtuals()
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
     for (size_t i = 0; i < columns.size(); ++i)
@@ -167,9 +208,18 @@ NameSet injectRequiredColumns(
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
+        /// Copy columns[i] to avoid a dangling reference: injectRequiredColumnsRecursively may call
+        /// columns.emplace_back, which can reallocate the vector and invalidate any reference into it.
+        String column_name = columns[i];
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i], storage_snapshot, alter_conversions,
-            data_part_info_for_reader, options, columns, required_columns, injected_columns);
+            column_name,
+            storage_snapshot,
+            alter_conversions,
+            data_part_info_for_reader,
+            options,
+            columns,
+            required_columns,
+            injected_columns);
     }
 
     /** Add a column of the minimum size.
@@ -203,18 +253,39 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
+    const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
     : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
-    number_of_rows_in_part = data_part->rows_count;
+    number_of_rows_in_part = data_part->getRowCount();
+
     /// Initialize with sample block until update won't called.
     initialize(sample_block, {}, columns);
 }
 
 void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update)
 {
-    fixed_columns_bytes_per_row = 0;
-    dynamic_columns_infos.clear();
+    /// Columns that are read only by `PREWHERE` steps are absent from the result block (the header of the reading step
+    /// contains only columns that are used later in the query), but they still occupy memory while the block is being read.
+    /// Their sizes cannot be measured in `update`, so they keep the estimation obtained from the part in the constructor.
+    size_t prewhere_only_fixed_columns_bytes_per_row = 0;
+    std::vector<ColumnInfo> prewhere_only_dynamic_columns_infos;
+    if (from_update)
+    {
+        for (const auto & [column_name, size_of_value] : fixed_columns_from_part)
+        {
+            if (!sample_block.has(column_name))
+                prewhere_only_fixed_columns_bytes_per_row += size_of_value;
+        }
+
+        for (auto & info : dynamic_columns_infos)
+        {
+            if (!sample_block.has(info.name))
+                prewhere_only_dynamic_columns_infos.push_back(std::move(info));
+        }
+    }
+
+    fixed_columns_bytes_per_row = prewhere_only_fixed_columns_bytes_per_row;
+    dynamic_columns_infos = std::move(prewhere_only_dynamic_columns_infos);
 
     std::unordered_set<String> names_set;
     if (!from_update)
@@ -238,16 +309,20 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
-            fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
+            fixed_columns_bytes_per_row += size_of_value;
             max_size_per_row_fixed = std::max(max_size_per_row_fixed, static_cast<double>(size_of_value));
+
+            if (!from_update)
+                fixed_columns_from_part.emplace_back(column_name, size_of_value);
         }
         else
         {
             ColumnInfo info;
             info.name = column_name;
+            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
             /// If column isn't fixed and doesn't have checksum, than take first
             ColumnSize column_size;
-            if (column_from_part && column_from_part->isSubcolumn() && allow_subcolumns_sizes_calculation)
+            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
                 column_size = data_part->getSubcolumnSize(column_name);
             else
                 column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
@@ -290,6 +365,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     if (!is_initialized_in_update)
     {
         /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
+        /// Columns that are read only by `PREWHERE` steps are absent from the read block and keep the estimation from the part.
         initialize(sample_block, columns, {}, true);
         is_initialized_in_update = true;
     }
@@ -313,11 +389,30 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     max_size_per_row_dynamic = 0;
     for (auto & info : dynamic_columns_infos)
     {
-        size_t new_size = columns[sample_block.getPositionByName(info.name)]->byteSize();
+        auto position = sample_block.findPositionByName(info.name);
+        if (!position)
+        {
+            /// The column is read only by `PREWHERE` steps, its actual size in the block is unknown.
+            /// Keep the current estimation of bytes per row and account the estimated size of the column.
+            info.size_bytes = static_cast<size_t>(info.bytes_per_row * static_cast<double>(num_rows));
+            block_size_bytes += info.size_bytes;
+            bytes_per_row_current += info.bytes_per_row;
+            max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
+            continue;
+        }
+
+        size_t new_size = columns[*position]->byteSize();
         size_t diff_size = new_size - info.size_bytes;
 
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
+
+        /// For subcolumns, the output column size can be much smaller than what was
+        /// actually read from disk (e.g. a Map subcolumn reads the entire Map but
+        /// only extracts one key's values). Prevent the estimate from dropping below
+        /// the global average so that chunk sizes stay appropriate for the real I/O cost.
+        if (info.is_subcolumn)
+            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
 
         info.size_bytes = new_size;
         block_size_bytes += new_size;
@@ -337,6 +432,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
         .remove_filter_column = remove_filter_column,
         .need_filter = true,
         .perform_alter_conversions = true,
+        .columns_overwritten_by_chain = {},
         .mutation_version = std::nullopt,
     };
 
@@ -354,7 +450,7 @@ void addPatchPartsColumns(
     if (patch_parts.empty())
         return;
 
-    NameSet required_virtuals;
+    NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
 
     for (size_t i = 0; i < patch_parts.size(); ++i)
@@ -385,22 +481,33 @@ void addPatchPartsColumns(
             patch_columns_to_read_set.insert(RowExistsColumn::name);
         }
 
-        auto patch_system_columns = getVirtualsRequiredForPatch(patch_parts[i]);
-        patch_columns_to_read_set.insert(patch_system_columns.begin(), patch_system_columns.end());
-        required_virtuals.insert(patch_system_columns.begin(), patch_system_columns.end());
+        auto patch_key_columns = getKeyColumnsRequiredForPatch(patch_parts[i]);
+        patch_columns_to_read_set.insert(patch_key_columns.begin(), patch_key_columns.end());
+        required_key_columns.insert(patch_key_columns.begin(), patch_key_columns.end());
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
+
+        fiu_do_on(FailPoints::patch_parts_reverse_column_order,
+        {
+            /// Simulate non-deterministic NameSet iteration producing different column
+            /// orderings for different patches. This reproduces the bug fixed in
+            /// getUpdatedHeader (applyPatches.cpp) where sortColumns() normalizes order
+            /// before the positional assertCompatibleHeader comparison.
+            if (i % 2 == 1)
+                std::reverse(patch_columns_to_read_names.begin(), patch_columns_to_read_names.end());
+        });
+
         result.patch_columns[i] = storage_snapshot->getColumnsByNames(options, patch_columns_to_read_names);
     }
 
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
     auto first_step_columns_set = first_step_columns.getNameSet();
 
-    for (const auto & virtual_name : required_virtuals)
+    for (const auto & key_column_name : required_key_columns)
     {
-        if (!first_step_columns_set.contains(virtual_name))
+        if (!first_step_columns_set.contains(key_column_name))
         {
-            auto column = storage_snapshot->getColumn(options, virtual_name);
+            auto column = storage_snapshot->getColumn(options, key_column_name);
             first_step_columns.push_back(std::move(column));
         }
     }
@@ -426,7 +533,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
-        .withVirtuals()
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
     auto add_step = [&](const PrewhereExprStep & step)
@@ -492,7 +599,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             index_read_tasks,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution);
+            reader_settings.force_short_circuit_execution,
+            reader_settings.read_ahead_prewhere_columns);
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);

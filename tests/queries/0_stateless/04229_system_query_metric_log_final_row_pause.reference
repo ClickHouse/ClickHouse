@@ -1,0 +1,4 @@
+--Check that a periodic row overtook the paused final row
+1
+--Check that failpoint-delayed finish still emits final query metric row
+1

@@ -1,0 +1,147 @@
+---
+slug: /cloud/managed-postgres/pricing
+sidebarTitle: 'Precios'
+title: 'Precios'
+description: 'Modelo de precios, niveles, tipos de instancia, facturación y desactivación del servicio de ClickHouse Managed Postgres'
+keywords: ['precios de Postgres', 'costo de Managed Postgres', 'precios de copias de seguridad de Postgres', 'transferencia de datos de Postgres', 'desactivación de Postgres', 'calculadora de precios de Postgres', 'precios de nvme', 'precios por nivel de Postgres']
+doc_type: 'reference'
+---
+
+ClickHouse Managed Postgres se basa en almacenamiento NVMe local, lo que le permite ofrecer un rendimiento apto para producción e integración nativa con ClickHouse sin el sobrecoste de las arquitecturas tradicionales de almacenamiento conectado por red. En esta página se describen el modelo de precios, los tipos de instancia disponibles y la comparación de niveles del servicio.
+
+<Tip>
+  **Calculadora de precios**
+
+  Para conocer el precio exacto, usa la [calculadora de precios](https://clickhouse.com/pricing?service=postgres#pricing-calculator) para encontrar la mejor configuración y el mejor precio para tu workload.
+</Tip>
+
+## Relación precio-rendimiento {#price-performance}
+
+Como el servicio se ejecuta sobre almacenamiento NVMe local, muchas cargas de trabajo pueden lograr una relación precio-rendimiento considerablemente mejor que con las arquitecturas tradicionales de almacenamiento conectado por red. Consulta [PostgresBench](https://postgresbench.clickhouse.com/) para ver comparaciones de benchmark frente a otros proveedores de Postgres con perfiles de hardware similares.
+
+Los clientes pueden llegar a necesitar entre 2 y 4 veces menos cómputo para cargas de trabajo comparables. Estas posibles ganancias de eficiencia deben tenerse en cuenta al comparar precios entre proveedores, aunque las mejoras reales variarán según la carga de trabajo y deben validarse en función de sus aplicaciones específicas.
+
+## Modelo de precios {#pricing-model}
+
+El servicio se ejecuta sobre almacenamiento NVMe local, por lo que el precio se basa en la configuración completa de la VM —CPU, memoria y almacenamiento—, en lugar de cobros separados por cómputo y disco.
+
+Hay más de 50 configuraciones disponibles, desde 1 vCPU / 8 GB de RAM / 59 GB de NVMe hasta 96 vCPUs / 768 GB de RAM / 60 TB de almacenamiento NVMe, lo que ofrece flexibilidad tanto para cargas de trabajo de Postgres intensivas en cómputo como para aquellas con altas necesidades de almacenamiento.
+
+### Precios por nivel {#tier-based-pricing}
+
+Los precios, las funcionalidades y los límites de recursos varían según el nivel de la organización ([Basic, Scale o Enterprise](/es/products/cloud/features/cloud-tiers)); no obstante, todos los niveles incluyen las capacidades principales del servicio, como Postgres apto para producción sobre almacenamiento NVMe local, [CDC nativo hacia ClickHouse](/es/products/managed-postgres/clickpipes) y la [extensión `pg_clickhouse`](/es/products/managed-postgres/extensions).
+
+La siguiente comparativa resume las funcionalidades, capacidades y límites incluidos en cada nivel. Para comparar los precios de los distintos niveles, consulte la [calculadora de precios](https://clickhouse.com/pricing?service=postgres#pricing-calculator).
+
+<div className="ch-tier-cards">
+  <div className="ch-tier-card">
+    <div className="ch-tier-card-title">Basic</div>
+    <p className="ch-tier-card-description">Ideal para probar nuevas ideas o proyectos iniciales. Almacenamiento y memoria limitados.</p>
+
+    <ul className="ch-tier-card-list">
+      <li><a href="/es/products/managed-postgres/scaling">Hasta 8 GB de RAM para capacidad de cómputo</a></li>
+      <li><a href="/es/products/managed-postgres/scaling">Hasta 118 GB de almacenamiento NVMe local</a></li>
+      <li><a href="/es/products/managed-postgres/scaling">Escalado automático del almacenamiento</a></li>
+      <li><a href="/es/products/managed-postgres/backup-and-restore">Copias de seguridad con retención de 7 días</a></li>
+      <li><a href="/es/products/managed-postgres/backup-and-restore">PITR y ramas</a></li>
+      <li>Incluye <a href="/es/products/managed-postgres/high-availability">alta disponibilidad</a></li>
+      <li><a href="/es/products/managed-postgres/monitoring/query-insights">Query Insights</a></li>
+      <li><a href="/es/products/managed-postgres/extensions">Más de 90 extensiones de Postgres</a></li>
+      <li><a href="/es/products/managed-postgres/migrations/clickpipes">Migración de datos totalmente gestionada</a></li>
+      <li>Soporte experto con un tiempo de respuesta de 1 día hábil</li>
+      <li><a href="/es/products/cloud/guides/security/cloud-access-management/manage-my-account">Autenticación mediante inicio de sesión único (SSO)</a> con las cuentas sociales de Google o Microsoft</li>
+      <li><a href="/es/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">Autenticación multifactor</a></li>
+    </ul>
+  </div>
+
+  <div className="ch-tier-card">
+    <div className="ch-tier-card-title">Scale</div>
+    <p className="ch-tier-card-description">Para entornos de producción, datos a gran escala o casos de uso profesionales.</p>
+    <p className="ch-tier-card-lead">Todo lo incluido en Basic, además de:</p>
+
+    <ul className="ch-tier-card-list">
+      <li><a href="/es/products/managed-postgres/scaling">Hasta 60 TB de almacenamiento</a></li>
+      <li><a href="/es/products/managed-postgres/scaling">Hasta 96 vCPU y 768 GB de RAM</a></li>
+      <li><a href="/es/products/managed-postgres/read-replicas">Réplicas de lectura</a></li>
+      <li><a href="/es/products/managed-postgres/upgrades#scheduled-upgrades">Actualizaciones programadas</a></li>
+      <li><a href="/es/products/managed-postgres/security">Conectividad de red privada</a></li>
+      <li>Soporte experto 24x7 con un tiempo de respuesta de 1 hora para incidencias de gravedad 1</li>
+    </ul>
+  </div>
+
+  <div className="ch-tier-card">
+    <div className="ch-tier-card-title">Enterprise</div>
+    <p className="ch-tier-card-description">Para entornos de producción, volúmenes de datos muy grandes o casos de uso empresariales.</p>
+    <p className="ch-tier-card-lead">Todo lo incluido en Scale, además de:</p>
+
+    <ul className="ch-tier-card-list">
+      <li>Soporte Enterprise con un tiempo de respuesta de 30 min para incidencias de gravedad 1</li>
+      <li>Regiones privadas</li>
+      <li>Ingeniero de soporte principal asignado</li>
+      <li><a href="/es/products/managed-postgres/extensions">Extensiones personalizadas</a> (*sujetas a aprobación)</li>
+      <li><a href="/es/products/managed-postgres/upgrades#days-of-the-week">Selección del día de la semana para las actualizaciones programadas</a></li>
+    </ul>
+  </div>
+</div>
+
+### Tipos de instancia {#instance-types}
+
+Las configuraciones de instancia se agrupan en tres categorías para facilitar la elección de la infraestructura según las características de cada workload. No todos los tipos de instancia están disponibles en todas las regiones. GCP se encuentra en vista previa privada.
+
+* **Optimizado para Memoria:** Diseñado para workloads de uso intensivo de memoria, con una proporción de memoria a CPU de 1:8. En AWS, admite las familias `r8id` y `r6id` basadas en x86, y las familias `r8gd` y `r6gd` basadas en ARM64 (AWS Graviton). En GCP, admite las familias `n2` y `n2d` basadas en x86. Es la opción idónea para conjuntos de trabajo grandes, porcentajes de aciertos de caché elevados y workloads de bases de datos limitados por la memoria.
+* **Optimizado para Almacenamiento:** Diseñado para workloads que requieren grandes cantidades de almacenamiento NVMe local sin escalar proporcionalmente la capacidad de cómputo. En AWS, admite las familias `i8g` e `i8ge` basadas en ARM64 (AWS Graviton), y las familias `i7i` e `i7ie` basadas en x86, con configuraciones que ofrecen hasta 60 TB de almacenamiento NVMe local. En GCP, admite la familia `z3` basada en x86. Es la opción idónea para conjuntos de datos grandes, workloads de time-series, almacenamiento de logs y eventos, y workloads OLTP storage-heavy.
+* **Optimizado para CPU:** Diseñado para workloads de uso intensivo de cómputo, con una proporción de memoria a CPU de 1:4. En AWS, admite las familias `m8id` y `m6id` basadas en x86, y las familias `m8gd` y `m6gd` basadas en ARM64 (AWS Graviton). En GCP, admite las familias `n2` y `n2d` basadas en x86. Es la opción idónea para workloads transaccionales de alta concurrencia y consultas CPU-bound.
+
+## Calculadora de precios {#pricing-calculator}
+
+Usa la [calculadora de precios](https://clickhouse.com/pricing?service=postgres#pricing-calculator) para estimar los costos de despliegue en distintos perfiles de workload y configuraciones. Puedes personalizar:
+
+* nivel de la organización (Basic, Scale, Enterprise)
+* Proveedor de nube y región
+* Tipo de configuración (Memory, Storage o Optimizado para CPU) con tamaño de vCPU, memoria y almacenamiento
+* Arquitectura de CPU (ARM o x86)
+* Configuraciones de standby / alta disponibilidad (HA)
+
+Esto te permite comparar precios entre más de 50 combinaciones de configuración admitidas y encontrar la opción que mejor se adapte a tu workload.
+
+## Precios por proveedor de nube {#cloud-provider-pricing}
+
+### Precios en AWS {#aws-pricing}
+
+En AWS, Managed Postgres está disponible de forma general y se factura de la siguiente manera a partir del **9 de noviembre de 2026**:
+
+* **Copias de seguridad:** se incluye un almacenamiento de copias de seguridad equivalente al disco aprovisionado. El almacenamiento adicional de copias de seguridad se factura al precio de almacenamiento de ClickHouse Cloud de su región; por ejemplo, $25.30 por TB-mes en `us-east-1`. Consulte [Copia de seguridad y restauración](/es/products/managed-postgres/backup-and-restore).
+* **Transferencia de datos:** se factura según las [tarifas de transferencia de datos de ClickHouse Cloud](/es/products/cloud/reference/billing/network-data-transfer). Los costes de red deberían ser bajos cuando su aplicación y Managed Postgres se encuentran en la misma región y, si utiliza ClickPipes, cuando Managed Postgres y ClickHouse también lo están.
+* **ClickPipes:** la capacidad de cómputo es gratuita para la replicación de datos de Managed Postgres a ClickHouse Cloud. La salida de Managed Postgres hacia ClickPipes se mide según las [tarifas estándar de transferencia de datos](/es/products/cloud/reference/billing/network-data-transfer), por lo que no se aplican cargos de red cuando Managed Postgres y ClickHouse Cloud se encuentran en la misma región.
+* **WalShadow:** gratuito para la replicación de datos de Managed Postgres a ClickHouse Cloud durante la vista previa privada.
+
+<Note>
+  La transferencia de datos se clasifica comparando la IP de destino con los rangos de IP publicados por el proveedor de nube. El tráfico hacia un destino cuya IP no figure en los rangos publicados para su región se mide como salida a Internet pública, aunque ese destino esté alojado en el mismo proveedor de nube; por ejemplo, una réplica que utilice su propio bloque de IP (BYOIP). Si se conecta a una réplica de este tipo, póngase en contacto con [soporte](https://clickhouse.com/support/program) para que podamos revisar la clasificación.
+</Note>
+
+### Precios de la Private Preview en GCP {#gcp-private-preview-pricing}
+
+ClickHouse Managed Postgres en GCP es gratuito durante la Private Preview. Los precios aplicables una vez finalizada la Private Preview aún se están definiendo. Si necesita más información, póngase en contacto con nosotros para conocer cómo podrían ser los precios finales. Puede inscribirse en la lista de espera de la Private Preview en GCP [aquí](https://clickhouse.com/cloud/postgres#gcp-waitlist).
+
+## Desactivación del servicio {#service-deactivation}
+
+Desactivar un Servicio administrado de Postgres es similar a detener un servicio de ClickHouse Cloud. Se produce cuando su organización deja de cumplir los requisitos de facturación, en los mismos términos y plazos que el resto de servicios de ClickHouse Cloud. Por ejemplo, cuando su período de prueba finaliza sin haber configurado un método de facturación o cuando falla un pago. Consulte [Cumplimiento de los requisitos de facturación de ClickHouse Cloud](/es/products/cloud/reference/billing/billing-compliance) para conocer las reglas.
+
+Cuando se desactiva un servicio:
+
+* Se bloquean las conexiones existentes.
+* Se bloquean las nuevas conexiones.
+* El servicio deja de facturarse.
+* Sus datos y copias de seguridad se conservan; no se eliminan. Para obtener información sobre la retención de datos y de copias de seguridad, consulte [cumplimiento de los requisitos de facturación](/es/products/cloud/reference/billing/billing-compliance).
+
+Para volver a poner en marcha el servicio:
+
+1. Pague el saldo pendiente de su organización.
+2. Abra la pestaña **Settings** del servicio y haga clic en **Start**. Consulte [Configuración](/es/products/managed-postgres/settings#service-actions).
+
+El botón **Start** solo aparece cuando el servicio está desactivado y permanece deshabilitado mientras la factura de su organización esté pendiente de pago. Una vez pagada la factura, el botón se habilita. Haga clic en él para volver a iniciar el servicio.
+
+## Avisos sobre precios {#pricing-disclaimers}
+
+* Las operaciones de escalado y mantenimiento ejecutan brevemente nuevas instancias en paralelo con las antiguas para mantener su base de datos en línea; es posible que vea cargos superpuestos por las instancias antiguas y las nuevas mientras se completa la transición. La duración de esta ventana varía según el tipo de instancia y el volumen de almacenamiento.
+* El servicio puede recurrir a un tipo de instancia comparable de una generación anterior para mantener la configuración de alta disponibilidad seleccionada, si la capacidad del tipo de instancia seleccionado está temporalmente restringida en algunas de las zonas de disponibilidad. Se le facturará según la tarifa del tipo de instancia de destino.

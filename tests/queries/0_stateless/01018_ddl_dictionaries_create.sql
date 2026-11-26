@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-flaky-check
 
 SET send_logs_level = 'fatal';
 

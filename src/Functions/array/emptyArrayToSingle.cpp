@@ -2,12 +2,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -17,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -46,7 +48,8 @@ namespace
             const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
             IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
-            NullMap * res_null_map)
+            NullMap * res_null_map,
+            const IDataType & data_type)
         {
             if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
             {
@@ -62,6 +65,14 @@ namespace
 
                 ColumnArray::Offset src_prev_offset = 0;
                 ColumnArray::Offset res_prev_offset = 0;
+                /// The default of an Enum is its lowest member, not the column zero.
+                T default_value{};
+                if (!data_type.isDefaultInsertTrivial())
+                {
+                    auto default_column = data_type.createColumn();
+                    data_type.insertDefaultInto(*default_column);
+                    default_value = assert_cast<const ColumnVector<T> &>(*default_column).getData()[0];
+                }
 
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -82,7 +93,7 @@ namespace
                     }
                     else
                     {
-                        res_data.push_back(T());
+                        res_data.push_back(default_value);
                         ++res_prev_offset;
                         res_offsets[i] = res_prev_offset;
 
@@ -248,7 +259,7 @@ namespace
                     src_array_prev_offset = src_array_offsets[i];
 
                     if (src_array_prev_offset)
-                        src_string_prev_offset = src_string_offsets[src_array_prev_offset - 1];
+                        src_string_prev_offset = src_string_offsets[static_cast<ssize_t>(src_array_prev_offset) - 1];
                 }
 
                 return true;
@@ -262,7 +273,8 @@ namespace
             const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
             IColumn & res_data, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
-            NullMap * res_null_map)
+            NullMap * res_null_map,
+            const IDataType & data_type)
         {
             size_t size = src_offsets.size();
             res_offsets.resize(size);
@@ -292,7 +304,10 @@ namespace
                 }
                 else
                 {
-                    res_data.insertDefault();
+                    if (data_type.isDefaultInsertTrivial())
+                        res_data.insertDefault();
+                    else
+                        data_type.insertDefaultInto(res_data);
                     ++res_prev_offset;
                     res_offsets[i] = res_prev_offset;
 
@@ -310,32 +325,24 @@ namespace
             const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
             IColumn & res_data_col, ColumnArray::Offsets & res_array_offsets,
             const NullMap * src_null_map,
-            NullMap * res_null_map)
+            NullMap * res_null_map,
+            const IDataType & data_type)
         {
-            if (!(executeNumber<UInt8, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<UInt16, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<UInt32, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<UInt64, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<Int8, nullable>   (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<Int16, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<Int32, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<Int64, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<Float32, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
-                || executeNumber<Float64, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+            if (!(executeNumber<UInt8, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<UInt16, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<UInt32, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<UInt64, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<Int8, nullable>   (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<Int16, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<Int32, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<Int64, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<Float32, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
+                || executeNumber<Float64, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type)
                 || executeString<nullable>         (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeFixedString<nullable>    (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)))
-                executeGeneric<nullable>           (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map);
+                executeGeneric<nullable>           (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map, data_type);
         }
     }
-}
-
-DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-    if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
-
-    return arguments[0];
 }
 
 ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -348,19 +355,24 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
             arguments[0].column->getName(), getName());
 
+    const ColumnArray::Offsets & src_offsets = array->getOffsets();
+
+    /// No array is empty: the result is the argument itself.
+    if (src_offsets.empty() || (src_offsets[0] != 0 && std::adjacent_find(src_offsets.begin(), src_offsets.end()) == src_offsets.end()))
+        return arguments[0].column;
+
     MutableColumnPtr res_ptr = array->cloneEmpty();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets & src_offsets = array->getOffsets();
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
     const NullMap * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
 
-    const IColumn * inner_col;
-    IColumn * inner_res_col;
+    const IColumn * inner_col = nullptr;
+    IColumn * inner_res_col = nullptr;
 
     const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
     if (nullable_col)
@@ -378,10 +390,12 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
         inner_res_col = &res_data;
     }
 
+    const DataTypePtr data_type = removeNullable(assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType());
+
     if (nullable_col)
-        FunctionEmptyArrayToSingleImpl::executeDispatch<true>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
+        FunctionEmptyArrayToSingleImpl::executeDispatch<true>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map, *data_type);
     else
-        FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
+        FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map, *data_type);
 
     return res_ptr;
 }
@@ -409,7 +423,7 @@ INSERT INTO test VALUES ([], [], []);
 SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM test;
 )", R"(
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

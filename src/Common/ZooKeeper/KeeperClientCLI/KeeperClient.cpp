@@ -1,4 +1,4 @@
-#include <Common/filesystemHelpers.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
@@ -8,9 +8,67 @@
 namespace DB
 {
 
+[[clang::no_destroy]] std::map<String, Command> KeeperClientBase::commands;
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
+
+/// Format a ZooKeeper node name for display and round-tripping through the parser.
+/// Returns the name bare when it contains no special characters, or wrapped in
+/// single quotes with \' and \\ escaping otherwise. The result is always parseable
+/// by parseKeeperArg (either as a bare token or as an inline quoted segment).
+/// Used by both `ls` output and tab completion.
+String formatKeeperNodeName(const String & name)
+{
+    /// parseKeeperArg in bare mode only consumes BareWord, Slash, Dot, Number,
+    /// Minus tokens. Any other character (semicolons, parens, quotes, operators,
+    /// control chars, non-ASCII, etc.) would stop the parser. We check whether
+    /// each byte is safe for bare output; spaces and backslashes are safe with
+    /// escaping; everything else that the tokenizer treats specially needs quoting.
+    bool needs_escaping = false; /// spaces/backslashes — can use backslash escaping
+    bool needs_quoting = false;  /// anything else that isn't bare-safe
+    for (unsigned char c : name)
+    {
+        if (c == ' ' || c == '\\')
+            needs_escaping = true;
+        else if (!isWordCharASCII(c) && c != '/' && c != '.' && c != '-')
+            needs_quoting = true;
+    }
+
+    if (!needs_escaping && !needs_quoting)
+        return name;
+
+    /// If the name only has spaces and backslashes, use backslash escaping.
+    /// This preserves prefix matching for tab completion (the user types bare
+    /// characters, and the escaped form shares the same prefix).
+    if (!needs_quoting)
+    {
+        String result;
+        result.reserve(name.size() + 4);
+        for (unsigned char c : name)
+        {
+            if (c == ' ' || c == '\\')
+                result += '\\';
+            result += static_cast<char>(c);
+        }
+        return result;
+    }
+
+    /// Name contains characters not safe for bare output (semicolons, parens,
+    /// quotes, non-ASCII, etc.) — must use single-quoted form with \' and \\
+    /// escaping. Prefix matching may not work for partially-typed names, but
+    /// completing right after '/' still works.
+    String result = "'";
+    for (char c : name)
+    {
+        if (c == '\'' || c == '\\')
+            result += '\\';
+        result += c;
+    }
+    result += '\'';
+    return result;
 }
 
 String KeeperClientBase::executeFourLetterCommand(const String & /* command */)
@@ -33,11 +91,7 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
 
 fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    String result;
-    if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
-    else
-        result = fs::weakly_canonical(cwd / relative);
+    String result = (cwd / relative).lexically_normal();
 
     if (result.ends_with('/') && result.size() > 1)
         result.pop_back();
@@ -55,7 +109,7 @@ void KeeperClientBase::loadCommands(std::vector<Command> && new_commands)
     }
 
     for (const auto & command : four_letter_word_commands)
-        registered_commands_and_four_letter_words.push_back(command);
+        registered_commands_and_four_letter_words.push_back(String(command));
 
     std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }
@@ -115,6 +169,7 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
 {
     loadCommands({
         std::make_shared<LSCommand>(),
+        std::make_shared<LSRCommand>(),
         std::make_shared<CDCommand>(),
         std::make_shared<SetCommand>(),
         std::make_shared<CreateCommand>(),
@@ -138,6 +193,7 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
         std::make_shared<MVCommand>(),
         std::make_shared<MVRCommand>(),
         std::make_shared<GetAclCommand>(),
+        std::make_shared<WaitWatchCommand>(),
     });
 }
 

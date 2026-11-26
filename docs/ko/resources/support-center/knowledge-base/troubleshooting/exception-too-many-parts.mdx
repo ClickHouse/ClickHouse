@@ -1,0 +1,122 @@
+---
+title: ClickHouse에서 "Too many parts" 예외 해결하기
+description: 삽입을 배칭하고 비동기 삽입을 사용하며 적절한 파티셔닝 키를 선택해 "Too many parts" 예외를 진단하고 해결하는 방법을 알아봅니다.
+date: 2023-03-20
+tags: ['오류 및 예외']
+keywords: ['Too many parts']
+---
+
+<div id="what-the-exception-means">
+  ## 예외의 의미
+</div>
+
+ClickHouse는 `MergeTree` 테이블의 활성 데이터 파트 수가 설정된 한도를 `INSERT`로 초과하게 되면 `Too many parts` 예외를 발생시킵니다. 이 예외에는 흔히 `Merges are processing significantly slower than inserts`라는 메시지가 포함됩니다.
+
+동기식 `INSERT`는 실행될 때마다 최소 1개의 데이터 파트를 생성합니다. 하나의 삽입에 여러 파티션 값에 해당하는 행이 포함되어 있으면 ClickHouse는 영향을 받는 각 파티션마다 하나의 파트를 생성할 수 있습니다. 백그라운드 머지는 작은 파트들을 더 큰 파트로 합치지만, 새 파트가 ClickHouse의 머지 처리 속도보다 더 빠르게 생성되면 활성 파트 수는 계속 증가합니다.
+
+이 예외는 다음 설정 중 하나에 의해 트리거될 수 있습니다.
+
+* [`parts_to_throw_insert`](/ko/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert): 단일 파티션의 활성 파트 수를 제한합니다.
+* [`max_parts_in_total`](/ko/reference/settings/merge-tree-settings/max-parts#max_parts_in_total): 테이블 전체의 활성 파트 총수를 제한합니다.
+
+<div id="diagnose-the-cause">
+  ## 원인 파악
+</div>
+
+다음 쿼리를 사용하여 활성 파트가 가장 많은 파티션을 찾습니다:
+
+```sql
+SELECT
+    database,
+    table,
+    partition_id,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
+FROM system.parts
+WHERE active
+  AND database = '<database_name>'
+  AND table = '<table_name>'
+GROUP BY
+    database,
+    table,
+    partition_id
+ORDER BY active_parts DESC;
+```
+
+`max_parts_in_total`에 의해 테이블 전체에 적용되는 제한을 확인하려면, 테이블의 모든 활성 파트 수를 셉니다:
+
+```sql
+SELECT
+    database,
+    table,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
+FROM system.parts
+WHERE active
+  AND database = '<database_name>'
+  AND table = '<table_name>'
+GROUP BY
+    database,
+    table;
+```
+
+일반적인 원인은 다음과 같습니다.
+
+* 빈번한 소규모 동기 삽입.
+* high-cardinality 파티셔닝 키.
+* 여러 파티션 값에 해당하는 행이 포함된 삽입.
+* 스토리지 처리량이 제한적이거나, 사용 가능한 디스크 공간이 부족하거나, 기타 리소스 경합이 발생해 백그라운드 머지가 이를 따라가지 못하는 경우.
+
+현재 실행 중인 머지는 [`system.merges`](/ko/reference/system-tables/merges)에서 확인하고, 머지 실패와 관련된 서버 로그를 검토할 수 있습니다.
+
+<div id="resolve-the-exception">
+  ## 예외 해결하기
+</div>
+
+<div id="batch-synchronous-inserts">
+  ### 동기 삽입 배치 처리
+</div>
+
+삽입하기 전에 클라이언트에서 행을 배치로 묶으십시오. 각 배치에는 최소 1,000개의 행이 포함되어야 하며, 이상적으로는 10,000~100,000개의 행을 담는 것이 좋습니다. 초당 약 1회의 동기 `INSERT`를 목표로 하십시오. 횟수는 줄이고 한 번에 더 큰 규모로 삽입하면 생성되는 파트 수가 줄어들고 백그라운드 머지에 필요한 작업도 감소합니다.
+
+<div id="use-asynchronous-inserts">
+  ### 비동기 삽입 사용
+</div>
+
+클라이언트 측 배칭을 사용하기 어렵다면, ClickHouse가 서버에서 들어오는 데이터를 배치 처리할 수 있도록 [비동기 삽입](/ko/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)을 사용하십시오:
+
+```sql
+INSERT INTO <table_name>
+SETTINGS
+    async_insert = 1,
+    wait_for_async_insert = 1
+VALUES (...);
+```
+
+`wait_for_async_insert = 1`로 유지하여 데이터가 성공적으로 기록된 후에만 ClickHouse가 삽입을 확인하도록 하십시오.
+
+<div id="review-the-partitioning-key">
+  ### 파티셔닝 키 검토
+</div>
+
+카디널리티가 낮은 파티셔닝 키를 사용하고, 사용자 또는 요청 식별자와 같은 값으로 파티셔닝하는 것은 피하십시오. ClickHouse는 같은 파티션 내에서만 파트를 머지하므로, 파티션 수가 많으면 효과적으로 머지할 수 없습니다. 자세한 내용은 [파티셔닝 키 선택](/ko/concepts/best-practices/partitioning-keys)을 참조하십시오.
+
+<div id="investigate-merge-bottlenecks">
+  ### 머지 병목 현상 조사
+</div>
+
+삽입이 이미 적절한 단위로 배치 처리되고 있다면 스토리지 성능, 사용 가능한 디스크 공간, 그리고 동시에 실행 중인 백그라운드 작업을 확인하십시오. 머지 속도는 스토리지 시스템, 테이블 엔진, 정렬 키(sorting key), 압축, 그리고 사용 가능한 CPU 및 I/O 처리 용량에 따라 달라집니다.
+
+<div id="avoid-increasing-part-limits-as-the-primary-fix">
+  ### 주된 해결책으로 파트 제한을 늘리지는 마십시오
+</div>
+
+`parts_to_throw_insert` 또는 `max_parts_in_total`을 늘려도 과도한 파트 생성의 근본 원인은 해결되지 않습니다. 제한을 높이면 예외 발생을 늦출 수는 있지만, 파일 시스템과 메타데이터 오버헤드를 늘리고 쿼리 성능을 저하시킬 수도 있습니다. 이러한 설정은 원인을 파악하고 시스템에 충분한 용량이 있는지 확인한 후에만 변경하십시오.
+
+<div id="verify-the-recovery">
+  ## 복구 상태 확인
+</div>
+
+삽입 전략 또는 파티셔닝 방식을 변경한 후 진단 쿼리를 다시 실행하십시오. 백그라운드 머지가 밀린 작업을 처리하면서 활성 파트 수는 먼저 안정화된 다음 감소해야 합니다. 적체가 해소될 때까지 삽입 실패, 여유 디스크 공간, [`system.merges`](/ko/reference/system-tables/merges)를 계속 모니터링하십시오.

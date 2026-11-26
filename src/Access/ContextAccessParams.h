@@ -14,6 +14,7 @@ namespace Poco::Net
 namespace DB
 {
 struct Settings;
+class AccessRightsElements;
 
 /// Parameters which are used to calculate access rights and some related stuff like roles or constraints.
 class ContextAccessParams
@@ -25,6 +26,7 @@ public:
         bool use_default_roles_,
         const std::shared_ptr<const std::vector<UUID>> & current_roles_,
         const std::shared_ptr<const std::vector<UUID>> & external_roles_,
+        const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
         const Settings & settings_,
         const String & current_database_,
         const ClientInfo & client_info_,
@@ -39,6 +41,10 @@ public:
     const bool use_default_roles;
     const std::shared_ptr<const std::vector<UUID>> current_roles;
     const std::shared_ptr<const std::vector<UUID>> external_roles;
+
+    /// If not null, the access rights are limited to the intersection with these elements.
+    /// This comes from the GRANTS clause of the authentication method the user logged in with.
+    const std::shared_ptr<const AccessRightsElements> authentication_grants;
 
     const UInt64 readonly;
     const bool allow_ddl;
@@ -59,8 +65,12 @@ public:
     /// Initial user is used to combine row policies with.
     const std::optional<UUID> initial_user_id;
 
+    /// Names of the roles the initial query was running with (set by `SET ROLE`), as forwarded by the initiator.
+    /// If not null, the row policies of the initial user are taken for these roles instead of the default roles.
+    const std::optional<std::vector<String>> initial_user_current_roles;
+
     /// Outputs `ContextAccessParams` to string for logging.
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     friend bool operator <(const ContextAccessParams & left, const ContextAccessParams & right);
     friend bool operator ==(const ContextAccessParams & left, const ContextAccessParams & right);

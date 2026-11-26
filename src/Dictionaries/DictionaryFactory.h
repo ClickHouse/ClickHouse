@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Common/Documentation.h>
 #include <Dictionaries/IDictionary.h>
 
 
@@ -30,7 +31,7 @@ public:
 
     /// Create dictionary from AbstractConfiguration parsed
     /// from xml-file on filesystem.
-    DictionaryPtr create(
+    [[nodiscard]] DictionaryPtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -46,13 +47,18 @@ public:
         ContextPtr global_context,
         bool created_from_ddl)>;
 
-    bool isComplex(const std::string & layout_type) const;
+    [[nodiscard]] bool isComplex(const std::string & layout_type) const;
 
     /// If the argument `layout_type` is not complex layout and has corresponding complex layout,
     /// change `layout_type` to corresponding complex and return true; otherwise do nothing and return false.
     bool convertToComplex(std::string & layout_type) const;
 
-    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex = true);
+    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex = true, Documentation documentation = {});
+
+    [[nodiscard]] std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    /// Returns the embedded documentation for a dictionary layout (empty if none was registered).
+    [[nodiscard]] Documentation getDocumentation(const std::string & layout_type) const;
 
 private:
     struct RegisteredLayout
@@ -60,6 +66,7 @@ private:
         LayoutCreateFunction layout_create_function;
         bool is_layout_complex;
         bool has_layout_complex;
+        Documentation documentation;
     };
 
     using LayoutRegistry = UnorderedMapWithMemoryTracking<std::string, RegisteredLayout>;

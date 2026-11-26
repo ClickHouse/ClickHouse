@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/Access/parseAccessEntityName.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -15,7 +16,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 ostr << ',';
-            ostr << ' ' << backQuoteIfNeed(name);
+            ostr << ' ' << backQuoteAccessEntityNameIfNeed(name);
         }
     }
 }
@@ -39,10 +40,12 @@ String ASTShowCreateAccessEntityQuery::getID(char) const
 ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 {
     auto res = make_intrusive<ASTShowCreateAccessEntityQuery>(*this);
+    res->children.clear();
 
     if (row_policy_names)
         res->row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
+    cloneOutputOptions(*res);
     return res;
 }
 
@@ -61,7 +64,7 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(WriteBuffer & ostr, const F
     }
 
     if (!short_name.empty())
-        ostr << " " << backQuoteIfNeed(short_name);
+        ostr << " " << backQuoteAccessEntityNameIfNeed(short_name);
 
     if (database_and_table_name)
     {
