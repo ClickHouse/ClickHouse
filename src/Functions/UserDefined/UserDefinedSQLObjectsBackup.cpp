@@ -12,6 +12,7 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <base/sort.h>
@@ -107,7 +108,7 @@ namespace
         auto backup = restorer.getBackup();
 
         VectorWithMemoryTracking<std::pair<String, ASTPtr>> res;
-        std::unordered_map<String /* object name */, String /* formatted statement */> statements_by_name;
+        UnorderedMapWithMemoryTracking<String /* object name */, String /* formatted statement */> statements_by_name;
 
         for (const auto & data_path_in_backup : data_paths_in_backup)
         {
