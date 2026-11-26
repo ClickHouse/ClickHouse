@@ -7541,15 +7541,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
-    /// While `enable_block_offset_column` is enabled and `enable_block_number_column` is not, merges persist
-    /// `_block_offset` of the source parts but not `_block_number`. A merged part then has one block number
-    /// (the minimal block number of the part) for all of its rows, while the persisted block offsets repeat
-    /// between the rows that came from different source parts. Enabling `enable_block_number_column` after that
-    /// makes these non-unique pairs of (`_block_number`, `_block_offset`) permanent, and lightweight updates and
-    /// lightweight deletes in patch mode, which identify rows by this pair, would be applied to wrong rows.
-    /// This covers `MODIFY SETTING`, `RESET SETTING`, and any other way to get the setting enabled by this ALTER.
-    /// A table without rows has no such parts, so it is allowed there.
-    /// An ALTER that was already accepted by the initiator is not checked again.
+    /// Parts merged with only `enable_block_offset_column` enabled store `_block_offset` without `_block_number`,
+    /// so (`_block_number`, `_block_offset`) is not unique in them. Lightweight updates identify rows by this pair,
+    /// so enabling `enable_block_number_column` on such a table is refused, unless the table is empty.
     if (!is_secondary_replay
         && (*settings_from_storage)[MergeTreeSetting::enable_block_offset_column]
         && !(*settings_from_storage)[MergeTreeSetting::enable_block_number_column]
@@ -7558,11 +7552,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Enabling the `_block_number` column materialization is prohibited for table {}, "
-            "because the `_block_offset` column is already enabled and the table contains data. "
-            "This may lead to duplicates in (`_block_number`, `_block_offset`), "
-            "so further lightweight updates would modify or delete more rows than needed, leading to data loss. "
-            "Create a new table with both settings enabled and copy the data into it instead",
+            "Cannot enable `enable_block_number_column` for table {}: "
+            "`enable_block_offset_column` is already enabled and the table contains data. "
+            "Existing rows may share the same (`_block_number`, `_block_offset`), "
+            "so lightweight updates and deletes would affect more rows than intended. This leads to data loss. "
+            "Create a new table with both settings enabled and copy the data into it",
             getStorageID().getNameForLogs());
     }
 
