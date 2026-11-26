@@ -149,6 +149,10 @@ DROP TABLE t_skip_granularity_one;
 
 DROP TABLE IF EXISTS t_reverse_granularity_near_max;
 
+-- Disable force_primary_key_reverse_order: with a descending key `ORDER BY x DESC` is a forward read (`Read type: InOrder`),
+-- which does not split the mark ranges backwards.
+SET force_primary_key_reverse_order = 0;
+
 -- Adaptive granularity keeps more than one mark in the part, which is what a reverse read splits.
 CREATE TABLE t_reverse_granularity_near_max (x UInt64)
 ENGINE = MergeTree() ORDER BY x
