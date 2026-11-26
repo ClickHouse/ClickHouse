@@ -7,6 +7,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/checkEnumValue.h>
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
@@ -23,6 +24,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -126,29 +128,41 @@ static size_t readBSONSize(ReadBuffer & in)
     return size;
 }
 
-template <typename T>
+template <typename T, bool check_enum_value = false>
 static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     /// We allow to read any integer into any integer column.
     /// For example we can read BSON Int32 into ClickHouse UInt8.
+    auto insert = [&](auto value)
+    {
+        if constexpr (check_enum_value)
+        {
+            /// BSON int32 and int64 are signed; a bool byte is checked as the unsigned value that is stored.
+            if constexpr (std::is_same_v<decltype(value), UInt8>)
+                checkEnumValue<DataTypeEnum<T>>(*data_type, static_cast<UInt16>(value));
+            else
+                checkEnumValue<DataTypeEnum<T>>(*data_type, static_cast<std::make_signed_t<decltype(value)>>(value));
+        }
+        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+    };
 
     if (bson_type == BSONType::INT32)
     {
         UInt32 value = 0;
         readBinaryLittleEndian(value, in);
-        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+        insert(value);
     }
     else if (bson_type == BSONType::INT64)
     {
         UInt64 value = 0;
         readBinaryLittleEndian(value, in);
-        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+        insert(value);
     }
     else if (bson_type == BSONType::BOOL)
     {
         UInt8 value = 0;
         readBinaryLittleEndian(value, in);
-        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+        insert(value);
     }
     else
     {
@@ -555,7 +569,13 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             lc_column.insertFromFullColumn(*tmp_column, 0);
             return res;
         }
-        case TypeIndex::Enum8: [[fallthrough]];
+        case TypeIndex::Enum8:
+            if (format_settings.check_conversion_from_numbers_to_enum)
+            {
+                readAndInsertInteger<Int8, true>(*in, column, data_type, bson_type);
+                return true;
+            }
+            [[fallthrough]];
         case TypeIndex::Int8:
         {
             readAndInsertInteger<Int8>(*in, column, data_type, bson_type);
@@ -566,7 +586,13 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertInteger<UInt8>(*in, column, data_type, bson_type);
             return true;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
+        case TypeIndex::Enum16:
+            if (format_settings.check_conversion_from_numbers_to_enum)
+            {
+                readAndInsertInteger<Int16, true>(*in, column, data_type, bson_type);
+                return true;
+            }
+            [[fallthrough]];
         case TypeIndex::Int16:
         {
             readAndInsertInteger<Int16>(*in, column, data_type, bson_type);

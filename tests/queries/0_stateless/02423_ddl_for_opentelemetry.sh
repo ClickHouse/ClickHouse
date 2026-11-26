@@ -132,7 +132,8 @@ echo "===exception===="
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 execute_query $trace_id 4 -q "DROP TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry_non_exist ON CLUSTER ${cluster_name}" 2>&1 | grep 'DB::Exception ' | grep -Fv "UNKNOWN_TABLE"
 
-check_span 1 $trace_id "TCPHandler"
+# Only the client's query: the missing-table hint may query another test's `Remote` database inside this trace.
+check_span 1 $trace_id "TCPHandler" "lower(hex(parent_span_id)) = '5150000000000515'"
 
 if [ $cluster_name = "test_shard_localhost" ]; then
     expected=1

@@ -2985,6 +2985,8 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     result.float_precision = 0;
     result.bool_true_representation = "true";
     result.bool_false_representation = "false";
+    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
+    result.session_time_zone = nullptr;
     return result;
 }
 
@@ -3809,11 +3811,15 @@ ColumnPtr convertObjectViaFormatParse(
     }
     write_helper.finalize();
 
+    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
+    FunctionConvertSettings parse_settings = cast_settings;
+    parse_settings.format_settings.session_time_zone = nullptr;
+
     ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
     if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, cast_settings);
+        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, parse_settings);
 
-    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, cast_settings);
+    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings);
 }
 
 } /// anonymous namespace
@@ -5066,7 +5072,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
     const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
-        && (cast_type == CastType::accurate || isTuple(from_nested_type));
+        && (cast_type == CastType::accurate || isTuple(from_nested_type) || !from_nested_type->isDefaultInsertTrivial());
 
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).

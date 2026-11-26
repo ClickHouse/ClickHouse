@@ -176,8 +176,8 @@ else()
     set(RUSTCWRAPPER "")
 endif()
 
-# Note that RUSTFLAGS_CPU is defined in cpu_features.cmake
-set(RUSTFLAGS ${RUSTFLAGS_CPU})
+# Note that RUSTFLAGS_CPU is defined in cpu_features.cmake and RUSTFLAGS_ADD in the root CMakeLists.txt
+set(RUSTFLAGS ${RUSTFLAGS_CPU} ${RUSTFLAGS_ADD})
 
 # Otherwise /usr/bin/ld will not be able to link our openssl build (built with lld) to openssl rust wrapper (built ld)
 if (LINKER_NAME MATCHES "lld")
@@ -196,19 +196,17 @@ if (TOOLCHAIN_PATH)
     list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
 endif()
 
-set(RUST_CARGO_BUILD_STD "")
+# Rebuild the standard library with our RUSTFLAGS, so it gets the sanitizer instrumentation and the stack protector too.
+set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
 # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
 if (SANITIZE STREQUAL "memory")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=memory" "-Zsanitizer-memory-track-origins")
 elseif (SANITIZE STREQUAL "thread")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
 elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     # Rust has no UBSan, so the combined ASan+UBSan build applies only ASan. Besides the
     # instrumentation itself, `-Zsanitizer=address` arms wasmtime's `cfg(asan)` guard, preventing
     # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
@@ -220,7 +218,6 @@ if (ENABLE_CFI)
         message(FATAL_ERROR "ENABLE_CFI requires Clang ${Rust_LLVM_VERSION_MAJOR} or newer, the LLVM version of rustc "
             "${Rust_VERSION} (${Rust_TOOLCHAIN}); found Clang ${CMAKE_CXX_COMPILER_VERSION}.")
     endif()
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Clinker-plugin-lto" "-Zsanitizer=cfi" "-Zsanitizer-cfi-normalize-integers")
     # The next trait solver fails to normalize the projections that the CFI type ids of some trait methods build (an
     # internal compiler error in Cranelift since nightly-2026-08-22, https://github.com/rust-lang/rust/issues/166055),
@@ -256,6 +253,8 @@ endif()
 # the BOOL value `OFF`, which is not equal to the empty string (see cmake/sanitize.cmake).
 if (SANITIZE)
     list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
+    # Check the preconditions of unsafe std functions (alignment, overlap, ...). A violation aborts, so not in production.
+    list(APPEND RUSTFLAGS "-Zub-checks=yes")
 endif()
 
 # Set metadata flag to force different hashes for different sanitizers
@@ -306,6 +305,14 @@ if (SANITIZE)
     set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
 codegen-units = 4")
     message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
+elseif (ENABLE_CFI)
+    # CFI links the crates as bitcode, where every codegen unit repeats the inline functions it uses.
+    # vortex-array keeps 4 units so that it is not the longest ThinLTO backend job of the link.
+    set(RUST_RELEASE_PROFILE_EXTRA "codegen-units = 1
+
+[profile.release.package.vortex-array]
+codegen-units = 4")
+    message(STATUS "Rust release profile: one codegen unit per crate, for the CFI link")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
@@ -501,9 +508,7 @@ function(clickhouse_config_crate_env target_name)
        corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
     endif()
 
-    if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
-        corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
-    endif()
+    corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
 
     # See [1] for more details, but basically:
     # - we need to explicitly set CXXSTDLIB to avoid using of libstdc++
