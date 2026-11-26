@@ -1577,10 +1577,12 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
     if (rows == 0)
         return result_type->createColumn();
 
-    /// Appending a default to a copy of shared aggregate states copies the states, so copy only the selected ones.
-    const bool copy_all_elements = array_elements.byteSize() <= rows * sizeof(UInt64) && !hasAggregateStates(array_elements);
-
     static constexpr UInt64 no_element = std::numeric_limits<UInt64>::max();
+
+    /// Appending a default to a copy of shared aggregate states copies the states, so copy only the selected ones.
+    /// The default after all elements needs a position, which an array of the maximum size of empty tuples has not.
+    const bool copy_all_elements = array_elements.byteSize() <= rows * sizeof(UInt64) && !hasAggregateStates(array_elements)
+        && array_size < no_element;
     const UInt64 default_marker = copy_all_elements ? array_size : no_element;
     auto positions_column = ColumnUInt64::create(rows);
     auto & positions = positions_column->getData();

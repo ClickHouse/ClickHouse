@@ -17,3 +17,10 @@ WITH replicate(arrayReduce('groupArrayState', range(toUInt64(1000))), range(1638
 SELECT sum(length(finalizeAggregation(a[if(number = 0, 1, 16385)])))
 FROM numbers(16384)
 SETTINGS max_block_size = 16384, max_memory_usage = 60000000;
+
+-- A constant array of the maximum number of empty tuples: a default cannot be appended to a copy of all elements.
+WITH toUInt64(ignore(number)) AS z,
+     arrayWithConstant(42007935 + z, tuple()) AS a,
+     arrayFlatten(replicate(a, arrayWithConstant(65537 + z, tuple()))) AS b,
+     arrayFlatten(replicate(b, arrayWithConstant(6700417 + z, tuple()))) AS c
+SELECT c[number] FROM numbers(2) SETTINGS max_memory_usage = 300000000;
