@@ -3353,9 +3353,7 @@ def test_archive(started_cluster):
     )
 
     query_id = f"query_{uuid.uuid4()}"
-    # Implementation with whole archive sending can have duplicates,
-    # this is was a mistake in implementation.
-    assert expected_count <= int(
+    assert expected_count == int(
         node2.query(f"SELECT count() FROM {cluster_function_old}", query_id=query_id)
     )
     node2.query("SYSTEM FLUSH LOGS")
