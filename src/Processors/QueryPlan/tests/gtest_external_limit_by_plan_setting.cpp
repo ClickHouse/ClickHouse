@@ -31,9 +31,9 @@ void registerLimitByStep(QueryPlanStepRegistry & registry);
 
 using namespace DB;
 
-/// External `LIMIT BY` thresholds are serialized only to peers whose plan version supports them.
-/// `QueryPlanSerializationSettings::readBinary` rejects unknown setting names, so older peers receive
-/// neither threshold and use in-memory execution with its memory requirements.
+/// External `LIMIT BY` thresholds are serialized only to peers whose plan version supports them. An older
+/// peer does not know their names, so it receives neither threshold and uses in-memory execution with its
+/// memory requirements.
 ///
 /// Step version 1 adds the input-order bit to the flags byte, followed by the sort description of the order,
 /// and is introduced at the same global version. Older peers preserve input order through their in-memory
@@ -123,7 +123,7 @@ TEST(ExternalLimitByPlanSetting, ThresholdSettingsRespectPeerVersion)
         QueryPlanSerializationSettings plan_settings;
         step.serializeSettings(plan_settings, version);
         WriteBufferFromOwnString out;
-        plan_settings.writeChangedBinary(out);
+        plan_settings.write(out);
         for (const auto * name : {"max_bytes_before_external_limit_by", "max_bytes_ratio_before_external_limit_by"})
             EXPECT_EQ(out.str().contains(name), version == current_version) << name;
     }
