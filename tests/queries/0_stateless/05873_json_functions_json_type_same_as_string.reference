@@ -4,6 +4,8 @@ t	19	645	1798	0
 te	19	632	1796	0
 -- comparisons, calls, distinct String results, mismatches
 t	33744	1776	679	0
+tb	180	45	16	0
+tbn	180	45	15	0
 tc	152	38	23	0
 te	7391	389	315	0
 tf	260	26	69	0
@@ -18,6 +20,7 @@ ts	56	28	18	0
 7	1	7	7
 1	5000000	5000000
 1	5000000	5000000
+5000000	5000000
 1
 -- examples: the call, on JSON, on String
 JSONLength(j)	3	3

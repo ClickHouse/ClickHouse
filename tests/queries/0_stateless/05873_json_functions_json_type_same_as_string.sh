@@ -275,6 +275,28 @@ EOF
     done
 } | build_queries ts "" j_skip o_skip | $CLICKHOUSE_CLIENT
 
+# A Bool inside SimpleAggregateFunction is a JSON boolean, and a LowCardinality typed value converts like its dictionary type.
+W="b SimpleAggregateFunction(any, Bool), nb SimpleAggregateFunction(any, Nullable(Bool)), ln LowCardinality(Nullable(String)), li LowCardinality(Nullable(Int32))"
+for name in tb tbn; do
+    settings=""
+    [ $name = tbn ] && settings="SETTINGS type_json_skip_null_typed_paths = 1"
+    $CLICKHOUSE_CLIENT --allow_suspicious_low_cardinality_types 1 -q "
+    CREATE TABLE ${name}_0 (id UInt32, j_w JSON($W)) ENGINE = Memory;
+    INSERT INTO ${name}_0 VALUES (1, '{\"b\":true,\"nb\":true,\"ln\":\"x\",\"li\":7}'), (2, '{\"b\":false,\"nb\":null,\"ln\":null,\"li\":null}'),
+        (3, '{\"nb\":false,\"ln\":\"12\",\"li\":-3}'), (4, '{}');
+    CREATE TABLE $name (id UInt32, j_w JSON($W), o_w String) ENGINE = Memory;
+    INSERT INTO $name SELECT id, j_w, j_w::String FROM ${name}_0 $settings;
+    "
+    {
+        for f in JSONHas JSONExtractInt JSONExtractUInt JSONExtractString JSONExtractRaw; do
+            for p in "'b'" "'nb'" "'ln'" "'li'" "materialize('b')"; do printf '%s|, %s|\n' "$f" "$p"; done
+        done
+        for ty in Int64 UInt8 "Nullable(Int64)" String "Nullable(String)"; do
+            for p in "'b'" "'nb'" "'ln'" "'li'"; do printf 'JSONExtract|, %s|%s\n' "$p" "$ty"; done
+        done
+    } | build_queries $name "$settings" j_w o_w | $CLICKHOUSE_CLIENT
+done
+
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- comparisons, calls, distinct String results, mismatches';
 SELECT tbl, count(), uniqExact(call), uniqExact(e), countIf(r != e) FROM res GROUP BY tbl ORDER BY tbl;
@@ -293,19 +315,20 @@ FROM numbers(256) SETTINGS max_execution_time = 10, max_memory_usage = '100M';
 "
 
 # A path of plain constant keys reads the subcolumn of the path, so the other paths of the row are not written; JSONHas
-# and the extraction of a typed String value do not write the value either, with or without
+# and the extraction of a typed String value, also a LowCardinality one, do not write the value either, with or without
 # `type_json_skip_null_typed_paths`. The whole-row route (a CaseInsensitive call) writes them and goes over the same
 # memory limit.
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- a constant path does not write the row';
-CREATE TABLE tm (j JSON, jt JSON(pad String)) ENGINE = Memory;
-INSERT INTO tm SELECT s, s FROM (SELECT concat('{\"a\":7,\"pad\":\"', repeat(repeat('x', 1000000), 5), '\"}') AS s);
+CREATE TABLE tm (j JSON, jt JSON(pad String), jl JSON(pad LowCardinality(String))) ENGINE = Memory;
+INSERT INTO tm SELECT s, s, s FROM (SELECT concat('{\"a\":7,\"pad\":\"', repeat(repeat('x', 1000000), 5), '\"}') AS s);
 SELECT JSONExtractInt(j, 'a'), JSONHas(j, 'a'), JSONExtractRaw(j, 'a'), JSONExtract(j, 'a', 'Nullable(Int64)')
 FROM tm SETTINGS max_memory_usage = '20M';
 SELECT JSONHas(j, 'pad'), length(JSONExtractString(jt, 'pad')), length(JSONExtract(jt, 'pad', 'String'))
 FROM tm SETTINGS max_memory_usage = '20M';
 SELECT JSONHas(jt, 'pad'), length(JSONExtractString(jt, 'pad')), length(JSONExtract(jt, 'pad', 'String'))
 FROM tm SETTINGS type_json_skip_null_typed_paths = 1, max_memory_usage = '20M';
+SELECT length(JSONExtractString(jl, 'pad')), length(JSONExtract(jl, 'pad', 'String')) FROM tm SETTINGS max_memory_usage = '20M';
 "
 $CLICKHOUSE_CLIENT -q "SELECT JSONExtractIntCaseInsensitive(j, 'a') FROM tm SETTINGS max_memory_usage = '20M'" 2>&1 \
     | grep -c -m1 'MEMORY_LIMIT_EXCEEDED'

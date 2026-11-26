@@ -25,6 +25,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -313,14 +314,15 @@ public:
                 constexpr std::string_view name = TName::name;
                 if constexpr (name == "JSONExtract" || name == "JSONExtractString" || name == "JSONExtractInt" || name == "JSONExtractUInt")
                 {
-                    const auto from_type = removeNullable(value_type);
+                    const auto from_type = removeNullable(removeLowCardinality(value_type));
                     const auto to_type = removeNullable(result_type);
                     DataTypePtr supertype;
-                    if (isNativeInteger(from_type) && isNativeInteger(to_type) && !isBool(from_type) && !isBool(to_type))
+                    if (isNativeInteger(from_type) && isNativeInteger(to_type) && !isBool(from_type) && !isBool(to_type)
+                        && !isSimpleAggregateFunctionOfBool(*from_type) && !isSimpleAggregateFunctionOfBool(*to_type))
                         supertype = tryGetLeastSupertype(DataTypes{from_type, to_type});
                     if ((isString(from_type) && isString(to_type)) || (supertype && supertype->equals(*to_type)))
                     {
-                        ColumnPtr values = castColumn({removeNullable(value), from_type, ""}, to_type);
+                        ColumnPtr values = castColumn({removeNullable(value->convertToFullColumnIfLowCardinality()), from_type, ""}, to_type);
                         auto null_map = ColumnUInt8::create(num_rows);
                         auto & null_data = null_map->getData();
                         for (size_t i = 0; i < num_rows; ++i)
