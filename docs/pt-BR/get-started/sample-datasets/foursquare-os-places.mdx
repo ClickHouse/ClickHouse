@@ -17,13 +17,13 @@ e pode ser usado gratuitamente sob a licença Apache 2.0.
 
 <Note>
   A Foursquare atualizou a forma de acessar o OS Places. Versões anteriores deste guia consultavam
-  arquivos fixados por data em um bucket público do S3; agora, o acesso é feito pelo Places Portal e por um
+  arquivos date-pinned em um bucket público do S3; agora, o acesso é feito pelo Places Portal e por um
   catálogo Iceberg autenticado. Consulte a [documentação de acesso ao OS Places da Foursquare](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
   para mais detalhes.
 </Note>
 
 <div id="before-you-begin">
-  ## Antes de começar
+  ## Antes de começar {#before-you-begin}
 </div>
 
 Antes de executar as consultas deste guia, você precisa de:
@@ -32,7 +32,7 @@ Antes de executar as consultas deste guia, você precisa de:
 * Um token de acesso criado na aba **Access Data** do conjunto de dados **OS Places**
 
 <div id="connect-to-the-foursquare-catalog">
-  ## Conecte-se ao catálogo da Foursquare
+  ## Conecte-se ao catálogo da Foursquare {#connect-to-the-foursquare-catalog}
 </div>
 
 Mantenha seu token de acesso em sigilo. Inicie o cliente ClickHouse e substitua
@@ -56,7 +56,7 @@ mudar ao longo do tempo. Assim, consultas sem uma cláusula `ORDER BY` podem ret
 amostra diferentes das respostas mostradas neste guia.
 
 <div id="verify-the-connection">
-  ## Verifique a conexão
+  ## Verifique a conexão {#verify-the-connection}
 </div>
 
 Consulte uma linha da tabela Iceberg `places_os`:
@@ -100,7 +100,7 @@ bbox:                (NULL,NULL,NULL,NULL)
 ```
 
 <div id="explore-the-data">
-  ## Explore os dados
+  ## Explore os dados {#explore-the-data}
 </div>
 
 A linha de exemplo contém vários campos nulos. Adicione filtros para retornar uma linha mais completa:
@@ -187,7 +187,7 @@ DESCRIBE places.`datasets.places_os`;
 ```
 
 <div id="loading-the-data">
-  ## Carregue os dados no ClickHouse
+  ## Carregue os dados no ClickHouse {#loading-the-data}
 </div>
 
 Para armazenar os dados de forma persistente, crie uma tabela no `clickhouse-server` ou no ClickHouse Cloud.
@@ -362,9 +362,7 @@ do catálogo desalinhem os valores importados. A consulta exclui `unresolved_fla
 não é necessária na tabela local e filtra as linhas sem coordenadas, pois elas
 não podem ser posicionadas no mapa. Outros valores anuláveis da origem permanecem nulos na tabela local.
 
-<div id="data-visualization">
-  ## Visualizando os dados
-</div>
+## Visualizando os dados {#data-visualization}
 
 <Note>
   O modelo de acesso do Foursquare mudou desde que estas visualizações foram criadas. A
@@ -377,41 +375,25 @@ Durante um hackathon da empresa, o cofundador e CTO da ClickHouse, Alexey Milovi
 para criar as seguintes visualizações a partir do conjunto de dados do Foursquare.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Mapa de densidade de pontos de interesse na Europa](/images/getting-started/example-datasets/visualization_1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Mapa de densidade de pontos de interesse na Europa](/images/getting-started/example-datasets/visualization_1.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Bares de saquê no Japão](/images/getting-started/example-datasets/visualization_2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Bares de saquê no Japão](/images/getting-started/example-datasets/visualization_2.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Caixas eletrônicos](/images/getting-started/example-datasets/visualization_3.webp)
-
-</Frame>
-
+  <Frame>
+    ![Caixas eletrônicos](/images/getting-started/example-datasets/visualization_3.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Mapa da Europa com pontos de interesse categorizados por país](/images/getting-started/example-datasets/visualization_4.webp)
-
-</Frame>
-
+  <Frame>
+    ![Mapa da Europa com pontos de interesse categorizados por país](/images/getting-started/example-datasets/visualization_4.webp)
+  </Frame>
 </div>

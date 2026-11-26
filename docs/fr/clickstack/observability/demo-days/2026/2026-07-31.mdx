@@ -1,0 +1,130 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-31
+title: 'Demo days - 2026-07-31'
+sidebarTitle: '2026-07-31'
+description: 'Journées de démonstration ClickStack du 2026-07-31'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Métriques d’histogramme exponentiel {#exponential-histogram-metrics}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/w45v3IMcXTY" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Une première prise en charge des requêtes est désormais disponible pour les métriques d’histogramme exponentiel OpenTelemetry. Il était déjà possible d’enregistrer l’une de ces métriques sur une source, mais pas de l’interroger. Les nombres d’occurrences et les quantiles fonctionnent désormais via le constructeur de requêtes.
+
+Les histogrammes exponentiels sont similaires aux histogrammes à buckets explicites, mais les bornes de leurs buckets sont calculées à partir de puissances de deux au lieu d’être stockées pour chaque bucket. La scale détermine la puissance de deux utilisée. Plus la scale est élevée, plus les buckets sont petits, tandis que l’offset décale les bornes vers des multiples plus élevés ou plus faibles. Le compteur de chaque bucket enregistre le nombre d’observations comprises dans cette plage.
+
+Max, min, sum et avg restent non pris en charge, comme dans l’implémentation existante des histogrammes explicites. Ces champs étant facultatifs dans le modèle de données OpenTelemetry, nous ne comptons pas sur leur présence.
+
+Comme le montre la démonstration, le SQL généré est long et peu lisible. Ses performances sont acceptables et il n’épuise pas la mémoire, mais il ne s’agit que d’une première prise en charge fonctionnelle. L’optimisation des performances constitue le prochain chantier, et un schéma mis à jour, déjà en cours d’élaboration, devrait rendre ces requêtes nettement plus rapides.
+
+Pour l’instant, seul le type d’affichage série temporelle s’affiche correctement, comme pour le type de métrique d’histogramme existant.
+
+**PR associées :** [#2687](https://github.com/hyperdxio/hyperdx/pull/2687) feat: Show exponential histogram metrics in the metric name drop-down, [#2697](https://github.com/hyperdxio/hyperdx/pull/2697) feat: Implement quantile+sum for exponential histogram metrics, [#2705](https://github.com/hyperdxio/hyperdx/pull/2705) feat: Support exponential histograms in MCP, [#2707](https://github.com/hyperdxio/hyperdx/pull/2707) fix: Support grouping histogram quantile aggregations over non-Attribute columns
+
+## Validation des graphiques en SQL brut {#validation-for-raw-sql-charts}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/zfZsehTqeCQ" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les graphiques en SQL brut affichent désormais un avertissement lorsque des macros attendues sont absentes. Cette amélioration fait suite à une demande d’assistance : un utilisateur qui créait un grand nombre de graphiques en SQL brut obtenait régulièrement des résultats déroutants.
+
+Les requêtes de tableau de bord doivent inclure les macros de filtres et de table source. Les graphiques de séries temporelles doivent en outre inclure les macros d’intervalle de temps et d’intervalle. Jusqu’à présent, ces vérifications n’étaient effectuées qu’une fois une alerte associée à la tuile. Elles s’appliquent désormais à tous les graphiques en SQL brut : la suppression d’une macro affiche donc un avertissement dans l’éditeur, au lieu de produire plus tard un graphique incompréhensible.
+
+La validation tient également compte des dépendances de chaque macro. Les macros de table source et de filtres nécessitent qu’une source soit sélectionnée, alors que les graphiques en SQL brut n’en ont pas besoin par ailleurs. L’utilisation de l’une de ces macros sans source sélectionnée génère donc une erreur, et non un simple avertissement.
+
+Le changement est mineur, mais il devrait permettre de repérer plus facilement les problèmes de SQL brut sans avoir à contacter l’assistance.
+
+**PRs associées :** [#2742](https://github.com/hyperdxio/hyperdx/pull/2742) feat: Warn on missing params/macros in SQL Editor
+
+## Lier les sources par nom plutôt que par ID {#link-to-sources-by-name-not-id}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/r2uNmcJXGSM" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+L’équipe LogHouse souhaitait disposer d’un moyen plus stable de créer des liens vers les sources. Elle gère l’environnement de journalisation de ClickHouse Cloud et provisionne les sources par programmation selon une approche infrastructure-as-code. Les ID de source changent lorsqu’une source est recréée et diffèrent d’un environnement à l’autre (développement, préproduction et production), ce qui rend fragile tout lien fondé sur un ID. Comme l’équipe crée des liens vers ClickStack depuis des systèmes d’alerte et Grafana, il n’était pas envisageable de maintenir un ensemble distinct d’ID de source pour chaque environnement.
+
+Le paramètre d’URL `source` accepte désormais un nom de source en plus d’un ID. Les noms étant définis lors du provisionnement des sources, un même lien peut fonctionner dans tous les environnements. Cette prise en charge a d’abord été ajoutée à la page de recherche. Une PR ultérieure l’étend à toutes les pages dotées d’un paramètre de source, notamment l’Explorateur de graphiques, la cartographie des services, les sessions, le tableau de bord des services et le tableau de bord Kubernetes.
+
+La discussion qui a suivi a principalement porté sur la découvrabilité. Il s’agit en pratique d’une API d’URL, que les utilisateurs ont peu de chances de découvrir par hasard. Une option consisterait à utiliser par défaut les noms plutôt que les ID, mais les collisions de noms rendent cette approche risquée. Parmi les autres suggestions figuraient l’exposition des liens via un bouton de partage, leur génération par des agents via le MCP et une véritable documentation de l’API d’URL. Les intervalles de temps relatifs gagneraient à être documentés de la même manière.
+
+Les références par nom pourraient également être étendues aux tableaux de bord. Un flux de travail infrastructure-as-code pourrait alors provisionner les sources, importer les tableaux de bord et tout relier automatiquement. L’import de tableaux de bord via l’interface utilisateur associe déjà les sources par nom ; ce qui manque encore concerne donc surtout les flux de travail programmatiques.
+
+**PR associées :** [#2746](https://github.com/hyperdxio/hyperdx/pull/2746) feat: Accept source names in addition to IDs in URL Params, [#2758](https://github.com/hyperdxio/hyperdx/pull/2758) feat: Support source name deeplinks on additional pages
+
+## Refonte des paramètres d’affichage des graphiques {#chart-display-settings-redesign}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tO5yFKR-MLQ" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Des travaux sont en cours pour déterminer où placer les paramètres d’affichage des graphiques. La modification initiale les intégrait directement à droite de l’éditeur de tuile, au lieu de les ouvrir dans un panneau coulissant distinct. Auparavant, l’éditeur de tuile était une boîte de dialogue modale, et les Paramètres D’Affichage s’ouvraient dans un panneau coulissant superposé. Une seule pression sur Échap fermait les deux, et superposer un panneau coulissant à une boîte de dialogue modale n’a jamais été satisfaisant.
+
+La PR s’est complexifiée lorsque les paramètres de série ont dû eux aussi s’empiler par-dessus ; nous avons donc pris du recul pour repenser la page dans son ensemble. Le travail en est encore au stade des maquettes fonctionnelles. La conception actuelle place les paramètres dans un panneau ancré et applique les modifications automatiquement, ce qui permet de voir le résultat en temps réel sans avoir à cliquer sur un bouton Appliquer.
+
+L’objectif est de finaliser la refonte avant de l’intégrer à la PR existante. L’état actuel est considéré comme un prototype, notamment parce que la nouvelle conception modifie également certaines parties de la page du tableau de bord.
+
+**PRs associées :** [#2721](https://github.com/hyperdxio/hyperdx/pull/2721) feat(dashboards): move tile editor to a drawer with docked settings panel
+
+## Nouvelle page Explorer {#new-explore-page}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/E1vEjJBw1gs" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Il s’agit d’une première exploration d’une page Explorer unifiée qui pourrait, à terme, remplacer Recherche, Recherches enregistrées et Explorateur de graphiques par un point d’entrée unique.
+
+Le déploiement s’appuie sur les enseignements tirés de la refonte du visualiseur de traces. Plutôt que de modifier l’expérience de tous les utilisateurs d’un seul coup, la nouvelle page serait d’abord activée via un feature flag pour un petit groupe d’utilisateurs. Nous mettrions cette période à profit pour identifier et corriger les problèmes avant un déploiement plus large. Si l’idée ne fonctionne pas, elle restera une expérimentation et ne sera pas livrée. C’est une issue tout à fait acceptable.
+
+La page commence par le choix d’un type de signal. Le choix des traces, des logs ou des métriques adapte le reste de l’expérience en conséquence. Par exemple, sélectionner les logs vous donne accès à la vue en liste, aux motifs d’événements, aux séries temporelles et aux autres visualisations actuellement proposées dans l’Explorateur de graphiques.
+
+Une investigation devrait pouvoir se poursuivre sans changer de page. Vous pourriez commencer par une liste, passer à un nombre ou à une table regroupée, ajouter le résultat à un tableau de bord, puis écrire une requête personnalisée si vous avez besoin d’un contrôle plus fin.
+
+Plusieurs idées plus modestes sont également prévues, la plupart issues des retours des utilisateurs. L’éditeur de requêtes fonctionnerait davantage comme l’éditeur SQL, ce qui éliminerait les différences actuelles de comportement de la complétion automatique. Les erreurs et avertissements apparaîtraient au fil de la saisie, sans attendre l’exécution de la requête.
+
+Les colonnes disposeraient d’un sélecteur dédié. Au moins un utilisateur ne s’était pas rendu compte que la modification de la clause `SELECT` déterminait les colonnes affichées dans la table. Avec le sélecteur, un clic sur un champ met à jour le SQL et permet de trier selon ce champ. La clause `SELECT` reste disponible pour les utilisateurs avancés.
+
+Les vues enregistrées seraient également accessibles depuis la page : vous pourriez ainsi explorer sans enregistrer, puis enregistrer la vue courante directement sur place. Le SQL généré serait affiché de manière intégrée.
+
+De nombreux éléments manquent encore, notamment certaines des visualisations disponibles aujourd’hui dans l’Explorateur de graphiques. La conception continuera d’évoluer à mesure que ces éléments seront ajoutés.
+
+**PR associées :** aucune pour l’instant, il s’agit d’une exploration et non d’une fonctionnalité livrée
+
+## Liaison des filtres de tableau de bord {#dashboard-filter-linking}
+
+*Démonstration par [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IQ4WtnNYS5s" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La liaison des filtres de tableau de bord a été fusionnée. Nous l’avions présentée pour la première fois à l’état de brouillon il y a plusieurs mois, avant de la mettre en pause le temps d’étudier ses implications en matière de performance. La liaison modifie la structure des requêtes de tableau de bord et ne tire pas toujours pleinement parti des vues matérialisées ; elle sera donc proposée sous la forme d’un interrupteur à activer explicitement plutôt que comme comportement par défaut.
+
+Lorsque la liaison est activée, le choix d’une valeur dans un filtre restreint les valeurs disponibles dans les autres. Si vous sélectionnez un service, seules les valeurs de sévérité présentes pour ce service sont conservées. Si vous sélectionnez un ID de trace, seuls les ID de trace parente associés sont conservés. Les utilisateurs ne peuvent ainsi plus choisir de combinaisons qui ne renvoient aucune donnée.
+
+Une PR complémentaire rend la liaison sensible à la source. Les filtres sont regroupés par source, et des icônes de chaîne relient les filtres voisins qui peuvent se restreindre mutuellement. Sur un tableau de bord comportant deux filtres de logs et deux filtres de traces, on doit voir clairement quels filtres interagissent.
+
+Le cas d’utilisation initial était le tableau de bord Kubernetes : la sélection d’un groupe de conteneurs ne devrait conserver que les déploiements et les nœuds qui contiennent ce groupe de conteneurs. Les valeurs restreintes sont récupérées à la demande, à l’ouverture d’une liste déroulante, ce qui limite le coût des recherches supplémentaires.
+
+Deux questions sont restées en suspens à l’issue de la discussion. D’abord, le paramètre est actuellement stocké par utilisateur dans le stockage du navigateur. Lors de l’appel, il est ressorti que les utilisateurs voudront probablement, à terme, l’enregistrer au niveau du tableau de bord. Dans ce cas, mieux vaudrait peut-être que la préférence au niveau utilisateur reste temporaire, plutôt que d’entrer plus tard en concurrence avec le comportement défini au niveau du tableau de bord.
+
+L’autre question porte sur le comportement des filtres dépendants pendant le chargement de leurs valeurs. Actuellement, la sélection d’une valeur affiche un état de chargement dans la liste déroulante dépendante au lieu de la bloquer, mais le comportement avec un second filtre dépendant reste à vérifier. L’option privilégiée consiste à garder les filtres utilisables pendant la restriction, tout en indiquant que la liste n’a pas fini de se mettre à jour. Un utilisateur qui connaît déjà la valeur souhaitée ne devrait pas avoir à attendre les métadonnées.
+
+**PR associées :** [#2423](https://github.com/hyperdxio/hyperdx/pull/2423) feat(dashboards): cascading (faceted) filter values, [#2760](https://github.com/hyperdxio/hyperdx/pull/2760) feat(dashboards): persist filter link toggle and clarify within-source linking
+
+## Mémorisation du dernier onglet du panneau latéral {#remember-the-last-side-panel-tab}
+
+*Démonstration par [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/FlDWN7sGHMo" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La plus petite PR de la semaine illustre aussi parfaitement un petit agacement qui méritait d’être corrigé.
+
+Le panneau latéral des lignes s’ouvrait toujours sur l’onglet Vue d’ensemble, conçu autour des champs de log OpenTelemetry. Pour les logs qui ne suivent pas la structure OTel, cet onglet n’affiche que très peu d’informations utiles. Il fallait donc basculer vers Valeurs de colonne à chaque ouverture d’une ligne.
+
+Le panneau mémorise désormais le dernier onglet utilisé et le rouvre la fois suivante. Aucune configuration n’est nécessaire. Les utilisateurs hors OTel qui passent à Valeurs de colonne y resteront, tandis que ceux qui utilisent Vue d’ensemble conservent le comportement actuel.
+
+**PRs associées :** [#2752](https://github.com/hyperdxio/hyperdx/pull/2752) feat(app): remember last-used side panel tab across opens

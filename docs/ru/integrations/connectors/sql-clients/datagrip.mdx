@@ -17,9 +17,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
 <CommunityMaintainedBadge />
 
-<div id="start-or-download-datagrip">
-  ## Запустите или скачайте DataGrip
-</div>
+## Запустите или скачайте DataGrip {#start-or-download-datagrip}
 
 DataGrip доступен по адресу https://www.jetbrains.com/datagrip/
 
@@ -29,16 +27,12 @@ DataGrip доступен по адресу https://www.jetbrains.com/datagrip/
   </Step>
 
   <Step title="Загрузите драйвер ClickHouse" id="2-load-the-clickhouse-driver">
-    1. Запустите DataGrip и на вкладке **Data Sources** в диалоговом окне **Data Sources and Drivers** нажмите значок **+**
+    1. Запустите DataGrip и на вкладке **Источники данных** в диалоговом окне **Источники данных and Drivers** нажмите значок **+**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Вкладка Data Sources в DataGrip с выделенным значком +](/images/integrations/sql-clients/datagrip-5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Вкладка Источники данных в DataGrip с выделенным значком +](/images/integrations/sql-clients/datagrip-5.webp)
+      </Frame>
     </div>
 
     Выберите **ClickHouse**
@@ -48,13 +42,9 @@ DataGrip доступен по адресу https://www.jetbrains.com/datagrip/
     </Tip>
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Выбор ClickHouse в DataGrip из списка источников данных](/images/integrations/sql-clients/datagrip-6.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Выбор ClickHouse в DataGrip из списка источников данных](/images/integrations/sql-clients/datagrip-6.webp)
+      </Frame>
     </div>
 
     * Перейдите на вкладку **Drivers** и загрузите драйвер ClickHouse
@@ -63,13 +53,9 @@ DataGrip доступен по адресу https://www.jetbrains.com/datagrip/
       выберите **ClickHouse** в списке **Complete Support** и нажмите значок **+**. В параметре **Provided Driver** выберите драйвер **Latest stable**:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Вкладка Drivers в DataGrip, показывающая установку драйвера ClickHouse](/images/integrations/sql-clients/datagrip-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Вкладка Drivers в DataGrip, показывающая установку драйвера ClickHouse](/images/integrations/sql-clients/datagrip-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -84,25 +70,21 @@ DataGrip доступен по адресу https://www.jetbrains.com/datagrip/
 
       `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
 
-      ClickHouse Cloud требует SSL-шифрования для всех подключений. Без параметра `?ssl=true` вы увидите ошибку &quot;Connection reset&quot; даже при правильных учетных данных.
+      ClickHouse Cloud требует SSL-шифрования для всех подключений. Без параметра `?ssl=true` вы увидите ошибку «Connection reset» даже при правильных учетных данных.
 
       Подробнее о настройках JDBC URL см. в репозитории [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java).
     </Tip>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Форма сведений о подключении в DataGrip с настройками ClickHouse](/images/integrations/sql-clients/datagrip-7.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Форма сведений о подключении в DataGrip с настройками ClickHouse](/images/integrations/sql-clients/datagrip-7.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="learn-more">
-  ## Узнайте больше
+  ## Узнайте больше {#learn-more}
 </div>
 
 Дополнительную информацию о DataGrip см. в документации DataGrip.
