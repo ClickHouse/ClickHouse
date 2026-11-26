@@ -11,15 +11,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="user05830_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
+# `UPDATE ... SET` requires `ALTER UPDATE` on the whole table, so it is granted there: only `SELECT` can be missing below.
+# A TTL must depend on a column of the table, so the TTLs use `pd`, a date column the user can read.
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP USER IF EXISTS $user;
 CREATE USER $user;
-CREATE TABLE $db.records (id UInt64, d Date, public String, secret String, t Tuple(a String, b String))
+CREATE TABLE $db.records (id UInt64, d Date, pd Date, public String, secret String, t Tuple(a String, b String))
 ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO $db.records VALUES (1, '2100-01-01', 'public_1', 'secret_1', ('a_1', 'b_1')), (2, '2100-01-01', 'public_2', 'secret_2', ('a_2', 'b_2'));
--- `UPDATE ... SET` requires `ALTER UPDATE` on the whole table, so grant it there: only `SELECT` can be missing below.
-GRANT SELECT(id, public), ALTER UPDATE, ALTER TTL ON $db.records TO $user;
+INSERT INTO $db.records VALUES (1, '2100-01-01', '2100-01-01', 'public_1', 'secret_1', ('a_1', 'b_1')), (2, '2100-01-01', '2100-01-01', 'public_2', 'secret_2', ('a_2', 'b_2'));
+GRANT SELECT(id, pd, public), ALTER UPDATE, ALTER TTL ON $db.records TO $user;
 EOF
 
 echo "-- denied: UPDATE reading secret"
@@ -35,8 +36,8 @@ EOF
 echo "-- denied: TTL reading columns without SELECT"
 ${CLICKHOUSE_CLIENT} --user "$user" <<EOF
 ALTER TABLE $db.records MODIFY TTL d + INTERVAL 1 DAY; -- { serverError ACCESS_DENIED }
-ALTER TABLE $db.records MODIFY TTL toDate('2100-01-01') + INTERVAL 1 DAY WHERE secret = 'secret_1'; -- { serverError ACCESS_DENIED }
-ALTER TABLE $db.records MODIFY TTL toDate('2100-01-01') + INTERVAL 1 DAY GROUP BY id SET public = any(secret); -- { serverError ACCESS_DENIED }
+ALTER TABLE $db.records MODIFY TTL pd + INTERVAL 1 DAY WHERE secret = 'secret_1'; -- { serverError ACCESS_DENIED }
+ALTER TABLE $db.records MODIFY TTL pd + INTERVAL 1 DAY GROUP BY id SET public = any(secret); -- { serverError ACCESS_DENIED }
 EOF
 
 echo "-- data and metadata unchanged"
@@ -48,7 +49,7 @@ echo "-- allowed: expressions reading only granted columns"
 ${CLICKHOUSE_CLIENT} --user "$user" --mutations_sync 2 <<EOF
 ALTER TABLE $db.records UPDATE public = upper(public) WHERE id = 1;
 UPDATE $db.records SET public = concat(public, '_', toString(id)) WHERE id = 2 SETTINGS enable_lightweight_update = 1;
-ALTER TABLE $db.records MODIFY TTL toDate('2100-01-01') + INTERVAL 1 DAY GROUP BY id SET public = any(public);
+ALTER TABLE $db.records MODIFY TTL pd + INTERVAL 1 DAY GROUP BY id SET public = any(public);
 SELECT id, public FROM $db.records ORDER BY id;
 EOF
 

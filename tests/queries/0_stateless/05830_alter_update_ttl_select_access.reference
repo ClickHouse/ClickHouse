@@ -6,6 +6,8 @@
 0
 0
 -- allowed: expressions reading only granted columns
+1	PUBLIC_1
+2	public_2_2
 -- allowed: a grant on the column covers its subcolumns
 1	a_1
 2	public_2_2
