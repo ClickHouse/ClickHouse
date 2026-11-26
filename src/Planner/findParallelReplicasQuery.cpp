@@ -120,7 +120,7 @@ bool tableFunctionCanDriveParallelReplicasRead(const TableFunctionNode & table_f
     return !query_sets_additional_table_filters;
 }
 
-static bool canUseTableFunctionForParallelReplicas(
+bool canUseTableFunctionForParallelReplicas(
     const TableFunctionNode & table_function_node, const IQueryTreeNode * query_tree_root, const ContextPtr & context)
 {
     if (!tableFunctionCanDriveParallelReplicasRead(table_function_node, queryTreeSetsAdditionalTableFilters(query_tree_root)))

@@ -57,6 +57,10 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
 /// Same, resolving a View / MaterializedView storage to the table that would actually be read.
 bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context);
 
+/// Same for a table function read in the query `query_tree_root`.
+bool canUseTableFunctionForParallelReplicas(
+    const TableFunctionNode & table_function_node, const IQueryTreeNode * query_tree_root, const ContextPtr & context);
+
 /// Whether concatenating the results of the query run by each replica on its share of the rows gives the result
 /// of the query: it does not aggregate, number, sort, deduplicate, limit or skip rows.
 bool canRunQueryOnEachReplicaShare(const QueryNode & query_node);
