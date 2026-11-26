@@ -22,9 +22,10 @@ namespace QueryPlanSerializationSetting
 
 using namespace DB;
 
-/// `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` may go on the wire only towards a
-/// peer whose query-plan serialization version knows the names, and `adaptive_aggregator_disable_thaw` and
-/// `adaptive_aggregator_combine_arg_min_max`, names of a later version, only towards a peer that knows them.
+/// `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` may go on the wire only towards a peer
+/// whose query-plan serialization version knows the names, and `adaptive_aggregator_disable_thaw`, a name of a later
+/// version, only towards a peer that knows it. `adaptive_aggregator_combine_arg_min_max` goes towards every peer that
+/// can receive a plan, which skips the name if it does not know it (see `QueryPlanSerializationSettings`).
 ///
 /// The reader of `QueryPlanSerializationSettings` in a peer that predates these names throws on a name it does not
 /// know. Writing either name towards a peer that predates it
@@ -37,8 +38,6 @@ namespace
 constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 constexpr UInt64 pre_setting_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR - 1;
 constexpr UInt64 pre_disable_thaw_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW - 1;
-constexpr UInt64 pre_combine_arg_min_max_version
-    = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_COMBINE_ARG_MIN_MAX - 1;
 
 QueryPlanSerializationSettings serializeAggregatingStep(
     bool enable_adaptive_aggregator, UInt64 version, bool disable_thaw = false, bool combine_arg_min_max = false)
@@ -156,30 +155,17 @@ TEST(AdaptiveAggregatorPlanSetting, DisableThawNotCarriedTowardsAPeerThatPredate
     }
 }
 
-TEST(AdaptiveAggregatorPlanSetting, CombineArgMinMaxCarriedTowardsAPeerThatKnowsTheName)
+TEST(AdaptiveAggregatorPlanSetting, CombineArgMinMaxCarriedTowardsTheOldestPeer)
 {
-    /// The value is written for a peer at the current version whichever way it is set, and reaches the remote
-    /// aggregation as it was set.
+    /// The value is written for the oldest peer that can receive a plan, whichever way it is set, and reaches the
+    /// remote aggregation as it was set. A peer without the setting skips the name and stages every missed row,
+    /// which changes only the speed and the memory.
     for (bool keep : {false, true})
     {
         const auto settings = serializeAggregatingStep(
-            /*enable_adaptive_aggregator=*/true, current_version, /*disable_thaw=*/false,
+            /*enable_adaptive_aggregator=*/true, DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION, /*disable_thaw=*/false,
             /*combine_arg_min_max=*/keep);
         EXPECT_TRUE(wireCarries(settings, "adaptive_aggregator_combine_arg_min_max")) << "keep = " << keep;
         EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_combine_arg_min_max], keep);
-    }
-}
-
-TEST(AdaptiveAggregatorPlanSetting, CombineArgMinMaxNotCarriedTowardsAPeerThatPredatesTheName)
-{
-    /// A peer that knows the other adaptive names but not this one receives them without it, and stores every
-    /// missed row, which changes only the speed and the memory.
-    for (bool keep : {false, true})
-    {
-        const auto settings = serializeAggregatingStep(
-            /*enable_adaptive_aggregator=*/true, pre_combine_arg_min_max_version, /*disable_thaw=*/false,
-            /*combine_arg_min_max=*/keep);
-        EXPECT_FALSE(wireCarries(settings, "adaptive_aggregator_combine_arg_min_max")) << "keep = " << keep;
-        EXPECT_TRUE(wireCarries(settings, "enable_adaptive_aggregator")) << "keep = " << keep;
     }
 }
