@@ -33,6 +33,7 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <boost/functional/hash.hpp>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -127,7 +128,7 @@ struct SpecialParserType
     /// Type and nullability
     VectorWithMemoryTracking<std::pair<Field::Types::Which, bool>> nested_types;
 
-    bool useDefaultParser() const
+    [[nodiscard]] bool useDefaultParser() const
     {
         return main_type == Field::Types::String || (!nested_types.empty()
             && std::all_of(
@@ -620,6 +621,7 @@ bool ConstantExpressionTemplate::tryParseExpression(
     return true;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool ConstantExpressionTemplate::parseLiteralAndAssertType(
     ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * complex_type, size_t column_idx, const Settings & settings)
 {

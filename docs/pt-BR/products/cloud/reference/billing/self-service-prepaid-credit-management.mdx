@@ -1,21 +1,23 @@
 ---
-description: 'Visualize saldos de créditos pré-pagos e transfira créditos de contratos comprometidos entre organizações do ClickHouse.'
+description: 'Visualize saldos de créditos pré-pagos e transfira créditos de contratos com compromisso de consumo entre organizações do ClickHouse.'
 sidebarTitle: 'Self Service Prepaid Credit Management'
 slug: /cloud/manage/billing/self-service-prepaid-credit-management
 title: 'Gerenciamento de créditos pré-pagos em autoatendimento'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Se você adquirir créditos pré-pagos por meio de um contrato com compromisso de consumo, poderá gerenciar como esses créditos são distribuídos entre as suas organizações do ClickHouse.
-Use a página **Prepaid credits** para consultar saldos e transferir créditos entre organizações.
+Use a página **Créditos pré-pagos** para consultar saldos e transferir créditos entre organizações.
 
 ## Acessar créditos pré-pagos {#access-prepaid-credits}
 
-No console do ClickHouse Cloud, abra **Settings** e selecione **Prepaid credits** em **Account**.
+No console do ClickHouse Cloud, abra **Settings** e selecione **Créditos pré-pagos** em **Account**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Créditos pré-pagos em Account na barra lateral de Settings" size="sm" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Créditos pré-pagos em Account na barra lateral de Settings](/images/cloud/reference/billing/prepaid-credits-navigation.png)
+  </Frame>
+</div>
 
 Para visualizar os saldos de créditos pré-pagos, você precisa ter pelo menos uma das seguintes funções em uma organização com créditos de contrato com compromisso de consumo alocados:
 
@@ -50,10 +52,10 @@ Todos os valores são expressos em ClickHouse Credits (CHC), sendo que 1 CHC equ
 
 Cada linha da tabela abaixo do resumo representa uma organização, com dados que refletem todos os saldos pré-pagos dessa organização.
 
-* **Organization** exibe o nome da organização, um Organization ID parcialmente mascarado e um link para sua página de faturamento com o detalhamento dos saldos de créditos.
+* **Organização** exibe o nome da organização, um ID de organização parcialmente mascarado e um link para sua página de faturamento com o detalhamento dos saldos de créditos.
 * **créditos concedidos**, **créditos expirados**, **créditos utilizados** e **créditos disponíveis** seguem as mesmas definições do resumo, mas se aplicam aos créditos pré-pagos daquela organização.
 * **Credit status** exibe o estado dos saldos pré-pagos da organização, conforme descrito abaixo.
-* **Expiration Date** exibe a data de expiração do saldo pré-pago. Se houver vários saldos, exibe a data de expiração mais distante.
+* **Data de expiração** exibe a data de expiração do saldo pré-pago. Se houver vários saldos, exibe a data de expiração mais distante.
 
 | Status                 | Descrição                                                                                                                    |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -61,9 +63,13 @@ Cada linha da tabela abaixo do resumo representa uma organização, com dados qu
 | **Expires soon**       | A organização tem apenas um saldo pré-pago ativo, e ele expira em até 60 dias. Esse status permanece até que o saldo expire. |
 | **Expired**            | Todos os saldos pré-pagos da organização têm datas de término no passado.                                                    |
 | **Spent**              | Todos os saldos pré-pagos da organização foram consumidos, mas não expiraram. Esse status tem precedência sobre **Active**.  |
-| **No Prepaid Credits** | A organização não tem créditos pré-pagos.                                                                                    |
+| **Sem créditos pré-pagos** | A organização não tem créditos pré-pagos.                                                                                    |
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Métricas de resumo de créditos pré-pagos e saldos por organização" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Métricas de resumo de créditos pré-pagos e saldos por organização](/images/cloud/reference/billing/prepaid-credits-balances.png)
+  </Frame>
+</div>
 
 ## Transferir créditos {#transfer-credits}
 
@@ -75,16 +81,20 @@ Para transferir créditos, você precisa da permissão [Manage billing details](
 2. Selecione uma concessão de créditos ativa. O painel lista as concessões ativas da organização de origem e suas datas de expiração.
 3. Selecione uma organização de destino entre as organizações às quais você tem acesso.
 4. Informe o valor a ser transferido.
-5. Revise os saldos resultantes e clique em **Transfer credits**.
+5. Revise os saldos resultantes e clique em **Transferir créditos**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="Painel de transferência de créditos com a concessão de origem, a organização de destino, o valor da transferência e os saldos resultantes" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Painel de transferência de créditos com a concessão de origem, a organização de destino, o valor da transferência e os saldos resultantes](/images/cloud/reference/billing/prepaid-credits-transfer.png)
+  </Frame>
+</div>
 
 ### Regras de transferência {#transfer-rules}
 
-* Você pode transferir apenas **créditos pré-pagos ativos**. Não é possível transferir créditos de teste.
-* A transferência de créditos altera os créditos pré-pagos disponíveis nas organizações de origem e de destino, mas não altera o total de créditos ativos concedidos no seu contrato com compromisso de gasto.
-* Ao transferir créditos pré-pagos para uma organização em teste ou em período de carência por falta de pagamento, ela se torna uma organização pré-paga e passa a consumir esses créditos.
-* Só é possível transferir todos os créditos pré-pagos restantes de uma organização de origem se ela tiver uma [forma de pagamento reserva](/pt-BR/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org) ou nenhum serviço. Caso contrário, o limite máximo de transferência é de 75% do saldo de créditos da organização de origem.
+* Você só pode transferir **créditos pré-pagos ativos**. Não é possível transferir créditos de avaliação.
+* Uma transferência de créditos altera os créditos pré-pagos disponíveis para as organizações de origem e de destino, mas não altera o total de créditos ativos concedidos no seu contrato com compromisso de consumo.
+* Ao receber créditos pré-pagos por transferência, uma organização em período de teste ou em período de carência por falta de pagamento passa a ser uma organização pré-paga e começa a consumir esses créditos.
+* Você só pode transferir todos os créditos pré-pagos restantes de uma organização de origem se ela tiver uma [forma de pagamento reserva](/pt-BR/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org) ou não tiver serviços. Caso contrário, a transferência máxima é de 75% do saldo de créditos da organização de origem.
 * Não é possível transferir créditos entre organizações do ClickHouse Cloud e do [Bring Your Own Cloud (BYOC)](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
 * Não é possível transferir créditos entre organizações faturadas por marketplaces de nuvem diferentes, como o AWS Marketplace e o Google Cloud Marketplace.
 

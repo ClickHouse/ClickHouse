@@ -1557,24 +1557,11 @@ Two settings control when spilling starts:
 
 - `max_bytes_before_external_distinct` sets a threshold in bytes of total query memory. It defaults
   to `0` (disabled).
-- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under server or
-  user limits, measured at the start of execution. It defaults to `0.5` and has no effect when
-  neither limit applies.
+- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under the query's
+  `max_memory_usage` and the server or user limits, measured at the start of execution. It defaults
+  to `0.5` and has no effect when no limit applies.
 
 When both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling.
-
-`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
-set an absolute threshold below that limit. For example, this query uses a 16 MiB spill threshold
-with a 256 MiB query memory limit:
-
-```sql
-SELECT DISTINCT number % 1000000 AS id
-FROM numbers(2000000)
-SETTINGS
-    max_bytes_before_external_distinct = 16777216,
-    max_bytes_ratio_before_external_distinct = 0,
-    max_memory_usage = 268435456;
-```
 
 These thresholds do not cap memory usage. Leave room for other query processing and the spill
 itself. Spilling may also start earlier under memory pressure.
@@ -2952,7 +2939,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Less RAM is used if a small enough [LIMIT](/reference/statements/select/limit) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. A [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range does not reduce it, because the size of the range is unknown until the data is sorted. For distributed query processing, if [GROUP BY](/reference/statements/select/group-by) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
-If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting `max_bytes_before_external_sort` for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the `/var/lib/clickhouse/tmp/` directory in the config (by default, but you can use the `tmp_path` parameter to change this setting). You can also use spilling to disk only if query exceeds memory limits, i.e. `max_bytes_ratio_before_external_sort=0.6` will enable spilling to disk only once the query hits `60%` memory limit (user/sever).
+If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting `max_bytes_before_external_sort` for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the `/var/lib/clickhouse/tmp/` directory in the config (by default, but you can use the `tmp_path` parameter to change this setting). You can also use spilling to disk only if query exceeds memory limits, i.e. `max_bytes_ratio_before_external_sort=0.6` will enable spilling to disk only once the query uses `60%` of the memory available under its `max_memory_usage` and the user and server limits.
 
 Running a query may use more memory than `max_bytes_before_external_sort`. For this reason, this setting must have a value significantly smaller than `max_memory_usage`. As an example, if your server has 128 GB of RAM and you need to run a single query, set `max_memory_usage` to 100 GB, and `max_bytes_before_external_sort` to 80 GB.
 

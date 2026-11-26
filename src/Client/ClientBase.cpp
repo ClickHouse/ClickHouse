@@ -117,6 +117,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <csignal>
+#include <poll.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -199,6 +200,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_POLL;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
@@ -302,6 +304,15 @@ bool isTableNameArgument(std::string_view argument)
     const std::string_view first_word(argument.begin(), std::ranges::find_if(argument, isWhitespaceASCII));
 
     return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
+}
+
+/// The failed query printed next to its error hides secrets, as `system.query_log` does. The inline data of an
+/// INSERT is outside the AST, so its secrets can't be hidden: it is left out.
+String queryTextForErrorMessage(std::string_view query, const DB::ASTPtr & parsed_query)
+{
+    if (parsed_query && (parsed_query->hasSecretParts() || DB::getInsertData(parsed_query)))
+        return parsed_query->formatForErrorMessage();
+    return String(query);
 }
 
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
@@ -1047,6 +1058,9 @@ try
     {
         output_buffer_canceled = false;
 
+        if (connection)
+            connection->onQueryOutputCreated();
+
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -1329,6 +1343,9 @@ void ClientBase::initLogsOutputStream()
 {
     if (!logs_out_stream)
     {
+        if (connection)
+            connection->onQueryOutputCreated();
+
         WriteBuffer * wb = out_logs_buf.get();
 
         bool color_logs = false;
@@ -1716,12 +1733,12 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         if (server_exception)
             server_exception->rethrow();
         if (!is_interactive)
-            e.addMessage("(in query: {})", full_query);
+            e.addMessage("(in query: {})", queryTextForErrorMessage(full_query, parsed_query));
         throw;
     }
 
     if (have_error)
-        processError(full_query);
+        processError(queryTextForErrorMessage(full_query, parsed_query));
     return !have_error;
 }
 
@@ -2490,6 +2507,9 @@ void ClientBase::resetOutput()
     }
     pager_cmd = nullptr;
 
+    if (connection)
+        connection->onQueryOutputReleased();
+
     std_out->next();
 }
 
@@ -2574,6 +2594,9 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 
 namespace
 {
+/// Returns false when stdin is unreadable (closed fd, broken pipe, etc.)
+/// because callers use this as a probe: "is there extra stdin data for this INSERT?"
+/// An unreadable stdin simply means there is no extra data, not an error to report.
 bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 {
     try
@@ -2586,6 +2609,61 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
             return false;
         throw;
     }
+}
+
+enum class StdinState
+{
+    Data,
+    EndOfFile,
+    Ambiguous,
+};
+
+/// Checks stdin without blocking. An open pipe/socket with neither data nor EOF is
+/// ambiguous: it can be an intentionally unused inherited stdin or a delayed writer.
+/// Callers decide whether that is valid for their particular INSERT source.
+///
+/// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
+/// `POLLNVAL`, or `POLLERR` without `POLLIN`) is reported as end of file rather than
+/// failing the INSERT.
+/// Genuine `poll` failures (`ret < 0` after retrying `EINTR`) indicate system-level
+/// problems (`EFAULT`/`EINVAL`/`ENOMEM`) and are surfaced as exceptions instead of
+/// being silently swallowed.
+StdinState getStdinStateNonBlocking(ReadBuffer & std_in, int fd)
+{
+    if (std_in.hasPendingData())
+        return StdinState::Data;
+
+    struct pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+
+    int ret = 0;
+    do
+    {
+        ret = poll(&pfd, 1, 0);
+    }
+    while (ret < 0 && errno == EINTR);
+
+    if (ret < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll stdin");
+
+    if (ret == 0)
+        return StdinState::Ambiguous;
+
+    if (pfd.revents & POLLNVAL)
+        return StdinState::EndOfFile;
+
+    /// `POLLERR` or `POLLHUP` do not imply that no bytes remain readable: e.g. a socket
+    /// whose peer sent data and then reset the connection reports `POLLIN | POLLERR | POLLHUP`,
+    /// and the data is still readable. Check `POLLIN` first, so such data is not ignored.
+    if (pfd.revents & POLLIN)
+        return StdinState::Data;
+
+    if (pfd.revents & (POLLERR | POLLHUP))
+        return StdinState::EndOfFile;
+
+    return StdinState::Ambiguous;
 }
 }
 
@@ -2718,7 +2796,20 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     /// `FROM INFILE` names the data source, so stdin is not read for it. Do not even check stdin then: the check waits
     /// for data or EOF, so an open pipe would block the query.
-    bool have_data_in_stdin = !parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    /// Inline data is a complete payload of an INSERT, so an open inherited stdin must not prevent executing it:
+    /// use a non-blocking check and append stdin only when it already has data. When there is no other data source,
+    /// use the blocking check as before.
+    bool have_data_in_stdin = false;
+    if (!parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty)
+    {
+        if (parsed_insert_query->data)
+        {
+            const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+            have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
+        }
+        else
+            have_data_in_stdin = isStdinNotEmptyAndValid(*std_in);
+    }
 
     if (need_render_progress)
     {
@@ -3258,7 +3349,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            auto stdin_state = StdinState::EndOfFile;
+            if (!is_interactive && !stdin_is_a_tty)
+                stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+
+            const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -3268,7 +3363,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_inline_insert_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            auto stdin_state = StdinState::EndOfFile;
+            if (!is_interactive && !stdin_is_a_tty)
+                stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+
+            const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -4031,7 +4130,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Report error.
                 if (have_error)
-                    processError(full_query);
+                    processError(queryTextForErrorMessage(full_query, parsed_query));
 
                 // Stop processing queries if needed.
                 if (have_error && stdout_is_broken)
@@ -4052,7 +4151,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    if (exit_strings.contains(trimmed_input))
+    if (isExitString(trimmed_input))
         return false;
 
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
@@ -4250,12 +4349,7 @@ bool ClientBase::processQueryText(const String & text)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
     }
 
-    if (query_fuzzer_runs)
-    {
-        processWithASTFuzzer(text);
-        return true;
-    }
-
+    /// With the AST fuzzer `executeMultiQuery` fuzzes each statement and returns false when the server is gone.
     return executeMultiQuery(text);
 }
 
@@ -4344,9 +4438,14 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     auto & storage_settings = *ast_create.storage->settings;
     bool added_new_setting = false;
 
+    /// The query may name a setting by its alias, while the changes from the command line use canonical names.
+    std::unordered_set<String> settings_in_query;
+    for (const auto & change : storage_settings.changes)
+        settings_in_query.emplace(MergeTreeSettings::resolveName(change.name));
+
     for (const auto & change : all_changed)
     {
-        if (!storage_settings.changes.tryGet(change.name))
+        if (!settings_in_query.contains(String(MergeTreeSettings::resolveName(change.name))))
         {
             storage_settings.changes.emplace_back(change.name, change.value);
             added_new_setting = true;
@@ -4857,6 +4956,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
+        ("vim", "Use emulated vim editing mode.")
     ;
 }
 
@@ -4914,6 +5014,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
     if (options.contains("multiline"))
         getClientConfiguration().setBool("multiline", true);
+    if (options.contains("vim"))
+        getClientConfiguration().setBool("vim", true);
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
@@ -5302,6 +5404,7 @@ void ClientBase::runInteractive()
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
         /// `processQueryText`, so offer them here.
         .enable_slash_commands = true,
+        .vim = getClientConfiguration().getBool("vim", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
@@ -5541,16 +5644,8 @@ void ClientBase::runNonInteractive()
     {
         for (const auto & query : queries)
         {
-            if (query_fuzzer_runs)
-            {
-                if (!processWithASTFuzzer(query))
-                    return;
-            }
-            else
-            {
-                if (!processQueryText(query))
-                    return;
-            }
+            if (!processQueryText(query))
+                return;
         }
     }
     else
@@ -5560,10 +5655,7 @@ void ClientBase::runNonInteractive()
         ReadBufferFromFileDescriptor in(stdin_fd);
         String text;
         readStringUntilEOF(text, in);
-        if (query_fuzzer_runs)
-            processWithASTFuzzer(text);
-        else
-            processQueryText(text);
+        processQueryText(text);
     }
 }
 

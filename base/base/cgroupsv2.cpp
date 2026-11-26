@@ -13,7 +13,7 @@ bool cgroupsV2Enabled()
     try
     {
         /// This file exists iff the host has cgroups v2 enabled.
-        auto controllers_file = default_cgroups_mount / "cgroup.controllers";
+        auto controllers_file = std::filesystem::path(default_cgroups_mount) / "cgroup.controllers";
         if (!fs::exists(controllers_file))
             return false;
         return true;
@@ -50,7 +50,7 @@ fs::path cgroupV2PathOfProcess()
         if (cgroup.starts_with(v2_prefix))
         {
             cgroup = cgroup.substr(v2_prefix.length());
-            return default_cgroups_mount / cgroup;
+            return std::filesystem::path(default_cgroups_mount) / cgroup;
         }
     }
     return {};
@@ -71,7 +71,7 @@ std::optional<std::string> getCgroupsV2PathContainingFile([[maybe_unused]] std::
 
     /// Return the bottom-most nested file. If there is no such file at the current
     /// level, try again at the parent level as settings are inherited.
-    while (current_cgroup != default_cgroups_mount.parent_path())
+    while (current_cgroup != std::filesystem::path(default_cgroups_mount).parent_path())
     {
         const auto path = current_cgroup / file_name;
         if (fs::exists(path))

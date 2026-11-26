@@ -2,12 +2,10 @@
 title: 'Seguridad de red de BYOC'
 slug: /cloud/reference/byoc/reference/network_security
 sidebarTitle: 'Seguridad de red'
-keywords: ['BYOC', 'nube', 'Bring Your Own Cloud', 'seguridad de red', 'aws', 'gcp', 'azure', 'límites de red', 'firewall']
+keywords: ['BYOC', 'nube', 'Bring Your Own Cloud', 'seguridad de red', 'aws', 'gcp', 'azure', 'límites de red', 'cortafuegos']
 description: 'Despliegue ClickHouse en su propia infraestructura en la nube'
-doc_type: 'referencia'
+doc_type: 'reference'
 ---
-
-import { Image } from "/snippets/es/components/Image.jsx";
 
 ## Conexiones entre el plano de control de ClickHouse y su VPC de BYOC {#connection-between-clickhouse-and-byoc}
 
@@ -45,13 +43,13 @@ En GCP, un perímetro de VPC Service Controls que restrinja `container.googleapi
 La siguiente sección describe cómo se utiliza la red privada de **Tailscale** para la resolución de problemas y el acceso opcional de administración.
 
 <div id="tailscale-private-network">
-  ## Red privada de Tailscale
+  ## Red privada de Tailscale {#tailscale-private-network}
 </div>
 
 Tailscale proporciona una conexión de red privada de confianza cero entre los servicios de administración de ClickHouse Cloud y su implementación BYOC. Este canal seguro permite a los ingenieros de ClickHouse realizar tareas de resolución de problemas y operaciones de administración sin necesidad de acceso entrante desde la red pública ni de configuraciones de VPN complejas; los propios agentes realizan conexiones únicamente salientes y necesitan acceso saliente a internet para llegar al servicio de coordinación de Tailscale.
 
 <div id="tailscale-overview">
-  ### Descripción general
+  ### Descripción general {#tailscale-overview}
 </div>
 
 Tailscale crea un túnel de red privado y cifrado entre el plano de control de ClickHouse (en la VPC de ClickHouse) y tu plano de datos de BYOC (en tu VPC). Esta conexión se usa exclusivamente para:
@@ -66,7 +64,11 @@ Tailscale crea un túnel de red privado y cifrado entre el plano de control de C
 
 ### Cómo funciona Tailscale en BYOC {#how-tailscale-works}
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
+  </Frame>
+</div>
 
 Para cada servicio o endpoint al que se deba acceder mediante Tailscale, ClickHouse BYOC despliega:
 
