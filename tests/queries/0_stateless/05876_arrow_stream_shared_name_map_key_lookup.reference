@@ -1,0 +1,29 @@
+key in the converted representation
+{'abcdefghijklmnop':7}	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	{'abcdefghijklmnop':7}	7
+7	{'abcdefghijklmnop':7}	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}
+key in the decoded representation
+{'abcdefghijklmnop':7}	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	{'abcdefghijklmnop':7}	7
+keys in both representations
+{'abcdefghijklmnop':7}	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7	7
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	{'abcdefghijklmnop':7}	7	7
+missing key
+{'abcdefghijklmnop':7}	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	0
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	{'abcdefghijklmnop':7}	0
+requested through the keys
+['abcdefghijklmnop']	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	7
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	['abcdefghijklmnop']	7
+['abcdefghijklmnop']	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	7
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	['abcdefghijklmnop']	7
+a whole column that does not describe the keys
+{\'abcdefghijklmnop\':7}	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	{\'abcdefghijklmnop\':7}	7
+map below a struct
+({'abcdefghijklmnop':7})	({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})	7
+({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})	({'abcdefghijklmnop':7})	7
+({'abcdefghijklmnop':7})	({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})	7
+({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})	({'abcdefghijklmnop':7})	7
+shared names of both the struct and the map
+({\'abcdefghijklmnop\':7})	({'abcdefghijklmnop':7})	{'abcdefghijklmnop':7}	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7
+({'abcdefghijklmnop':7})	({\'abcdefghijklmnop\':7})	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	{'abcdefghijklmnop':7}	7

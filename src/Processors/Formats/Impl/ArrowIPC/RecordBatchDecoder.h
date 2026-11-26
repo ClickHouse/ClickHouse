@@ -31,6 +31,11 @@ struct RequestedType
     /// bytes must not be reinterpreted for any one of them: each column is converted by its own type after
     /// decoding. `type` then keeps the requirements of these columns that decoding has to honor.
     bool shared = false;
+    /// The distinct types of these columns, in the order of the header (empty unless `shared`). `type` keeps
+    /// only one of two types that decoding does not tell apart (`Map(String, UInt8)` and `Map(IPv6, UInt8)`),
+    /// while a key lookup of a map parses the key in the type of the keys, so it is resolved against each of
+    /// them (see `ArrowIPC::buildChunk`).
+    DataTypes shared_types;
 };
 
 using RequestedTypes = UnorderedMapWithMemoryTracking<String, RequestedType>;

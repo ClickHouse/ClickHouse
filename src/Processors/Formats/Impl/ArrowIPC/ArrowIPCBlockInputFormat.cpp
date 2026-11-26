@@ -641,7 +641,7 @@ void ArrowIPC::collectRequestedTypes(
         /// decoding. The type that decoding depends on the most is kept (`T Tuple(s IPv6)` keeps the null map
         /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too), recursively
         /// for the elements of composites (see `mergeDecodingRequirements`).
-        auto [it, inserted] = requested_types.try_emplace(std::move(name), RequestedType{.type = header_column.type});
+        auto [it, inserted] = requested_types.try_emplace(std::move(name), RequestedType{.type = header_column.type, .shared = false, .shared_types = {}});
         if (!inserted && !it->second.type->equals(*header_column.type))
         {
             auto & header_types = shared_header_types[it->first];
@@ -650,6 +650,7 @@ void ArrowIPC::collectRequestedTypes(
             if (std::ranges::none_of(header_types, [&](const auto & type) { return type->equals(*header_column.type); }))
                 header_types.push_back(header_column.type);
             it->second.shared = true;
+            it->second.shared_types = header_types;
             it->second.type = mergeDecodingRequirements(it->second.type, header_column.type, case_insensitive);
         }
     }
@@ -1784,18 +1785,99 @@ Chunk ArrowIPC::buildChunk(
             DataTypePtr key_lookup_hint;
             if (nested_it != name_to_index.end() && header_column.name.size() > nested_table_name.size() + 1)
             {
-                /// The types requested for the column and its subcolumns (see `keyLookupSourceHint`).
+                /// The types requested for the column and its subcolumns (see `keyLookupSourceHint`). A name that
+                /// several header columns share (see `ArrowIPC::RequestedType::shared`) has several of them, and
+                /// `shared_choices` tells which one is taken: the lookup is resolved with each combination.
+                struct SharedChoice
+                {
+                    String name;
+                    size_t index = 0;
+                    size_t count = 0;
+                };
+                VectorWithMemoryTracking<SharedChoice> shared_choices;
                 auto find_requested = [&](const String & name) -> DataTypePtr
                 {
-                    if (auto requested_it = requested_field_target_types.find(name); requested_it != requested_field_target_types.end())
+                    auto requested_it = requested_field_target_types.find(name);
+                    if (requested_it == requested_field_target_types.end())
+                        return nullptr;
+                    const auto & shared_types = requested_it->second.shared_types;
+                    if (shared_types.size() < 2)
                         return requested_it->second.type;
-                    return nullptr;
+                    auto choice = std::ranges::find(shared_choices, name, &SharedChoice::name);
+                    if (choice == shared_choices.end())
+                    {
+                        shared_choices.push_back({.name = name, .index = 0, .count = shared_types.size()});
+                        choice = std::prev(shared_choices.end());
+                    }
+                    return shared_types[choice->index];
                 };
+                /// The next combination, as an odometer: the names found with the current one are the last digits.
+                auto next_shared_choices = [&]
+                {
+                    for (auto & choice : shared_choices | std::views::reverse)
+                    {
+                        if (++choice.index < choice.count)
+                            return true;
+                        choice.index = 0;
+                    }
+                    return false;
+                };
+
+                const auto & decoded_type = decoded[nested_it->second].type;
                 const std::string_view subcolumn = std::string_view(header_column.name).substr(nested_table_name.size() + 1);
-                if (!isDeclaredSubcolumn(decoded[nested_it->second].type, subcolumn, case_insensitive))
+                if (!isDeclaredSubcolumn(decoded_type, subcolumn, case_insensitive))
+                {
                     key_lookup_hint = keyLookupSourceHint(
-                        decoded[nested_it->second].type, subcolumn, header_column.type, /*requested=*/nullptr, search_nested,
+                        decoded_type, subcolumn, header_column.type, /*requested=*/nullptr, search_nested,
                         /*array_depth=*/0, find_requested, case_insensitive, format_settings);
+
+                    /// The columns that share a name can request different representations of the keys of a map
+                    /// (`T Map(String, UInt8)` and `t Map(IPv6, UInt8)`), and the lookup parses its key in the
+                    /// type of the keys: `t.key_6162:...:6f70` is a key of the `IPv6` keys only, and
+                    /// `t.key_abcdefghijklmnop` of the `String` ones. The lookup is taken from the representation
+                    /// that resolves it, whatever the order of the columns in the header. If several do, the
+                    /// one that converts the decoded column is preferred to the one that keeps it as decoded,
+                    /// and then the one whose type has the smaller name.
+                    if (!shared_choices.empty())
+                    {
+                        struct Candidate
+                        {
+                            bool resolves = false;
+                            bool converts = false;
+                            String name;
+                        };
+                        auto candidate_of = [&](const DataTypePtr & hint)
+                        {
+                            const DataTypePtr source_type = hint
+                                ? typeConvertedByHint(decoded_type, hint, case_insensitive, format_settings) : decoded_type;
+                            return Candidate{
+                                .resolves = source_type->tryGetSubcolumnType(subcolumn) != nullptr,
+                                .converts = !source_type->equals(*decoded_type),
+                                .name = hint ? hint->getName() : String{}};
+                        };
+                        auto preferred = [](const Candidate & a, const Candidate & b)
+                        {
+                            if (a.resolves != b.resolves)
+                                return a.resolves;
+                            if (a.converts != b.converts)
+                                return a.converts;
+                            return a.name < b.name;
+                        };
+                        Candidate best = candidate_of(key_lookup_hint);
+                        while (next_shared_choices())
+                        {
+                            DataTypePtr hint = keyLookupSourceHint(
+                                decoded_type, subcolumn, header_column.type, /*requested=*/nullptr, search_nested,
+                                /*array_depth=*/0, find_requested, case_insensitive, format_settings);
+                            Candidate candidate = candidate_of(hint);
+                            if (preferred(candidate, best))
+                            {
+                                best = std::move(candidate);
+                                key_lookup_hint = std::move(hint);
+                            }
+                        }
+                    }
+                }
             }
             if (key_lookup_hint)
             {
