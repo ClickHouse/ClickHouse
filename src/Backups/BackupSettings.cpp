@@ -158,15 +158,14 @@ CoreSettingsFromQuery BackupSettings::extractCoreSettingsFromQuery(const ASTBack
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = make_intrusive<ASTSetQuery>();
-    query_settings->is_standalone = false;
+    SettingsChanges changes;
 
     /// Copy the fields of the BackupSettings to the query.
     static const BackupSettings default_settings;
 
 #define COPY_BACKUP_SETTINGS_TO_QUERY(TYPE, NAME) \
     if ((NAME) != default_settings.NAME) \
-        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
+        changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
 
     LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
 
@@ -174,28 +173,15 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// share of the backup without fsync, so an explicitly requested value is sent even when the
     /// loop above omitted it for equalling the default. An unnamed one stays omitted.
     if (fsync_backup_files_specified && fsync_backup_files == default_settings.fsync_backup_files)
-        query_settings->changes.emplace_back(
-            "fsync_backup_files", static_cast<Field>(SettingFieldBool{fsync_backup_files}));
+        changes.emplace_back("fsync_backup_files", static_cast<Field>(SettingFieldBool{fsync_backup_files}));
 
     /// Only the `checksum` generator uses it, and not sending it otherwise keeps hosts that do not know this setting working.
     if (data_file_name_generator == BackupDataFileNameGeneratorType::Checksum && data_file_name_prefix_length)
-        query_settings->changes.emplace_back("data_file_name_prefix_length", Field(static_cast<UInt64>(*data_file_name_prefix_length)));
+        changes.emplace_back("data_file_name_prefix_length", Field(static_cast<UInt64>(*data_file_name_prefix_length)));
 
-    /// Copy the core settings to the query too.
-    query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
-
-    /// Other hosts re-parse this clause as text, and older parsers reject `name = DEFAULT` after a comma, so no reset is sent.
-    ///
-    /// Nor is a core reset sent as its default: that marks it changed on the receiver, where e.g. `BackupWriterS3` then overrides `<s3>`.
-    /// The DDL settings packet already omits it, so only its overrides are dropped.
-    ///
-    /// A backup-specific reset is not sent: the rebuild carries resolved state, and resolving it again would lose `backup_uuid`.
-    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
-
-    if (query_settings->changes.empty())
-        query_settings = nullptr;
-
-    query.settings = query_settings;
+    /// Read from the incoming clause before it is replaced.
+    const auto core_default_names = extractCoreSettingsFromQuery(query).default_names;
+    query.settings = makeSettingsClauseForOtherHosts(std::move(changes), core_settings, core_default_names);
 
     auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
     if (base_backup_name)

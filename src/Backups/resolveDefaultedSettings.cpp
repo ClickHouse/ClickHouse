@@ -62,7 +62,7 @@ CoreSettingsFromQuery extractCoreSettings(
     return res;
 }
 
-void eraseOverridesOfResetSettings(SettingsChanges & changes, const std::vector<String> & default_names)
+static void eraseOverridesOfResetSettings(SettingsChanges & changes, const std::vector<String> & default_names)
 {
     for (const auto & name : default_names)
     {
@@ -77,6 +77,22 @@ void eraseOverridesOfResetSettings(SettingsChanges & changes, const std::vector<
                     || std::ranges::find(equivalent_names, change.name) != equivalent_names.end();
             });
     }
+}
+
+ASTPtr makeSettingsClauseForOtherHosts(
+    SettingsChanges specific_changes, const SettingsChanges & core_settings, const std::vector<String> & core_default_names)
+{
+    SettingsChanges changes = std::move(specific_changes);
+    changes.insert(changes.end(), core_settings.begin(), core_settings.end());
+    eraseOverridesOfResetSettings(changes, core_default_names);
+
+    if (changes.empty())
+        return nullptr;
+
+    auto clause = make_intrusive<ASTSetQuery>();
+    clause->is_standalone = false;
+    clause->changes = std::move(changes);
+    return clause;
 }
 
 }

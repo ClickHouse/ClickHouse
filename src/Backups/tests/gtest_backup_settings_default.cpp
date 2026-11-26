@@ -61,6 +61,24 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryForwardsNoReset)
         << "the generated backup_uuid was discarded";
 }
 
+/// A clause left with no change once the overrides of resets are dropped is omitted, not sent as an empty `SETTINGS`.
+TEST(BackupSettingsDefault, CopySettingsToQueryOmitsAnEmptyClause)
+{
+    ASTPtr backup_holder;
+    ASTBackupQuery * backup_query
+        = parseBackupQuery(backup_holder, "BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = 4, max_threads = DEFAULT");
+    ASSERT_NE(nullptr, backup_query);
+    BackupSettings::fromBackupQuery(*backup_query).copySettingsToQuery(*backup_query);
+    EXPECT_EQ(nullptr, backup_query->settings) << "rebuilt: " << backup_query->formatWithSecretsOneLine();
+
+    ASTPtr restore_holder;
+    ASTBackupQuery * restore_query
+        = parseBackupQuery(restore_holder, "RESTORE TABLE t FROM Disk('d', 'b') SETTINGS max_threads = 4, max_threads = DEFAULT");
+    ASSERT_NE(nullptr, restore_query);
+    RestoreSettings::fromRestoreQuery(*restore_query).copySettingsToQuery(*restore_query);
+    EXPECT_EQ(nullptr, restore_query->settings) << "rebuilt: " << restore_query->formatWithSecretsOneLine();
+}
+
 /// A named `fsync_backup_files` is sent even at its default, so that a host not knowing it rejects the query; a reset names it too.
 TEST(BackupSettingsDefault, BackupCopySettingsToQuerySendsAResetFsyncBackupFiles)
 {

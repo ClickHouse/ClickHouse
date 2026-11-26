@@ -4,7 +4,6 @@
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Backups/SettingsFieldOptionalBool.h>
@@ -285,28 +284,20 @@ CoreSettingsFromQuery RestoreSettings::extractCoreSettingsFromQuery(const ASTBac
 
 void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = make_intrusive<ASTSetQuery>();
-    query_settings->is_standalone = false;
+    SettingsChanges changes;
 
     /// Copy the fields of the RestoreSettings to the query.
     static const RestoreSettings default_settings;
 
 #define COPY_RESTORE_SETTINGS_TO_QUERY(TYPE, NAME) \
     if ((NAME) != default_settings.NAME) \
-        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
+        changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
 
     LIST_OF_RESTORE_SETTINGS(COPY_RESTORE_SETTINGS_TO_QUERY)
 
-    /// Copy the core settings to the query too.
-    query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
-
-    /// No reset is sent, only the overrides it cancels are dropped, as in `BackupSettings::copySettingsToQuery`.
-    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
-
-    if (query_settings->changes.empty())
-        query_settings = nullptr;
-
-    query.settings = query_settings;
+    /// Read from the incoming clause before it is replaced.
+    const auto core_default_names = extractCoreSettingsFromQuery(query).default_names;
+    query.settings = makeSettingsClauseForOtherHosts(std::move(changes), core_settings, core_default_names);
 
     auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
     if (base_backup_name)
