@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동으로 생성됩니다.
 
-<div id="hdfs_create_new_file_on_insert">
-  ## hdfs_create_new_file_on_insert
-</div>
+## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -28,9 +26,7 @@ HDFS 엔진 테이블에서 각 삽입 시 새 파일을 생성할지 여부를 
 * 0 — `INSERT` 쿼리가 파일 끝에 새 데이터를 추가합니다.
 * 1 — `INSERT` 쿼리가 새 파일을 생성합니다.
 
-<div id="hdfs_ignore_file_doesnt_exist">
-  ## hdfs_ignore_file_doesnt_exist
-</div>
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,17 +39,13 @@ HDFS 엔진 테이블에서 각 삽입 시 새 파일을 생성할지 여부를 
 * 1 — `SELECT`는 빈 결과를 반환합니다.
 * 0 — `SELECT`는 예외를 발생시킵니다.
 
-<div id="hdfs_replication">
-  ## hdfs_replication
-</div>
+## hdfs_replication {#hdfs_replication}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 실제 복제 수는 HDFS 파일을 생성할 때 지정할 수 있습니다.
 
-<div id="hdfs_skip_empty_files">
-  ## hdfs_skip_empty_files
-</div>
+## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -64,9 +56,20 @@ HDFS 엔진 테이블에서 각 삽입 시 새 파일을 생성할지 여부를 
 * 0 — 빈 파일이 요청한 포맷과 호환되지 않으면 `SELECT`가 예외를 발생시킵니다.
 * 1 — 빈 파일에 대해 `SELECT`가 빈 결과를 반환합니다.
 
-<div id="hdfs_throw_on_zero_files_match">
-  ## hdfs_throw_on_zero_files_match
-</div>
+## hdfs_skip_hidden_files {#hdfs_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새로운 설정: 다른 Hive 생태계 리더와 마찬가지로, 글롭으로 파일 목록을 조회할 때 글롭이 아닌 접두사 아래에 `_` 또는 `.`로 시작하는 경로 세그먼트가 있는 파일을 건너뜁니다. `partition_strategy = 'hive'`인 테이블은 항상 이러한 경로를 건너뜁니다."}]}]} />
+
+[HDFS](/ko/reference/engines/table-engines/integrations/hdfs) 엔진 테이블(Engine Tables)에서 글롭으로 파일 목록을 조회할 때 숨겨진 경로를 건너뛸지 여부를 활성화하거나 비활성화합니다. 숨겨진 경로란 경로에서 글롭이 아닌 접두사 아래에 `_` 또는 `.`로 시작하는 세그먼트가 있는 파일을 말합니다. `=`를 포함하는 세그먼트는 파티션 디렉터리(예: 파티션 열(partition column) `_p`에 대한 `_p=1`)이므로 숨겨진 경로로 간주하지 않습니다. Hive 생태계의 writer(Hive, Spark, Trino)는 진행 중인 출력을 이러한 경로에 스테이징하고 마커 파일을 기록하므로(`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), 이를 읽으면 writer의 커밋과 경쟁 상태가 발생합니다. 글롭이 아닌 접두사에 포함된 세그먼트는 검사하지 않습니다. `partition_strategy = 'hive'`인 테이블은 이 설정과 관계없이 항상 숨겨진 경로를 건너뜁니다.
+
+가능한 값:
+
+* 0 — 글롭과 일치하는 모든 파일을 읽습니다.
+* 1 — 글롭이 아닌 접두사 아래에 숨겨진 경로 세그먼트가 있는 파일을 건너뜁니다.
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -79,9 +82,7 @@ HDFS 엔진 테이블에서 각 삽입 시 새 파일을 생성할지 여부를 
 * 1 — `SELECT`가 예외를 발생시킵니다.
 * 0 — `SELECT`는 빈 결과를 반환합니다.
 
-<div id="hdfs_truncate_on_insert">
-  ## hdfs_truncate_on_insert
-</div>
+## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

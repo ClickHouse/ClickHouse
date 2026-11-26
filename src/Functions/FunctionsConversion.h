@@ -3031,6 +3031,18 @@ struct ConvertImpl
             else
                 scale = additions;
 
+            /// With the same scale only the time zone can differ, which keeps the ticks.
+            if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDateTime64>)
+            {
+                if (col_from->getScale() == scale)
+                {
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        return ColumnNullable::create(named_from.column, ColumnUInt8::create(input_rows_count, false));
+                    else
+                        return named_from.column;
+                }
+            }
+
             auto col_to = ColVecTo::create(0, scale);
             const auto & vec_from = col_from->getData();
             auto & vec_to = col_to->getData();
