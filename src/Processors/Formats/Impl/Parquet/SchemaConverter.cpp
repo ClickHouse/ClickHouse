@@ -244,7 +244,7 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
 
 bool SchemaConverter::canLendPath(const TraversalNode & node) const
 {
-    /// ColumnMapper can replace a path with a shorter one (processSubtreeArrayInner).
+    /// `ColumnMapper` can replace a path with a shorter one (`processSubtreeArrayInner`).
     return sample_block && !column_mapper && !node.requested && node.name.size() >= max_requested_name_size;
 }
 
@@ -267,12 +267,12 @@ static bool isPrimitiveNode(const parq::SchemaElement & elem)
 /// specification allows a reader to return a null reference for such rows, and returning the
 /// stored fields is not less informative than that (a reference with all fields null is the null
 /// reference), while avoiding a pass over the values.
-static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const String & name_for_logging)
+static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const std::function<String()> & get_name_for_logging)
 {
     const parq::SchemaElement & group = file_metadata.schema.at(group_schema_idx);
     const size_t first_child_idx = group_schema_idx + 1;
     if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", get_name_for_logging(), group.num_children, file_metadata.schema.size() - first_child_idx);
 
     UnorderedSetWithMemoryTracking<std::string_view> seen_names;
     for (size_t i = 0; i < size_t(group.num_children); ++i)
@@ -283,16 +283,16 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
         if (!kind.has_value())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Parquet column {} has `FILE` logical type, but contains unrecognized field `{}`. Valid fields are: {}",
-                name_for_logging, field.name, file_logical_type_field_names);
+                get_name_for_logging(), field.name, file_logical_type_field_names);
         if (!seen_names.insert(field.name).second)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", name_for_logging, field.name);
+                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", get_name_for_logging(), field.name);
         if (!isPrimitiveNode(field))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", name_for_logging, field.name);
+                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", get_name_for_logging(), field.name);
         if (field.repetition_type != parq::FieldRepetitionType::OPTIONAL)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", name_for_logging, field.name);
+                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", get_name_for_logging(), field.name);
 
         const parq::LogicalType & logical = field.logicalType;
         const bool has_annotation = field.__isset.logicalType || field.__isset.converted_type;
@@ -322,7 +322,7 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
         if (!field.__isset.type || !valid_type)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Parquet column {} has `FILE` logical type, but its field `{}` has unexpected type (expected {}): {}",
-                name_for_logging, field.name, expected_type, thriftToString(field));
+                get_name_for_logging(), field.name, expected_type, thriftToString(field));
     }
 }
 
@@ -479,7 +479,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         if (isPrimitiveNode(*node.element))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Parquet column {} has `FILE` logical type, but it is a primitive column rather than a group", node.getNameForLogging());
-        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, node.getNameForLogging());
+        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, [&] { return node.getNameForLogging(); });
     }
 
     if (!processSubtreePrimitive(node) &&
@@ -1084,7 +1084,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     ...
 
     /// Not a Map's key_value tuple: `map.keys` and `map.values` are the names of the subcolumns of a Map.
-    /// Only a name at least 2 shorter than a requested name can be its path prefix in addMissingElementOfTupleInArray.
+    /// Only a name at least 2 shorter than a requested name can be its path prefix in `addMissingElementOfTupleInArray`.
     const bool is_tuple_in_array = sample_block && !node.requested && !node.not_in_datalake_schema && levels.back().rep > 0
         && node.schema_context != SchemaContext::MapTuple && node.name.size() + 1 < max_requested_name_size;
     const size_t tuple_schema_idx = schema_idx - 1;

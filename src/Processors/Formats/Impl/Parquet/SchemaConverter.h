@@ -107,7 +107,7 @@ private:
         std::optional<size_t> output_idx; // index in output_columns
 
         /// Set if `name` and `parquet_name` are borrowed from the parent, which takes them back
-        /// truncated to these sizes in takeBackPath.
+        /// truncated to these sizes in `takeBackPath`.
         struct LentPath
         {
             size_t name_size = 0;
@@ -142,7 +142,7 @@ private:
             }
         }
 
-        TraversalNode prepareToRecurse(SchemaContext schema_context_, DataTypePtr type_hint_, bool lend_path = false)
+        TraversalNode prepareToRecurse(SchemaContext schema_context_, DataTypePtr type_hint_, bool lend_path)
         {
             std::optional<LentPath> lent;
             String lent_name;
@@ -168,7 +168,7 @@ private:
             return res;
         }
 
-        /// Takes back the path lent to `child` by prepareToRecurse, if any.
+        /// Takes back the path lent to `child` by `prepareToRecurse`, if any.
         void takeBackPath(TraversalNode & child)
         {
             if (!child.lent_path)

@@ -29,8 +29,8 @@ class W:
     def zz(s, n): s.varint(((n << 1) ^ (n >> 63)) & ((1 << 64) - 1))
 
 CT_I32, CT_I64, CT_BIN, CT_LIST, CT_STRUCT = 5, 6, 8, 9, 12
-REQUIRED, REPEATED = 0, 2
-INT32, DOUBLE, BYTE_ARRAY = 1, 5, 6
+REQUIRED, OPTIONAL, REPEATED = 0, 1, 2
+INT32, INT64, DOUBLE, BYTE_ARRAY = 1, 2, 5, 6
 
 def field(w, last, fid, ctype):
     d = fid - last
@@ -38,7 +38,7 @@ def field(w, last, fid, ctype):
     else: w.u8(ctype); w.zz(fid)
     return fid
 
-def schema_elem(w, name, repetition=None, num_children=None, ptype=None):
+def schema_elem(w, name, repetition=None, num_children=None, ptype=None, file_type=False):
     last = 0
     if ptype is not None:
         last = field(w, last, 1, CT_I32); w.zz(ptype)
@@ -47,6 +47,8 @@ def schema_elem(w, name, repetition=None, num_children=None, ptype=None):
     last = field(w, last, 4, CT_BIN); w.varint(len(name)); w.out += name.encode()
     if num_children is not None:
         last = field(w, last, 5, CT_I32); w.zz(num_children)
+    if file_type:
+        last = field(w, last, 10, CT_STRUCT); field(w, 0, 19, CT_STRUCT); w.u8(0); w.u8(0)
     w.u8(0)
 
 def build(path, elements):
@@ -70,15 +72,25 @@ def long_group(path, name_size, children, repetition, child):
 
 # A group named 'a' * 4000000 with 500000 DOUBLE leaves.
 long_group(f"{work}/wide.parquet", 4000000, 500000, REQUIRED, lambda n: (n, REQUIRED, None, DOUBLE))
+# A group named 'a' * 16000000 with 250000 `FILE` groups that have no fields.
+long_group(f"{work}/file_children.parquet", 16000000, 250000, REQUIRED, lambda n: (n, REQUIRED, 0, None, True))
 # A repeated group named 'a' * 1000000 with 2000 empty groups.
 long_group(f"{user_files}/repeated.parquet", 1000000, 2000, REPEATED, lambda n: (n, REQUIRED, 0))
 # A group `g` with one INT32 leaf with an empty name, so its path `g.` is as long as the requested name.
 build(f"{work}/boundary.parquet", [("root", None, 1), ("g", REQUIRED, 1), ("", REQUIRED, None, INT32)])
+# A variant group `vvvvv` as long as the requested name `value`, next to a top-level `value`.
+build(f"{work}/variant.parquet", [("root", None, 2), ("vvvvv", OPTIONAL, 2),
+                                  ("metadata", REQUIRED, None, BYTE_ARRAY), ("value", OPTIONAL, None, BYTE_ARRAY),
+                                  ("value", REQUIRED, None, INT64)])
 PYEOF
 
 out=$(timeout 60 ${CLICKHOUSE_LOCAL} -q "SELECT geometry FROM file('${WORK_DIR}/wide.parquet', Parquet, 'geometry String') FORMAT Null SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1)
 rc=$?
 if [ "$rc" = 0 ] && [ -z "$out" ]; then echo "wide: ok"; else echo "wide: UNEXPECTED rc=$rc ${out:0:200}"; fi
+
+out=$(timeout 60 ${CLICKHOUSE_LOCAL} -q "SELECT geometry FROM file('${WORK_DIR}/file_children.parquet', Parquet, 'geometry String') FORMAT Null SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1)
+rc=$?
+if [ "$rc" = 0 ] && [ -z "$out" ]; then echo "file: ok"; else echo "file: UNEXPECTED rc=$rc ${out:0:200}"; fi
 
 ${CLICKHOUSE_CLIENT} -q "SELECT geometry FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}/repeated.parquet', Parquet, 'geometry String') FORMAT Null SETTINGS input_format_parquet_use_native_reader_v3 = 1, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_repeated'"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
@@ -86,6 +98,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'repeated', memory_usage < 512000000 FROM system
 
 out=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${WORK_DIR}/boundary.parquet', Parquet, '\`g.\` Int32') SETTINGS input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_allow_missing_columns = 0" 2>&1)
 if [ -z "$out" ]; then echo "boundary: ok"; else echo "boundary: UNEXPECTED ${out:0:200}"; fi
+
+out=$(${CLICKHOUSE_LOCAL} -q "SELECT value FROM file('${WORK_DIR}/variant.parquet', Parquet, 'value Int64') SETTINGS input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_allow_missing_columns = 0, input_format_parquet_detect_variant_by_structure = 1" 2>&1)
+if [ -z "$out" ]; then echo "variant: ok"; else echo "variant: UNEXPECTED ${out:0:200}"; fi
 
 # The paths of the other columns stay intact after the children of a long-named node are read.
 ${CLICKHOUSE_LOCAL} -q "

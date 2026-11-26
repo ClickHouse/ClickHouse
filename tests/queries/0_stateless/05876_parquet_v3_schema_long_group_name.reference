@@ -1,6 +1,8 @@
 wide: ok
+file: ok
 repeated	1
 boundary: ok
+variant: ok
 1000
 1001
 1002
