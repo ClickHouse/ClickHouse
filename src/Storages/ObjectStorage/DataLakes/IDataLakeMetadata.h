@@ -175,6 +175,7 @@ public:
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
         const StorageID & /*table_id*/,
         ObjectStoragePtr /*object_storage*/,
         StorageObjectStorageConfigurationPtr /*configuration*/,

@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'Chat'
+sidebarTitle: 'Conversa'
 slug: /agents/chat
-title: 'Chat'
-description: 'Conversas, favoritos, conversas fixadas, fork, atalhos de teclado e compartilhamento de chats no ClickHouse Agents'
-keywords: ['AI', 'ClickHouse Cloud', 'agentes', 'chat', 'conversas', 'favoritos', 'conversas fixadas', 'atalhos de teclado', 'fork', 'compartilhar']
+title: 'Conversa'
+description: 'Conversas, favoritos, conversas fixadas, ramificação, atalhos de teclado e compartilhamento de conversas no ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agentes', 'conversa', 'conversas', 'favoritos', 'conversas fixadas', 'atalhos de teclado', 'bifurcação', 'compartilhar']
 doc_type: 'reference'
 ---
 
@@ -11,149 +11,113 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-A interface de chat no Agents permite gerenciar conversas, forks e compartilhamento.
+A interface de chat em Agents gerencia conversas, ramificações e compartilhamento.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Interface de chat do ClickHouse Agent mostrando a navegação à esquerda, o cabeçalho com a identidade do agente e o composer](/images/cloud/agent-builder/chat/chat.webp)
-
-</Frame>
-
+  <Frame>
+    ![Interface de chat do ClickHouse Agent mostrando a navegação à esquerda, o cabeçalho de identidade do agente e a área de composição da mensagem](/images/cloud/agent-builder/chat/chat.webp)
+  </Frame>
 </div>
 
-<div id="conversations">
-  ## Conversas
-</div>
+## Conversas {#conversations}
 
 Inicie uma nova conversa clicando no ícone de composição na navegação à esquerda.
-Selecione o agente que deseja usar na caixa de diálogo do seletor de agente, no canto superior esquerdo da janela da conversa — por padrão, o **ClickHouse Agent** fica selecionado.
-Agora você pode digitar sua mensagem no composer e clicar em enviar. Cada conversa é salva no histórico da barra lateral e pode ser reaberta, renomeada ou excluída depois.
+Escolha o agente que deseja usar no seletor de agentes, no canto superior esquerdo da janela da conversa — por padrão, o **ClickHouse Agent** já vem selecionado.
+Em seguida, digite sua mensagem no campo de composição e clique em enviar. Cada conversa fica salva no histórico da barra lateral e pode ser reaberta, renomeada ou excluída posteriormente.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Interface de chat com o ícone de composição destacado na navegação à esquerda, a barra lateral mostrando o histórico de Chats com uma conversa salva chamada Top 10 Tables Ranked e o composer com uma pergunta de exemplo digitada](/images/cloud/agent-builder/chat/conversation.webp)
-
-</Frame>
-
+  <Frame>
+    ![Interface de chat com o ícone de composição destacado na navegação à esquerda, a barra lateral exibindo o histórico de Chats com uma conversa salva chamada Top 10 Tables Ranked e o campo de composição com uma pergunta de exemplo digitada](/images/cloud/agent-builder/chat/conversation.webp)
+  </Frame>
 </div>
 
-Você pode editar qualquer uma das suas mensagens no próprio chat, e o agente regenerará a resposta a partir desse ponto no histórico da conversa.
-Você também pode regenerar apenas a última resposta do agente, sem reenviar sua mensagem.
+Você pode editar qualquer uma das suas mensagens diretamente, e o agente vai gerar a resposta novamente a partir desse ponto do histórico de conversas.
+Também é possível gerar novamente apenas a última resposta do agente, sem reenviar sua mensagem.
 
-<div id="bookmarks">
-  ## Favoritos
-</div>
+## Favoritos {#bookmarks}
 
-Marque uma mensagem ou uma conversa inteira como favorita para encontrá-la rapidamente depois. Os favoritos são visíveis apenas para você e permanecem mesmo após a conversa ser renomeada.
+Adicione uma mensagem ou uma conversa inteira aos favoritos para encontrá-la rapidamente depois. Os favoritos são visíveis apenas para você e são mantidos mesmo quando a conversa é renomeada.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Cabeçalho do chat com o ícone de favorito destacado e a dica de ferramenta Add Bookmarks visível](/images/cloud/agent-builder/chat/bookmark.webp)
-
-</Frame>
-
+  <Frame>
+    ![Cabeçalho do chat com o ícone de favoritos destacado e a dica de ferramenta Add favoritos visível](/images/cloud/agent-builder/chat/bookmark.webp)
+  </Frame>
 </div>
 
-<div id="pinned-conversations">
-  ## Conversas fixadas
-</div>
+## Conversas fixadas {#pinned-conversations}
 
-Fixe uma conversa para mantê-la no topo da barra lateral, separada do histórico agrupado por data logo abaixo. Abra o menu de opções da conversa (o ícone de três pontos) na barra lateral e selecione **Fixar**. As conversas fixadas aparecem em uma seção **Fixadas** acima dos grupos **Hoje**, **Ontem** e dos mais antigos.
+Fixe uma conversa para mantê-la no topo da barra lateral, separada do histórico agrupado por data logo abaixo. Na barra lateral, abra o menu de opções da conversa (o ícone de três pontos) e selecione **Fixar**. As conversas fixadas ficam reunidas em uma seção **Fixadas**, acima dos grupos **Hoje**, **Ontem** e dos mais antigos.
 
-Para desafixar, abra o mesmo menu e selecione **Desafixar**.
+Para desafixar uma conversa, abra o mesmo menu e selecione **Desafixar**.
 
-<div id="forking">
-  ## Forking
-</div>
+## Ramificação {#forking}
 
-O fork cria uma nova conversa a partir de uma mensagem específica. Você pode usá-lo para explorar um caminho alternativo sem alterar a thread original.
-Há três modos de fork disponíveis:
+A ramificação cria uma nova conversa a partir de uma mensagem específica. Use-a para explorar um caminho alternativo sem interferir na thread original.
+Há três modos de bifurcação disponíveis:
 
-* **Somente mensagens visíveis** - permite copiar o caminho direto até a mensagem bifurcada.
-* **Incluir ramificações relacionadas** - permite copiar o caminho principal mais todas as ramificações existentes.
-* **Incluir tudo até aqui** - permite copiar tudo até a mensagem bifurcada.
+* **Visible messages only** - copia o caminho direto até a mensagem bifurcada.
+* **Include related branches** - copia o caminho principal e todas as ramificações existentes.
+* **Include all to here** - copia tudo até a mensagem bifurcada.
 
-As conversas criadas por fork são independentes, portanto as alterações não são sincronizadas de volta com a original.
+As conversas bifurcadas são independentes, ou seja, as alterações não são sincronizadas com a conversa original.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Caixa de diálogo de seleção de opção de fork mostrando três ícones de modo de fork, as caixas de seleção Start fork here e Remember e a barra de ferramentas de ação da mensagem abaixo](/images/cloud/agent-builder/chat/fork.webp)
-
-</Frame>
-
+  <Frame>
+    ![Caixa de diálogo Select a fork option mostrando três ícones de modo de bifurcação, as caixas de seleção Start fork here e Remember e, abaixo, a barra de ferramentas de ações da mensagem](/images/cloud/agent-builder/chat/fork.webp)
+  </Frame>
 </div>
 
-<div id="sharing-chats">
-  ## Compartilhar conversas
-</div>
+## Compartilhamento de conversas {#sharing-chats}
 
-Gere um link compartilhável para qualquer conversa para enviá-la a um colega de equipe ou salvá-la para referência. Os destinatários veem uma visualização somente leitura, incluindo artefatos e ramificações visíveis. Você pode revogar um link no dashboard de compartilhamento a qualquer momento.
+Gere um link compartilhável para qualquer conversa e envie-o a um colega de equipe ou guarde-o como referência. Os destinatários veem uma visualização read-only, incluindo artefatos e ramificações visíveis. Você pode revogar um link a qualquer momento no dashboard de compartilhamento.
 
-As edições em mensagens existentes aparecem na visualização compartilhada; mensagens adicionadas após a geração do link não aparecem.
+Edições em mensagens existentes aparecem na visualização compartilhada; mensagens adicionadas depois da geração do link, não.
 
-Qualquer pessoa que visualizar um link compartilhado pode continuar a conversa na própria conta clicando em **Continue this chat**. Isso copia a conversa — incluindo a ramificação que a pessoa está visualizando — para o histórico dela como uma nova conversa privada, sem alterar a sua conversa original.
+Qualquer pessoa que acesse um link compartilhado pode dar continuidade à conversa na própria conta clicando em **Continue this chat**. Isso copia a conversa — incluindo a ramificação que a pessoa está visualizando — para o histórico dela como uma nova conversa privada, sem alterar a sua conversa original.
 
-Para compartilhar uma conversa, abra o menu dela na barra lateral e selecione **Share**:
+Para compartilhar uma conversa, abra o menu dela na barra lateral e selecione **Compartilhar**:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Menu da conversa na barra lateral com as opções Share, Rename, Duplicate, Archive e Delete visíveis](/images/cloud/agent-builder/chat/share.webp)
-
-</Frame>
-
+  <Frame>
+    ![Menu da conversa na barra lateral com as opções Compartilhar, Rename, Duplicate, Archive e Delete visíveis](/images/cloud/agent-builder/chat/share.webp)
+  </Frame>
 </div>
 
 Em seguida, clique em **Create link** na caixa de diálogo de compartilhamento:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Caixa de diálogo Share link to chat com o botão Create link e uma observação de que seu nome e quaisquer mensagens adicionadas após o compartilhamento permanecem privados](/images/cloud/agent-builder/chat/share-modal.webp)
-
-</Frame>
-
+  <Frame>
+    ![Caixa de diálogo Compartilhar link to chat com o botão Create link e um aviso de que seu nome e quaisquer mensagens adicionadas após o compartilhamento permanecem privados](/images/cloud/agent-builder/chat/share-modal.webp)
+  </Frame>
 </div>
 
-<div id="keyboard-shortcuts">
-  ## Atalhos de teclado
-</div>
+## Atalhos de teclado {#keyboard-shortcuts}
 
-Abra a referência de atalhos de teclado com `Cmd+Shift+/` (`Ctrl+Shift+/` no Windows e Linux) ou pelo menu da conta, em **Ajuda** → **Atalhos de teclado**. Todos os atalhos podem ser personalizados: clique em uma linha na caixa de diálogo para registrar uma nova combinação e use **Redefinir tudo para os padrões** para restaurar os atalhos padrão.
+Abra a referência de atalhos de teclado com `Cmd+Shift+/` (`Ctrl+Shift+/` no Windows e no Linux) ou pelo menu da conta, em **Help** → **Atalhos de teclado**. Todos os atalhos são personalizáveis: clique em uma linha da caixa de diálogo para gravar uma nova combinação e use **Reset all to defaults** para restaurar os valores padrão.
 
 Os atalhos padrão são:
 
-| Ação                               | macOS                 | Windows e Linux        |
-| ---------------------------------- | --------------------- | ---------------------- |
-| Mostrar atalhos de teclado         | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
-| Novo chat                          | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
-| Ir para o campo de entrada do chat | `Shift+Esc`           | `Shift+Esc`            |
-| Fazer upload de arquivo            | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
-| Copiar a última resposta           | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
-| Enviar mensagem                    | `Cmd+Enter`           | `Ctrl+Enter`           |
-| Alternar a barra lateral           | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
-| Abrir o seletor de modelo          | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
-| Ir para a Busca                    | `Cmd+/`               | `Ctrl+/`               |
-| Abrir configurações                | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
-| Favoritar conversa                 | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
-| Parar geração                      | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
-| Regenerar resposta                 | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
-| Editar a última mensagem           | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
-| Continuar resposta                 | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
-| Copiar o último bloco de código    | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
-| Rolar até o topo                   | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
-| Rolar até o fim                    | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
-| Arquivar conversa                  | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
-| Excluir conversa                   | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
+| Ação                                  | macOS                 | Windows e Linux        |
+| ------------------------------------- | --------------------- | ---------------------- |
+| Mostrar atalhos de teclado            | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
+| Nova conversa                         | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
+| Focar no campo de entrada da conversa | `Shift+Esc`           | `Shift+Esc`            |
+| Enviar arquivo                        | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
+| Copiar última resposta                | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
+| Enviar mensagem                       | `Cmd+Enter`           | `Ctrl+Enter`           |
+| Mostrar/ocultar barra lateral         | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
+| Abrir seletor de modelo               | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
+| Focar na busca                        | `Cmd+/`               | `Ctrl+/`               |
+| Abrir configurações                   | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
+| Adicionar conversa aos favoritos      | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
+| Interromper geração                   | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
+| Gerar resposta novamente              | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
+| Editar última mensagem                | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
+| Continuar resposta                    | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
+| Copiar último bloco de código         | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
+| Rolar até o topo                      | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
+| Rolar até o final                     | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
+| Arquivar conversa                     | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
+| Excluir conversa                      | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
 
-Você também pode atribuir seus próprios atalhos para abrir painéis como agents, Prompts, arquivos e favoritos — eles não têm teclas padrão.
+Você também pode atribuir seus próprios atalhos para abrir painéis como agentes, Prompts, arquivos e favoritos — eles não têm teclas padrão.

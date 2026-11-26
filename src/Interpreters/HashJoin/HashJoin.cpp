@@ -7,8 +7,10 @@
 
 #include <base/getL2CacheSize.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
@@ -1013,7 +1015,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
         if (!isLowCardinalityType(keyType()))
             prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
-        all_key_columns[column_name] = prepared_key_column;
+        /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+        all_key_columns[column_name] = replaceNegativeZeros(prepared_key_column);
     }
 
     if (strictness == JoinStrictness::Asof)
@@ -1307,7 +1310,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     LOG_DEBUG(
         log,
         "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
-        ReadableSize(total_bytes_in_join - new_total_bytes_in_join),
+        /// The shrink can also grow the byte count, e.g. when it rewrites blocks into new allocations.
+        ReadableSize(static_cast<double>(total_bytes_in_join) - static_cast<double>(new_total_bytes_in_join)),
         ReadableSize(current_memory_usage - new_current_memory_usage),
         ReadableSize(new_total_bytes_in_join),
         ReadableSize(new_current_memory_usage));
@@ -1737,7 +1741,7 @@ private:
     size_t num_buckets;
 
     HashJoinTable::Cursor position;
-    std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
+    std::optional<size_t> nulls_position;
     std::optional<HashJoin::StoredBlocksList::const_iterator> used_position;
 
     std::vector<GatherColumn> emit_gather;
@@ -1801,26 +1805,25 @@ private:
 
     void fillNullsFromBlocks(MutableColumns & columns_right, size_t & rows_added)
     {
-        /// for parallel iteration, only stream 0 handles nullmaps to avoid duplicates
-        if (bucket_idx != 0)
-            return;
-
+        /// For parallel iteration, stream bucket_idx takes holders bucket_idx, bucket_idx + num_buckets, ...
         if (!nulls_position.has_value())
-            nulls_position = parent.data->build_streams.front().nullmaps.begin();
+            nulls_position = bucket_idx;
 
-        auto end = parent.data->build_streams.front().nullmaps.end();
+        const auto & nullmaps = parent.data->build_streams.front().nullmaps;
+        const size_t step = std::max<size_t>(num_buckets, 1);
 
         size_t nulls_added = 0;
 
         PaddedPODArray<UInt64> words;
         words.reserve(max_block_size);
 
-        for (auto & it = *nulls_position; it != end && rows_added + nulls_added < max_block_size; ++it)
+        for (size_t & i = *nulls_position; i < nullmaps.size() && rows_added + nulls_added < max_block_size; i += step)
         {
-            const auto * columns = it->columns;
+            const auto & holder = nullmaps[i];
+            const auto * columns = holder.columns;
             ConstNullMapPtr nullmap = nullptr;
-            if (it->column)
-                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
+            if (holder.column)
+                nullmap = &assert_cast<const ColumnUInt8 &>(*holder.column).getData();
 
             /// Iterate only the selector's rows to avoid emitting rows outside this partition.
             for (size_t row : columns->selector)
