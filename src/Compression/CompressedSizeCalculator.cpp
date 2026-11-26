@@ -21,6 +21,13 @@ UInt32 getCompressedBlockSize(const ICompressionCodec & codec, const char * src,
     return codec.compress(src, src_size, scratch.data());
 }
 
+/// On-disk block layout must match CompressedWriteBuffer::nextImpl (checksum + header + payload)
+UInt64 getOnDiskBlockSize(const ICompressionCodec & codec, const char * src, size_t src_size, PODArray<char> & scratch)
+{
+    chassert(src_size <= INT_MAX);
+    return sizeof(CityHash_v1_0_2::uint128) + getCompressedBlockSize(codec, src, static_cast<UInt32>(src_size), scratch);
+}
+
 }
 
 CompressedSizeCalculator::CompressedSizeCalculator(CompressionCodecPtr codec_, size_t buf_size)
@@ -31,14 +38,19 @@ CompressedSizeCalculator::CompressedSizeCalculator(CompressionCodecPtr codec_, s
         codec = CompressionCodecFactory::instance().getDefaultCodec();
 }
 
+UInt64 CompressedSizeCalculator::getCompressedBytes() const
+{
+    if (!offset())
+        return compressed_total;
+
+    /// Not `scratch`: this is const and may run concurrently on one shared instance.
+    PODArray<char> open_block_scratch;
+    return compressed_total + getOnDiskBlockSize(*codec, working_buffer.begin(), offset(), open_block_scratch);
+}
+
 void CompressedSizeCalculator::nextImpl()
 {
-    chassert(offset() <= INT_MAX);
-    const UInt32 decompressed_size = static_cast<UInt32>(offset());
-
-    /// On-disk block layout must match CompressedWriteBuffer::nextImpl (checksum + header + payload)
-    compressed_total
-        += sizeof(CityHash_v1_0_2::uint128) + getCompressedBlockSize(*codec, working_buffer.begin(), decompressed_size, scratch);
+    compressed_total += getOnDiskBlockSize(*codec, working_buffer.begin(), offset(), scratch);
 }
 
 }

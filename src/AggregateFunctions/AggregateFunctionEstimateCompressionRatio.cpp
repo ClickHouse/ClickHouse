@@ -53,8 +53,7 @@ struct AggregationFunctionEstimateCompressionRatioData
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
-        /// Real cancellation can happen only in case of exception
-        /// In other cases the data will be read via finalizeAndGetSizes()
+        /// Only insertResultInto finalizes the calculator: serialize and merge read the sizes of an open one.
         if (calculator)
             calculator->cancel();
     }
@@ -83,7 +82,8 @@ private:
                 roundCompressBlockSizeToWholeValues(block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE), *argument_types[0]));
     }
 
-    std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
+    /// Does not modify the state: serialize and merge may read one shared state from several threads at once.
+    std::pair<UInt64, UInt64> getSizes(ConstAggregateDataPtr __restrict place) const
     {
         const Data & data_ref = data(place);
 
@@ -92,8 +92,6 @@ private:
 
         if (data_ref.calculator)
         {
-            data_ref.calculator->finalize();
-
             uncompressed_size += data_ref.calculator->getUncompressedBytes();
             compressed_size += data_ref.calculator->getCompressedBytes();
         }
@@ -186,7 +184,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(rhs);
+        auto [uncompressed_size, compressed_size] = getSizes(rhs);
 
         data(place).merged_uncompressed_size += uncompressed_size;
         data(place).merged_compressed_size += compressed_size;
@@ -194,7 +192,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
-        auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
+        auto [uncompressed_size, compressed_size] = getSizes(place);
 
         writeVarUInt(uncompressed_size, buf);
         writeVarUInt(compressed_size, buf);
@@ -208,7 +206,11 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
+        /// Finalized here because the reset below must not destroy an open buffer.
+        if (data(place).calculator)
+            data(place).calculator->finalize();
+
+        auto [uncompressed_size, compressed_size] = getSizes(place);
 
         /// Persist finalized sizes so the next add()/resetCalculatorIfNeeded() cycle
         /// preserves all previously accumulated data. Without this, window functions
