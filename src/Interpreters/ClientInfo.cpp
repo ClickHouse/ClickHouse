@@ -259,7 +259,7 @@ String ClientInfo::getInterserverQueryHash(const Poco::Net::StreamSocket & socke
         writeBinary(UInt8(current_roles.has_value()), message);
         if (current_roles)
             writeVectorBinary(*current_roles, message);
-        auto mac = hmacSHA256({reinterpret_cast<const UInt8 *>(secret.data()), secret.size()}, message.str());
+        auto mac = hmacSHA256({reinterpret_cast<const uint8_t *>(secret.data()), secret.size()}, message.str());
         return String(reinterpret_cast<const char *>(mac.data()), mac.size());
     }
 
