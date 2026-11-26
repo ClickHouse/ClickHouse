@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: long, no-fasttest
 # Tag no-fasttest: needs MinIO
 
 # `INSERT INTO t SELECT ... FROM <table function>` fills the fields missing in the input with the `DEFAULT`s of `t`.
