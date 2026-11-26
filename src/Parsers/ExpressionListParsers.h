@@ -80,7 +80,7 @@ public:
     }
 
 protected:
-    const char * getName() const override { return "list of elements"; }
+    [[nodiscard]] const char * getName() const override { return "list of elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 private:
     ParserPtr elem_parser;
@@ -116,10 +116,10 @@ public:
         return false;
     }
 
-    auto getUnionModes() const { return union_modes; }
+    [[nodiscard]] auto getUnionModes() const { return union_modes; }
 
 protected:
-    const char * getName() const override { return "list of union elements"; }
+    [[nodiscard]] const char * getName() const override { return "list of union elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 private:
     SelectUnionModes union_modes;
@@ -129,7 +129,7 @@ private:
 class ParserArray : public IParserBase
 {
 protected:
-    const char * getName() const override { return "array"; }
+    [[nodiscard]] const char * getName() const override { return "array"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -148,7 +148,7 @@ public:
     }
 
 protected:
-    const char * getName() const override { return "function"; }
+    [[nodiscard]] const char * getName() const override { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
     bool is_table_function;
@@ -160,7 +160,7 @@ protected:
 class ParserExpressionWithOptionalArguments : public IParserBase
 {
 protected:
-    const char * getName() const override { return "expression with optional parameters"; }
+    [[nodiscard]] const char * getName() const override { return "expression with optional parameters"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -183,7 +183,7 @@ public:
     }
 
 protected:
-    const char * getName() const override { return "list, delimited by binary operators"; }
+    [[nodiscard]] const char * getName() const override { return "list, delimited by binary operators"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -195,10 +195,10 @@ public:
     explicit ParserExpression(bool allow_trailing_commas_ = false, bool stop_at_and_insert_ = false)
         : allow_trailing_commas(allow_trailing_commas_), stop_at_and_insert(stop_at_and_insert_) {}
 
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    const char * getName() const override { return "lambda expression"; }
+    [[nodiscard]] const char * getName() const override { return "lambda expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
@@ -211,7 +211,7 @@ protected:
 class ParserTableFunctionExpression : public IParserBase
 {
 protected:
-    const char * getName() const override { return "table function expression"; }
+    [[nodiscard]] const char * getName() const override { return "table function expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -225,7 +225,7 @@ public:
 protected:
     ParserPtr impl;
 
-    const char * getName() const override { return "expression with optional alias"; }
+    [[nodiscard]] const char * getName() const override { return "expression with optional alias"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
@@ -251,7 +251,7 @@ protected:
     bool allow_trailing_commas;
     bool stop_at_and_insert;
 
-    const char * getName() const override { return "list of expressions"; }
+    [[nodiscard]] const char * getName() const override { return "list of expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -264,7 +264,7 @@ public:
 private:
     ParserExpressionList nested_parser;
 protected:
-    const char * getName() const override { return "not empty list of expressions"; }
+    [[nodiscard]] const char * getName() const override { return "not empty list of expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -276,42 +276,42 @@ public:
 protected:
     bool allow_order;
 
-    const char * getName() const override { return "storage order by expression"; }
+    [[nodiscard]] const char * getName() const override { return "storage order by expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserOrderByExpressionList : public IParserBase
 {
 protected:
-    const char * getName() const override { return "order by expression"; }
+    [[nodiscard]] const char * getName() const override { return "order by expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserAliasesExpressionList : public IParserBase
 {
 protected:
-    const char * getName() const override { return "list of aliases expressions"; }
+    [[nodiscard]] const char * getName() const override { return "list of aliases expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserGroupingSetsExpressionList : public IParserBase
 {
 protected:
-    const char * getName() const override { return "grouping sets expression"; }
+    [[nodiscard]] const char * getName() const override { return "grouping sets expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserGroupingSetsExpressionListElements : public IParserBase
 {
 protected:
-    const char * getName() const override { return "grouping sets expression elements"; }
+    [[nodiscard]] const char * getName() const override { return "grouping sets expression elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserInterpolateExpressionList : public IParserBase
 {
 protected:
-    const char * getName() const override { return "interpolate expression"; }
+    [[nodiscard]] const char * getName() const override { return "interpolate expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -321,7 +321,7 @@ protected:
 class ParserKeyValuePair : public IParserBase
 {
 protected:
-    const char * getName() const override { return "key-value pair"; }
+    [[nodiscard]] const char * getName() const override { return "key-value pair"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -330,7 +330,7 @@ protected:
 class ParserKeyValuePairsList : public IParserBase
 {
 protected:
-    const char * getName() const override { return "list of pairs"; }
+    [[nodiscard]] const char * getName() const override { return "list of pairs"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -341,7 +341,7 @@ public:
     explicit ParserTTLExpressionList(bool stop_at_and_insert_ = false) : stop_at_and_insert(stop_at_and_insert_) {}
 
 protected:
-    const char * getName() const override { return "ttl expression list"; }
+    [[nodiscard]] const char * getName() const override { return "ttl expression list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool stop_at_and_insert;
 };

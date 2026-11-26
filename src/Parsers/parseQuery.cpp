@@ -453,6 +453,7 @@ ASTPtr tryParseQuery(
         diagnostics->expected.max_parsed_pos = nullptr;
         diagnostics->expected.highlights.clear();
         diagnostics->expected.failed_keyword_readings.reset();
+        diagnostics->expected.failed_subquery_readings.reset();
         diagnostics->error_token = Token{};
     }
 
@@ -735,6 +736,12 @@ ASTPtr parseQuery(
     size_t max_parser_backtracks)
 {
     return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks);
+}
+
+
+ASTPtr parseQueryFromText(IParser & parser, std::string_view query)
+{
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0, 0);
 }
 
 
