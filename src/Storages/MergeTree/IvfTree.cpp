@@ -348,6 +348,35 @@ void IvfTree::serialize(WriteBuffer & out) const
     }
 }
 
+IvfTree IvfTree::fromLevels(size_t dimensions, std::vector<std::vector<float>> centroids, std::vector<std::vector<UInt32>> child_offsets)
+{
+    if (centroids.empty() || centroids.size() != child_offsets.size() || !child_offsets.back().empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "An IVF tree of {} levels of centroids and {} of offsets", centroids.size(), child_offsets.size());
+    IvfTree tree(dimensions);
+    tree.levels.resize(centroids.size());
+    for (size_t l = 0; l < centroids.size(); ++l)
+    {
+        if (centroids[l].empty() || centroids[l].size() % dimensions != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "A level of an IVF tree of {} values of {} dimensions", centroids[l].size(), dimensions);
+        tree.levels[l].centroids = std::move(centroids[l]);
+        tree.levels[l].child_offsets = std::move(child_offsets[l]);
+    }
+    tree.checkOffsets();
+    tree.finish();
+    return tree;
+}
+
+void IvfTree::checkOffsets() const
+{
+    for (size_t l = 0; l + 1 < levels.size(); ++l)
+    {
+        const auto & offsets = levels[l].child_offsets;
+        if (offsets.size() != levels[l].nodes(dimensions) + 1 || offsets.front() != 0 || offsets.back() != levels[l + 1].nodes(dimensions)
+            || std::adjacent_find(offsets.begin(), offsets.end(), std::greater_equal<UInt32>()) != offsets.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "A level of an IVF tree has invalid offsets of the children");
+    }
+}
+
 void IvfTree::deserialize(ReadBuffer & in)
 {
     UInt64 depth = 0;
@@ -370,13 +399,7 @@ void IvfTree::deserialize(ReadBuffer & in)
             in.readStrict(reinterpret_cast<char *>(level.child_offsets.data()), level.child_offsets.size() * sizeof(UInt32));
         }
     }
-    for (size_t l = 0; l + 1 < depth; ++l)
-    {
-        const auto & offsets = levels[l].child_offsets;
-        if (offsets.front() != 0 || offsets.back() != levels[l + 1].nodes(dimensions)
-            || std::adjacent_find(offsets.begin(), offsets.end(), std::greater_equal<UInt32>()) != offsets.end())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "A level of an IVF tree has invalid offsets of the children");
-    }
+    checkOffsets();
     finish();
 }
 

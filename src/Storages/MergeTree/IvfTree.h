@@ -49,6 +49,9 @@ public:
     /// of every level above the leaves.
     void route(const float * vector, size_t beam, size_t keep, std::vector<UInt32> & result, Scratch & scratch) const;
 
+    /// The tree of these levels, the children of the root first; `child_offsets` of the leaves is empty.
+    static IvfTree fromLevels(size_t dimensions, std::vector<std::vector<float>> centroids, std::vector<std::vector<UInt32>> child_offsets);
+
     void serialize(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);
 
@@ -66,6 +69,7 @@ private:
     };
 
     void finish();
+    void checkOffsets() const;
 
     size_t dimensions = 0;
     /// The children of the root first, the leaves last.

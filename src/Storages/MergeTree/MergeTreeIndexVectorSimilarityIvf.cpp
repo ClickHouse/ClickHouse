@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <mutex>
 #include <numeric>
+#include <map>
 #include <optional>
 #include <queue>
 #include <random>
@@ -82,7 +83,8 @@ constexpr size_t rescoring_factor = 4;
 
 constexpr size_t max_sample_bytes = 512 << 20;
 constexpr size_t assign_block_bytes = 32 << 20;
-constexpr size_t max_bucket_bytes = 256 << 20;
+/// The lists whose entries are sorted together when the index is written: about 4 MiB of entries per list at most.
+constexpr size_t lists_per_bucket = 4096;
 
 /// The rows of a list that the index aims at when the number of lists is not given.
 constexpr size_t default_list_rows = 1024;
@@ -135,6 +137,18 @@ std::vector<float> makeRotation(size_t dimensions, UInt64 seed)
             row[k] *= inverse;
     }
     return std::vector<float>(rows.begin(), rows.end());
+}
+
+/// The rotation of all indexes of `dimensions`, from one seed, so that it is not stored.
+const std::vector<float> & rotationOf(size_t dimensions)
+{
+    static std::mutex mutex;
+    static std::map<size_t, std::vector<float>> rotations;
+    std::lock_guard lock(mutex);
+    auto [it, inserted] = rotations.try_emplace(dimensions);
+    if (inserted)
+        it->second = makeRotation(dimensions, /*seed=*/ 42);
+    return it->second;
 }
 
 std::vector<float> rotateCentroids(const std::vector<float> & rotation, const std::vector<float> & centroids, size_t lists, size_t dimensions)
@@ -334,7 +348,7 @@ MergeTreeIndexGranuleIvf::~MergeTreeIndexGranuleIvf() = default;
 
 size_t MergeTreeIndexGranuleIvf::memoryUsageBytes() const
 {
-    return tree.memoryUsageBytes() + (rotation.size() + rotated_centroids.size()) * sizeof(float) + list_offsets.size() * sizeof(UInt64);
+    return (rotated_centroids.size()) * sizeof(float) + list_offsets.size() * sizeof(UInt64);
 }
 
 size_t MergeTreeIndexGranuleIvf::entryBytes() const
@@ -365,8 +379,7 @@ void MergeTreeIndexGranuleIvf::serializeBinaryWithMultipleStreams(MergeTreeIndex
     writeIntBinary(static_cast<UInt64>(rows), header);
     writeIntBinary(static_cast<UInt64>(lists), header);
     writeIntBinary(static_cast<UInt64>(lists_stream.count()), header);
-    tree.serialize(header);
-    header.write(reinterpret_cast<const char *>(rotation.data()), rotation.size() * sizeof(float));
+    writeIntBinary(tree_version, header);
     header.write(reinterpret_cast<const char *>(list_offsets.data()), list_offsets.size() * sizeof(UInt64));
 
     const size_t code_bytes = IvfQuantization::codeBytes(dimensions);
@@ -433,17 +446,10 @@ void MergeTreeIndexGranuleIvf::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
     rows = persisted_rows;
     lists = persisted_lists;
-    tree = IvfTree(dimensions);
-    tree.deserialize(istr);
-    if (tree.leaves() != lists)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has {} lists, but its tree has {} leaves",
-            backQuote(index_name), lists, tree.leaves());
-    rotation.resize(dimensions * dimensions);
+    readIntBinary(tree_version, istr);
     list_offsets.resize(lists + 1);
-    istr.readStrict(reinterpret_cast<char *>(rotation.data()), rotation.size() * sizeof(float));
     istr.readStrict(reinterpret_cast<char *>(list_offsets.data()), list_offsets.size() * sizeof(UInt64));
     buckets.clear();
-    rotated_centroids = rotateCentroids(rotation, tree.leafCentroids(), lists, dimensions);
 
     if (list_offsets[0] != 0 || !std::is_sorted(list_offsets.begin(), list_offsets.end()) || entries() != rows)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has invalid list offsets", backQuote(index_name));
@@ -454,6 +460,13 @@ void MergeTreeIndexGranuleIvf::deserializeBinaryWithMultipleStreams(MergeTreeInd
     deserializeBinary(*streams.at(MergeTreeIndexSubstream::Type::Regular)->getDataBuffer(), state.version);
     data_part_storage = state.part_info.getDataPartStorage();
     index_file_name = state.index.getFileName();
+
+    tree = IvfTreeStore::get(IvfTreeStore::tableOf(*data_part_storage), index_name, dimensions, tree_version);
+    if (tree->leaves() != lists)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has {} lists, but version {} of the tree of its table has {} leaves",
+            backQuote(index_name), lists, tree_version, tree->leaves());
+    rotation = rotationOf(dimensions);
+    rotated_centroids = rotateCentroids(rotation, tree->leafCentroids(), lists, dimensions);
 }
 
 namespace
@@ -501,7 +514,7 @@ NearestNeighbours MergeTreeIndexGranuleIvf::search(const std::vector<float> & qu
     std::vector<UInt32> order;
     IvfTree::Scratch scratch;
     /// A query keeps as many nodes on each level above the lists as it probes lists.
-    tree.route(query.data(), num_probes, num_probes, order, scratch);
+    tree->route(query.data(), num_probes, num_probes, order, scratch);
     const double route_ms = watch.elapsedSeconds() * 1000;
     ProfileEvents::increment(ProfileEvents::IvfIndexRouteMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::IvfIndexSearches);
@@ -634,17 +647,18 @@ NearestNeighbours MergeTreeIndexGranuleIvf::search(const std::vector<float> & qu
     }
 
     LOG_TRACE(logger, "Searched {} of {} lists ({}) of IVF index {} in {:.3f} ms (the tree of {} levels {:.3f} ms)",
-        order.size(), lists, ReadableSize(bytes_read), backQuote(index_name), watch.elapsedSeconds() * 1000, tree.depth(), route_ms);
+        order.size(), lists, ReadableSize(bytes_read), backQuote(index_name), watch.elapsedSeconds() * 1000, tree->depth(), route_ms);
     return result;
 }
 
 MergeTreeIndexAggregatorIvf::MergeTreeIndexAggregatorIvf(
-    const String & index_name_, const Block & index_sample_block_, size_t dimensions_, IvfMetric metric_, IvfParams params_)
+    const String & index_name_, const Block & index_sample_block_, size_t dimensions_, IvfMetric metric_, IvfParams params_, String table_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , dimensions(dimensions_)
     , metric(metric_)
     , params(params_)
+    , table(std::move(table_))
     , rng(42)
     , converted(dimensions_)
 {
@@ -657,6 +671,14 @@ MergeTreeIndexAggregatorIvf::~MergeTreeIndexAggregatorIvf() = default;
 void MergeTreeIndexAggregatorIvf::reset()
 {
     rows = 0;
+    encoded_rows = 0;
+    tree_looked_up = false;
+    tree.reset();
+    rotated_centroids = {};
+    buckets = {};
+    bucket_of_list = {};
+    counts = {};
+    pending = {};
     vectors.reset();
     sample = {};
 }
@@ -670,33 +692,15 @@ void MergeTreeIndexAggregatorIvf::add(const float * vector)
     ++rows;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
+void MergeTreeIndexAggregatorIvf::startEncoding(IvfTreeStore::VersionedTree tree_)
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleIvf>(index_name, metric, dimensions);
-    if (rows == 0)
-        return granule;
+    tree = std::move(tree_);
+    const size_t lists = tree->tree->leaves();
+    rotated_centroids = rotateCentroids(rotationOf(dimensions), tree->tree->leafCentroids(), lists, dimensions);
 
-    Stopwatch watch;
-    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::IvfIndexBuildMicroseconds, watch.elapsedMicroseconds()); });
-    const size_t sample_rows = sample.size() / dimensions;
-    const size_t wanted_lists = params.lists ? params.lists : (rows + default_list_rows - 1) / default_list_rows;
-    granule->tree = IvfTree::build(sample.data(), sample_rows, dimensions, wanted_lists, tree_branching, /*seed=*/ 42);
-    const size_t lists = granule->tree.leaves();
-    sample = {};
-    const double train_seconds = watch.elapsedSeconds();
-    ProfileEvents::increment(ProfileEvents::IvfIndexTrainMicroseconds, watch.elapsedMicroseconds());
-
-    granule->rows = rows;
-    granule->lists = lists;
-
-    granule->rotation = makeRotation(dimensions, /*seed=*/ 42);
-    granule->rotated_centroids = rotateCentroids(granule->rotation, granule->tree.leafCentroids(), lists, dimensions);
-
-    const size_t code_bytes = IvfQuantization::codeBytes(dimensions);
-    const size_t record_bytes = 2 * sizeof(UInt32) + sizeof(IvfQuantization::CodeParams) + code_bytes;
-    const size_t num_buckets = std::clamp<size_t>((rows * record_bytes + max_bucket_bytes - 1) / max_bucket_bytes, 1, lists);
-    std::vector<IvfListBucket> buckets(num_buckets);
-    std::vector<UInt32> bucket_of_list(lists);
+    const size_t num_buckets = (lists + lists_per_bucket - 1) / lists_per_bucket;
+    buckets.assign(num_buckets, {});
+    bucket_of_list.resize(lists);
     for (size_t b = 0; b < num_buckets; ++b)
     {
         buckets[b].first_list = b * lists / num_buckets;
@@ -705,60 +709,104 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
         for (size_t l = buckets[b].first_list; l < buckets[b].end_list; ++l)
             bucket_of_list[l] = static_cast<UInt32>(b);
     }
+    counts.assign(lists, 0);
+}
 
-    std::vector<UInt64> counts(lists, 0);
-    /// The records of a block, `record_bytes` each: the list, the row, the parameters and the codes.
-    std::vector<char> records;
+void MergeTreeIndexAggregatorIvf::encode(const float * block, size_t n)
+{
+    const size_t record_bytes = 2 * sizeof(UInt32) + sizeof(IvfQuantization::CodeParams) + IvfQuantization::codeBytes(dimensions);
+    const size_t lists = tree->tree->leaves();
 
-    vectors->finishWriting();
-    auto in = vectors->read();
-    double assign_seconds = 0;
+    Stopwatch assign_watch;
+    records.resize(n * record_bytes);
+    assignAndEncode(*tree->tree, rotationOf(dimensions), rotated_centroids, block, n, dimensions, assign_beam, static_cast<UInt32>(encoded_rows),
+        records.data());
+    ProfileEvents::increment(ProfileEvents::IvfIndexAssignMicroseconds, assign_watch.elapsedMicroseconds());
+
+    Stopwatch spill_watch;
+    for (size_t i = 0; i < n; ++i)
     {
-        const size_t block_rows = std::max<size_t>(assign_block_bytes / (dimensions * sizeof(float)), 1);
-        const auto & tree = granule->tree;
+        UInt32 list = 0;
+        memcpy(&list, records.data() + i * record_bytes, sizeof(list));
+        if (list >= lists)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index {} assigned a row to the list {} of {}", backQuote(index_name), list, lists);
+        buckets[bucket_of_list[list]].records->write(records.data() + i * record_bytes, record_bytes);
+        ++counts[list];
+    }
+    ProfileEvents::increment(ProfileEvents::IvfIndexSpillMicroseconds, spill_watch.elapsedMicroseconds());
+    encoded_rows += n;
+}
 
-        std::vector<float> block(block_rows * dimensions);
-        for (size_t first = 0; first < rows; first += block_rows)
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
+{
+    auto granule = std::make_shared<MergeTreeIndexGranuleIvf>(index_name, metric, dimensions);
+    if (rows == 0)
+    {
+        reset();
+        return granule;
+    }
+
+    Stopwatch watch;
+    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::IvfIndexBuildMicroseconds, watch.elapsedMicroseconds()); });
+
+    if (!tree)
+    {
+        /// The table had no tree when this part began: this part trains it, unless another one has meanwhile.
+        const size_t sample_rows = sample.size() / dimensions;
+        const size_t wanted_lists = params.lists ? params.lists : (rows + default_list_rows - 1) / default_list_rows;
+        auto trained = IvfTreeStore::latestOrTrain(table, index_name, dimensions, [&]
         {
-            const size_t n = std::min(block_rows, rows - first);
+            Stopwatch train_watch;
+            auto built = IvfTree::build(sample.data(), sample_rows, dimensions, wanted_lists, tree_branching, /*seed=*/ 42);
+            ProfileEvents::increment(ProfileEvents::IvfIndexTrainMicroseconds, train_watch.elapsedMicroseconds());
+            LOG_DEBUG(logger, "Trained the tree of IVF index {} of {} on {} of {} rows: {} lists, {} levels",
+                backQuote(index_name), table, sample_rows, rows, built.leaves(), built.depth());
+            return built;
+        });
+        sample = {};
+
+        const size_t spilled_rows = rows;
+        startEncoding(std::move(trained));
+        vectors->finishWriting();
+        auto in = vectors->read();
+        const size_t block_rows = std::max<size_t>(assign_block_bytes / (dimensions * sizeof(float)), 1);
+        std::vector<float> block(block_rows * dimensions);
+        for (size_t first = 0; first < spilled_rows; first += block_rows)
+        {
+            const size_t n = std::min(block_rows, spilled_rows - first);
             Stopwatch spill_watch;
             in->readStrict(reinterpret_cast<char *>(block.data()), n * dimensions * sizeof(float));
             ProfileEvents::increment(ProfileEvents::IvfIndexSpillMicroseconds, spill_watch.elapsedMicroseconds());
-
-            Stopwatch assign_watch;
-            records.resize(n * record_bytes);
-            assignAndEncode(tree, granule->rotation, granule->rotated_centroids, block.data(), n, dimensions, assign_beam,
-                static_cast<UInt32>(first), records.data());
-            assign_seconds += assign_watch.elapsedSeconds();
-            ProfileEvents::increment(ProfileEvents::IvfIndexAssignMicroseconds, assign_watch.elapsedMicroseconds());
-
-            spill_watch.restart();
-            for (size_t i = 0; i < n; ++i)
-            {
-                UInt32 list = 0;
-                memcpy(&list, records.data() + i * record_bytes, sizeof(list));
-                if (list >= lists)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index {} assigned a row to the list {} of {}",
-                        backQuote(index_name), list, lists);
-                buckets[bucket_of_list[list]].records->write(records.data() + i * record_bytes, record_bytes);
-                ++counts[list];
-            }
-            ProfileEvents::increment(ProfileEvents::IvfIndexSpillMicroseconds, spill_watch.elapsedMicroseconds());
+            encode(block.data(), n);
         }
+        in.reset();
+        vectors.reset();
     }
-    in.reset();
+
+    if (!pending.empty())
+    {
+        encode(pending.data(), pending.size() / dimensions);
+        pending.clear();
+    }
+    if (encoded_rows != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index {} encoded {} of {} rows", backQuote(index_name), encoded_rows, rows);
     for (auto & bucket : buckets)
         bucket.records->finishWriting();
 
+    const size_t lists = tree->tree->leaves();
+    granule->rows = rows;
+    granule->lists = lists;
+    granule->tree = tree->tree;
+    granule->tree_version = tree->version;
+    granule->rotation = rotationOf(dimensions);
+    granule->rotated_centroids = std::move(rotated_centroids);
     granule->list_offsets.assign(lists + 1, 0);
     for (size_t l = 0; l < lists; ++l)
         granule->list_offsets[l + 1] = granule->list_offsets[l] + counts[l];
     granule->buckets = std::move(buckets);
 
-    LOG_DEBUG(logger, "Built IVF index {} of {} rows with {} dimensions in {} lists, a tree of {} levels, in {:.3f} s "
-        "(the tree on {} rows {:.3f} s, routing the rows {:.3f} s), {} buckets",
-        backQuote(index_name), rows, dimensions, lists, granule->tree.depth(), watch.elapsedSeconds(), sample_rows, train_seconds,
-        assign_seconds, num_buckets);
+    LOG_DEBUG(logger, "Built IVF index {} of {} rows with {} dimensions by version {} of the tree of {} ({} lists) in {:.3f} s",
+        backQuote(index_name), rows, dimensions, tree->version, table, lists, watch.elapsedSeconds());
     reset();
     return granule;
 }
@@ -822,14 +870,36 @@ void MergeTreeIndexAggregatorIvf::update(const Block & block, size_t * pos, size
         checkFinite(vector, dimensions, ErrorCodes::INCORRECT_DATA, "indexed vector");
         if (metric == IvfMetric::Cosine)
             normalizeIvfVector(vector, dimensions);
-        add(vector);
     }
 
-    Stopwatch spill_watch;
-    if (!vectors)
-        vectors = std::make_shared<TemporaryDataBuffer>(temporaryData());
-    vectors->write(reinterpret_cast<const char *>(converted.data()), converted.size() * sizeof(float));
-    ProfileEvents::increment(ProfileEvents::IvfIndexSpillMicroseconds, spill_watch.elapsedMicroseconds());
+    if (!tree_looked_up)
+    {
+        tree_looked_up = true;
+        if (auto stored = IvfTreeStore::latest(table, index_name, dimensions))
+            startEncoding(std::move(*stored));
+    }
+
+    if (tree)
+    {
+        /// The table has its tree: the rows are encoded as they come, in blocks that keep all cores busy.
+        pending.insert(pending.end(), converted.begin(), converted.end());
+        rows += rows_read;
+        if (pending.size() * sizeof(float) >= assign_block_bytes)
+        {
+            encode(pending.data(), pending.size() / dimensions);
+            pending.clear();
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows_read; ++i)
+            add(converted.data() + i * dimensions);
+        Stopwatch spill_watch;
+        if (!vectors)
+            vectors = std::make_shared<TemporaryDataBuffer>(temporaryData());
+        vectors->write(reinterpret_cast<const char *>(converted.data()), converted.size() * sizeof(float));
+        ProfileEvents::increment(ProfileEvents::IvfIndexSpillMicroseconds, spill_watch.elapsedMicroseconds());
+    }
 
     *pos += rows_read;
 }
@@ -927,7 +997,13 @@ MergeTreeIndexFormat MergeTreeIndexIvf::getPhysicalFormat(
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexIvf::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorIvf>(index.name, index.sample_block, dimensions, metric, params);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index {} of method 'ivf' is built only for a part of its table", backQuote(index.name));
+}
+
+MergeTreeIndexAggregatorPtr MergeTreeIndexIvf::createIndexAggregatorForPart(const IDataPartStorage & part_storage) const
+{
+    return std::make_shared<MergeTreeIndexAggregatorIvf>(
+        index.name, index.sample_block, dimensions, metric, params, IvfTreeStore::tableOf(part_storage));
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexIvf::createIndexCondition(const ActionsDAG::Node *, ContextPtr) const
