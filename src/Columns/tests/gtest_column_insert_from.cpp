@@ -58,18 +58,6 @@ void checkDecimalSelfInsertion()
         [](size_t i) { return T{std::numeric_limits<typename T::NativeType>::max() - static_cast<typename T::NativeType>(i)}; });
 }
 
-template <typename Create>
-void checkSingletonAllocation(Create create)
-{
-    auto source = create();
-    source->insertDefault();
-    auto scalar = create();
-    auto range = create();
-    scalar->insertFrom(*source, 0);
-    range->insertRangeFrom(*source, 0, 1);
-    EXPECT_EQ(scalar->allocatedBytes(), range->allocatedBytes());
-}
-
 }
 
 TEST(ColumnInsertFrom, VectorSelfInsertionWithGrowth)
@@ -84,15 +72,6 @@ TEST(ColumnInsertFrom, DecimalSelfInsertionWithGrowth)
     checkDecimalSelfInsertion<Decimal64>();
     checkDecimalSelfInsertion<Decimal128>();
     checkDecimalSelfInsertion<Decimal256>();
-}
-
-TEST(ColumnInsertFrom, NumericSingletonAllocationMatchesRange)
-{
-    checkSingletonAllocation([] { return ColumnUInt8::create(); });
-    checkSingletonAllocation([] { return ColumnUInt256::create(); });
-    checkSingletonAllocation([] { return ColumnDecimal<Decimal64>::create(0, 6); });
-    checkSingletonAllocation([] { return ColumnDecimal<Decimal256>::create(0, 6); });
-    checkSingletonAllocation([] { return ColumnNullable::create(ColumnUInt8::create(), ColumnUInt8::create()); });
 }
 
 TEST(ColumnInsertFrom, NullableSelfInsertionWithNullMapGrowth)

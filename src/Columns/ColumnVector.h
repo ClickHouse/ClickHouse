@@ -66,9 +66,7 @@ public:
     {
         /// Snapshot before growing: the source may be this column.
         const T value = assert_cast<const Self &>(src).getData()[n];
-        const size_t old_size = data.size();
-        data.resize(old_size + 1);
-        data[old_size] = value;
+        data.push_back(value);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
