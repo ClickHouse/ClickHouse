@@ -17,6 +17,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 #include <Analyzer/Passes/AggregateFunctionsArithmeticOperationsPass.h>
+#include <Analyzer/Passes/AliasMapPushdownPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/RewriteArrayFilterLengthToArrayCountPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
@@ -300,6 +301,7 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
 
+    manager.addPass(std::make_unique<AliasMapPushdownPass>());
     manager.addPass(std::make_unique<MaterializedColumnSubstitutionPass>());
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());

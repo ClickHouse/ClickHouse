@@ -696,7 +696,7 @@ NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryT
         {
             const auto * column_node = current->as<ColumnNode>();
             if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
-                column_names.insert(column_node->getColumnName());
+                column_names.insert(column_node->getEffectiveAccessCheckColumnName());
         });
     return column_names;
 }

@@ -134,6 +134,30 @@ public:
         source = source_;
     }
 
+    struct PushdownMetadata
+    {
+        String access_check_column_name;
+        QueryTreeNodePtr original_node;
+    };
+
+    /// Optional table column name whose SELECT privilege authorizes this synthetic ALIAS node
+    /// and the original expression node to use when formatting ASTs.
+    [[nodiscard]] const String * getAccessCheckColumnName() const
+    {
+        return pushdown_metadata ? &pushdown_metadata->access_check_column_name : nullptr;
+    }
+
+    [[nodiscard]] const String & getEffectiveAccessCheckColumnName() const
+    {
+        return pushdown_metadata ? pushdown_metadata->access_check_column_name : column.name;
+    }
+
+    void setPushdownMetadata(String access_check_column_name_, QueryTreeNodePtr original_node_)
+    {
+        pushdown_metadata = std::make_unique<PushdownMetadata>(PushdownMetadata{
+            std::move(access_check_column_name_), std::move(original_node_)});
+    }
+
     [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
@@ -164,6 +188,7 @@ private:
 
     NameAndTypePair column;
     TableExpressionNodeWeakPtr source;
+    std::unique_ptr<PushdownMetadata> pushdown_metadata;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;

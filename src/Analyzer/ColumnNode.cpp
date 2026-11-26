@@ -61,6 +61,9 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 
     buffer << ", column_name: " << column.name << ", result_type: " << column.type->getName();
 
+    if (pushdown_metadata)
+        buffer << ", access_check_column: " << pushdown_metadata->access_check_column_name;
+
     auto column_source_ptr = source.lock();
     if (column_source_ptr)
         buffer << ", source_id: " << state.getNodeId(column_source_ptr.get());
@@ -77,7 +80,12 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const ColumnNode &>(rhs);
-    return column.name == rhs_typed.column.name && column.type->equals(*rhs_typed.column.type);
+    if (column.name != rhs_typed.column.name || !column.type->equals(*rhs_typed.column.type))
+        return false;
+    if (static_cast<bool>(pushdown_metadata) != static_cast<bool>(rhs_typed.pushdown_metadata))
+        return false;
+    return !pushdown_metadata
+        || pushdown_metadata->access_check_column_name == rhs_typed.pushdown_metadata->access_check_column_name;
 }
 
 void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
@@ -86,15 +94,32 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*com
     hash_state.update(column.name);
 
     column.type->updateHash(hash_state);
+
+    const bool has_pushdown_metadata = pushdown_metadata != nullptr;
+    hash_state.update(has_pushdown_metadata);
+    if (has_pushdown_metadata)
+    {
+        hash_state.update(pushdown_metadata->access_check_column_name.size());
+        hash_state.update(pushdown_metadata->access_check_column_name);
+    }
 }
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    return std::make_shared<ColumnNode>(column, source);
+    auto cloned = std::make_shared<ColumnNode>(column, source);
+    if (pushdown_metadata)
+    {
+        cloned->setPushdownMetadata(
+            pushdown_metadata->access_check_column_name,
+            pushdown_metadata->original_node ? pushdown_metadata->original_node->clone() : nullptr);
+    }
+    return cloned;
 }
 
 ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
 {
+    if (pushdown_metadata && pushdown_metadata->original_node)
+        return pushdown_metadata->original_node->toAST(options);
     std::vector<std::string> column_identifier_parts;
 
     auto column_source = getColumnSourceOrNull();

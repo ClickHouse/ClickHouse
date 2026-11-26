@@ -414,9 +414,11 @@ public:
         /// If replacing the direct root expression of an ordinary `ALIAS` column turns it into a
         /// trivial rename (`alias -> __mat_col`), `FunctionToSubcolumnsPass::resolveTrivialAliasChain`
         /// would unwrap it and check `SELECT` on `__mat_col` (e.g. `empty(svc)` -> `__mat_service.size`).
-        /// Require `SELECT` on the target column in that case (as well as when outside an ALIAS).
-        const bool is_direct_alias_root = !parent_stack.empty() && parent_stack.back()->getNodeType() == QueryTreeNodeType::COLUMN;
-        const bool skip_rbac_check = (alias_depth > 0 && !is_direct_alias_root);
+        /// Synthetic pushed-down ALIAS nodes carry `access_check_column_name` and are never unwrapped,
+        /// so only ordinary direct alias roots need the explicit `SELECT(__mat_col)` check.
+        const auto * enclosing_col = !parent_stack.empty() ? parent_stack.back()->as<ColumnNode>() : nullptr;
+        const bool is_unwrapped_ordinary_alias_root = enclosing_col && !enclosing_col->getAccessCheckColumnName();
+        const bool skip_rbac_check = (alias_depth > 0 && !is_unwrapped_ordinary_alias_root);
         const auto & storage_id = table_node->getStorageID();
 
         const MaterializedCandidate * chosen = nullptr;

@@ -1,0 +1,45 @@
+=== 1. RBAC blocks direct access to raw_attrs, __mat_service, and ungranted key columns ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== 2. Static & value-based masking via pushdown + MATERIALIZED under RBAC ===
+1	checkout	***	***@acme.com			
+2	auth	***	***@acme.com			ok_msg
+1	checkout
+1	checkout
+2	***@acme.com
+1	8	0
+2	4	0
+1	internal_token	0
+1	service	1
+2	internal_token	0
+2	service	1
+2
+=== 3. Whole-map SELECT cannot bypass masking ===
+1	{'email':'***@acme.com','secret_tag':'t1','service':'checkout','ssn':'***'}
+2	{'email':'***@acme.com','msg':'ok_msg','secret_tag':'t2','service':'auth','ssn':'***'}
+=== 4. Admin sees unmasked values ===
+1	checkout	111-11	alice@acme.com	tok1	secret:payload
+2	auth	222-22	bob@acme.com	tok2	ok_msg
+=== 5. Dictionary-driven masking + EXPLAIN SYNTAX run_query_tree_passes = 1 + EXPLAIN actions = 1 ===
+1	checkout		
+2	auth		
+1
+0
+0
+=== 6. Live dictionary reload updates masking with zero table DDL ===
+1		
+2		
+=== 7. QueryResultCache: unrelated queries cache cleanly, non-deterministic ALIAS does not leak ===
+2
+QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS
+QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS
+1	111-11
+2	222-22
+1	***
+2	***
+1	111-11
+2	222-22
+1	***
+2	***
