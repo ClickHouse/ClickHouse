@@ -7,7 +7,9 @@ description: '組み込みダッシュボードと Prometheus メトリクスを
 doc_type: 'reference'
 ---
 
-BYOCデプロイメントには包括的なオブザーバビリティ機能が備わっており、専用のPrometheus監視スタックや ClickHouseサーバーが直接公開するメトリクスエンドポイントを通じて、ClickHouseサービスを監視できます。監視データはお使いのクラウドアカウント内に保持されるため、監視インフラストラクチャを完全に制御できます。ClickHouseにエクスポートされる監視データは、[ネットワーク境界](/ja/products/bring-your-own-cloud/reference/network-security#outbound-connections)に記載された限定的な使用状況およびヘルステレメトリーのみです。これとは別に、ClickHouseのダッシュボードや、承認されたエスカレーション時にはClickHouseのエンジニアが、Tailscale経由でこのスタックをその場でクエリできますが、ClickHouse側には何も保持されません — [ClickHouse データアクセス](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access)を参照してください。
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+BYOCデプロイメントには包括的なオブザーバビリティ機能が備わっており、専用のPrometheus監視スタックや ClickHouseサーバーが直接公開するメトリクスエンドポイントを通じて、ClickHouseサービスを監視できます。すべてのオブザーバビリティデータはお使いのクラウドアカウント内に保持されるため、監視インフラストラクチャを完全に制御できます。
 
 <div id="prometheus-monitoring">
   ## Prometheus の監視アプローチ
@@ -44,7 +46,9 @@ ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に�
 * Kubernetes クラスターおよびシステムコンポーネント
 * 基盤インフラストラクチャのノード
 
-### Prometheus スタックへのアクセス {#accessing-prometheus-stack}
+<div id="accessing-prometheus-stack">
+  ### Prometheus スタックへのアクセス
+</div>
 
 組み込みの Prometheus スタックに接続するには、次の手順を実行します。
 
@@ -110,7 +114,9 @@ scrape_configs:
 
 ClickHouse service は Prometheus 互換のメトリクスエンドポイントを公開しているため、お使いの Prometheus インスタンスから直接スクレイプできます。この方法では ClickHouse 固有のメトリクスは取得できますが、Kubernetes や関連サービスのメトリクスは含まれません。
 
-### メトリクスエンドポイントへのアクセス {#metrics-endpoint}
+<div id="metrics-endpoint">
+  ### メトリクスエンドポイントへのアクセス
+</div>
 
 メトリクスエンドポイントは、ClickHouse サービスのエンドポイント上の`/metrics_all`で利用できます。
 
@@ -165,7 +171,9 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-### Prometheus の設定 {#configuring-prometheus}
+<div id="configuring-prometheus">
+  ### Prometheus の設定
+</div>
 
 Prometheus インスタンスが ClickHouse のメトリクスエンドポイントをスクレイプするよう設定します。
 
@@ -196,66 +204,28 @@ scrape_configs:
 
 すぐに使えるダッシュボード群を必要とするチーム向けに、ClickHouse は Prometheus **ClickHouse Mixin** を提供しています。これは、ClickHouse クラスターの監視用に特別に設計された、あらかじめ用意された Grafana ダッシュボードです。
 
-### Grafana のセットアップと ClickHouse Mix-in のインポート {#setup-grafana-mixin}
+<div id="setup-grafana-mixin">
+  ### Grafana のセットアップと ClickHouse Mix-in のインポート
+</div>
 
 Prometheus インスタンスを ClickHouse の監視スタックに統合したら、次の手順で Grafana からメトリクスを可視化できます。
 
 1. **Grafana で Prometheus をデータソースとして追加する**
    Grafana のサイドバーで「Data sources」に移動し、「Add data source」をクリックして「Prometheus」を選択します。接続するには、Prometheus インスタンスの URL と必要な認証情報を入力します。
 
-<div className="ch-image-lg ch-image-background-black">
+<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
 
-<Frame>
+<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
 
-![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
 
 2. **ClickHouse ダッシュボードをインポートする**
    Grafana でダッシュボード画面に移動し、「Import」を選択します。ダッシュボードの JSON ファイルをアップロードするか、その内容を直接貼り付けます。JSON ファイルは ClickHouse Mix-in のリポジトリから取得できます。
    [ClickHouse Mix-in Dashboard JSON](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
 
 3. **メトリクスを確認する**
    ダッシュボードをインポートし、Prometheus のデータソースを設定すると、ClickHouse Cloud サービスのリアルタイム メトリクスが表示されます。
 
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />

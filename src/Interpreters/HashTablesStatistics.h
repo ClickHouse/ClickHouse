@@ -23,7 +23,7 @@ struct StatsCollectingParams
     {
     }
 
-    [[nodiscard]] bool isCollectionAndUseEnabled() const { return key != 0; }
+    bool isCollectionAndUseEnabled() const { return key != 0; }
     void disable() { key = 0; }
 
     StatsCollectingParams & setKey(UInt64 key_)
@@ -37,107 +37,39 @@ struct StatsCollectingParams
     const size_t max_size_to_preallocate = 0;
 };
 
-struct HashJoinStatsCollectingParams
-{
-    StatsCollectingParams build;
-    StatsCollectingParams match;
-};
-
 struct AggregationEntry
 {
-    [[nodiscard]] bool shouldBeUpdated(const AggregationEntry & new_entry) const
+    bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
-            || median_size < new_entry.median_size || new_entry.sum_of_sizes_with_empty_string < sum_of_sizes_with_empty_string / 2
-            || sum_of_sizes_with_empty_string < new_entry.sum_of_sizes_with_empty_string
-            || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
+            || median_size < new_entry.median_size || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
     }
 
-    [[nodiscard]] std::string dump() const
+    std::string dump() const
     {
         return fmt::format(
-            "sum_of_sizes={}, median_size={}, sum_of_sizes_with_empty_string={}, adaptive_staging_repeat_dominated={}",
+            "sum_of_sizes={}, median_size={}, adaptive_staging_repeat_dominated={}",
             sum_of_sizes,
             median_size,
-            sum_of_sizes_with_empty_string,
             adaptive_staging_repeat_dominated);
-    }
-
-    /// The part of `median_size` with an empty string, by the share of such keys in `sum_of_sizes` (see
-    /// `sum_of_sizes_with_empty_string`).
-    [[nodiscard]] size_t medianSizeWithEmptyString() const
-    {
-        chassert(sum_of_sizes_with_empty_string <= sum_of_sizes && sum_of_sizes != 0);
-        return static_cast<size_t>(
-            static_cast<double>(median_size) * static_cast<double>(sum_of_sizes_with_empty_string) / static_cast<double>(sum_of_sizes));
     }
 
     size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size = 0; // roughly the size we're going to preallocate on each thread
-    /// The part of `sum_of_sizes` with an empty string in the tables of fixed-width keys and one `String`,
-    /// which keep such keys in a sub-table of their own (see `KeysAndPackedStringHashTable`), and 0 for the
-    /// other methods. Its share of `sum_of_sizes` splits the preallocation of such a table between its
-    /// sub-tables.
-    size_t sum_of_sizes_with_empty_string = 0;
-    /// The adaptive verdict of a run of the query (see `Aggregator::adaptiveStagingVerdict`): its staged
-    /// streams were repeat-dominated, so freezing cannot pay for such a query, and later runs do not engage
-    /// the adaptive aggregation at all. Runs without a verdict of their own carry the stored one over (see
-    /// `updateStatistics`).
+    /// Whether the adaptive aggregator measured the query's staged stream as repeat-dominated and
+    /// thawed: freezing cannot pay for such a query, so later runs do not engage it at all. Runs
+    /// without an adaptive measurement carry the stored verdict over (see `updateStatistics`).
     bool adaptive_staging_repeat_dominated = false;
 };
 
 struct HashJoinEntry
 {
-    /// A stored size is kept until a run finds less than this fraction of it, so a hint may overstate the current size up to this factor.
-    static constexpr size_t MAX_OVERESTIMATION_FACTOR = 2;
+    bool shouldBeUpdated(const HashJoinEntry & new_entry) const { return new_entry.ht_size < ht_size / 2 || ht_size < new_entry.ht_size; }
 
-    [[nodiscard]] bool shouldBeUpdated(const HashJoinEntry & new_entry) const
-    {
-        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size;
-    }
-
-    [[nodiscard]] std::string dump() const { return fmt::format("ht_size={}", ht_size); }
+    std::string dump() const { return fmt::format("ht_size={}", ht_size); }
 
     size_t ht_size; // the size of the shared hash table
     size_t source_rows; // the number of rows in the source table
-};
-
-struct HashJoinMatchEntry
-{
-    [[nodiscard]] bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
-
-    [[nodiscard]] std::string dump() const { return fmt::format("matches={}", matches); }
-
-    size_t matches; // number of hash-table matches for a specific hash join.
-};
-
-/// The statistics of the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`).
-struct RadixUniqExactEntry
-{
-    [[nodiscard]] bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
-    {
-        auto differs = [](size_t lhs, size_t rhs) { return lhs < rhs / 2 || rhs < lhs / 2; };
-        return differs(num_streams, new_entry.num_streams) || differs(num_distinct, new_entry.num_distinct)
-            || differs(stream_distinct, new_entry.stream_distinct) || differs(stream_keys, new_entry.stream_keys);
-    }
-
-    [[nodiscard]] std::string dump() const
-    {
-        return fmt::format(
-            "num_distinct={}, stream_distinct={}, stream_keys={}, num_streams={}",
-            num_distinct,
-            stream_distinct,
-            stream_keys,
-            num_streams);
-    }
-
-    /// The result.
-    size_t num_distinct = 0;
-    /// The median over the streams of the number of distinct keys of a stream (estimated for some of them).
-    size_t stream_distinct = 0;
-    /// The median over the streams of the number of keys of a stream, without NULLs and consecutive duplicates.
-    size_t stream_keys = 0;
-    size_t num_streams = 0;
 };
 
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.
@@ -178,5 +110,4 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 
 std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt);
 std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params);
-std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params);
 }

@@ -165,13 +165,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initialize(const DB::Blo
         /// Remove LowCardinality from columns if needed. It's important to use columns initialized in
         /// MergedData::initialize to keep correct dynamic structure of some columns (like JSON/Dynamic).
         if (desc.nested_type)
-        {
-            /// See `SummingSortedAlgorithm::SummingMergedData::initialize` for why the two-step form is
-            /// needed: the argument's implicit `MutableColumnPtr -> ColumnPtr` temporary must die
-            /// before `assumeMutable` checks `use_count() == 1`.
-            ColumnPtr column_without_lc = recursiveRemoveLowCardinality(std::move(columns[desc.column_number]));
-            columns[desc.column_number] = column_without_lc->assumeMutable();
-        }
+            columns[desc.column_number] = recursiveRemoveLowCardinality(std::move(columns[desc.column_number]))->assumeMutable();
     }
 
     initAggregateDescription();
@@ -319,7 +313,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
     while (queue.isValid())
     {
         bool key_differs = false;
-        SortCursor current = *queue.current().first;
+        SortCursor current = queue.current();
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -359,7 +353,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next(1);
+            queue.next();
         }
         else
         {

@@ -1,5 +1,3 @@
--- Random settings limits: merge_max_block_size=(100, None)
--- MATERIALIZE PROJECTION merges the projection parts of a ~1M-row part merge_max_block_size rows per block.
 DROP TABLE IF EXISTS video_log;
 
 CREATE TABLE video_log

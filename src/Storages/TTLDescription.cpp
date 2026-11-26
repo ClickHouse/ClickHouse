@@ -15,7 +15,6 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/TypeMismatchStrictness.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -28,7 +27,6 @@
 #include <Parsers/ASTAssignment.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLTask.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -1012,32 +1010,6 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
 
-/// `arrayJoin` is the one action that changes the number of rows in a block, while every consumer of a
-/// TTL expression indexes its result column positionally against the block's rows:
-/// `TTLDeleteAlgorithm::execute` sizes its loop by `block.rows()` and reads `timestamps[i]`. With a
-/// multi-element array a row is judged by an earlier row's timestamp - so rows whose own TTL is far in
-/// the future are deleted - and with an empty array the read goes past the end of the column, letting
-/// garbage decide deletion. Even `allow_suspicious_ttl_expressions` must not allow that. Loading already
-/// stored metadata is the one place that has to accept it, because a rejection there fails the whole load
-/// rather than the one table; `buildExpression` below then stops such a TTL before it ever executes.
-///
-/// The built DAG only carries an `ARRAY_JOIN` node when `ActionsVisitor` recognised the literal name
-/// `arrayJoin`, which it does not do for the `unnest` alias when `normalize_function_names = 0` left
-/// the name uncanonicalized (the expression is then built as an ordinary call of a special function
-/// that throws `FUNCTION_IS_SPECIAL` on every later TTL evaluation). The AST is therefore checked as
-/// well, by canonical function name, so the verdict does not depend on that setting or on the
-/// spelling of the alias.
-///
-/// Either argument may be null: the check on a stored expression runs before that expression is built,
-/// and a stored `GROUP BY ... SET` assignment has no AST to check.
-void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, const ASTPtr & ast, std::string_view expression_kind)
-{
-    if ((expression && expression->hasArrayJoin()) || expressionContainsArrayJoin(ast))
-        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-            "TTL {}expression cannot contain arrayJoin, because it changes the number of rows",
-            expression_kind);
-}
-
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
@@ -1190,20 +1162,6 @@ NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
         result.emplace_back(col.name, widenTemporalType(col.type));
     }
     return result;
-}
-
-/// Every analysis of a stored TTL expression uses the server settings, as CREATE and table loading do,
-/// on a copy of the caller's context, so the caller's user and current database still apply.
-ContextPtr getTTLExpressionContext(const ContextPtr & context)
-{
-    const auto global_context = context->getGlobalContext();
-    const auto & global_settings = global_context->getSettingsRef();
-    if (context->getSettingsRef() == global_settings)
-        return context;
-
-    auto ttl_context = Context::createCopy(context);
-    ttl_context->setSettings(global_settings);
-    return ttl_context;
 }
 
 }
@@ -1401,44 +1359,20 @@ static void checkTTLGroupBySetForAggregateFunctions(
     }
 }
 
-/// A stored TTL is screened again here, every time it is turned back into a runnable expression.
-///
-/// `TTLValidationMode::Attach` cannot reject it while the metadata is being read - a rejection there
-/// fails the whole load rather than the one table, so the server would not start after an upgrade and a
-/// replica could not read the metadata another replica wrote - so a TTL stored before the `CREATE`-time
-/// check existed still loads. It must not then execute: it deletes rows whose own TTL is far in the
-/// future and reads past the end of the expression column for an empty array. `buildExpression` and
-/// `buildWhereExpression` are the only way a consumer gets a runnable expression out of a stored
-/// description (`TTLTransform`, `TTLCalcTransform` and
-/// `MergeTreeDataWriter::updateTTL` all go through them), so failing here turns the silent row loss into
-/// a failed INSERT or TTL merge. The table still attaches, so `ALTER TABLE ... REMOVE TTL` or a
-/// `MODIFY TTL` to a sane expression repairs it.
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
-    checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, expression_ast, /*expression_kind=*/ "");
-
-    /// A `GROUP BY ... SET` assignment is stored as prebuilt `ExpressionActions` and not as an AST, so it
-    /// is screened through the built expression, and it is screened here, because setting up the
-    /// `TTLAggregationAlgorithm` that executes it goes through this function too. A spelling that
-    /// `ActionsVisitor` does not recognise as `arrayJoin` is not built as an `ARRAY_JOIN` node at all and
-    /// throws `FUNCTION_IS_SPECIAL` when executed, which already fails closed.
-    for (const auto & set_part : set_parts)
-        checkTTLExpressionPreservesRowCount(set_part.expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
-
     auto ast = expression_ast->clone();
-    return buildExpressionAndSets(ast, expression_source_columns, getTTLExpressionContext(context));
+    return buildExpressionAndSets(ast, expression_source_columns, context);
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
 {
     if (where_expression_ast)
     {
-        checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, where_expression_ast, /*expression_kind=*/ "WHERE ");
-
         auto ast = where_expression_ast->clone();
         /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
         /// predicate must keep the table's original static column types.
-        return buildExpressionAndSets(ast, where_expression_source_columns, getTTLExpressionContext(context), nullptr, false);
+        return buildExpressionAndSets(ast, where_expression_source_columns, context, nullptr, false);
     }
 
     return {};
@@ -1449,11 +1383,8 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    TTLValidationMode validation_mode,
-    bool trust_recompression_codec)
+    TTLValidationMode validation_mode)
 {
-    const auto expression_context = getTTLExpressionContext(context);
-
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
 
@@ -1479,7 +1410,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns).expression;
+    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_source_columns).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
@@ -1507,7 +1438,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
                 = buildExpressionAndSets(
-                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
+                    ast, columns.getAllPhysical(), context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -1516,45 +1447,15 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             const auto & pk_columns = primary_key.column_names;
 
-            auto is_primary_key_prefix = [&pk_columns](const ASTs & keys)
-            {
-                if (keys.size() > pk_columns.size())
-                    return false;
-                for (size_t i = 0; i < keys.size(); ++i)
-                    if (keys[i]->getColumnName() != pk_columns[i])
-                        return false;
-                return true;
-            };
-
-            /// `GROUP BY (a, b, c)` parses as a single `tuple(a, b, c)` expression, but it means the same list
-            /// of keys as `GROUP BY a, b, c`, exactly as `ORDER BY (a, b, c)` means the same key as
-            /// `ORDER BY a, b, c`. Unwrap it here rather than in the parser: the parsed AST is what gets
-            /// formatted back, and rewriting it there would make formatting non-idempotent, because the
-            /// formatted `GROUP BY a, b, c` would be unwrapped again on the next parse.
-            ///
-            /// The spelling is ambiguous when the first primary key element is itself a tuple: with
-            /// `ORDER BY ((a, b), c)`, the single key `GROUP BY (a, b)` already matches the primary key
-            /// prefix as an intact tuple, and such tables exist and must keep attaching. So the intact
-            /// interpretation wins whenever it is a prefix of the primary key, and only otherwise do we
-            /// fall back to reading the parentheses as a key list. An empty `GROUP BY ()` unwraps to
-            /// nothing, which would pass the prefix check vacuously, so it keeps the `tuple()` in place
-            /// and is rejected as before.
-            ASTs group_by_key = ttl_element->group_by_key;
-            if (group_by_key.size() == 1 && !is_primary_key_prefix(group_by_key))
-            {
-                if (auto unwrapped = extractKeyExpressionList(group_by_key.front())->children; !unwrapped.empty())
-                    group_by_key = std::move(unwrapped);
-            }
-
-            if (group_by_key.size() > pk_columns.size())
+            if (ttl_element->group_by_key.size() > pk_columns.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
             NameSet aggregation_columns_set;
 
-            for (size_t i = 0; i < group_by_key.size(); ++i)
+            for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
-                if (group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", group_by_key[i]->getColumnName(), pk_columns[i]);
+                if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
             }
 
             std::vector<std::pair<String, ASTPtr>> aggregations;
@@ -1571,7 +1472,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
                 if (!skip_validation)
-                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), expression_context);
+                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), context);
 
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(ass_expression));
@@ -1581,12 +1482,12 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
 
-            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + group_by_key.size());
+            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
 
             for (auto [name, value] : aggregations)
             {
-                auto syntax_result = TreeRewriter(expression_context).analyze(value, columns.getAllPhysical(), {}, {}, true);
-                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, expression_context);
+                auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
+                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
 
                 TTLAggregateDescription set_part;
                 set_part.column_name = name;
@@ -1600,9 +1501,6 @@ TTLDescription TTLDescription::getTTLFromAST(
                 if (!skip_validation)
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
 
-                if (validation_mode != TTLValidationMode::Attach)
-                    checkTTLExpressionPreservesRowCount(set_part.expression, value, /*expression_kind=*/ "GROUP BY SET ");
-
                 result.set_parts.emplace_back(set_part);
 
                 for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
@@ -1614,24 +1512,15 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// On `ATTACH` (loading stored metadata) the codec checks are relaxed the same way column codecs are:
             /// a table created on an earlier version must still load even if its recompression codec would now be
             /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. A create with
-            /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below. A stored TTL that an
-            /// `ALTER` rebuilds without defining it again does not check the codec either.
+            /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     ttl_element->recompression_codec, {},
-                    skip_validation || trust_recompression_codec ? CodecValidationSettings::trusted()
-                                                                 : CodecValidationSettings(context->getSettingsRef()));
+                    skip_validation ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef()));
         }
     }
 
     checkTTLExpression(expression, result.result_column, skip_validation);
-
-    if (validation_mode != TTLValidationMode::Attach)
-    {
-        checkTTLExpressionPreservesRowCount(expression, result.expression_ast, /*expression_kind=*/ "");
-        if (where_expression)
-            checkTTLExpressionPreservesRowCount(where_expression, result.where_expression_ast, /*expression_kind=*/ "WHERE ");
-    }
 
     if (where_expression && !skip_validation)
         checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
@@ -1674,8 +1563,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    TTLValidationMode validation_mode,
-    bool trust_recompression_codec)
+    TTLValidationMode validation_mode)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -1686,8 +1574,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(
-            ttl_element_ptr, columns, context, primary_key, validation_mode, trust_recompression_codec);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode);
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression_ast)
@@ -1716,13 +1603,6 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
             result.move_ttl.emplace_back(std::move(ttl));
         }
     }
-
-    /// A table is loaded with its TTL analyzed in the global context, where nothing that exists only for a query or
-    /// a session (a table function, a temporary table) resolves, so a TTL that is going to be stored must analyze there.
-    /// A replica replaying a DDL that the initiator already committed does not judge it again, or its DDL queue would stall.
-    if (validation_mode != TTLValidationMode::Attach && !context->isGlobalContext() && !isSecondaryDDLReplay(context))
-        getTTLForTableFromAST(definition_ast, columns, context->getGlobalContext(), primary_key, TTLValidationMode::Attach);
-
     return result;
 }
 

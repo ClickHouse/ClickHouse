@@ -7,14 +7,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -36,7 +34,6 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 
@@ -45,7 +42,6 @@
 #include <utility>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -59,7 +55,7 @@ namespace Setting
 
 namespace RabbitMQSetting
 {
-    extern const RabbitMQSettingsSecretString rabbitmq_address;
+    extern const RabbitMQSettingsString rabbitmq_address;
     extern const RabbitMQSettingsBool rabbitmq_commit_on_select;
     extern const RabbitMQSettingsUInt64 rabbitmq_empty_queue_backoff_end_ms;
     extern const RabbitMQSettingsUInt64 rabbitmq_empty_queue_backoff_start_ms;
@@ -73,9 +69,9 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsUInt64 rabbitmq_max_block_size;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_idle_producer_connections;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_rows_per_message;
-    extern const RabbitMQSettingsNonZeroUInt64 rabbitmq_num_consumers;
+    extern const RabbitMQSettingsUInt64 rabbitmq_num_consumers;
     extern const RabbitMQSettingsUInt64 rabbitmq_num_queues;
-    extern const RabbitMQSettingsSecretString rabbitmq_password;
+    extern const RabbitMQSettingsString rabbitmq_password;
     extern const RabbitMQSettingsBool rabbitmq_persistent;
     extern const RabbitMQSettingsString rabbitmq_queue_base;
     extern const RabbitMQSettingsBool rabbitmq_queue_consume;
@@ -178,13 +174,13 @@ StorageRabbitMQ::StorageRabbitMQ(
     auto setting_rabbitmq_username = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value;
     auto setting_rabbitmq_password = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value;
     String username;
-    SecretString password;
+    String password;
 
     /// The connection is TLS when either the `rabbitmq_secure` setting is on or the
     /// `rabbitmq_address` URI uses the `amqps` scheme; OpenSSL must be initialized in both cases.
     bool secure_connection = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value;
 
-    const auto address_string = getContext()->getMacros()->expand(String((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].value));
+    const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
 
     if (!address_string.empty())
     {
@@ -216,10 +212,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
         username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
-        if (setting_rabbitmq_password.empty())
-            password = config.getString("rabbitmq.password", "");
-        else
-            password = setting_rabbitmq_password;
+        password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
         if (username.empty() || password.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -244,7 +237,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         .password = password,
         .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
         .secure = secure_connection,
-        .connection_string = SecretString(address_string)
+        .connection_string = address_string
     };
 
     if (secure_connection)
@@ -804,7 +797,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
                  "Failed to declare queue. Probably queue settings are conflicting: "
                  "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
                  "or use a different queue_base or manually delete previously declared queues, "
-                 "which were declared with the same names. ERROR reason: {}", std::string(message));
+                 "which  were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;
@@ -1009,7 +1002,6 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
         std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
         getFormatName(),
         max_rows,
@@ -1060,13 +1052,11 @@ void StorageRabbitMQ::publisherCleanupFunc()
 
 void StorageRabbitMQ::scheduleStreamingTasksImpl()
 {
-    /// Until the setup is done `connectionFunc` keeps retrying it and schedules the streaming task once it succeeds.
-    if (initialized)
-        streaming_task->schedule();
+    streaming_task->schedule();
 }
 
 
-void StorageRabbitMQ::shutdown(bool is_drop)
+void StorageRabbitMQ::shutdown(bool)
 {
     /// Needed to make this method idempotent
     if (shutdown_called.exchange(true))
@@ -1120,14 +1110,8 @@ void StorageRabbitMQ::shutdown(bool is_drop)
             consumer->closeConnections();
         }
 
-        /// checkTableCanBeDropped() latches drop_table before the statement it guards can fail, and
-        /// nothing ever clears it, so the flag alone also marks a still-alive table whose TRUNCATE
-        /// or dependency check threw. Deleting the queues needs the shutdown to be a drop as well.
-        if (is_drop && drop_table)
-        {
-            waitForConsumerChannelsToClose(consumers_snapshot);
+        if (drop_table)
             cleanupRabbitMQ();
-        }
 
         /// It is important to close connection here - before removing consumers, because
         /// it will finish and clean callbacks, which might use those consumers data.
@@ -1154,52 +1138,7 @@ void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
-}
-
-
-/// AMQP orders method completion per channel only, so a queue.delete issued on a fresh channel can
-/// be evaluated by the broker while the consumer is still registered on its own channel, and a
-/// classic queue then refuses AMQP::ifunused with PRECONDITION_FAILED. The broker deregisters a
-/// channel's consumers while handling its channel.close, before answering it, so waiting for that
-/// answer establishes the ordering the delete needs.
-void StorageRabbitMQ::waitForConsumerChannelsToClose(
-    const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const
-{
-    if (use_user_setup || consumers_snapshot.empty() || !connection->isConnected())
-        return;
-
-    auto outstanding = [&consumers_snapshot]
-    {
-        for (const auto & consumer_weak : consumers_snapshot)
-            if (auto consumer = consumer_weak.lock(); consumer && !consumer->isChannelCloseCompleted())
-                return true;
-        return false;
-    };
-
-    /// Each close that completes stops the loop, so re-enter it while any consumer is outstanding.
-    /// The remaining time is read once per iteration, because computing it from a second reading
-    /// of the clock could underflow past the bound into an effectively unbounded wait.
-    Stopwatch watch;
-    while (outstanding())
-    {
-        const auto elapsed = watch.elapsedMilliseconds();
-        if (elapsed >= CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS)
-            break;
-        if (!connection->getHandler().startBlockingLoopWithTimeout(CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS - elapsed))
-            break;
-    }
-
-    if (outstanding())
-    {
-        for (const auto & consumer_weak : consumers_snapshot)
-            if (auto consumer = consumer_weak.lock())
-                consumer->abandonChannelClose();
-
-        LOG_WARNING(log, "Timed out waiting for consumer channels to close after {} ms. "
-                         "Queue deletion may be refused while the consumers are still registered",
-                    watch.elapsedMilliseconds());
-    }
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 
@@ -1225,7 +1164,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
             queue_names += queue;
         }
         LOG_WARNING(log,
-                    "RabbitMQ clean up not done, because there is no connection in table's shutdown. "
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown."
                     "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
                     queues.size(), queue_names);
         return;
@@ -1490,9 +1429,6 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
-    /// Read all consumers in parallel, as Kafka does: with `parallel_view_processing = 0` the pipeline has one thread, and
-    /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
-    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), num_created_consumers));
 
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
@@ -1662,29 +1598,12 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
-        /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
-        /// to keep existing tables loadable.
-        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
-        const UInt64 num_consumers = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_num_consumers].value;
-        if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting `rabbitmq_num_consumers` can not be bigger than {}, got {}",
-                std::numeric_limits<int>::max(),
-                num_consumers);
-
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
 
     factory.registerStorage(
         "RabbitMQ",
         creator_fn,
-        SecretArgumentsSpec{
-            /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
-            .secret_settings = RabbitMQ::settingsToHide(),
-            .settings_as_arguments = true,
-            .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
-        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,

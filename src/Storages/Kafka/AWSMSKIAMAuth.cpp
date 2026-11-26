@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
-#include <Common/RemoteHostFilter.h>
 #include <Core/SettingsFields.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/URI.h>
@@ -19,7 +18,6 @@
 #include <cppkafka/kafka_handle_base.h>
 #include <librdkafka/rdkafka.h>
 #include <IO/S3/Client.h>
-#include <IO/S3/AwsFormat.h>
 #include <IO/S3/Credentials.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -75,7 +73,7 @@ namespace
     {
         try
         {
-            Aws::String service_host = DB::S3::awsFormat("kafka.{}.amazonaws.com", region);
+            String service_host = "kafka." + region + ".amazonaws.com";
 
             Aws::Http::URI uri;
             uri.SetScheme(Aws::Http::Scheme::HTTPS);
@@ -91,7 +89,7 @@ namespace
             Aws::Client::AWSAuthV4Signer signer(
                 std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
                 "kafka-cluster",
-                Aws::String(region),
+                region,
                 Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
                 true);
 
@@ -100,7 +98,7 @@ namespace
                 throw Exception(ErrorCodes::AWS_ERROR, "Failed to presign AWS MSK IAM request");
             }
 
-            String presigned_url(request->GetURIString());
+            String presigned_url = request->GetURIString();
 
             presigned_url += "&User-Agent=clickhouse-msk-iam";
 
@@ -182,22 +180,15 @@ void setupAuthentication(
 
     if (!context_holder)
     {
-        /// The configuration holds the filter by reference, so the filter must outlive `context_holder->provider`.
-        static const RemoteHostFilter remote_host_filter;
-
         auto aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-            effective_region, remote_host_filter, 0, {}, false, false, false, HTTPConnectionGroupType::STORAGE, {}, {});
+            effective_region, {}, 0, {}, false, false, false, false, {}, {});
 
         S3::CredentialsConfiguration credentials_configuration;
         credentials_configuration.use_environment_credentials = use_environment_credentials;
         /// `forbid_implicit_credentials` defaults to true (fail-closed) to restrict server-managed credentials
-        /// in user S3 queries. The Kafka `AWS_MSK_IAM` path opts out, so the server's ambient identity
-        /// (environment / IMDS / IRSA / ECS / profile files) is resolved whenever the operator sets
-        /// `kafka.use_environment_credentials = 1` in the server config. The mechanism, the broker list, and
-        /// the region can all come from user table settings, so with that config a user who can create Kafka
-        /// tables can make the server send a token signed with its own identity to a broker of the user's
-        /// choice. For this reason the config setting is documented as unsafe, and `remote_url_allow_hosts`
-        /// is the way to restrict the brokers.
+        /// in user S3 queries. Kafka `AWS_MSK_IAM` is server-side, operator-configured authentication, not a
+        /// user S3 query, so it opts out: `kafka.use_environment_credentials = 1` must resolve the environment /
+        /// IMDS / profile credentials as before.
         credentials_configuration.forbid_implicit_credentials = false;
 
         auto provider = std::make_shared<S3::S3CredentialsProviderChain>(

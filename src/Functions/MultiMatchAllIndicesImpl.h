@@ -192,7 +192,6 @@ struct MultiMatchAllIndicesImpl
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
         VectorWithMemoryTracking<std::string_view> needles;
-        MultiRegexps::GlobalCacheCounters cache_counters;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -205,7 +204,7 @@ struct MultiMatchAllIndicesImpl
 
             if (needles.empty())
             {
-                offsets[i] = (i == 0) ? 0 : offsets[static_cast<ssize_t>(i) - 1];
+                offsets[i] = (i == 0) ? 0 : offsets[i-1];
                 prev_haystack_offset = haystack_offsets[i];
                 prev_needles_offset = needles_offsets[i];
                 continue;
@@ -221,7 +220,7 @@ struct MultiMatchAllIndicesImpl
                         throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
             }
 
-            MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ true, WithEditDistance>(needles, edit_distance, cache_counters);
+            MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ true, WithEditDistance>(needles, edit_distance);
             MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
             hs_scratch_t * scratch = nullptr;
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
