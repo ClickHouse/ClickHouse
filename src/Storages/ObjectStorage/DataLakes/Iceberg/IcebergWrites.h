@@ -315,7 +315,8 @@ private:
     ContextPtr context;
     /// Of the session.
     const KeyDescription & sort_description;
-    const SortDescription & sort_order_description;
+    /// Own copy: `sortBlockByKeyDescription` writes the names of the sort columns into it, and the sinks of a session work in parallel.
+    SortDescription sort_order_description;
     /// Own copy: the sinks of a session work in parallel.
     std::optional<ChunkPartitioner> partitioner;
     /// The uploads of the finished data files of this sink.
