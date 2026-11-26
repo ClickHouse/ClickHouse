@@ -11394,6 +11394,7 @@ Requires [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings
         {"26.4", 4, 4, "New setting"}) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+A phrase of several words that is searched by one of its words counts every token the word matches.
 
 Requires [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) to be enabled.
 )", 0, \

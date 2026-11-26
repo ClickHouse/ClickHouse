@@ -885,6 +885,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         return;
 
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    /// A phrase word only skips granules, so every token it matches is charged, not only the large postings.
+    const bool charge_every_token = condition_text.searchesPhraseWords();
     const bool use_pattern_bypass_cache
         = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_pattern_bypass_cache];
     auto tokens_cache = condition_text.tokensCache();
@@ -1018,14 +1020,20 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 continue;
             }
 
-            /// Deserialize only the token infos for matched tokens.
-            auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
+            if (charge_every_token)
+                postings_to_read += matched_indices.size();
 
-            for (size_t i = 0; i < matched_indices.size(); ++i)
+            if (postings_to_read <= max_postings_to_read)
             {
-                String token(block_tokens.getDataAt(matched_indices[i]));
-                postings_to_read += !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
-                analyzer->addTokenInfo(token, infos[i]);
+                /// Deserialize only the token infos for matched tokens.
+                auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
+
+                for (size_t i = 0; i < matched_indices.size(); ++i)
+                {
+                    String token(block_tokens.getDataAt(matched_indices[i]));
+                    postings_to_read += !charge_every_token && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
+                    analyzer->addTokenInfo(token, infos[i]);
+                }
             }
 
             if (postings_to_read > max_postings_to_read)

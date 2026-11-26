@@ -191,3 +191,46 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
 ORDER BY log_comment;
 
 DROP TABLE tab_lower;
+
+SELECT 'Many tokens';
+
+DROP TABLE IF EXISTS tab_many;
+
+CREATE TABLE tab_many
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 4) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+-- The searched word 'user' of '%error user%' starts 64 distinct tokens, each in one row, so their postings are embedded.
+INSERT INTO tab_many SELECT number + 1, concat('error user', toString(number)) FROM numbers(64);
+INSERT INTO tab_many VALUES (101, 'error budget');
+OPTIMIZE TABLE tab_many FINAL;
+
+-- Every matched token counts against the postings budget, so a budget of 50 stops the search and nothing is pruned.
+SELECT 'like', count() FROM tab_many WHERE message LIKE '%error user%' SETTINGS log_comment = '05315_many_like', text_index_like_max_postings_to_read = 50;
+SELECT 'like, no index', count() FROM tab_many WHERE message LIKE '%error user%' SETTINGS use_skip_indexes = 0;
+SELECT 'ilike', count() FROM tab_many WHERE message ILIKE '%ERROR USER%' SETTINGS log_comment = '05315_many_ilike', text_index_like_max_postings_to_read = 50, use_text_index_pattern_bypass_cache = 1;
+SELECT 'ilike, no index', count() FROM tab_many WHERE message ILIKE '%ERROR USER%' SETTINGS use_skip_indexes = 0;
+-- 'USER%' searched on its own is charged by large postings only, so it does not reuse the bailout the phrase cached.
+SELECT 'ilike prefix', count() FROM tab_many WHERE message ILIKE 'USER%' SETTINGS log_comment = '05315_many_ilike_prefix', text_index_like_max_postings_to_read = 50, use_text_index_pattern_bypass_cache = 1, query_plan_text_index_add_hint = 0;
+SELECT 'ilike prefix, no index', count() FROM tab_many WHERE message ILIKE 'USER%' SETTINGS use_skip_indexes = 0;
+SELECT 'like, budget of all tokens', count() FROM tab_many WHERE message LIKE '%error user%' SETTINGS log_comment = '05315_many_like_in_budget', text_index_like_max_postings_to_read = 64;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    log_comment,
+    ProfileEvents['TextIndexReadDictionaryBlocks'] AS dictionary_blocks_read,
+    ProfileEvents['TextIndexDiscardPatternScan'] > 0 AS pattern_scan_discarded,
+    read_rows < (SELECT count() FROM tab_many) AS granules_pruned
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+  AND type = 'QueryFinish' AND log_comment IN ('05315_many_like', '05315_many_ilike', '05315_many_ilike_prefix', '05315_many_like_in_budget')
+ORDER BY log_comment;
+
+DROP TABLE tab_many;

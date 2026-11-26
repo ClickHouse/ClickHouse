@@ -171,6 +171,7 @@ public:
 
     [[nodiscard]] bool hasSearchPatterns() const;
     [[nodiscard]] UInt128 getSearchPatternsHash() const { return search_patterns_hash; }
+    [[nodiscard]] bool searchesPhraseWords() const { return searches_phrase_words; }
     [[nodiscard]] const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     [[nodiscard]] const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     [[nodiscard]] TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
@@ -331,6 +332,7 @@ private:
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
     /// Stable hash of the set of search queries containing patterns.
     UInt128 search_patterns_hash{};
+    bool searches_phrase_words = false;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression

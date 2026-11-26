@@ -345,6 +345,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
                 element = RPNElement{};
     }
 
+    searches_phrase_words = std::ranges::any_of(rpn, [](const RPNElement & element) { return element.is_phrase_word; });
+
     NameSet all_search_tokens_set;
 
     for (const auto & element : rpn)
@@ -368,6 +370,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     std::ranges::sort(pattern_hashes);
 
     SipHash pattern_hash_state;
+    /// Phrase words charge the postings budget differently, so they get their own pattern bypass cache entries.
+    pattern_hash_state.update(searches_phrase_words);
     pattern_hash_state.update(pattern_hashes.size());
     for (const auto & pattern_hash : pattern_hashes)
         pattern_hash_state.update(pattern_hash);

@@ -65,3 +65,15 @@ not ilike	17
 not ilike, no index	17
 05315_lower_ilike	1
 05315_lower_like	0
+Many tokens
+like	64
+like, no index	64
+ilike	64
+ilike, no index	64
+ilike prefix	0
+ilike prefix, no index	0
+like, budget of all tokens	64
+05315_many_ilike	14	1	0
+05315_many_ilike_prefix	17	0	1
+05315_many_like	14	1	0
+05315_many_like_in_budget	17	0	1
