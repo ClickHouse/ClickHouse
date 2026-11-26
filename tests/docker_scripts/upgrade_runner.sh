@@ -1045,6 +1045,15 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
 #       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
+# `DDLWorker(rdb2_03206_replication_lag_metric_...)` + `Mapping for table with UUID=... already exists` +
+#       `TABLE_ALREADY_EXISTS` comes from `03206_replication_lag_metric`, which creates two replicas of one `Replicated`
+#       database on one server and creates its table through the first one, `rdb1_...`. Every replica creates a table
+#       with the UUID from the DDL log, so the second replica, `rdb2_...`, collides with the table of `rdb1_...`, and its
+#       DDLWorker retries every 5s, replaying the entry and then recovering the replica, until the test drops both
+#       databases. When the stress run stops the test before its `DROP DATABASE` queries, the previous release and the
+#       upgraded server both retry without end. Filtered via regex in the secondary pipe below to require the DDLWorker
+#       of the fixture's second replica, the UUID mapping message AND `TABLE_ALREADY_EXISTS` together, so the same
+#       collision on any other database, or any other error of that database, still fails this job.
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
 echo "Check for Error messages in server log:"
@@ -1112,6 +1121,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
+    | grep -av -e "DDLWorker(rdb2_03206_replication_lag_metric_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "getInfoIfClickHouseDictionarySource.*Code: 198\. DB::NetException: Not found address of host: \[x\. (DNS_ERROR)" \
