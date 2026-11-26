@@ -134,6 +134,7 @@ Cancelled after the row processing loop" \
 
 # (2) Plain runs of 5000: the batch skip helper crosses its 4096-row poll inside run k=0.
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.runs;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.runs (k UInt32) ENGINE = MergeTree ORDER BY k
         SETTINGS $WIDE_PART;
     INSERT INTO ${CLICKHOUSE_DATABASE}.runs SELECT intDiv(number, 5000) FROM numbers(10000);
@@ -148,6 +149,7 @@ Cancelled after the row processing loop" \
 # (3) Runs of 5000 with a non-sorted column: the hash-table loop crosses i=4096 inside run k=0,
 # so the in-loop poll must be the one that observes the cancellation.
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.runs_with_v;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.runs_with_v (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k
         SETTINGS $WIDE_PART;
     INSERT INTO ${CLICKHOUSE_DATABASE}.runs_with_v SELECT intDiv(number, 5000), number FROM numbers(10000);
@@ -163,6 +165,7 @@ Cancelled after the row processing loop" \
 # reaching any poll, so chunk 2 goes through `continueWithPrevRange` and the poll right after the
 # skipped carried-over prefix is the first one the query can hit.
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.cont;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.cont (k UInt32) ENGINE = MergeTree ORDER BY k
         SETTINGS $WIDE_PART;
     INSERT INTO ${CLICKHOUSE_DATABASE}.cont SELECT intDiv(number, 3000) FROM numbers(10000);
@@ -178,6 +181,7 @@ Cancelled after the continuation range" \
 # from being hashed. Without the bail-out the query logs `Cancelled at the outer-loop poll` instead
 # of the expected pair below, and the marker sequence check fails.
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.runs_multi;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.runs_multi (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k
         SETTINGS $WIDE_PART;
     INSERT INTO ${CLICKHOUSE_DATABASE}.runs_multi SELECT intDiv(number, 6000), number FROM numbers(20000);
@@ -194,6 +198,7 @@ Cancelled after the row processing loop" \
 # prefix first. Removing the immediate return that follows it hashes the rest of chunk 2 instead and
 # logs `Cancelled after hashing a range`, which the expected markers reject.
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.cont_with_v;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.cont_with_v (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k
         SETTINGS $WIDE_PART;
     INSERT INTO ${CLICKHOUSE_DATABASE}.cont_with_v SELECT intDiv(number, 2000), number FROM numbers(6000);
