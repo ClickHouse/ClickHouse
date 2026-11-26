@@ -34,15 +34,15 @@ public:
 
     CuckooFilter() = default;
 
-    bool alwaysFalse() const { return num_buckets == 0; }
+    [[nodiscard]] bool alwaysFalse() const { return num_buckets == 0; }
 
     /// Membership test for a key hash (same scheme as insertion).
-    bool contains(UInt64 item_hash) const;
+    [[nodiscard]] bool contains(UInt64 item_hash) const;
 
     void serializeBinary(WriteBuffer & ostr) const;
     void deserializeBinary(ReadBuffer & istr, UInt8 format_version);
 
-    size_t memoryUsageBytes() const;
+    [[nodiscard]] size_t memoryUsageBytes() const;
 
 private:
     CuckooFilter(size_t fingerprint_bits_, UInt64 seed_, size_t num_buckets_, std::vector<uint8_t> slot_data_);
@@ -51,18 +51,18 @@ private:
 
     bool buildFromHashesImpl(const HashSet<UInt64> & hashes);
 
-    UInt64 mixKey(UInt64 item_hash) const;
-    UInt64 fingerprintFromKey(UInt64 item_hash) const;
-    size_t primaryBucket(UInt64 item_hash) const;
-    size_t altHashFingerprint(UInt64 fp) const;
-    size_t alternateBucket(size_t bucket, UInt64 fp) const;
+    [[nodiscard]] UInt64 mixKey(UInt64 item_hash) const;
+    [[nodiscard]] UInt64 fingerprintFromKey(UInt64 item_hash) const;
+    [[nodiscard]] size_t primaryBucket(UInt64 item_hash) const;
+    [[nodiscard]] size_t altHashFingerprint(UInt64 fp) const;
+    [[nodiscard]] size_t alternateBucket(size_t bucket, UInt64 fp) const;
 
     bool insertKey(UInt64 item_hash);
     bool insertFingerprintIntoBucket(size_t bucket, UInt64 fp);
     bool kickInsert(UInt64 item_hash, UInt64 fp, size_t bucket1, size_t bucket2);
 
-    size_t bytesNeeded(size_t num_slots, size_t bits) const;
-    UInt64 readSlot(size_t slot_idx) const;
+    [[nodiscard]] size_t bytesNeeded(size_t num_slots, size_t bits) const;
+    [[nodiscard]] UInt64 readSlot(size_t slot_idx) const;
     void writeSlot(size_t slot_idx, UInt64 fp);
 
     size_t f_bits = 8;

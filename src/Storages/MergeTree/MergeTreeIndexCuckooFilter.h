@@ -25,14 +25,14 @@ public:
 
     MergeTreeIndexGranuleCuckooFilter(double false_positive_rate_, size_t f_bits_, const std::vector<HashSet<UInt64>> & column_hashes);
 
-    bool empty() const override;
+    [[nodiscard]] bool empty() const override;
 
-    size_t memoryUsageBytes() const override;
+    [[nodiscard]] size_t memoryUsageBytes() const override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    const std::vector<CuckooFilterPtr> & getFilters() const { return cuckoo_filters; }
+    [[nodiscard]] const std::vector<CuckooFilterPtr> & getFilters() const { return cuckoo_filters; }
 
 private:
     const size_t f_bits;
@@ -129,7 +129,7 @@ class MergeTreeIndexAggregatorCuckooFilter final : public IMergeTreeIndexAggrega
 public:
     MergeTreeIndexAggregatorCuckooFilter(double false_positive_rate_, size_t f_bits_, const Names & columns_name_);
 
-    bool empty() const override;
+    [[nodiscard]] bool empty() const override;
 
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
@@ -149,9 +149,9 @@ class MergeTreeIndexCuckooFilter final : public IMergeTreeIndex
 public:
     MergeTreeIndexCuckooFilter(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, double false_positive_rate_, size_t f_bits_);
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
 
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 

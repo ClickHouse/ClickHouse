@@ -38,15 +38,15 @@ public:
 
     BinaryFuseFilter() = default;
 
-    bool alwaysFalse() const { return variant == Variant::Empty; }
-    bool contains(UInt64 item_hash) const;
+    [[nodiscard]] bool alwaysFalse() const { return variant == Variant::Empty; }
+    [[nodiscard]] bool contains(UInt64 item_hash) const;
 
     void serializeBinary(WriteBuffer & ostr) const;
     void deserializeBinary(ReadBuffer & istr, UInt8 format_version);
 
-    size_t memoryUsageBytes() const;
-    Variant getVariant() const { return variant; }
-    UInt8 getFingerprintBits() const { return static_cast<UInt8>(f_bits); }
+    [[nodiscard]] size_t memoryUsageBytes() const;
+    [[nodiscard]] Variant getVariant() const { return variant; }
+    [[nodiscard]] UInt8 getFingerprintBits() const { return static_cast<UInt8>(f_bits); }
 
 private:
     BinaryFuseFilter(size_t fingerprint_bits_, UInt64 seed_);
@@ -54,10 +54,10 @@ private:
     bool buildFromHashesImpl(const HashSet<UInt64> & hashes);
     bool tryBuildFuse3(const std::vector<UInt64> & keys, UInt64 seed_candidate);
     bool tryBuildFuse4(const std::vector<UInt64> & keys, UInt64 seed_candidate);
-    UInt64 mixKey(UInt64 item_hash) const;
-    UInt32 fingerprintFromKey(UInt64 item_hash) const;
-    size_t bytesPerFingerprint() const;
-    UInt32 getSlot(size_t index) const;
+    [[nodiscard]] UInt64 mixKey(UInt64 item_hash) const;
+    [[nodiscard]] UInt32 fingerprintFromKey(UInt64 item_hash) const;
+    [[nodiscard]] size_t bytesPerFingerprint() const;
+    [[nodiscard]] UInt32 getSlot(size_t index) const;
     void setSlot(size_t index, UInt32 value);
     void getIndexes3(UInt64 item_hash, size_t & i0, size_t & i1, size_t & i2) const;
     void getIndexes4(UInt64 item_hash, size_t & i0, size_t & i1, size_t & i2, size_t & i3) const;
