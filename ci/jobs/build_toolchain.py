@@ -413,6 +413,9 @@ def main():
                 f' -DCMAKE_ASM_FLAGS="{musl_c_flags()}"'
                 # Nothing can be linked before libunwind exists
                 f" -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY"
+                # Without linking, `check_library_exists` finds any symbol. This one changes the
+                # code: musl has no `__cxa_thread_atexit_impl`, so libc++abi must use its own.
+                f" -DLIBCXXABI_HAS_CXA_THREAD_ATEXIT_IMPL=OFF"
                 f" -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=OFF"
                 f" -DLLVM_INCLUDE_TESTS=OFF"
                 f" -DLIBUNWIND_INCLUDE_TESTS=OFF"
