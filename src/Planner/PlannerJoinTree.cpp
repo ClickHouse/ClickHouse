@@ -2948,7 +2948,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                             auto modified_query_info = select_query_info;
                             modified_query_info.cluster = std::move(cluster);
-                            till_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+                            /// `GROUP BY ... WITH CLUSTER` merges groups whose keys are close to each other, and the
+                            /// custom key splits the rows between the replicas regardless of that distance, so a
+                            /// cluster can span several replicas. The replicas must therefore return aggregation
+                            /// states, and the clustering has to run once, on the initiator, over all the groups.
+                            const auto * custom_key_query_node = table_expression_query_info.query_tree->as<QueryNode>();
+                            till_stage = custom_key_query_node && custom_key_query_node->hasGroupByWithCluster()
+                                ? QueryProcessingStage::WithMergeableState
+                                : QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
                             QueryPlan query_plan_parallel_replicas;
                             auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
