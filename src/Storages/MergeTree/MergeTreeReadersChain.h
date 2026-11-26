@@ -132,6 +132,9 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    /// For every reader, the read names of the columns whose patches are discarded after its step.
+    std::vector<NameSet> columns_without_patches_after_step;
+
     /// PREWHERE granule ProfileEvents (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders).
     /// Each granule is fed in mark order from each block with three flags: `was_read` (rows reached the user
     /// predicate), `survived` (a row survived the user predicate), and `contaminated` (a synthesized dynamic
