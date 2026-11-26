@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <any>
+#include <array>
 #include <functional>
 #include <optional>
 #include <span>
@@ -798,8 +799,8 @@ private:
 
     [[noreturn]] static void throwKeysNotRecoverable(Type type);
 
-    /// The most the buckets of `slot` allocate while `slot_rows` rows are inserted, `bucket_rows[b]` of them into bucket `b`
-    /// (all of them into each bucket if `bucket_rows` is empty), including the first-insert reserve of the slot.
+    /// The most the buckets of `slot` allocate while `slot_rows` rows are inserted, `bucket_rows[b]` of them into bucket `b`,
+    /// or split in any way if `bucket_rows` is empty, including the first-insert reserve of the slot (then every row into each bucket).
     template <typename Map>
     size_t estimateSlotGrowth(const Map & map, size_t slot, size_t slot_rows, const std::vector<UInt32> & bucket_rows) const
     {
@@ -808,6 +809,8 @@ private:
         else
         {
             const size_t reserve = slots.keysToReservePerBucket<Map>(slot);
+            if (bucket_rows.empty() && !reserve)
+                return estimateAnySplitGrowth(map, slot, slot_rows);
             size_t growth = 0;
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
             {
@@ -817,6 +820,30 @@ private:
             }
             return growth;
         }
+    }
+
+    /// A bucket allocates only once it gets more than `keysBeforeResize()` new keys, so at most `growing` buckets allocate,
+    /// each at most what it would with all the rows.
+    template <typename Map>
+    size_t estimateAnySplitGrowth(const Map & map, size_t slot, size_t slot_rows) const
+    {
+        std::array<size_t, Map::NUM_BUCKETS> free_keys;
+        std::array<size_t, Map::NUM_BUCKETS> growth;
+        size_t num_buckets = 0;
+        for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size(), ++num_buckets)
+        {
+            free_keys[num_buckets] = map.impls[bucket].keysBeforeResize();
+            growth[num_buckets] = map.impls[bucket].estimateGrowthMemory(slot_rows);
+        }
+        std::sort(free_keys.begin(), free_keys.begin() + num_buckets);
+        size_t growing = 0;
+        for (size_t keys_left = slot_rows; growing < num_buckets && free_keys[growing] < keys_left; ++growing)
+            keys_left -= free_keys[growing] + 1;
+        std::nth_element(growth.begin(), growth.begin() + growing, growth.begin() + num_buckets, std::greater<>());
+        size_t bound = 0;
+        for (size_t i = 0; i < growing; ++i)
+            bound = JoinSpillBudget::add(bound, growth[i]);
+        return bound;
     }
 
     /// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
@@ -844,8 +871,8 @@ private:
         PaddedPODArray<UInt128> prebuilt_keys;
         /// The rows of the block per bucket, with a budget only.
         std::vector<UInt32> bucket_rows;
-        /// A two-level map behind one slot reserves the growth as if each bucket got every row, and counts the rows per bucket
-        /// only if that does not fit.
+        /// A two-level map behind one slot reserves a bound over any split of the rows, and counts the rows per bucket only if
+        /// that does not fit.
         std::optional<size_t> worst_case_reserved;
         SCOPE_EXIT({
             if (worst_case_reserved)

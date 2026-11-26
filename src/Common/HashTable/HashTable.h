@@ -310,6 +310,7 @@ public:
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
     [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+    [[nodiscard]] size_t maxFill() const { return precalculated_max_fill; }
 
     /// Increase the size of the hash table.
     void increaseSize() { increaseSizeDegree(size_degree >= max_size_degree ? 1 : 2); }
@@ -408,6 +409,7 @@ public:
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
     [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+    [[nodiscard]] size_t maxFill() const { return precalculated_max_fill; }
 
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
     void increaseSize()
@@ -1902,6 +1904,14 @@ public:
                 return max_size;
         }
         return peak_extra_bytes;
+    }
+
+    /// How many more keys the table takes before an insert resizes it (or only switches it to the Robin Hood mode).
+    /// The zero key is counted in `m_size` without the resize check, so `m_size` can be above `maxFill`.
+    [[nodiscard]] size_t keysBeforeResize() const noexcept
+    {
+        const size_t max_fill = grower.maxFill();
+        return m_size < max_fill ? max_fill - m_size : 0;
     }
 
     [[nodiscard]] size_t getBufferSizeInCells() const
