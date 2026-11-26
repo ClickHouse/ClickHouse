@@ -1,6 +1,11 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
 
 #include <Processors/Port.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
@@ -29,12 +34,40 @@ TTLCalcTransform::TTLCalcTransform(
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
-    bool force_)
-    : IAccumulatingTransform(header_, header_)
+    bool force_,
+    const NamesAndTypesList & expired_columns_)
+    /// Same output header as TTLTransform: a skip index or projection reading a column this merge
+    /// expired still needs it downstream, so the expired columns are re-added as defaults.
+    : IAccumulatingTransform(header_, TTLTransform::addExpiredColumnsToBlock(header_, expired_columns_))
+    , expired_columns(expired_columns_)
     , data_part(data_part_)
     , log(getLogger(storage_.getLogName() + " (TTLCalcTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
+
+    /// The same defaults TTLTransform substitutes: a rule reading an expired column must see what
+    /// a query would read, which is the column's DEFAULT expression, not the bare type default.
+    const auto & storage_columns = metadata_snapshot_->getColumns();
+    const auto & column_defaults = storage_columns.getDefaults();
+    for (const auto & expired_column : expired_columns)
+    {
+        ExpressionActionsPtr default_expression;
+        String default_column_name;
+        if (auto it = column_defaults.find(expired_column.name); it != column_defaults.end())
+        {
+            auto default_ast = addTypeConversionToAST(it->second.expression->clone(), expired_column.type->getName());
+            auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
+            default_expression = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
+            default_column_name = default_ast->getColumnName();
+        }
+        expired_columns_data.emplace(
+            expired_column.name,
+            TTLTransform::ExpiredColumnData{
+                expired_column.type,
+                std::move(default_expression),
+                std::move(default_column_name),
+                TTLTransform::sharesNestedOffsets(storage_, expired_column)});
+    }
 
     if (metadata_snapshot_->hasRowsTTL())
     {
@@ -58,6 +91,13 @@ TTLCalcTransform::TTLCalcTransform(
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
+            /// Physical expiry is what the caller declares, not header presence: a merge keeps an
+            /// expired column in the header when an index or projection still reads it.
+            if (expired_columns.contains(name))
+            {
+                preserved_column_ttls.emplace_back(name, old_ttl_infos.columns_ttl[name]);
+                continue;
+            }
             algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
                 getExpressions(description, subqueries_for_sets, context), description,
                 TTLUpdateField::COLUMNS_TTL, name, old_ttl_infos.columns_ttl[name], current_time_, force_));
@@ -78,6 +118,9 @@ TTLCalcTransform::TTLCalcTransform(
 void TTLCalcTransform::consume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    /// Mirrors TTLTransform: an expired column carries its default here whether or not the block
+    /// still has it, so a rule reading it never sees values the base table no longer exposes.
+    TTLTransform::fillExpiredColumns(block, expired_columns_data);
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
@@ -112,6 +155,12 @@ void TTLCalcTransform::finalize()
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+    /// Rules skipped for absent inputs keep their pre-merge info, min/max included.
+    for (const auto & [name, info] : preserved_column_ttls)
+    {
+        data_part->ttl_infos.columns_ttl[name] = info;
+        data_part->ttl_infos.updatePartMinMaxTTL(info);
+    }
 }
 
 IProcessor::Status TTLCalcTransform::prepare()

@@ -38,6 +38,20 @@ public:
 
     static SharedHeader addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_);
 
+    struct ExpiredColumnData
+    {
+        DataTypePtr type;
+        ExpressionActionsPtr default_expression;
+        String default_column_name;
+        bool shares_nested_offsets;
+    };
+    using ExpiredColumnsData = UnorderedMapWithMemoryTracking<String, ExpiredColumnData>;
+
+    /// Whether `column` is a `Nested` subcolumn that shares its array sizes with the other subcolumns.
+    static bool sharesNestedOffsets(const MergeTreeData & storage, const NameAndTypePair & column);
+    /// Sets each expired column of `block` to its default, sized like a stored sibling if it shares `Nested` offsets.
+    static void fillExpiredColumns(Block & block, const ExpiredColumnsData & expired_columns_data);
+
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;
@@ -64,14 +78,7 @@ private:
 
     NamesAndTypesList expired_columns;
 
-    struct ExpiredColumnData
-    {
-        DataTypePtr type;
-        ExpressionActionsPtr default_expression;
-        String default_column_name;
-        bool shares_nested_offsets;
-    };
-    UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
+    ExpiredColumnsData expired_columns_data;
 
     /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
     /// Its stored value describes the pre-expiry data, so it is recomputed once the TTL algorithms that

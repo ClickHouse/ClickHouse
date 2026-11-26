@@ -4,6 +4,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
+#include <Processors/Transforms/TTLTransform.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
@@ -23,7 +24,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
         time_t current_time,
-        bool force_
+        bool force_,
+        const NamesAndTypesList & expired_columns_ = {}
     );
 
     PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
@@ -40,6 +42,11 @@ protected:
 
 private:
     VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
+    /// Physically dropped as fully expired; rules reading them evaluate over defaults, as in TTLTransform.
+    NamesAndTypesList expired_columns;
+    TTLTransform::ExpiredColumnsData expired_columns_data;
+    /// (column name, pre-merge info) for column rules whose inputs are absent from the stream.
+    VectorWithMemoryTracking<std::pair<String, MergeTreeDataPartTTLInfo>> preserved_column_ttls;
     PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading

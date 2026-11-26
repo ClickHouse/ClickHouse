@@ -67,6 +67,36 @@ static const ColumnWithTypeAndName * findNestedSiblingWithSizes(const Block & bl
     return nullptr;
 }
 
+bool TTLTransform::sharesNestedOffsets(const MergeTreeData & storage, const NameAndTypePair & column)
+{
+    return (*storage.getSettings())[MergeTreeSetting::share_nested_offsets] && isArray(column.type)
+        && Nested::extractTableName(column.name) != column.name;
+}
+
+void TTLTransform::fillExpiredColumns(Block & block, const ExpiredColumnsData & expired_columns_data)
+{
+    for (const auto & [column, data] : expired_columns_data)
+    {
+        auto default_column
+            = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
+        if (!default_column && data.shares_nested_offsets)
+            if (const auto * sibling = findNestedSiblingWithSizes(block, column, expired_columns_data))
+                default_column = TTLColumnAlgorithm::createArraysOfDefaults(*data.type, *sibling->column);
+        if (default_column)
+            default_column = default_column->convertToFullColumnIfConst();
+        else
+            default_column = data.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
+
+        /// Expired column may pre-exist (e.g. from customized merges like ReplacingMergeTree with version key), so
+        /// replace it with default instead of inserting a new one.
+        auto * c = block.findByName(column);
+        if (c)
+            c->column = default_column;
+        else
+            block.insert(ColumnWithTypeAndName(default_column, data.type, column));
+    }
+}
+
 /// A column TTL resets its column to the default, but the `MATERIALIZED` columns computed from it keep
 /// the value they had before the expiry, which contradicts their own expression forever - no later merge
 /// repairs it. `ALTER TABLE ... CLEAR COLUMN`, the other path that resets a column to its default,
@@ -207,17 +237,11 @@ TTLTransform::TTLTransform(
         return Result{actions, default_ast->getColumnName()};
     };
 
-    bool share_nested = (*storage_.getSettings())[MergeTreeSetting::share_nested_offsets];
-    auto shares_nested_offsets = [&](const NameAndTypePair & column)
-    {
-        return share_nested && isArray(column.type) && Nested::extractTableName(column.name) != column.name;
-    };
-
     for (const auto & expired_column : expired_columns)
     {
         auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
         ExpiredColumnData data{
-            expired_column.type, std::move(default_expression), std::move(default_column_name), shares_nested_offsets(expired_column)};
+            expired_column.type, std::move(default_expression), std::move(default_column_name), sharesNestedOffsets(storage_, expired_column)};
         expired_columns_data.emplace(expired_column.name, std::move(data));
     }
 
@@ -303,7 +327,7 @@ TTLTransform::TTLTransform(
             default_expression,
             default_column_name,
             isCompactPart(data_part),
-            shares_nested_offsets(storage_columns.getPhysical(name))));
+            sharesNestedOffsets(storage_, storage_columns.getPhysical(name))));
     };
 
     /// The TTL of a column that nothing recomputes goes first: a dependent has to read the value that
@@ -405,26 +429,7 @@ void TTLTransform::consume(Chunk chunk)
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     /// Fill expired columns with default values which will later be handled in TTLColumnAlgorithm
-    for (const auto & [column, data] : expired_columns_data)
-    {
-        auto default_column
-            = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
-        if (!default_column && data.shares_nested_offsets)
-            if (const auto * sibling = findNestedSiblingWithSizes(block, column, expired_columns_data))
-                default_column = TTLColumnAlgorithm::createArraysOfDefaults(*data.type, *sibling->column);
-        if (default_column)
-            default_column = default_column->convertToFullColumnIfConst();
-        else
-            default_column = data.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
-
-        /// Expired column may pre-exist (e.g. from customized merges like ReplacingMergeTree with version key), so
-        /// replace it with default instead of inserting a new one.
-        auto * c = block.findByName(column);
-        if (c)
-            c->column = default_column;
-        else
-            block.insert(ColumnWithTypeAndName(default_column, data.type, column));
-    }
+    fillExpiredColumns(block, expired_columns_data);
 
     const size_t num_input_rows = block.rows();
     /// In a vertical merge, tag every row with its position in the chunk. The TTL algorithms filter the block,
