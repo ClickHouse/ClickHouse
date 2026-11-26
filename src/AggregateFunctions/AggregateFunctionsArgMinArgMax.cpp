@@ -197,6 +197,16 @@ public:
         }
     }
 
+    /// The row with the extreme value, the second argument, of the rows that a state receives, and the first
+    /// of several rows with that value, because the value replaces the kept one only when it is strictly
+    /// better. The values need a total order, as for `min` and `max`.
+    [[nodiscard]] AggregateFunctionRowSelection getRowSelection() const override
+    {
+        if (!singleValueTypeIsTotallyOrdered(type_val))
+            return {};
+        return {.kind = AggregateFunctionRowSelection::Kind::BestRow, .ordering_argument = 1, .largest = !isMin};
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if constexpr (isMin)
