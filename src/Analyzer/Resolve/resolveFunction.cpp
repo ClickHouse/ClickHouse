@@ -96,10 +96,10 @@ namespace Setting
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
     extern const SettingsBool exact_rows_before_limit;
-    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -209,7 +209,21 @@ bool readsRowsTillEnd(const IdentifierResolveScope & scope)
     return (query_node && query_node->isGroupByWithTotals()) || scope.context->getSettingsRef()[Setting::exact_rows_before_limit];
 }
 
-/// Whether the rows the `exists_node` filter selects reach no output: its query is a table expression, at any depth, of a `LIMIT 0` query.
+bool readsRemoteSource(const IQueryTreeNode & node)
+{
+    if (const auto * table_node = node.as<TableNode>())
+        return table_node->getStorage()->isRemote();
+    if (const auto * table_function_node = node.as<TableFunctionNode>())
+        return table_function_node->getStorage() && table_function_node->getStorage()->isRemote();
+
+    for (const auto & child : node.getChildren())
+        if (child && readsRemoteSource(*child))
+            return true;
+
+    return false;
+}
+
+/// Whether the rows the `exists_node` filter selects reach no output: its query is a table expression, at any depth, of a `LIMIT 0` query that reads no remote table.
 bool isExistsResultDiscardedByLimitZero(
     const IdentifierResolveScope & scope, const IQueryTreeNode * exists_node, const std::function<bool(const String &)> & is_builtin_function)
 {
@@ -235,27 +249,16 @@ bool isExistsResultDiscardedByLimitZero(
                 return false;
 
             if (hasLimitZero(*parent_query_node))
-                return !readsRowsTillEnd(parent);
+            {
+                const auto & join_tree = parent_query_node->getJoinTreeNode();
+                return !readsRowsTillEnd(parent) && !(join_tree && readsRemoteSource(*join_tree));
+            }
         }
         else
         {
             return false;
         }
     }
-
-    return false;
-}
-
-bool readsRemoteSource(const IQueryTreeNode & node)
-{
-    if (const auto * table_node = node.as<TableNode>())
-        return table_node->getStorage()->isRemote();
-    if (const auto * table_function_node = node.as<TableFunctionNode>())
-        return table_function_node->getStorage() && table_function_node->getStorage()->isRemote();
-
-    for (const auto & child : node.getChildren())
-        if (child && readsRemoteSource(*child))
-            return true;
 
     return false;
 }
@@ -2405,11 +2408,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             };
 
             /// A row filter of rows an outer `LIMIT 0` discards is never needed: keep it a set, which that `LIMIT` never builds.
-            /// A subquery over a remote source, or an `IN` subquery that parallel replicas refuse, keeps the scalar path.
+            /// Parallel replicas or a remote table under that `LIMIT 0` query would build the set on other servers: keep the scalar path.
             if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery]
-                || (scope.context->getSettingsRef()[Setting::parallel_replicas_allow_in_with_subquery]
-                    && isExistsResultDiscardedByLimitZero(scope, function_node_ptr.get(), is_builtin_function)
-                    && !readsRemoteSource(*new_exists_argument)))
+                || (!scope.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]
+                    && isExistsResultDiscardedByLimitZero(scope, function_node_ptr.get(), is_builtin_function)))
             {
                 /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
                 QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);

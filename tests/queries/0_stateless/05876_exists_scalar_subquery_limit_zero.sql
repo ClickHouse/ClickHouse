@@ -7,7 +7,7 @@ INSERT INTO t SELECT number, number % 30000 FROM numbers(100000);
 DROP TABLE IF EXISTS t_dist;
 CREATE TABLE t_dist AS t ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t);
 
-SET execute_exists_as_scalar_subquery = 1, exact_rows_before_limit = 0;
+SET execute_exists_as_scalar_subquery = 1, exact_rows_before_limit = 0, enable_parallel_replicas = 0;
 
 SELECT * FROM (WITH s AS (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1) SELECT k, c FROM s UNION ALL SELECT 0 AS k, 0 AS c WHERE NOT exists((SELECT 1 FROM s))) LIMIT 0
 SETTINGS log_comment = 'exists_limit_zero_issue' FORMAT TSVWithNamesAndTypes;
@@ -56,8 +56,19 @@ SETTINGS log_comment = 'exists_limit_zero_exact_rows', exact_rows_before_limit =
 SELECT * FROM (SELECT c1 FROM t_dist WHERE NOT exists((SELECT 1 FROM t_dist))) LIMIT 0
 SETTINGS log_comment = 'exists_limit_zero_distributed', distributed_product_mode = 'deny';
 
+SELECT * FROM (SELECT c1 FROM t_dist WHERE NOT exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1)))) LIMIT 0
+SETTINGS log_comment = 'exists_limit_zero_distributed_outer', prefer_localhost_replica = 0;
+
+SELECT * FROM (SELECT c1 FROM t WHERE NOT exists((SELECT 1 FROM t_dist))) LIMIT 0
+SETTINGS log_comment = 'exists_limit_zero_distributed_subquery';
+
 SELECT * FROM (SELECT c1 FROM t WHERE NOT exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1)))) LIMIT 0
 SETTINGS log_comment = 'exists_limit_zero_parallel_replicas', enable_parallel_replicas = 2, parallel_replicas_allow_in_with_subquery = 0,
+max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+SELECT * FROM (SELECT c1 FROM t WHERE NOT exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1)))) LIMIT 0
+SETTINGS log_comment = 'exists_limit_zero_parallel_replicas_allow_in', enable_parallel_replicas = 2,
 max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
 parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
 
