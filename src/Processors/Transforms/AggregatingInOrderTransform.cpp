@@ -4,6 +4,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -132,6 +133,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         if (group_by_key)
             key_columns_raw[i] = materialized_columns.back().get();
     }
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    /// Only the hashed keys are replaced; `key_columns` keep the original values for finding the sorted ranges.
+    if (group_by_key)
+        replaceNegativeZeros(key_columns_raw, materialized_columns);
 
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;

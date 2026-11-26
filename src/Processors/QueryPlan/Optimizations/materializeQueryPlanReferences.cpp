@@ -119,20 +119,20 @@ void materializeQueryPlanReferences(
 
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node)
 {
-    auto * common_subplan = typeid_cast<CommonSubplanStep *>(node.step.get());
-    if (!common_subplan)
-        return;
+    /// Decorrelation can wrap the same plan several times, and the node is visited once, so the whole chain is removed.
+    while (typeid_cast<CommonSubplanStep *>(node.step.get()))
+    {
+        if (node.children.size() != 1)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected CommonSubplanStep to have exactly one child, but got {}",
+                node.children.size());
 
-    if (node.children.size() != 1)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected CommonSubplanStep to have exactly one child, but got {}",
-            node.children.size());
+        auto * child = node.children[0];
 
-    auto * child = node.children[0];
-
-    node.step = std::move(child->step);
-    node.children = std::move(child->children);
+        node.step = std::move(child->step);
+        node.children = std::move(child->children);
+    }
 }
 
 }

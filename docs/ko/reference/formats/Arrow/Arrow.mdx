@@ -25,35 +25,36 @@ ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 
 아래 표는 지원되는 데이터 타입과 `INSERT` 및 `SELECT` 쿼리에서 해당 타입이 ClickHouse [데이터 타입](/ko/reference/data-types/index)에 어떻게 매핑되는지를 보여줍니다.
 
-| Arrow 데이터 타입 (`INSERT`)                 | ClickHouse 데이터 타입                                                                                         | Arrow 데이터 타입 (`SELECT`) |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `BOOL`                                  | [Bool](/ko/reference/data-types/boolean)                                                                     | `BOOL`                  |
-| `UINT8`, `BOOL`                         | [UInt8](/ko/reference/data-types/int-uint)                                                                   | `UINT8`                 |
-| `INT8`                                  | [Int8](/ko/reference/data-types/int-uint)/[Enum8](/ko/reference/data-types/enum)                                | `INT8`                  |
-| `UINT16`                                | [UInt16](/ko/reference/data-types/int-uint)                                                                  | `UINT16`                |
-| `INT16`                                 | [Int16](/ko/reference/data-types/int-uint)/[Enum16](/ko/reference/data-types/enum)                              | `INT16`                 |
-| `UINT32`                                | [UInt32](/ko/reference/data-types/int-uint)                                                                  | `UINT32`                |
-| `INT32`                                 | [Int32](/ko/reference/data-types/int-uint)                                                                   | `INT32`                 |
-| `UINT64`                                | [UInt64](/ko/reference/data-types/int-uint)                                                                  | `UINT64`                |
-| `INT64`                                 | [Int64](/ko/reference/data-types/int-uint)                                                                   | `INT64`                 |
-| `FLOAT`, `HALF_FLOAT`                   | [Float32](/ko/reference/data-types/float)                                                                    | `FLOAT32`               |
-| `DOUBLE`                                | [Float64](/ko/reference/data-types/float)                                                                    | `FLOAT64`               |
-| `DATE32`                                | [Date32](/ko/reference/data-types/date32)                                                                    | `UINT16`                |
-| `DATE64`                                | [DateTime](/ko/reference/data-types/datetime)                                                                | `UINT32`                |
-| `TIMESTAMP`                             | [DateTime64](/ko/reference/data-types/datetime64)                                                            | `TIMESTAMP`             |
-| `TIME32`, `TIME64`                      | [Time64](/ko/reference/data-types/time64)                                                                    | `TIME32`, `TIME64`      |
-| `STRING`, `BINARY`                      | [String](/ko/reference/data-types/string)                                                                    | `BINARY`                |
-| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ko/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`     |
-| `DECIMAL`                               | [Decimal](/ko/reference/data-types/decimal)                                                                  | `DECIMAL`               |
-| `DECIMAL256`                            | [Decimal256](/ko/reference/data-types/decimal)                                                               | `DECIMAL256`            |
-| `LIST`, `LIST_VIEW`                     | [Array](/ko/reference/data-types/array)                                                                      | `LIST`                  |
-| `STRUCT`                                | [Tuple](/ko/reference/data-types/tuple)                                                                      | `STRUCT`                |
-| `MAP`                                   | [Map](/ko/reference/data-types/map)                                                                          | `MAP`                   |
-| `UINT32`                                | [IPv4](/ko/reference/data-types/ipv4)                                                                        | `UINT32`                |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/ko/reference/data-types/ipv6)                                                                        | `FIXED_SIZE_BINARY`     |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/ko/reference/data-types/int-uint)                                           | `FIXED_SIZE_BINARY`     |
-| `DURATION`                              | [Interval](/ko/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`              |
-| `INT64`                                 | [Interval](/ko/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)   | `INT64`                 |
+| Arrow 데이터 타입 (`INSERT`)                 | ClickHouse 데이터 타입                                                                                                                                   | Arrow 데이터 타입 (`SELECT`) |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `BOOL`                                  | [Bool](/ko/reference/data-types/boolean)                                                                                                               | `BOOL`                  |
+| `UINT8`, `BOOL`                         | [UInt8](/ko/reference/data-types/int-uint)                                                                                                             | `UINT8`                 |
+| `INT8`                                  | [Int8](/ko/reference/data-types/int-uint)/[Enum8](/ko/reference/data-types/enum)                                                                          | `INT8`                  |
+| `UINT16`                                | [UInt16](/ko/reference/data-types/int-uint)                                                                                                            | `UINT16`                |
+| `INT16`                                 | [Int16](/ko/reference/data-types/int-uint)/[Enum16](/ko/reference/data-types/enum)                                                                        | `INT16`                 |
+| `UINT32`                                | [UInt32](/ko/reference/data-types/int-uint)                                                                                                            | `UINT32`                |
+| `INT32`                                 | [Int32](/ko/reference/data-types/int-uint)                                                                                                             | `INT32`                 |
+| `UINT64`                                | [UInt64](/ko/reference/data-types/int-uint)                                                                                                            | `UINT64`                |
+| `INT64`                                 | [Int64](/ko/reference/data-types/int-uint)                                                                                                             | `INT64`                 |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/ko/reference/data-types/float)                                                                                                              | `FLOAT32`               |
+| `DOUBLE`                                | [Float64](/ko/reference/data-types/float)                                                                                                              | `FLOAT64`               |
+| `DATE32`                                | [Date32](/ko/reference/data-types/date32)                                                                                                              | `UINT16`                |
+| `DATE64`                                | [DateTime](/ko/reference/data-types/datetime)                                                                                                          | `UINT32`                |
+| `TIMESTAMP`                             | [DateTime64](/ko/reference/data-types/datetime64)                                                                                                      | `TIMESTAMP`             |
+| `TIME32`, `TIME64`                      | [Time64](/ko/reference/data-types/time64)                                                                                                              | `TIME32`, `TIME64`      |
+| `STRING`, `BINARY`                      | [String](/ko/reference/data-types/string)                                                                                                              | `BINARY`                |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ko/reference/data-types/fixedstring)                                                                                                    | `FIXED_SIZE_BINARY`     |
+| `DECIMAL`                               | [Decimal](/ko/reference/data-types/decimal)                                                                                                            | `DECIMAL`               |
+| `DECIMAL256`                            | [Decimal256](/ko/reference/data-types/decimal)                                                                                                         | `DECIMAL256`            |
+| `LIST`, `LIST_VIEW`                     | [Array](/ko/reference/data-types/array)                                                                                                                | `LIST`                  |
+| `STRUCT`                                | [Tuple](/ko/reference/data-types/tuple)                                                                                                                | `STRUCT`                |
+| `MAP`                                   | [Map](/ko/reference/data-types/map)                                                                                                                    | `MAP`                   |
+| `UINT32`                                | [IPv4](/ko/reference/data-types/ipv4)                                                                                                                  | `UINT32`                |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/ko/reference/data-types/ipv6)                                                                                                                  | `FIXED_SIZE_BINARY`     |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/ko/reference/data-types/int-uint)                                                                                     | `FIXED_SIZE_BINARY`     |
+| `DURATION`                              | [Interval](/ko/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second)                                           | `DURATION`              |
+| `INT64`                                 | [Interval](/ko/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)                                             | `INT64`                 |
+| `INTERVAL`                              | [Interval](/ko/reference/data-types/special-data-types/interval) (Month). `DAY_TIME` 및 `MONTH_DAY_NANO`는 인터벌로 구성된 [Tuple](/ko/reference/data-types/tuple) | `INT64`, `STRUCT`       |
 
 배열은 중첩될 수 있으며, 인수로 `Nullable` 타입을 사용할 수도 있습니다. `Tuple` 및 `Map` 타입도 중첩할 수 있습니다.
 

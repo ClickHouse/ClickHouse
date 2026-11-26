@@ -13,35 +13,27 @@ SharedMergeTree テーブルエンジンファミリーは ClickHouse Cloud を�
 
 * insert スループットの向上
 * バックグラウンドマージのスループット向上
-* mutation のスループット向上
+* ミューテーション のスループット向上
 * scale-up および scale-down の高速化
 * SELECT クエリに対する、より軽量な強整合性
 
 SharedMergeTree の大きな改善点の 1 つは、ReplicatedMergeTree と比べて、コンピュートとストレージの分離がより進んでいることです。以下は、ReplicatedMergeTree におけるコンピュートとストレージの分離方法を示したものです。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ReplicatedMergeTree の図](/images/cloud/reference/shared-merge-tree-1.png)
-
-</Frame>
-
+  <Frame>
+    ![ReplicatedMergeTree の図](/images/cloud/reference/shared-merge-tree-1.png)
+  </Frame>
 </div>
 
 ご覧のとおり、ReplicatedMergeTree ではデータ自体はオブジェクトストレージに保存されますが、メタデータは引き続き各 clickhouse-server 上に保持されます。つまり、レプリケーションを伴うあらゆる操作で、メタデータもすべてのレプリカに複製する必要があります。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![メタデータ付き ReplicatedMergeTree の図](/images/cloud/reference/shared-merge-tree-2.png)
-
-</Frame>
-
+  <Frame>
+    ![メタデータ付き ReplicatedMergeTree の図](/images/cloud/reference/shared-merge-tree-2.png)
+  </Frame>
 </div>
 
-ReplicatedMergeTree とは異なり、SharedMergeTree ではレプリカ同士が通信する必要はありません。代わりに、すべての通信は共有ストレージと clickhouse-keeper を介して行われます。SharedMergeTree は非同期のリーダーレス レプリケーションを実装しており、協調とメタデータストレージのために clickhouse-keeper を使用します。つまり、サービスの scale-up や scale-down に合わせてメタデータを複製する必要がありません。その結果、レプリケーション、mutation、マージ、scale-up が高速化されます。SharedMergeTree では各テーブルで数百のレプリカを持てるため、分片なしで動的にスケールできます。ClickHouse Cloud では、1 つのクエリにより多くのコンピュートリソースを活用するために、分散クエリ実行のアプローチが採用されています。
+ReplicatedMergeTree とは異なり、SharedMergeTree ではレプリカ同士が通信する必要はありません。代わりに、すべての通信は共有ストレージと clickhouse-keeper を介して行われます。SharedMergeTree は非同期のリーダーレス レプリケーションを実装しており、協調とメタデータストレージのために clickhouse-keeper を使用します。つまり、サービスの scale-up や scale-down に合わせてメタデータを複製する必要がありません。その結果、レプリケーション、ミューテーション、マージ、scale-up が高速化されます。SharedMergeTree では各テーブルで数百のレプリカを持てるため、分片なしで動的にスケールできます。ClickHouse Cloud では、1 つのクエリにより多くのコンピュートリソースを活用するために、分散クエリ実行のアプローチが採用されています。
 
 ## 内部情報の確認 {#introspection}
 
@@ -130,8 +122,8 @@ SharedMergeTree は、ReplicatedMergeTree よりも優れた軽量な整合性�
 
 ## `ALTER` とミューテーションの可視性 {#alter-and-mutation-visibility}
 
-`SharedMergeTree` は、ClickHouse Keeper を介してメタデータの変更を調整します。各レプリカは変更されたメタデータを非同期でフェッチするため、メタデータの変更がすべてのレプリカですぐに反映されるとは限りません。なお、同じノード上の同じ session 内での読み取りには、すでに最新のメタデータが使用されます。メタデータの変更直後に別のレプリカで読み取りを実行する必要がある場合は、`SYSTEM SYNC REPLICA LIGHTWEIGHT` を使用して、そのレプリカに ClickHouse Keeper からメタデータをフェッチさせてください。
+`SharedMergeTree` は、ClickHouse Keeper を介してメタデータの変更を調整します。レプリカは変更後のメタデータを非同期にフェッチするため、メタデータの変更がすべてのレプリカで即座に可視になるとは限りません。同じノード上の同じ session 内での読み取りでは、すでに最新のメタデータが使用されます。メタデータの変更直後に別のレプリカで読み取りを実行する必要がある場合は、`SYSTEM SYNC REPLICA LIGHTWEIGHT` を使用して、そのレプリカに ClickHouse Keeper からメタデータをフェッチさせてください。
 
-ミューテーションを伴う `ALTER` 操作では、バックグラウンド処理によって共有ストレージ上に新しいパーツが作成され、その可視性は ClickHouse Keeper を介して調整されます。`ReplicatedMergeTree` のように、レプリカごとに書き換えやデータ転送を行う処理ではありません。
+ミューテーションを伴う `ALTER` 操作では、共有ストレージ上に新しいパーツを作成するバックグラウンド処理が実行され、それらのパーツの可視性は ClickHouse Keeper を介して調整されます。これは、`ReplicatedMergeTree` のようにレプリカごとに書き換えやデータ転送を行う処理ではありません。
 
-ClickHouse Cloud では、[`alter_sync`](/ja/reference/settings/session-settings/alter#alter_sync) のデフォルト値は `0` です。クライアントがメタデータ操作、またはメタデータ以外の `MODIFY COLUMN` による書き換えの完了を待機する必要がある場合は、この設定を指定してください。`UPDATE`、`DELETE`、`MATERIALIZE ...` 操作では、[`mutations_sync`](/ja/reference/settings/session-settings/mutations#mutations_sync) で待機を制御し、[`system.mutations`](/ja/reference/system-tables/mutations) で進捗を監視してください。
+ClickHouse Cloud では、[`alter_sync`](/ja/reference/settings/session-settings/alter#alter_sync) のデフォルト値は `0` です。クライアントがメタデータ操作、またはメタデータのみの変更ではない `MODIFY COLUMN` による書き換えの完了を待機する必要がある場合は、この設定を指定してください。`UPDATE`、`DELETE`、`MATERIALIZE ...` 操作では、[`mutations_sync`](/ja/reference/settings/session-settings/mutations#mutations_sync) で待機動作を制御し、[`system.mutations`](/ja/reference/system-tables/mutations) で進捗を監視してください。
