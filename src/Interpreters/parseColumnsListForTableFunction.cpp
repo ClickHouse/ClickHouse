@@ -95,8 +95,10 @@ void checkAggregateFunctionStateVersion(const IDataType & type, bool check_argum
 DataTypeValidationSettings getStructureValidationSettings(const ContextPtr & context)
 {
     DataTypeValidationSettings validation_settings(context->getSettingsRef());
-    /// A structure is parsed again, with the server's settings, whenever a table defined by a table function is loaded.
-    validation_settings.allow_suspicious_aggregate_function_version_0 = true;
+    /// Outside a query, a structure is parsed when a table defined by a table function is loaded or its storage is created,
+    /// and a DDL worker replays a query its initiator has checked.
+    if (!context->hasQueryContext() || context->isDDLOrOnClusterInternal())
+        validation_settings.allow_suspicious_aggregate_function_version_0 = true;
     return validation_settings;
 }
 

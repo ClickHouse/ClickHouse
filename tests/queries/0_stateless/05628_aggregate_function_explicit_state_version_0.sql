@@ -19,6 +19,8 @@ CREATE TABLE t_ephemeral (k UInt8, s AggregateFunction(0, sumMap, Array(UInt8), 
 ALTER TABLE t ADD COLUMN s2 AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t MODIFY COLUMN s AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)); -- { serverError BAD_ARGUMENTS }
 SELECT CAST(sumMapState([1::UInt8], [2::UInt8]), 'AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8))'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM format(RowBinary, 's AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8))', ''); -- { serverError BAD_ARGUMENTS }
+CREATE VIEW v_refused AS SELECT * FROM format(RowBinary, 's AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8))', ''); -- { serverError BAD_ARGUMENTS }
 
 -- The default version, and version 0 of a function whose default state version is 0.
 CREATE TABLE t_allowed (a AggregateFunction(sumMap, Array(UInt8), Array(UInt8)), b AggregateFunction(1, sumMap, Array(UInt8), Array(UInt8)), c AggregateFunction(0, uniq, UInt64), d AggregateFunction(0, quantileDeterministic, UInt64, UInt64), e AggregateFunction(0, groupBitmap, UInt32)) ENGINE = Memory;

@@ -2964,7 +2964,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQL SECURITY is not supported for tables created from a table function");
 
         auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        auto table_function_context = getContext();
+        if (create.attach)
+        {
+            /// Like its column types, the structure of an attached table may keep a state version 0.
+            auto attach_context = Context::createCopy(getContext());
+            attach_context->setSetting("allow_suspicious_aggregate_function_version_0", 1);
+            table_function_context = attach_context;
+        }
+        auto table_function = TableFunctionFactory::instance().get(table_function_ast, table_function_context);
 
         /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
         /// from the function; a definition with an explicit column list skips that inference and is
@@ -2980,7 +2988,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
-        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
+        res = table_function->execute(table_function_ast, table_function_context, create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
 
         /// A table engine picks the comment up from the arguments the storage factory passes to it,
