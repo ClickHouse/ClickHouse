@@ -133,7 +133,7 @@ private:
 
     /// Whether the miss of `key` with `hash` repeats the previous miss. A fixed-width key determines its
     /// hash, so only a string-like key compares the hash first, as a cheap filter.
-    bool ALWAYS_INLINE repeatsPrevious([[maybe_unused]] UInt64 hash, const RecordKey & key) const
+    [[nodiscard]] bool ALWAYS_INLINE repeatsPrevious([[maybe_unused]] UInt64 hash, const RecordKey & key) const
     {
         if constexpr (kind == AdaptiveMissCombine::counts)
         {
@@ -183,7 +183,7 @@ private:
 
     /// Whether the records count their rows: every count record, and the records of a row selection with a
     /// `count`.
-    bool ALWAYS_INLINE countsRows() const
+    [[nodiscard]] bool ALWAYS_INLINE countsRows() const
     {
         if constexpr (kind == AdaptiveMissCombine::selection)
             return selection_counts_rows;

@@ -88,7 +88,7 @@ public:
         return tail.key == key ? &tail : nullptr;
     }
 
-    bool ALWAYS_INLINE isPending(size_t partition) const { return states[partition] == State::pending; }
+    [[nodiscard]] bool ALWAYS_INLINE isPending(size_t partition) const { return states[partition] == State::pending; }
 
     /// Adds `rows` to the count of `tail`, a written count record, while the count keeps its stored width,
     /// and returns whether it did.
