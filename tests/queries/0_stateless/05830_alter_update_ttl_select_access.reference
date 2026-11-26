@@ -1,0 +1,14 @@
+-- denied: UPDATE reading secret
+-- denied: TTL reading columns without SELECT
+-- data and metadata unchanged
+1	public_1
+2	public_2
+0
+0
+-- allowed: expressions reading only granted columns
+-- allowed: a grant on the column covers its subcolumns
+1	a_1
+2	public_2_2
+-- allowed after GRANT SELECT(secret, d)
+1	secret_1
+2	secret_2
