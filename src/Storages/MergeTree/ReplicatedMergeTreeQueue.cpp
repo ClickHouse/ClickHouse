@@ -316,7 +316,7 @@ bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
 
 bool ReplicatedMergeTreeQueue::isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const
 {
-    if (entry.type != LogEntry::MERGE_PARTS || !storage.supportsLightweightUpdate())
+    if (entry.type != LogEntry::MERGE_PARTS || !storage.supportsPatchParts())
         return false;
 
     auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
@@ -347,7 +347,7 @@ bool ReplicatedMergeTreeQueue::isMergeOfPatchPartsBlocked(const LogEntry & entry
 
 bool ReplicatedMergeTreeQueue::isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const
 {
-    if (entry.type != LogEntry::DROP_PART || !storage.supportsLightweightUpdate())
+    if (entry.type != LogEntry::DROP_PART || !storage.supportsPatchParts())
         return false;
 
     auto dropped_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
@@ -381,7 +381,7 @@ bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
     const CommittingBlocks & committing_blocks,
     std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const
 {
-    if (entry.type != LogEntry::MUTATE_PART || !storage.supportsLightweightUpdate())
+    if (entry.type != LogEntry::MUTATE_PART || !storage.supportsPatchParts())
         return false;
 
     auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
@@ -2215,7 +2215,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
     LogEntryPtr entry;
     CommittingBlocks committing_blocks;
 
-    if (storage.supportsLightweightUpdate())
+    if (storage.supportsPatchParts())
     {
         auto zookeeper = storage.getZooKeeper();
         std::optional<PartitionIdsHint> partition_ids_hint;

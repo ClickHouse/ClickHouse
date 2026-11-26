@@ -10882,7 +10882,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
-        if (detach && supportsLightweightUpdate())
+        if (detach && supportsPatchParts())
         {
             auto patch_parts = getPatchPartsVectorForPartition(part_info.getPartitionId());
             if (!assertNoPatchesForParts({part}, patch_parts, "DETACH PART " + part_name, throw_if_noop))
@@ -10962,7 +10962,7 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
 
     clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
 
-    if (detach && supportsLightweightUpdate())
+    if (detach && supportsPatchParts())
     {
         auto sync_timeout_ms = getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
         if (!waitForProcessingQueue(sync_timeout_ms, SyncReplicaMode::LIGHTWEIGHT, {}))

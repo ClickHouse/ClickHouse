@@ -5838,7 +5838,7 @@ size_t MergeTreeData::clearEmptyParts()
 
 size_t MergeTreeData::clearUnusedPatchParts()
 {
-    if (!supportsLightweightUpdate() || !(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
+    if (!supportsPatchParts() || !(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
         return 0;
 
     auto patch_parts = getPatchPartsVectorForInternalUsage();
@@ -7544,20 +7544,28 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Parts merged with only `enable_block_offset_column` enabled store `_block_offset` without `_block_number`,
     /// so (`_block_number`, `_block_offset`) is not unique in them. Lightweight updates identify rows by this pair,
     /// so enabling `enable_block_number_column` on such a table is refused, unless the table is empty.
-    if (!is_secondary_replay
-        && (*settings_from_storage)[MergeTreeSetting::enable_block_offset_column]
-        && !(*settings_from_storage)[MergeTreeSetting::enable_block_number_column]
-        && (*alter_effective_settings)[MergeTreeSetting::enable_block_number_column]
-        && getTotalActiveSizeInRows() != 0)
+    /// Writing the setting to the definition of a table that has it only from the server configuration is refused
+    /// as well: the configuration could have been different when the existing parts were written.
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot enable `enable_block_number_column` for table {}: "
-            "`enable_block_offset_column` is already enabled and the table contains data. "
-            "Existing rows may share the same (`_block_number`, `_block_offset`), "
-            "so lightweight updates and deletes would affect more rows than intended. This leads to data loss. "
-            "Create a new table with both settings enabled and copy the data into it",
-            getStorageID().getNameForLogs());
+        const bool was_enabled = (*settings_from_storage)[MergeTreeSetting::enable_block_number_column];
+        const bool is_enabled = (*alter_effective_settings)[MergeTreeSetting::enable_block_number_column];
+        const bool was_in_definition = isSettingEnabledInDefinition(old_metadata, "enable_block_number_column");
+        const bool is_in_definition = isSettingEnabledInDefinition(new_metadata, "enable_block_number_column");
+
+        if (!is_secondary_replay
+            && (*settings_from_storage)[MergeTreeSetting::enable_block_offset_column]
+            && ((!was_enabled && is_enabled) || (!was_in_definition && is_in_definition))
+            && getTotalActiveSizeInRows() != 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot enable `enable_block_number_column` for table {}: "
+                "`enable_block_offset_column` is already enabled and the table contains data. "
+                "Existing rows may share the same (`_block_number`, `_block_offset`), "
+                "so lightweight updates and deletes would affect more rows than intended. This leads to data loss. "
+                "Create a new table with both settings enabled and copy the data into it",
+                getStorageID().getNameForLogs());
+        }
     }
 
     /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
@@ -15391,7 +15399,7 @@ MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
     return params;
 }
 
-std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdate() const
+std::expected<void, PreformattedMessage> MergeTreeData::supportsPatchParts() const
 {
     /// TODO(unique-key): support lightweight updates.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
@@ -15416,6 +15424,42 @@ std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdat
         return std::unexpected(PreformattedMessage::create(
             "Lightweight updates are supported only for tables with materialized _block_offset column. "
             "Run 'MODIFY SETTING enable_block_offset_column = 1' command to enable it"));
+
+    return {};
+}
+
+bool MergeTreeData::isSettingEnabledInDefinition(const StorageInMemoryMetadata & metadata, std::string_view setting_name)
+{
+    if (!metadata.hasSettingsChanges())
+        return false;
+
+    for (const auto & change : metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes)
+    {
+        if (MergeTreeSettings::resolveName(change.name) == setting_name)
+            return SettingFieldBool(change.value).value;
+    }
+
+    return false;
+}
+
+std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdate() const
+{
+    if (auto supports = supportsPatchParts(); !supports)
+        return supports;
+
+    /// A setting enabled only by the server configuration could have been disabled when the existing parts
+    /// were written, and then (`_block_number`, `_block_offset`) does not identify a row in them.
+    /// `CREATE TABLE` writes these settings to the definition if they are enabled by the server configuration.
+    const auto metadata = getInMemoryMetadataPtr(getContext(), false);
+    for (const auto * setting_name : {"enable_block_number_column", "enable_block_offset_column"})
+    {
+        if (!isSettingEnabledInDefinition(*metadata, setting_name))
+            return std::unexpected(PreformattedMessage::create(
+                "Lightweight updates are supported only for tables with the setting `{}` enabled in the table definition, "
+                "but for this table it is enabled only by the server configuration. "
+                "Run 'MODIFY SETTING {} = 1' command to enable it",
+                setting_name, setting_name));
+    }
 
     return {};
 }

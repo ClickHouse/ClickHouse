@@ -1800,7 +1800,16 @@ public:
 
     static MergingParams getMergingParamsForPatchParts();
 
+    /// Whether a new lightweight update can be executed. In addition to `supportsPatchParts`, it requires
+    /// `enable_block_number_column` and `enable_block_offset_column` to be enabled in the definition of the table
+    /// and not only by the server configuration: only then it is known that all parts were written with them.
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override;
+
+    /// Whether the table may have patch parts, according to the settings in effect.
+    std::expected<void, PreformattedMessage> supportsPatchParts() const;
+
+    /// Whether the setting is enabled in the definition of the table (the SETTINGS clause), under any of its names.
+    static bool isSettingEnabledInDefinition(const StorageInMemoryMetadata & metadata, std::string_view setting_name);
 
     /// TODO: make enabled by default in the next release if no problems found.
     bool allowRemoveStaleMovingParts() const;

@@ -974,6 +974,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE,
             /* stored_definition */ args.query.attach_short_syntax || is_stored_definition);
 
+        /// Lightweight updates identify rows by (`_block_number`, `_block_offset`) and require all parts of the table to be
+        /// written with these columns. If the server configuration enables them, write them to the definition of a new table:
+        /// only then it is known that the table had them from the start, whatever happens to the configuration later.
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !is_stored_definition)
+        {
+            auto & changes = args.storage_def->settings->changes;
+            auto add_if_enabled_and_absent = [&](std::string_view name, bool enabled)
+            {
+                const bool absent = std::ranges::none_of(changes, [&](const SettingChange & change) { return MergeTreeSettings::resolveName(change.name) == name; });
+                if (enabled && absent)
+                    changes.push_back(SettingChange{String(name), Field(UInt64(1))});
+            };
+
+            add_if_enabled_and_absent("enable_block_number_column", (*storage_settings)[MergeTreeSetting::enable_block_number_column]);
+            add_if_enabled_and_absent("enable_block_offset_column", (*storage_settings)[MergeTreeSetting::enable_block_offset_column]);
+        }
+
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
         /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
