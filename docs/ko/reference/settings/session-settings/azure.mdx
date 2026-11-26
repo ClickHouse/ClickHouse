@@ -91,6 +91,19 @@ S3 엔진에서 빈 파일 스키핑을 활성화하거나 비활성화합니다
 * 0 — 빈 파일이 요청된 포맷과 호환되지 않으면 `SELECT`에서 예외가 발생합니다.
 * 1 — 빈 파일에 대해 `SELECT`는 빈 결과를 반환합니다.
 
+## azure_skip_hidden_files {#azure_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새로운 설정: 다른 Hive 생태계 리더와 마찬가지로, 글롭으로 파일 목록을 조회할 때 글롭이 아닌 접두사 아래에 `_` 또는 `.`로 시작하는 경로 세그먼트가 있는 블롭을 건너뜁니다. `partition_strategy = 'hive'`인 테이블은 항상 이러한 경로를 건너뜁니다."}]}]} />
+
+[AzureBlobStorage](/ko/reference/engines/table-engines/integrations/azureBlobStorage) 엔진 테이블(Engine Tables)에서 글롭으로 파일 목록을 조회할 때 숨겨진 경로를 스키핑할지 여부를 활성화하거나 비활성화합니다. 숨겨진 경로란 경로에서 글롭이 아닌 접두사 아래에 `_` 또는 `.`로 시작하는 경로 세그먼트가 있는 블롭을 말합니다. `=`를 포함하는 세그먼트는 파티션 디렉터리(예: 파티션 열(partition column) `_p`의 `_p=1`)이므로 숨겨진 경로로 간주하지 않습니다. Hive 생태계의 작성기(Hive, Spark, Trino)는 진행 중인 출력을 이러한 경로(`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`) 아래에 스테이징하고 마커 객체를 기록하므로, 이를 읽으면 작성기의 커밋과 경쟁 상태가 발생합니다. 글롭이 아닌 접두사 내부의 세그먼트는 검사하지 않습니다. `partition_strategy = 'hive'`인 테이블은 이 설정과 관계없이 항상 숨겨진 경로를 건너뜁니다.
+
+가능한 값:
+
+* 0 — 글롭과 일치하는 모든 블롭을 읽습니다.
+* 1 — 글롭이 아닌 접두사 아래에 숨겨진 경로 세그먼트가 있는 블롭을 건너뜁니다.
+
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

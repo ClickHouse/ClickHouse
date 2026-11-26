@@ -21,6 +21,9 @@
 #include <thread>
 #include <vector>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <Common/Silk/FiberScheduler.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 
@@ -28,6 +31,7 @@
 #include <silk/fibers/future.h>
 #endif
 
+#include <base/errnoToString.h>
 #include <base/scope_guard.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -41,10 +45,13 @@
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
+#include <aws/core/config/ConfigAndCredentialsCacheManager.h>
 #include <aws/core/http/URI.h>
 #include <aws/core/internal/AWSHttpResourceClient.h>
+#include <aws/core/utils/HashingUtils.h>
 
 #include <Common/Crypto/OpenSSLInitializer.h>
+#include <Common/ProxyConfiguration.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromS3.h>
@@ -62,7 +69,10 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
 #include <IO/S3RequestSettings.h>
+#include <Poco/AutoPtr.h>
+#include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/ServerApplication.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <IO/S3/tests/TestPocoHTTPServer.h>
 
@@ -1485,6 +1495,328 @@ TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
         "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
 }
 
+TEST(IOTestAwsS3Client, WebIdentityStsRegionFallsBackToClientRegion)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// AWS_DEFAULT_REGION / profile region wins when set.
+    EXPECT_EQ(Provider::resolveStsRegion("us-east-2", "eu-central-1"), "us-east-2");
+    /// Otherwise STS follows the S3 client's region (bucket URL / endpoint).
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-central-1"), "eu-central-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "ap-southeast-1"), "ap-southeast-1");
+    /// No region anywhere keeps the historical default.
+    EXPECT_EQ(Provider::resolveStsRegion("", ""), "us-east-1");
+    /// So does an S3 endpoint without a region: there is no `aws-global` STS endpoint.
+    EXPECT_EQ(Provider::resolveStsRegion("", "aws-global"), "us-east-1");
+
+    /// Regions of other partitions are regions as well.
+    EXPECT_EQ(Provider::resolveStsRegion("", "cn-northwest-1"), "cn-northwest-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "us-gov-west-1"), "us-gov-west-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eusc-de-east-1"), "eusc-de-east-1");
+
+    /// What an S3 client has as its region is a part of the host name for some endpoints,
+    /// such as `s3-accelerate.amazonaws.com` and `s3-external-1.amazonaws.com`. There is no STS in such a region.
+    EXPECT_EQ(Provider::resolveStsRegion("", "accelerate"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "external-1"), "us-east-1");
+
+    /// And it is any string if it comes from the `region` setting. The STS region is a part of the host name
+    /// which the web identity token is sent to, so only a string in the form of a region name gets there.
+    EXPECT_EQ(Provider::resolveStsRegion("", "auto"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "EU-WEST-1"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-west-1.example.org"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "example.org/eu-west-1"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-west-1@example.org"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "example.org:8443/#eu-west-1"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-west-1\n"), "us-east-1");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsClientUsesClientRegion)
+{
+    /// The provider is cached per process, so use a new role each time to make the constructor run.
+    static int run = 0;
+    /// The token file is only read on the first request, which this test does not make.
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_region");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+
+    DB::RemoteHostFilter remote_host_filter;
+    /// Built for `eu-west-1`, the way `S3CredentialsProviderChain` builds it for the region of the S3 client.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+
+    auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
+        client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
+    ASSERT_TRUE(provider);
+
+    /// The provider writes the resolved region into the configuration its STS client is built from.
+    EXPECT_EQ(std::string_view(client_configuration.region), "eu-west-1");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionFollowsS3RegionThroughCredentialsChain)
+{
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_chain");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_region_chain");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    /// Keep the EC2 metadata provider out of the chain.
+    ScopedEnvVarForAwsS3ClientTests imds_env("AWS_EC2_METADATA_DISABLED", "true");
+
+    DB::RemoteHostFilter remote_host_filter;
+    const auto web_identity_provider_for = [&](const std::string & s3_region)
+    {
+        auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+
+        DB::S3::S3CredentialsProviderChain chain(
+            client_configuration,
+            Aws::Auth::AWSCredentials(),
+            DB::S3::CredentialsConfiguration{
+                .use_environment_credentials = true,
+                .forbid_implicit_credentials = false,
+                /// What `ClientFactory::create` passes for an S3 client: its region after `updateSchemeAndRegion`.
+                .s3_client_region = s3_region});
+        return chain.GetProviders().at(0);
+    };
+
+    /// Providers are cached by STS region, so S3 clients share one only when they resolve to the same STS region.
+    const auto eu_west = web_identity_provider_for("eu-west-1");
+    EXPECT_EQ(eu_west, web_identity_provider_for("eu-west-1"));
+    EXPECT_NE(eu_west, web_identity_provider_for("eu-central-1"));
+    /// An S3 endpoint without a region keeps the default STS region.
+    EXPECT_EQ(web_identity_provider_for("aws-global"), web_identity_provider_for("us-east-1"));
+    /// So does an S3 client with a string that is not a region name instead of the region.
+    EXPECT_EQ(web_identity_provider_for("accelerate"), web_identity_provider_for("us-east-1"));
+    EXPECT_EQ(web_identity_provider_for("example.org/eu-west-1"), web_identity_provider_for("us-east-1"));
+}
+
+/// Everything is allowed if the list is empty.
+static void setAllowedHostsForWebIdentityStsTests(DB::RemoteHostFilter & remote_host_filter, const std::string & allowed_hosts)
+{
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(
+        allowed_hosts.empty()
+            ? "<clickhouse></clickhouse>"
+            : "<clickhouse><remote_url_allow_hosts>" + allowed_hosts + "</remote_url_allow_hosts></clickhouse>");
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    remote_host_filter.setValuesFromConfig(*config);
+}
+
+/// The providers are cached per process and keep a pointer to the filter, so the filter lives as long as the process.
+static DB::RemoteHostFilter & remoteHostFilterForWebIdentityStsTests(const std::string & allowed_hosts)
+{
+    static DB::RemoteHostFilter remote_host_filter;
+    setAllowedHostsForWebIdentityStsTests(remote_host_filter, allowed_hosts);
+    return remote_host_filter;
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionOfClientIsUsedOnlyWhileItsEndpointIsAllowed)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// The provider is cached per process, so use a new role each time to make the constructor run.
+    static int run = 0;
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_allowed_hosts_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_allowed_hosts");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+
+    const auto set_allowed_hosts = [](const std::string & allowed_hosts) { remoteHostFilterForWebIdentityStsTests(allowed_hosts); };
+    SCOPE_EXIT({ set_allowed_hosts(""); });
+
+    /// Everything is allowed without `remote_url_allow_hosts`.
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("");
+
+    /// Built for `eu-west-1`.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    auto provider = std::dynamic_pointer_cast<Provider>(
+        Provider::create(client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    ASSERT_TRUE(provider);
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+
+    /// The list has the hosts which the server accessed before the region of the S3 client was taken into account.
+    /// It applies to the provider which already exists, and no request goes to a host which is not in the list.
+    set_allowed_hosts("<host>s3.eu-west-1.amazonaws.com</host><host>sts.us-east-1.amazonaws.com</host>");
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
+
+    /// The same for a provider which is created with this list.
+    ScopedEnvVarForAwsS3ClientTests another_role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_allowed_hosts_another_" + std::to_string(run));
+    auto another_client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    auto another_provider = std::dynamic_pointer_cast<Provider>(
+        Provider::create(another_client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    ASSERT_TRUE(another_provider);
+    EXPECT_NE(another_provider, provider);
+    EXPECT_EQ(another_provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
+
+    /// The STS endpoint of the region of the S3 client is used again as soon as it is allowed.
+    set_allowed_hosts(R"(<host>s3.eu-west-1.amazonaws.com</host><host_regexp>^sts\.[a-z0-9-]+\.amazonaws\.com$</host_regexp>)");
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+    EXPECT_EQ(another_provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsConfiguredRegionDoesNotDependOnAllowedHosts)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    static int run = 0;
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_configured_region_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_configured_region");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "eu-central-1");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+
+    SCOPE_EXIT({ remoteHostFilterForWebIdentityStsTests(""); });
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("<host>s3.eu-west-1.amazonaws.com</host>");
+
+    /// The region from `AWS_DEFAULT_REGION` is set by the one who set `remote_url_allow_hosts`, and it is used as before.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    auto provider = std::dynamic_pointer_cast<Provider>(
+        Provider::create(client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    ASSERT_TRUE(provider);
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.eu-central-1.amazonaws.com");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsProvidersAreNotSharedBetweenRemoteHostFilters)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// The provider is cached per process, so use a new role each time to make the constructor run.
+    static int run = 0;
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_two_filters_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_two_filters");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+
+    /// The providers are cached per process and keep a pointer to the filter, so the filters live as long as the process.
+    /// The first one allows everything, like the filter of the S3 client for Keeper snapshots, which is not the filter of the server.
+    static DB::RemoteHostFilter unrestricted_filter;
+    static DB::RemoteHostFilter restricted_filter;
+    setAllowedHostsForWebIdentityStsTests(restricted_filter, "<host>s3.eu-west-1.amazonaws.com</host><host>sts.us-east-1.amazonaws.com</host>");
+
+    const auto provider_for = [](const DB::RemoteHostFilter & remote_host_filter)
+    {
+        /// The same role, token file and region (`eu-west-1`) for every filter.
+        auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+        return std::dynamic_pointer_cast<Provider>(
+            Provider::create(client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    };
+
+    /// The provider for the unrestricted filter gets to the cache first.
+    const auto unrestricted_provider = provider_for(unrestricted_filter);
+    ASSERT_TRUE(unrestricted_provider);
+    EXPECT_EQ(unrestricted_provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+
+    /// An S3 client with the restricted filter does not get it, and its provider checks the restricted filter.
+    const auto restricted_provider = provider_for(restricted_filter);
+    ASSERT_TRUE(restricted_provider);
+    EXPECT_NE(restricted_provider, unrestricted_provider);
+    EXPECT_EQ(restricted_provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
+    EXPECT_EQ(unrestricted_provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+
+    /// S3 clients with the same filter share a provider, as before.
+    EXPECT_EQ(provider_for(restricted_filter), restricted_provider);
+    EXPECT_EQ(provider_for(unrestricted_filter), unrestricted_provider);
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionIsTheRegionOfS3Client)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_of_s3_client");
+    /// An S3 client asks its credentials providers for credentials when it is created. The token file does not exist,
+    /// so the web identity provider stops before it sends a request to STS.
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/nonexistent/clickhouse_web_identity_token_for_gtest_sts_region_of_s3_client");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+    /// Keep the providers which send requests, the EC2 metadata and the ECS ones, out of the chain.
+    ScopedEnvVarForAwsS3ClientTests imds_env("AWS_EC2_METADATA_DISABLED", "true");
+    ScopedEnvVarForAwsS3ClientTests ecs_relative_uri_env("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "");
+    ScopedEnvVarForAwsS3ClientTests ecs_full_uri_env("AWS_CONTAINER_CREDENTIALS_FULL_URI", "");
+    /// The AWS SDK takes the region of a new client configuration from `AWS_REGION`. An S3 client replaces it
+    /// with the region from the `region` setting or from the endpoint, so STS is never called there.
+    ScopedEnvVarForAwsS3ClientTests sdk_region_env("AWS_REGION", "ap-southeast-2");
+
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("");
+
+    const auto sts_endpoint_of_s3_client = [&](const std::string & region_setting, const std::string & url) -> std::string
+    {
+        DB::S3::URI uri(url);
+        auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+            region_setting,
+            remote_host_filter,
+            /* s3_max_redirects = */ 100,
+            DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+            /* s3_slow_all_threads_after_network_error = */ true,
+            /* s3_slow_all_threads_after_retryable_error = */ true,
+            /* enable_s3_requests_logging = */ false,
+            /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+            /* opt_disk_name = */ {},
+            /* request_throttler = */ {});
+        client_configuration.endpointOverride = uri.endpoint;
+
+        std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+            client_configuration,
+            DB::S3::ClientSettings{
+                .use_virtual_addressing = uri.is_virtual_hosted_style,
+                .gcs_issue_compose_request = false,
+                .is_s3express_bucket = false,
+            },
+            /* access_key_id = */ "",
+            /* secret_access_key = */ "",
+            /* server_side_encryption_customer_key_base64 = */ "",
+            {},
+            {},
+            DB::S3::CredentialsConfiguration{.use_environment_credentials = true, .forbid_implicit_credentials = false});
+
+        auto chain = std::dynamic_pointer_cast<DB::S3::S3CredentialsProviderChain>(client->getCredentialsProviderForTesting());
+        if (!chain)
+            return "the S3 client has no credentials provider chain";
+        auto provider = std::dynamic_pointer_cast<Provider>(chain->GetProviders().at(0));
+        if (!provider)
+            return "the first provider of the chain is not the web identity one";
+        return std::string(std::string_view(provider->getStsEndpoint()));
+    };
+
+    /// The region from the endpoint.
+    EXPECT_EQ(sts_endpoint_of_s3_client("", "https://s3.eu-west-1.amazonaws.com/bucket/key"), "https://sts.eu-west-1.amazonaws.com");
+    /// The region from the `region` setting.
+    EXPECT_EQ(sts_endpoint_of_s3_client("eu-central-1", "https://storage.example.org/bucket/key"), "https://sts.eu-central-1.amazonaws.com");
+    /// No region in the endpoint, and no `region` setting.
+    EXPECT_EQ(sts_endpoint_of_s3_client("", "https://storage.example.org/bucket/key"), "https://sts.us-east-1.amazonaws.com");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionIsNotTakenFromOtherUsersOfCredentialsChain)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// The token file is only read on the first request, which this test does not make.
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_of_other_users");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_region_of_other_users");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+    /// Keep the EC2 metadata provider out of the chain.
+    ScopedEnvVarForAwsS3ClientTests imds_env("AWS_EC2_METADATA_DISABLED", "true");
+    /// The AWS SDK takes the region of a new client configuration from `AWS_REGION`.
+    ScopedEnvVarForAwsS3ClientTests sdk_region_env("AWS_REGION", "ap-southeast-2");
+
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("");
+
+    /// The way the Glue and S3 Tables catalogs and `AWS_MSK_IAM` for Kafka build the configuration for the credentials chain:
+    /// their region (`eu-west-1`) is only in `force_region`, and `region` is what the AWS SDK picked.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    ASSERT_EQ(std::string_view(client_configuration.region), "ap-southeast-2");
+
+    DB::S3::S3CredentialsProviderChain chain(
+        client_configuration,
+        Aws::Auth::AWSCredentials(),
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = true, .forbid_implicit_credentials = false});
+    auto provider = std::dynamic_pointer_cast<Provider>(chain.GetProviders().at(0));
+    ASSERT_TRUE(provider);
+
+    /// Neither of the two is the region of an S3 client, so STS is called in `us-east-1`, as before.
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
+}
+
 TEST(IOTestAwsS3Client, HttpResponseCodeToString)
 {
     EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::OK), "200");
@@ -2102,7 +2434,8 @@ TEST(IOTestAwsS3Client, WebIdentityInvalidationDuringRefreshIsKept)
         "arn:aws:iam::123456789012:role/clickhouse_web_identity_invalidation_role",
         Aws::String(token_file.data(), token_file.size()),
         "session",
-        "eu-west-1");
+        "eu-west-1",
+        /* sts_region_is_from_s3_client = */ false);
     EXPECT_EQ(provider.GetAWSCredentials().GetAWSAccessKeyId(), "web_identity_invalidation_access_key");
 
     provider.SetNeedRefresh();
@@ -2229,7 +2562,8 @@ TEST(IOTestAwsS3Client, WebIdentityRefreshWithoutTokenFileFailsOnlyInFiber)
         "arn:aws:iam::123456789012:role/clickhouse_unit_test_role",
         "/nonexistent/clickhouse_web_identity_token_for_gtest",
         "session",
-        "eu-west-1");
+        "eu-west-1",
+        /* sts_region_is_from_s3_client = */ false);
 
     /// A thread keeps the previous behavior.
     EXPECT_TRUE(provider.GetAWSCredentials().IsEmpty());
@@ -2294,7 +2628,8 @@ TEST(IOTestAwsS3Client, WebIdentityRefreshInFiber)
         "arn:aws:iam::123456789012:role/clickhouse_web_identity_fiber_role",
         Aws::String(token_file.data(), token_file.size()),
         "session",
-        "eu-west-1");
+        "eu-west-1",
+        /* sts_region_is_from_s3_client = */ false);
 
     /// A thread keeps the previous behavior: no credentials, cached as the result of this refresh.
     EXPECT_TRUE(provider.GetAWSCredentials().IsEmpty());
@@ -2636,6 +2971,322 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
     EXPECT_EQ(token_requests, 1);
     EXPECT_EQ(credentials_requests, 1);
     EXPECT_EQ(requests_without_token, 0);
+}
+
+namespace
+{
+
+void writeProfileCredentials(const std::filesystem::path & file, std::string_view access_key)
+{
+    std::ofstream out(file);
+    out << "[default]\naws_access_key_id = " << access_key << "\naws_secret_access_key = profile_secret_key\n";
+}
+
+/// Leaves a profile file in a temporary directory the only source of credentials of `S3CredentialsProviderChain`.
+class ProfileFileOnlyEnvironment
+{
+public:
+    ProfileFileOnlyEnvironment()
+    {
+        std::filesystem::remove_all(directory);
+        std::filesystem::create_directories(directory);
+        /// The SDK caches the config and credentials files once per process, so they are read again from the files of
+        /// this environment here, and from the original ones when the variables are restored.
+        reloadCachedProfileFiles();
+    }
+
+    ~ProfileFileOnlyEnvironment() { std::filesystem::remove_all(directory); }
+
+    std::unique_ptr<DB::S3::S3CredentialsProviderChain> createChain() const
+    {
+        return std::make_unique<DB::S3::S3CredentialsProviderChain>(
+            client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
+    }
+
+    const std::filesystem::path directory = std::filesystem::temp_directory_path()
+        / fmt::format("clickhouse_profile_credentials_for_gtest_{}", ::getpid());
+    const std::filesystem::path credentials_file = directory / "credentials";
+    const std::filesystem::path config_file = directory / "config";
+
+private:
+    static void reloadCachedProfileFiles()
+    {
+        Aws::Config::ReloadCachedConfigFile();
+        Aws::Config::ReloadCachedCredentialsFile();
+    }
+
+    /// Declared before the variables, so it runs after they are restored.
+    struct ReloadOnDestruction
+    {
+        ~ReloadOnDestruction() { reloadCachedProfileFiles(); }
+    } reload_on_destruction;
+
+    ScopedEnvVarForAwsS3ClientTests credentials_file_env{"AWS_SHARED_CREDENTIALS_FILE", credentials_file.string()};
+    ScopedEnvVarForAwsS3ClientTests config_file_env{"AWS_CONFIG_FILE", config_file.string()};
+    ScopedEnvVarForAwsS3ClientTests imds_disabled_env{"AWS_EC2_METADATA_DISABLED", "true"};
+    ScopedEnvVarForAwsS3ClientTests access_key_env{"AWS_ACCESS_KEY_ID", ""};
+    ScopedEnvVarForAwsS3ClientTests secret_key_env{"AWS_SECRET_ACCESS_KEY", ""};
+    ScopedEnvVarForAwsS3ClientTests profile_env{"AWS_PROFILE", ""};
+    ScopedEnvVarForAwsS3ClientTests default_profile_env{"AWS_DEFAULT_PROFILE", ""};
+    ScopedEnvVarForAwsS3ClientTests role_env{"AWS_ROLE_ARN", ""};
+    ScopedEnvVarForAwsS3ClientTests token_file_env{"AWS_WEB_IDENTITY_TOKEN_FILE", ""};
+    ScopedEnvVarForAwsS3ClientTests ecs_relative_uri_env{"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", ""};
+    ScopedEnvVarForAwsS3ClientTests ecs_full_uri_env{"AWS_CONTAINER_CREDENTIALS_FULL_URI", ""};
+
+    const DB::S3::PocoHTTPClientConfiguration client_configuration = createFiberTestClientConfiguration("eu-west-1");
+    const DB::S3::CredentialsConfiguration credentials_configuration{
+        .use_environment_credentials = true,
+        .use_insecure_imds_request = false,
+        .forbid_implicit_credentials = false,
+    };
+};
+
+}
+
+/// The local copy of the SDK profile file provider, as `S3CredentialsProviderChain` uses it, on a thread and in a fiber:
+/// a missing file gives no credentials, and a file created later is read after an invalidation, not before the refresh
+/// interval of the SDK has passed.
+TEST(IOTestAwsS3Client, ProfileFileCredentialsOnThreadAndInFiber)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+
+    const auto check_profile_file_credentials = [&](std::string_view access_key)
+    {
+        std::filesystem::remove(environment.credentials_file);
+        auto chain = environment.createChain();
+        EXPECT_TRUE(chain->GetAWSCredentials().IsEmpty());
+
+        writeProfileCredentials(environment.credentials_file, access_key);
+        /// The missing file was loaded just now, so the next load waits for the refresh interval.
+        EXPECT_TRUE(chain->GetAWSCredentials().IsEmpty());
+
+        chain->SetNeedRefresh();
+        const auto credentials = chain->GetAWSCredentials();
+        EXPECT_EQ(credentials.GetAWSAccessKeyId(), access_key);
+        EXPECT_EQ(credentials.GetAWSSecretKey(), "profile_secret_key");
+    };
+
+    check_profile_file_credentials("thread_profile_access_key");
+
+    bool inside_fiber = false;
+    EXPECT_EQ(Silk::runBlocking([&]
+    {
+        inside_fiber = Silk::isInsideFiber();
+        check_profile_file_credentials("fiber_profile_access_key");
+        return 0;
+    }), 0);
+    EXPECT_TRUE(inside_fiber);
+}
+
+/// An invalidation that starts while the profile file provider reads the file is not cleared when that read completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup reads the file again. The file is a FIFO, so the refresh
+/// stays in the read until the test writes the credentials.
+TEST(IOTestAwsS3Client, ProfileFileInvalidationDuringRefreshIsKept)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+    const auto & credentials_file = environment.credentials_file;
+
+    writeProfileCredentials(credentials_file, "first_profile_access_key");
+    auto chain = environment.createChain();
+    EXPECT_EQ(chain->GetAWSCredentials().GetAWSAccessKeyId(), "first_profile_access_key");
+
+    std::filesystem::remove(credentials_file);
+    ASSERT_EQ(::mkfifo(credentials_file.c_str(), 0600), 0) << errnoToString();
+    chain->SetNeedRefresh();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::array<silk::FiberFuture, 2> fibers;
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they finish before it ends. The writer below is destroyed first,
+        /// which ends the read of the refresh.
+        SCOPE_EXIT({
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { chain->GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        /// Opening a FIFO for writing waits for its reader, so the refresh is in the read once this returns.
+        std::ofstream writer(credentials_file);
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            chain->SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// As in `AssumeRoleInvalidationDuringRefreshIsKept`, this can pass without the wait in `SetNeedRefresh` only if
+        /// that fiber is suspended for longer than the read takes; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+
+        writer << "[default]\naws_access_key_id = second_profile_access_key\naws_secret_access_key = profile_secret_key\n";
+    }
+
+    std::filesystem::remove(credentials_file);
+    writeProfileCredentials(credentials_file, "third_profile_access_key");
+    EXPECT_EQ(chain->GetAWSCredentials().GetAWSAccessKeyId(), "third_profile_access_key");
+}
+
+namespace
+{
+
+const std::string SSO_TEST_CREDENTIALS_JSON = R"({"roleCredentials": {"accessKeyId": "sso_access_key", "secretAccessKey": "sso_secret_key", "sessionToken": "sso_session_token", "expiration": 4102444800000, "accountId": "123456789012"}})";
+
+/// Makes the `default` profile of `environment` use an SSO session with a cached token that does not expire soon, so the
+/// provider reads the token and does not refresh it. The SSO region differs from the region of the client, as the
+/// provider must use the region of the session.
+void writeSSOSessionProfile(const ProfileFileOnlyEnvironment & environment)
+{
+    std::ofstream(environment.config_file)
+        << "[default]\nsso_session = fiber-session\nsso_account_id = 123456789012\nsso_role_name = fiber-role\n"
+           "[sso-session fiber-session]\nsso_region = us-east-2\nsso_start_url = https://fiber.awsapps.com/start\n";
+    Aws::Config::ReloadCachedConfigFile();
+
+    /// The SDK looks for the token next to the credentials file, in a file named after the SHA-1 of the session name.
+    const auto cache_directory = environment.directory / "sso" / "cache";
+    std::filesystem::create_directories(cache_directory);
+    const auto token_file_name = Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateSHA1("fiber-session"));
+    std::ofstream(cache_directory / (token_file_name + ".json"))
+        << R"({"accessToken": "sso_access_token", "expiresAt": "2100-01-01T00:00:00Z"})";
+}
+
+/// `SSOCredentialsProvider::Reload` sends the credentials request over HTTPS to the portal address of the SDK, so the
+/// request reaches the test server through an HTTP proxy without tunneling, as in `makeClientTalkingToMockGCS`: the portal
+/// host is not resolved, and there is no TLS. The provider is created directly, because `S3CredentialsProviderChain`
+/// creates its SSO provider with its own client configuration.
+std::unique_ptr<DB::S3::SSOCredentialsProvider> createSSOTestProvider(const FunctionHTTPServer & portal)
+{
+    auto client_configuration = createFiberTestClientConfiguration("eu-west-1");
+    const UInt16 proxy_port = Poco::URI(portal.getUrl()).getPort();
+    client_configuration.per_request_configuration = [proxy_port]
+    {
+        return DB::ProxyConfiguration{
+            .host = "127.0.0.1",
+            .protocol = DB::ProxyConfiguration::Protocol::HTTP,
+            .port = proxy_port,
+            .original_request_protocol = DB::ProxyConfiguration::Protocol::HTTPS,
+        };
+    };
+    return std::make_unique<DB::S3::SSOCredentialsProvider>(std::move(client_configuration), /* expiration_window_seconds = */ 120);
+}
+
+bool isSSOCredentialsRequest(const Poco::Net::HTTPServerRequest & request)
+{
+    const Poco::URI uri(request.getURI());
+    const auto parameters = uri.getQueryParameters();
+    const auto has_parameter = [&](const std::string & name, const std::string & value)
+    {
+        return std::ranges::find(parameters, std::pair{name, value}) != parameters.end();
+    };
+    return uri.getScheme() == "https" && uri.getHost() == "portal.sso.us-east-2.amazonaws.com"
+        && uri.getPath() == "/federation/credentials" && has_parameter("account_id", "123456789012")
+        && has_parameter("role_name", "fiber-role") && request.get("x-amz-sso_bearer_token", "") == "sso_access_token";
+}
+
+}
+
+/// Concurrent fibers wait for one SSO refresh, which reads the cached token of the SSO session and asks the SSO portal
+/// for the role credentials.
+TEST(IOTestAwsS3Client, SSOCredentialsInConcurrentFibers)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+    writeSSOSessionProfile(environment);
+
+    Poco::Event release(/* autoReset = */ false);
+    std::atomic<size_t> credentials_requests = 0;
+    std::atomic<size_t> unexpected_requests = 0;
+    FunctionHTTPServer portal([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (!isSSOCredentialsRequest(request))
+        {
+            ++unexpected_requests;
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+            return;
+        }
+        ++credentials_requests;
+        /// Holds the refresh in I/O until all fibers have started.
+        release.wait();
+        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, SSO_TEST_CREDENTIALS_JSON);
+    });
+    auto provider = createSSOTestProvider(portal);
+
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
+    std::vector<Aws::String> access_keys(fiber_count);
+    runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t i)
+    {
+        access_keys[i] = provider->GetAWSCredentials().GetAWSAccessKeyId();
+    });
+
+    for (const auto & access_key : access_keys)
+        EXPECT_EQ(access_key, "sso_access_key");
+    EXPECT_EQ(credentials_requests, 1);
+    EXPECT_EQ(unexpected_requests, 0);
+}
+
+/// An invalidation that starts while an SSO refresh waits for the SSO portal is not cleared when that refresh completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup asks the portal again.
+TEST(IOTestAwsS3Client, SSOInvalidationDuringRefreshIsKept)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+    writeSSOSessionProfile(environment);
+
+    Poco::Event portal_entered(/* autoReset = */ false);
+    Poco::Event release(/* autoReset = */ false);
+    release.set();
+    std::atomic<size_t> credentials_requests = 0;
+    FunctionHTTPServer portal([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (!isSSOCredentialsRequest(request))
+        {
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+            return;
+        }
+        ++credentials_requests;
+        portal_entered.set();
+        release.wait();
+        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, SSO_TEST_CREDENTIALS_JSON);
+    });
+    auto provider = createSSOTestProvider(portal);
+    ASSERT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "sso_access_key");
+
+    provider->SetNeedRefresh();
+    portal_entered.reset();
+    release.reset();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::array<silk::FiberFuture, 2> fibers;
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they are released and finish before it ends.
+        SCOPE_EXIT({
+            release.set();
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { provider->GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        ASSERT_TRUE(portal_entered.tryWait(60'000)) << "The refresh did not reach the SSO portal within 60 seconds";
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            provider->SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// As in `AssumeRoleInvalidationDuringRefreshIsKept`, this can pass without the wait in `SetNeedRefresh` only if
+        /// that fiber is suspended for longer than the portal answer takes; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+    }
+
+    const size_t credentials_requests_before = credentials_requests;
+    EXPECT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "sso_access_key");
+    EXPECT_EQ(credentials_requests, credentials_requests_before + 1);
 }
 
 /// A failed IMDS load in a fiber gives no credentials instead of an error, because IMDS is a member of the credentials

@@ -37,6 +37,7 @@
 #include <Common/randomSeed.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
@@ -1016,6 +1017,11 @@ void Connection::sendQuery(
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
+
+    /// Only an intermediate result can have rows that carry no columns: at `Complete` a result always has
+    /// columns. A block of this kind in answer to any other query is malformed data.
+    rows_without_columns_expected = stage != QueryProcessingStage::Complete;
+
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -1758,6 +1764,7 @@ void Connection::initBlockInput()
         /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
             *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
+        block_in->setAllowRowsWithoutColumns(rows_without_columns_expected);
     }
 }
 

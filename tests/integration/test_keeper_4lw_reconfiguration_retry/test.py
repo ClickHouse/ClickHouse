@@ -21,14 +21,25 @@ node = cluster.add_instance(
     "node", main_configs=["configs/enable_keeper.xml"], stay_alive=True
 )
 
-# Nothing listens on this port, so a member added with this endpoint never joins.
+# Connections to this endpoint are accepted and never answered, so a member added
+# with it never joins, and adding another member waits while its join is in progress.
 UNREACHABLE_ENDPOINT = "node:9235"
+
+SILENT_LISTENER = """
+import socket
+server = socket.create_server(("0.0.0.0", 9235))
+connections = []
+while True:
+    connections.append(server.accept()[0])
+"""
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        node.exec_in_container(["python3", "-c", SILENT_LISTENER], detach=True)
+        node.wait_until_port_is_ready(9235, timeout=10)
         keeper_utils.wait_until_connected(cluster, node)
         yield cluster
     finally:
