@@ -397,6 +397,7 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
     else
         result = std::make_shared<ConstantNode>(std::get<ConstantValue>(constant_value), source_expression, is_deterministic);
     result->mask_id = mask_id;
+    result->scalar_subquery_ids = scalar_subquery_ids;
     return result;
 }
 

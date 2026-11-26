@@ -49,6 +49,12 @@ public:
     [[nodiscard]] const std::optional<ActionsDAG> & getElementFilter() const { return element_filter; }
     [[nodiscard]] const String & getElementFilterColumnName() const { return element_filter_column_name; }
 
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        if (element_filter)
+            visitor(*element_filter);
+    }
+
     /// the filter push down adds a relaxed copy of a filter below the step only one time
     [[nodiscard]] bool hasRelaxedFilterBelow() const { return has_relaxed_filter_below; }
     void setHasRelaxedFilterBelow() { has_relaxed_filter_below = true; }

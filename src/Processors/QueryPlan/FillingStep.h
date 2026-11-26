@@ -29,6 +29,13 @@ public:
     [[nodiscard]] const SortDescription & getSortDescription() const override { return sort_description; }
     [[nodiscard]] const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
 
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        /// `WITH FILL ... INTERPOLATE (x AS <expression>)` keeps its expression here.
+        if (interpolate_description)
+            visitor(interpolate_description->actions);
+    }
+
     void serialize(Serialization & ctx) const override;
     [[nodiscard]] bool isSerializable() const override { return true; }
     [[nodiscard]] QueryPlanStepPtr clone() const override;

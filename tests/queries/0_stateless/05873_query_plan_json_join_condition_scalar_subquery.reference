@@ -1,0 +1,2 @@
+block_nested_loop	2	Scalar	['BlockNestedLoopJoin']
+hash_mixed	2	Scalar	['Join']

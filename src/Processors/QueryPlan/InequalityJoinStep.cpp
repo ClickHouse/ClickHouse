@@ -205,6 +205,12 @@ void InequalityJoinStep::describeActions(FormatSettings & settings) const
         settings.out << settings.detail_prefix << "Swapped: true\n";
 }
 
+void InequalityJoinStep::forEachActionsDAG(const ActionsDAGVisitor & visitor) const
+{
+    if (residual)
+        visitor(residual->actions->getActionsDAG());
+}
+
 void InequalityJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Type", toString(kind));

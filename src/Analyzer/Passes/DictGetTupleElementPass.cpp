@@ -188,7 +188,12 @@ public:
                 {
                     const auto & default_tuple = default_value.safeGet<Tuple>();
                     if (element_index < default_tuple.size())
-                        new_default_arg = std::make_shared<ConstantNode>(default_tuple[element_index]);
+                    {
+                        auto element_constant = std::make_shared<ConstantNode>(default_tuple[element_index]);
+                        /// An element of the default, so it reads whatever scalar subquery gave the default.
+                        element_constant->addScalarSubqueryIds(default_constant->getScalarSubqueryIds());
+                        new_default_arg = std::move(element_constant);
+                    }
                     else
                         return; /// Cannot optimize — index out of range
                 }

@@ -529,7 +529,12 @@ private:
             stripped.remove_suffix(3);
 
         if (stripped.size() != regexp.size() && !disablesDotAll(regexp) && !endsInsideQuotedLiteral(regexp))
-            function_node_arguments_nodes[1] = std::make_shared<ConstantNode>(String(stripped));
+        {
+            auto stripped_constant = std::make_shared<ConstantNode>(String(stripped));
+            /// The same pattern, so it reads whatever scalar subquery gave the original.
+            stripped_constant->addScalarSubqueryIds(constant_node->getScalarSubqueryIds());
+            function_node_arguments_nodes[1] = std::move(stripped_constant);
+        }
     }
 };
 

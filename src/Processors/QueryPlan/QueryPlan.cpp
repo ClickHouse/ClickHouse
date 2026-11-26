@@ -266,12 +266,15 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         convertToDistributed(effective_settings);
 
     /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
-    /// into the `ExpressionActions`, and the names are derived from them. Only over the child plans
+    /// into the `ExpressionActions`, and both the consumed subqueries and the names are derived from them. Only over the child plans
     /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
     /// capturing the plan change the work the query does.
     PrettyNamesPerPlan pretty_names;
     if (log_capture)
+    {
+        QueryPlanLogCapture::recordConsumedSubqueries(*this);
         pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
+    }
 
     struct Frame
     {

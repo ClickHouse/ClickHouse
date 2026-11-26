@@ -131,7 +131,7 @@ public:
         if (!preimage_range)
             return;
 
-        const auto new_node = generateOptimizedDateFilter(comparator, argument_node, *preimage_range);
+        const auto new_node = generateOptimizedDateFilter(comparator, argument_node, *preimage_range, literal->getScalarSubqueryIds());
 
         if (!new_node)
             return;
@@ -140,9 +140,21 @@ public:
     }
 
 private:
+    /// `scalar_subquery_ids` are those of the literal the range is computed from. The bounds replace
+    /// it, so they carry them.
     [[nodiscard]] QueryTreeNodePtr generateOptimizedDateFilter(
-        const String & comparator, const QueryTreeNodePtr & column_node, const FieldInterval & range) const
+        const String & comparator,
+        const QueryTreeNodePtr & column_node,
+        const FieldInterval & range,
+        const std::vector<size_t> & scalar_subquery_ids) const
     {
+        const auto make_bound = [&](const String & value)
+        {
+            auto bound = std::make_shared<ConstantNode>(value);
+            bound->addScalarSubqueryIds(scalar_subquery_ids);
+            return bound;
+        };
+
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
         String start_date_or_date_time;
@@ -167,27 +179,27 @@ private:
         {
             return createFunctionNode(
                 "and",
-                createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
-                createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
+                createFunctionNode("greaterOrEquals", column_node, make_bound(start_date_or_date_time)),
+                createFunctionNode("less", column_node, make_bound(end_date_or_date_time)));
         }
         if (comparator == "notEquals")
         {
             return createFunctionNode(
                 "or",
-                createFunctionNode("less", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
-                createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
+                createFunctionNode("less", column_node, make_bound(start_date_or_date_time)),
+                createFunctionNode("greaterOrEquals", column_node, make_bound(end_date_or_date_time)));
         }
         if (comparator == "greater")
         {
-            return createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
+            return createFunctionNode("greaterOrEquals", column_node, make_bound(end_date_or_date_time));
         }
         if (comparator == "lessOrEquals")
         {
-            return createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
+            return createFunctionNode("less", column_node, make_bound(end_date_or_date_time));
         }
         if (comparator == "less" || comparator == "greaterOrEquals")
         {
-            return createFunctionNode(comparator, column_node, std::make_shared<ConstantNode>(start_date_or_date_time));
+            return createFunctionNode(comparator, column_node, make_bound(start_date_or_date_time));
         }
         [[unlikely]] {
             throw Exception(

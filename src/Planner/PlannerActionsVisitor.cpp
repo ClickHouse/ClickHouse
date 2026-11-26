@@ -656,8 +656,21 @@ public:
     }
 
     const ActionsDAG::Node * addConstantIfNecessary(
-        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic, bool is_masked_secret = false)
+        const std::string & node_name,
+        ColumnConstPtr column,
+        DataTypePtr type,
+        std::string name,
+        bool is_deterministic,
+        bool is_masked_secret = false,
+        const std::vector<size_t> & scalar_subquery_ids = {})
     {
+        /// Recorded here as well as on the node below, because different plan rewrites lose
+        /// different halves: splitting a DAG moves nodes into a fresh one that has no list of its
+        /// own, while projecting a constant under an alias rebuilds the node and loses what was on
+        /// it. Both are read back onto the consuming step.
+        for (size_t id : scalar_subquery_ids)
+            actions_dag.addScalarSubqueryId(id);
+
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
         {
@@ -671,7 +684,10 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret);
+        const auto * node = &actions_dag.addColumn(
+            std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret,
+            /*is_runtime_filter_id=*/false, scalar_subquery_ids);
+
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -982,7 +998,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     actions_stack[0].addConstantIfNecessary(
         constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
-        /* is_masked_secret= */ constant_node.isMasked());
+        /* is_masked_secret= */ constant_node.isMasked(),
+        /* scalar_subquery_ids= */ constant_node.getScalarSubqueryIds());
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)
@@ -1085,8 +1102,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
     bool in_second_is_deterministic = false;
+    /// A constant set can come from scalar subqueries, for example an `OR` chain of `equals` against
+    /// their values that a pass turned into `IN`. The set keeps their ids, as any other constant does.
+    std::vector<size_t> in_second_scalar_subquery_ids;
     if (const auto * const_node = in_second_argument->as<const ConstantNode>())
+    {
         in_second_is_deterministic = const_node->isDeterministic();
+        in_second_scalar_subquery_ids = const_node->getScalarSubqueryIds();
+    }
 
     FutureSetPtr set;
     auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
@@ -1120,7 +1143,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     auto type = std::make_shared<DataTypeSet>();
     ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 
-    actions_stack[0].addConstantIfNecessary(name, column, type, name, in_second_is_deterministic);
+    actions_stack[0].addConstantIfNecessary(
+        name, column, type, name, in_second_is_deterministic, /*is_masked_secret=*/ false, in_second_scalar_subquery_ids);
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)

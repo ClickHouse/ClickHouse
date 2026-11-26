@@ -8,6 +8,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ShuffleStep.h>
 
 #include <Interpreters/Context.h>
@@ -108,21 +109,27 @@ QueryAnalysisResult QueryAnalysisResult::create(const QueryTreeNodePtr & query_t
     if (query_node.hasLimit())
     {
         /// Constness of limit is validated during query analysis stage
+        const auto & limit_constant = query_node.getLimit()->as<ConstantNode &>();
         std::tie(result.limit_length, result.fractional_limit, result.is_limit_length_negative)
-            = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>());
+            = getLimitOffsetValue(limit_constant);
+        result.collectLimitOffsetSubqueryIdsFrom(limit_constant);
 
         if (query_node.hasOffset() && (result.limit_length || result.fractional_limit > 0))
         {
             /// Constness of offset is validated during query analysis stage
+            const auto & offset_constant = query_node.getOffset()->as<ConstantNode &>();
             std::tie(result.limit_offset, result.fractional_offset, result.is_limit_offset_negative)
-                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
+                = getLimitOffsetValue(offset_constant);
+            result.collectLimitOffsetSubqueryIdsFrom(offset_constant);
         }
     }
     else if (query_node.hasOffset())
     {
         /// Constness of offset is validated during query analysis stage
+        const auto & offset_constant = query_node.getOffset()->as<ConstantNode &>();
         std::tie(result.limit_offset, result.fractional_offset, result.is_limit_offset_negative)
-            = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
+            = getLimitOffsetValue(offset_constant);
+        result.collectLimitOffsetSubqueryIdsFrom(offset_constant);
     }
 
     /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
@@ -144,19 +151,45 @@ QueryAnalysisResult QueryAnalysisResult::create(const QueryTreeNodePtr & query_t
     if (query_node.hasLimitBy())
     {
         Float64 fractional_limitby_limit = 0;
+        const auto & limit_by_limit_constant = query_node.getLimitByLimit()->as<ConstantNode &>();
         std::tie(result.limit_by_length, fractional_limitby_limit, result.is_limit_by_length_negative)
-            = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>());
+            = getLimitOffsetValue(limit_by_limit_constant);
+        for (size_t id : limit_by_limit_constant.getScalarSubqueryIds())
+            result.limit_by_subquery_ids.push_back(id);
 
         Float64 fractional_limitby_offset = 0;
         if (query_node.hasLimitByOffset())
+        {
+            const auto & limit_by_offset_constant = query_node.getLimitByOffset()->as<ConstantNode &>();
             std::tie(result.limit_by_offset, fractional_limitby_offset, result.is_limit_by_offset_negative)
-                = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>());
+                = getLimitOffsetValue(limit_by_offset_constant);
+            for (size_t id : limit_by_offset_constant.getScalarSubqueryIds())
+                result.limit_by_subquery_ids.push_back(id);
+        }
 
         if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
     }
 
     return result;
+}
+
+void QueryAnalysisResult::collectLimitOffsetSubqueryIdsFrom(const ConstantNode & constant)
+{
+    for (size_t id : constant.getScalarSubqueryIds())
+        limit_offset_subquery_ids.push_back(id);
+}
+
+void QueryAnalysisResult::addLimitOffsetSubqueryIdsTo(IQueryPlanStep & step) const
+{
+    for (size_t id : limit_offset_subquery_ids)
+        step.addConsumedSubqueryId(id);
+}
+
+void QueryAnalysisResult::addLimitBySubqueryIdsTo(IQueryPlanStep & step) const
+{
+    for (size_t id : limit_by_subquery_ids)
+        step.addConsumedSubqueryId(id);
 }
 
 }

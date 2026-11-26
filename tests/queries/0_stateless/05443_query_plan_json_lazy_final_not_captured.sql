@@ -51,7 +51,7 @@ FROM
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     )
-    SELECT arrayJoin(JSONExtractArrayRaw(plan, 'Nodes')) AS node FROM one_plan
+    SELECT arrayJoin(JSONExtractArrayRaw(plan, 'Plans', 1, 'Nodes')) AS node FROM one_plan
 );
 
 DROP TABLE t_05443;

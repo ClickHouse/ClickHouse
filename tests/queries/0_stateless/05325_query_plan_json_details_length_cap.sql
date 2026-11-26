@@ -29,7 +29,7 @@ FROM
 (
     SELECT arrayJoin(arrayFlatten(arrayMap(
         node -> JSONExtract(node, 'Details', 'Array(String)'),
-        JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')))) AS detail
+        JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes')))) AS detail
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
       AND position(query, '05325_capped') > 0

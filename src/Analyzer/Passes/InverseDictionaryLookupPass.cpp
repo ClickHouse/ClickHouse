@@ -644,6 +644,8 @@ public:
                         = assert_cast<const DataTypeArray &>(*keys_constant->getResultType()).getNestedType();
 
                     auto single_key_const = std::make_shared<ConstantNode>(single_key_field, single_key_value_type);
+                    /// The keys are looked up from the compared value, so they read whatever scalar subquery gave it.
+                    single_key_const->addScalarSubqueryIds(keys_constant->getScalarSubqueryIds());
 
                     auto equals_node = std::make_shared<FunctionNode>("equals");
                     equals_node->markAsOperator();
@@ -663,6 +665,7 @@ public:
 
                 /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
                 auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
+                keys_const_node->addScalarSubqueryIds(keys_constant->getScalarSubqueryIds());
 
                 auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
                 in_function_node->markAsOperator();

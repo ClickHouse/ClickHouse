@@ -64,6 +64,9 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    /// The mixed condition of the join, the part of `ON` that is not equality of keys.
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override;
+
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     [[nodiscard]] const JoinPtr & getJoin() const { return join; }
@@ -184,6 +187,9 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
+
+    /// The mixed condition of the join, the part of `ON` that is not equality of keys.
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override;
 
     [[nodiscard]] const JoinPtr & getJoin() const { return join; }
 

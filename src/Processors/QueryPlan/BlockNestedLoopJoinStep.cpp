@@ -330,6 +330,12 @@ void BlockNestedLoopJoinStep::describeActions(FormatSettings & settings) const
         predicate.actions->describeActions(settings.out, prefix);
 }
 
+void BlockNestedLoopJoinStep::forEachActionsDAG(const ActionsDAGVisitor & visitor) const
+{
+    if (predicate.actions)
+        visitor(predicate.actions->getActionsDAG());
+}
+
 void BlockNestedLoopJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Type", toString(kind));

@@ -877,7 +877,11 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
     {
         chassert(filter.converted_value.has_value());
         const size_t constant_idx = constant_on_left ? 0 : 1;
-        new_args[constant_idx] = std::make_shared<ConstantNode>(*filter.converted_value);
+        auto converted_constant = std::make_shared<ConstantNode>(*filter.converted_value);
+        /// The same value, converted, so it reads whatever scalar subquery gave the original.
+        if (const auto * original_constant = new_args[constant_idx]->as<ConstantNode>())
+            converted_constant->addScalarSubqueryIds(original_constant->getScalarSubqueryIds());
+        new_args[constant_idx] = std::move(converted_constant);
     }
 
     auto new_node = std::make_shared<FunctionNode>(func_name);
@@ -1135,6 +1139,8 @@ static void convertNotEqualsChainToNotIn(
         args.reserve(not_equals_entries.size());
         DataTypes tuple_element_types;
         tuple_element_types.reserve(not_equals_entries.size());
+        /// Of the scalar subqueries that gave the constants, carried onto the set that replaces them.
+        std::vector<size_t> scalar_subquery_ids;
         bool all_constants_convert_losslessly = true;
         for (auto & [idx, not_equals] : not_equals_entries)
         {
@@ -1152,6 +1158,8 @@ static void convertNotEqualsChainToNotIn(
 
             args.push_back(literal->getValue());
             tuple_element_types.push_back(literal->getResultType());
+            const auto & literal_ids = literal->getScalarSubqueryIds();
+            scalar_subquery_ids.insert(scalar_subquery_ids.end(), literal_ids.begin(), literal_ids.end());
 
             /// The set converts each element to the expression's type, while the comparison it
             /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
@@ -1169,6 +1177,7 @@ static void convertNotEqualsChainToNotIn(
         /// would collapse `DateTime` to `UInt32`, an Enum to its underlying integer and so on, and
         /// the resulting `notIn` would compare different values than the notEquals it replaces.
         auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+        rhs_node->addScalarSubqueryIds(scalar_subquery_ids);
 
         auto not_in_function = std::make_shared<FunctionNode>(*not_in_function_name);
         not_in_function->markAsOperator();
@@ -2416,6 +2425,8 @@ private:
             return {};
 
         auto typed_constant = std::make_shared<ConstantNode>(std::move(converted), other_type);
+        /// The same value, converted, so it reads whatever scalar subquery gave the original.
+        typed_constant->addScalarSubqueryIds(constant_node->getScalarSubqueryIds());
         const auto typed_comparison = std::make_shared<FunctionNode>(function_name);
         typed_comparison->markAsOperator();
         typed_comparison->getArguments().getNodes().push_back(other_side);
@@ -2927,6 +2938,8 @@ private:
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
+            /// Of the scalar subqueries that gave the constants, carried onto the set that replaces them.
+            std::vector<size_t> scalar_subquery_ids;
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
@@ -2945,6 +2958,8 @@ private:
 
                 args.push_back(literal->getValue());
                 tuple_element_types.push_back(literal->getResultType());
+                const auto & literal_ids = literal->getScalarSubqueryIds();
+                scalar_subquery_ids.insert(scalar_subquery_ids.end(), literal_ids.begin(), literal_ids.end());
 
                 /// The set converts each element to the expression's type, while the comparison it
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
@@ -2963,6 +2978,7 @@ private:
             }
 
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+            rhs_node->addScalarSubqueryIds(scalar_subquery_ids);
 
             auto in_function = std::make_shared<FunctionNode>(*in_function_name);
             in_function->markAsOperator();

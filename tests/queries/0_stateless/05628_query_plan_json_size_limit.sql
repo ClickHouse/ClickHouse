@@ -32,7 +32,7 @@ SELECT
     log_comment,
     length(toJSONString(query_plan)) <= 4096 AS within_limit,
     JSONHas(toJSONString(query_plan), 'Error') AS says_why,
-    JSONHas(toJSONString(query_plan), 'Nodes') AS has_plan
+    JSONHas(toJSONString(query_plan), 'Plans', 1, 'Nodes') AS has_plan
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
   AND log_comment IN ('05628_small', '05628_over', '05628_unlimited')

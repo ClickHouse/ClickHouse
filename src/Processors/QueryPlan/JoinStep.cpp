@@ -523,6 +523,22 @@ void JoinStep::describeActions(FormatSettings & settings) const
         QueryPlanFormat::formatJoinInputColumns(settings.out, *this, prefix);
 }
 
+/// A hash join keeps the part of `ON` that is not equality of keys in its `TableJoin`, as the mixed
+/// expression, so that is where a scalar subquery used by the condition ends up.
+static void forEachJoinActionsDAG(const JoinPtr & join, const IQueryPlanStep::ActionsDAGVisitor & visitor)
+{
+    if (!join)
+        return;
+
+    if (const auto & mixed = join->getTableJoin().getMixedJoinExpression())
+        visitor(mixed->getActionsDAG());
+}
+
+void JoinStep::forEachActionsDAG(const ActionsDAGVisitor & visitor) const
+{
+    forEachJoinActionsDAG(join, visitor);
+}
+
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     WriteBufferFromOwnString dummy;
@@ -735,6 +751,11 @@ void FilledJoinStep::describeActions(FormatSettings & settings) const
 
     for (const auto & [name, value] : describeJoinActions(join, settings))
         settings.out << prefix << name << ": " << value << '\n';
+}
+
+void FilledJoinStep::forEachActionsDAG(const ActionsDAGVisitor & visitor) const
+{
+    forEachJoinActionsDAG(join, visitor);
 }
 
 void FilledJoinStep::describeActions(JSONBuilder::JSONMap & map) const

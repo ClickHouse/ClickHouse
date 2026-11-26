@@ -203,6 +203,7 @@ CapturedStep captureStep(
 
     captured.id = step.getUniqID();
     captured.type = step.getName();
+    captured.consumed_subquery_ids = step.getConsumedSubqueryIds();
     captured.description = stepDescription(step, options, max_description_length, masker);
     captured.details = stepDetails(step, options, max_description_length, plan_pretty_names, masker);
     captured.indexes = stepIndexes(step, options, masker);
@@ -212,6 +213,15 @@ CapturedStep captureStep(
     return captured;
 }
 
+}
+
+std::string_view toString(SubPlanKind kind)
+{
+    switch (kind)
+    {
+        case SubPlanKind::Set: return "Set";
+        case SubPlanKind::Scalar: return "Scalar";
+    }
 }
 
 CapturedPlan CapturedPlan::capture(
@@ -264,6 +274,24 @@ CapturedPlan CapturedPlan::capture(
             }
     }
 
+    return result;
+}
+
+CapturedSubPlan CapturedSubPlan::capture(
+    const PlanWalk & walk,
+    const ExplainPlanOptions & options,
+    size_t max_description_length,
+    const PrettyNamesPerPlan * pretty_names,
+    size_t subquery_id,
+    SubPlanKind kind)
+{
+    auto plan = CapturedPlan::capture(walk, options, max_description_length, /*steps_to_stats=*/ nullptr, pretty_names);
+
+    CapturedSubPlan result;
+    result.subquery_id = subquery_id;
+    result.kind = kind;
+    result.root_id = std::move(plan.root_id);
+    result.nodes = std::move(plan.nodes);
     return result;
 }
 
