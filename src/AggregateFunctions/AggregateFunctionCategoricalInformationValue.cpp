@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -16,6 +17,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -106,10 +108,23 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        const auto add = [&](Counter & lhs, Counter value)
+        {
+            Counter sum = 0;
+            if (common::addOverflow(lhs, value, sum))
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Cannot merge states of aggregate function {}: the number of rows ({} + {}) does not fit into UInt64",
+                    getName(),
+                    lhs,
+                    value);
+            lhs = sum;
+        };
+
         for (size_t i = 0; i <= category_count; ++i)
         {
-            counter(place, i, false) += counter(rhs, i, false);
-            counter(place, i, true) += counter(rhs, i, true);
+            add(counter(place, i, false), counter(rhs, i, false));
+            add(counter(place, i, true), counter(rhs, i, true));
         }
     }
 
