@@ -8,13 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-PROXY_PORT=$(python3 -c "
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-")
+PORT_FILE=$(mktemp "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.XXXXXX.port")
 
 python3 -c "
 import threading
@@ -27,7 +21,7 @@ lock = threading.Lock()
 class Handler(BaseHTTPRequestHandler):
     def reply(self):
         global redirected
-        if self.path in ('/ping', '/redirected'):
+        if self.path == '/redirected':
             with lock:
                 body = str(int(redirected > 0)).encode()
             self.send_response(200)
@@ -52,18 +46,21 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-ThreadingHTTPServer(('127.0.0.1', $PROXY_PORT), Handler).serve_forever()
+server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+with open('$PORT_FILE', 'w') as f:
+    f.write(str(server.server_address[1]))
+server.serve_forever()
 " &
 PROXY_PID=$!
 
-trap 'kill $PROXY_PID 2>/dev/null' EXIT
+trap 'kill $PROXY_PID 2>/dev/null; wait $PROXY_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
 
-for _ in {1..100}; do
-    if [ "$(${CLICKHOUSE_CURL} -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PROXY_PORT}/ping")" = "200" ]; then
-        break
-    fi
+for _ in {1..300}; do
+    [ -s "$PORT_FILE" ] && break
     sleep 0.1
 done
+PROXY_PORT=$(cat "$PORT_FILE")
+[ -n "$PROXY_PORT" ] || { echo 'the proxy did not start'; exit 1; }
 
 http_proxy="http://127.0.0.1:${PROXY_PORT}" no_proxy="" ${CLICKHOUSE_LOCAL} --query "SELECT * FROM s3('http://abc/bbb/key.csv', NOSIGN, 'CSV', 'x String')" 2>&1 | grep -o -m1 'S3_ERROR'
 
