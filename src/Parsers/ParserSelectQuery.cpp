@@ -3787,9 +3787,9 @@ itself. Spilling may also start earlier under memory pressure.
 
 Rows can be returned before spilling, and a `LIMIT` satisfied at this stage can finish the query early.
 Once spilling starts, the rest of the input must be read before the remaining results can be returned.
-If the query includes `ORDER BY`, spilling keeps the same rows of each key as processing in memory and
-returns the results in the requested order. Otherwise, as in memory, which rows of a key are kept is not
-defined, and the rows returned after spilling starts are grouped by the `LIMIT BY` keys.
+If the query includes `ORDER BY` or `SHUFFLE`, spilling keeps the same rows of each key as processing in
+memory and returns the results in the requested order. Otherwise, as in memory, which rows of a key are kept
+is not defined, and the rows returned after spilling starts are grouped by the `LIMIT BY` keys.
 
 When `LIMIT BY` uses input sorted by its keys, it keeps the count of one group at a time and does not
 spill.

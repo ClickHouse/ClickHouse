@@ -1,6 +1,7 @@
--- A `LIMIT BY` above `SHUFFLE` returns the rows in the shuffled order also when it spills. `SHUFFLE` has no
--- sort columns, so arrival numbers restore the order. A spilled `LIMIT BY` that lost the order would return
--- the keys grouped, here in ascending order, which a shuffle of 1000 keys does not produce by chance.
+-- A `LIMIT BY` above `SHUFFLE` returns the rows in the shuffled order also when it spills. The rows of a
+-- query on one server carry no column of this order, so arrival numbers restore it. A spilled `LIMIT BY` that
+-- lost the order would return the keys grouped, here in ascending order, which a shuffle of 1000 keys does
+-- not produce by chance.
 -- At a 1-byte threshold a spilling `LIMIT BY` spills from its first chunk. The threshold is compared with
 -- the memory tracked by the query, so allocations must not linger in the thread-local untracked buffers.
 SET max_bytes_ratio_before_external_limit_by = 0;

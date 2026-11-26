@@ -71,20 +71,17 @@ public:
     /// partition sets so no `LIMIT BY` group spans two streams.
     void skipStreamMerging() { skip_stream_merging = true; }
 
-    /// The step must return the rows in their input order, which follows `input_order_`: it runs above the
+    /// The step must return the rows in their input order, which `input_order_` describes: it runs above the
     /// `ORDER BY` sorting or the `SHUFFLE` of its query (set by the planners), or the optimizer propagates a
     /// global order through it, which the steps above may rely on (set by the `applyOrder` optimization). The
     /// in-memory `LIMIT BY` keeps the order by construction; a spilling one sorts the rows returned after
-    /// spilling back into it (see `ExternalLimitByTransform`): by the columns of `input_order_` when it has
-    /// some and the spilled rows carry them all, and by arrival numbers otherwise. A `SHUFFLE` order has no
-    /// columns, so arrival numbers restore it. Without an input order, the order has no meaning, so a spilling
-    /// `LIMIT BY` may keep any rows of a group that fit its window, and returns them grouped by key.
-    void preserveInputOrder(SortDescription input_order_)
-    {
-        preserve_input_order = true;
-        input_order = std::move(input_order_);
-    }
-    [[nodiscard]] bool preservesInputOrder() const { return preserve_input_order; }
+    /// spilling back into it (see `ExternalLimitByTransform`): by the columns of `input_order_` when the spilled
+    /// rows carry them all, and by arrival numbers otherwise. For `SHUFFLE`, `input_order_` names its internal
+    /// key column (`ShuffleStep::internal_key_column_name`), which only the rows of a distributed query carry, so
+    /// arrival numbers restore the order of a local one. Without an input order, the order has no meaning, so a
+    /// spilling `LIMIT BY` may keep any rows of a group that fit its window, and returns them grouped by key.
+    void preserveInputOrder(SortDescription input_order_) { input_order = std::move(input_order_); }
+    [[nodiscard]] bool preservesInputOrder() const { return !input_order.empty(); }
 
     /// Never spill to disk: count the rows of the groups in memory only.
     void disableExternalLimitBy() { external_limit_by_disabled = true; }
@@ -113,12 +110,10 @@ private:
     SortDescription sorted_columns_descr;
 
     bool skip_stream_merging = false;
-    /// Whether the output must keep the input order (see `preserveInputOrder`).
-    bool preserve_input_order = false;
-    /// The sort columns of the order that the output must keep; empty when arrival numbers restore it.
+    /// The order that the output must keep; empty when the order has no meaning.
     SortDescription input_order;
-    /// The step was read at step version 0, which predates `preserve_input_order`, so its unset flag does not
-    /// show that the order has no meaning. See `transformPipeline`.
+    /// The step was read at step version 0, which predates `input_order`, so its empty order does not show
+    /// that the order has no meaning. See `transformPipeline`.
     bool input_order_unknown = false;
     bool external_limit_by_disabled = false;
     UInt64 limit_hint = 0;
