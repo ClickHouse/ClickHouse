@@ -411,8 +411,7 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
-    /// Only the threshold decides when to spill now, the size limits are caps checked in `addBlockToJoin`. Every insert is
-    /// admitted against it before it allocates, so this only catches what an insert went over by.
+    /// Only the threshold decides when to spill now, the size limits are caps checked in `addBlockToJoin`.
     bool has_overflow = spill_budget
         && JoinSpillBudget::add(JoinSpillBudget::add(hash_join->getRawByteCount(), heldBytes()), spill_budget->getReserved())
             >= external_join_threshold;
@@ -895,8 +894,7 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     Buckets buckets_snapshot = rehashBuckets();
     /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
     stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
-    /// Detached first: a throw must not leave `hash_join` pointing at a join whose maps are gone. The maps go first, and
-    /// each block is freed once scattered, so the split needs at most the copy of one block more.
+    /// Detached first: a throw must not leave `hash_join` pointing at a join whose maps are gone.
     auto released_join = std::move(hash_join);
     auto right_blocks = released_join->takeStoredBlocks();
 
@@ -1035,7 +1033,6 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
 
         if (!spill_budget)
         {
-            /// Legacy mode: only the size limits spill, after the insert.
             hash_join->addBlockToJoin(current_block, current_block.rows(), context.callerChecksLimits());
             if (hasMemoryOverflow(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
                 repartitionCurrentBucket(prev_keys_num, {}, context);
@@ -1044,7 +1041,6 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
 
         bool refused = false;
         hash_join->addBlockToJoin(current_block, context.callerChecksLimits(), refused);
-        /// A refused share is not in the join, so it goes in after the split.
         if (refused)
             repartitionCurrentBucket(prev_keys_num, std::move(current_block), context);
         else if (hasMemoryOverflow(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))

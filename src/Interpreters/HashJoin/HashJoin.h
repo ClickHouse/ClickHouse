@@ -101,7 +101,6 @@ struct BuildResult
 {
     bool is_inserted = false;
     bool all_values_unique = true;
-    /// The spill budget refused a slot, see `HashJoinTable::InsertBudget`.
     bool refused = false;
 };
 
@@ -245,12 +244,10 @@ public:
       */
     bool addBlockToJoin(const Block & source_block_, size_t num_rows, JoinBuildContext context) override;
 
-    /// Like the overload above, with the spill budget (see `setSpillBudget`): `refused` tells whether the budget refused the
-    /// block, which is then not in the join. `checked = false` admits the block whatever the budget says.
+    /// `refused`: the spill budget refused the block, which is then not in the join. `checked = false` admits it anyway.
     bool addBlockToJoin(const Block & source_block_, JoinBuildContext context, bool & refused, bool checked = true);
 
-    /// The budget that every insert is admitted against, see `JoinSpillBudget`. `held_elsewhere` is what the owner holds
-    /// outside this join against the same budget. Call before the first insert.
+    /// Every insert is admitted against `budget`; `held_elsewhere` is what the owner holds outside this join. Call before the first insert.
     void setSpillBudget(JoinSpillBudget * budget, std::function<size_t()> held_elsewhere = {});
 
     /// `getTotalByteCount` without the debug checks, which walk the block lists that other threads may be changing.
@@ -730,7 +727,6 @@ public:
     /// The hand-over of the stored blocks, one at a time, after `releaseJoinMaps`: `takeBuildStreamBlock` moves the first
     /// block of a build stream out (empty when there is none) and keeps counting its bytes until `releaseTakenBlock`.
     StoredBlocksList takeBuildStreamBlock(size_t stream);
-    /// The bytes of a taken block that `releaseTakenBlock` releases.
     static size_t takenBlockBytes(const StoredBlocksList & taken);
     /// The block with the columns of `savedBlockSample`. Frees the row store as it rebuilds the columns.
     Block materializeTakenBlock(StoredBlocksList && taken) const;
@@ -839,7 +835,6 @@ private:
     JoinSpillBudget * spill_budget = nullptr;
     std::function<size_t()> spill_held_elsewhere;
 
-    /// What the join holds against the spill budget.
     size_t spillHeldBytes() const;
 
     void updatePeakBuildBytes(size_t bytes)

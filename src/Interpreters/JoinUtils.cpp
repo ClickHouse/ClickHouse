@@ -842,7 +842,6 @@ static Blocks scatterBlockByHashImpl(
     for (size_t i = 0; i < num_cols; ++i)
     {
         ColumnPtr column;
-        /// A column of an owned block is freed once it is scattered.
         if constexpr (owned)
             column = std::move(block.getByPosition(i).column);
         else

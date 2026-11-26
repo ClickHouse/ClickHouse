@@ -149,8 +149,6 @@ private:
     /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts
     /// stay concurrent.
     bool addBlockToExternalJoin(const Block & block, size_t num_rows, JoinBuildContext context);
-    /// Every block after the switch goes here: the blocks of the HashJoin first, so that a new block finds at most the
-    /// blocks other threads are handing over.
     bool addBlockAfterSwitch(const Block & block, size_t num_rows, JoinBuildContext context);
     /// Hands the blocks of the HashJoin over, one at a time, until none is left to claim.
     void tryConvertBuildStreams(JoinBuildContext context);

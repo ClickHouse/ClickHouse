@@ -1023,8 +1023,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
-    /// With a spill budget, the block is admitted before it is registered, and each part of the reservation is released once
-    /// its bytes are in the join.
     size_t reserved_bytes = 0;
     SCOPE_EXIT({
         if (reserved_bytes)
@@ -1147,7 +1145,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
         new_block.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
         auto * stored_columns = &new_block.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
-        /// The block as stored, the null maps the join keeps of it, and one arena chunk for its keys and row lists.
         size_t reserved_nullmaps = 0;
         size_t reserved_arena = 0;
         if (spill_budget)

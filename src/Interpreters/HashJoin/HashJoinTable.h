@@ -541,17 +541,14 @@ public:
         ASOFJoinInequality asof_inequality;
     };
 
-    /// With a spill budget, each slot reserves the growth of its buckets before it inserts, and a slot the budget refuses
-    /// stops the block: `BuildResult::refused`.
+    /// With a spill budget, each slot reserves the growth of its buckets before it inserts; a refused slot stops the block.
     struct InsertBudget
     {
         JoinSpillBudget & budget;
-        /// What the join holds, see `JoinSpillBudget::tryReserve`.
         absl::FunctionRef<size_t()> held_bytes;
         /// Otherwise the budget only counts the rows and never refuses them.
         bool checked;
 
-        /// The bytes reserved, or nothing if the budget refuses.
         std::optional<size_t> reserve(size_t bytes) const
         {
             if (!checked)
@@ -576,7 +573,6 @@ public:
         return dispatchType([&]<Type TYPE>() { return insertTyped<TYPE, Maps>(settings, rows, arena(stream), add_bytes, budget); });
     }
 
-    /// Whether an insert copies the keys into the arena of its build stream.
     bool copiesKeysToArena() const;
 
     /// Each slot reserves its share of `keys_to_reserve` at its first insert.
@@ -869,7 +865,6 @@ private:
         std::span<const ScatteredBlock::Selector> per_slot(&rows.selector, 1);
         /// If the key getter can build its keys ahead, the scatter builds them here once, for the inserts of all slots.
         PaddedPODArray<UInt128> prebuilt_keys;
-        /// The rows of the block per bucket, with a budget only.
         std::vector<UInt32> bucket_rows;
         /// A two-level map has one slot only with one build stream, so its bound over any split of the rows is reserved before
         /// the slot lock; the rows are counted per bucket only if that bound does not fit.

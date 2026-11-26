@@ -128,8 +128,7 @@ public:
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
 
-    /// The in-memory join of `SpillingHashJoin` whose blocks this join takes over: they count against the spill threshold
-    /// until their share is in this join. Call before the first block.
+    /// The join whose blocks this one takes over: they count against the threshold until scattered. Call before the first block.
     void setHeldElsewhere(std::shared_ptr<HashJoin> join) { held_elsewhere = std::move(join); }
     /// Takes over a block of the `setHeldElsewhere` join, freeing each column once it is scattered.
     void addHandedOverBlock(HashJoin & from, std::list<StoredBlock> taken, JoinBuildContext context);
@@ -141,12 +140,10 @@ private:
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
-    /// A block of `held_elsewhere` while this join takes it over.
     struct HandedOver;
 
     /// Add right table block to the @join. Calls @rehash on overflow. An `owned` block is freed as it is scattered.
     void addBlockToJoinImpl(Block block, JoinBuildContext context, bool owned = false, HandedOver * handed_over = nullptr);
-    /// What is held against the spill threshold besides the inner join.
     size_t heldBytes() const;
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.

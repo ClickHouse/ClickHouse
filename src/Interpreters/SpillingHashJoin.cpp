@@ -168,7 +168,6 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
         std::shared_lock lock(switch_mutex);
         if (state.load(std::memory_order_acquire) == State::COLLECTING)
         {
-            /// The insert is admitted against the threshold before it allocates, and a refused block is not in the join.
             bool refused = false;
             const bool res = hash_join->addBlockToJoin(block, context, refused);
             if (!refused)
@@ -345,8 +344,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        /// Every insert was admitted against the threshold, so this is a safety net. The bytes include what the
-        /// in-memory join allocates once the build is over.
+        /// A safety net: the bytes include what the in-memory join allocates once the build is over.
         const size_t total_bytes = hash_join->getRawByteCount();
         if (total_bytes >= max_bytes_before_external_join)
         {
