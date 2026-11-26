@@ -4036,8 +4036,20 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
     }
     catch (const Exception &)
     {
-        return {};
+        /// Without a wrapper, the caller inserts the default of `to`, which is a failure only when it is NULL.
+        if (!report_failures_as_null || canContainNull(*to))
+            return {};
     }
+
+    if (to->canBeInsideNullable())
+        return createToNullableColumnWrapper();
+
+    return [this, from, to](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+    {
+        if (arguments.front().column->empty())
+            return result_type->createColumn();
+        return prepareUnpackDictionaries(from, to)(arguments, result_type, nullable_source, input_rows_count);
+    };
 }
 
 FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(
@@ -5070,9 +5082,13 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
-    /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
+    /// A conversion that can throw must not see the nested values of NULL rows: any under `accurateCast`, the element
+    /// conversions of a Tuple, which do not all read its null map, and under `accurateCastOrNull` the strict conversion
+    /// of a `Variant` or `Dynamic` member (see `createWrapperIfCanConvert`).
     const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
-        && (cast_type == CastType::accurate || isTuple(from_nested_type));
+        && (cast_type == CastType::accurate || isTuple(from_nested_type)
+            || (cast_type == CastType::accurateOrNull
+                && anyInTypeTree(*from_nested_type, [](const IDataType & type) { return isVariant(type) || isDynamic(type); })));
 
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).
