@@ -548,6 +548,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
         case Protocol::Server::ProfileEvents:
+        case Protocol::Server::ProfileTraces:
             replica_with_last_received_packet = replica_location;
             break;
 

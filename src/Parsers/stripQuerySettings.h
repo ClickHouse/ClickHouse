@@ -39,7 +39,9 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
 
 /// Like removeSettingsFromQuery, but touches only the SETTINGS carriers of the top-level query itself:
 /// the INSERT clause, the trailing clause of the (top-level) SELECT-UNION, and the SETTINGS clause of
-/// each first-order SELECT of that union tree. It does not descend into subqueries, table expressions
+/// each first-order SELECT of that union tree. For any other statement, such as `CREATE` or `ALTER`, it
+/// touches the trailing query clause and the `CREATE` storage clause, but not the `AS SELECT` of a
+/// `CREATE` or the query of `ALTER ... MODIFY QUERY`. It does not descend into subqueries, table expressions
 /// or table functions, so a SETTINGS clause the user wrote inside a nested subquery (for example the
 /// documented leaf-node pattern `view(SELECT ... SETTINGS max_execution_time = 10)`) is preserved.
 ///

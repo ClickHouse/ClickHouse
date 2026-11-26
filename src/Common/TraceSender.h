@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <string_view>
@@ -46,7 +47,8 @@ public:
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
-    static constexpr size_t QUERY_ID_MAX_LEN = 95;
+    /// Leave room for the fixed fields and stack frames within a portable 512-byte atomic pipe write.
+    static constexpr size_t QUERY_ID_MAX_LEN = 93;
 
     /// The thread a trace is attributed to. `send` fills it from the calling thread; a sampler that
     /// captures another thread's stack (the macOS query profiler) passes the sampled thread's instead.
@@ -55,6 +57,8 @@ public:
         std::string_view query_id;
         UInt64 thread_id = 0;
         ThreadName thread_name = ThreadName::UNKNOWN;
+        /// Subscription that receives the trace in `ProfileTraces` packets, 0 for none.
+        UInt64 profile_traces_id = 0;
     };
 
     struct Extras
@@ -74,7 +78,18 @@ public:
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras, Origin origin) noexcept;
 
-    /// True when a TraceCollector is running, i.e. when `send()` can deliver rather than discard.
+    enum class ProfileTracesFlushResult
+    {
+        NotRunning,
+        MarkerSent,
+        TimedOut,
+    };
+
+    /// Send an ordering marker from a regular thread, waiting for pipe space until the deadline.
+    /// Not signal-safe. A timeout stops trace delivery without failing the query.
+    static ProfileTracesFlushResult flushProfileTraces(UInt64 subscription_id, std::chrono::steady_clock::time_point deadline);
+
+    /// True when a `TraceCollector` is running, i.e. when `send` can deliver rather than discard.
     /// `shutdown` is checked first, so inside an `in_flight` section the fd is not read while the destructor resets it.
     static bool isCollecting() { return !shutdown.load() && pipe.fds_rw[1] >= 0; }
 

@@ -5,6 +5,7 @@
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/ProfileTraces.h>
 #include <Common/Stopwatch.h>
 
 #include <memory>
@@ -24,7 +25,7 @@ enum class FramedPacketKind : uint8_t
 };
 
 /** A framing format multiplexes different parts of the query response in a single stream:
-  * chunks of data, totals and extremes, progress packets, profile events (metrics), server logs,
+  * chunks of data, totals and extremes, progress packets, profile events (metrics), profile traces, server logs,
   * and exceptions - everything that the native protocol supports. This allows rich data exchange
   * in the HTTP protocol.
   *
@@ -43,7 +44,7 @@ enum class FramedPacketKind : uint8_t
   * exactly the unframed output, and the `totals` and `extremes` packets carry additional rows that
   * the unframed output does not contain.
   *
-  * Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
+  * Auxiliary packets (`progress`, `log`, `profile_events`, `profile_traces`, `exception`) are represented as JSON.
   *
   * The framing format is selected by the query setting `framing_output_format`. It applies to the
   * HTTP protocol, but may apply in other protocols as well in the future.
@@ -76,7 +77,7 @@ public:
 
     /// Called after the output format has written a portion of the given kind into the payload
     /// buffer. Wraps everything accumulated since the previous call into a packet
-    /// (does nothing if the payload buffer is empty). Also pumps pending logs and profile events.
+    /// (does nothing if the payload buffer is empty). Also pumps pending logs, profile events and traces.
     void onPayload(FramedPacketKind kind);
 
     /// Called before the output format starts writing a `totals` / `extremes` portion into the
@@ -90,7 +91,7 @@ public:
     void beginPayload(FramedPacketKind kind) { pending_payload_kind = kind; }
 
     /// Called on query progress, possibly from another thread than `onPayload`
-    /// (but the calls are serialized by IOutputFormat). Also pumps pending logs and profile events.
+    /// (but the calls are serialized by IOutputFormat). Also pumps pending logs, profile events and traces.
     void onProgress(const Progress & progress);
 
     /// Remember an exception to be written as the last packet on `finalize`.
@@ -104,12 +105,12 @@ public:
     /// Remember the final progress (with the final counters: `result_rows`, `result_bytes`,
     /// `memory_usage`, known only after the query finished) to be written as the last `progress`
     /// packet on `finalize` - after the trailing logs and profile events emitted by the
-    /// query-finish logging are drained, so that a successful stream really ends with it, as
-    /// `docs/en/interfaces/framing-formats.md` documents. Writing it eagerly would order it
+    /// query-finish logging and the remaining profile traces are drained, so that a successful stream ends with it, as
+    /// `docs/concepts/features/interfaces/framing-formats.mdx` documents. Writing it eagerly would order it
     /// before that trailing drain. The passed value is accumulated, so passing deltas is fine.
     void setFinalProgress(const Progress & progress);
 
-    /// Write the remaining payload, pending logs and profile events, the final progress if any,
+    /// Write the remaining payload, pending logs, profile events and traces, the final progress if any,
     /// and the exception if any, then flush the output. No more packets can be written after this call.
     void finalize();
 
@@ -119,13 +120,19 @@ public:
     /// Profile events of the query will be written as packets, at most once in `period_us` microseconds.
     void setProfileEventsQueue(const InternalProfileEventsQueuePtr & queue, const String & host_name_, UInt64 period_us);
 
-    /// Accessors for the log and profile-events queue wiring, so it can be carried over when a
+    /// Stack trace samples of the query will be written as packets, at most once in `period_us` microseconds.
+    /// Fully buffered responses retain samples in the bounded queue until finalization.
+    void setProfileTracesQueue(const InternalProfileTracesQueuePtr & queue, UInt64 period_us, bool defer_until_finalize = false);
+
+    /// Accessors for the auxiliary queue wiring, so it can be carried over when a
     /// framing format is recreated for the buffered exception path (see `HTTPHandler`), keeping the
-    /// `log` and `profile_events` packets collected during parsing and planning.
+    /// `log`, `profile_events` and `profile_traces` packets collected during parsing and planning.
     const std::shared_ptr<InternalTextLogsQueue> & getLogsQueue() const { return logs_queue; }
     const InternalProfileEventsQueuePtr & getProfileEventsQueue() const { return profile_events_queue; }
     const String & getProfileEventsHostName() const { return host_name; }
     UInt64 getProfileEventsPeriodMicroseconds() const { return profile_events_period_us; }
+    const InternalProfileTracesQueuePtr & getProfileTracesQueue() const { return profile_traces_queue; }
+    UInt64 getProfileTracesPeriodMicroseconds() const { return profile_traces_period_us; }
 
 protected:
     virtual void writePayloadPacket(FramedPacketKind kind, std::string_view data) = 0;
@@ -134,13 +141,15 @@ protected:
     virtual void writeLogsPacket(const Block & block) = 0;
     /// The block has the structure of `ProfileEvents::getSampleBlock` (see ProfileEventsExt.h).
     virtual void writeProfileEventsPacket(const Block & block) = 0;
+    /// The block has the structure of `InternalProfileTracesQueue::getSampleBlock`.
+    virtual void writeProfileTracesPacket(const Block & block) = 0;
     virtual void writeExceptionPacket(const String & message) = 0;
     virtual void finalizeImpl() {}
 
     static std::string_view getPacketKindName(FramedPacketKind kind);
 
     /// Writes `s` as a JSON string, replacing invalid UTF-8 sequences with the replacement character.
-    /// Auxiliary packets (`log`, `profile_events`, `exception`) are always JSON, unlike the query result
+    /// Auxiliary packets (`log`, `profile_events`, `profile_traces`, `exception`) are always JSON, unlike the query result
     /// payload, which - depending on the framing format - may embed non-UTF-8 bytes verbatim
     /// (`JSONEachPacketString` with a text output format) or byte-exactly (base64). Auxiliary packets have
     /// no such escape hatch, and some of their string fields (for example `query_id` in the `log` packet)
@@ -150,6 +159,7 @@ protected:
     /// Helpers to represent single entries of auxiliary packets as JSON objects.
     void writeLogRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const;
     void writeProfileEventRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const;
+    void writeProfileTraceRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const;
 
     WriteBuffer & out;
     const FormatSettings format_settings;
@@ -158,6 +168,7 @@ private:
     void extractAndWritePayload(FramedPacketKind kind);
     void pumpLogs();
     void pumpProfileEvents(bool force);
+    void pumpProfileTraces(bool force);
     /// Flush `out` down to the underlying buffer (including the nested compressed buffer, if any).
     void flushOut();
 
@@ -189,6 +200,10 @@ private:
     UInt64 profile_events_period_us = 0;
     Stopwatch profile_events_watch;
     ProfileEvents::ThreadIdToCountersSnapshot profile_events_snapshots;
+    InternalProfileTracesQueuePtr profile_traces_queue;
+    UInt64 profile_traces_period_us = 0;
+    bool defer_profile_traces_until_finalize = false;
+    Stopwatch profile_traces_watch;
 
     String exception_message;
 
@@ -208,8 +223,8 @@ private:
     /// well-formed-looking duplicate after the truncated packet and corrupt the stream. Failing closed
     /// lets the error terminate the already-broken stream instead.
     ///
-    /// Deliberately NOT set around the non-emitting work between packet writes (draining the log and
-    /// profile-events queues and building their blocks): a throw there leaves no partial packet on the
+    /// Deliberately NOT set around the non-emitting work between packet writes (draining the log,
+    /// profile-events and profile-traces queues and building their blocks): a throw there leaves no partial packet on the
     /// wire, so the recovery re-entry of `finalize` must still deliver the terminal framed `exception`
     /// packet instead of failing closed.
     bool writing = false;

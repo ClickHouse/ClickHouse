@@ -1,0 +1,2 @@
+send_profile_traces=0: cancellation does not wait for the collector
+send_profile_traces=1: cancellation does not wait for the collector

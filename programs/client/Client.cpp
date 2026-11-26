@@ -237,6 +237,7 @@ std::vector<String> Client::loadWarningMessages()
                 return messages;
 
             case Protocol::Server::ProfileEvents:
+            case Protocol::Server::ProfileTraces:
                 continue;
 
             default:

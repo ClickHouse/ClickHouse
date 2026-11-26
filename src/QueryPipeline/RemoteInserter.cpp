@@ -27,6 +27,7 @@ namespace Setting
 {
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsBool send_profile_events;
+    extern const SettingsBool send_profile_traces;
 }
 
 namespace ErrorCodes
@@ -80,6 +81,8 @@ void RemoteInserter::initialize()
     ///
     /// So that is why send_logs_level had been disabled here.
     settings[Setting::send_logs_level] = "none";
+    /// Trace packets have the same full-duplex deadlock risk while uploading data.
+    settings[Setting::send_profile_traces] = false;
 
     /// The quotas over profile events charge the initiating user with what the remote server reports in
     /// its `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the query
@@ -125,9 +128,9 @@ void RemoteInserter::initialize()
             /// events, so these can arrive before the header block.
             processProfileEventsPacket(packet.block);
         }
-        else if (Protocol::Server::Progress == packet.type)
+        else if (Protocol::Server::Progress == packet.type || Protocol::Server::ProfileTraces == packet.type)
         {
-            /// The same as above, the progress of such a subquery is ignored.
+            /// The same as above, the progress of such a subquery is ignored, as are trace packets.
         }
         else
             throw NetException(
@@ -189,6 +192,7 @@ void RemoteInserter::onFinish()
             processProfileEventsPacket(packet.block);
         else if (Protocol::Server::Log == packet.type ||
             Protocol::Server::Progress == packet.type ||
+            Protocol::Server::ProfileTraces == packet.type ||
             Protocol::Server::TimezoneUpdate == packet.type)
         {
             // Do nothing

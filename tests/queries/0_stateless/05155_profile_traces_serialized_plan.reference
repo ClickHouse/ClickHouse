@@ -1,0 +1,2 @@
+hedged=0: serialized plans preserve trace transport gating and SQL opt-outs
+hedged=1: serialized plans preserve trace transport gating and SQL opt-outs

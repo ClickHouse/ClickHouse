@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -23,9 +24,26 @@ struct Settings;
 ///   the shard otherwise takes the parser from the effective `dialect` of the authenticated user, which
 ///   its own profile may default to Kusto or PRQL. Sending a value the user already has is a no-op for
 ///   settings constraints, so this does not trip a profile that pins `dialect` as read-only.
+/// - `send_profile_traces` is disabled when this query has no receiving queue. The disabled value must
+///   stay changed so that a shard does not enable delivery from its own settings defaults.
 ///
 /// The demotion runs first, so the `dialect` override is marked changed afterwards.
 void prepareSecondaryQuerySettings(Settings & settings);
+
+/// Remove SQL opt-ins to profile trace delivery from an already-cloned forwarded query. The wire
+/// setting carries the effective opt-in after transport queues have been initialized. Keep explicit
+/// opt-outs and `DEFAULT` clauses with their normal query-scope semantics. A final duplicate opt-in
+/// removes earlier opt-outs in that clause as well. The caller must prune emptied settings clauses
+/// before formatting the query, as `removeSettingsFromQuery` does.
+void stripProfileTraceOptInsFromQuery(const ASTPtr & query);
+
+/// Remove `send_profile_traces` from a DDL statement before its text is queued for other hosts: by
+/// `ON CLUSTER` or by a `Replicated` database. The hosts executing the queued entry have no trace
+/// receiver, and an older host rejects the setting name as `UNKNOWN_SETTING`. The setting is removed
+/// from the carriers that the statement itself applies (its trailing `SETTINGS` clause and the `CREATE`
+/// storage clause) and from the whole `AS SELECT` of `CREATE TABLE ... AS SELECT`. A stored view
+/// definition, including the query of `ALTER ... MODIFY QUERY`, keeps its own SQL settings.
+void stripProfileTraceSettingsFromDDLQuery(const ASTPtr & query);
 
 /// Marks the settings that choose the method of an aggregation key as changed, with their effective values:
 /// `enable_packed_string_keys_in_aggregation` and `enable_fixed_and_packed_string_keys_in_aggregation`.

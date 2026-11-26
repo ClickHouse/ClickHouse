@@ -1,0 +1,4 @@
+buffered query exceptions retain early trace samples
+legacy buffering and SQL framing retain early trace samples
+buffered queries without results retain samples before final progress
+buffered trace overflow is reported with bounded batches

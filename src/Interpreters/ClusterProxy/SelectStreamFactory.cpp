@@ -130,6 +130,15 @@ void SelectStreamFactory::createForShard(
         PlannerContextPtr planner_context;
         std::unique_ptr<QueryPlan> query_plan;
 
+        /// Strip initiator-only settings from both the query text and serialized plan forwarded to the shard.
+        /// The AST carries them from nested `SETTINGS` clauses and from `QueryNode::settings_changes`,
+        /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
+        /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
+        /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
+        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped query.
+        auto forwarded_query = query.ast->clone();
+        prepareSecondaryQueryAST(forwarded_query);
+
         const auto & settings = context->getSettingsRef();
 
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
@@ -137,7 +146,7 @@ void SelectStreamFactory::createForShard(
         if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query.ast->clone(), *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+                forwarded_query, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }
@@ -150,15 +159,6 @@ void SelectStreamFactory::createForShard(
             shard_header = query.header;
             planner_context = query.planner_context;
         }
-
-        /// Strip initiator-only settings from the query text forwarded to the shard. The AST carries them
-        /// from a nested `SETTINGS` clause, and on the analyzer path from `QueryNode::settings_changes`,
-        /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
-        /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
-        /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
-        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped query.
-        auto forwarded_query = query.ast->clone();
-        stripInitiatorOnlySettingsFromQuery(forwarded_query);
 
         remote_shards.emplace_back(Shard{
             .query = forwarded_query,
