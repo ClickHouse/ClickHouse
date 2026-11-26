@@ -832,9 +832,17 @@ void BSONEachRowRowInputFormat::skipUnknownField(BSONType type, const String & k
 
 void BSONEachRowRowInputFormat::syncAfterError()
 {
-    /// Skip all remaining bytes in current document
+    /// Skip all remaining bytes in current document.
     size_t already_read_bytes = in->count() - current_document_start;
-    in->ignore(current_document_size - already_read_bytes);
+    if (already_read_bytes <= current_document_size)
+    {
+        in->ignore(current_document_size - already_read_bytes);
+        return;
+    }
+
+    /// The error happened before the size of the document was read (truncated data), or after more bytes than the
+    /// document declares were read (malformed data), so the start of the next document is unknown: skip the rest.
+    in->ignoreAll();
 }
 
 bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
@@ -850,6 +858,8 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     size_t key_index = 0;
 
     current_document_start = in->count();
+    /// Not the size of the previous document if this one is truncated before its size, see `syncAfterError`.
+    current_document_size = 0;
     readBinaryLittleEndian(current_document_size, *in);
     if (current_document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", current_document_size);
