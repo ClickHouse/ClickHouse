@@ -20,7 +20,7 @@ SELECT DISTINCT arrayJoin(JSONAllPaths(json)) AS path FROM t_json_source_subcolu
 SELECT DISTINCT arrayJoin(JSONDynamicPaths(json)) AS path FROM t_json_source_subcolumn ORDER BY path;
 DROP TABLE t_json_source_subcolumn;
 
--- Rows created without the original text get it from the object itself.
+-- Aggregation keeps the original text of a key, as the text is a part of the value.
 SELECT json.__source FROM (SELECT materialize('{"a" :  42}')::JSON(with_source=1) AS json FROM numbers(2)) GROUP BY json;
 SELECT (materialize('{}')::JSON(with_source=1)).__source;
 

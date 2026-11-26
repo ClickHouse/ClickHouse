@@ -1469,6 +1469,10 @@ void SerializationObject::serializeForHashCalculation(const IColumn & column, si
             dynamic_serialization->serializeForHashCalculation(*path_info.column, path_info.row, ostr);
         }
     }
+
+    /// The source is a part of the value, as in `ColumnObject::compareAt`.
+    if (column_object.hasSource())
+        writeStringBinary(column_object.getSourceColumn().getDataAt(row_num), ostr);
 }
 
 /// Restore column object to the state with previous size.

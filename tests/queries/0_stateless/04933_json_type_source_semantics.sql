@@ -1,11 +1,11 @@
--- The stored JSON text is not a part of the value: values with the same paths and values are equal
--- and grouped together no matter how their JSON text is formatted.
+-- The stored JSON text is a part of the value: values with the same paths and values but differently formatted
+-- JSON text are different values, so they are not equal and not grouped together.
 
 DROP TABLE IF EXISTS t_json_source_semantics;
 CREATE TABLE t_json_source_semantics (id UInt64, json JSON(with_source=1)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_json_source_semantics VALUES (1, '{"a" : 42}'), (2, '{"a":42}'), (3, '{  "a"  :  42  }');
 
-SELECT 'equal values with different text';
+SELECT 'equal objects with different text';
 SELECT count(), countDistinct(json) FROM t_json_source_semantics;
 SELECT json FROM t_json_source_semantics GROUP BY json;
 SELECT DISTINCT json FROM t_json_source_semantics;
@@ -15,8 +15,8 @@ SELECT 'comparison with a literal';
 SELECT count() FROM t_json_source_semantics WHERE json = '{"a" : 42}'::JSON(with_source=1);
 SELECT id, json = (SELECT json FROM t_json_source_semantics WHERE id = 1) FROM t_json_source_semantics ORDER BY id;
 
-SELECT 'source after aggregation is created from the object';
-SELECT json.__source FROM (SELECT json FROM t_json_source_semantics GROUP BY json);
+SELECT 'source is kept by aggregation';
+SELECT json.__source FROM (SELECT json FROM t_json_source_semantics GROUP BY json) ORDER BY json.__source;
 SELECT json.__source FROM (SELECT any(json) AS json FROM t_json_source_semantics);
 
 SELECT 'source is kept when values are just copied';
@@ -29,7 +29,8 @@ DROP TABLE IF EXISTS t_json_source_typed;
 CREATE TABLE t_json_source_typed (json JSON(with_source=1, d Date, n Decimal(10, 2))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_json_source_typed VALUES ('{"d" : "2020-01-01", "n" : 42.42}');
 SELECT json.__source FROM t_json_source_typed;
-SELECT json.__source FROM (SELECT json FROM t_json_source_typed GROUP BY json);
+-- A value without the source gets the text created from its object.
+SELECT CAST(CAST(json AS JSON(d Date, n Decimal(10, 2))) AS JSON(with_source=1, d Date, n Decimal(10, 2))).__source FROM t_json_source_typed;
 
 DROP TABLE t_json_source_typed;
 DROP TABLE t_json_source_semantics;
