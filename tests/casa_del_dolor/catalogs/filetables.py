@@ -886,9 +886,14 @@ class FileHandler:
             return True
         if isinstance(data_read, list):
             # Avro records: rebuild rows in the declared column order
+            # `createDataFrame` rejects char and varchar, as when the rows are inserted
             struct = StructType(
                 [
-                    StructField(c.column_name, c.spark_type, c.nullable)
+                    StructField(
+                        c.column_name,
+                        self.spark.data_generator._map_type_to_insert(c.spark_type),
+                        c.nullable,
+                    )
                     for c in table.columns.values()
                 ]
             )
