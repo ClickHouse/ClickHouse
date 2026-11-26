@@ -2,32 +2,36 @@
 ///
 /// Every case builds one hierarchy under a `TimeSharedScheduler` and reports `requests_per_second`. Requests
 /// cost 1, and each consumer or pending request is a query of its own (`ResourceSchedulingContext`).
-/// Constraints are set so they never throttle: the rate is the cost of the nodes, not of a limit.
+/// Limits do not bind, so the rate is the cost of the nodes, except in `semaphore_saturated` and
+/// `production_development`, which measure a saturated semaphore.
 ///
 /// Modes:
 ///   - `Dequeue`: the benchmark thread is the scheduler thread, so there is no hand-off between threads.
 ///     Every leaf keeps `depth` pending requests. Each iteration dequeues one request from the root,
 ///     finishes it, enqueues it again into its leaf and processes the events. With `depth:1` every
 ///     request empties its leaf, so the deactivation and activation of the nodes above it run every time.
-///   - `Threads`: the scheduler runs its own thread, and each of `threads` consumers loops on a
-///     `ResourceGuard` (enqueue, wait for the grant, finish). Consumer `i` uses leaf `i % leaves`.
+///   - `Threads`: the scheduler runs its own thread, and `consumers` threads loop on a `ResourceGuard`
+///     (enqueue, wait for the grant, finish). Consumer `i` uses leaf `i % leaves`. All consumers run
+///     through a 0.2 s warm-up and a 1 s measured window; the rate is the requests completed in the window.
 ///
 /// Hierarchies (`leaves` is the number of leaf queues):
 ///   - `queue_fifo`, `queue_fair`, `queue_las`, `queue_priority`: one `RequestQueue` with this algorithm.
 ///   - `resources`: `leaves` resources of one `RequestQueue` each, served round-robin by the scheduler.
 ///   - `fair`: `FairPolicy` over the queues.
 ///   - `priority`: `PriorityPolicy` over the queues, each with its own priority.
-///   - `semaphore`: `SemaphoreConstraint` with `max_requests = 4` over a queue.
+///   - `semaphore`: `SemaphoreConstraint` over a queue.
+///   - `semaphore_saturated`: the same with `max_requests = 1`, so every granted request saturates it until
+///     finished.
 ///   - `throttler`: `ThrottlerConstraint` over a queue.
 ///   - `workload`: one `TimeSharedWorkloadNode` without children.
 ///   - `workload_fair`: workload `all` with `leaves` children.
 ///   - `workload_priority`: workload `all` with `leaves` children, every second one with `priority = 1`.
-///   - `workload_limits`: `workload_fair` with `max_io_requests = 4` and `max_bytes_per_second` on `all`.
+///   - `workload_limits`: `workload_fair` with `max_io_requests` and `max_bytes_per_second` on `all`.
 ///   - `production_development`: `all` with `max_io_requests = 100` over `production` with `weight = 3`
-///     and `development` with `max_io_requests = 10`.
+///     and `development` with `max_io_requests = 10`, which binds with more than 10 development consumers.
 ///
 /// For example:
-///   benchmark_time_shared_scheduler --benchmark_filter='^Threads/workload_fair/leaves:16/real_time/threads:16$'
+///   benchmark_time_shared_scheduler --benchmark_filter='^Threads/workload_fair/leaves:16/consumers:16/'
 
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
@@ -46,11 +50,14 @@
 #include <benchmark/benchmark.h>
 #include <fmt/format.h>
 
+#include <atomic>
+#include <chrono>
 #include <exception>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -61,8 +68,14 @@ namespace
 
 constexpr ResourceCost request_cost = 1;
 
+constexpr auto warmup_duration = std::chrono::milliseconds(200);
+constexpr auto window_duration = std::chrono::seconds(1);
+
 /// Speed and burst of a token bucket that never runs out at the rates measured here.
 constexpr double unlimited_speed = 1e15;
+
+/// A request limit above the number of consumers, so it never binds.
+constexpr Int64 unbinding_max_requests = 1024;
 
 using Leaves = std::vector<ISchedulerQueue *>;
 
@@ -119,9 +132,10 @@ Leaves priorityPolicy(TimeSharedScheduler & scheduler, size_t leaves)
     return result;
 }
 
+template <Int64 max_requests>
 Leaves semaphoreConstraint(TimeSharedScheduler & scheduler, size_t)
 {
-    auto root = makeNode<SemaphoreConstraint>(scheduler.event_queue, "semaphore", SchedulerNodeInfo{}, /* max_requests */ 4);
+    auto root = makeNode<SemaphoreConstraint>(scheduler.event_queue, "semaphore", SchedulerNodeInfo{}, max_requests);
     Leaves result{addQueue(*root, "queue")};
     scheduler.attachChild(root);
     return result;
@@ -183,7 +197,7 @@ Leaves workloadPriority(TimeSharedScheduler & scheduler, size_t leaves)
 Leaves workloadLimits(TimeSharedScheduler & scheduler, size_t leaves)
 {
     WorkloadSettings all;
-    all.max_io_requests = 4;
+    all.max_io_requests = unbinding_max_requests;
     all.max_bytes_per_second = unlimited_speed;
     all.max_burst_bytes = unlimited_speed;
     return workloads(scheduler, all, equalChildren(leaves));
@@ -276,69 +290,78 @@ void Dequeue(benchmark::State & state, Build build)
     state.counters["requests_per_second"] = benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
 }
 
-/// State shared by the consumers of one `Threads` case. Thread 0 sets it up before any thread enters
-/// the measured loop, and tears it down after all of them have left it.
-struct Run
-{
-    std::unique_ptr<TimeSharedScheduler> scheduler;
-    Leaves leaves;
-    std::vector<std::unique_ptr<ResourceSchedulingContext>> queries;
-};
-
-Run run;
-
-/// Args: leaves.
+/// Args: leaves, consumers.
 void Threads(benchmark::State & state, Build build)
 {
     const auto leaves = static_cast<size_t>(state.range(0));
-    const auto consumer = static_cast<size_t>(state.thread_index());
+    const auto consumers = static_cast<size_t>(state.range(1));
 
-    if (consumer == 0)
+    static std::once_flag global_pool_initialized;
+    std::call_once(global_pool_initialized, [] { GlobalThreadPool::initialize(); });
+
+    std::vector<std::unique_ptr<ResourceSchedulingContext>> queries;
+    for (size_t i = 0; i < consumers; ++i)
+        queries.push_back(makeQuery());
+
+    TimeSharedScheduler scheduler;
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    /// The hierarchy is built on the scheduler thread, as `WorkloadResourceManager` does.
+    std::promise<Leaves> built;
+    scheduler.event_queue.enqueue([&]
     {
-        static std::once_flag global_pool_initialized;
-        std::call_once(global_pool_initialized, [] { GlobalThreadPool::initialize(); });
-
-        run.scheduler = std::make_unique<TimeSharedScheduler>();
-        run.scheduler->start(ThreadName::TEST_SCHEDULER);
-
-        /// The hierarchy is built on the scheduler thread, as `WorkloadResourceManager` does.
-        std::promise<Leaves> built;
-        run.scheduler->event_queue.enqueue([&]
+        try
         {
-            try
-            {
-                built.set_value(build(*run.scheduler, leaves));
-            }
-            catch (...)
-            {
-                built.set_exception(std::current_exception());
-            }
-        });
-        run.leaves = built.get_future().get();
+            built.set_value(build(scheduler, leaves));
+        }
+        catch (...)
+        {
+            built.set_exception(std::current_exception());
+        }
+    });
+    const Leaves leaf_queues = built.get_future().get();
 
-        for (int i = 0; i < state.threads(); ++i)
-            run.queries.push_back(makeQuery());
-    }
-
-    /// Set on the first iteration: the setup by thread 0 is complete only once the loop has started.
-    ResourceLink link;
+    double requests_per_second = 0;
     for (auto _ [[maybe_unused]] : state)
     {
-        if (!link) [[unlikely]]
-            link = makeLink(run.leaves[consumer % run.leaves.size()], *run.queries[consumer]);
-        ResourceGuard guard(ResourceGuard::Metrics::getIOWrite(), link, request_cost);
-        guard.unlock(request_cost);
+        std::atomic<bool> measuring{false};
+        std::atomic<bool> stop{false};
+        std::atomic<UInt64> completed{0};
+
+        std::vector<std::thread> threads;
+        for (size_t i = 0; i < consumers; ++i)
+        {
+            threads.emplace_back([&, link = makeLink(leaf_queues[i % leaf_queues.size()], *queries[i])]
+            {
+                UInt64 measured = 0;
+                while (!stop.load(std::memory_order_relaxed))
+                {
+                    ResourceGuard guard(ResourceGuard::Metrics::getIOWrite(), link, request_cost);
+                    guard.unlock(request_cost);
+                    if (measuring.load(std::memory_order_relaxed))
+                        ++measured;
+                }
+                completed += measured;
+            });
+        }
+
+        std::this_thread::sleep_for(warmup_duration);
+        measuring = true;
+        const auto window_start = std::chrono::steady_clock::now();
+        std::this_thread::sleep_for(window_duration);
+        measuring = false;
+        const auto window_end = std::chrono::steady_clock::now();
+        stop = true;
+        for (auto & thread : threads)
+            thread.join();
+
+        const double seconds = std::chrono::duration<double>(window_end - window_start).count();
+        state.SetIterationTime(seconds);
+        requests_per_second = static_cast<double>(completed.load()) / seconds;
     }
 
-    state.counters["requests_per_second"] = benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
-
-    if (consumer == 0)
-    {
-        run.scheduler->stop();
-        run.scheduler.reset();
-        run.leaves.clear();
-        run.queries.clear();
-    }
+    state.counters["requests_per_second"] = requests_per_second;
+    scheduler.stop();
 }
 
 struct Hierarchy
@@ -358,7 +381,8 @@ struct Hierarchy
         {"resources", resources, {2, 16}},
         {"fair", fairPolicy, {2, 16, 256}},
         {"priority", priorityPolicy, {2, 16}},
-        {"semaphore", semaphoreConstraint, {1}},
+        {"semaphore", semaphoreConstraint<unbinding_max_requests>, {1}},
+        {"semaphore_saturated", semaphoreConstraint<1>, {1}},
         {"throttler", throttlerConstraint, {1}},
         {"workload", workload, {1}},
         {"workload_fair", workloadFair, {2, 16, 256}},
@@ -373,10 +397,10 @@ struct Hierarchy
             ->ArgsProduct({hierarchy.leaves, {1, 16}})
             ->UseRealTime();
         benchmark::RegisterBenchmark("Threads/" + hierarchy.name, &Threads, hierarchy.build)
-            ->ArgNames({"leaves"})
-            ->ArgsProduct({hierarchy.leaves})
-            ->ThreadRange(1, 64, 4)
-            ->UseRealTime();
+            ->ArgNames({"leaves", "consumers"})
+            ->ArgsProduct({hierarchy.leaves, {1, 4, 16, 64}})
+            ->Iterations(1)
+            ->UseManualTime();
     }
     return true;
 }();
