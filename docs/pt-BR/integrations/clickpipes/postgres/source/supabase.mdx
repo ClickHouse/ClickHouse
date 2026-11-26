@@ -10,15 +10,13 @@ integration:
   - category: 'clickpipes'
 ---
 
-Este é um guia de como configurar o Supabase Postgres para uso no ClickPipes.
+Este é um guia de como configurar o Postgres do Supabase para uso no ClickPipes.
 
 <Note>
   O ClickPipes oferece suporte nativo ao Supabase via IPv6 para uma replicação sem interrupções.
 </Note>
 
-<div id="creating-a-user-with-permissions-and-replication-slot">
-  ## Criando um usuário com permissões e slot de replicação
-</div>
+## Criando um usuário com permissões e slot de replicação {#creating-a-user-with-permissions-and-replication-slot}
 
 Conecte-se à sua instância do Supabase como um usuário administrador e execute os seguintes comandos:
 
@@ -54,16 +52,16 @@ Conecte-se à sua instância do Supabase como um usuário administrador e execut
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * Para criar uma publicação para todas as tabelas em um schema específico:
+* Para criar uma publicação para todas as tabelas em um schema específico:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
 <div id="increase-max_slot_wal_keep_size">
-  ## Aumente `max_slot_wal_keep_size`
+  ## Aumente `max_slot_wal_keep_size` {#increase-max_slot_wal_keep_size}
 </div>
 
 <Warning>
@@ -74,22 +72,16 @@ A publicação `clickpipes` define o conjunto de tabelas cujos eventos de altera
   Para obter uma recomendação mais precisa para esse valor, entre em contato com a equipe do ClickPipes.
 </Warning>
 
-<div id="connection-details-to-use-for-supabase">
-  ## Detalhes de conexão para usar com o Supabase
-</div>
+## Detalhes de conexão para usar com o Supabase {#connection-details-to-use-for-supabase}
 
 Acesse `Project Settings` -&gt; `Database` no seu projeto do Supabase (em `Configuration`).
 
 **Importante**: Desative `Display connection pooler` nesta página, depois vá para a seção `Connection parameters` e anote/copie os parâmetros.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Localize os detalhes de conexão do Supabase](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
-
-</Frame>
-
+  <Frame>
+    ![Localize os detalhes de conexão do Supabase](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
+  </Frame>
 </div>
 
 <Info>
@@ -97,7 +89,7 @@ Acesse `Project Settings` -&gt; `Database` no seu projeto do Supabase (em `Confi
 </Info>
 
 <div id="note-on-rls">
-  ## Observação sobre RLS
+  ## Observação sobre RLS {#note-on-rls}
 </div>
 
 O usuário do ClickPipes para Postgres não deve estar sujeito a políticas de RLS, pois isso pode resultar em dados ausentes. Você pode desativar as políticas de RLS para esse usuário executando o comando abaixo:
@@ -107,7 +99,7 @@ ALTER USER clickpipes_user BYPASSRLS;
 ```
 
 <div id="whats-next">
-  ## Próximos passos
+  ## Próximos passos {#whats-next}
 </div>
 
 Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/postgres/index) e iniciar a ingestão de dados da sua instância do Postgres no ClickHouse Cloud.

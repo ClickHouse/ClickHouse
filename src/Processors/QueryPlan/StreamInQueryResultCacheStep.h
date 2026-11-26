@@ -12,7 +12,7 @@ class StreamInQueryResultCacheStep : public ITransformingStep
 public:
     StreamInQueryResultCacheStep(const SharedHeader & input_header_, std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
 
-    String getName() const override { return "StreamInQueryResultCache"; }
+    [[nodiscard]] String getName() const override { return "StreamInQueryResultCache"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -23,7 +23,7 @@ public:
     /// finalizes the write only once the speculative run produced a complete set, so an aborted run
     /// caches nothing while a successful one still populates the cache — as it did when this step
     /// was not clonable at all and the source was consumed in place.
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }

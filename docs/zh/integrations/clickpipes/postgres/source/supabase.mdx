@@ -16,9 +16,7 @@ integration:
   ClickPipes 原生支持通过 IPv6 接入 Supabase，实现无缝复制。
 </Note>
 
-<div id="creating-a-user-with-permissions-and-replication-slot">
-  ## 创建具有权限和 replication slot 的用户
-</div>
+## 创建具有权限和 replication slot 的用户 {#creating-a-user-with-permissions-and-replication-slot}
 
 以管理员用户身份连接到你的 Supabase 实例，并执行以下命令：
 
@@ -45,7 +43,7 @@ integration:
 4. 使用你要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议只在 publication 中包含所需的表，以避免额外的性能开销。
 
 <Warning>
-  publication 中包含的任何表都必须**定义主键**，&#95;或者&#95;将其**副本标识**配置为 `FULL`。有关范围界定的指导，请参阅 [Postgres FAQ](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+  publication 中包含的任何表都必须**定义主键**，*或者*将其**副本标识**配置为 `FULL`。有关范围界定的指导，请参阅 [Postgres FAQ](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
 </Warning>
 
 * 为特定表创建 publication：
@@ -54,16 +52,16 @@ integration:
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 为特定 schema 中的所有表创建 publication：
+* 为特定 schema 中的所有表创建 publication：
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication 定义了将流式传输到 ClickPipes 的那组表的变更事件。除非你打算复制所有表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <div id="increase-max_slot_wal_keep_size">
-  ## 增加 `max_slot_wal_keep_size`
+  ## 增加 `max_slot_wal_keep_size` {#increase-max_slot_wal_keep_size}
 </div>
 
 <Warning>
@@ -74,22 +72,16 @@ integration:
   如需获取关于该值的更合适建议，你可以联系 ClickPipes 团队。
 </Warning>
 
-<div id="connection-details-to-use-for-supabase">
-  ## 用于 Supabase 的连接详细信息
-</div>
+## 用于 Supabase 的连接详细信息 {#connection-details-to-use-for-supabase}
 
 前往你的 Supabase 项目的 `Project Settings` -&gt; `Database` (位于 `Configuration` 下) 。
 
 **重要**：在此页面上关闭 `Display connection pooler`，然后前往 `Connection parameters` 部分，记录或复制这些参数。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![找到 Supabase 连接详细信息](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
-
-</Frame>
-
+  <Frame>
+    ![找到 Supabase 连接详细信息](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
+  </Frame>
 </div>
 
 <Info>
@@ -97,7 +89,7 @@ integration:
 </Info>
 
 <div id="note-on-rls">
-  ## 关于 RLS 的说明
+  ## 关于 RLS 的说明 {#note-on-rls}
 </div>
 
 ClickPipes 的 Postgres 用户不得受到 RLS 策略的限制，否则可能会导致数据缺失。你可以运行以下命令，为该用户禁用 RLS 策略：
@@ -107,7 +99,7 @@ ALTER USER clickpipes_user BYPASSRLS;
 ```
 
 <div id="whats-next">
-  ## 接下来做什么？
+  ## 接下来做什么？ {#whats-next}
 </div>
 
 您现在可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。
