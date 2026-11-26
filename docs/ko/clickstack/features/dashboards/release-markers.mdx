@@ -11,38 +11,28 @@ keywords: ['clickstack', 'dashboards', 'release markers', 'deployment tracking',
 
 버전 정보는 이미 전송 중인 텔레메트리에서 가져오며, 타일의 소스에 설정된 표현식을 통해 읽습니다. 연결할 CI 통합도 없고 배포 시 푸시할 항목도 없습니다.
 
-<div id="turn-on">
-  ## 마커 켜기
-</div>
+## 마커 켜기 {#turn-on}
 
 릴리스 마커는 기본적으로 꺼져 있습니다. 대시보드의 더보기 메뉴를 열고 **릴리스 마커 표시**를 선택하십시오.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![보기 섹션에서 알림 어노테이션 표시 아래에 릴리스 마커 표시 항목이 있는 대시보드 더보기 메뉴](/images/clickstack/dashboards/release-markers-menu.webp)
-
-</Frame>
-
+  <Frame>
+    ![보기 섹션에서 알림 어노테이션 표시 아래에 릴리스 마커 표시 항목이 있는 대시보드 더보기 메뉴](/images/clickstack/dashboards/release-markers-menu.webp)
+  </Frame>
 </div>
 
 토글을 켜면 대시보드 URL에 `releaseMarkers=true`가 추가되므로 공유한 링크를 열면 마커가 이미 켜진 상태로 표시됩니다. 이는 대시보드 구성이 아닌 보기 상태이므로 대시보드와 함께 저장되지 않으며, 끄면 매개변수가 다시 제거됩니다.
 
 마커는 소스가 로그 또는 트레이스 소스인 시계열 타일에 표시됩니다. [알림 어노테이션](/ko/clickstack/features/alerts)도 같은 메뉴에서 설정할 수 있으며 동시에 표시할 수 있습니다. 두 마커 집합은 함께 표시되며, 각각 고유한 레이블을 유지합니다.
 
-<div id="version-expression">
-  ## 버전의 출처 구성
-</div>
+## 버전의 출처 구성 {#version-expression}
 
 기본적으로 ClickStack은 OpenTelemetry 리소스 속성인 `ResourceAttributes['service.version']`을 읽습니다. 서비스가 [서비스 리소스 의미 체계 규약](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/)을 따른다면 별도의 설정 없이 마커가 작동합니다.
 
 다른 위치에서 버전을 읽으려면 로그 또는 트레이스 소스에서 **Service Version Expression**을 설정하십시오. **Team Settings → Sources**에서 소스를 편집합니다. 로그 소스에서는 **Configure Optional Fields**를 통해 이 필드에 접근할 수 있으며, 트레이스 소스에서는 **Service Name Expression** 아래 양식에 바로 표시됩니다.
 
 <Frame>
-
-![로그 소스의 선택적 필드에 있는 Service Version Expression 필드이며, 기본 자리 표시자로 ResourceAttributes\['service.version'\]가 표시됨](/images/clickstack/dashboards/service-version-expression.webp)
-
+  ![로그 소스의 선택적 필드에 있는 Service Version Expression 필드이며, 기본 자리 표시자로 ResourceAttributes\['service.version'\]가 표시됨](/images/clickstack/dashboards/service-version-expression.webp)
 </Frame>
 
 값은 속성 이름이 아닌 SQL 표현식이므로 다음과 같은 일반적인 두 가지 경우를 지원합니다.
@@ -57,10 +47,10 @@ coalesce(
 )
 ```
 
-이 필드는 [sources API](/ko/clickstack/api-reference)의 로그 및 트레이스 소스에서도 `serviceVersionExpression`으로 제공되므로, source를 프로그래밍 방식으로 Provisioning할 때 설정할 수 있습니다. [logs](/ko/clickstack/managing/config#logs) 및 [traces](/ko/clickstack/managing/config#traces)의 전체 source 설정 목록을 참조하십시오.
+이 필드는 [sources API](/ko/clickstack/api-reference)의 로그 및 트레이스 소스에서도 `serviceVersionExpression`으로 제공되므로, 소스를 프로그래밍 방식으로 Provisioning할 때 설정할 수 있습니다. [로그](/ko/clickstack/managing/config#logs) 및 [traces](/ko/clickstack/managing/config#traces)의 전체 소스 설정 목록을 참조하십시오.
 
 <div id="what-a-marker-means">
-  ## marker의 의미
+  ## marker의 의미 {#what-a-marker-means}
 </div>
 
 marker는 표시된 윈도우 내 타일 데이터에 특정 버전 값이 처음 나타났음을 기록합니다. 이는 배포와 유사하지만 의도적으로 배포와 동일한 것을 의미하지는 않으므로, 배포 marker가 아닌 릴리스 마커입니다.
@@ -71,7 +61,7 @@ marker는 표시된 윈도우 내 타일 데이터에 특정 버전 값이 처�
 윈도우가 열릴 때 이미 실행 중이던 버전은 실제로 발생하지 않은 릴리스로 표시하지 않고 인식하여 제외합니다. 이를 위해 쿼리는 기존 버전을 찾기 위해 윈도우 시작 시점보다 30분 전 또는 윈도우 기간의 10% 전 중 더 긴 시점까지 거슬러 올라갑니다.
 
 <div id="scoping">
-  ## 타일에 표시되는 릴리스
+  ## 타일에 표시되는 릴리스 {#scoping}
 </div>
 
 릴리스 쿼리는 타일 자체의 소스에서 타일에 설정된 프레디케이트, 즉 `WHERE` 절, 각 시리즈의 필터, [dashboard 필터](/ko/clickstack/features/dashboards/overview#custom-filters)를 적용하여 실행됩니다. 타일에 표시되는 내용은 무엇을 차트로 표현하는지에 따라 달라집니다.
@@ -84,20 +74,14 @@ marker는 표시된 윈도우 내 타일 데이터에 특정 버전 값이 처�
 
 세 번째 경우에는 마커의 서비스에 해당하는 선이 차트에 없으므로 마커가 표시되지 않습니다. 윈도우 내의 모든 릴리스가 단일 서비스에서 발생한 경우에는 기본 마커 색상으로 표시됩니다.
 
-<div id="reading-markers">
-  ## 복잡한 차트에서 마커 읽기
-</div>
+## 복잡한 차트에서 마커 읽기 {#reading-markers}
 
 마커 레이블에 마우스를 올리면 해당 시점의 모든 릴리스를 확인할 수 있으며, 각 릴리스의 제공 서비스, 버전, 시간이 표시됩니다.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![두 서비스가 표시된 차트에서 서비스 frontend, 버전 2.0.2 및 해당 버전이 처음 나타난 시간이 표시된 릴리스 마커의 호버 툴팁](/images/clickstack/dashboards/release-marker-tooltip.webp)
-
-</Frame>
-
+  <Frame>
+    ![두 서비스가 표시된 차트에서 서비스 frontend, 버전 2.0.2 및 해당 버전이 처음 나타난 시간이 표시된 릴리스 마커의 호버 툴팁](/images/clickstack/dashboards/release-marker-tooltip.webp)
+  </Frame>
 </div>
 
 색상은 마커와 해당 시리즈를 연결하지만, 차트 범례에는 최대 4개의 항목만 표시되며 나머지는 &quot;+N more&quot; 뒤로 축약됩니다. 그러면 화면에서 색상을 대조할 대상이 없습니다. 툴팁에는 서비스 이름이 직접 표시되므로 타일에 표시되는 시리즈 수와 관계없이 사용할 수 있습니다.
@@ -107,7 +91,7 @@ marker는 표시된 윈도우 내 타일 데이터에 특정 버전 값이 처�
 마커가 표시된 상태에서도 플롯을 가로로 드래그하여 확대할 수 있습니다.
 
 <div id="limitations">
-  ## 제한 사항
+  ## 제한 사항 {#limitations}
 </div>
 
 * **시계열 타일에서만 지원합니다.** 테이블, 숫자, 히트맵에는 마커가 표시되지 않습니다.

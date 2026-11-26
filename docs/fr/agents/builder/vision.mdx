@@ -3,7 +3,7 @@ sidebarTitle: 'Vision'
 slug: /agents/builder/vision
 title: 'Vision'
 description: 'Images en entrée et compréhension visuelle dans ClickHouse Agents'
-keywords: ['IA', 'ClickHouse Cloud', 'agents', 'vision', 'image en entrée', 'multimodal']
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'vision', 'images en entrée', 'multimodal']
 doc_type: 'reference'
 ---
 
@@ -11,34 +11,24 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-Vision permet aux utilisateurs de téléverser des images afin qu’un agent les analyse. L’agent transmet l’image à un modèle compatible avec Vision, qui la décrit, la résume ou répond à des questions sur son contenu.
+Vision permet aux utilisateurs de téléverser des images afin qu&#39;un agent les analyse. L&#39;agent transmet l&#39;image à un modèle doté de capacités de vision, qui en décrit le contenu, le résume ou répond à des questions à son sujet.
 
-<div id="enable-it">
-  ## Activer les fonctionnalités Vision
-</div>
+## Activer les fonctionnalités Vision {#enable-it}
 
-Vision fonctionne uniquement avec les modèles qui prennent en charge les images en entrée. Si le modèle sélectionné ne peut pas traiter d’images en entrée, le contrôle de téléversement dans le composeur de messages est désactivé. Basculez vers un modèle compatible avec Vision pour le réactiver.
+Vision ne fonctionne qu&#39;avec les modèles qui prennent en charge les images en entrée. Si le modèle sélectionné ne peut pas traiter les images en entrée, le bouton de téléversement de la zone de rédaction des messages est désactivé. Sélectionnez un modèle doté de capacités de vision pour le réactiver.
 
-<div id="use-it">
-  ## Utiliser les fonctionnalités Vision
-</div>
+## Utiliser les fonctionnalités Vision {#use-it}
 
-Cliquez sur l’icône en forme de trombone en bas à gauche du composeur de messages, puis choisissez **Téléverser vers le fournisseur** pour joindre une image — une capture d’écran, une photo, un graphique ou un diagramme. Posez ensuite n’importe quelle question qui nécessite de lire l’image : *« Qu’est-ce qui ne va pas avec ce plan de requête ? »*, *« Transcris le texte de cette capture d’écran »* ou *« Compare ce tableau de bord à celui de la semaine dernière. »*
+Cliquez sur l&#39;icône en forme de trombone en bas à gauche de la zone de rédaction des messages, puis choisissez **Upload to Provider** pour joindre une image : capture d&#39;écran, photo, graphique, diagramme… Posez ensuite toute question nécessitant de lire l&#39;image : *« Qu&#39;est-ce qui ne va pas dans ce plan de requête ? »*, *« Transcris le texte de cette capture d&#39;écran »* ou *« Compare ce tableau de bord à celui de la semaine dernière. »*
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Composeur de messages avec le menu du trombone ouvert, affichant les options Téléverser vers le fournisseur, Téléverser comme texte et Téléverser vers l’environnement de code](/images/cloud/agent-builder/vision/vision.webp)
-
-</Frame>
-
+  <Frame>
+    ![Zone de rédaction des messages avec le menu du trombone ouvert affichant les options Upload to Provider, Upload as Text et Upload to Code Environment](/images/cloud/agent-builder/vision/vision.webp)
+  </Frame>
 </div>
 
-L’agent traite l’image comme faisant partie du contexte du message ; les questions de suivi dans le même échange peuvent donc faire référence à ce qu’il a vu sans avoir à la téléverser de nouveau.
+L&#39;agent intègre l&#39;image au contexte du message : les questions de suivi posées dans le même tour peuvent donc s&#39;appuyer sur ce qu&#39;il a vu, sans avoir à la téléverser de nouveau.
 
-<div id="combine-with-other-tools">
-  ## Associer Vision à d&#39;autres outils
-</div>
+## Combiner Vision avec d&#39;autres outils {#combine-with-other-tools}
 
-Vision s&#39;associe bien au [code interpreter](/fr/agents/builder/code-interpreter) pour l&#39;analyse d&#39;images — par exemple, l&#39;agent lit des chiffres sur une capture d&#39;écran puis exécute Python pour calculer les totaux — ainsi qu&#39;à la [web search](/fr/agents/builder/web-search) lorsqu&#39;une image fait référence à un élément que le modèle doit rechercher.
+Vision se combine efficacement avec l&#39;[interpréteur de code](/fr/agents/builder/code-interpreter) pour analyser des images — par exemple, l&#39;agent relève des nombres sur une capture d&#39;écran, puis exécute du code Python pour calculer des totaux —, ainsi qu&#39;avec la [recherche sur le Web](/fr/agents/builder/web-search) lorsqu&#39;une image fait référence à un élément que le modèle doit rechercher.

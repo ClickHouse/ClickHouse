@@ -11,9 +11,9 @@ doc_type: 'guide'
 
 ## Proporcionar el contexto de traza a ClickHouse {#supplying-trace-context-to-clickhouse}
 
-ClickHouse acepta encabezados HTTP de contexto de traza, como se describe en la [recomendación del W3C](https://www.w3.org/TR/trace-context/). También acepta contexto de traza a través de un protocolo nativo que se utiliza para la comunicación entre servidores de ClickHouse o entre el cliente y el servidor. Para realizar pruebas manuales, se pueden proporcionar a `clickhouse-client` encabezados de contexto de traza conformes con la recomendación Trace Context mediante las opciones `--opentelemetry-traceparent` y `--opentelemetry-tracestate`.
+ClickHouse acepta cabeceras HTTP de contexto de traza, como se describe en la [recomendación del W3C](https://www.w3.org/TR/trace-context/). También acepta contexto de traza a través de un protocolo nativo que se utiliza para la comunicación entre servidores de ClickHouse o entre el cliente y el servidor. Los handlers HTTP de los protocolos de Prometheus (exposición de métricas, escritura remota, lectura remota y la API de consultas) también aceptan cabeceras HTTP de contexto de traza. Para realizar pruebas manuales, se pueden proporcionar a `clickhouse-client` encabezados de contexto de traza conformes con la recomendación Trace Context mediante las opciones `--opentelemetry-traceparent` y `--opentelemetry-tracestate`.
 
-Si no se proporciona un contexto de traza padre, o si el contexto de traza proporcionado no cumple con el estándar W3C mencionado anteriormente, ClickHouse puede iniciar una nueva traza, con una probabilidad controlada por la configuración [opentelemetry&#95;start&#95;trace&#95;probability](/es/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
+Si no se proporciona un contexto de traza padre, o si el contexto de traza proporcionado no cumple con el estándar W3C mencionado anteriormente, ClickHouse puede iniciar una nueva traza, con una probabilidad controlada por el parámetro de configuración [opentelemetry&#95;start&#95;trace&#95;probability](/es/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
 ## Propagación del contexto de traza {#propagating-the-trace-context}
 
