@@ -610,6 +610,10 @@ class BigLakeCatalogManager(CatalogManager):
         fs = gcsfs.GCSFileSystem(token=self._credential.token, skip_instance_cache=True)
         return fs.exists(gcs_path)
 
+    def write_gcs_object(self, gcs_path: str, data: bytes) -> None:
+        fs = gcsfs.GCSFileSystem(token=self._credential.token, skip_instance_cache=True)
+        fs.pipe_file(gcs_path, data)
+
     def _delete_gcs_prefix(self, gcs_path: str) -> None:
         try:
             fs = gcsfs.GCSFileSystem(token=self._credential.token)

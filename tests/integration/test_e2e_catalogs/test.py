@@ -1387,10 +1387,9 @@ def test_gcs_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
         assert node.query(select_all) == rows_before
 
         orphan = f"data/orphan-{suffix}.parquet"
-        node.query(
-            f"INSERT INTO FUNCTION s3({nc}, url = '{url}/{orphan}', "
-            "format = 'RawBLOB', structure = 'data String') SELECT 'orphan'"
-        )
+        # Written by the manager: writing it through the collection would replace the stored `url`,
+        # which requires the grant `SHOW NAMED COLLECTIONS SECRETS`.
+        catalog_manager.write_gcs_object(f"{table_path}/{orphan}", b"orphan")
         assert catalog_manager.gcs_path_exists(f"{table_path}/{orphan}")
         # Object timestamps have one-second precision and come from the storage's clock;
         # the margin covers normal clock drift between it and the server.
