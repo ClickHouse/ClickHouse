@@ -202,7 +202,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 * 데이터 파트가 여러 조건 집합과 일치하면 ClickHouse는 가장 마지막에 일치한 조건 집합을 사용합니다(`<case>` 섹션은 순서대로 검사되며, 일치하는 섹션마다 이전 선택을 재정의합니다).
 
 <Note>
-  데이터 파트에 대해 충족되는 조건이 없으면 ClickHouse는 크기를 고려한 기본 내장 설정을 사용합니다. 즉, 100MB 미만이면 `LZ4`, 그 이상이면 `ZSTD(3)`를 사용합니다. 위의 `min_part_size` 조건과 마찬가지로, 여기서의 크기는 데이터가 기록되기 전 코덱을 선택해야 하는 시점에 알려진 크기입니다. 즉, 새로 삽입된 파트의 경우 `0`이고, 머지나 뮤테이션의 경우 소스 파트의 크기입니다. 따라서 `TTL DELETE`나 축약 머지처럼 입력보다 결과가 작아지는 재작성은 입력 크기를 기준으로 분류되며, 임계값보다 작으면서도 `ZSTD(3)`로 압축된 파트가 생성될 수 있습니다.
+  데이터 파트에 대해 충족되는 조건이 없으면 ClickHouse는 크기를 고려한 기본 내장 설정을 사용합니다. 즉, 100MB 미만이면 `LZ4`, 그 이상이면 `ZSTD(3)`를 사용합니다. 위의 `min_part_size` 조건과 마찬가지로, 여기서의 크기는 데이터가 기록되기 전 코덱을 선택해야 하는 시점에 알려진 크기입니다. 즉, 새로 삽입된 파트의 경우 삽입된 블록(inserted block)의 압축되지 않은 크기이고, 머지나 뮤테이션의 경우 소스 파트의 크기입니다. 그래서 작은 삽입은 `LZ4`로 기록되고, 큰 삽입은 처음부터 `ZSTD(3)`로 기록됩니다. 따라서 `TTL DELETE`나 축약 머지처럼 입력보다 결과가 작아지는 재작성은 입력 크기를 기준으로 분류되며, 임계값보다 작으면서도 `ZSTD(3)`로 압축된 파트가 생성될 수 있습니다.
 </Note>
 
 **예시**
@@ -545,18 +545,18 @@ Graphite 데이터 축소를 위한 설정입니다.
 
 ## http_server_default_response {#http_server_default_response}
 
-ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지입니다.
+ClickHouse HTTP(s) 서버에 접속하면 기본적으로 표시되는 페이지입니다.
 기본값은 &quot;Ok.&quot;입니다(끝에 줄 바꿈 문자(line feed)가 포함됨).
 
 * **기본값:** `"Ok.\n"`
 
 **예시**
 
-`http://localhost: http_port`에 접속하면 `https://tabix.io/`가 열립니다.
+`http://localhost: http_port`에 접속하면 내장 웹 UI(`/play`)가 열립니다.
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
 </http_server_default_response>
 ```
 
@@ -769,17 +769,17 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 | `async_queue_max_size`       | 비동기 로깅을 사용할 때 플러시를 기다리며 큐에 보관되는 메시지의 최대 개수입니다. 이를 초과하는 메시지는 삭제됩니다                                                                                                  |
 | `console`                    | 콘솔 로깅을 활성화합니다. 활성화하려면 `1` 또는 `true`로 설정합니다. ClickHouse가 데몬 모드로 실행되지 않으면 기본값은 `1`이고, 그렇지 않으면 `0`입니다.                                                                |
 | `console_log_level`          | 콘솔 출력용 로그 레벨입니다. 기본값은 `level`입니다.                                                                                                                                  |
-| `console_shutdown_log_level` | Shutdown level은 server 종료 시 콘솔 로그 레벨을 설정하는 데 사용됩니다.                                                                                                                |
-| `console_startup_log_level`  | 시작 레벨은 server 시작 시 콘솔 로그 레벨을 설정하는 데 사용됩니다. 시작이 완료되면 로그 레벨은 `console_log_level` 설정으로 되돌아갑니다                                                                         |
+| `console_shutdown_log_level` | Shutdown level은 서버 종료 시 콘솔 로그 레벨을 설정하는 데 사용됩니다.                                                                                                                |
+| `console_startup_log_level`  | 시작 레벨은 서버 시작 시 콘솔 로그 레벨을 설정하는 데 사용됩니다. 시작이 완료되면 로그 레벨은 `console_log_level` 설정으로 되돌아갑니다                                                                         |
 | `count`                      | 회전 정책: ClickHouse가 보관하는 과거 로그 파일의 최대 개수입니다.                                                                                                                        |
 | `errorlog`                   | 오류 로그 파일의 경로입니다.                                                                                                                                                   |
 | `formatting.type`            | 콘솔 출력용 로그 포맷입니다. 현재는 `json`만 지원됩니다                                                                                                                                 |
 | `level`                      | 로그 레벨입니다. 허용되는 값: `none`(로깅 끄기), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                         |
 | `log`                        | 로그 파일의 경로입니다.                                                                                                                                                      |
 | `rotation`                   | 회전 정책: 로그 파일을 언제 회전할지 제어합니다. 회전은 크기, 시간 또는 둘의 조합을 기준으로 할 수 있습니다. 예시: 100M, daily, 100M,daily. 로그 파일이 지정된 크기를 초과하거나 지정된 시간 인터벌에 도달하면 이름이 변경되어 보관되고, 새 로그 파일이 생성됩니다. |
-| `shutdown_level`             | Shutdown level은 server 종료 시 root logger 레벨을 설정하는 데 사용됩니다.                                                                                                          |
+| `shutdown_level`             | Shutdown level은 서버 종료 시 root logger 레벨을 설정하는 데 사용됩니다.                                                                                                          |
 | `size`                       | 회전 정책: 로그 파일의 최대 크기(바이트)입니다. 로그 파일 크기가 이 임계값을 초과하면 이름이 변경되어 보관되고, 새 로그 파일이 생성됩니다.                                                                                  |
-| `startup_level`              | 시작 레벨은 server 시작 시 root logger 레벨을 설정하는 데 사용됩니다. 시작이 완료되면 로그 레벨은 `level` 설정으로 되돌아갑니다                                                                               |
+| `startup_level`              | 시작 레벨은 서버 시작 시 root logger 레벨을 설정하는 데 사용됩니다. 시작이 완료되면 로그 레벨은 `level` 설정으로 되돌아갑니다                                                                               |
 | `stream_compress`            | LZ4를 사용해 로그 메시지를 압축합니다. 활성화하려면 `1` 또는 `true`로 설정합니다.                                                                                                               |
 | `syslog_level`               | syslog로 로깅할 때의 로그 레벨입니다.                                                                                                                                           |
 | `use_syslog`                 | 로그 출력을 syslog로도 전달합니다.                                                                                                                                             |
@@ -1532,9 +1532,9 @@ curl 127.0.0.1:9363/metrics
 
 추가 설정:
 
-| 설정      | 설명                                    | 기본값     |
-| ------- | ------------------------------------- | ------- |
-| `level` | 테이블에 저장되는 최대 메시지 수준(기본값은 `Trace`)입니다. | `Trace` |
+| 설정      | 설명                                                                                                                                                                                                                                                   | 기본값                                |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `level` | 테이블에 저장되는 최대 메시지 수준입니다. 명시적으로 설정하면 루트 로거의 로그 레벨이 최소한 이 값까지 높아지므로, `text_log`에 서버 로그 파일(`logger.level`)보다 더 상세한 메시지를 기록할 수 있습니다. 설정하지 않으면 구성된 로그 출력(`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`) 중 가장 상세한 수준까지의 메시지가 저장됩니다. | `Trace`(설정하지 않으면 다른 로그 출력에 따라 제한됨) |
 
 **예시**
 

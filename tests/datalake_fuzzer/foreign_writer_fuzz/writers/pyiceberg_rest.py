@@ -238,6 +238,15 @@ class PyIcebergRestWriter(Writer):
                     required=False,
                 )
         elif kind == "drop_column":
+            source_id = table.schema().find_field(op["name"]).field_id
+            if any(
+                f.source_id == source_id
+                for spec in table.specs().values()
+                for f in spec.fields
+            ):
+                # PyIceberg 0.11 then writes manifests that it cannot read back
+                # (https://github.com/apache/iceberg-python/pull/4115).
+                raise OpRejected(f"a partition spec of the table uses {op['name']}")
             with table.update_schema() as update:
                 update.delete_column(op["name"])
         elif kind == "rename_column":
