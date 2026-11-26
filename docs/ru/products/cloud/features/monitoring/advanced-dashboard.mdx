@@ -18,9 +18,7 @@ doc_type: 'guide'
 так и в Cloud. В этой статье мы покажем, как использовать расширенную панель мониторинга в
 Cloud.
 
-<div id="accessing-the-advanced-dashboard">
-  ## Доступ к расширенной панели мониторинга
-</div>
+## Доступ к расширенной панели мониторинга {#accessing-the-advanced-dashboard}
 
 Чтобы открыть расширенную панель мониторинга, перейдите в:
 
@@ -28,18 +26,12 @@ Cloud.
   * `Monitoring` → `Advanced dashboard`
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Расширенная панель мониторинга](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Расширенная панель мониторинга](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
 </div>
 
-<div id="accessing-the-native-advanced-dashboard">
-  ## Доступ к встроенной расширенной панели мониторинга
-</div>
+## Доступ к встроенной расширенной панели мониторинга {#accessing-the-native-advanced-dashboard}
 
 Чтобы открыть встроенную расширенную панель мониторинга, перейдите:
 
@@ -51,30 +43,22 @@ Cloud.
 пройти аутентификацию.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Расширенная панель мониторинга](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
 </div>
 
 С каждой визуализацией связан SQL-запрос, который её заполняет. Вы можете
 изменить этот запрос, нажав на значок пера.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Advanced dashboard](/images/cloud/manage/monitoring/edit_visualization.webp)
-
-</Frame>
-
+  <Frame>
+    ![Расширенная панель мониторинга](/images/cloud/manage/monitoring/edit_visualization.webp)
+  </Frame>
 </div>
 
 <div id="out-of-box-visualizations">
-  ## Готовые визуализации
+  ## Готовые визуализации {#out-of-box-visualizations}
 </div>
 
 Стандартные диаграммы на расширенной панели мониторинга позволяют в реальном времени
@@ -82,7 +66,7 @@ Cloud.
 каждой диаграммы. Для удобства они сгруппированы в три категории.
 
 <div id="clickhouse-specific">
-  ### Для ClickHouse
+  ### Для ClickHouse {#clickhouse-specific}
 </div>
 
 Эти метрики предназначены для мониторинга состояния и производительности вашего
@@ -99,7 +83,7 @@ Cloud.
 | Прочитанных байт/с      | Показывает объём данных, считываемых запросами                                                    |
 
 <div id="system-health-specific">
-  ### Метрики состояния системы
+  ### Метрики состояния системы {#system-health-specific}
 </div>
 
 Мониторинг базовой системы не менее важен, чем мониторинг самого ClickHouse.
@@ -116,7 +100,7 @@ Cloud.
 | Использование CPU ОС (Kernel)    | Использование CPU при выполнении кода ядра                                         |
 
 <div id="clickhouse-cloud-specific">
-  ## Особенности ClickHouse Cloud
+  ## Особенности ClickHouse Cloud {#clickhouse-cloud-specific}
 </div>
 
 ClickHouse Cloud хранит данные в Объектном хранилище (типа S3). Мониторинг этого
@@ -137,7 +121,7 @@ ClickHouse Cloud хранит данные в Объектном хранили�
 | Одновременные сетевые подключения | Отслеживает текущее количество одновременных сетевых подключений |
 
 <div id="identifying-issues-with-the-advanced-dashboard">
-  ## Выявление проблем с помощью расширенной панели мониторинга
+  ## Выявление проблем с помощью расширенной панели мониторинга {#identifying-issues-with-the-advanced-dashboard}
 </div>
 
 Такое представление о состоянии вашего сервиса ClickHouse в реальном времени помогает
@@ -145,9 +129,7 @@ ClickHouse Cloud хранит данные в Объектном хранили�
 их устранять. Ниже приведено несколько проблем, которые можно обнаружить с помощью
 расширенной панели мониторинга.
 
-<div id="unbatched-inserts">
-  ### Вставки без батчей
-</div>
+### Вставка без батчинга {#unbatched-inserts}
 
 Как описано в [документации Best Practices](/ru/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous), по возможности рекомендуется всегда
 выполнять массовую вставку данных в ClickHouse синхронно.
@@ -160,13 +142,9 @@ ClickHouse Cloud хранит данные в Объектном хранили�
 **Макс. частей в партиции**
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Вставки без батчей](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
-
-</Frame>
-
+  <Frame>
+    ![Вставка без батчинга](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+  </Frame>
 </div>
 
 Пример выше показывает два всплеска **Вставленных строк/с** и **Макс. частей в партиции**
@@ -176,9 +154,7 @@ ClickHouse Cloud хранит данные в Объектном хранили�
 при этом скорость **Вставленных строк/с** очень низкая. Создаётся много частей при
 очень небольшом объёме данных, что указывает на неоптимальный размер частей.
 
-<div id="resource-intensive-query">
-  ### Ресурсоемкий запрос
-</div>
+### Ресурсоемкий запрос {#resource-intensive-query}
 
 Нередко приходится выполнять SQL-запросы, которые потребляют много ресурсов, например
 CPU или памяти. Однако важно отслеживать такие запросы и понимать,
@@ -193,18 +169,12 @@ CPU или памяти. Однако важно отслеживать таки
 количества выполняемых запросов в секунду.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Ресурсоемкий запрос](/images/cloud/manage/monitoring/resource_intensive_query.webp)
-
-</Frame>
-
+  <Frame>
+    ![Ресурсоемкий запрос](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+  </Frame>
 </div>
 
-<div id="bad-primary-key-design">
-  ### Неудачный выбор первичного ключа
-</div>
+### Неудачный выбор первичного ключа {#bad-primary-key-design}
 
 Ещё одна проблема, которую можно выявить с помощью расширенной панели мониторинга, — неудачный выбор первичного ключа.
 Как описано в [&quot;A practical introduction to primary indexes in ClickHouse&quot;](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key),
@@ -217,13 +187,9 @@ CPU или памяти. Однако важно отслеживать таки
 для выполнения которых выбирается большое количество строк.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Ресурсоемкий запрос](/images/cloud/manage/monitoring/selected_rows_sec.webp)
-
-</Frame>
-
+  <Frame>
+    ![Ресурсоемкий запрос](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+  </Frame>
 </div>
 
 Используя временную метку в качестве фильтра, вы можете найти запросы, выполненные во время

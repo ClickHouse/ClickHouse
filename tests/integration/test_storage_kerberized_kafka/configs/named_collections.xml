@@ -1,0 +1,25 @@
+<clickhouse>
+    <named_collections>
+        <!-- `sasl_kerberos_keytab` is a path on the server, thus it is accepted only from a named collection
+             that is defined in the server configuration. The global `<kafka>` configuration is not merged
+             into a named collection, so the collection has all the Kerberos properties. The principal is
+             different from the one in the global configuration. -->
+        <kafka_config>
+            <kafka_broker_list>kerberized_kafka1:19092</kafka_broker_list>
+            <kafka_topic_list>kafka_json_as_string_named_collection</kafka_topic_list>
+            <kafka_commit_on_select>1</kafka_commit_on_select>
+            <kafka_group_name>kafka_json_as_string_named_collection</kafka_group_name>
+            <kafka_format>JSONAsString</kafka_format>
+            <kafka_flush_interval_ms>1000</kafka_flush_interval_ms>
+            <kafka>
+                <security_protocol>SASL_PLAINTEXT</security_protocol>
+                <sasl_mechanism>GSSAPI</sasl_mechanism>
+                <sasl_kerberos_service_name>kafka</sasl_kerberos_service_name>
+                <sasl_kerberos_keytab>/tmp/keytab/clickhouse.keytab</sasl_kerberos_keytab>
+                <sasl_kerberos_principal>anotherkafkauser/instance@TEST.CLICKHOUSE.TECH</sasl_kerberos_principal>
+                <debug>security</debug>
+                <api_version_request>false</api_version_request>
+            </kafka>
+        </kafka_config>
+    </named_collections>
+</clickhouse>

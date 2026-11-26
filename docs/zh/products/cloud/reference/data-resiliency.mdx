@@ -11,11 +11,11 @@ keywords: ['ClickHouse Cloud', '数据恢复能力', '灾难恢复']
 ClickHouse Cloud 目前不支持自动故障转移，也不支持跨多个地理区域的自动同步。
 
 <Tip>
-  客户应定期执行 Backup 恢复测试，以了解其服务规模和配置对应的具体 RTO。
+  客户应定期执行 备份 恢复测试，以了解其服务规模和配置对应的具体 RTO。
 </Tip>
 
 <div id="definitions">
-  ## 定义
+  ## 定义 {#definitions}
 </div>
 
 先了解几个定义会更有帮助。
@@ -58,14 +58,14 @@ ClickHouse Cloud 支持以下备份能力。
 此部分还会显示每个备份的成功/失败状态。
 
 <div id="restoring-from-a-backup">
-  ## 从Backup中恢复
+  ## 从Backup中恢复 {#restoring-from-a-backup}
 </div>
 
 1. 位于 ClickHouse Cloud 存储桶中的默认Backup可恢复到同一区域中的新服务。
 2. 外部Backup (位于客户对象存储中) 可恢复到同一区域或不同区域中的新服务。
 
 <div id="backup-and-restore-duration-guidance">
-  ## Backup和恢复耗时指南
+  ## Backup和恢复耗时指南 {#backup-and-restore-duration-guidance}
 </div>
 
 Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显著差异。以下数据来自内部测试观察结果，并非性能承诺。
@@ -82,13 +82,13 @@ Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显�
 </Note>
 
 <div id="recovery-process">
-  ## 恢复流程
+  ## 恢复流程 {#recovery-process}
 </div>
 
 本节介绍各种恢复选项，以及每种情况下可采用的恢复流程。
 
 <div id="primary-service-data-corruption">
-  ### 主服务数据损坏
+  ### 主服务数据损坏 {#primary-service-data-corruption}
 </div>
 
 在这种情况下，数据[可以从备份恢复](/zh/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup)到同一区域中的另一项服务。
@@ -96,24 +96,20 @@ Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显�
 
 #### 恢复步骤 {#restoration-steps}
 
-从现有 Backup 中恢复：
+从现有 备份 中恢复：
 
-1. 前往 ClickHouse Cloud 控制台的“Backups”部分。
-2. 在要恢复的目标 Backup 对应的“Actions”下，点击三点菜单。
-3. 为新服务指定名称，然后从该 Backup 中恢复
+1. 前往 ClickHouse Cloud 控制台的“备份”部分。
+2. 在要恢复的目标 备份 对应的“Actions”下，点击三点菜单。
+3. 为新服务指定名称，然后从该 备份 中恢复
 
 <div className="ch-image-md">
-
-<Frame>
-
-![从 Backup 中恢复](/images/cloud/guides/restore_backup.webp)
-
-</Frame>
-
+  <Frame>
+    ![从备份中恢复](/images/cloud/guides/restore_backup.webp)
+  </Frame>
 </div>
 
 <div id="primary-region-downtime">
-  ### 主区域停机
+  ### 主区域停机 {#primary-region-downtime}
 </div>
 
 您可以将[备份导出](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)到您自己的云提供商存储桶。
@@ -133,7 +129,7 @@ Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显�
 </Note>
 
 <div id="additional-options">
-  ## 其他选项
+  ## 其他选项 {#additional-options}
 </div>
 
 还有一些可进一步考虑的选项。

@@ -21,6 +21,9 @@
 #include <thread>
 #include <vector>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <Common/Silk/FiberScheduler.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 
@@ -28,6 +31,7 @@
 #include <silk/fibers/future.h>
 #endif
 
+#include <base/errnoToString.h>
 #include <base/scope_guard.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -41,10 +45,13 @@
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
+#include <aws/core/config/ConfigAndCredentialsCacheManager.h>
 #include <aws/core/http/URI.h>
 #include <aws/core/internal/AWSHttpResourceClient.h>
+#include <aws/core/utils/HashingUtils.h>
 
 #include <Common/Crypto/OpenSSLInitializer.h>
+#include <Common/ProxyConfiguration.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromS3.h>
@@ -1940,7 +1947,7 @@ class FunctionHTTPServer
 public:
     explicit FunctionHTTPServer(HTTPHandlerFunction handler, int max_threads = 16)
         : thread_pool(std::make_unique<Poco::ThreadPool>(/* minCapacity = */ 2, max_threads))
-        , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server_socket(std::make_unique<Poco::Net::ServerSocket>(/* port = */ 0, /* backlog = */ std::max(64, max_threads)))
         , server(std::make_unique<Poco::Net::HTTPServer>(
               new Factory(std::move(handler)), *thread_pool, *server_socket, makeServerParams(max_threads)))
     {
@@ -1996,6 +2003,8 @@ void sendHTTPBody(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPRespo
     out << body;
     out.flush();
 }
+
+const std::string FIBER_TEST_CREDENTIALS_JSON = R"({"AccessKeyId": "fiber_access_key", "SecretAccessKey": "fiber_secret_key", "Token": "fiber_session_token", "Expiration": "2030-01-01T00:00:00Z"})";
 
 DB::S3::PocoHTTPClientConfiguration createFiberTestClientConfiguration(const std::string & region)
 {
@@ -2532,8 +2541,10 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
         MockStsRequestHandler(request_info, role_access_key, "role_secret_key").handleRequest(request, response);
     });
 
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
     std::atomic<size_t> requests_signed_with_refreshed_credentials = 0;
     std::atomic<size_t> other_requests = 0;
+    /// A thread per fiber: the server refuses, not queues, a connection it may start a thread for while its pool has none free.
     FunctionHTTPServer http([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
     {
         if (getCredentialString(request).starts_with("Credential=refreshed_role_access_key/"))
@@ -2541,7 +2552,7 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
         else
             ++other_requests;
         sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "");
-    });
+    }, /* max_threads = */ static_cast<int>(fiber_count));
 
     const DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAssumeRoleRefreshInConcurrentFibers/test.txt");
     /// The role is unique, so the provider is not shared with other tests through the credentials cache.
@@ -2561,12 +2572,510 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
     release.reset();
     const size_t sts_requests_before = sts_requests;
 
-    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
     runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t) { doReadRequest(client, uri); });
 
     EXPECT_EQ(sts_requests, sts_requests_before + 1);
     EXPECT_GE(requests_signed_with_refreshed_credentials, fiber_count);
     EXPECT_EQ(other_requests, 0);
+}
+
+namespace
+{
+
+/// An IMDS credentials provider with the client configuration of the other fiber tests. `S3CredentialsProviderChain`
+/// uses shorter timeouts and fewer retries for IMDS.
+std::unique_ptr<DB::S3::AWSInstanceProfileCredentialsProvider> createInstanceProfileTestProvider(const std::string & imds_url)
+{
+    auto metadata_client = std::make_shared<DB::S3::AWSEC2MetadataClient>(createFiberTestClientConfiguration(""), imds_url.c_str());
+    auto config_loader = std::make_shared<DB::S3::AWSEC2InstanceProfileConfigLoader>(metadata_client, /* use_secure_pull = */ true);
+    return std::make_unique<DB::S3::AWSInstanceProfileCredentialsProvider>(config_loader);
+}
+
+}
+
+/// EC2 IMDS in fibers: concurrent callers wait on the provider's `Silk::FiberMutex` while the first one is suspended in
+/// IMDS I/O, which is held until all fibers have started, and all of them get the credentials of one refresh.
+TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
+{
+    initializeFiberSchedulerForTests();
+
+    Poco::Event release(/* autoReset = */ false);
+    std::atomic<size_t> token_requests = 0;
+    std::atomic<size_t> credentials_requests = 0;
+    std::atomic<size_t> requests_without_token = 0;
+    const std::string credentials_resource = DB::S3::AWSEC2MetadataClient::EC2_SECURITY_CREDENTIALS_RESOURCE;
+
+    FunctionHTTPServer imds([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        const std::string path = Poco::URI(request.getURI()).getPath();
+        if (path == DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE)
+        {
+            ++token_requests;
+            /// Holds the refresh in I/O until all fibers have started.
+            release.wait();
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "imds_token");
+            return;
+        }
+        if (request.get(DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, "") != "imds_token")
+            ++requests_without_token;
+        if (path == credentials_resource)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "fiber-role");
+        else if (path == credentials_resource + "/fiber-role")
+        {
+            ++credentials_requests;
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, FIBER_TEST_CREDENTIALS_JSON);
+        }
+        else
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+    });
+
+    auto provider = createInstanceProfileTestProvider(imds.getUrl());
+
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
+    std::vector<Aws::String> access_keys(fiber_count);
+    runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t i)
+    {
+        access_keys[i] = provider->GetAWSCredentials().GetAWSAccessKeyId();
+    });
+
+    for (const auto & access_key : access_keys)
+        EXPECT_EQ(access_key, "fiber_access_key");
+    EXPECT_EQ(token_requests, 1);
+    EXPECT_EQ(credentials_requests, 1);
+    EXPECT_EQ(requests_without_token, 0);
+}
+
+namespace
+{
+
+void writeProfileCredentials(const std::filesystem::path & file, std::string_view access_key)
+{
+    std::ofstream out(file);
+    out << "[default]\naws_access_key_id = " << access_key << "\naws_secret_access_key = profile_secret_key\n";
+}
+
+/// Leaves a profile file in a temporary directory the only source of credentials of `S3CredentialsProviderChain`.
+class ProfileFileOnlyEnvironment
+{
+public:
+    ProfileFileOnlyEnvironment()
+    {
+        std::filesystem::remove_all(directory);
+        std::filesystem::create_directories(directory);
+        /// The SDK caches the config and credentials files once per process, so they are read again from the files of
+        /// this environment here, and from the original ones when the variables are restored.
+        reloadCachedProfileFiles();
+    }
+
+    ~ProfileFileOnlyEnvironment() { std::filesystem::remove_all(directory); }
+
+    std::unique_ptr<DB::S3::S3CredentialsProviderChain> createChain() const
+    {
+        return std::make_unique<DB::S3::S3CredentialsProviderChain>(
+            client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
+    }
+
+    const std::filesystem::path directory = std::filesystem::temp_directory_path()
+        / fmt::format("clickhouse_profile_credentials_for_gtest_{}", ::getpid());
+    const std::filesystem::path credentials_file = directory / "credentials";
+    const std::filesystem::path config_file = directory / "config";
+
+private:
+    static void reloadCachedProfileFiles()
+    {
+        Aws::Config::ReloadCachedConfigFile();
+        Aws::Config::ReloadCachedCredentialsFile();
+    }
+
+    /// Declared before the variables, so it runs after they are restored.
+    struct ReloadOnDestruction
+    {
+        ~ReloadOnDestruction() { reloadCachedProfileFiles(); }
+    } reload_on_destruction;
+
+    ScopedEnvVarForAwsS3ClientTests credentials_file_env{"AWS_SHARED_CREDENTIALS_FILE", credentials_file.string()};
+    ScopedEnvVarForAwsS3ClientTests config_file_env{"AWS_CONFIG_FILE", config_file.string()};
+    ScopedEnvVarForAwsS3ClientTests imds_disabled_env{"AWS_EC2_METADATA_DISABLED", "true"};
+    ScopedEnvVarForAwsS3ClientTests access_key_env{"AWS_ACCESS_KEY_ID", ""};
+    ScopedEnvVarForAwsS3ClientTests secret_key_env{"AWS_SECRET_ACCESS_KEY", ""};
+    ScopedEnvVarForAwsS3ClientTests profile_env{"AWS_PROFILE", ""};
+    ScopedEnvVarForAwsS3ClientTests default_profile_env{"AWS_DEFAULT_PROFILE", ""};
+    ScopedEnvVarForAwsS3ClientTests role_env{"AWS_ROLE_ARN", ""};
+    ScopedEnvVarForAwsS3ClientTests token_file_env{"AWS_WEB_IDENTITY_TOKEN_FILE", ""};
+    ScopedEnvVarForAwsS3ClientTests ecs_relative_uri_env{"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", ""};
+    ScopedEnvVarForAwsS3ClientTests ecs_full_uri_env{"AWS_CONTAINER_CREDENTIALS_FULL_URI", ""};
+
+    const DB::S3::PocoHTTPClientConfiguration client_configuration = createFiberTestClientConfiguration("eu-west-1");
+    const DB::S3::CredentialsConfiguration credentials_configuration{
+        .use_environment_credentials = true,
+        .use_insecure_imds_request = false,
+        .forbid_implicit_credentials = false,
+    };
+};
+
+}
+
+/// The local copy of the SDK profile file provider, as `S3CredentialsProviderChain` uses it, on a thread and in a fiber:
+/// a missing file gives no credentials, and a file created later is read after an invalidation, not before the refresh
+/// interval of the SDK has passed.
+TEST(IOTestAwsS3Client, ProfileFileCredentialsOnThreadAndInFiber)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+
+    const auto check_profile_file_credentials = [&](std::string_view access_key)
+    {
+        std::filesystem::remove(environment.credentials_file);
+        auto chain = environment.createChain();
+        EXPECT_TRUE(chain->GetAWSCredentials().IsEmpty());
+
+        writeProfileCredentials(environment.credentials_file, access_key);
+        /// The missing file was loaded just now, so the next load waits for the refresh interval.
+        EXPECT_TRUE(chain->GetAWSCredentials().IsEmpty());
+
+        chain->SetNeedRefresh();
+        const auto credentials = chain->GetAWSCredentials();
+        EXPECT_EQ(credentials.GetAWSAccessKeyId(), access_key);
+        EXPECT_EQ(credentials.GetAWSSecretKey(), "profile_secret_key");
+    };
+
+    check_profile_file_credentials("thread_profile_access_key");
+
+    bool inside_fiber = false;
+    EXPECT_EQ(Silk::runBlocking([&]
+    {
+        inside_fiber = Silk::isInsideFiber();
+        check_profile_file_credentials("fiber_profile_access_key");
+        return 0;
+    }), 0);
+    EXPECT_TRUE(inside_fiber);
+}
+
+/// An invalidation that starts while the profile file provider reads the file is not cleared when that read completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup reads the file again. The file is a FIFO, so the refresh
+/// stays in the read until the test writes the credentials.
+TEST(IOTestAwsS3Client, ProfileFileInvalidationDuringRefreshIsKept)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+    const auto & credentials_file = environment.credentials_file;
+
+    writeProfileCredentials(credentials_file, "first_profile_access_key");
+    auto chain = environment.createChain();
+    EXPECT_EQ(chain->GetAWSCredentials().GetAWSAccessKeyId(), "first_profile_access_key");
+
+    std::filesystem::remove(credentials_file);
+    ASSERT_EQ(::mkfifo(credentials_file.c_str(), 0600), 0) << errnoToString();
+    chain->SetNeedRefresh();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::array<silk::FiberFuture, 2> fibers;
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they finish before it ends. The writer below is destroyed first,
+        /// which ends the read of the refresh.
+        SCOPE_EXIT({
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { chain->GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        /// Opening a FIFO for writing waits for its reader, so the refresh is in the read once this returns.
+        std::ofstream writer(credentials_file);
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            chain->SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// As in `AssumeRoleInvalidationDuringRefreshIsKept`, this can pass without the wait in `SetNeedRefresh` only if
+        /// that fiber is suspended for longer than the read takes; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+
+        writer << "[default]\naws_access_key_id = second_profile_access_key\naws_secret_access_key = profile_secret_key\n";
+    }
+
+    std::filesystem::remove(credentials_file);
+    writeProfileCredentials(credentials_file, "third_profile_access_key");
+    EXPECT_EQ(chain->GetAWSCredentials().GetAWSAccessKeyId(), "third_profile_access_key");
+}
+
+namespace
+{
+
+const std::string SSO_TEST_CREDENTIALS_JSON = R"({"roleCredentials": {"accessKeyId": "sso_access_key", "secretAccessKey": "sso_secret_key", "sessionToken": "sso_session_token", "expiration": 4102444800000, "accountId": "123456789012"}})";
+
+/// Makes the `default` profile of `environment` use an SSO session with a cached token that does not expire soon, so the
+/// provider reads the token and does not refresh it. The SSO region differs from the region of the client, as the
+/// provider must use the region of the session.
+void writeSSOSessionProfile(const ProfileFileOnlyEnvironment & environment)
+{
+    std::ofstream(environment.config_file)
+        << "[default]\nsso_session = fiber-session\nsso_account_id = 123456789012\nsso_role_name = fiber-role\n"
+           "[sso-session fiber-session]\nsso_region = us-east-2\nsso_start_url = https://fiber.awsapps.com/start\n";
+    Aws::Config::ReloadCachedConfigFile();
+
+    /// The SDK looks for the token next to the credentials file, in a file named after the SHA-1 of the session name.
+    const auto cache_directory = environment.directory / "sso" / "cache";
+    std::filesystem::create_directories(cache_directory);
+    const auto token_file_name = Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateSHA1("fiber-session"));
+    std::ofstream(cache_directory / (token_file_name + ".json"))
+        << R"({"accessToken": "sso_access_token", "expiresAt": "2100-01-01T00:00:00Z"})";
+}
+
+/// `SSOCredentialsProvider::Reload` sends the credentials request over HTTPS to the portal address of the SDK, so the
+/// request reaches the test server through an HTTP proxy without tunneling, as in `makeClientTalkingToMockGCS`: the portal
+/// host is not resolved, and there is no TLS. The provider is created directly, because `S3CredentialsProviderChain`
+/// creates its SSO provider with its own client configuration.
+std::unique_ptr<DB::S3::SSOCredentialsProvider> createSSOTestProvider(const FunctionHTTPServer & portal)
+{
+    auto client_configuration = createFiberTestClientConfiguration("eu-west-1");
+    const UInt16 proxy_port = Poco::URI(portal.getUrl()).getPort();
+    client_configuration.per_request_configuration = [proxy_port]
+    {
+        return DB::ProxyConfiguration{
+            .host = "127.0.0.1",
+            .protocol = DB::ProxyConfiguration::Protocol::HTTP,
+            .port = proxy_port,
+            .original_request_protocol = DB::ProxyConfiguration::Protocol::HTTPS,
+        };
+    };
+    return std::make_unique<DB::S3::SSOCredentialsProvider>(std::move(client_configuration), /* expiration_window_seconds = */ 120);
+}
+
+bool isSSOCredentialsRequest(const Poco::Net::HTTPServerRequest & request)
+{
+    const Poco::URI uri(request.getURI());
+    const auto parameters = uri.getQueryParameters();
+    const auto has_parameter = [&](const std::string & name, const std::string & value)
+    {
+        return std::ranges::find(parameters, std::pair{name, value}) != parameters.end();
+    };
+    return uri.getScheme() == "https" && uri.getHost() == "portal.sso.us-east-2.amazonaws.com"
+        && uri.getPath() == "/federation/credentials" && has_parameter("account_id", "123456789012")
+        && has_parameter("role_name", "fiber-role") && request.get("x-amz-sso_bearer_token", "") == "sso_access_token";
+}
+
+}
+
+/// Concurrent fibers wait for one SSO refresh, which reads the cached token of the SSO session and asks the SSO portal
+/// for the role credentials.
+TEST(IOTestAwsS3Client, SSOCredentialsInConcurrentFibers)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+    writeSSOSessionProfile(environment);
+
+    Poco::Event release(/* autoReset = */ false);
+    std::atomic<size_t> credentials_requests = 0;
+    std::atomic<size_t> unexpected_requests = 0;
+    FunctionHTTPServer portal([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (!isSSOCredentialsRequest(request))
+        {
+            ++unexpected_requests;
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+            return;
+        }
+        ++credentials_requests;
+        /// Holds the refresh in I/O until all fibers have started.
+        release.wait();
+        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, SSO_TEST_CREDENTIALS_JSON);
+    });
+    auto provider = createSSOTestProvider(portal);
+
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
+    std::vector<Aws::String> access_keys(fiber_count);
+    runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t i)
+    {
+        access_keys[i] = provider->GetAWSCredentials().GetAWSAccessKeyId();
+    });
+
+    for (const auto & access_key : access_keys)
+        EXPECT_EQ(access_key, "sso_access_key");
+    EXPECT_EQ(credentials_requests, 1);
+    EXPECT_EQ(unexpected_requests, 0);
+}
+
+/// An invalidation that starts while an SSO refresh waits for the SSO portal is not cleared when that refresh completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup asks the portal again.
+TEST(IOTestAwsS3Client, SSOInvalidationDuringRefreshIsKept)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+    writeSSOSessionProfile(environment);
+
+    Poco::Event portal_entered(/* autoReset = */ false);
+    Poco::Event release(/* autoReset = */ false);
+    release.set();
+    std::atomic<size_t> credentials_requests = 0;
+    FunctionHTTPServer portal([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (!isSSOCredentialsRequest(request))
+        {
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+            return;
+        }
+        ++credentials_requests;
+        portal_entered.set();
+        release.wait();
+        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, SSO_TEST_CREDENTIALS_JSON);
+    });
+    auto provider = createSSOTestProvider(portal);
+    ASSERT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "sso_access_key");
+
+    provider->SetNeedRefresh();
+    portal_entered.reset();
+    release.reset();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::array<silk::FiberFuture, 2> fibers;
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they are released and finish before it ends.
+        SCOPE_EXIT({
+            release.set();
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { provider->GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        ASSERT_TRUE(portal_entered.tryWait(60'000)) << "The refresh did not reach the SSO portal within 60 seconds";
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            provider->SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// As in `AssumeRoleInvalidationDuringRefreshIsKept`, this can pass without the wait in `SetNeedRefresh` only if
+        /// that fiber is suspended for longer than the portal answer takes; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+    }
+
+    const size_t credentials_requests_before = credentials_requests;
+    EXPECT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "sso_access_key");
+    EXPECT_EQ(credentials_requests, credentials_requests_before + 1);
+}
+
+/// A failed IMDS load in a fiber gives no credentials instead of an error, because IMDS is a member of the credentials
+/// chain that is unavailable outside EC2, and the next load waits for the refresh interval. After an invalidation the
+/// credentials come from IMDSv1 when the token request fails.
+TEST(IOTestAwsS3Client, InstanceProfileFailedLoadAndFallbackInFiber)
+{
+    initializeFiberSchedulerForTests();
+
+    std::atomic<bool> credentials_available = false;
+    std::atomic<size_t> requests = 0;
+    const std::string credentials_resource = DB::S3::AWSEC2MetadataClient::EC2_SECURITY_CREDENTIALS_RESOURCE;
+    FunctionHTTPServer imds([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        ++requests;
+        const std::string path = Poco::URI(request.getURI()).getPath();
+        /// The token request always fails, so the credentials can come only from IMDSv1.
+        if (!credentials_available || path == DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+        else if (path == credentials_resource)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "fiber-role");
+        else if (path == credentials_resource + "/fiber-role")
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, FIBER_TEST_CREDENTIALS_JSON);
+        else
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+    });
+    auto provider = createInstanceProfileTestProvider(imds.getUrl());
+
+    bool failed_load_is_empty = false;
+    size_t requests_after_failed_load = 0;
+    bool next_load_is_empty = false;
+    size_t requests_after_next_load = 0;
+    Aws::String access_key_after_invalidation;
+    EXPECT_EQ(Silk::runBlocking([&]
+    {
+        failed_load_is_empty = provider->GetAWSCredentials().IsEmpty();
+        requests_after_failed_load = requests;
+        next_load_is_empty = provider->GetAWSCredentials().IsEmpty();
+        requests_after_next_load = requests;
+
+        credentials_available = true;
+        provider->SetNeedRefresh();
+        access_key_after_invalidation = provider->GetAWSCredentials().GetAWSAccessKeyId();
+        return 0;
+    }), 0);
+
+    EXPECT_TRUE(failed_load_is_empty);
+    EXPECT_GE(requests_after_failed_load, 1);
+    EXPECT_TRUE(next_load_is_empty);
+    EXPECT_EQ(requests_after_next_load, requests_after_failed_load);
+    EXPECT_EQ(access_key_after_invalidation, "fiber_access_key");
+}
+
+/// An invalidation that starts while an IMDS refresh waits for its token is not cleared when that refresh completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup asks IMDS again.
+TEST(IOTestAwsS3Client, InstanceProfileInvalidationDuringRefreshIsKept)
+{
+    initializeFiberSchedulerForTests();
+
+    Poco::Event token_entered(/* autoReset = */ false);
+    Poco::Event release(/* autoReset = */ false);
+    release.set();
+    std::atomic<size_t> token_requests = 0;
+    const std::string credentials_resource = DB::S3::AWSEC2MetadataClient::EC2_SECURITY_CREDENTIALS_RESOURCE;
+    FunctionHTTPServer imds([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        const std::string path = Poco::URI(request.getURI()).getPath();
+        if (path == DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE)
+        {
+            ++token_requests;
+            token_entered.set();
+            release.wait();
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "imds_token");
+        }
+        else if (path == credentials_resource)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "fiber-role");
+        else if (path == credentials_resource + "/fiber-role")
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, FIBER_TEST_CREDENTIALS_JSON);
+        else
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+    });
+    auto provider = createInstanceProfileTestProvider(imds.getUrl());
+    EXPECT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "fiber_access_key");
+
+    provider->SetNeedRefresh();
+    token_entered.reset();
+    release.reset();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::array<silk::FiberFuture, 2> fibers;
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they are released and finish before it ends.
+        SCOPE_EXIT({
+            release.set();
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { provider->GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        ASSERT_TRUE(token_entered.tryWait(60'000)) << "The refresh did not reach IMDS within 60 seconds";
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            provider->SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// As in `AssumeRoleInvalidationDuringRefreshIsKept`, this can pass without the wait in `SetNeedRefresh` only if
+        /// that fiber is suspended for longer than the IMDS answer takes; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+    }
+
+    const size_t token_requests_before = token_requests;
+    provider->GetAWSCredentials();
+    EXPECT_EQ(token_requests, token_requests_before + 1);
 }
 
 /// An invalidation that starts while an `AssumeRole` refresh waits for STS is not cleared when that refresh completes:

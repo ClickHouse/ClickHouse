@@ -73,6 +73,8 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 أما بالنسبة إلى أحمال عمل التطبيقات، فننصح بالنظر في [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview#transactions-and-analytics).
 
+العبارات التي تتحكم في المعاملات موضّحة في الصفحة المرجعية [`BEGIN TRANSACTION`](/ar/reference/statements/transactions).
+
 ### المتطلبات {#requirements}
 
 * انشر ClickHouse Keeper أو ZooKeeper لتتبّع المعاملات
@@ -88,7 +90,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 ### ملاحظات {#notes-1}
 
 * هذه ميزة تجريبية، ومن المتوقع أن تطرأ عليها تغييرات.
-* إذا حدث استثناء أثناء معاملة، فلا يمكنك تنفيذ `commit` للمعاملة. ويشمل ذلك جميع الاستثناءات، بما فيها استثناءات `UNKNOWN_FUNCTION` الناتجة عن الأخطاء الإملائية.
+* إذا حدث استثناء أثناء معاملة، فلا يمكنك تنفيذ `commit` للمعاملة. ويشمل ذلك جميع الاستثناءات، بما فيها استثناءات `UNKNOWN_FUNCTION` الناتجة عن الأخطاء الإملائية، ما عدا الاستعلام الذي يتعذر تحليله أو الذي تكون معلمات الاستعلام الخاصة به مفقودة أو غير صالحة: إذ لا يُنفَّذ مثل هذا الاستعلام، وتظل المعاملة نشطة.
 * المعاملات المتداخلة غير مدعومة؛ أنهِ المعاملة الحالية وابدأ معاملة جديدة بدلًا من ذلك
 
 ### الإعدادات {#configuration}
@@ -210,6 +212,16 @@ Ok.
 
 #### ابدأ معاملة ثم أدرِج صفًا {#begin-a-transaction-and-insert-a-row}
 
+عمليات الإدراج غير المتزامنة غير مدعومة داخل المعاملة، ونظرًا إلى أن [`async_insert`](/ar/reference/settings/session-settings/async-insert#async_insert) مفعّل افتراضيًا، فعطّله أولًا في الـ session:
+
+```sql
+SET async_insert = 0
+```
+
+```response
+Ok.
+```
+
 ```sql
 BEGIN TRANSACTION
 ```
@@ -238,7 +250,7 @@ FROM mergetree_table
 ```
 
 <Note>
-  يمكنك تنفيذ استعلام على الجدول من داخل معاملة، وسترى أن الصف قد أُدرج رغم أنه لم يُنفَّذ له commit بعد.
+  يمكنك تنفيذ استعلام على الجدول من داخل معاملة، وسترى أن الصف قد أُدرج رغم أنه لم يُنفَّذ له commit بعد.
 </Note>
 
 #### التراجع عن المعاملة، ثم الاستعلام من الجدول مرة أخرى {#rollback-the-transaction-and-query-the-table-again}
