@@ -807,6 +807,7 @@ void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const Cart
             for (size_t i = 0; i < smaller.size(); ++i)
                 index.insert({box(smaller[i]), i});
             CartesianMultiPolygon rectangles;
+            std::vector<GeoRectangle, AllocatorWithMemoryTracking<GeoRectangle>> clipped; // STYLE_CHECK_ALLOW_STD_CONTAINERS
             bool representable = true;
             for (const auto & rectangle : larger)
             {
@@ -831,10 +832,37 @@ void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const Cart
                             break;
                         }
                         rectangles.push_back(std::move(polygon));
+                        clipped.push_back(intersection);
                     }
                 }
                 if (!representable)
                     break;
+            }
+            if (representable && clipped.size() > 1)
+            {
+                /// Valid components do not make a valid multi-polygon: clipping can bring the pieces of
+                /// nearly adjacent input components within the tolerance of the validator, which then
+                /// rejects them, while the general overlay resolves such contacts. Pieces separated by
+                /// more than the margin are valid together. Otherwise select this kernel only if the
+                /// validator accepts its result.
+                Float64 magnitude = 0;
+                for (const auto & piece : clipped)
+                    magnitude = std::max({magnitude, std::abs(piece.min_x), std::abs(piece.min_y), std::abs(piece.max_x), std::abs(piece.max_y)});
+                const auto margin = geoSeparationMargin(magnitude);
+                Index pieces;
+                bool separated = true;
+                for (size_t i = 0; i < clipped.size() && separated; ++i)
+                {
+                    const auto & piece = clipped[i];
+                    const Box widened{{piece.min_x - margin, piece.min_y - margin}, {piece.max_x + margin, piece.max_y + margin}};
+                    separated = pieces.qbegin(boost::geometry::index::intersects(widened)) == pieces.qend();
+                    pieces.insert({box(piece), i});
+                }
+                if (!separated)
+                {
+                    String reason;
+                    representable = isValidGeoMultiPolygon<AllocatorWithMemoryTracking>(rectangles, reason);
+                }
             }
             if (representable)
             {
