@@ -394,6 +394,7 @@ TEST(SchedulerWorkloadResourceManager, SchedulerAlgorithms)
         t.query(fmt::format("CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = '{}'", scheduler));
         ClassifierPtr classifier = t.manager->acquire("all");
         ResourceLink link = classifier->get("res1");
+        EXPECT_EQ(dynamic_cast<RequestQueue &>(*link.queue).getScheduler(), parseSchedulerAlgorithm(scheduler));
         std::atomic<size_t> finished{0};
         /// Joins the workers before the state they use is destroyed, also if scheduling one of them throws.
         SCOPE_EXIT({ t.wait(); });
