@@ -30,3 +30,5 @@ column_mapping_id: unchanged
 writer_features: unchanged
 clustered_later, version 0 pinned: (NOT_IMPLEMENTED)
 clustered_later: unchanged
+column_mapping_later, version 0 pinned: (NOT_IMPLEMENTED)
+column_mapping_later: unchanged

@@ -844,19 +844,19 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
 
+    /// The kernel opens the table at its latest version for the transaction.
+    auto latest_snapshot = snapshot;
+    if (snapshot_version.has_value())
+        latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(/* version */ std::nullopt, kernel_helper, object_storage, log);
+
     /// Reject column-mapped tables (snapshot exposes physical names): the writer emits logical
     /// names, not the required physical field names/ids. TODO: support it (delta-kernel-rs#1124).
-    if (!snapshot->getPhysicalNamesMap().empty())
+    if (!snapshot->getPhysicalNamesMap().empty() || !latest_snapshot->getPhysicalNamesMap().empty())
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
-
-    /// The kernel opens the table at its latest version for the transaction.
-    auto latest_snapshot = snapshot;
-    if (snapshot_version.has_value())
-        latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(/* version */ std::nullopt, kernel_helper, object_storage, log);
 
     /// The kernel requires the statistics of the clustering columns, and the writer only writes `numRecords`.
     if (latest_snapshot->hasWriterFeature("clustering"))

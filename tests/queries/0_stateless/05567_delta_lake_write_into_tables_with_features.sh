@@ -85,18 +85,30 @@ do
     if diff -rq "$CUR_DIR/data_lake_corpus/delta/$table" "$BASE/$table" > /dev/null; then echo "$table: unchanged"; else echo "$table: changed"; fi
 done
 
-# Version 1 enables clustering. The INSERT is committed on the latest version, so it is rejected with version 0 pinned too.
-mkdir -p "$BASE/clustered_later/_delta_log"
-cat > "$BASE/clustered_later/_delta_log/00000000000000000000.json" <<'JSON'
+# Version 1 enables a feature that the writer rejects. The INSERT is committed on the latest version, so it is rejected
+# with version 0 pinned too.
+pinned_before_feature()
+{
+    local table=$1
+    mkdir -p "$BASE/$table/_delta_log"
+    cat > "$BASE/$table/_delta_log/00000000000000000000.json" <<'JSON'
 {"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
-{"metaData":{"id":"clustered_later","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1700000000000}}
+{"metaData":{"id":"pinned_before_feature","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1700000000000}}
 JSON
-cat > "$BASE/clustered_later/_delta_log/00000000000000000001.json" <<'JSON'
+    cat > "$BASE/$table/_delta_log/00000000000000000001.json"
+    cp -r "$BASE/$table" "$BASE/${table}_before"
+    echo "$table, version 0 pinned: $(SETTINGS="$SETTINGS --delta_lake_snapshot_version 0" insert "$table" "(1)")"
+    if diff -rq "$BASE/${table}_before" "$BASE/$table" > /dev/null; then echo "$table: unchanged"; else echo "$table: changed"; fi
+}
+
+pinned_before_feature clustered_later <<'JSON'
 {"protocol":{"minReaderVersion":1,"minWriterVersion":7,"writerFeatures":["appendOnly","invariants","domainMetadata","clustering"]}}
 {"domainMetadata":{"domain":"delta.clustering","configuration":"{\"clusteringColumns\":[[\"id\"]],\"domainName\":\"delta.clustering\"}","removed":false}}
 JSON
-cp -r "$BASE/clustered_later" "$BASE/clustered_later_before"
-echo "clustered_later, version 0 pinned: $(SETTINGS="$SETTINGS --delta_lake_snapshot_version 0" insert clustered_later "(1)")"
-if diff -rq "$BASE/clustered_later_before" "$BASE/clustered_later" > /dev/null; then echo "clustered_later: unchanged"; else echo "clustered_later: changed"; fi
+
+pinned_before_feature column_mapping_later <<'JSON'
+{"protocol":{"minReaderVersion":3,"minWriterVersion":7,"readerFeatures":["columnMapping"],"writerFeatures":["appendOnly","invariants","columnMapping"]}}
+{"metaData":{"id":"pinned_before_feature","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":true,\"metadata\":{\"delta.columnMapping.id\":2,\"delta.columnMapping.physicalName\":\"col-5f422f40-de70-45b2-88ab-1d5c90e94db1\"}}]}","partitionColumns":[],"configuration":{"delta.columnMapping.mode":"name","delta.columnMapping.maxColumnId":"2"},"createdTime":1700000000000}}
+JSON
 
 rm -rf "$BASE"
