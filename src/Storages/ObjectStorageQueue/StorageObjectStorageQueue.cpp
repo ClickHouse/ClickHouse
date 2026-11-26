@@ -76,6 +76,7 @@ namespace ProfileEvents
 namespace DimensionalMetrics
 {
     extern MetricFamily & ObjectStorageQueueFailures;
+    extern MetricFamily & ObjectStorageQueueLastPollTimestamp;
 }
 
 
@@ -600,6 +601,15 @@ void StorageObjectStorageQueue::startup()
 
     /// Start background tasks.
     metadata->startup();
+
+    /// The value 0 means "not polled yet". It is set before the tasks start, because they set the real time.
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp, {getStorageID().getDatabaseName(), getStorageID().getTableName()}, 0);
+    SCOPE_EXIT_SAFE({
+        if (!startup_finished)
+            removeGaugeMetrics(getStorageID(), nullptr);
+    });
+
     for (auto & task : streaming_tasks)
         task->activateAndSchedule();
 
@@ -668,6 +678,11 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         if (is_drop && !keep_data_in_keeper && !can_be_moved_between_databases)
             tryRemoveEmptyDatabaseNode();
     }
+
+    /// The table does not consume anymore: remove its gauges, so they do not show stale values.
+    /// After a detach and attach the first poll sets them again.
+    removeGaugeMetrics(getStorageID(), metadata.get());
+
     LOG_TRACE(log, "Shut down storage");
 }
 
@@ -688,6 +703,25 @@ void StorageObjectStorageQueue::tryRemoveEmptyDatabaseNode() const
     {
         tryLogCurrentException(log, fmt::format("Cannot remove keeper node {}", database_path.string()));
     }
+}
+
+void StorageObjectStorageQueue::removeGaugeMetrics(const StorageID & storage_id, ObjectStorageQueueMetadata * metadata)
+{
+    /// The metadata can be shared with other tables and can outlive this one, so the watermarks of this table
+    /// are removed from it together with their gauges.
+    if (metadata)
+        metadata->removePipelineLagMetrics(storage_id);
+
+    DimensionalMetrics::remove(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp, {storage_id.getDatabaseName(), storage_id.getTableName()});
+}
+
+void StorageObjectStorageQueue::setLastPollTimestamp(const StorageID & storage_id)
+{
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp,
+        {storage_id.getDatabaseName(), storage_id.getTableName()},
+        static_cast<DimensionalMetrics::Value>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())));
 }
 
 void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
@@ -711,6 +745,8 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
     StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
+    /// The gauges of the old name are not removed here on purpose: they stay until the server restarts.
+    /// A running cycle still uses the old name, so a removal here would not be complete.
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -996,6 +1032,9 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 metadata->registerActive(storage_id);
 
+                /// Set before the cycle, so that it advances also when the cycle finds no files or fails.
+                setLastPollTimestamp(storage_id);
+
                 if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
                     /// Reset the reschedule interval.
@@ -1117,6 +1156,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
+        /// Set for every batch, so that it advances during a long backlog.
+        setLastPollTimestamp(table_id);
+
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
         const auto batch_size_override = max_files_override.get();
@@ -1313,6 +1355,7 @@ void StorageObjectStorageQueue::postProcess(
             type,
             object_storage,
             getName(),
+            getStorageID(),
             metadata.getTableMetadata(),
             after_processing_settings);
     }

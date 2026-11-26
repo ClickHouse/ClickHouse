@@ -27,6 +27,8 @@
 #include <Common/SipHash.h>
 #include <Core/TypeId.h>
 
+#include <Poco/String.h>
+
 namespace DB
 {
 
@@ -637,8 +639,9 @@ namespace
         auto transform_func = [&](DataTypePtr & type1, DataTypePtr & type2){ transformInferredJSONTypesIfNeeded(type1, type2, settings, json_info); };
         for (auto & type : data_types)
         {
-            if (const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get()))
-                merged_type->merge(*json_type, transform_func);
+            const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get());
+            if (json_type && !merged_type->merge(*json_type, transform_func))
+                return;
         }
 
         for (auto & type : data_types)
@@ -1920,6 +1923,14 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, cons
     for (auto & [name, type] : header.getNamesAndTypesList())
         result.emplace_back(name, makeNullableRecursively(type, settings));
     return result;
+}
+
+String getColumnMatchingKeyForSchemaInference(std::string_view name, const FormatSettings & settings)
+{
+    String key(name);
+    if (settings.input_format_column_matching_case_sensitivity == FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE)
+        Poco::toLowerInPlace(key);
+    return key;
 }
 
 bool checkIfTypeIsComplete(const DataTypePtr & type)

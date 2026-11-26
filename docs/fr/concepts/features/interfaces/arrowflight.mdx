@@ -3,7 +3,7 @@ description: 'Documentation de l’interface Apache Arrow Flight de ClickHouse, 
 sidebarTitle: 'Interface Arrow Flight'
 slug: /interfaces/arrowflight
 title: 'Interface Arrow Flight'
-doc_type: 'référence'
+doc_type: 'guide'
 ---
 
 ## Vue d’ensemble {#overview}
@@ -12,16 +12,20 @@ ClickHouse prend en charge le protocole [Apache Arrow Flight](https://arrow.apac
 
 L’implémentation inclut la prise en charge d’[Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html), ce qui permet aux outils de BI et aux applications utilisant le protocole Flight SQL d’interroger ClickHouse directement.
 
-Fonctionnalités clés :
+Fonctionnalités clés :
 
 * Exécuter des requêtes SQL et récupérer les résultats au format Apache Arrow.
 * Insérer des données dans des tables à l’aide du format Arrow.
 * Interroger les métadonnées (catalogues, schémas, tables, clés primaires) via les commandes Flight SQL.
-* Créer, lier, exécuter et fermer des instructions préparées côté serveur via Flight SQL.
+* Créer, lier, exécuter et fermer des requêtes préparées côté serveur via Flight SQL.
 * Gérer les sessions et les paramètres via les actions Flight SQL.
 * Chiffrement TLS et authentification par nom d’utilisateur/mot de passe.
-* Récupération incrémentielle des résultats via `PollFlightInfo`.
+* Récupération incrémentale des résultats via `PollFlightInfo`.
 * Annulation de requêtes via `CancelFlightInfo`.
+
+<Note>
+  Dans ClickHouse Cloud, l’interface Arrow Flight est désactivée par défaut : son utilisation nécessite l’activation d’un feature flag Cloud pour votre service. Les exemples de configuration du serveur ci-dessous concernent ClickHouse autogéré.
+</Note>
 
 ## Activation du serveur Arrow Flight {#enabling-server}
 
