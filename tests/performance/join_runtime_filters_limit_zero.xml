@@ -1,0 +1,23 @@
+<test>
+    <create_query>CREATE TABLE rf_limit_zero (p UInt32, k UInt32, v UInt64) ENGINE = ReplacingMergeTree PARTITION BY p ORDER BY (p, k)</create_query>
+
+    <fill_query>SYSTEM STOP MERGES rf_limit_zero</fill_query>
+    <fill_query>INSERT INTO rf_limit_zero SELECT number, number, 1 FROM numbers(300) SETTINGS max_partitions_per_insert_block = 1000</fill_query>
+    <fill_query>INSERT INTO rf_limit_zero SELECT number, number, 2 FROM numbers(300) SETTINGS max_partitions_per_insert_block = 1000</fill_query>
+
+    <query>
+        SELECT * FROM
+        (
+            SELECT a.k AS k, b.v AS v1, c.v AS v2, d.v AS v3, e.v AS v4
+            FROM rf_limit_zero AS a FINAL
+            INNER JOIN rf_limit_zero AS b FINAL USING (p, k)
+            INNER JOIN rf_limit_zero AS c FINAL USING (p, k)
+            INNER JOIN rf_limit_zero AS d FINAL USING (p, k)
+            INNER JOIN rf_limit_zero AS e FINAL USING (p, k)
+        )
+        LIMIT 0
+        SETTINGS max_threads = 8, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS rf_limit_zero</drop_query>
+</test>

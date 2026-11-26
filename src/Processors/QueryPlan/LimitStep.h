@@ -46,6 +46,9 @@ public:
     [[nodiscard]] bool withTies() const { return with_ties; }
     [[nodiscard]] bool alwaysReadTillEnd() const { return always_read_till_end; }
 
+    /// A `LIMIT 0` that does not read till end (for totals or `exact_rows_before_limit`) takes no row.
+    [[nodiscard]] bool takesNoRows() const { return getLimitWithOffset() == 0 && !always_read_till_end; }
+
     void markAsShardLimit() { is_shard_limit = true; }
 
     void serialize(Serialization & ctx) const override;
