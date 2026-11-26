@@ -6,9 +6,7 @@ tags: ['Exportación de datos', 'Formatos de datos']
 keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 ---
 
-<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
-  ## Cómo exportar datos de PostgreSQL a Parquet, CSV o JSON
-</div>
+## Cómo exportar datos de PostgreSQL a Parquet, CSV o JSON {#how-to-export-postgresql-data-to-parquet-csv-or-json}
 
 Esto se hace fácilmente con `clickhouse-local`:
 
@@ -23,9 +21,7 @@ Estos ejemplos usan `clickhouse-local`, que forma parte del binario de ClickHous
 curl https://clickhouse.com/ | sh
 ```
 
-<div id="export-postgresql-to-parquet">
-  ## Exportar de PostgreSQL a Parquet
-</div>
+## Exportar de PostgreSQL a Parquet {#export-postgresql-to-parquet}
 
 La función de tabla `postgresql` permite realizar consultas `SELECT` (e `INSERT`) sobre datos almacenados en un servidor PostgreSQL remoto. Por ejemplo, para ver el contenido completo de una tabla en PostgreSQL:
 
@@ -59,9 +55,7 @@ INTO OUTFILE 'my_output_file.parquet'"
   Como el nombre del archivo de salida tiene la extensión `.parquet`, ClickHouse asume que queremos el formato Parquet, así que fíjate en que omitimos la cláusula `FORMAT Parquet`.
 </Note>
 
-<div id="export-postgresql-to-csv">
-  ## Exportar PostgreSQL a CSV
-</div>
+## Exportar PostgreSQL a CSV {#export-postgresql-to-csv}
 
 Es igual que con Parquet, salvo que aquí especificamos un nombre de archivo más adecuado para la salida:
 
@@ -79,9 +73,7 @@ INTO OUTFILE 'my_output_file.csv'"
 
 ¡Eso es todo! ClickHouse detecta la extensión `.csv` en el nombre del archivo de salida y exporta los datos en formato CSV. Por lo demás, es exactamente el mismo comando que el anterior.
 
-<div id="export-postgresql-to-json">
-  ## Exportar de PostgreSQL a JSON
-</div>
+## Exportar de PostgreSQL a JSON {#export-postgresql-to-json}
 
 Para pasar de PostgreSQL a JSON, basta con cambiar el nombre del archivo y ClickHouse detectará el formato:
 
@@ -116,9 +108,7 @@ INTO OUTFILE 'my_output_file.ndjson'"
   ```
 </Note>
 
-<div id="stream-postgresql-to-another-process">
-  ## Canalizar PostgreSQL a otro proceso
-</div>
+## Canalizar PostgreSQL a otro proceso {#stream-postgresql-to-another-process}
 
 En lugar de usar `INTO OUTFILE`, puede canalizar los resultados de una función de tabla a otro proceso. Aquí tiene un ejemplo sencillo para ilustrar la sintaxis: contamos el número de filas con el comando de Linux `wc -l`:
 

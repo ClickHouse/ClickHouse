@@ -95,6 +95,8 @@ struct Settings;
   * Additional rules about identifier binding.
   * Bind for identifier to entity means that identifier first part match some node during analysis.
   * If other parts of identifier cannot be resolved in that node, exception must be thrown.
+  * A qualifier that matches a table expression is the exception: on a miss the lookup continues,
+  * and the error message names that table expression if nothing else resolves.
   *
   * Example:
   * CREATE TABLE test_table (id UInt64, compound_value Tuple(value UInt64)) ENGINE=TinyLog;

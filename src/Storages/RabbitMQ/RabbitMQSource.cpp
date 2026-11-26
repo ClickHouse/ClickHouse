@@ -64,8 +64,7 @@ RabbitMQSource::RabbitMQSource(
     bool ack_in_suffix_,
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
-    bool drive_loop_on_worker_,
-    UInt64 first_poll_timeout_ms_)
+    bool drive_loop_on_worker_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -79,8 +78,7 @@ RabbitMQSource::RabbitMQSource(
         ack_in_suffix_,
         log_,
         cancel_epoch_,
-        drive_loop_on_worker_,
-        first_poll_timeout_ms_)
+        drive_loop_on_worker_)
 {
 }
 
@@ -97,8 +95,7 @@ RabbitMQSource::RabbitMQSource(
     bool ack_in_suffix_,
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
-    bool drive_loop_on_worker_,
-    UInt64 first_poll_timeout_ms_)
+    bool drive_loop_on_worker_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -109,7 +106,6 @@ RabbitMQSource::RabbitMQSource(
     , ack_in_suffix(ack_in_suffix_)
     , nack_broken_messages(nack_broken_messages_)
     , drive_loop_on_worker(drive_loop_on_worker_)
-    , first_poll_timeout_ms(first_poll_timeout_ms_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
@@ -150,8 +146,6 @@ void RabbitMQSource::updateChannel()
 
 uint64_t RabbitMQSource::driveBudgetMs() const
 {
-    if (!drive_loop_on_worker)
-        return max_execution_time_ms ? std::min(first_poll_timeout_ms, max_execution_time_ms) : first_poll_timeout_ms;
     return max_execution_time_ms ? max_execution_time_ms : DEFAULT_LOOP_DRIVE_WAIT_MS;
 }
 
@@ -161,17 +155,16 @@ bool RabbitMQSource::driveLoopUntilMessage()
 
     auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
     auto & handler = storage.getConnection().getHandler();
-    /// A finite flush interval caps the whole cycle from its entry (drive_stopwatch, or total_stopwatch when
-    /// streaming). An unlimited cycle (flush=0) instead bounds only each wait for the next delivery by this
-    /// per-call idle window, so a live backlog drains in full while an empty queue still ends the cycle.
+    /// A finite flush interval caps the whole cycle from its entry (drive_stopwatch). An unlimited
+    /// cycle (flush=0) instead bounds only each wait for the next delivery by this per-call idle
+    /// window, so a live backlog drains in full while an empty queue still releases the permit.
     Stopwatch idle_stopwatch{CLOCK_MONOTONIC_COARSE};
     while (!consumer->hasPendingMessages())
     {
-        /// SYSTEM PAUSE blocks only future cycles; an idle streaming cycle must not start a block after it.
-        if (consumer->isConsumerStopped() || is_cancelled() || (!drive_loop_on_worker && storage.isConsumeBlocked()))
+        if (consumer->isConsumerStopped() || is_cancelled())
             return false;
         const uint64_t elapsed_ms = max_execution_time_ms
-            ? (drive_loop_on_worker ? *drive_stopwatch : total_stopwatch).elapsedMilliseconds()
+            ? drive_stopwatch->elapsedMilliseconds()
             : idle_stopwatch.elapsedMilliseconds();
         if (elapsed_ms >= drive_budget_ms)
             return false;
@@ -185,8 +178,7 @@ bool RabbitMQSource::driveLoopUntilMessage()
             consumer->waitForMessages(std::min(LOOP_DRIVE_POLL_MS, drive_budget_ms - elapsed_ms), is_cancelled);
     }
 
-    /// A delivery may wake the wait right after SYSTEM PAUSE.
-    return drive_loop_on_worker || !storage.isConsumeBlocked();
+    return true;
 }
 
 Chunk RabbitMQSource::generate()
@@ -268,7 +260,7 @@ Chunk RabbitMQSource::generateImpl()
                     result_columns[i]->rollback(*checkpoints[i]);
 
                     // All data columns will get default value in case of error.
-                    result_columns[i]->insertDefault();
+                    non_virtual_header.getByPosition(i).type->insertDefaultInto(*result_columns[i]);
                 }
                 return 1;
             }
@@ -418,9 +410,8 @@ Chunk RabbitMQSource::generateImpl()
         }
         else if (total_rows == 0)
         {
-            /// Empty first poll: wait for a message instead of returning empty, so that an idle table
-            /// does not build its whole insert pipeline for every retry. See driveLoopUntilMessage.
-            if ((drive_loop_on_worker || first_poll_timeout_ms) && !consumer->isConsumerStopped() && driveLoopUntilMessage())
+            /// Empty first poll: self-drive the loop instead of returning empty. See driveLoopUntilMessage.
+            if (drive_loop_on_worker && !consumer->isConsumerStopped() && driveLoopUntilMessage())
                 continue;
             break;
         }
