@@ -1,4 +1,3 @@
-SET enable_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 SET cast_keep_nullable = 1;
 

@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'Inicio rápido'
+sidebarTitle: 'Guía de inicio rápido'
 slug: /agents/quickstart
-title: 'Inicio rápido'
-description: 'Crea y ejecuta tu primer agente de ClickHouse con un servicio de ClickHouse Cloud'
-keywords: ['AI', 'ClickHouse Cloud', 'agentes', 'inicio rápido', 'agent builder']
+title: 'Guía de inicio rápido'
+description: 'Cree y ejecute su primer ClickHouse Agent sobre un servicio de ClickHouse Cloud'
+keywords: ['IA', 'ClickHouse Cloud', 'agentes', 'guía de inicio rápido', 'Constructor de Agentes']
 doc_type: 'guide'
 ---
 
@@ -11,116 +11,86 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-Cree un agente personalizado en la consola de Cloud y ejecute una consulta en lenguaje natural contra su servicio.
+Cree un agente personalizado en la consola de ClickHouse Cloud y ejecute una consulta en lenguaje natural sobre su servicio.
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#prerequisites}
 
-* Un servicio de ClickHouse Cloud que puedas consultar.
-* La opción **Crear agente** en Agent Builder. Si no aparece, pide a un administrador de la organización que conceda la creación de agentes en Configuración de administrador, como se detalla en [compartir y acceso](/es/agents/sharing-and-access).
+* Un servicio de ClickHouse Cloud en el que pueda ejecutar consultas.
+* La opción **Crear agente** en el Constructor de Agentes. Si no aparece, pida a un administrador de la organización que le conceda permiso para crear agentes desde la Configuración de Administración, tal como se explica en [uso compartido y acceso](/es/agents/sharing-and-access).
 
-<div id="build-the-agent">
-  ## Crea el agente
-</div>
+## Crear el agente {#build-the-agent}
 
 <Steps>
-  <Step title="Inicia ClickHouse Agents" id="launch-agents">
-    Desde tu servicio de Cloud, haz clic en **ClickHouse agents** en la barra lateral izquierda para abrir el launchpad de agentes. Haz clic en **Launch ClickHouse agents** para abrir Agent Builder.
+  <Step title="Iniciar ClickHouse Agents" id="launch-agents">
+    Desde su Servicio de Cloud, haga clic en **ClickHouse agents** en la barra lateral izquierda para abrir la página de inicio de agentes. Haga clic en **Launch ClickHouse agents** para abrir el Constructor de Agentes.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Navegación del servicio de Cloud con ClickHouse agents (Beta) seleccionado, mostrando el launchpad con el botón Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Navegación del Servicio de Cloud con ClickHouse agents (Beta) seleccionado, que muestra la página de inicio con el botón Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="Crea el agente" id="create-the-agent">
-    En Agent Builder, haz clic en **Create New Agent** en la parte superior del panel izquierdo. Completa los campos principales:
+  <Step title="Crear el agente" id="create-the-agent">
+    En el Constructor de Agentes, haga clic en **Create New Agent** en la parte superior del panel izquierdo. Complete los campos principales:
 
-    * **Name** - un identificador breve para tu agente.
-    * **Description** - una descripción de la finalidad del agente, visible para tus compañeros de equipo.
-    * **Category** - una categoría para tu agente. Puedes dejarla como `General`, a menos que tu organización tenga categorías personalizadas.
-    * **Instructions** - el system prompt, que describe el rol del agente, las preguntas que debe responder y cualquier regla de negocio que deba seguir.
-    * **Model** - elige un modelo en el menú desplegable.
+    * **Name**: un identificador breve para su agente.
+    * **Description**: una descripción de la finalidad del agente, que podrán ver sus compañeros de equipo.
+    * **Category**: una categoría para su agente. Puede dejar `General`, a menos que su organización tenga categorías personalizadas.
+    * **Instructions**: la instrucción del sistema, que describe el rol del agente, las preguntas que debe responder y las reglas de negocio que debe seguir.
+    * **Model**: elija un modelo en la lista desplegable.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Panel de Agent Builder que muestra el menú desplegable Create New Agent, los campos del formulario (Name, Description, Category, Instructions, Model) y la sección Capabilities](/images/cloud/agent-builder/agent-builder.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Panel del Constructor de Agentes que muestra la lista desplegable Create New Agent, los campos del formulario (Name, Description, Category, Instructions, Model) y la sección Capabilities](/images/cloud/agent-builder/agent-builder.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="Añade capacidades y herramientas" id="attach-tools">
-    Las capacidades y herramientas del agente se gestionan en dos lugares.
+  <Step title="Añadir capacidades y herramientas" id="attach-tools">
+    Las capacidades y herramientas del agente se configuran en dos lugares.
 
-    **Capabilities** en el panel principal — funciones nativas como [Run Code](/es/agents/builder/code-interpreter), [Web Search](/es/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/es/agents/builder/mcp-servers) y [Skills](/es/agents/builder/skills). Activa las que necesite el agente.
+    **Capabilities**, en el panel principal: funciones propias como [Run Code](/es/agents/builder/code-interpreter), [Web Search](/es/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/es/agents/builder/mcp-servers) y [Skills](/es/agents/builder/skills). Active las que necesite el agente.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Sección Capabilities del panel de Agent Builder que muestra los interruptores de Run Code, Web Search, File Context, Artifacts, MCP Servers y Skills](/images/cloud/agent-builder/capabilities.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Sección Capabilities del panel del Constructor de Agentes que muestra los toggles Run Code, Web Search, File Context, Artifacts, MCP Servers y Skills](/images/cloud/agent-builder/capabilities.webp)
+      </Frame>
     </div>
 
-    **Tools** detrás del botón **Add Tools** en la parte inferior del panel — integraciones de terceros como [image generation](/es/agents/builder/image-generation), [vision](/es/agents/builder/vision), API de búsqueda y servicios externos.
+    **Tools**, accesibles mediante el botón **Add Tools** en la parte inferior del panel: integraciones de terceros como [generación de imágenes](/es/agents/builder/image-generation), [visión](/es/agents/builder/vision), APIs de búsqueda y servicios externos.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Parte inferior del panel de Agent Builder con el botón Add Tools resaltado](/images/cloud/agent-builder/tools-button.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Parte inferior del panel del Constructor de Agentes con el botón Add Tools resaltado](/images/cloud/agent-builder/tools-button.webp)
+      </Frame>
     </div>
 
-    Haz clic en **Add Tools** para explorar el catálogo:
+    Haga clic en **Add Tools** para explorar el catálogo:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Modal de Agent Tools que muestra una cuadrícula de integraciones de terceros, incluidas Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator y Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Modal Agent Tools que muestra una cuadrícula de integraciones de terceros, entre ellas Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator y Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
+      </Frame>
     </div>
 
-    [Subagents](/es/agents/builder/subagents) se configuran en **Advanced settings** — consulta la página de subagents para obtener más información.
+    Los [subagentes](/es/agents/builder/subagents) se configuran en **Advanced settings**; consulte la página de subagentes para obtener más información.
 
-    Puedes cambiar las capacidades y herramientas asociadas en cualquier momento.
+    Puede modificar las capacidades y herramientas añadidas en cualquier momento.
   </Step>
 
-  <Step title="Ejecuta una consulta" id="run-a-query">
-    Guarda el agente, abre una nueva conversación y selecciona tu agente en el selector de agentes. Escribe una pregunta — por ejemplo, *&quot;¿Cuáles son mis 10 tablas con más filas esta semana?&quot;* — y el agente planificará, llamará a las herramientas según sea necesario y devolverá una respuesta.
+  <Step title="Ejecutar una consulta" id="run-a-query">
+    Guarde el agente, abra una nueva conversación y seleccione su agente en el selector de agentes. Escriba una pregunta (por ejemplo, *«What are my top 10 tables by número de filas this week?»*) y el agente planificará la tarea, llamará a las herramientas que necesite y devolverá una respuesta.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Intercambio de chat que muestra la pregunta '¿Cuáles son mis 10 tablas con más filas esta semana?' y la respuesta del agente: una tabla Markdown con la clasificación de las 10 tablas con más filas entre servicios, con Key Observations debajo](/images/cloud/agent-builder/chat-query.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Intercambio de chat que muestra la pregunta 'What are my top 10 tables by número de filas this week?' y la respuesta del agente: una tabla markdown que clasifica las 10 tablas principales de los servicios por número de filas, con Key Observations debajo](/images/cloud/agent-builder/chat-query.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## Próximos pasos
-</div>
+## Próximos pasos {#next-steps}
 
 * [Comparte el agente](/es/agents/sharing-and-access) con los miembros de tu equipo.
-* Publícalo en el [marketplace](/es/agents/marketplace) una vez que el agente sea estable.
+* Publícalo en el [mercado](/es/agents/marketplace) cuando el agente sea estable.
