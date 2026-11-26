@@ -45,6 +45,21 @@ public:
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
 
+    /// Adds `SELECT` on the columns of `database`.`table` that `expressions` read. `storage` may be null
+    /// (an `ON CLUSTER` query for a table this host does not have), then subcolumns are not mapped to their columns.
+    static void addRequiredSelectAccessForExpressions(
+        AccessRightsElements & required_access,
+        const ASTs & expressions,
+        const String & database,
+        const String & table,
+        const StoragePtr & storage,
+        const ContextPtr & context_);
+
+    /// The expressions of an `UPDATE` (`ALTER TABLE ... UPDATE` or `UPDATE ... SET`) that copy table data into the
+    /// updated columns: the right-hand sides of the assignments and the predicate. Empty for the lightweight-delete form.
+    static ASTs getUpdateExpressionsReadingTable(
+        const IAST & assignments, IAST * predicate, RowExistsColumnKind row_exists_column_kind);
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
     [[nodiscard]] bool supportsTransactions() const override { return true; }
@@ -63,10 +78,14 @@ private:
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.
     void addRequiredAccessForModifyQuerySQLSecurity(AccessRightsElements & required_access, const StoragePtr & storage) const;
 
-    /// Adds `SELECT` on the columns that the expressions of an `ADD COLUMN` or `MODIFY COLUMN` declaration read,
-    /// so that a user cannot store an expression, e.g. `public ALIAS secret`, that reads a column they cannot read.
-    void addRequiredAccessForColumnDeclarationExpressions(
-        AccessRightsElements & required_access, const ASTAlterCommand & command, const StoragePtr & storage) const;
+    /// Adds `SELECT` on the columns read by the expressions of `command` that are evaluated over the table data:
+    /// a column declaration of `ADD COLUMN` / `MODIFY COLUMN` (e.g. `public ALIAS secret`), the assignments and
+    /// predicate of `UPDATE` (e.g. `UPDATE public = secret`), and `MODIFY TTL` (e.g. `GROUP BY id SET public = any(secret)`).
+    void addRequiredSelectAccessForCommandExpressions(
+        AccessRightsElements & required_access,
+        const ASTAlterCommand & command,
+        const StoragePtr & storage,
+        RowExistsColumnKind row_exists_column_kind) const;
 
     BlockIO executeToTable(const ASTAlterQuery & alter);
 

@@ -39,6 +39,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
@@ -945,25 +946,29 @@ void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
         required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
 }
 
-/** The `DEFAULT`, `MATERIALIZED`, `ALIAS` or `EPHEMERAL` expression and the `TTL` of a column are stored in the
-  * table metadata and later evaluated for every reader: a `SELECT` of an `ALIAS` column is authorized by the
-  * grant on the alias name alone (see `collectReferencedColumnNames`). Storing such an expression is therefore
-  * an act of reading every column it references, and requires `SELECT` on each of them.
+/** Adds `SELECT` on every table column that `expressions` read. Used for the expressions of an `ALTER` that are
+  * evaluated over the data of the table on behalf of the user, but not by a `SELECT` that would check them:
+  *  - the `DEFAULT`, `MATERIALIZED`, `ALIAS` or `EPHEMERAL` expression and the `TTL` of a column are stored in the
+  *    table metadata and later evaluated for every reader: a `SELECT` of an `ALIAS` column is authorized by the
+  *    grant on the alias name alone (see `collectReferencedColumnNames`);
+  *  - the assignments and the predicate of `UPDATE` write the values they read into the updated columns;
+  *  - the table `TTL` deletes or moves rows by its condition and `GROUP BY ... SET` writes aggregates into columns.
+  * Evaluating such an expression is therefore an act of reading every column it references.
   *
   * Names are taken from the statement as written: a name that does not resolve to a column of the current
   * metadata (a column added or renamed by the same statement) is still checked, which fails closed.
   * SQL user-defined functions are already expanded by `executeToTable` before the access check.
   */
-void InterpreterAlterQuery::addRequiredAccessForColumnDeclarationExpressions(
-    AccessRightsElements & required_access, const ASTAlterCommand & command, const StoragePtr & storage) const
+void InterpreterAlterQuery::addRequiredSelectAccessForExpressions(
+    AccessRightsElements & required_access,
+    const ASTs & expressions,
+    const String & database,
+    const String & table,
+    const StoragePtr & storage,
+    const ContextPtr & context_)
 {
-    if (!command.col_decl)
-        return;
-
-    const auto & declaration = command.col_decl->as<const ASTColumnDeclaration &>();
-
     RequiredSourceColumnsVisitor::Data data;
-    for (const auto & expression : {declaration.getDefaultExpression(), declaration.getTTL()})
+    for (const auto & expression : expressions)
         if (expression)
             RequiredSourceColumnsVisitor(data).visit(expression);
 
@@ -971,7 +976,6 @@ void InterpreterAlterQuery::addRequiredAccessForColumnDeclarationExpressions(
     if (referenced.empty())
         return;
 
-    const auto & alter = query_ptr->as<const ASTAlterQuery &>();
     Names column_names(referenced.begin(), referenced.end());
     std::ranges::sort(column_names);
 
@@ -979,12 +983,83 @@ void InterpreterAlterQuery::addRequiredAccessForColumnDeclarationExpressions(
     /// for a table that this host does not have) the names are checked as written.
     if (storage)
     {
-        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, /*bypass_metadata_cache=*/ false);
         column_names = metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
-            column_names, getContext(), StorageID(alter.getDatabase(), alter.getTable()));
+            column_names, context_, StorageID(database, table));
     }
 
-    required_access.emplace_back(AccessType::SELECT, alter.getDatabase(), alter.getTable(), column_names);
+    required_access.emplace_back(AccessType::SELECT, database, table, column_names);
+}
+
+ASTs InterpreterAlterQuery::getUpdateExpressionsReadingTable(
+    const IAST & assignments, IAST * predicate, RowExistsColumnKind row_exists_column_kind)
+{
+    /// The lightweight-delete form `_row_exists = 0` (what `DELETE FROM` is rewritten to) only deletes rows, as
+    /// `ALTER DELETE` does, and is authorized the same way. Any other assignment copies what it reads into a column,
+    /// and the predicate decides which rows get the values. As for the `ALTER UPDATE` right, the form counts as a
+    /// delete only when `_row_exists` is known to be the hidden marker.
+    ASTs expressions;
+    for (const ASTPtr & assignment_ast : assignments.children)
+    {
+        const auto & assignment = assignment_ast->as<const ASTAssignment &>();
+        if (isLightweightDeleteAssignment(assignment) && row_exists_column_kind == RowExistsColumnKind::LightweightDeleteMarker)
+            continue;
+        expressions.push_back(assignment.expression());
+    }
+    if (!expressions.empty() && predicate)
+        expressions.push_back(predicate->ptr());
+    return expressions;
+}
+
+void InterpreterAlterQuery::addRequiredSelectAccessForCommandExpressions(
+    AccessRightsElements & required_access,
+    const ASTAlterCommand & command,
+    const StoragePtr & storage,
+    RowExistsColumnKind row_exists_column_kind) const
+{
+    ASTs expressions;
+    switch (command.type)
+    {
+        case ASTAlterCommand::ADD_COLUMN:
+        case ASTAlterCommand::MODIFY_COLUMN:
+        {
+            if (!command.col_decl)
+                return;
+            const auto & declaration = command.col_decl->as<const ASTColumnDeclaration &>();
+            expressions = {declaration.getDefaultExpression(), declaration.getTTL()};
+            break;
+        }
+        case ASTAlterCommand::UPDATE:
+        {
+            expressions = getUpdateExpressionsReadingTable(*command.update_assignments, command.predicate, row_exists_column_kind);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_TTL:
+        {
+            if (!command.ttl)
+                return;
+            for (const auto & child : command.ttl->children)
+            {
+                const auto * element = child->as<ASTTTLElement>();
+                if (!element)
+                {
+                    expressions.push_back(child);
+                    continue;
+                }
+                expressions.push_back(element->ttl());
+                expressions.push_back(element->where());
+                expressions.insert(expressions.end(), element->group_by_key.begin(), element->group_by_key.end());
+                for (const auto & assignment_ast : element->group_by_assignments)
+                    expressions.push_back(assignment_ast->as<const ASTAssignment &>().expression());
+            }
+            break;
+        }
+        default:
+            return;
+    }
+
+    const auto & alter = query_ptr->as<const ASTAlterQuery &>();
+    addRequiredSelectAccessForExpressions(required_access, expressions, alter.getDatabase(), alter.getTable(), storage, getContext());
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
@@ -1014,8 +1089,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
 
-        if (command.type == ASTAlterCommand::ADD_COLUMN || command.type == ASTAlterCommand::MODIFY_COLUMN)
-            addRequiredAccessForColumnDeclarationExpressions(required_access, command, storage);
+        addRequiredSelectAccessForCommandExpressions(required_access, command, storage, row_exists_column_kind);
     }
 
     return required_access;

@@ -144,6 +144,16 @@ BlockIO InterpreterUpdateQuery::execute()
     if (updates_columns)
         required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
+    /// The assignments and the predicate read the table: `UPDATE t SET public = secret` must not copy a column the
+    /// user cannot read into one they can.
+    InterpreterAlterQuery::addRequiredSelectAccessForExpressions(
+        required_access,
+        InterpreterAlterQuery::getUpdateExpressionsReadingTable(*update_query.assignments, update_query.predicate.get(), row_exists_column_kind),
+        update_query.getDatabase(),
+        update_query.getTable(),
+        table_for_access,
+        getContext());
+
     if (!update_query.cluster.empty())
     {
         /// Substitute the database into table functions that use the current database implicitly, e.g.
