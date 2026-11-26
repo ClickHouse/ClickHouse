@@ -9,7 +9,9 @@ endif()
 clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" FEATURES ${_features})
 clickhouse_config_crate_flags(_ch_rust_workspace)
 # For `zstd-sys` and `lz4-sys`, which do not bundle copies of these libraries (see `config.toml.in`).
-target_link_libraries(_ch_rust_workspace INTERFACE ch_contrib::zstd ch_contrib::lz4)
+# `LINK_ONLY`: the consumers of the workspace must not get the include directories of these libraries. The one of LZ4
+# contains a legacy `xxhash.h`, which would shadow the one of `ch_contrib::xxHash` for the C++ code.
+target_link_libraries(_ch_rust_workspace INTERFACE $<LINK_ONLY:ch_contrib::zstd> $<LINK_ONLY:ch_contrib::lz4>)
 
 # The build script of `delta_kernel_ffi` writes `delta_kernel_ffi.hpp` only when it runs and does not track all the crates
 # the header is generated from, so the header must not come from a shared Cargo build directory.
