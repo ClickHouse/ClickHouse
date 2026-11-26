@@ -2,11 +2,13 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -22,7 +24,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/ProcessList.h>
-#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -98,6 +101,31 @@ void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const St
     waitInterruptibly(context, watch, timeout_ms, [&](Int64 chunk_ms) { return event.tryWait(chunk_ms); });
 }
 
+void addStoredColumnsReadFromTable(
+    const QueryTreeNodePtr & node, const IStorage & storage, const ColumnsDescription & columns, NameSet & column_names)
+{
+    if (!node)
+        return;
+
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        auto source = column_node->getColumnSourceOrNull();
+        const auto * table = source ? source->as<TableNode>() : nullptr;
+
+        /// The analyzer names a subcolumn by its full name, so it is mapped to its column here.
+        if (table && table->getStorage().get() == &storage)
+            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_node->getColumnName()))
+                column_names.insert(column->getNameInStorage());
+    }
+
+    /// A scalar subquery is folded into a constant that keeps it as the source expression.
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        addStoredColumnsReadFromTable(constant_node->getSourceExpression(), storage, columns, column_names);
+
+    for (const auto & child : node->getChildren())
+        addStoredColumnsReadFromTable(child, storage, columns, column_names);
+}
+
 zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
     const ContextPtr & context,
     const zkutil::ZooKeeperPtr & zookeeper,
@@ -140,14 +168,15 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
 
 zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
     const MutationCommands & commands,
-    const ColumnsDescription & columns,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_path)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
-    auto affected_columns = getUpdateAffectedColumns(commands, columns, context);
+    auto affected_columns = getUpdateAffectedColumns(commands, storage, metadata_snapshot, context);
     auto in_progress_path = fs::path(zookeeper_path) / "lightweight_updates" / "in_progress";
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
     auto affected_columns_str = affected_columns.toString();
@@ -423,29 +452,36 @@ PlainLightweightUpdateLock::~PlainLightweightUpdateLock()
         lightweight_updates_sync->releaseColumns(affected_columns);
 }
 
-UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands, const ColumnsDescription & columns, const ContextPtr & context)
+UpdateAffectedColumns getUpdateAffectedColumns(
+    const MutationCommands & commands,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
 {
     UpdateAffectedColumns res;
-    const auto physical_columns = columns.getAllPhysical();
+    const auto & columns = metadata_snapshot->getColumns();
+    auto storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
+    auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, std::move(storage_snapshot));
 
-    auto add_used = [&](const ASTPtr & expression)
-    {
-        ASTPtr resolved = expression ? expression->clone() : nullptr;
-        if (resolved)
-        {
-            replaceAliasColumnsInQuery(resolved, columns, {}, context);
-            replaceSubcolumnsToGetSubcolumnFunctionInQuery(resolved, physical_columns);
-        }
-
-        auto identifiers = collectIdentifiersFullNames(buildQueryTree(resolved, context));
-        std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
-    };
+    /// Otherwise a scalar subquery of an `Array` or `Tuple` type is replaced by `__getScalar`, which drops it.
+    auto analysis_context = Context::createCopy(context);
+    analysis_context->setSetting("enable_scalar_subquery_optimization", false);
 
     for (const auto & command : commands)
     {
         auto alter = command.ast();
         if (!alter)
             continue;
+
+        auto expressions = make_intrusive<ASTExpressionList>();
+        auto add_used = [&](const ASTPtr & expression)
+        {
+            auto identifiers = collectIdentifiersFullNames(buildQueryTree(expression, context));
+            std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
+
+            if (expression)
+                expressions->children.push_back(expression->clone());
+        };
 
         /// The predicate and assignment expressions were re-parsed from the serialized mutation command,
         /// so their set operations (UNION/INTERSECT/EXCEPT) are not normalized yet. Normalize them before
@@ -469,6 +505,11 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
 
             add_used(assignment_expression);
         }
+
+        /// Resolved as the UPDATE resolves them, so reads through ALIAS columns, subcolumns, qualified names and subqueries count.
+        auto query_tree = buildQueryTree(expressions, analysis_context);
+        QueryAnalyzer(/*only_analyze=*/ true).resolve(query_tree, table_node, analysis_context);
+        addStoredColumnsReadFromTable(query_tree, *storage, columns, res.used);
     }
 
     /// An UPDATE also rewrites the MATERIALIZED columns derived from the ones it sets, from the stored values of their other inputs.
@@ -505,7 +546,8 @@ void LightweightUpdateHolderInKeeper::reset()
 
 zkutil::EphemeralNodeHolderPtr getLockForLightweightUpdateInKeeper(
     const MutationCommands & commands,
-    const ColumnsDescription & columns,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_path)
@@ -516,7 +558,7 @@ zkutil::EphemeralNodeHolderPtr getLockForLightweightUpdateInKeeper(
         return getLockForSyncMode(context, zookeeper, zookeeper_path);
 
     if (parallel_mode == UpdateParallelMode::AUTO)
-        return getLockForAutoMode(commands, columns, context, zookeeper, zookeeper_path);
+        return getLockForAutoMode(commands, storage, metadata_snapshot, context, zookeeper, zookeeper_path);
 
     return {};
 }

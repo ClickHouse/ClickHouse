@@ -5,7 +5,12 @@ MergeTree W4 refused 0
 MergeTree W5 refused 1
 MergeTree W6 refused 1
 MergeTree W7 refused 1
-0	1	1	5	2
+MergeTree W8 refused 0
+MergeTree W9 refused 1
+MergeTree W10 refused 1
+MergeTree W11 refused 1
+MergeTree W12 refused 1
+0	1	1	4	2
 1	10	20	30	30
 2	40	1	0	41
 3	10	1	7	11
@@ -16,7 +21,12 @@ ReplicatedMergeTree W4 refused 0
 ReplicatedMergeTree W5 refused 1
 ReplicatedMergeTree W6 refused 1
 ReplicatedMergeTree W7 refused 1
-0	1	1	5	2
+ReplicatedMergeTree W8 refused 0
+ReplicatedMergeTree W9 refused 1
+ReplicatedMergeTree W10 refused 1
+ReplicatedMergeTree W11 refused 1
+ReplicatedMergeTree W12 refused 1
+0	1	1	4	2
 1	10	20	30	30
 2	40	1	0	41
 3	10	1	7	11

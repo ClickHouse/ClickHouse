@@ -8,7 +8,7 @@
 # In update_parallel_mode = 'auto' a lightweight UPDATE also writes the MATERIALIZED columns derived from the columns it
 # sets, computed from the stored values of their other inputs. So it conflicts with an update that writes one of those
 # inputs or reads one of those columns, while an update of the same input stays concurrent.
-# A holder updates `a` and `t` and is paused while it holds the lock; each waiter runs with lock_acquire_timeout = 0, so
+# A holder updates `a`, `t` and `j` and is paused while it holds the lock; each waiter runs with lock_acquire_timeout = 0, so
 # it is refused at once on a conflict. The refused ones are re-run after the holder, then every row must have c = a + b.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -84,13 +84,15 @@ function check()
 
     $CLICKHOUSE_CLIENT --query "
         DROP TABLE IF EXISTS $table SYNC;
-        CREATE TABLE $table (k UInt64, a Int64, b Int64, x Int64, c Int64 MATERIALIZED a + b, al Int64 ALIAS a, t Tuple(u Int64))
+        CREATE TABLE $table (
+            k UInt64, a Int64, b Int64, x Int64, c Int64 MATERIALIZED a + b, al Int64 ALIAS a, t Tuple(u Int64),
+            av Tuple(u Int64) ALIAS t, vt String ALIAS _table, j JSON)
         ENGINE = $engine_clause ORDER BY k
         SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
         INSERT INTO $table (k, a, b, x) SELECT number, 1, 1, 0 FROM numbers(4);
     "
 
-    local holder="UPDATE $table SET a = 10, t = tuple(10) WHERE k IN (1, 3)"
+    local holder="UPDATE $table SET a = 10, t = tuple(10), j = '{\"u\": 10}' WHERE k IN (1, 3)"
 
     if [[ "$engine" == "MergeTree" ]]
     then
@@ -128,6 +130,16 @@ function check()
     waiter W6 "UPDATE $table SET x = 6 WHERE k = 0 AND al > 5"
     # Reads `t` through a subcolumn.
     waiter W7 "UPDATE $table SET x = 7 WHERE k = 0 AND t.u > 5"
+    # Reads only a virtual column, through an ALIAS.
+    waiter W8 "UPDATE $table SET x = 8 WHERE k = 0 AND vt = '$table'"
+    # Reads `t` through a subcolumn of an ALIAS.
+    waiter W9 "UPDATE $table SET x = 9 WHERE k = 0 AND av.u > 5"
+    # Reads `t` through a qualified subcolumn.
+    waiter W10 "UPDATE $table SET x = 10 WHERE k = 0 AND $table.t.u > 5"
+    # Reads `j` through a JSON path.
+    waiter W11 "UPDATE $table SET x = 11 WHERE k = 0 AND j.u::Int64 > 5"
+    # Reads `c` through a qualified name in a scalar subquery of an Array type.
+    waiter W12 "UPDATE $table SET x = length((SELECT groupArray($table.c) FROM $table)) WHERE k = 0"
 
     if [[ "$engine" == "MergeTree" ]]
     then

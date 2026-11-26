@@ -7,7 +7,8 @@
 namespace DB
 {
 
-class ColumnsDescription;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Structure representing the columns used and updated by UPDATE queries
 struct UpdateAffectedColumns
@@ -80,7 +81,11 @@ struct LightweightUpdateHolderInKeeper
     PartitionBlockNumbersHolder partition_block_numbers;
 };
 
-UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands, const ColumnsDescription & columns, const ContextPtr & context);
+UpdateAffectedColumns getUpdateAffectedColumns(
+    const MutationCommands & commands,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context);
 
 /// Get lock for lighweight mode in zookeeper.
 /// Returns an ephemeral node that holds the lock in one of the three modes (see setting update_parallel_mode):
@@ -99,7 +104,8 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
 /// 3 RTT in optimistic case.
 zkutil::EphemeralNodeHolderPtr getLockForLightweightUpdateInKeeper(
     const MutationCommands & commands,
-    const ColumnsDescription & columns,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_path);
