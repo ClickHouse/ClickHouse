@@ -19,7 +19,7 @@ namespace DB::Iceberg
 
 PartitionSpecResolver::PartitionSpecResolver(
     Poco::JSON::Object::Ptr metadata_object_, IcebergSchemaProcessorPtr schema_processor_, ContextPtr context_)
-    : metadata_object(std::move(metadata_object_))
+    : metadata_object(metadata_object_)
     , schema_processor(std::move(schema_processor_))
     , context(std::move(context_))
 {

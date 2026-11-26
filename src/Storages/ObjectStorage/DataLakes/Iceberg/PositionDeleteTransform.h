@@ -23,15 +23,15 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_);
 
-    size_t numPositionDeleteFiles() const { return position_delete_files.size(); }
+    [[nodiscard]] size_t numPositionDeleteFiles() const { return position_delete_files.size(); }
 
     /// The next chunk of the position delete file `file_index` with at least one row of the current data file and no rows of
     /// other data files, or a chunk without rows at the end of the file.
     Chunk readPositionDeleteChunk(size_t file_index);
 
-    size_t positionColumnIndex(size_t file_index) const { return position_delete_files[file_index].position_index; }
+    [[nodiscard]] size_t positionColumnIndex(size_t file_index) const { return position_delete_files[file_index].position_index; }
 
-    std::unique_ptr<roaring::Roaring64Map> readDeletionVector() const;
+    [[nodiscard]] std::unique_ptr<roaring::Roaring64Map> readDeletionVector() const;
 
     template <typename Callback>
     void forEachDeletedPosition(Callback && callback)

@@ -769,9 +769,9 @@ static DeletionVectorPlan planDeletionVectors(
         {
             const String path = data_file->parsed_entry->file_path_key.serialize();
             if (positions_by_data_file.contains(path))
-                plan.matched_files.emplace(path, MatchedDataFile{.entry = data_file, .partition_spec_id = manifest.partition_spec_id});
+                plan.matched_files.emplace(path, MatchedDataFile{.entry = data_file, .partition_spec_id = manifest.partition_spec_id, .previous_deletes = nullptr});
         }
-        const auto live_position_deletes = files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
+        const auto & live_position_deletes = files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
         for (const auto & position_delete : live_position_deletes)
         {
             manifest_of_position_delete.emplace(position_delete.get(), manifest_index);
