@@ -1649,7 +1649,7 @@ def test_seekable_formats(started_cluster, format_name, expected_bytes_read):
     )
     assert int(result) == expected_lines
 
-    instance.query(f"SELECT * FROM {table_function} FORMAT Null")
+    instance.query(f"SELECT * FROM {table_function} SETTINGS use_page_cache_for_object_storage = 0 FORMAT Null")
 
     instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
