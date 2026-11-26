@@ -6,9 +6,7 @@ title: 'セルフマネージドのアップグレード'
 doc_type: 'guide'
 ---
 
-<div id="clickhouse-upgrade-overview">
-  ## ClickHouse アップグレードの概要
-</div>
+## ClickHouse アップグレードの概要 {#clickhouse-upgrade-overview}
 
 このドキュメントには、次の内容が含まれています。
 
@@ -16,39 +14,27 @@ doc_type: 'guide'
 * 推奨される手順
 * システム上のバイナリをアップグレードする際の詳細
 
-<div id="general-guidelines">
-  ## 一般的なガイドライン
-</div>
+## 一般的なガイドライン {#general-guidelines}
 
 以下の注意事項は、計画を立てる際の参考になるほか、この後の文書でそのような推奨を行っている理由を理解するのにも役立ちます。
 
-<div id="upgrade-clickhouse-server-separately-from-clickhouse-keeper-or-zookeeper">
-  ### ClickHouse server は ClickHouse Keeper または ZooKeeper とは別にアップグレードする
-</div>
+### ClickHouse server は ClickHouse Keeper または ZooKeeper とは別にアップグレードする {#upgrade-clickhouse-server-separately-from-clickhouse-keeper-or-zookeeper}
 
 ClickHouse Keeper または Apache ZooKeeper に対するセキュリティ修正が必要でない限り、ClickHouse server のアップグレード時に Keeper もアップグレードする必要はありません。アップグレードの過程では Keeper の安定性を維持する必要があるため、Keeper のアップグレードを検討する前に、まず ClickHouse server のアップグレードを完了してください。
 
-<div id="minor-version-upgrades-should-be-adopted-often">
-  ### マイナーバージョンのアップグレードはこまめに行うべきです
-</div>
+### マイナーバージョンのアップグレードはこまめに行うべきです {#minor-version-upgrades-should-be-adopted-often}
 
 新しいマイナーバージョンがリリースされたら、常にできるだけ早く最新バージョンへアップグレードすることを強く推奨します。マイナーリリースに破壊的変更はありませんが、重要なバグ修正 (場合によってはセキュリティ修正も) を含んでいます。
 
-<div id="test-experimental-features-on-a-separate-clickhouse-server-running-the-target-version">
-  ### 対象バージョンで稼働する別の ClickHouse server で実験的機能をテストする
-</div>
+### 対象バージョンで稼働する別の ClickHouse server で実験的機能をテストする {#test-experimental-features-on-a-separate-clickhouse-server-running-the-target-version}
 
 実験的機能の互換性は、いつどのように破綻してもおかしくありません。実験的機能を使用している場合は、changelog を確認し、対象バージョンをインストールした別の ClickHouse server を用意して、そこで実験的機能の利用をテストすることを検討してください。
 
-<div id="downgrades">
-  ### ダウングレード
-</div>
+### ダウングレード {#downgrades}
 
 アップグレード後、新しいバージョンが依存している一部の機能と互換性がないことに気付いた場合でも、新機能をまだ一切使用していなければ、比較的新しい (1年未満の) バージョンにダウングレードできることがあります。いったん新機能を使用すると、ダウングレードはできなくなります。
 
-<div id="multiple-clickhouse-server-versions-in-a-cluster">
-  ### 1 つのクラスター内に複数の ClickHouse server バージョンがある場合
-</div>
+### 1 つのクラスター内に複数の ClickHouse server バージョンがある場合 {#multiple-clickhouse-server-versions-in-a-cluster}
 
 当社では、1 年間の互換性ウィンドウ (2 つの LTS バージョンを含む) を維持するよう努めています。つまり、任意の 2 つのバージョンの差が 1 年未満である場合 (またはその間に LTS バージョンが 2 つ未満しかない場合) 、それらは同じクラスター内で連携して動作できるはずです。ただし、distributed queries の性能低下や、ReplicatedMergeTree における一部のバックグラウンド操作で再試行可能な error など、軽微な問題が発生する可能性はあるため、クラスター内のすべてのメンバーはできるだけ早く同じバージョンにアップグレードすることを推奨します。
 
@@ -59,37 +45,31 @@ ClickHouse Keeper または Apache ZooKeeper に対するセキュリティ修�
 * 予期しない error や警告が logs に表示される可能性がある
 * ダウングレードできなくなる可能性がある
 
-<div id="incremental-upgrades">
-  ### 段階的なアップグレード
-</div>
+### 段階的なアップグレード {#incremental-upgrades}
 
 現在のバージョンと対象バージョンの差が1年を超える場合は、次のいずれかの方法を推奨します。
 
 * ダウンタイムを伴うアップグレードを行う (すべてのサーバーを停止し、すべてのサーバーをアップグレードした後、すべてのサーバーを起動する) 。
 * または、中間バージョンを経由してアップグレードする (現在のバージョンより1年未満だけ新しいバージョン) 。
 
-<div id="recommended-plan">
-  ## 推奨プラン
-</div>
+## 推奨プラン {#recommended-plan}
 
 以下は、ClickHouse をダウンタイムなしでアップグレードするための推奨手順です。
 
 1. 設定変更をデフォルトの `/etc/clickhouse-server/config.xml` ファイルには入れず、代わりに `/etc/clickhouse-server/config.d/` に配置してください。`/etc/clickhouse-server/config.xml` はアップグレード時に上書きされる可能性があるためです。
-2. 互換性のない変更がないか、[changelog](/ja/resources/changelogs/oss/2026) を確認してください (対象リリースから現在使用中のリリースまでさかのぼって確認します) 。
-3. 互換性のない変更として挙がっている項目のうち、アップグレード前に対応できるものは事前に対応し、アップグレード後に必要な変更は一覧にまとめてください。
+2. 破壊的変更がないか、[changelog](/ja/resources/changelogs/oss/2026) を確認してください (対象リリースから現在使用中のリリースまでさかのぼって確認します) 。
+3. 破壊的変更として挙がっている項目のうち、アップグレード前に対応できるものは事前に対応し、アップグレード後に必要な変更は一覧にまとめてください。
 4. 各分片について、同じ分片内の他のレプリカをアップグレードしている間も稼働させておくレプリカを 1 つ以上特定してください。
 5. アップグレード対象のレプリカでは、1 台ずつ次を実施します:
 
-* ClickHouse server を停止する
-* server を対象バージョンにアップグレードする
-* ClickHouse server を起動する
+* ClickHouse サーバーを停止する
+* サーバーを対象バージョンにアップグレードする
+* ClickHouse サーバーを起動する
 * システムが安定したことを示す Keeper メッセージが出るまで待機する
 * 次のレプリカに進む
 
 6. Keeper log と ClickHouse log にエラーがないか確認します
-
 7. 手順 4 で特定したレプリカを新しいバージョンにアップグレードします
-
 8. 手順 1 〜 3 で作成した変更一覧を参照し、アップグレード後に必要な変更を行います。
 
 <Note>
@@ -102,9 +82,7 @@ ClickHouse Keeper または Apache ZooKeeper に対するセキュリティ修�
   ```
 </Note>
 
-<div id="clickhouse-server-binary-upgrade-process">
-  ## ClickHouse server バイナリのアップグレード手順
-</div>
+## ClickHouse server バイナリのアップグレード手順 {#clickhouse-server-binary-upgrade-process}
 
 ClickHouse を `deb` パッケージからインストールした場合は、サーバー上で次のコマンドを実行します。
 
