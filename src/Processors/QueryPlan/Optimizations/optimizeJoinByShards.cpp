@@ -18,6 +18,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/KeyDescription.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Common/StackWithMemoryTracking.h>
@@ -150,6 +151,10 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     const auto & rhs_pk_colum_names = rhs_pk.column_names;
     auto rhs_matches = matchTrees(rhs_pk_dag.getOutputs(), rhs_dag, false);
 
+    /// The layers follow the stored key values, not the values the session computes.
+    const auto lhs_session_dependent = getKeySubexpressionsWithSessionDependentValues(*lhs_pk.expression, lhs_reading->getContext());
+    const auto rhs_session_dependent = getKeySubexpressionsWithSessionDependentValues(*rhs_pk.expression, rhs_reading->getContext());
+
     JoinStep::PrimaryKeySharding sharding;
 
     bool first = true;
@@ -163,6 +168,9 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
         /// `splitIntersectingPartsRangesIntoLayers` gates on this predicate. Only the prefix the split
         /// actually reads has to be safe, so an unsafe column just ends the prefix here.
         if (!isSafePrimaryDataKeyType(*lhs_pk.data_types[pos]) || !isSafePrimaryDataKeyType(*rhs_pk.data_types[pos]))
+            break;
+
+        if (lhs_session_dependent.contains(lhs_pk_colum_names[pos]) || rhs_session_dependent.contains(rhs_pk_colum_names[pos]))
             break;
 
         bool ldesc = (pos < lhs_pk.reverse_flags.size()) ? lhs_pk.reverse_flags[pos] : false;

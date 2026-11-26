@@ -16,6 +16,10 @@ class ColumnsDescription;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+/// Names of the subexpressions of `key_expr` (key columns included) whose value depends on a setting that `context` sets
+/// differently from the global context the stored key values were computed in; consumers must not match these by name.
+NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context);
+
 /// Common structure for primary, partition and other storage keys
 struct KeyDescription
 {

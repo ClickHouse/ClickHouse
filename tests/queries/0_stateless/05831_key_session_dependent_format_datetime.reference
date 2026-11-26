@@ -1,0 +1,53 @@
+baseline session
+read in order	1
+primary key	833
+fromUnixTimestamp primary key	833
+skip indexes	833
+join sharding	1
+no setting changed	0	0
+formatdatetime_parsedatetime_m_is_month_name	1	1
+formatdatetime_f_prints_single_zero	1	0
+formatdatetime_f_prints_scale_number_of_digits	1	0
+formatdatetime_format_without_leading_zeros	1	0
+formatdatetime_e_with_space_padding	1	0
+parsedatetime_parse_without_leading_zeros	0	1
+parsedatetime_e_requires_space_padding	0	1
+deviating session
+read in order	0
+order by	1
+aggregation in order	300
+primary key	168
+partition pruning	168
+constant folding	112
+set index	168
+bloom filter index	168
+minmax index	168
+min max	00	59
+partition values	60
+aggregation per partition	60
+limit by per partition	60
+distinct per partition	60
+join sharding	0
+join	25920
+shard pruning	168
+parseDateTime	2
+lambda	1
+nullable	168
+fromUnixTimestamp	168
+final	12
+final without index	12
+sample	324
+sample without index	324
+sample expected	324
+folded min max	005
+folded sample	473
+folded sample without index	473
+folded sample expected	473
+nested folded min max	005
+nested folded sample	473
+nested folded sample without index	473
+nested folded sample expected	473
+modulo partition	(\'May\',1)
+modulo partition pruning	1
+distinct in order	300
+window	1667488

@@ -110,6 +110,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/KeyDescription.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -2248,6 +2249,10 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     {
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
     }
+
+    /// The rows were placed by the stored sharding key, not by the value the session computes.
+    if (!getKeySubexpressionsWithSessionDependentValues(*sharding_key_expr, local_context).empty())
+        return nullptr;
 
     const ActionsDAG & sharding_key_dag = sharding_key_expr->getActionsDAG();
     const ActionsDAG::Node * expr_node = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);

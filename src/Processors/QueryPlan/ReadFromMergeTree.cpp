@@ -67,6 +67,7 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -3671,6 +3672,10 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
         if (index_helper->isInert())
             continue;
 
+        /// The granules hold the stored values of the index expression, which the session computes differently.
+        if (!getKeySubexpressionsWithSessionDependentValues(*index.expression, query_context).empty())
+            continue;
+
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {
@@ -4782,8 +4787,18 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
     /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
-    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    if (prefix_size > sorting_key.column_names.size())
         return false;
+
+    /// The parts are sorted by the stored key values, not by the values the session computes.
+    if (prefix_size && sorting_key.expression)
+    {
+        const auto session_dependent = getKeySubexpressionsWithSessionDependentValues(*sorting_key.expression, context);
+        for (size_t i = 0; i < prefix_size; ++i)
+            if (session_dependent.contains(sorting_key.column_names[i]))
+                return false;
+    }
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
     /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,
