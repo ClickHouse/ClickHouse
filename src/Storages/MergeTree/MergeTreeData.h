@@ -241,7 +241,7 @@ class MergeTreeData : public WithMutableContext, public IStorage, public IBackgr
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
-    using BrokenPartCallback = std::function<void (const String &)>;
+    using BrokenPartCallback = std::function<void (const String & part_name, bool after_read_error)>;
     using DataPart = IMergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
@@ -383,6 +383,11 @@ public:
     choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
+
+    /// Shared data serialization version of `JSON` columns for a part of the given expected size,
+    /// `is_insert` tells whether the part is created by an insert.
+    MergeTreeObjectSharedDataSerializationVersion chooseObjectSharedDataSerializationVersion(
+        size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const;
 
     MergeTreeDataPartBuilder getDataPartBuilder(
         const String & name,
@@ -559,7 +564,7 @@ public:
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
-                  BrokenPartCallback broken_part_callback_ = [](const String &){});
+                  BrokenPartCallback broken_part_callback_ = [](const String &, bool){});
 
     /// Out-of-line so the forward-declared `UniqueKeyDenseIndexOps`
     /// doesn't force a full-type include in callers that destroy
@@ -628,6 +633,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
 
+    bool supportsSubcolumnOptimizationWithFinal() const override;
     bool hasBucketedMapSerialization() const override;
 
     bool supportsTTL() const override { return true; }
@@ -1209,7 +1215,7 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
-    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
+    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` does not remove
     /// recursively, so the files that the engine keeps there (besides the parts and the directories it removes by
     /// name) would survive the drop and get loaded by the next table created on the same disk. Called for each
     /// writable disk after the parts are removed, so that a failed drop can still be retried or undone with them.
@@ -1618,8 +1624,6 @@ public:
     /// (via `getMetadataSnapshotForEmptyPart`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
-    /// With `precommit_storage = false` the returned part's storage transaction is still open, so
-    /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
     /// Metadata for an empty part that covers or replaces `source_part`. For a patch part it is the
     /// synthetic patch-part metadata stamped with the metadata version of `source_part`: the synthetic
     /// metadata alone carries version 0, and an empty patch at version 0 would drag the version of every
@@ -1631,8 +1635,7 @@ public:
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index,
-        bool precommit_storage = true) const;
+        std::optional<PatchPartIndex> patch_part_index) const;
 
     MergeTreeDataFormatVersion format_version;
 

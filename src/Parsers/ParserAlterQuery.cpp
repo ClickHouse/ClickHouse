@@ -138,7 +138,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
 
-    ParserCompoundIdentifier parser_name;
+    ParserCompoundIdentifier parser_name(/* table_name_with_optional_uuid = */ false, /* allow_query_parameter = */ true);
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
     ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
@@ -2666,11 +2666,11 @@ The following operations are available:
 
 ## ADD INDEX {#add-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata.
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata. [`CREATE INDEX`](/reference/statements/create/skipping-index) adds an index with a standalone statement.
 
 ## DROP INDEX {#drop-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations).
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations). [`DROP INDEX ... ON`](/reference/statements/drop#drop-index) is the standalone form.
 
 ## MATERIALIZE INDEX {#materialize-index}
 
@@ -2703,7 +2703,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] n
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
 )",
         .parent = "ALTER",
-        .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
+        .related = {"ALTER", "CREATE TABLE", "CREATE INDEX", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
     };
 
     documentation["ALTER TABLE ... PROJECTION"] =

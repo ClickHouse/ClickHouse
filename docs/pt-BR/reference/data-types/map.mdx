@@ -144,8 +144,12 @@ Quando uma parte de dados é gravada com a serialização `with_buckets`:
 
 Quando uma consulta lê uma chave específica (`m['key']`), o otimizador reescreve a expressão para uma subcoluna de chave (`m.key_<serialized_key>`).
 A camada de serialização calcula a qual bucket a chave solicitada pertence e lê apenas esse bucket do disco.
+Essa reescrita ocorre apenas em tabelas que usam a serialização `with_buckets`: com a serialização `basic`, a leitura de uma subcoluna de chave
+lê o `Map` inteiro de qualquer forma.
 
 Quando o map completo é lido (por exemplo, `SELECT m`), todos os buckets são lidos e remontados no map original. Isso é mais lento do que a serialização `basic` devido à sobrecarga de ler e mesclar vários subfluxos.
+
+Um `Map` cujo tipo de chave contém `JSON` ou `Dynamic` é sempre gravado em um único bucket, e a consulta de uma de suas chaves lê o map inteiro.
 
 <Note>
   Desde a versão 26.8, a serialização `with_buckets` preserva a ordem original das chaves: um subfluxo adicional, `bucket_indexes`, registra de qual bucket foi obtido cada par chave-valor, para que o map seja remontado na ordem em que foi gravado, e não na ordem dos buckets.

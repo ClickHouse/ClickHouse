@@ -48,6 +48,16 @@ const char * toString(JoinLocality locality)
     }
 }
 
+const char * toString(JoinSetOperation set_operation)
+{
+    switch (set_operation)
+    {
+        case JoinSetOperation::None: return "NONE";
+        case JoinSetOperation::IntersectDistinct: return "INTERSECT DISTINCT";
+        case JoinSetOperation::ExceptDistinct: return "EXCEPT DISTINCT";
+    }
+}
+
 const char * toString(ASOFJoinInequality asof_join_inequality)
 {
     switch (asof_join_inequality)
@@ -167,6 +177,24 @@ JoinLocality deserializeJoinLocality(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinLocality", UInt16(val));
 
     return static_cast<JoinLocality>(val);
+}
+
+void serializeJoinSetOperation(JoinSetOperation set_operation, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(set_operation);
+    chassert(val <= JoinSetOperationMax);
+    writeIntBinary(val, out);
+}
+
+JoinSetOperation deserializeJoinSetOperation(ReadBuffer & in)
+{
+    uint8_t val = 0;
+    readIntBinary(val, in);
+
+    if (val > JoinSetOperationMax)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinSetOperation", UInt16(val));
+
+    return static_cast<JoinSetOperation>(val);
 }
 
 }
