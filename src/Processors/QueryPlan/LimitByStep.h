@@ -18,18 +18,19 @@ public:
         UInt64 prefer_external_sort_block_bytes = DEFAULT_BLOCK_SIZE * 256;
 
         /// The pipeline combines these thresholds into the smaller enabled spill trigger.
-        /// Setting both to zero disables external `LIMIT BY`.
+        /// Setting both to zero disables threshold-triggered spilling; the scheduler may still request it.
         UInt64 max_bytes_before_external_limit_by = 0;
         double max_bytes_ratio_before_external_limit_by = 0.;
 
-        /// Internal steps serialize these settings through `updatePlanSettings` even when spilling is
-        /// disabled. Defaults match the query settings, including the required nonzero buffer size.
+        /// Internal steps serialize these settings through `updatePlanSettings` even when both thresholds
+        /// are zero. Defaults match the query settings, including the required nonzero buffer size.
         size_t min_free_disk_space = 0;
         String temporary_files_codec = "LZ4";
         UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
-        /// Disables external `LIMIT BY` for internal operations, such as decorrelated subqueries, that do not
-        /// use query settings.
+        /// Leaves both thresholds at zero for internal steps that do not use query settings, such as the
+        /// `LIMIT BY` of a decorrelated subquery. The memory scheduler can still make such a step spill,
+        /// which keeps the same rows of each group as processing in memory.
         Settings() = default;
         explicit Settings(const DB::Settings & settings_);
         explicit Settings(const QueryPlanSerializationSettings & settings_);
