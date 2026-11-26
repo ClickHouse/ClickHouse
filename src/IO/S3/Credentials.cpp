@@ -53,6 +53,7 @@ namespace S3
 #    include <aws/core/platform/Environment.h>
 #    include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #    include <aws/core/utils/json/JsonSerializer.h>
+#    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/utils/DateTime.h>
 #    include <aws/core/http/HttpClientFactory.h>
@@ -66,6 +67,7 @@ namespace S3
 #    include <Common/Concepts.h>
 #    include <Common/SipHash.h>
 #    include <Common/ProfileEvents.h>
+#    include <Common/re2.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 #    include <Common/Silk/FiberScheduler.h>
@@ -100,6 +102,7 @@ namespace ErrorCodes
     extern const int GCP_ERROR;
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int S3_ERROR;
 }
 
 namespace S3
@@ -115,6 +118,13 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
 
     const Aws::Utils::DateTime now = Aws::Utils::DateTime::Now();
     return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
+}
+
+/// Whether the string has the form of a name of an AWS region, such as `eu-central-1`, `us-gov-west-1` or `eusc-de-east-1`.
+bool hasFormOfRegionName(std::string_view region)
+{
+    static const RE2 region_name_pattern(R"([a-z]{2,}(?:-[a-z]+)+-[0-9]+)");
+    return RE2::FullMatch(region, region_name_pattern);
 }
 
 struct ResolvedWebIdentitySettings
@@ -644,11 +654,16 @@ AWSInstanceProfileCredentialsProvider::AWSInstanceProfileCredentialsProvider(con
 
 Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentials()
 {
-    if (Silk::isInsideFiber())
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "EC2 instance metadata credentials are not implemented for fibers");
-    refreshIfExpired();
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    std::lock_guard lock(get_aws_credentials_mutex);
+    if (IsTimeToRefresh(load_frequency_ms))
+        Reload();
     return GetAWSCredentialsImpl();
+}
+
+void AWSInstanceProfileCredentialsProvider::SetNeedRefresh()
+{
+    std::lock_guard lock(get_aws_credentials_mutex);
+    AWSCredentialsProvider::SetNeedRefresh();
 }
 
 Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentialsImpl()
@@ -674,22 +689,6 @@ void AWSInstanceProfileCredentialsProvider::Reload()
     auto new_credentials = GetAWSCredentialsImpl();
     LOG_INFO(logger, "Got {}credentials from EC2 Metadata Service",
              new_credentials.IsEmpty() ? "empty " : ((new_credentials == old_credentials) ? "same " : ""));
-}
-
-void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
-{
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsTimeToRefresh(load_frequency_ms))
-    {
-        return;
-    }
-
-    guard.UpgradeToWriterLock();
-    if (!IsTimeToRefresh(load_frequency_ms)) // double-checked lock to avoid refreshing twice
-    {
-        return;
-    }
-    Reload();
 }
 
 void AWSInstanceProfileCredentialsProvider::CacheKey::updateHash(SipHash & hash) const
@@ -718,6 +717,29 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey::updateHash(Si
     hash.update(std::string_view(role_arn));
     hash.update(std::string_view(token_file));
     hash.update(std::string_view(session_name));
+    hash.update(std::string_view(region));
+    hash.update(reinterpret_cast<std::uintptr_t>(remote_host_filter));
+}
+
+Aws::String AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::resolveStsRegion(std::string_view configured_region, std::string_view client_region)
+{
+    if (!configured_region.empty())
+        return Aws::String(configured_region);
+
+    /// Neither `AWS_DEFAULT_REGION` nor the AWS profile sets a region: call STS in the region of the S3 client,
+    /// so that a server which runs outside of AWS and writes to buckets in several regions does not depend on one of them.
+    ///
+    /// The region becomes a part of the host name of the STS endpoint, which the web identity token is sent to,
+    /// and what an S3 client has as its region is not always a region:
+    /// - `aws-global` for an endpoint without a region;
+    /// - a part of the host name for endpoints such as `s3-accelerate.amazonaws.com` (`accelerate`),
+    ///   see `PocoHTTPClientConfiguration::updateSchemeAndRegion`;
+    /// - any string from the `region` setting, for example, of an S3-compatible storage.
+    /// So only a string in the form of a region name is used, and STS is called in `us-east-1` otherwise, as before.
+    if (hasFormOfRegionName(client_region))
+        return Aws::String(client_region);
+
+    return Aws::Region::US_EAST_1;
 }
 
 bool AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(std::string_view role_arn_)
@@ -757,14 +779,12 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
     LOG_DEBUG(logger, "Resolved role_arn from profile_config or environment variable to be {}", role_arn);
 
 
-    if (tmp_region.empty())
-    {
-        tmp_region = Aws::Region::US_EAST_1;
-    }
-    else
-    {
-        LOG_DEBUG(logger, "Resolved region from profile_config or environment variable to be {}", tmp_region);
-    }
+    /// `S3CredentialsProviderChain` puts the region of the S3 client into `force_region`, and leaves it empty if the
+    /// credentials are not for an S3 client. It is not in `region`: `createClientConfiguration` leaves there what
+    /// the AWS SDK picks, such as `AWS_REGION` or the region of the EC2 instance.
+    const bool sts_region_is_from_s3_client = tmp_region.empty();
+    tmp_region = resolveStsRegion(tmp_region, aws_client_configuration.force_region);
+    LOG_DEBUG(logger, "Resolved STS region to be {}", tmp_region);
 
     bool cache_on_session_name = true;
     if (session_name.empty())
@@ -778,7 +798,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
     }
 
     return CredentialsProviderCache::instance().getOrSet(
-        AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey{role_arn, token_file, cache_on_session_name ? session_name : ""},
+        AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey{
+            role_arn, token_file, cache_on_session_name ? session_name : "", tmp_region, &aws_client_configuration.remote_host_filter},
         [&]
         {
             return Aws::MakeShared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>("S3Credentials",
@@ -787,7 +808,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
                 std::move(role_arn),
                 std::move(token_file),
                 std::move(session_name),
-                std::move(tmp_region));
+                std::move(tmp_region),
+                sts_region_is_from_s3_client);
         });
 }
 
@@ -797,7 +819,8 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     Aws::String role_arn_,
     Aws::String token_file_,
     Aws::String session_name_,
-    Aws::String tmp_region)
+    Aws::String tmp_region,
+    bool sts_region_is_from_s3_client)
     : role_arn(std::move(role_arn_))
     , token_file(std::move(token_file_))
     , session_name(std::move(session_name_))
@@ -823,7 +846,34 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
 
     client = std::make_unique<Aws::Internal::STSCredentialsClient>(aws_client_configuration);
+
+    /// The STS endpoint of the region of the S3 client is a host which the server did not access before that region
+    /// was taken into account, and `remote_url_allow_hosts` may list only the hosts which it accessed: the S3 endpoint
+    /// and `sts.us-east-1.amazonaws.com`. So this endpoint is used only while it is allowed, see `getClient`.
+    if (sts_region_is_from_s3_client && aws_client_configuration.endpointOverride.empty()
+        && aws_client_configuration.region != Aws::Region::US_EAST_1)
+    {
+        auto configuration_for_default_region = aws_client_configuration;
+        configuration_for_default_region.region = Aws::Region::US_EAST_1;
+        client_for_default_region = std::make_unique<Aws::Internal::STSCredentialsClient>(configuration_for_default_region);
+        remote_host_filter = &aws_client_configuration.remote_host_filter;
+    }
+
     LOG_INFO(logger, "Creating STS AssumeRole with web identity creds provider.");
+}
+
+Aws::Internal::STSCredentialsClient & AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::getClient() const
+{
+    /// It is checked for every request, because the list of the allowed hosts is reloaded with the configuration.
+    /// If the endpoint is not allowed, STS is called in `us-east-1`, as before the region of the S3 client was taken into account.
+    if (client_for_default_region && !remote_host_filter->checkURL(Poco::URI(client->GetEndpoint().c_str()), /* throw_on_error = */ false))
+        return *client_for_default_region;
+    return *client;
+}
+
+Aws::String AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::getStsEndpoint() const
+{
+    return getClient().GetEndpoint();
 }
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::GetAWSCredentials()
@@ -832,13 +882,14 @@ Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Ge
     if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return credentials;
 
-    Silk::ThreadModeScope thread_mode;
     Reload();
     return credentials;
 }
 
 void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::SetNeedRefresh()
 {
+    /// Wait for an ongoing refresh so its completion cannot clear this invalidation.
+    std::lock_guard lock(get_aws_credentials_mutex);
     last_loaded_ms.store(0, std::memory_order_relaxed);
 }
 
@@ -856,20 +907,43 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials have expired, attempting to renew from STS.");
 
-    std::ifstream token_stream(token_file.data());
-    if (token_stream)
+    /// In a fiber a failed refresh without usable credentials is reported, as for `AssumeRole`: an unsigned request
+    /// would be answered with `AccessDenied`, which hides the real cause.
+    auto throw_in_fiber_without_usable_credentials = [&](std::string_view reason)
     {
-        String token_string((std::istreambuf_iterator<char>(token_stream)), std::istreambuf_iterator<char>());
-        token = token_string;
-    }
-    else
+        if (Silk::isInsideFiber() && (IsSetNeedRefresh() || areCredentialsEmptyOrExpired(credentials, 0)))
+            throw DB::Exception(ErrorCodes::S3_ERROR, "Failed to get credentials using AssumeRoleWithWebIdentity: {}", reason);
+    };
+
     {
-        LOG_INFO(logger, "Can't open token file: {}", token_file);
-        return;
+        Silk::ThreadModeScope thread_mode;
+        std::ifstream token_stream(token_file.data());
+        if (token_stream)
+        {
+            String token_string((std::istreambuf_iterator<char>(token_stream)), std::istreambuf_iterator<char>());
+            token = token_string;
+        }
+        else
+        {
+            throw_in_fiber_without_usable_credentials(fmt::format("can't open token file {}", token_file));
+            LOG_INFO(logger, "Can't open token file: {}", token_file);
+            return;
+        }
     }
     Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
-    auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
+    auto & sts_client = getClient();
+    if (&sts_client != client.get())
+        LOG_INFO(logger, "STS endpoint {} is not allowed by `remote_url_allow_hosts`, using {}", client->GetEndpoint(), sts_client.GetEndpoint());
+
+    auto result = sts_client.GetAssumeRoleWithWebIdentityCredentials(request);
+    if (result.creds.IsEmpty() && Silk::isInsideFiber())
+    {
+        throw_in_fiber_without_usable_credentials("STS returned no credentials");
+        /// Keep the base refresh state and cached `credentials` so the next call retries STS.
+        LOG_WARNING(logger, "Failed to get credentials from STS, keeping the cached credentials");
+        return;
+    }
     last_loaded_ms.store(Aws::Utils::DateTime::Now().Millis(), std::memory_order_relaxed);
 
     LOG_INFO(logger, "Got {}credentials from STS",
@@ -890,11 +964,39 @@ SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfigurati
 
 Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
 {
-    if (Silk::isInsideFiber())
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "SSO credentials are not implemented for fibers");
-    refreshIfExpired();
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    std::lock_guard lock(get_aws_credentials_mutex);
+    if (IsSetNeedRefresh() || areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+        Reload();
     return credentials;
+}
+
+void SSOCredentialsProvider::SetNeedRefresh()
+{
+    std::lock_guard lock(get_aws_credentials_mutex);
+    AWSCredentialsProvider::SetNeedRefresh();
+}
+
+Aws::Auth::AWSBearerToken SSOCredentialsProvider::BearerTokenProvider::GetAWSBearerToken()
+{
+    /// A copy of `Aws::Auth::SSOBearerTokenProvider::GetAWSBearerToken` without its `ReaderWriterLock`, which it holds
+    /// across file and network I/O: the SDK cache and refresh policy are kept.
+    if (m_token.IsEmpty())
+        Reload();
+
+    if (!m_token.IsEmpty())
+    {
+        const auto now = Aws::Utils::DateTime::Now();
+        if (now >= m_token.GetExpiration() - std::chrono::seconds(REFRESH_WINDOW_BEFORE_EXPIRATION_S)
+            && m_lastUpdateAttempt + std::chrono::seconds(REFRESH_ATTEMPT_INTERVAL_S) < now)
+            RefreshFromSso();
+    }
+
+    if (m_token.IsExpiredOrEmpty())
+    {
+        AWS_LOGSTREAM_ERROR("SSOBearerTokenProvider", "SSOBearerTokenProvider is unable to provide a token")
+        return Aws::Auth::AWSBearerToken("", Aws::Utils::DateTime(0.0));
+    }
+    return m_token;
 }
 
 void SSOCredentialsProvider::Reload()
@@ -902,6 +1004,10 @@ void SSOCredentialsProvider::Reload()
     auto profile = Aws::Config::GetCachedConfigProfile(profile_to_use);
     const auto access_token = [&]
     {
+        /// The SDK reads the token files here and may refresh the token of an SSO session, so this runs in thread mode,
+        /// while the request for the credentials below uses the cooperative transport of the fiber.
+        Silk::ThreadModeScope thread_mode;
+
         // If we have an SSO Session set, use the refreshed token.
         if (profile.IsSsoSessionSet())
         {
@@ -959,20 +1065,6 @@ void SSOCredentialsProvider::Reload()
     credentials = result.creds;
 }
 
-void SSOCredentialsProvider::refreshIfExpired()
-{
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
-        return;
-
-    guard.UpgradeToWriterLock();
-
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
-        return;
-
-    Reload();
-}
-
 Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_access_token_path)
 {
     LOG_TEST(logger, "Preparing to load token from: {}", sso_access_token_path);
@@ -1013,6 +1105,69 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
 
     LOG_TEST(logger, "Unable to open token file on path: {}", sso_access_token_path);
     return "";
+}
+
+namespace
+{
+
+/// A copy of `Aws::Auth::ProfileConfigFileAWSCredentialsProvider` that serializes access with `Silk::FiberMutex` instead
+/// of the SDK `ReaderWriterLock` and reads the credentials file inside `Silk::ThreadModeScope`. Overriding `Reload` of
+/// the SDK provider is not enough: the SDK holds its native lock across `Reload`, so a fiber would enter thread mode
+/// with that lock held, and a fiber that waits for it would block its scheduler thread.
+class ProfileConfigFileAWSCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
+{
+public:
+    ProfileConfigFileAWSCredentialsProvider()
+        : profile_to_use(Aws::Auth::GetConfigProfileName())
+        , credentials_file_loader(Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetCredentialsProfileFilename())
+    {
+        LOG_DEBUG(
+            getLogger("ProfileConfigFileAWSCredentialsProvider"),
+            "Setting provider to read credentials from {} for credentials file and {} for the config file, for use with profile {}",
+            Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetCredentialsProfileFilename(),
+            Aws::Auth::GetConfigProfileFilename(),
+            profile_to_use);
+    }
+
+    Aws::Auth::AWSCredentials GetAWSCredentials() override
+    {
+        std::lock_guard lock(get_aws_credentials_mutex);
+        if (IsTimeToRefresh(Aws::Auth::REFRESH_THRESHOLD))
+            Reload();
+
+        const auto & profiles = credentials_file_loader.GetProfiles();
+        const auto profile = profiles.find(profile_to_use);
+        if (profile == profiles.end())
+            return {};
+
+        auto credentials = profile->second.GetCredentials();
+        if (!credentials.IsEmpty())
+            credentials.AddUserAgentFeature(Aws::Client::UserAgentFeature::CREDENTIALS_PROFILE);
+        return credentials;
+    }
+
+    void SetNeedRefresh() override
+    {
+        std::lock_guard lock(get_aws_credentials_mutex);
+        AWSCredentialsProvider::SetNeedRefresh();
+    }
+
+private:
+    void Reload() override
+    {
+        {
+            Silk::ThreadModeScope thread_mode;
+            credentials_file_loader.Load();
+        }
+        /// Preserve the SDK's refresh interval even when the file is missing or empty.
+        AWSCredentialsProvider::Reload();
+    }
+
+    const Aws::String profile_to_use;
+    Aws::Config::AWSConfigFileProfileConfigLoader credentials_file_loader;
+    Silk::FiberMutex get_aws_credentials_mutex;
+};
+
 }
 
 Aws::Auth::AWSCredentials GeneralHTTPCredentialsProvider::GetAWSCredentials()
@@ -1064,8 +1219,11 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         //  additionally, plain EC2/IMDS setups avoid extra warning
         if (AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(credentials_configuration.kms_role_arn))
         {
+            /// The provider takes the region of the S3 client from here. Not `configuration.region`: this chain is also
+            /// used for the Glue and S3 Tables catalogs and for `AWS_MSK_IAM`, and there it is not a region of theirs,
+            /// see `CredentialsConfiguration::s3_client_region`.
             DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-                configuration.region,
+                credentials_configuration.s3_client_region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
                 configuration.retry_strategy,
@@ -1177,7 +1335,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         /// disabled the chain stays empty and the request goes out unsigned (anonymous).
         /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
         /// in chain.
-        AddProvider(Aws::MakeShared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>("S3Credentials"));
+        AddProvider(Aws::MakeShared<ProfileConfigFileAWSCredentialsProvider>("S3Credentials"));
     }
 }
 
@@ -1404,22 +1562,19 @@ AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleCredentialsProvider::GetAWSCredentials()
 {
-    if (Silk::isInsideFiber())
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "STS AssumeRole credentials are not implemented for fibers");
-    /// Honor `SetNeedRefresh()` like sibling providers (Web-Identity, SSO) do.
-    /// Without this, external callers (e.g. `S3::Client` on auth retries, or the
-    /// delta-kernel `ExpiredToken` retry path) can't force a re-AssumeRole even
-    /// after explicitly signalling the cached token is stale.
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    std::lock_guard lock(get_aws_credentials_mutex);
     if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
-        return credentials;
-
-    guard.UpgradeToWriterLock();
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return credentials;
 
     Reload();
     return credentials;
+}
+
+void AwsAuthSTSAssumeRoleCredentialsProvider::SetNeedRefresh()
+{
+    /// Wait for an ongoing refresh so its completion cannot clear this invalidation.
+    std::lock_guard lock(get_aws_credentials_mutex);
+    AWSCredentialsProvider::SetNeedRefresh();
 }
 
 void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
@@ -1430,8 +1585,15 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
-        /// Keep `m_needsRefresh` and cached `credentials` so the next call retries STS.
-        LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", outcome.GetError().GetMessage());
+        /// Keep the base refresh state and cached `credentials` so the next call retries STS.
+        const auto & error = outcome.GetError();
+        if (Silk::isInsideFiber() && (IsSetNeedRefresh() || areCredentialsEmptyOrExpired(credentials, 0)))
+            throw DB::Exception(
+                ErrorCodes::S3_ERROR,
+                "Failed to get credentials using AssumeRole. Error: {} ({}): {}",
+                error.GetExceptionName(), static_cast<int>(error.GetErrorType()), error.GetMessage());
+
+        LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", error.GetMessage());
         return;
     }
 
@@ -1441,7 +1603,6 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     credentials.SetSessionToken(result.getSessionToken());
     credentials.SetExpiration(result.getExpiration());
 
-    /// Clear `m_needsRefresh` so an external `SetNeedRefresh()` isn't latched.
     AWSCredentialsProvider::Reload();
 
     LOG_TRACE(logger, "Successfully retrieved credentials");

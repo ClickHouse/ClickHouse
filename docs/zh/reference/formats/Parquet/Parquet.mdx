@@ -110,9 +110,11 @@ ClickHouse 会将以 Parquet [`VARIANT`](https://github.com/apache/parquet-forma
 
 每个值都保留各自的类型。Variant 原始类型会被读取为对应的 ClickHouse 类型 (例如，`int32` 读取为 `Int32`，`decimal8` 读取为 `Decimal(18, S)`，`timestamp` 读取为 `DateTime64(6, 'UTC')`，`timestamp_ntz` 读取为 `DateTime64(6)`，`binary` 和 `string` 读取为 `String`，`uuid` 读取为 `UUID`) ；variant `null` 读取为 `NULL`；variant 对象读取为 [`JSON`](/zh/reference/data-types/newjson)，其中嵌套对象会被展平为以点分隔的路径 (值为 `null` 的字段视为不存在) ；元素全部为对象的 variant 数组读取为 `Array(JSON)`，其他 variant 数组则读取为 `Array(Dynamic)`。之所以顶层类型为 `Dynamic` 而非 `JSON`，是因为 variant 值不一定是对象。
 
-也可以通过显式指定类型，将 variant 列读取为 [`JSON`](/zh/reference/data-types/newjson)，例如在表结构中或在 `file` 表函数的 structure 参数中指定。此时每个值都必须是对象，否则会抛出异常。variant `null` 以及整列为 `null` 的情况都会被读取为空对象。所请求的 `JSON` 类型中显式指定类型的路径会被转换为相应类型，而 `SKIP` 和 `SKIP REGEXP` 中列出的路径会被跳过。
+也可以通过显式指定类型，将 variant 列读取为 [`JSON`](/zh/reference/data-types/newjson)，例如在表结构中或在 `file` 表函数的 structure 参数中指定。此时每个值都必须是对象，否则会抛出异常。variant `null` 以及整列为 `null` 的情况都会被读取为空对象。所请求的 `JSON` 类型中显式指定类型的路径会被转换为相应类型，而 `SKIP` 和 `SKIP REGEXP` 中列出的路径会被跳过。也可以通过显式指定，将 variant 列读取为普通的 [`Variant`](/zh/reference/data-types/variant) 类型。每个值会归入写入时其 variant 类型所对应的成员 (例如，`int16` 对应 `UInt8`，`date` 对应 `Date`，`decimal4` 对应 `Decimal(5, 2)`，数组对应 `Array`) ，并被转换为该成员类型；若某个值与任何成员都不匹配，则会抛出异常。只有在写入后能够还原其值时，才能写入 `Variant`：其成员必须是标量类型、`JSON` 或由它们组成的数组，且任意两个成员的写入方式不能相同，否则会抛出异常。例如，`Variant(UInt32, Int64)` 和 `Variant(Map(String, Int64), String)` 无法写入，请改用 `Dynamic`。
 
-目前尚不支持 shredded variant (包含 `typed_value` 字段的 group) ：读取此类列会抛出异常，但文件中的其他列仍可正常读取；如果启用了 `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference`，schema 推断会跳过该列。此外，也不支持将 `Dynamic` 或 `JSON` 列以 `VARIANT` 形式写入 Parquet。
+目前尚不支持 shredded variant (包含 `typed_value` 字段的 group) ：读取此类列会抛出异常，但文件中的其他列仍可正常读取；如果启用了 `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference`，schema 推断会跳过该列。
+
+[`Dynamic`](/zh/reference/data-types/dynamic) 类型和普通 [`Variant`](/zh/reference/data-types/variant) 类型 (`Geometry` 除外) 的列，包括嵌套在 `Array`、`Map` 和 `Tuple` 中的此类列，都会以规范版本 1 的非 shredded `VARIANT` group 形式写入。`NULL` 会被写入为整个 group 的 null，但 map 键除外：map 键必须存在，因此会改为写入 variant `null`。`JSON` 值会被写入为 variant 对象：若启用了设置 `json_type_escape_dots_in_keys`，键中经过转义的点号会在写入时还原，并在读取时重新转义，从而使包含点号的键与嵌套路径得以区分。写入对象的嵌套深度受设置 `max_parser_depth` 限制 (`0` 表示不限制) 。非有效 UTF-8 的字符串会被写入为 variant `binary` 值。对象键必须是有效的 UTF-8，否则会抛出异常。不支持将 `JSON` 列本身以 `VARIANT` 形式写入。
 
 ## 文件引用 {#file-type}
 
@@ -122,13 +124,14 @@ ClickHouse 会将以 Parquet [`VARIANT`](https://github.com/apache/parquet-forma
 
 ## 地理空间类型 (GeoParquet) {#geo-types}
 
-ClickHouse 支持按照 [GeoParquet](https://geoparquet.org/) 规范以及 Parquet [`GEOMETRY` 和 `GEOGRAPHY` 逻辑类型](https://github.com/apache/parquet-format/blob/master/Geospatial.md)读写几何列。几何列以 [WKB](https://libgeos.org/specifications/wkb/) 编码的 `BYTE_ARRAY` 载荷形式存储 (对于 GeoParquet，读取时也支持 WKT) 。GeoParquet 在文件级 Parquet 元数据中通过一个 JSON `geo` 键描述每个几何列的编码、几何类型和 CRS；逻辑类型则直接标注在列本身上，此时列块元数据中包含的是 `GeospatialStatistics` (一个包围盒以及几何类型列表) ，而非min/max 统计信息。一个文件可以同时采用这两种方式。
+ClickHouse 支持按照 [GeoParquet](https://geoparquet.org/) 规范以及 Parquet [`GEOMETRY` 和 `GEOGRAPHY` 逻辑类型](https://github.com/apache/parquet-format/blob/master/Geospatial.md)读写几何列。几何列以 [WKB](https://libgeos.org/specifications/wkb/) 编码的 `BYTE_ARRAY` 载荷形式存储 (对于 GeoParquet，读取时也支持 WKT) 。读取时还支持 GeoParquet 1.1 的原生 (GeoArrow) 编码 (`point`、`linestring`、`polygon`、`multipoint`、`multilinestring` 和 `multipolygon`) ，这类编码将坐标存储在由 `struct<x: double, y: double>` 构成的嵌套列表中。GeoParquet 在文件级 Parquet 元数据中通过一个 JSON `geo` 键描述每个几何列的编码、几何类型和 CRS；逻辑类型则直接标注在列本身上，此时列块元数据中包含的是 `GeospatialStatistics` (一个包围盒以及几何类型列表) ，而非min/max 统计信息。一个文件可以同时采用这两种方式。
 
 ### 读取行为 {#read}
 
 读取时，几何列会映射为对应的 ClickHouse [地理空间类型](/zh/reference/data-types/geo)：
 
 * 声明为 `Point`、`MultiPoint`、`LineString`、`Polygon`、`MultiLineString` 或 `MultiPolygon` 的列，会读取为对应的 ClickHouse 地理空间类型。
+* 采用原生 (GeoArrow) 编码的列，会读取为与该编码对应的地理空间类型，例如 `polygon` 读取为 `Polygon`。值为 NULL 的几何对象会读取为该类型的默认值 (空数组或点 `(0, 0)`) ，与 WKB 的处理方式相同。
 * 包含多种或未知几何类型的列，会读取为 [`Geometry`](/zh/reference/data-types/geo#geometry) 类型，它是一个涵盖所有受支持地理空间类型 的 `Variant`。
 * 对于逻辑类型为 `GEOMETRY` 或 `GEOGRAPHY` 的列，如果文件包含 GeoParquet 元数据，则从中获取几何类型；否则，若所有列块的 `GeospatialStatistics` 都列出同一种二维几何类型，该列会读取为对应的地理空间类型，否则读取为 `Geometry`。如果显式指定了某个地理空间类型，值会直接解码为该类型。
 * ClickHouse 没有单独的地理 (geography) 类型，因此 `GEOGRAPHY` 列会读取为与 `GEOMETRY` 相同的地理空间类型 (坐标为经度和纬度) ，边插值算法 (`algorithm` 参数) 也不会保留。CRS (`crs` 参数，默认为 `OGC:CRS84`) 同样不会保留。不支持包含 Z 或 M 坐标的几何对象。

@@ -10,7 +10,7 @@ doc_type: 'reference'
 تتضمن عمليات النشر من نوع BYOC إمكانات شاملة لـ observability، ما يتيح لك مراقبة خدمات ClickHouse عبر حزمة مراقبة Prometheus مخصصة، ونقاط نهاية مباشرة للمقاييس من خوادم ClickHouse. وتبقى بيانات المراقبة داخل حسابك السحابي، مما يمنحك تحكمًا كاملًا في البنية التحتية للمراقبة. وتُعد بيانات الاستخدام وتيليمتري الحالة الصحية المحدودة المذكورة في [حدود الشبكة](/ar/products/bring-your-own-cloud/reference/network-security#outbound-connections) بيانات المراقبة الوحيدة التي تُصدَّر إلى ClickHouse؛ وبشكل منفصل، يمكن للوحات معلومات ClickHouse، وعند الموافقة على التصعيد لمهندسيها، الاستعلام عن هذه الحزمة في مكانها عبر Tailscale، دون الاحتفاظ بأي شيء على جانب ClickHouse — راجع [الوصول إلى بيانات ClickHouse](/ar/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
 <div id="prometheus-monitoring">
-  ## أساليب المراقبة باستخدام Prometheus
+  ## أساليب المراقبة باستخدام Prometheus {#prometheus-monitoring}
 </div>
 
 يوفّر BYOC طريقتين رئيسيتين لجمع المقاييس وعرضها باستخدام Prometheus:
@@ -19,7 +19,7 @@ doc_type: 'reference'
 2. **جمع مقاييس ClickHouse مباشرةً**: وجّه نشر Prometheus لديك إلى نقطة النهاية `/metrics_all` التي توفّرها كل خدمة ClickHouse.
 
 <div id="monitoring-approaches-comparison">
-  ### مقارنة أساليب المراقبة
+  ### مقارنة أساليب المراقبة {#monitoring-approaches-comparison}
 </div>
 
 | الإمكانية                    | حزمة Prometheus المضمّنة                                                      | الجمع المباشر للمقاييس من خدمات ClickHouse                                           |
@@ -35,7 +35,7 @@ doc_type: 'reference'
 **التوصية**: بالنسبة إلى معظم حالات الاستخدام، نوصي بالتكامل مع حزمة Prometheus المضمّنة، لأنها توفّر مقاييس شاملة من جميع المكوّنات في نشر BYOC لديك (خدمات ClickHouse، وعنقود Kubernetes، والخدمات الداعمة)، بدلًا من الاكتفاء بمقاييس خادم ClickHouse فقط.
 
 <div id="builtin-prometheus-stack">
-  ## حزمة Prometheus المدمجة في BYOC
+  ## حزمة Prometheus المدمجة في BYOC {#builtin-prometheus-stack}
 </div>
 
 ينشر ClickHouse BYOC حزمة مراقبة Prometheus متكاملة داخل عنقود Kubernetes لديك، بما في ذلك Prometheus وGrafana وAlertManager، وThanos اختياريًا لتخزين المقاييس على المدى الطويل. تجمع هذه الحزمة المقاييس من:
@@ -66,7 +66,7 @@ doc_type: 'reference'
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### التكامل مع أدوات المراقبة لديك
+  ### التكامل مع أدوات المراقبة لديك {#prometheus-stack-integration}
 </div>
 
 يمكنك الاستفادة من حزمة Prometheus الخاصة بـ BYOC ضمن بيئة المراقبة لديك بعدة طرق:
@@ -105,7 +105,7 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## تكامل Prometheus مع خدمة ClickHouse
+  ## تكامل Prometheus مع خدمة ClickHouse {#direct-prometheus-integration}
 </div>
 
 توفّر خدمات ClickHouse نقطة نهاية للمقاييس متوافقة مع Prometheus، ويمكنك جمع المقاييس منها مباشرةً باستخدام مثيل Prometheus الخاص بك. يوفّر هذا النهج مقاييس خاصة بـ ClickHouse، لكنه لا يشمل مقاييس Kubernetes أو مقاييس الخدمات المساندة.
@@ -133,7 +133,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### المصادقة
+  ### المصادقة {#authentication}
 </div>
 
 تتطلب نقطة نهاية المقاييس المصادقة باستخدام بيانات اعتماد ClickHouse. نوصي باستخدام المستخدم `default` أو إنشاء مستخدم مخصص بأقل الأذونات اللازمة خصيصًا لكشط المقاييس.
@@ -191,7 +191,7 @@ scrape_configs:
 * `<username>` و `<password>` ببيانات اعتماد مستخدم scraping الخاص بك
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin
+  ## ClickHouse Mixin {#clickhouse-mixin}
 </div>
 
 للفرق التي تريد مجموعة جاهزة من لوحات المعلومات، يوفّر ClickHouse ‏**ClickHouse Mixin** لـ Prometheus. وهي لوحة معلومات Grafana جاهزة ومصممة خصيصًا لمراقبة عناقيد ClickHouse.
@@ -200,37 +200,25 @@ scrape_configs:
 
 بمجرد دمج مثيل Prometheus لديك مع حزمة مراقبة ClickHouse، يمكنك عرض المقاييس في Grafana باتباع الخطوات التالية:
 
-1. **إضافة Prometheus كمصدر بيانات في Grafana**
+1. **إضافة Prometheus كمصدر البيانات في Grafana**
    انتقل إلى &quot;Data sources&quot; في الشريط الجانبي لـ Grafana، وانقر على &quot;Add data source&quot;، ثم اختر &quot;Prometheus&quot;. أدخل عنوان URL الخاص بمثيل Prometheus وأي بيانات اعتماد مطلوبة لإجراء الاتصال.
 
 <div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+  </Frame>
 </div>
 
 2. **استيراد لوحة معلومات ClickHouse**
@@ -238,24 +226,16 @@ scrape_configs:
    [ملف JSON للوحة معلومات ClickHouse Mix-in](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
 <div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+  </Frame>
 </div>
 
 3. **استعراض المقاييس**
-   بمجرد استيراد لوحة المعلومات وتهيئتها باستخدام مصدر بيانات Prometheus لديك، ستتمكن من رؤية مقاييس في الوقت الفعلي من خدمات ClickHouse Cloud الخاصة بك.
+   بمجرد استيراد لوحة المعلومات وتهيئتها باستخدام مصدر البيانات Prometheus لديك، ستتمكن من رؤية مقاييس في الوقت الفعلي من خدمات ClickHouse Cloud الخاصة بك.
 
 <div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+  </Frame>
 </div>

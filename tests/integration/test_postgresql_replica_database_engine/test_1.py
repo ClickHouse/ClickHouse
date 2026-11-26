@@ -797,6 +797,16 @@ def test_merge_keeps_child_table_capabilities(started_cluster):
     assert int(total_rows) == 10, total_rows
     assert int(total_bytes) > 0, total_bytes
 
+    # Under FINAL, isNull(value) is rewritten to `value.null` through the wrapper, whose nested table
+    # is a ReplacingMergeTree, but not through a Merge, which may declare other column types.
+    for source, rewritten in ((f"test_database.{table_name}", True), ("merge_over_matpg", False)):
+        explain = instance.query(
+            "EXPLAIN QUERY TREE dump_ast = 1 "
+            f"SELECT isNull(value) FROM {source} FINAL "
+            "SETTINGS optimize_functions_to_subcolumns = 1"
+        )
+        assert ("value.null" in explain) == rewritten, explain
+
     instance.query("DROP TABLE merge_over_matpg")
 
 

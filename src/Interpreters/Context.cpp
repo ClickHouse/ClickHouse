@@ -536,6 +536,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 namespace
@@ -566,7 +567,7 @@ MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibilit
 /// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
 /// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
 /// it is already shared with running threads when profiles are applied, so a reset would race there.
-static const std::vector<String> distributed_cache_force_setting_names
+[[clang::no_destroy]] static const std::vector<String> distributed_cache_force_setting_names
     = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -9456,7 +9457,13 @@ void Context::setInputInitializer(InputInitializer && initializer)
 void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
 {
     if (!input_initializer_callback)
+    {
+        /// The server sets both callbacks together and resets only the initializer once `input` is read, so the
+        /// blocks reader without the initializer means a second read of the same input, e.g. from a view in RETURNING.
+        if (input_blocks_reader)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function can be read only once per query");
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
+    }
 
     input_initializer_callback(shared_from_this(), columns, header);
     /// Reset callback
@@ -10710,10 +10717,10 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
-void Context::enablePlanLogCapture()
+void Context::enablePlanLogCapture(const CollectedStatistics & collected)
 {
-    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
-    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>(collected);
+    setJoinAnalyzeMode(collected.join_matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 }
 
 QueryPlanLogCapturePtr Context::getPlanLogCapture() const
