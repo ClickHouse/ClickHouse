@@ -23,7 +23,7 @@ Pour analyser les stack frames, utilisez `addressToLine`, `addressToLineWithInli
 * `thread_name` ([String](/fr/reference/data-types/string)) — Le nom du thread.
 * `thread_id` ([UInt64](/fr/reference/data-types/int-uint)) — L’identifiant du thread
 * `query_id` ([String](/fr/reference/data-types/string)) — L’identifiant de la requête à laquelle ce thread appartient.
-* `trace` ([Array(UInt64)](/fr/reference/data-types/array)) — La trace de pile de ce thread. Sur les plateformes ELF, à l’exception de FreeBSD, les adresses du binaire principal de ClickHouse sont stockées sous forme d’offsets physiques dans le fichier, tandis que les frames situées en dehors de celui-ci (bibliothèques partagées, code JIT) sont stockées sous la valeur 0.
+* `trace` ([Array(UInt64)](/fr/reference/data-types/array)) — La trace de pile de ce thread. Sauf sur FreeBSD, les adresses du binaire principal de ClickHouse sont stockées sous forme d’offsets physiques dans le fichier, tandis que les cadres de pile situés en dehors de celui-ci (bibliothèques partagées, code JIT) sont stockés sous la valeur 0.
 * `untracked_memory` ([Int64](/fr/reference/data-types/int-uint)) — Compteur par thread des allocations mémoire qui n’ont pas encore été propagées au MemoryTracker parent. Peut être négatif si davantage de mémoire a été libérée qu’allouée depuis le dernier flush.
 
 ## Exemple {#example}

@@ -15,7 +15,7 @@ Use `LZ4` se não tiver certeza de qual modo escolher.
 </Tip>
 
 <div id="modes">
-  ## Modos
+  ## Modos {#modes}
 </div>
 
 | valor  | nome               | descrição                                     |
@@ -33,7 +33,7 @@ Segundo [benchmarks do Facebook](https://facebook.github.io/zstd/#benchmarks):
 | **lz4** 1.9.2     | 2.1  | 740 MB/s    | 4530 MB/s     |
 
 <div id="block">
-  ## Bloco
+  ## Bloco {#block}
 </div>
 
 | campo               | tipo    | descrição                                                                                           |
@@ -45,13 +45,9 @@ Segundo [benchmarks do Facebook](https://facebook.github.io/zstd/#benchmarks):
 | compressed&#95;data | binary  | Bloco de dados comprimidos                                                                          |
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Diagrama que ilustra a estrutura do bloco de compressão do ClickHouse](/images/data-compression/ch_compression_block.webp)
-
-</Frame>
-
+  <Frame>
+    ![Diagrama que ilustra a estrutura do bloco de compressão do ClickHouse](/images/data-compression/ch_compression_block.webp)
+  </Frame>
 </div>
 
 O cabeçalho é (raw&#95;size + data&#95;size + mode), e o tamanho bruto consiste em len(header + compressed&#95;data).
@@ -59,7 +55,7 @@ O cabeçalho é (raw&#95;size + data&#95;size + mode), e o tamanho bruto consist
 O checksum é `hash(header + compressed_data)`, usando [ClickHouse CityHash](/pt-BR/resources/develop-contribute/native-protocol/hash).
 
 <div id="none-mode">
-  ## Modo None
+  ## Modo None {#none-mode}
 </div>
 
 Se o modo *None* for usado, `compressed_data` será igual aos dados originais.
