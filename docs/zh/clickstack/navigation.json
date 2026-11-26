@@ -8,12 +8,12 @@
         "zh/clickstack/observability/index",
         {
           "expanded": true,
-          "group": "Introduction",
+          "group": "简介",
           "pages": [
             "zh/clickstack/observability/overview",
             "zh/clickstack/observability/getting-started/index",
             {
-              "group": "Sample datasets",
+              "group": "示例数据集",
               "root": "zh/clickstack/observability/example-datasets/index",
               "pages": [
                 "zh/clickstack/observability/example-datasets/sample-data",
@@ -31,11 +31,11 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "功能",
           "pages": [
             "zh/clickstack/observability/features/search",
             {
-              "group": "Dashboards",
+              "group": "仪表盘",
               "pages": [
                 "zh/clickstack/observability/features/dashboards/overview",
                 "zh/clickstack/observability/features/dashboards/dashboard-templates",
@@ -56,20 +56,20 @@
             "zh/clickstack/observability/mcp",
             "zh/clickstack/observability/url-parameters",
             {
-              "group": "Demo days",
+              "group": "演示日",
               "root": "zh/clickstack/observability/demo-days/index",
               "pages": [
                 {
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "November",
+                      "group": "十一月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-11-12"
                       ]
                     },
                     {
-                      "group": "October",
+                      "group": "十月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-10-22",
                         "zh/clickstack/observability/demo-days/2026/2026-10-15",
@@ -78,7 +78,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "九月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-09-24",
                         "zh/clickstack/observability/demo-days/2026/2026-09-17",
@@ -87,7 +87,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "八月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-08-28",
                         "zh/clickstack/observability/demo-days/2026/2026-08-21",
@@ -96,7 +96,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "七月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-07-31",
                         "zh/clickstack/observability/demo-days/2026/2026-07-24",
@@ -106,7 +106,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "六月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-06-26",
                         "zh/clickstack/observability/demo-days/2026/2026-06-18",
@@ -115,7 +115,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "五月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-05-29",
                         "zh/clickstack/observability/demo-days/2026/2026-05-22",
@@ -124,7 +124,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "四月",
                       "pages": [
                         "zh/clickstack/observability/demo-days/2026/2026-04-17",
                         "zh/clickstack/observability/demo-days/2026/2026-04-10",
@@ -139,7 +139,7 @@
         },
         {
           "expanded": true,
-          "group": "Administration",
+          "group": "管理",
           "pages": [
             "zh/clickstack/observability/managing/overview",
             "zh/clickstack/observability/managing/config",
@@ -147,17 +147,17 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "指南",
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "摄取数据",
               "pages": [
                 "zh/clickstack/observability/ingesting-data/overview",
                 "zh/clickstack/observability/ingesting-data/opentelemetry",
                 "zh/clickstack/observability/ingesting-data/vector",
                 {
-                  "group": "Integrations",
+                  "group": "集成",
                   "pages": [
                     "zh/clickstack/observability/integration-examples/index",
                     "zh/clickstack/observability/integration-examples/nginx-logs",
@@ -167,7 +167,7 @@
                     "zh/clickstack/observability/integration-examples/cloudwatch",
                     "zh/clickstack/observability/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "主机日志",
                       "pages": [
                         "zh/clickstack/observability/integration-examples/host-logs",
                         "zh/clickstack/observability/integration-examples/host-logs/ec2"
@@ -188,7 +188,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "语言 SDK",
                   "pages": [
                     "zh/clickstack/observability/ingesting-data/sdks/index",
                     "zh/clickstack/observability/ingesting-data/sdks/instrument-with-ai",
@@ -210,11 +210,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "迁移指南",
               "pages": [
                 "zh/clickstack/observability/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "从 Elastic 迁移",
                   "pages": [
                     "zh/clickstack/observability/migration/elastic/index",
                     "zh/clickstack/observability/migration/elastic/intro",
@@ -231,7 +231,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "集成合作伙伴",
           "pages": [
             "zh/clickstack/observability/integration-partners/index",
             "zh/clickstack/observability/integration-partners/bindplane",
@@ -241,14 +241,14 @@
           ]
         },
         {
-          "group": "Self-managed",
+          "group": "自管理",
           "pages": [
             "zh/clickstack/self-configured/overview",
             "zh/clickstack/self-configured/getting-started/managed",
             "zh/clickstack/self-configured/architecture",
             "zh/clickstack/self-configured/deployment/managed",
             {
-              "group": "Configuration and schemas",
+              "group": "配置与模式",
               "pages": [
                 "zh/clickstack/self-configured/ingesting-data/collector",
                 "zh/clickstack/self-configured/managing/config",
@@ -258,7 +258,7 @@
               ]
             },
             {
-              "group": "Administration",
+              "group": "管理",
               "pages": [
                 "zh/clickstack/self-configured/managing/overview",
                 "zh/clickstack/self-configured/managing/estimating-resources",
@@ -270,7 +270,7 @@
               ]
             },
             {
-              "group": "Migration reference",
+              "group": "迁移参考文档",
               "pages": [
                 {
                   "group": "Elasticsearch",
@@ -284,10 +284,10 @@
           ]
         },
         {
-          "group": "API reference",
+          "group": "API 参考文档",
           "pages": [
             {
-              "group": "Dashboards",
+              "group": "仪表盘",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
@@ -298,7 +298,7 @@
               ]
             },
             {
-              "group": "Alerts",
+              "group": "告警",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
@@ -308,7 +308,7 @@
               ]
             },
             {
-              "group": "Sources",
+              "group": "source",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
@@ -318,7 +318,7 @@
               ]
             },
             {
-              "group": "Webhooks",
+              "group": "Webhook",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
@@ -328,7 +328,7 @@
               ]
             },
             {
-              "group": "Roles",
+              "group": "角色",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
@@ -338,7 +338,7 @@
               ]
             },
             {
-              "group": "Saved searches",
+              "group": "保存的搜索",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
@@ -356,7 +356,7 @@
           }
         },
         {
-          "group": "Onboarding guides",
+          "group": "引导指南",
           "hidden": true,
           "pages": [
             "zh/clickstack/managed-onboarding/instrument-application-serverless",
@@ -385,18 +385,18 @@
       ]
     },
     {
-      "dropdown": "ClickStack (OSS)",
+      "dropdown": "ClickStack（OSS）",
       "icon": "/images/clickstack/clickstack-icon-dark.svg",
       "pages": [
         "zh/clickstack",
         {
           "expanded": true,
-          "group": "Introduction",
+          "group": "简介",
           "pages": [
             "zh/clickstack/overview",
             "zh/clickstack/getting-started/oss",
             {
-              "group": "Sample datasets",
+              "group": "示例数据集",
               "pages": [
                 "zh/clickstack/example-datasets/index",
                 "zh/clickstack/example-datasets/sample-data",
@@ -415,10 +415,10 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "功能",
           "pages": [
             {
-              "group": "Deployment",
+              "group": "部署",
               "pages": [
                 "zh/clickstack/deployment/oss",
                 "zh/clickstack/deployment/all-in-one",
@@ -437,7 +437,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (deprecated)",
+                      "group": "v1.x（已弃用）",
                       "pages": [
                         "zh/clickstack/deployment/helm-v1",
                         "zh/clickstack/deployment/helm-configuration-v1",
@@ -455,7 +455,7 @@
             },
             "zh/clickstack/features/search",
             {
-              "group": "Dashboards",
+              "group": "仪表盘",
               "pages": [
                 "zh/clickstack/features/dashboards/overview",
                 "zh/clickstack/features/dashboards/dashboard-templates",
@@ -473,20 +473,20 @@
             "zh/clickstack/mcp",
             "zh/clickstack/url-parameters",
             {
-              "group": "Demo days",
+              "group": "演示日",
               "pages": [
                 "zh/clickstack/demo-days/index",
                 {
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "November",
+                      "group": "十一月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-11-12"
                       ]
                     },
                     {
-                      "group": "October",
+                      "group": "十月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-10-22",
                         "zh/clickstack/demo-days/2026/2026-10-15",
@@ -495,7 +495,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "九月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-09-24",
                         "zh/clickstack/demo-days/2026/2026-09-17",
@@ -504,7 +504,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "八月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-08-28",
                         "zh/clickstack/demo-days/2026/2026-08-21",
@@ -513,7 +513,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "七月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-07-31",
                         "zh/clickstack/demo-days/2026/2026-07-24",
@@ -523,7 +523,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "六月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-06-26",
                         "zh/clickstack/demo-days/2026/2026-06-18",
@@ -532,7 +532,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "五月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-05-29",
                         "zh/clickstack/demo-days/2026/2026-05-22",
@@ -541,7 +541,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "四月",
                       "pages": [
                         "zh/clickstack/demo-days/2026/2026-04-17",
                         "zh/clickstack/demo-days/2026/2026-04-10",
@@ -556,7 +556,7 @@
         },
         {
           "expanded": true,
-          "group": "Administration",
+          "group": "管理",
           "pages": [
             "zh/clickstack/managing/overview",
             "zh/clickstack/managing/config",
@@ -568,11 +568,11 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "指南",
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "摄取数据",
               "pages": [
                 "zh/clickstack/ingesting-data/overview",
                 "zh/clickstack/ingesting-data/opentelemetry",
@@ -582,7 +582,7 @@
                 "zh/clickstack/ingesting-data/schema/map-vs-json",
                 "zh/clickstack/ingesting-data/trace-sampling",
                 {
-                  "group": "Integrations",
+                  "group": "集成",
                   "pages": [
                     "zh/clickstack/integration-examples/index",
                     "zh/clickstack/integration-examples/nginx-logs",
@@ -592,7 +592,7 @@
                     "zh/clickstack/integration-examples/cloudwatch",
                     "zh/clickstack/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "主机日志",
                       "pages": [
                         "zh/clickstack/integration-examples/host-logs",
                         "zh/clickstack/integration-examples/host-logs/ec2"
@@ -614,7 +614,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "语言 SDK",
                   "pages": [
                     "zh/clickstack/ingesting-data/sdks/index",
                     "zh/clickstack/ingesting-data/sdks/browser",
@@ -635,11 +635,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "迁移指南",
               "pages": [
                 "zh/clickstack/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "从 Elastic 迁移",
                   "pages": [
                     "zh/clickstack/migration/elastic/index",
                     "zh/clickstack/migration/elastic/intro",
@@ -658,7 +658,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "集成合作伙伴",
           "pages": [
             "zh/clickstack/integration-partners/index",
             "zh/clickstack/integration-partners/bindplane",
@@ -669,7 +669,7 @@
         },
         {
           "expanded": true,
-          "group": "API reference",
+          "group": "API 参考文档",
           "openapi": {
             "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
             "directory": "zh/clickstack/api-reference"

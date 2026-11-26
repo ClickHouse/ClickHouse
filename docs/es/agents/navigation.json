@@ -1,8 +1,8 @@
 {
-  "item": "Agents",
+  "item": "Agentes",
   "pages": [
     {
-      "group": "Get started",
+      "group": "Primeros pasos",
       "pages": [
         "es/agents/index",
         "es/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "Agent Builder",
+      "group": "Constructor de Agentes",
       "pages": [
         "es/agents/builder/index",
         "es/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "Manage agents",
+      "group": "Gestionar agentes",
       "pages": [
         "es/agents/prompts",
         "es/agents/memory",
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "group": "Assistant",
+      "group": "Asistente",
       "pages": [
         "es/agents/assistant/using-ai-chat",
         "es/agents/assistant/customizing-semantic-layer"

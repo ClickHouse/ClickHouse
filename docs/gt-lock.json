@@ -4,47 +4,47 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "62b5cc6dd5c2a83b9d1c3a0b913cf70ed9e42e8bfb940c180bf45390ed9e0dc1",
+      "versionId": "626f994624b93eb9edf478df58264b0784feb8e8423734cc7c78955f5ed4b4f7",
       "translations": {
-        "ja": {
-          "updatedAt": "2026-11-26T13:31:47.857Z",
-          "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-26T13:31:47.974Z",
-          "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
-        },
-        "fr": {
-          "updatedAt": "2026-11-26T13:31:48.201Z",
-          "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
-        },
         "zh": {
-          "updatedAt": "2026-11-26T13:31:48.087Z",
+          "updatedAt": "2026-11-26T13:35:10.446Z",
           "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
-        },
-        "ar": {
-          "updatedAt": "2026-11-26T13:31:48.144Z",
-          "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
-        },
-        "ko": {
-          "updatedAt": "2026-11-26T13:31:47.917Z",
-          "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
         },
         "es": {
-          "updatedAt": "2026-11-26T13:31:47.800Z",
+          "updatedAt": "2026-11-26T13:35:10.524Z",
           "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T13:35:10.599Z",
+          "fileName": "docs.json",
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T13:35:10.673Z",
+          "fileName": "docs.json",
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
         },
         "ru": {
-          "updatedAt": "2026-11-26T13:31:48.031Z",
+          "updatedAt": "2026-11-26T13:35:10.756Z",
           "fileName": "docs.json",
-          "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T13:35:10.865Z",
+          "fileName": "docs.json",
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T13:35:10.943Z",
+          "fileName": "docs.json",
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T13:35:11.021Z",
+          "fileName": "docs.json",
+          "postProcessHash": "fdc271d8a56930b549efbbb8260f29fec039853ce26bc44ea71a25c34d6244dd"
         }
       },
       "fileName": "docs.json"
@@ -71316,47 +71316,47 @@
     },
     {
       "fileId": "969e0f9553959710975c69eaf4a3f200b31677aa81405eecf50acde9d374ee98",
-      "versionId": "f62e41efbfd37262d720bc639a431323546aaf9b3ff75594c0b32f3785e33431",
+      "versionId": "d907b77092f456997fdb177c6349a6ddf1abc000a81b73302f5422d721500369",
       "translations": {
-        "es": {
-          "updatedAt": "2026-11-17T19:23:09.246Z",
-          "fileName": "es/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "f452953fe5048fb7790a29495547838fd9e22ab199ca4b420fd74c37042b5317"
-        },
         "ja": {
-          "updatedAt": "2026-11-17T19:23:09.246Z",
+          "updatedAt": "2026-11-26T13:35:10.353Z",
           "fileName": "ja/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "69720323d64674e37e99f841fe386fe0e3dd108bf38e5d2f2d2e3c8e92038bd0"
-        },
-        "ko": {
-          "updatedAt": "2026-11-17T19:23:09.247Z",
-          "fileName": "ko/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "4848953ddb4b24acf0bd1d8419a84f1fac8655fd2b74dc98f071ddbac71d5d01"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:09.248Z",
-          "fileName": "pt-BR/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "7ec1054d09436062130443e5797bc31acc42fca27eed795f37d36d86c69d6242"
+          "postProcessHash": "9c93b099b57c7a4281e503787b26aaf859bf959dcf159c4b35d678b3f97b4dda"
         },
         "ru": {
-          "updatedAt": "2026-11-17T19:23:09.248Z",
+          "updatedAt": "2026-11-26T13:35:10.354Z",
           "fileName": "ru/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "1e778bd442f4479ba9c95f2108dd7cf9815d0926ba33dc9306638001ce2000e2"
+          "postProcessHash": "bec8b32b33fc1831120816bc233e6334daf2b5f9f4642b8e6f1ba9766625e9fc"
         },
         "zh": {
-          "updatedAt": "2026-11-17T19:23:09.249Z",
+          "updatedAt": "2026-11-26T13:35:10.354Z",
           "fileName": "zh/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "1f8e1dfb5c4ecd34538e5bc14a5255c8b7853a4954a87250b66f26ea4dbfa25c"
+          "postProcessHash": "0dc46105acd5d87d815ad950469e4c3b0d9d8adf131cf2b6e7416f1d00b97ef9"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T13:35:10.354Z",
+          "fileName": "ko/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "1058d4b8853c6f120b776258dcee65c65783eac22b8c66715afa74c7ccb7295b"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T13:35:10.354Z",
+          "fileName": "pt-BR/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "9f7a8acc1212207a4a452a207eba091d20278fdb44da493373d038c1e4b74c40"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T13:35:10.355Z",
+          "fileName": "es/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "fd9778f79787e926d504ccf5cbbd440aee3d3202d751f8a23bfaaf5d1b4f8fcf"
         },
         "ar": {
-          "updatedAt": "2026-11-17T19:23:09.249Z",
+          "updatedAt": "2026-11-26T13:35:10.355Z",
           "fileName": "ar/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "512e9d72b70fa7443eb5e28f0f70500bac3fb144ef0fb26f4a2a1c2f0613a48d"
+          "postProcessHash": "6468807111c21466d9754c5b821df158f974ffe74979d2c52d3a1fbe40dd1172"
         },
         "fr": {
-          "updatedAt": "2026-11-17T19:23:09.250Z",
+          "updatedAt": "2026-11-26T13:35:10.356Z",
           "fileName": "fr/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "102bcc2af91b351acdcf80bebee2f58a974011fe69e6de97b19bb139a6211a91"
+          "postProcessHash": "f197de403c9c1f0c0eb161e7ba795e25c155b7e5fbbf15a2b75f280df300acdf"
         }
       },
       "fileName": "concepts/features/configuration/server-config/workload-scheduling.mdx"
@@ -153472,6 +153472,147 @@
         }
       },
       "fileName": "clickstack/observability/demo-days/2026/2026-10-08.mdx"
+    },
+    {
+      "fileId": "e04958fd75ed1b2ceb423821b53e8a03dff042a3676599630914c4e8e4bd00d4",
+      "versionId": "c23bf317815ae8fb0847ea6b0ff5a7bde45caacd11254a303a39383ba0d3421a",
+      "translations": {
+        "ja": {
+          "updatedAt": "2026-11-26T13:35:10.350Z",
+          "fileName": "ja/reference/statements/create/resource.mdx",
+          "postProcessHash": "0787934e05447202c85fc2990e38ef32531153d312498c3d63962c313bb19a90"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T13:35:10.350Z",
+          "fileName": "ru/reference/statements/create/resource.mdx",
+          "postProcessHash": "11c8d2573870a28dff9c62e4bf150421d7f933e09362a1065416786b5f30d1df"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T13:35:10.350Z",
+          "fileName": "es/reference/statements/create/resource.mdx",
+          "postProcessHash": "0e8ac0afe23d07670cbe5bc67ffd0a376a4e69b0ad0e6b6c106d0363b3ccfc72"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T13:35:10.350Z",
+          "fileName": "fr/reference/statements/create/resource.mdx",
+          "postProcessHash": "63516e3b59dccc187bf23d20c77ca5330bab374843302b310205952e59465ab5"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "ar/reference/statements/create/resource.mdx",
+          "postProcessHash": "506822cd92855de047a8f9471d6985ca82b4a57742b539c4e6d431ff6dba6bda"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "ko/reference/statements/create/resource.mdx",
+          "postProcessHash": "5b766c35f76f56da30e3568de8213a6fb6e4eb0fd5dfa3815059971f96a14d7f"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "zh/reference/statements/create/resource.mdx",
+          "postProcessHash": "d97f97b16bd99f9e9fe7332ffa55e8e041077973d54f5e48230a899573387d99"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "pt-BR/reference/statements/create/resource.mdx",
+          "postProcessHash": "07e26652dd05ea80ebf15da51836bafa47208d63698ee637fbc98d3e330cdf86"
+        }
+      },
+      "fileName": "reference/statements/create/resource.mdx"
+    },
+    {
+      "fileId": "54659178360d84cadbf4c8eb6e69b71f28b5aa0a617c0fd7f60ec96c5b890bf1",
+      "versionId": "901fb56537e63ce28216f8717769b26fb1070a27d3097b049f5ef30059d0fd42",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "es/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "e34e7e5fdd2ff0afe3d686252235a4c56bcf98d55e13e75c2fb5c049ecdb1679"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "ru/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "0b3f56119c2fa70323507e199751cd27876817c748cf55dc6518a9141b3207b7"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "pt-BR/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "6a58381a8616cce69f4dae9b4a54d8629ac0c7697e65bd732c1cae8cda360ec5"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "zh/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "e37ff81b3d4175bbd158a87da3f3bc4286a4319b44fb4a5c7a18281b681b128f"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "ko/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "f5d2652292d8b4351a1f12d4f8f0385012e8335cc94aad6034f5072ac966c7f2"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "ja/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "1e07451d465366f3aea8d6738a4fea8c4bcb4534153144459fcefc5c7360950d"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "fr/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "d53ee09d1c7cf160f3039e36de84a5360133bf2fe569cd3e6f86fe70cc7e9847"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "ar/reference/statements/create/skipping-index.mdx",
+          "postProcessHash": "0af2aae9c2dc2919cc02fbabc9ed64b005eba5d749c68558177cf64e8a6b750f"
+        }
+      },
+      "fileName": "reference/statements/create/skipping-index.mdx"
+    },
+    {
+      "fileId": "5d80b24d4f5a01e1ad5afa5c33d72a52ac62fc98bcad8d36db8831abad3c76ae",
+      "versionId": "fe6bd4fc2049da64f0193370f08beeeacfd6cd76e42da2d0deef90979cf1c8ce",
+      "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "pt-BR/reference/statements/create/workload.mdx",
+          "postProcessHash": "662245bb19afbb263f3860c296480eb2ba1064048087e715e9965f404a06d4f7"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "ja/reference/statements/create/workload.mdx",
+          "postProcessHash": "8838c0c0a8b79f3bc94c777b6e26486caae23f3497ed955ecf272a02b3ad1f5d"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T13:35:10.351Z",
+          "fileName": "zh/reference/statements/create/workload.mdx",
+          "postProcessHash": "3eb8a476b2834e2f15b4fde69dc6c17ea56ae2a5c0f91761e9fe104f28c43abb"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "ko/reference/statements/create/workload.mdx",
+          "postProcessHash": "0079a4c8dc5a7bf339dc3d4f4c4039feb3229a704b5de6520bac78aa54a94add"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "es/reference/statements/create/workload.mdx",
+          "postProcessHash": "ce11f24c1e44829e0d2855ee98508f32f2281b1370764e387bf71ab2ffe96371"
+        },
+        "fr": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "fr/reference/statements/create/workload.mdx",
+          "postProcessHash": "4790226aaf0acf99eaa94ad0ada4df499841ca9a0d97647facfb848921b13608"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "ar/reference/statements/create/workload.mdx",
+          "postProcessHash": "b8eeaf2f7232d837294a0b30ae659b13d7f69ee3c457000f472ac69bcc30c68f"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T13:35:10.352Z",
+          "fileName": "ru/reference/statements/create/workload.mdx",
+          "postProcessHash": "39b06e297c84c08f666bf75abad005285454276014fe5bceb001f427a0f84ec3"
+        }
+      },
+      "fileName": "reference/statements/create/workload.mdx"
     }
   ]
 }
