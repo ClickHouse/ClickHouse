@@ -271,7 +271,17 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     /// capturing the plan change the work the query does.
     PrettyNamesPerPlan pretty_names;
     if (log_capture)
-        pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
+    {
+        try
+        {
+            pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            log_capture = nullptr;
+        }
+    }
 
     struct Frame
     {
