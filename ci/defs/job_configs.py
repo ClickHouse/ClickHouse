@@ -97,10 +97,16 @@ def dind_containment_env(job_mem):
 
 integration_dind_env = dind_containment_env(LIMITED_MEM)
 
+# The command is part of every build job digest, and the digest is computed on the host
+# of the Config Workflow, not on the build host. Runners of the same instance type differ
+# by a few memory pages, so the exact value made the same build get different digests in
+# different runs (and missed the cache). Whole GiB is stable across such hosts.
+BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
+
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
-    f"+--memory={Utils.physical_memory() * 95 // 100}"
-    f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    f"+--memory={BINARY_DOCKER_MEM * 95 // 100}"
+    f"+--memory-reservation={BINARY_DOCKER_MEM * 9 // 10}"
     f"+--volume=.:/ClickHouse"
 )
 
