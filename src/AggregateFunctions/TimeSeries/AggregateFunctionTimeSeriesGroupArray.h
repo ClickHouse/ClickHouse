@@ -192,7 +192,7 @@ public:
                     {
                         const size_t tail_elements = max_merged_size - 1 - static_cast<size_t>(w);
                         if (tail_elements > 0)
-                            memmove(dst + i + 1, dst + w + 1, tail_elements * sizeof(Element));
+                            memmove(dst + (i + 1), dst + (w + 1), tail_elements * sizeof(Element));
                         elements.resize_assume_reserved(max_merged_size - num_duplicates);
                     }
                     return;
