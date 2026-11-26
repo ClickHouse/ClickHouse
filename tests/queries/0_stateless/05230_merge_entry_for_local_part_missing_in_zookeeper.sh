@@ -35,16 +35,27 @@ OPTIMIZE TABLE t_merge_missing_znode_r1 FINAL;
 SYSTEM SYNC REPLICA t_merge_missing_znode_r2;
 "
 
-part_name=$(${CLICKHOUSE_CLIENT} -q "
-    SELECT any(name) FROM system.parts
+read -r part_name partition_id min_block max_block level <<< "$(${CLICKHOUSE_CLIENT} -q "
+    SELECT any(name), any(partition_id), any(min_block_number), any(max_block_number), any(level)
+    FROM system.parts
     WHERE database = currentDatabase() AND table = 't_merge_missing_znode_r2' AND active
-    HAVING count() = 1 AND sum(rows) = 100")
+    HAVING count() = 1 AND sum(rows) = 100")"
 
 # The nodes below are written by hand, so the state built above is checked first: a replica that
 # pulls a log entry naming no part, or a part intersecting its own, terminates the server.
-if [[ -z "$part_name" ]]; then
+if [[ "$part_name" != "${partition_id}_${min_block}_${max_block}_${level}" ]] \
+    || (( max_block != min_block + 1 || level < 1 )); then
     echo "the setup did not leave the merged part on r2"
     exit 1
+fi
+
+# The parts the merged part was made from, as replication names them: when a restart brings back
+# outdated parts, each one is then either a source of the entry or contains the merged part.
+if (( level == 1 )); then
+    source_parts="${partition_id}_${min_block}_${min_block}_0
+${partition_id}_${max_block}_${max_block}_0"
+else
+    source_parts="${partition_id}_${min_block}_${max_block}_$((level - 1))"
 fi
 
 # `MergeFromLogEntryTask` names its logger after the table's UUID, not after `<database>.<table>`.
@@ -64,8 +75,7 @@ create_time: 2026-01-01 00:00:00
 source replica: r1
 block_id: 
 merge
-all_0_0_0
-all_1_1_0
+$source_parts
 into
 $part_name
 deduplicate: 0
