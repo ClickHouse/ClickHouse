@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST.h>
 
 namespace Poco::JSON { class Object; }
@@ -106,6 +107,8 @@ public:
         void readJSON(const Poco::JSON::Object & json) override;
 
         String name;
+        /// Quoting of the replacement name as written in the query.
+        IdentifierPartQuote name_quote = IdentifierPartQuote::Unquoted;
 
     protected:
         void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

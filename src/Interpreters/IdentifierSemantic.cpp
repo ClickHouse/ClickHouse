@@ -95,7 +95,7 @@ std::optional<ASTIdentifier> IdentifierSemantic::uncover(const ASTIdentifier & i
 {
     if (identifier.semantic->covered)
     {
-        std::vector<String> name_parts = identifier.name_parts;
+        IdentifierName name_parts = identifier.name_parts;
         return ASTIdentifier(std::move(name_parts));
     }
     return {};
@@ -142,10 +142,10 @@ std::optional<size_t> IdentifierSemantic::chooseTableColumnMatch(const ASTIdenti
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
 {
-    if (identifier.name_parts.size() == 3 && table_name == identifier.name_parts[0])
-        return identifier.name_parts[1] + '.' + identifier.name_parts[2];
+    if (identifier.name_parts.size() == 3 && table_name == identifier.name_parts[0].spelling)
+        return identifier.name_parts[1].spelling + '.' + identifier.name_parts[2].spelling;
     if (identifier.name_parts.size() == 2)
-        return identifier.name_parts[0] + '.' + identifier.name_parts[1];
+        return identifier.name_parts[0].spelling + '.' + identifier.name_parts[1].spelling;
     return {};
 }
 
@@ -171,7 +171,7 @@ String IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, c
     {
         if (!res.empty())
             res += ".";
-        res += identifier.name_parts[i];
+        res += identifier.name_parts[i].spelling;
     }
     return res;
 }
@@ -180,8 +180,8 @@ bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier
 {
     size_t num_components = identifier.name_parts.size();
     if (num_components >= 3)
-        return identifier.name_parts[0] == database &&
-               identifier.name_parts[1] == table;
+        return identifier.name_parts[0].spelling == database &&
+               identifier.name_parts[1].spelling == table;
     return false;
 }
 
@@ -189,7 +189,7 @@ bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier
 {
     size_t num_components = identifier.name_parts.size();
     if (num_components >= 2)
-        return identifier.name_parts[0] == table;
+        return identifier.name_parts[0].spelling == table;
     return false;
 }
 
@@ -244,7 +244,7 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
     if (!to_strip)
         return;
 
-    identifier.name_parts = std::vector<String>(identifier.name_parts.begin() + to_strip, identifier.name_parts.end());
+    identifier.name_parts = IdentifierName(std::vector<IdentifierPart>(identifier.name_parts.begin() + to_strip, identifier.name_parts.end()));
     identifier.resetFullName();
 }
 
@@ -254,7 +254,10 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
     if (!prefix.empty())
     {
         prefix.resize(prefix.size() - 1); /// crop dot
-        identifier.name_parts = {prefix, identifier.shortName()};
+        IdentifierName new_parts;
+        new_parts.push_back(IdentifierPart{prefix});
+        new_parts.push_back(identifier.name_parts.back());
+        identifier.name_parts = std::move(new_parts);
         identifier.resetFullName();
         identifier.semantic->table = prefix;
         identifier.semantic->legacy_compound = true;

@@ -27,10 +27,10 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
 
         if (identifier.compound())
         {
-            if (identifier.name_parts[0] != column_name)
+            if (identifier.name_parts[0].spelling != column_name)
                 return;
             auto name_parts = identifier.name_parts;
-            name_parts[0] = rename_to;
+            name_parts[0] = IdentifierPart{rename_to};
             auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
             renamed->setAlias(identifier.tryGetAlias());
             ast = std::move(renamed);

@@ -70,12 +70,21 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
     if (!parser.parse(pos, res, expected))
         throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse itable identifier ({})", str);
 
-    return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
+    return Identifier(res->as<ASTIdentifier>()->name_parts.spellings());
 }
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
-    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context);
+    /// The identifier is an already resolved canonical storage identity transported with a serialized plan.
+    /// Resolve it exactly: double-quote every part so `standard` name matching does not fold it again
+    /// and make it ambiguous with case siblings such as `Foo` and `foo`.
+    IdentifierName exact_name;
+    exact_name.parts.reserve(identifier.getPartsSize());
+    for (const auto & part : identifier.getParts())
+        exact_name.push_back(IdentifierPart{part, IdentifierPartQuote::DoubleQuoted});
+    auto exact_identifier_ast = make_intrusive<ASTTableIdentifier>(std::move(exact_name));
+
+    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context, exact_identifier_ast);
     if (!resolve_result)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
 

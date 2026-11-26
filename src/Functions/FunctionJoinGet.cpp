@@ -7,6 +7,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/TableLockHolder.h>
@@ -19,7 +22,11 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsNameMatchMode database_and_table_name_matching;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
 }
 
 namespace ErrorCodes
@@ -194,8 +201,29 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
                         "Illegal type {} of first argument of function joinGet, expected a const string.",
                         arguments[0].type->getName());
 
-    const auto qualified_name = QualifiedTableName::parseFromString(join_name);
-    const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
+    StorageID requested_storage_id = StorageID::createEmpty();
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::database_and_table_name_matching] == NameMatchMode::Standard
+        && (join_name.starts_with('"') || join_name.starts_with('`')))
+    {
+        /// Under `standard` matching the analyzer writes a table identifier with double-quoted parts
+        /// in the identifier syntax: parse it with the quoting of the parts, so these stay exact.
+        ParserCompoundIdentifier parser;
+        ASTPtr ast = parseQuery(
+            parser, join_name.data(), join_name.data() + join_name.size(), "joinGet table name",
+            settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        const auto & name_parts = ast->as<const ASTIdentifier &>().name_parts;
+        if (name_parts.size() != 1 && name_parts.size() != 2)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Expected the first argument of function joinGet to be a table name with 1 or 2 parts, got {}", join_name);
+        requested_storage_id = StorageID(*make_intrusive<ASTTableIdentifier>(name_parts));
+    }
+    else
+    {
+        const auto qualified_name = QualifiedTableName::parseFromString(join_name);
+        requested_storage_id = StorageID(qualified_name.database, qualified_name.table);
+    }
+    const auto storage_id = context->resolveStorageID(std::move(requested_storage_id));
 
     /// Otherwise the errors below would reveal the existence and the engine of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, storage_id);

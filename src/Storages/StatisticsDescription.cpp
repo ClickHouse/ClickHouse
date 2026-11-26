@@ -117,9 +117,9 @@ size_t astAllocatedBytes(const IAST & ast)
     if (const auto * identifier = ast.as<ASTIdentifier>())
     {
         res += stringAllocatedBytes(identifier->full_name);
-        res += identifier->name_parts.capacity() * sizeof(String);
-        for (const auto & part : identifier->name_parts)
-            res += stringAllocatedBytes(part);
+        res += identifier->name_parts.parts.capacity() * sizeof(IdentifierPart);
+        for (const auto & part : identifier->name_parts.parts)
+            res += stringAllocatedBytes(part.spelling);
     }
     else if (const auto * literal = ast.as<ASTLiteral>())
     {

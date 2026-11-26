@@ -71,6 +71,8 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
                 res.move_destination_type = PartitionCommand::MoveDestinationType::TABLE;
                 res.to_database = command_ast->to_database;
                 res.to_table = command_ast->to_table;
+                res.to_database_quote = command_ast->to_database_quote;
+                res.to_table_quote = command_ast->to_table_quote;
                 break;
             case DataDestinationType::SHARD:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::SHARD;
@@ -90,6 +92,8 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.replace = command_ast->replace;
         res.from_database = command_ast->from_database;
         res.from_table = command_ast->from_table;
+        res.from_database_quote = command_ast->from_database_quote;
+        res.from_table_quote = command_ast->from_table_quote;
         return res;
     }
     if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)
