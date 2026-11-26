@@ -69,6 +69,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_summing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_suspicious_indices", trueOrFalseSetting},
     {"allow_tuple_element_aggregation", trueOrFalseSetting},
+    {"allow_vector_similarity_index_in_specialized_merge_tree", trueOrFalseSettingNoOracle},
     {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalseSetting},
     {"alter_column_secondary_index_mode",
      CHSetting(
@@ -153,6 +154,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_block_offset_column", trueOrFalseSetting},
     {"enable_index_granularity_compression", trueOrFalseSetting},
     {"enable_max_bytes_limit_for_min_age_to_force_merge", trueOrFalseSetting},
+    {"enable_merge_checkpoints", trueOrFalseSetting},
     {"enable_mixed_granularity_parts", trueOrFalseSetting},
     {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", trueOrFalseSetting},
     {"enable_row_mask_update_coalescing", trueOrFalseSetting},
@@ -339,6 +341,9 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"max_table_size_bytes_uncompressed", bytesRangeSetting},
     {"max_table_size_rows", rowsRangeSetting},
     {"max_uncompressed_bytes_in_patches", bytesRangeSetting},
+    {"merge_checkpoints_min_bytes", bytesRangeSetting},
+    {"merge_checkpoints_min_interval_seconds",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 120)); }, {}, false)},
     {"merge_max_block_size", highRangeNonZeroSetting},
     {"merge_max_block_size_bytes", bytesRangeSetting},
     {"merge_max_bytes_to_prewarm_cache", bytesRangeSetting},
@@ -352,28 +357,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
          {"0", "1", "2", "8", "10", "100"},
          false)},
-    {"merge_memory_estimate_per_source_part_column",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"0", "1", "4096", "1048576"};
-             return rg.pickRandomly(choices);
-         },
-         {"0", "1", "4096", "1048576"},
-         false)},
     {"merge_selecting_sleep_ms", highRangeSetting},
     {"merge_selecting_sleep_slowdown_factor",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 1.0, 4.0)); }, {}, false)},
-    {"merge_selector_algorithm",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"'Simple'", "'Trivial'", "'StochasticSimple'", "'Manual'"};
-             return rg.pickRandomly(choices);
-         },
-         {"'Simple'", "'Trivial'", "'StochasticSimple'", "'Manual'"},
-         false)},
     {"merge_selector_base",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 8.0)); }, {}, false)},
@@ -425,6 +412,12 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_bytes_for_compact_part", bytesRangeSetting},
     {"min_bytes_for_full_part_storage", bytesRangeSetting},
+    {"min_bytes_for_object_shared_data_main_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, UINT32_C(100) * UINT32_C(1024) * UINT32_C(1024))); },
+         {"0", "1"},
+         false)},
     {"min_bytes_for_wide_part",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -536,7 +529,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"},
          false)},
-    {"object_shared_data_serialization_version_for_zero_level_parts",
+    {"object_shared_data_serialization_version_for_small_parts",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
@@ -764,6 +757,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
     {"use_compact_variant_discriminators_serialization", trueOrFalseSetting},
     {"use_const_adaptive_granularity", trueOrFalseSetting},
+    {"use_object_shared_data_serialization_version_for_small_parts_on_insert", trueOrFalseSetting},
     {"use_primary_key_cache", trueOrFalseSetting},
     {"vertical_merge_algorithm_min_bytes_to_activate", bytesRangeSetting},
     {"vertical_merge_algorithm_min_columns_to_activate",
@@ -784,6 +778,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"zookeeper_session_expiration_check_period", highRangeSetting}};
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
+
+std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> oracleTableSettings;
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
 
@@ -922,6 +918,12 @@ static std::unordered_map<String, CHSetting> icebergTableOnlySettings
        {"iceberg_format_version",
         CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 3)); }, {"1", "2", "3"}, false)},
        {"iceberg_max_number_datafiles_to_compact", rowsRangeSetting},
+       /// Pins an early metadata file (relative to the table path): ClickHouse and the Hadoop catalog name them `v<N>`
+       {"iceberg_metadata_file_path",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return fmt::format("'metadata/v{}.metadata.json'", rg.randomInt<uint32_t>(1, 3)); },
+            {},
+            false)},
        {"iceberg_metadata_async_prefetch_period_ms",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
@@ -931,6 +933,9 @@ static std::unordered_map<String, CHSetting> icebergTableOnlySettings
             },
             {},
             false)},
+       /// A UUID no metadata file has, so the table can't be read
+       {"iceberg_metadata_table_uuid",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.nextUUID() + "'"; }, {}, false)},
        {"iceberg_outdated_snapshot_lifetime_seconds", icebergSecondsSetting},
        {"iceberg_read_with_snapshot_lease", trueOrFalseSetting},
        {"iceberg_recent_metadata_file_by_last_updated_ms_field", trueOrFalseSetting},
@@ -940,6 +945,7 @@ static std::unordered_map<String, CHSetting> icebergTableOnlySettings
 
 static std::unordered_map<String, CHSetting> paimonSettings = {
     {"paimon_incremental_read", trueOrFalseSetting},
+    {"paimon_incremental_read_append_overwrite", trueOrFalseSetting},
     {"paimon_metadata_refresh_interval_sec",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 120)); }, {"0", "1", "30", "60"}, false)},
@@ -1061,7 +1067,7 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
     = {{"kafka_schema_registry_skip_bytes",
         CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 512)); }, {}, false)},
        {"kafka_num_consumers",
-        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 32)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 32)); }, {}, false)},
        {"kafka_max_block_size", CHSetting(highRange, {}, false)},
        {"kafka_skip_broken_messages", CHSetting(highRange, {}, false)},
        {"kafka_commit_every_batch", trueOrFalseSetting},
@@ -1079,7 +1085,7 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
             {"'default'", "'stream'", "'dead_letter_queue'"},
             false)},
        {"kafka_commit_on_select", trueOrFalseSetting},
-       {"kafka_max_rows_per_message", CHSetting(rowsRange, {}, false)},
+       {"kafka_max_rows_per_message", CHSetting(rowsRangeNonZero, {}, false)},
        {"kafka_compression_codec",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
@@ -1100,9 +1106,88 @@ static std::unordered_map<String, CHSetting> rabbitMQTableSettings
     = {{"rabbitmq_empty_queue_backoff_end_ms", CHSetting(highRange, {}, false)},
        {"rabbitmq_empty_queue_backoff_start_ms", CHSetting(highRange, {}, false)},
        {"rabbitmq_empty_queue_backoff_step_ms", CHSetting(highRange, {}, false)},
-       {"rabbitmq_flush_interval_ms", CHSetting(highRange, {}, false)}};
+       {"rabbitmq_flush_interval_ms", CHSetting(highRange, {}, false)},
+       {"rabbitmq_exchange_type",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'direct'", "'fanout'", "'topic'", "'headers'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'direct'", "'fanout'", "'topic'", "'headers'"},
+            false)},
+       {"rabbitmq_num_consumers",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 8)); }, {}, false)},
+       {"rabbitmq_num_queues",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 8)); }, {}, false)},
+       {"rabbitmq_persistent", trueOrFalseSetting},
+       {"rabbitmq_queue_settings_list",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                /// Queue arguments that drop or reject messages under the consumers
+                static const DB::Strings choices
+                    = {"'x-max-length=10'",
+                       "'x-max-length-bytes=1000'",
+                       "'x-message-ttl=1000'",
+                       "'x-max-length=5,x-overflow=reject-publish'",
+                       "'x-max-length=5,x-overflow=drop-head'",
+                       "'x-queue-type=quorum'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"rabbitmq_vhost",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                /// Only `/` exists on the broker
+                static const DB::Strings choices = {"'/'", "'v1'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"rabbitmq_skip_broken_messages", CHSetting(highRange, {}, false)},
+       {"rabbitmq_max_block_size", CHSetting(highRange, {}, false)},
+       {"rabbitmq_commit_on_select", trueOrFalseSetting},
+       {"rabbitmq_max_rows_per_message", CHSetting(rowsRangeNonZero, {}, false)},
+       {"rabbitmq_handle_error_mode",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'default'", "'stream'", "'dead_letter_queue'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'default'", "'stream'", "'dead_letter_queue'"},
+            false)}};
 
-static std::unordered_map<String, CHSetting> natsTableSettings = {{"nats_flush_interval_ms", CHSetting(highRange, {}, false)}};
+static std::unordered_map<String, CHSetting> natsTableSettings
+    = {{"nats_flush_interval_ms", CHSetting(highRange, {}, false)},
+       {"nats_secure", trueOrFalseSetting},
+       {"nats_num_consumers",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 8)); }, {}, false)},
+       {"nats_queue_group",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            { return rg.nextBool() ? String("''") : "'q" + std::to_string(rg.randomInt<uint32_t>(0, 3)) + "'"; },
+            {},
+            false)},
+       {"nats_reconnect_wait", CHSetting(highRange, {}, false)},
+       {"nats_startup_connect_tries",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 5)); }, {}, false)},
+       {"nats_skip_broken_messages", CHSetting(highRange, {}, false)},
+       {"nats_max_block_size", CHSetting(highRange, {}, false)},
+       {"nats_commit_on_select", trueOrFalseSetting},
+       {"nats_max_rows_per_message", CHSetting(rowsRangeNonZero, {}, false)},
+       {"nats_handle_error_mode",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'default'", "'stream'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'default'", "'stream'"},
+            false)}};
 
 static std::unordered_map<String, CHSetting> fileLogTableSettings = {{"poll_timeout_ms", CHSetting(highRange, {}, false)}};
 
@@ -1190,9 +1275,305 @@ static std::unordered_map<String, CHSetting> timeSeriesTableSettings = {
 static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", highRangeSetting}, {"max_compress_block_size", highRangeSetting}};
 
-std::unordered_map<String, CHSetting> allDatabaseSettings = {{"lazy_load_tables", trueOrFalseSetting}};
+/// Mostly unlimited (0) or large, because a small limit makes `CREATE TABLE` in the database fail
+static const auto maxTablesSetting = CHSetting(
+    [](RandomGenerator & rg, FuzzConfig &)
+    { return rg.nextMediumNumber() < 61 ? "0" : std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 1000)); },
+    {},
+    false);
 
-void loadFuzzerTableSettings(const FuzzConfig & fc)
+std::unordered_map<String, CHSetting> allDatabaseSettings = {{"lazy_load_tables", trueOrFalseSetting}, {"max_tables", maxTablesSetting}};
+
+/// The `default_replica_*` settings are skipped, because the engine arguments are always given, and
+/// `collection_name` needs a named collection. `highRangeNonZero` stays far from the UInt64 lag overflow.
+std::unordered_map<String, CHSetting> replicatedDatabaseSettings
+    = {{"allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views", trueOrFalseSetting},
+       {"check_consistency", trueOrFalseSetting},
+       {"internal_replication", trueOrFalseSetting},
+       {"logs_to_keep", highRangeNonZeroSetting},
+       {"max_broken_tables_ratio", probRangeSetting},
+       {"max_replication_lag_to_enqueue", highRangeNonZeroSetting},
+       {"max_retries_before_automatic_recovery",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
+            {"0", "1", "10"},
+            false)},
+       {"wait_entry_commited_timeout_sec",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3600)); },
+            {"0", "1", "60", "3600"},
+            false)}};
+
+/// `DataLakeCatalog` settings besides the connection ones set by `createExternalDatabase`
+std::unordered_map<String, CHSetting> dataLakeCatalogSettings = {
+    {"flat_namespaces", trueOrFalseSetting},
+    {"force_add_bucket", trueOrFalseSetting},
+    {"oauth_server_use_request_body", trueOrFalseSetting},
+    {"snapshot_loading_mode",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'auto'", "'all'", "'refs'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"storage_uri_style",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'auto'", "'path'", "'virtual_hosted'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"use_unity_catalog_v2", trueOrFalseSetting}};
+
+/// Inline disk paths must be inside `custom_local_disks_base_directory`, which is this one in CI and casa del dolor.
+/// Cache and encrypted paths are relative, so they go under the cache base directory and the wrapped disk.
+static const String inline_disks_base = "/var/lib/clickhouse/disks/";
+
+/// A named disk a wrapper can go over: not `default` (outside the base directory), not wrapped the same way already,
+/// and with metadata that supports MergeTree writes. A cache goes only over object storage, not over an encrypted disk
+/// (which reports the type of the disk below it).
+static const DiskInfo * pickWrappableDisk(RandomGenerator & rg, const FuzzConfig & fc, const bool for_encrypted)
+{
+    std::vector<const DiskInfo *> candidates;
+    for (const auto & d : fc.disks)
+    {
+        if (d.name != "default"
+            && (for_encrypted ? !d.is_encrypted : (!d.is_cached && !d.is_encrypted && d.type == "ObjectStorage"))
+            && (d.type == "Local" || d.metadata_type == "Local" || d.metadata_type == "PlainRewritable"))
+        {
+            candidates.emplace_back(&d);
+        }
+    }
+    return candidates.empty() ? nullptr : rg.pickRandomly(candidates);
+}
+
+/// An unnamed disk with storage: local, local blob storage, S3 on MinIO or Azure on Azurite. The metadata type is part
+/// of the location, so one location keeps one layout, and a repeated definition reuses its disk. `plain` metadata is
+/// left out: it makes the table read-only. `keeper` metadata exists only in Cloud builds, recognized by their named
+/// Keeper disks, and it can't hold a database, whose metadata is committed with a move.
+static String generateInlineLeafDisk(
+    RandomGenerator & rg, const FuzzConfig & fc, const bool object_storage_only, const bool for_database = false)
+{
+    enum class LeafKind
+    {
+        Local,
+        LocalBlob,
+        ObjectStorageS3,
+        S3,
+        Azure
+    };
+    std::vector<LeafKind> kinds;
+    if (!object_storage_only)
+        kinds.emplace_back(LeafKind::Local);
+    kinds.emplace_back(LeafKind::LocalBlob);
+    if (fc.minio_server.has_value())
+    {
+        kinds.emplace_back(LeafKind::ObjectStorageS3);
+        kinds.emplace_back(LeafKind::S3);
+    }
+    if (fc.azurite_server.has_value())
+        kinds.emplace_back(LeafKind::Azure);
+    const LeafKind kind = rg.pickRandomly(kinds);
+    const uint32_t n = rg.randomInt<uint32_t>(0, 7);
+
+    /// The Keeper prefix of `keeper` metadata is the key prefix of the objects, which an Azure disk from a connection
+    /// string doesn't have, so it is only on S3
+    DB::Strings metadata_types = {"local", "plain_rewritable"};
+    if (kind == LeafKind::ObjectStorageS3 && !for_database && !fc.keeper_disks.empty())
+        metadata_types.emplace_back("keeper");
+    const uint32_t metadata_index = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(metadata_types.size() - 1));
+    const String & metadata_type = metadata_types[metadata_index];
+
+    if (kind == LeafKind::Local)
+    {
+        return fmt::format("disk(type = local, path = '{}inline_local_{}/')", inline_disks_base, n);
+    }
+    if (kind == LeafKind::LocalBlob)
+    {
+        return fmt::format(
+            "disk(type = object_storage, object_storage_type = local_blob_storage, metadata_type = {}, path = '{}inline_blob_{}_{}/')",
+            metadata_type,
+            inline_disks_base,
+            metadata_type,
+            n);
+    }
+    String options;
+    if (kind != LeafKind::Azure && rg.nextSmallNumber() < 3)
+    {
+        /// Small parts make every write a multipart upload
+        options += ", s3_max_single_part_upload_size = " + std::to_string(rg.nextBool() ? 0 : 1048576);
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        options += ", skip_access_check = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+    }
+    /// Only one `plain_rewritable` disk can be registered on a prefix, so the options are part of it
+    const size_t options_hash = std::hash<String>{}(options) % 1000;
+    if (kind == LeafKind::Azure)
+    {
+        /// A disk from a connection string has no key prefix, so each definition gets its own container, which is
+        /// created when missing. Container names allow only lowercase letters, digits and hyphens.
+        const ServerCredentials & sc = fc.azurite_server.value();
+        return fmt::format(
+            "disk(type = object_storage, object_storage_type = azure_blob_storage, metadata_type = {}, connection_string = '{}', "
+            "container_name = 'inline-{}-{}-{}'{})",
+            metadata_type,
+            escapeSQLString(sc.database),
+            metadata_index,
+            n,
+            options_hash,
+            options);
+    }
+    const ServerCredentials & sc = fc.minio_server.value();
+    return fmt::format(
+        "{}, endpoint = 'http://{}:{}/{}/inline_disks/{}_{}_{}/', access_key_id = '{}', secret_access_key = '{}'{})",
+        kind == LeafKind::ObjectStorageS3 ? fmt::format("disk(type = object_storage, object_storage_type = s3, metadata_type = {}", metadata_type)
+                                  : String(n % 2 ? "disk(type = s3_plain_rewritable" : "disk(type = s3"),
+        sc.server_hostname,
+        sc.port,
+        sc.database,
+        kind == LeafKind::ObjectStorageS3 ? metadata_type : "s3",
+        n,
+        options_hash,
+        escapeSQLString(sc.user),
+        escapeSQLString(sc.secret),
+        options);
+}
+
+/// `encrypted` over a named or another inline disk, or `cache` over a named or inline object storage disk (a cache is
+/// rejected over anything else, `encrypted` included), up to `encrypted` over `cache` over a leaf
+static String generateInlineDisk(RandomGenerator & rg, const FuzzConfig & fc, const uint32_t depth)
+{
+    const uint32_t next_option = rg.nextSmallNumber();
+    if (depth > 1 || next_option < 4)
+    {
+        return generateInlineLeafDisk(rg, fc, false);
+    }
+    const bool encrypted = next_option < 7;
+    const DiskInfo * named = rg.nextSmallNumber() < 4 ? pickWrappableDisk(rg, fc, encrypted) : nullptr;
+    const String inner = named ? ("'" + named->name + "'")
+                               : (encrypted ? generateInlineDisk(rg, fc, depth + 1) : generateInlineLeafDisk(rg, fc, true));
+    String res = fmt::format("disk(type = {}, disk = {}", encrypted ? "encrypted" : "cache", inner);
+
+    if (encrypted)
+    {
+        struct
+        {
+            const char * algo;
+            size_t hex_len;
+        } static constexpr algos[] = {{"AES_128_CTR", 32}, {"AES_192_CTR", 48}, {"AES_256_CTR", 64}};
+        const auto & alg = algos[rg.randomInt<uint32_t>(0, 2)];
+        String key;
+        for (size_t i = 0; i < alg.hex_len / 16; i++)
+            key += fmt::format("{:016x}", rg.randomInt<uint64_t>(0, std::numeric_limits<uint64_t>::max()));
+        res += fmt::format(", algorithm = {}, key_hex = {}", alg.algo, key);
+    }
+    else
+    {
+        static constexpr uint64_t MiB = UINT64_C(1024) * UINT64_C(1024);
+        /// `max_size_ratio_to_total_space` excludes `max_size`. It is kept small, since it is of the host disk, and the
+        /// bounds below assume the smallest `max_size`, 1 MiB.
+        uint64_t max_size = MiB;
+        if (rg.nextSmallNumber() < 3)
+            res += ", max_size_ratio_to_total_space = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0001, 0.01));
+        else
+        {
+            max_size = rg.thresholdGenerator<uint64_t>(0.2, 0.2, MiB, MiB * UINT64_C(1024));
+            res += ", max_size = '" + std::to_string(max_size) + "'";
+        }
+        if (rg.nextSmallNumber() < 4)
+            res += ", cache_on_write_operations = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+        /// The default policy is SLRU, with a ratio of 0.6
+        bool slru = true;
+        bool overcommit = false;
+        double slru_ratio = 0.6;
+        if (rg.nextSmallNumber() < 4)
+        {
+            /// The overcommit variants exist only in builds with the distributed cache. They have the same queue layout,
+            /// so `SLRU_OVERCOMMIT` has the same bounds as `SLRU`.
+            static const DB::Strings policies = {"LRU", "SLRU", "LRU_OVERCOMMIT", "SLRU_OVERCOMMIT"};
+            const String & policy = policies[rg.randomInt<uint32_t>(0, fc.has_distributed_cache ? 3 : 1)];
+            slru = policy.starts_with("SLRU");
+            overcommit = policy.ends_with("OVERCOMMIT");
+            res += ", cache_policy = '" + policy + "'";
+            if (slru && rg.nextBool())
+            {
+                const String ratio = std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.1, 0.9));
+                res += ", slru_size_ratio = " + ratio;
+                slru_ratio = std::stod(ratio);
+            }
+        }
+        /// The split cache divides the queues again, and it is rejected with the overcommit policies
+        double split_ratio = 1;
+        if (!overcommit && rg.nextSmallNumber() < 3)
+        {
+            res += ", use_split_cache = 1";
+            split_ratio = 0.1;
+            if (rg.nextBool())
+            {
+                const String ratio = std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.1, 0.9));
+                res += ", split_cache_ratio = " + ratio;
+                split_ratio = std::stod(ratio);
+            }
+            split_ratio = std::min(split_ratio, 1 - split_ratio);
+        }
+        /// The cache splits `max_elements` by these ratios, each part must stay above zero
+        if (rg.nextSmallNumber() < 4)
+            res += ", max_elements = "
+                + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, split_ratio < 1 ? 1000 : 100, UINT64_C(1000000)));
+        /// A file segment (32 MiB by default) must fit in each SLRU queue, and `boundary_alignment` (4 MiB by default)
+        /// must not exceed it
+        const uint64_t max_segment_size = slru
+            ? static_cast<uint64_t>(static_cast<double>(max_size) * split_ratio * std::min(slru_ratio, 1 - slru_ratio)) - 1
+            : MiB * UINT64_C(128);
+        uint64_t segment_size = 32 * MiB;
+        if (slru || rg.nextSmallNumber() < 4)
+        {
+            segment_size = rg.thresholdGenerator<uint64_t>(0.2, 0.2, UINT64_C(1024), max_segment_size);
+            res += ", max_file_segment_size = " + std::to_string(segment_size);
+            res += ", boundary_alignment = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, UINT64_C(512), segment_size));
+        }
+        else if (rg.nextSmallNumber() < 4)
+        {
+            res += ", boundary_alignment = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, UINT64_C(512), MiB));
+        }
+        if (rg.nextSmallNumber() < 4)
+            res += ", load_metadata_asynchronously = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+        if (rg.nextSmallNumber() < 4)
+            res += ", background_download_threads = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16));
+        if (rg.nextSmallNumber() < 4)
+            res += ", background_download_max_file_segment_size = "
+                + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, UINT64_C(1024), segment_size));
+        if (rg.nextSmallNumber() < 4)
+            res += ", background_download_queue_size_limit = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000));
+        if (rg.nextSmallNumber() < 4)
+            res += ", allow_dynamic_cache_resize = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+        if (rg.nextSmallNumber() < 4)
+            res += ", keep_free_space_size_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
+        if (rg.nextSmallNumber() < 4)
+            res += ", keep_free_space_elements_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
+        if (rg.nextSmallNumber() < 3)
+        {
+            res += ", enable_bypass_cache_with_threshold = 1";
+            if (rg.nextBool())
+                res += ", bypass_cache_threshold = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, MiB * UINT64_C(256)));
+        }
+        if (rg.nextSmallNumber() < 3)
+            res += ", cache_hits_threshold = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10));
+        if (rg.nextSmallNumber() < 3)
+            res += ", skip_cache_on_disk_failure = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+        if (rg.nextSmallNumber() < 2)
+            res += ", write_cache_per_user_id_directory = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+    }
+    /// The path follows the rest of the definition, so another definition does not share the cache or the encrypted files
+    return res + fmt::format(", path = '{}_{}/')", encrypted ? "encrypted" : "cache", std::hash<String>{}(res) % 100000);
+}
+
+void loadFuzzerTableSettings(const FuzzConfig & fc, const bool has_cloud_features)
 {
     std::unordered_set<String> codecsEscpated;
     std::unordered_map<String, CHSetting> s3Settings;
@@ -1254,127 +1635,97 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             [&](RandomGenerator & rg, FuzzConfig &) -> String
             {
                 const auto & di = rg.pickRandomly(fc.disks);
-                /// Inline local disk definition
+                /// Inline local disk definition. A local disk can't share the path of another disk, and `default`'s path
+                /// is outside the base directory, so each set of options gets its own directory there.
                 if (di.type == "Local" && rg.nextSmallNumber() < 4)
                 {
-                    String res = "disk(type = local, path = '" + di.path + "'";
+                    String res;
                     const uint32_t space_opt = rg.nextSmallNumber();
                     if (space_opt < 3)
                         res += ", keep_free_space_bytes = "
                             + std::to_string(
                                    rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)));
                     else if (space_opt < 5)
-                        res += ", keep_free_space_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
+                        /// Of the total space: above the free fraction, every write fails with `NOT_ENOUGH_SPACE`
+                        res += ", keep_free_space_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 0.1));
                     if (rg.nextBool())
                         res += ", thread_pool_size = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 128));
-                    return res + ")";
+                    return fmt::format(
+                        "disk(type = local, path = '{}local_{}/'{})", inline_disks_base, std::hash<String>{}(res) % 100000, res);
                 }
-                /// Inline object_storage disk definition (only for Local object storage — no external credentials needed)
-                if (di.type == "ObjectStorage" && di.object_storage_type == "Local" && rg.nextSmallNumber() < 4)
+                /// Inline object_storage disk definition (only for Local object storage — no external credentials needed),
+                /// under the metadata directory of a named disk with `Local` metadata. The path of other metadata types
+                /// is not that directory, and a `plain_rewritable` prefix can't hold another one below it.
+                if (di.type == "ObjectStorage" && di.object_storage_type == "Local" && di.metadata_type == "Local"
+                    && rg.nextSmallNumber() < 4)
                 {
-                    String res = "disk(type = object_storage, object_storage_type = local_blob_storage, path = '" + di.path + "'";
-                    /// metadata_type: local, plain, or plain_rewritable
-                    if (rg.nextBool())
+                    /// The metadata keys are per type: an unknown one fails the `CREATE`. `plain` metadata and
+                    /// `read_only` are left out, they make the table read-only.
+                    String res;
+                    const bool rewritable = rg.nextSmallNumber() < 4;
+                    bool with_metadata_path = false;
+                    if (rewritable)
                     {
-                        static const DB::Strings meta_types = {"local", "plain", "plain_rewritable"};
-                        const String & mt = rg.pickRandomly(meta_types);
-                        res += ", metadata_type = " + mt;
-                        if (mt == "local" && rg.nextBool())
-                            res += ", metadata_path = '" + di.path + "metadata/'";
+                        res += ", metadata_type = plain_rewritable";
+                        if (rg.nextSmallNumber() < 4)
+                            res += ", enable_hard_links = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                        if (rg.nextSmallNumber() < 4)
+                            res += ", metadata_snapshot_enabled = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                        if (rg.nextSmallNumber() < 4)
+                            res += ", metadata_snapshot_write_delay_ms = "
+                                + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000));
+                    }
+                    else
+                    {
+                        if (rg.nextBool())
+                            res += ", metadata_type = local";
+                        with_metadata_path = rg.nextBool();
                         if (rg.nextBool())
                             res += ", metadata_keep_free_space_bytes = "
                                 + std::to_string(
                                        rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)));
+                        if (rg.nextSmallNumber() < 4)
+                            res += ", persistent_removal_log = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                        if (rg.nextSmallNumber() < 4)
+                            res += ", metadata_removal_log_compaction_threshold = "
+                                + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 10000));
                     }
                     if (rg.nextSmallNumber() < 4)
                         res += ", enable_distributed_cache = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
                     if (rg.nextSmallNumber() < 4)
-                        res += ", read_only = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
-                    if (rg.nextSmallNumber() < 4)
                         res += ", remove_shared_recursive_file_limit = "
                             + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", object_metadata_cache_size = "
-                            + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1024) * UINT64_C(1024)));
                     if (rg.nextSmallNumber() < 4)
                         res += ", key_compatibility_prefix = 'compat_" + di.name + "/'";
                     if (rg.nextSmallNumber() < 4)
                         res += ", thread_pool_size = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 128));
-                    return res + ")";
+                    /// Each set of options gets its own directory: only one `plain_rewritable` disk can be registered on a
+                    /// prefix, a custom disk stays registered after its table is dropped, and two disks must not share
+                    /// a metadata path
+                    const String path = fmt::format(
+                        "{}{}_{}/",
+                        di.path,
+                        rewritable ? "rewritable" : "blob",
+                        std::hash<String>{}(res + (with_metadata_path ? "metadata" : "")) % 100000);
+                    if (with_metadata_path)
+                        res += ", metadata_path = '" + path + "metadata/'";
+                    return "disk(type = object_storage, object_storage_type = local_blob_storage, path = '" + path + "'" + res + ")";
                 }
-                /// Inline encrypted disk wrapping a non-encrypted local disk
-                const auto enc_it = std::find_if(
-                    fc.disks.begin(),
-                    fc.disks.end(),
-                    [&](const DiskInfo & d) { return !d.is_encrypted && d.type == "Local" && d.name != di.name && d.name != "default"; });
-                if (!di.is_encrypted && !di.is_cached && enc_it != fc.disks.end() && rg.nextSmallNumber() < 3)
-                {
-                    struct
-                    {
-                        const char * algo;
-                        size_t hex_len;
-                    } static constexpr algos[] = {{"AES_128_CTR", 32}, {"AES_192_CTR", 48}, {"AES_256_CTR", 64}};
-                    const auto & alg = algos[rg.randomInt<uint32_t>(0, 2)];
-                    String key;
-                    for (size_t i = 0; i < alg.hex_len / 16; i++)
-                        key += fmt::format("{:016x}", rg.randomInt<uint64_t>(0, std::numeric_limits<uint64_t>::max()));
-                    return "disk(type = encrypted, disk = '" + enc_it->name + "', path = '/var/lib/clickhouse/disks/encrypted_"
-                        + enc_it->name + "/', algorithm = " + alg.algo + ", key_hex = " + key + ")";
-                }
-                /// Inline cache disk wrapping a non-cached local disk
-                const auto cache_it = std::find_if(
-                    fc.disks.begin(),
-                    fc.disks.end(),
-                    [&](const DiskInfo & d) { return !d.is_cached && d.type == "Local" && d.name != di.name && d.name != "default"; });
-                if (!di.is_cached && cache_it != fc.disks.end() && rg.nextSmallNumber() < 3)
-                {
-                    String res = "disk(type = cache, disk = '" + cache_it->name + "', path = '/var/lib/clickhouse/disks/inline_cache_"
-                        + cache_it->name + "/'";
-                    res += ", max_size = '"
-                        + std::to_string(rg.thresholdGenerator<uint64_t>(
-                            0.2, 0.2, UINT64_C(1024) * UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)))
-                        + "'";
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", cache_on_write_operations = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
-                    if (rg.nextSmallNumber() < 4)
-                    {
-                        const bool slru = rg.nextBool();
-                        res += ", cache_policy = " + String(slru ? "'SLRU'" : "'LRU'");
-                        if (slru && rg.nextBool())
-                            res += ", slru_size_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.1, 0.9));
-                    }
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", max_elements = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1000000)));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", max_file_segment_size = "
-                            + std::to_string(rg.thresholdGenerator<uint64_t>(
-                                0.2, 0.2, UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(128)));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", load_metadata_asynchronously = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", background_download_threads = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", allow_dynamic_cache_resize = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", boundary_alignment = "
-                            + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, UINT64_C(512), UINT64_C(1024) * UINT64_C(1024)));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", keep_free_space_size_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", keep_free_space_elements_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
-                    return res + ")";
-                }
+                /// Inline `cache`/`encrypted` over a named or inline disk, or an inline leaf disk, also on S3
+                if (rg.nextSmallNumber() < 5)
+                    return generateInlineDisk(rg, fc, 0);
                 return "'" + di.name + "'";
             },
             {},
             false);
         /// Data lake storage settings don't support inline `disk(...)` definitions, only disk names, because
         /// `DataLakeStorageSettings::loadFromQuery` applies the changes without converting the AST-backed
-        /// field into a created disk like `MergeTreeSettings` does, giving `BAD_GET` exceptions
+        /// field into a created disk like `MergeTreeSettings` does, giving `BAD_GET` exceptions. The `Log`
+        /// family gives the same exception.
         const auto & disk_name_setting
             = CHSetting([&](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(fc.disks).name + "'"; }, {}, false);
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
-        logTableSettings.insert({{"disk", disk_setting}});
+        logTableSettings.insert({{"disk", disk_name_setting}});
         dataLakeSettings.insert({{"disk", disk_name_setting}});
         paimonSettings.insert({{"disk", disk_name_setting}});
 
@@ -1385,13 +1736,28 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         for (const auto & di : fc.disks)
             if (di.metadata_type == "Local" || di.metadata_type == "PlainRewritable")
                 database_safe_disks.emplace_back(di.name);
+        /// Or an inline leaf disk, which keeps the same kinds of metadata
+        const auto & database_disk_setting = CHSetting(
+            [&fc, database_safe_disks](RandomGenerator & rg, FuzzConfig &) -> String
+            {
+                if (database_safe_disks.empty() || rg.nextSmallNumber() < 4)
+                    return generateInlineLeafDisk(rg, fc, false, true);
+                return "'" + rg.pickRandomly(database_safe_disks) + "'";
+            },
+            {},
+            false);
+        allDatabaseSettings.insert({{"disk", database_disk_setting}});
+
+        /// `Set` and `Join` save their data with `replaceFile`, so they need the same disks. Names only,
+        /// because both give `BAD_GET` exceptions on inline definitions.
         if (!database_safe_disks.empty())
         {
-            const auto & database_disk_setting = CHSetting(
+            const auto & set_join_disk_setting = CHSetting(
                 [database_safe_disks](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(database_safe_disks) + "'"; },
                 {},
                 false);
-            allDatabaseSettings.insert({{"disk", database_disk_setting}});
+            setTableSettings.insert({{"disk", set_join_disk_setting}});
+            joinTableSettings.insert({{"disk", set_join_disk_setting}});
         }
     }
     if (fc.enable_fault_injection_settings)
@@ -1453,6 +1819,32 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
            {"min_insert_block_size_bytes_for_materialized_views", CHSetting(bytesRange, {}, false)},
            {"min_insert_block_size_rows_for_materialized_views", CHSetting(rowsRange, {}, false)},
            {"parallel_inserts", trueOrFalseSetting},
+           /// `partitioning_mode = 'regex'` needs both, the component naming one capture group of the regex
+           {"partition_component",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings choices = {"'p'", "'a'", "'b'", "'missing'", "''"};
+                    return rg.pickRandomly(choices);
+                },
+                {},
+                false)},
+           {"partition_regex",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings choices
+                        = {"'(?P<p>[^_.]+).*'",
+                           "'(?P<p>[0-9]+).*'",
+                           "'(?P<p>.+)'",
+                           "'(?P<a>[^_]+)_(?P<b>.*)'",
+                           "'(?P<p>[a-z]+)(?P<a>[0-9]*)'",
+                           "'no_groups'",
+                           "'(?P<p>'"};
+                    return rg.pickRandomly(choices);
+                },
+                {},
+                false)},
            {"partitioning_mode",
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
@@ -1483,6 +1875,30 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
     azureQueueSettings.insert(queueSettings.begin(), queueSettings.end());
 
+    DB::Strings merge_selector_choices = {"'Simple'", "'StochasticSimple'", "'Manual'"};
+    if (!has_cloud_features)
+    {
+        /// With cloud features a MergeTree may become a SharedMergeTree, whose coordinated merges
+        /// request several merges at once, which `Trivial` rejects with a LOGICAL_ERROR by design
+        merge_selector_choices.emplace_back("'Trivial'");
+    }
+    mergeTreeTableSettings.insert(
+        {{"merge_selector_algorithm",
+          CHSetting(
+              [merge_selector_choices](RandomGenerator & rg, FuzzConfig &) { return rg.pickRandomly(merge_selector_choices); },
+              {merge_selector_choices.begin(), merge_selector_choices.end()},
+              false)}});
+
+    if (!fc.timezones.empty())
+    {
+        /// The time zone of the `DateTime64` that Iceberg `timestamptz` columns are mapped to, also settable per `DataLakeCatalog` database
+        const auto timestamptz_zone = CHSetting(
+            [](RandomGenerator & rg, FuzzConfig & cfg) { return "'" + (rg.nextBool() ? String("UTC") : rg.pickRandomly(cfg.timezones)) + "'"; },
+            {},
+            false);
+        icebergTableOnlySettings.insert({{"iceberg_timezone_for_timestamptz", timestamptz_zone}});
+        dataLakeCatalogSettings.insert({{"iceberg_timezone_for_timestamptz", timestamptz_zone}});
+    }
     for (const auto & entry : fc.disallowed_settings)
     {
         mergeTreeTableSettings.erase(entry);
@@ -1503,6 +1919,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         joinTableSettings.erase(entry);
         embeddedRocksDBTableSettings.erase(entry);
         kafkaTableSettings.erase(entry);
+        natsTableSettings.erase(entry);
+        rabbitMQTableSettings.erase(entry);
         mySQLTableSettings.erase(entry);
         mergeTreeColumnSettings.erase(entry);
         s3Settings.erase(entry);
@@ -1510,6 +1928,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         azureBlobStorageSettings.erase(entry);
         azureQueueSettings.erase(entry);
         logTableSettings.erase(entry);
+        replicatedDatabaseSettings.erase(entry);
+        allDatabaseSettings.erase(entry);
     }
     /// The MergeTree settings `ProjectionDescription::getProjectionFromAST` accepts in `WITH SETTINGS`, for both forms
     static const std::vector<String> projection_setting_names
@@ -1613,6 +2033,17 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Executable, executableTableSettings},
          {ExecutablePool, executableTableSettings},
          {FileLog, fileLogTableSettings}});
+
+    /// These change the rows a read returns: a metadata pin keeps an old snapshot, incremental reads return only new data,
+    /// and Memory limits drop the oldest blocks on insert
+    oracleTableSettings.insert(allTableSettings.begin(), allTableSettings.end());
+    for (auto & [_, settings] : oracleTableSettings)
+    {
+        for (const auto & name : {"iceberg_metadata_file_path", "paimon_incremental_read", "max_rows_to_keep", "max_bytes_to_keep"})
+        {
+            settings.erase(name);
+        }
+    }
 
     allColumnSettings.insert(
         {{MergeTree, mergeTreeColumnSettings},

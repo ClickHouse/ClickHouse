@@ -23,6 +23,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -68,6 +69,7 @@
 #include <Functions/toFixedString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/readFloatText.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
@@ -96,6 +98,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool json_use_optimized_type_conversion;
     extern const SettingsBool check_conversion_from_numbers_to_enum;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
@@ -138,6 +141,7 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    const bool json_use_optimized_type_conversion;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
     /// `format_settings` has too many members to hash one by one; this hashes the session settings it
@@ -157,9 +161,50 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , json_use_optimized_type_conversion(!context || context->getSettingsRef()[Setting::json_use_optimized_type_conversion])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
         , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
+    {
+    }
+
+    /// A value a nested JSON CAST writes as text must not depend on the user's presentation settings
+    /// (they would change the stored value and diverge from the parser route), so normalize them to
+    /// shortest-lossless float text and canonical Boolean tokens.
+    static FormatSettings normalizeNestedConversionFormatSettings(FormatSettings fs)
+    {
+        fs.float_precision = 0;
+        fs.bool_true_representation = "true";
+        fs.bool_false_representation = "false";
+        return fs;
+    }
+
+    /// Copy of `base` for a CAST nested inside another conversion: the settings that describe the
+    /// user's own top-level CAST are replaced by what the enclosing conversion needs.
+    FunctionConvertSettings(
+        const FunctionConvertSettings & base,
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+        FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode_,
+        bool cast_keep_nullable_)
+        : date_time_overflow_behavior(date_time_overflow_behavior_)
+        , precise_float_parsing(base.precise_float_parsing)
+        /// The JSON parser rejects a malformed address, and a string reaches the nested CAST only when
+        /// the parser would not infer a type for it (see needsFormatParseFallback). All these flags
+        /// describe the user's own CAST, so leaving them on would store a default address for invalid
+        /// input, or a number where the parser keeps a string.
+        , cast_ipv4_ipv6_default_on_conversion_error(false)
+        , cast_string_to_variant_use_inference(base.cast_string_to_variant_use_inference)
+        , cast_string_to_dynamic_use_inference(false)
+        , input_format_ipv4_default_on_conversion_error(false)
+        , input_format_ipv6_default_on_conversion_error(false)
+        , check_conversion_from_numbers_to_enum(base.check_conversion_from_numbers_to_enum)
+        , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(
+              base.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
+        , cast_keep_nullable(cast_keep_nullable_)
+        , json_use_optimized_type_conversion(base.json_use_optimized_type_conversion)
+        , cast_string_to_date_time_mode(cast_string_to_date_time_mode_)
+        , format_settings(normalizeNestedConversionFormatSettings(base.format_settings))
+        , format_settings_hash(base.format_settings_hash)
     {
     }
 
@@ -184,6 +229,7 @@ struct FunctionConvertSettings
         hash.update(check_conversion_from_numbers_to_enum);
         hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
         hash.update(cast_keep_nullable);
+        hash.update(json_use_optimized_type_conversion);
         hash.update(cast_string_to_date_time_mode);
         hash.update(format_settings_hash);
     }
@@ -1592,6 +1638,24 @@ struct ConvertThroughParsing
                 /// and `isAllRead` skips it.
                 trimRight(text, '\0');
             }
+            if constexpr (std::is_same_v<FromDataType, DataTypeString> && is_floating_point<typename ToDataType::FieldType>)
+            {
+                if (settings.precise_float_parsing)
+                {
+                    /// Same verdict as the generic path below; a rejected row goes there only in `Throw` mode, for the message.
+                    if constexpr (exception_mode != ConvertFromStringExceptionMode::Throw)
+                        vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
+                    const bool parsed = tryParseFloatFromPaddedRange(vec_to[i], PaddedRange(*chars, current_offset, text.size()));
+                    if (parsed || exception_mode != ConvertFromStringExceptionMode::Throw)
+                    {
+                        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                            (*vec_null_map_to)[i] = !parsed;
+                        current_offset = next_offset;
+                        continue;
+                    }
+                }
+            }
+
             ReadBufferFromMemory read_buffer(text);
             read_buffer.setPaddedStorage(*chars, current_offset, text.size());
 
@@ -1694,7 +1758,8 @@ struct ConvertThroughParsing
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
                                 if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing, saturate_on_overflow))
-                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
+                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string '{}' as type {}",
+                                        String(read_buffer.buffer().begin(), read_buffer.buffer().size()), TypeName<typename ToDataType::FieldType>);
                             }
                             else
                                 parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing, saturate_on_overflow);
@@ -2076,7 +2141,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
             return std::forward<ColTo>(col_to);
         }
     }
-    /// Scalar fallback for remaining conversions (decimal-to-number, DateTime64, Time64)
+    /// Scalar fallback for remaining conversions (accurate decimal-to-number, DateTime64, Time64)
     else if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
     {
         using ToFieldType = typename ToDataType::FieldType;
@@ -2130,14 +2195,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
 
         return std::forward<ColTo>(col_to);
     }
+    /// Batch path for decimal-to-number, also from DateTime64 and Time64, with the default overflow behavior (an exception)
+    else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+    {
+        convertFromDecimalBatch<FromDataType, ToDataType>(vec_from.data(), vec_to.data(), input_rows_count, col_from->getScale());
+        return std::forward<ColTo>(col_to);
+    }
     else
     {
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale());
             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
             else
@@ -2200,6 +2269,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
         if constexpr (!std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
         {
+#if defined(__aarch64__)
+            /// A vector instruction wraps a `Float64` outside of the range of a 32-bit integer, while the scalar one saturates it.
+            /// Clamping gives the saturated value in every row, so this loop can be vectorized.
+            if constexpr (std::is_same_v<FromFieldType, Float64> && is_any_of<ToFieldType, Int32, UInt32>)
+            {
+                constexpr auto lower = static_cast<Float64>(std::numeric_limits<ToFieldType>::min());
+                constexpr auto upper = static_cast<Float64>(std::numeric_limits<ToFieldType>::max());
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<ToFieldType>(std::fmin(std::fmax(vec_from[i], lower), upper));
+                return std::move(col_to);
+            }
+#endif
             /// The loop must remain scalar. A value outside of the range of the result type wraps around here,
             /// while the vector instructions saturate or return another value, and the result of a row
             /// would depend on whether it is converted by the vectorized body or by the scalar remainder.
@@ -2244,8 +2325,8 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                        named_from.column->getName(), result_type->getName());
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value '{}' in column {} cannot be safely converted into type {}",
+                        toString(vec_from[i]), named_from.column->getName(), result_type->getName());
                 }
             }
         }
@@ -2949,6 +3030,18 @@ struct ConvertImpl
             else
                 scale = additions;
 
+            /// With the same scale only the time zone can differ, which keeps the ticks.
+            if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDateTime64>)
+            {
+                if (col_from->getScale() == scale)
+                {
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        return ColumnNullable::create(named_from.column, ColumnUInt8::create(input_rows_count, false));
+                    else
+                        return named_from.column;
+                }
+            }
+
             auto col_to = ColVecTo::create(0, scale);
             const auto & vec_from = col_from->getData();
             auto & vec_to = col_to->getData();
@@ -3426,7 +3519,7 @@ struct ConvertImpl
             /// Bool conversion
             if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
             {
-                if (isBool(result_type))
+                if (isBool(result_type) || isSimpleAggregateFunctionOfBool(*result_type))
                 {
                     convertToBool<FromFieldType>(vec_to, vec_from, input_rows_count);
                     RETURN_NULLABLE_IF_NEEDED(col_to);
@@ -3820,10 +3913,12 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///
 /// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
 ///   instants have the same local wall-clock representation;
-/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
-///   tables compare floating-point keys bitwise and keep distinct payloads apart;
+/// - a floating-point number, also as a `QBit` element, because every `NaN` payload is rendered as the
+///   same `nan`, while hash tables compare floating-point keys bitwise and keep distinct payloads apart;
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a `Time` or `Time64`, saturated to `-999:59:59`..`999:59:59` when formatted;
+/// - a `DateTime64`, saturated to `0000-01-01`..`9999-12-31` when formatted;
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
 ///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
 /// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
@@ -3839,10 +3934,11 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
     {
         if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
             collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
-        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
-            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
-        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+        else if (isFloat(nested) || isDate32(nested) || isDateTime64(nested) || isTime(nested) || isTime64(nested)
+                 || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
+        else if (const auto * qbit = typeid_cast<const DataTypeQBit *>(&nested))
+            collapses = collapses || isFloat(qbit->getElementType());
         else if (isUInt8(nested) && nested.getName() == "Bool")
             collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
     };

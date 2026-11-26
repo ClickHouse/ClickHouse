@@ -59,8 +59,8 @@ void DataTypeArray::updateHashImpl(SipHash & hash) const
 SerializationPtr DataTypeArray::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     if (settings.propagate_types_serialization_versions_to_nested_types)
-        return SerializationArray::create(nested->getSerialization(settings));
-    return SerializationArray::create(nested->getDefaultSerialization());
+        return SerializationArray::create(nested->getSerialization(settings), nested);
+    return SerializationArray::create(nested->getDefaultSerialization(), nested);
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const

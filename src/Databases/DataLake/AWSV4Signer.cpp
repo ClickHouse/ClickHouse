@@ -69,7 +69,7 @@ void signRequestWithAWSV4(
     {
         if (Poco::icompare(h.name, "authorization") == 0)
             continue;
-        request.SetHeaderValue(Aws::String(h.name.c_str(), h.name.size()), Aws::String(h.value.c_str(), h.value.size()));
+        request.SetHeaderValue(Aws::String(h.name), Aws::String(h.value));
     }
 
     if (!payload.empty())
