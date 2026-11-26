@@ -21,6 +21,9 @@ public:
 
     static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected);
 
+    /// Parse `name = literal`, with none of the other value forms of `SET` (no map, `DEFAULT` or parameter).
+    static bool parseNameLiteralPair(SettingChange & change, IParser::Pos & pos, Expected & expected);
+
     static bool parseNameValuePairWithParameterOrDefault(SettingChange & change,
                                                          String & default_settings,
                                                          Parameter & parameter,
