@@ -3,6 +3,7 @@ DateTime and IPv4 kept	2
 rows with a changed type kept	6
 identical value deduplicated	1
 identical rows deduplicated	3
+same values in other rows kept	8
 other value of the same type kept	2
 Array(Dynamic) kept	2
 Tuple(Dynamic) kept	2

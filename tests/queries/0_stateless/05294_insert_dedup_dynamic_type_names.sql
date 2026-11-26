@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_datetime_ipv4;
 DROP TABLE IF EXISTS t_rows;
 DROP TABLE IF EXISTS t_same;
 DROP TABLE IF EXISTS t_same_rows;
+DROP TABLE IF EXISTS t_row_order;
 DROP TABLE IF EXISTS t_other_value;
 DROP TABLE IF EXISTS t_array;
 DROP TABLE IF EXISTS t_tuple;
@@ -53,6 +54,12 @@ SELECT number, multiIf(number = 0, true::Bool::Dynamic, number = 1, NULL::Dynami
 INSERT INTO t_same_rows SETTINGS deduplicate_insert_select = 'enable_even_for_bad_queries'
 SELECT number, multiIf(number = 0, true::Bool::Dynamic, number = 1, NULL::Dynamic, 'a'::String::Dynamic) FROM numbers(3);
 SELECT 'identical rows deduplicated', count() FROM t_same_rows;
+
+-- Each type has the same values in both inserts, but in other rows.
+CREATE TABLE t_row_order (id UInt64, v Dynamic) ENGINE = MergeTree ORDER BY id SETTINGS non_replicated_deduplication_window = 100;
+INSERT INTO t_row_order VALUES (1, 1::Int8), (2, 'a'), (3, 2::Int8), (4, NULL);
+INSERT INTO t_row_order VALUES (1, 1::Int8), (2, 2::Int8), (3, NULL), (4, 'a');
+SELECT 'same values in other rows kept', count() FROM t_row_order;
 
 CREATE TABLE t_other_value (id UInt64, v Dynamic) ENGINE = MergeTree ORDER BY id SETTINGS non_replicated_deduplication_window = 100;
 INSERT INTO t_other_value VALUES (1, 1::Int8);
@@ -130,6 +137,7 @@ DROP TABLE t_map;
 DROP TABLE t_tuple;
 DROP TABLE t_array;
 DROP TABLE t_other_value;
+DROP TABLE t_row_order;
 DROP TABLE t_same_rows;
 DROP TABLE t_same;
 DROP TABLE t_rows;
