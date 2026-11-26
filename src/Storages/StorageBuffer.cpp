@@ -327,6 +327,7 @@ void StorageBuffer::read(
     /// The query can name a table that forwards the read here (a materialized view, an `Alias` or another `Buffer`).
     const auto * query_table_node = query_info.table_expression ? query_info.table_expression->as<TableNode>() : nullptr;
     const auto query_storage_id = query_table_node ? query_table_node->getStorageID() : getStorageID();
+    const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
@@ -346,6 +347,21 @@ void StorageBuffer::read(
                 count_of_current_storage++;
                 if (count_of_current_storage > 1)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageBuffer over Distributed does not support using the same table more than once in the query");
+            }
+        }
+
+        /// The buffers' plan below is typed by the table the query names, so it must declare our column types.
+        if (query_table_node)
+        {
+            for (const auto & name : column_names)
+            {
+                auto query_column = query_table_node->getStorageSnapshot()->tryGetColumn(get_columns_options, name);
+                auto our_column = storage_snapshot->tryGetColumn(get_columns_options, name);
+                if (query_column && our_column && !query_column->type->equals(*our_column->type))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Reading Buffer table {} through {} is not supported when it declares column {} with another type ({} instead of {})",
+                        getStorageID().getNameForLogs(), query_storage_id.getNameForLogs(), backQuoteIfNeed(name),
+                        query_column->type->getName(), our_column->type->getName());
             }
         }
     }
@@ -374,7 +390,6 @@ void StorageBuffer::read(
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
-        const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto destination_columns = destination_snapshot->getColumns(get_columns_options);
         auto our_columns = storage_snapshot->getColumns(get_columns_options);
 
