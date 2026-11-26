@@ -153,6 +153,7 @@ Run these only when the trigger appears. They are small expansion passes, not a 
 
 **Use concrete traces for suspicious code**
 - When you find suspicious callee logic, pick a minimal boundary input and trace execution step by step with concrete values. Do not dismiss it by abstract reasoning.
+- In the CI `Code Review` job only: when a finding can be shown with a query or a command, run it with a CI binary; `references/binaries.md` lists which binaries exist for the PR head, earlier commits, and master, and how to get them. Local reviews (including a local codex review) use the binaries their user provides and do not download CI binaries.
 - **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it or request the test that would prove it.
 
 **Do not let one finding close a topic**
@@ -225,7 +226,7 @@ Severity comes from user/system impact and confidence, not from which prompt unc
 - Pure formatting or "style wars".
 
 REQUESTED OUTPUT FORMAT
-Respond with the following sections. Be terse but specific. Include code suggestions as minimal diffs/patches where helpful.
+Respond with the following sections. Be terse but specific. Suggest a fix only as described for Fix under Findings.
 Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
 **Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary and Final Verdict.
 
@@ -244,14 +245,23 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 
 **Findings** (omit if no findings)
 - Each finding must name the violated behavior/invariant/contract and its impact. Do not frame findings as checklist matches.
-- **❌ Blockers**
-  - `[File:Line(s)]` Clear description of issue and impact.
-  - Suggested fix (code snippet or steps).
-- **⚠️ Majors**
-  - `[File:Line(s)]` Issue + rationale.
-  - Suggested fix.
+- Each Blocker and Major, in the summary and in an inline comment, has the layout below. An inline comment is self-contained, because the author may read only it.
+  ```
+  - `File:Line(s)` <Impact>
+    - **Repro:** <```sql``` block>
+    - **Evidence:** <one line>
+    - **Cause:** <defect>
+    - **Fix:** <optional>
+  ```
+  - **Impact**: one sentence (after the severity tag, if any) saying what a user or operator sees and when: a wrong result, an exception, a crash, data loss, a stuck job, a slowdown. The mechanism belongs in Cause.
+  - **Repro**: the smallest code block that shows it, with the expected and the actual result: a ```sql``` block whenever SQL can show it, otherwise a ```bash``` block with the commands. Prose steps only when neither can. When no runnable repro exists (a race, a failure path, an environment the review cannot set up), give the concrete input and the sequence of events that reach the defect.
+  - **Evidence**: one short line, exactly one of `✅ Reproduced with <binary>` or `📖 Code reading: <reason it was not run>`. Name the binary by job and short commit in CI (`Fast test` of `b92c716f`, `Build (arm_asan_ubsan)` of `b92c716f`), or by path and build type in a local review. Outputs belong in Repro, not here.
+  - **Cause**: the defect in the code, in a few sentences.
+  - **Fix** (optional): only when the defect and its fix are both clear and simple, such as a missing check or a wrong bound. Otherwise omit the line and leave the fix to the author: a partial fix proposed with confidence is taken as complete.
+- **❌ Blockers**: findings in the layout above.
+- **⚠️ Majors**: findings in the layout above.
 - **💡 Nits**
-  - `[File:Line(s)]` Issue + quick fix.
+  - `File:Line(s)` Issue + quick fix.
   - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`, or low-quality user-facing `Changelog entry` that is too vague).
 
 
@@ -277,7 +287,7 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 
 STYLE & CONDUCT
 - Be precise, evidence-based, and neutral.
-- Prefer small, surgical suggestions over broad rewrites.
+- When you suggest a fix, prefer a small, surgical one over a broad rewrite.
 - Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
 - Avoid changing scope: review what's in the PR; suggest follow-ups separately. Unchanged code that the PR's inputs reach is in scope: a defect there is a finding, even when it is pre-existing. The PR must either fix it or link an issue that tracks it; approve only when one of the two is done.
 - Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.
