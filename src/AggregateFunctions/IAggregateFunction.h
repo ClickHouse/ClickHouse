@@ -389,8 +389,9 @@ public:
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
-    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
-    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg`,
+    /// `sumCount` and `count`; `sum` is a `Field` of the result type of `sum` over the argument, and ignored by `count`.
+    /// Over a `Nullable` argument, `count` is the number of non-NULL rows. Other functions throw.
     virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
@@ -444,7 +445,7 @@ public:
     virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
-      * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
+      * The reason is that in the case of virtual functions the compiler can generate code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
       * This gives a performance drop on simple queries around 12%.
       * After the appearance of better compilers, the code can be removed.
@@ -1248,9 +1249,11 @@ struct AggregateFunctionProperties
       */
     bool is_order_dependent = false;
 
-    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
-      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
-      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+    /** The result is correct only if each state receives its rows in order. In another order the result is wrong,
+      * not just different as for `is_order_dependent` (examples: `deltaSum` and `deltaSumTimestamp`, which compare
+      * each row with the previous one). `deltaSumTimestamp` orders the states it merges by their timestamps, so it
+      * is correct on any number of streams, while `deltaSum` is correct only on one. An aggregation that adds the
+      * rows of several streams to one state cannot honor it.
       */
     bool requires_ordered_rows_per_state = false;
 

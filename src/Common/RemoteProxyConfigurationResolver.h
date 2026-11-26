@@ -5,6 +5,7 @@
 #include <mutex>
 
 #include <Common/ProxyConfigurationResolver.h>
+#include <Common/Silk/FiberMutex.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -54,7 +55,10 @@ private:
     std::string no_proxy_hosts;
     std::shared_ptr<RemoteProxyHostFetcher> fetcher;
 
-    std::mutex cache_mutex;
+    /// Held across the fetch, so that concurrent misses wait for a single fetch. The fetch can suspend a fiber and resume
+    /// it on another thread, so this is a fiber mutex: a `std::mutex` must be unlocked on the thread that locked it, and
+    /// the fibers waiting for it would block their threads.
+    Silk::FiberMutex cache_mutex;
     bool cache_valid = false;
     std::chrono::time_point<std::chrono::system_clock> cache_timestamp;
     ProxyConfiguration cached_config;

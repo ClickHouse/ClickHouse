@@ -66,6 +66,9 @@ public:
     /// size hints of a stream reported several times are summed).
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
+    void registerReadRanges() override;
+    void setReadRangesRegistry(ReadRangesRegistryPtr registry) override;
+
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
     /// these containers are mutated concurrently and all of the reader's synchronization lives here.
@@ -85,6 +88,7 @@ private:
         void release(const String & stream_name);
         /// Valid only while no task runs: a running task can `release` streams.
         std::vector<MergeTreeReaderStream *> getAll() const;
+        void forEach(const std::function<void(const String & stream_name, MergeTreeReaderStream & stream)> & callback) const;
 
         bool isPrefetched(const String & stream_name) const;
         void markPrefetched(const String & stream_name);
@@ -134,6 +138,18 @@ private:
     /// The slot of the average value size hint of `resolved`, or nullptr when the part has no file for it.
     /// Called on the reading thread only, see the body.
     double * avgValueSizeHintSlot(const ResolvedSubstream & resolved);
+
+    /// Read by stream since the last `registerReadRanges`, see `CompressedReadBufferBase::setRangesReadSink`. The buffer
+    /// of each stream appends to the ranges of its own stream; the map is guarded.
+    struct StreamRangesRead
+    {
+        CompressedBlockRanges ranges;
+        /// Of `read_ranges_registry`, looked up at the first flush.
+        ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
+    };
+    std::mutex ranges_read_mutex;
+    std::unordered_map<String, StreamRangesRead> ranges_read;
+    CompressedBlockRanges & getRangesRead(const String & stream_name);
 
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.

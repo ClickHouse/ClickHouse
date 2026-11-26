@@ -19,20 +19,17 @@ ClickHouse は、複数のカタログ (Unity、Glue、Polaris など) とのイ
   `SET allow_database_iceberg = 1;`
 </Note>
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 ClickHouse から Lakehouse runtime catalog (BigLake Metastore) への接続を作成する前に、以下を用意してください。
 
 * Lakehouse runtime catalog が有効になっている **Google Cloud プロジェクト**
-* [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc) で作成した、アプリケーション用の **Application Default credentials** (OAuth クライアント ID とクライアント シークレット)
-* 適切なスコープ (例: `https://www.googleapis.com/auth/bigquery` および GCS 用の storage スコープ) で OAuth フローを完了して取得した **リフレッシュ トークン**
+* 認証情報 (以下のいずれか):
+  * **サービスアカウントキー**: カタログおよび GCS バケットへのアクセス権を持つ service account の JSON キーファイル。[Google Cloud Console](https://docs.cloud.google.com/iam/docs/keys-create-delete) で作成します。ユーザーの session に依存しないため、サーバーではこのオプションを推奨します。
+  * [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc) で作成した、アプリケーション用の **Application Default credentials** (OAuth クライアント ID とクライアント シークレット) 、および適切なスコープ (例: `https://www.googleapis.com/auth/bigquery` および GCS 用の storage スコープ) で OAuth フローを完了して取得した **リフレッシュ トークン**
 * **warehouse** パス: テーブルが保存されている GCS バケット (必要に応じてプレフィックスを含む) 。例: `gs://your-bucket` または `gs://your-bucket/prefix`
 
-<div id="creating-a-connection">
-  ## Lakehouse runtime catalog と ClickHouse の接続を作成する
-</div>
+## Lakehouse runtime catalog と ClickHouse の接続を作成する {#creating-a-connection}
 
 OAuth 認証情報を用意したら、[DataLakeCatalog](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用するデータベースを ClickHouse に作成します：
 
@@ -50,9 +47,21 @@ SETTINGS
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
 
-<div id="querying-lakehouse-runtime-tables">
-  ## ClickHouse から Lakehouse runtime catalog のテーブルをクエリする
-</div>
+サービスアカウントキーで認証する場合は、JSON キーファイルの内容を `google_service_account_key` に、プロジェクトを `google_project_id` に指定します。ClickHouse はこのキーで JWT に署名し、それをアクセストークンと交換したうえで、トークンを自動的に更新します。GCS からデータファイルを読み取る際にも同じトークンが使用されます。キーは `SHOW CREATE DATABASE` の出力およびログ内でマスクされます。
+
+```sql
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_service_account_key = '{"type": "service_account", "client_email": "...", "private_key": "...", ...}',
+    google_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+`google_service_account_key` と `google_adc_*` 設定は併用できません。また、いずれも `disk` 設定と組み合わせることはできません。ディスク上のテーブルは、カタログの認証情報ではなくディスクの認証情報を使用してデータファイルを読み取るためです。
+
+## ClickHouse から Lakehouse runtime catalog のテーブルをクエリする {#querying-lakehouse-runtime-tables}
 
 接続を作成したら、Lakehouse runtime catalog に登録されているテーブルをクエリできます。
 
@@ -86,9 +95,7 @@ SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
 SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
 ```
 
-<div id="loading-data-into-clickhouse">
-  ## Lakehouse から ClickHouse へのデータの取り込み
-</div>
+## Lakehouse から ClickHouse へのデータの取り込み {#loading-data-into-clickhouse}
 
 Lakehouse runtime catalog のテーブルからローカルの ClickHouse テーブルにデータを取り込み、繰り返し実行するクエリを高速化するには、MergeTree テーブルを作成し、カタログからデータを挿入します:
 

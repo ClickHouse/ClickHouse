@@ -105,6 +105,21 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
+    /// Registers the ranges of the compressed blocks loaded since the previous call (from the uncompressed cache too) in the
+    /// `ReadRangesRegistry` of `setReadRangesRegistry`.
+    virtual void registerReadRanges() = 0;
+
+    /// Enables `registerReadRanges`. The readers of a read share `registry`, so a block several of them load is counted
+    /// once. A reader is reused only for the tasks of its read, so `registry` doesn't change.
+    /// A granule served from the columns cache loads nothing from the part and could not be measured, so the reader stops
+    /// reading from the cache; it still writes to it.
+    virtual void setReadRangesRegistry(ReadRangesRegistryPtr registry)
+    {
+        chassert(!read_ranges_registry || read_ranges_registry == registry);
+        read_ranges_registry = std::move(registry);
+        columns_cache_reads_possible = false;
+    }
+
     [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -165,6 +180,9 @@ protected:
     [[nodiscard]] StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    /// See `setReadRangesRegistry`.
+    ReadRangesRegistryPtr read_ranges_registry;
 
     [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 

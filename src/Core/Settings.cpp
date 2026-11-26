@@ -644,11 +644,15 @@ Multiply s3_min_upload_part_size by this factor each time s3_multiply_parts_coun
 Each time this number of parts was uploaded to S3, s3_min_upload_part_size is multiplied by s3_upload_part_size_multiply_factor.
 )", 0) \
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
-Maximum part number for s3 upload part.
+The maximum number of parts in a multipart upload or multipart copy to S3. The default matches the limit of AWS S3.
+
+When copying, the part size is increased so that the number of parts does not exceed this value. When writing, an exception is thrown if the data needs more parts; in that case increase `s3_max_upload_part_size` or `s3_upload_part_size_multiply_factor`. Lower this value for S3-compatible storages that support fewer parts.
 )", 0, \
         {"24.6", 10000, 10000, "Maximum part number for s3 upload part"}) \
     DECLARE(Bool, s3_allow_multipart_copy, true, R"(
-Allow multipart copy in S3.
+Allows copying objects within S3 (for example, when making a backup to S3 or moving data between S3 disks) with a multipart copy (`UploadPartCopy`) when the object is larger than `s3_max_single_operation_copy_size`.
+
+If disabled, objects are copied with a single `CopyObject` request regardless of their size, and if that is not possible, the data is read and uploaded again. Disable it for S3-compatible storages that do not support `UploadPartCopy`.
 )", 0, \
         {"25.2", true, true, "New setting."}) \
     DECLARE(UInt64, s3_max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, R"(
@@ -1281,10 +1285,6 @@ Equality with a constant string is not moved for this reason: it is still applie
 Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
 the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
 
-Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
-(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
-the amount of data read from disk when the values are replaced by empty strings.
-
 Possible values:
 
 - 0 — Disabled.
@@ -1606,7 +1606,9 @@ Is the memory-saving mode of distributed aggregation enabled.
 Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.
 )", 0) \
     DECLARE(Bool, enable_memory_bound_merging_of_aggregation_results, true, R"(
-Enable memory bound merging strategy for aggregation.
+Enables the memory-bound strategy of merging partial aggregation results in distributed queries and queries with parallel replicas.
+
+If the aggregation on the remote servers is done in the order of the `GROUP BY` keys (see `optimize_aggregation_in_order`), the remote servers send the partial results sorted by these keys, and the initiator merges them in order, so it holds only a small part of the aggregation state in memory at a time.
 )", 0) \
     DECLARE(Bool, enable_positional_arguments, true, R"(
 Enables or disables supporting positional arguments for [GROUP BY](/reference/statements/select/group-by), [LIMIT BY](/reference/statements/select/limit-by), [ORDER BY](/reference/statements/select/order-by) statements.
@@ -2420,10 +2422,11 @@ Possible values:
 )", 0, \
         {"26.9", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}) \
     DECLARE(Bool, use_statistics_for_sum_avg_aggregation, true, R"(
-Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `Nullable` or
-`LowCardinality`, without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
+Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `LowCardinality`,
+without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
 `auto_statistics_types` `MergeTree` setting) for the data parts that have them materialized, and read only the remaining
-parts. `count(column)` of a column that is not `Nullable` or `LowCardinality` is answered there from the number of rows.
+parts. `count(column)` of a column that is not `LowCardinality` is answered there from the number of rows. Over a
+`Nullable` column, the statistics hold the sum of the non-NULL values and the NULL count, which the aggregates skip.
 The result is exactly the same as when reading the data.
 
 Possible values:
@@ -2503,7 +2506,7 @@ Possible values:
 )", 0, \
         {"26.11", false, true, "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}) \
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
-For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column. When the column is read from `Parquet` files (the `file`, `s3`, `azureBlobStorage`, `hdfs` and data lake table functions and engines), the reader drops such rows itself and skips whole row groups that lie beyond the boundary by their statistics.
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
@@ -2820,7 +2823,9 @@ The plan carries the same information [`EXPLAIN ANALYZE`](/reference/statements/
 
 Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured, and only where the row itself is written, so [`log_queries`](/reference/settings/session-settings/log#log_queries) must also be enabled. A query that failed during execution is captured with the plan it was running but without statistics. The column is empty on `QueryStart` rows, because no plan exists yet when they are written.
 
-Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
+The plan is masked with the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) of the server, like the `query` column. A query in which a rule matches, in its text or in a query parameter, stores no plan, because constant folding can carry the masked text into the plan in a form no rule matches. Otherwise every text the plan holds, such as filter conditions, `IN` lists and output column names, is masked before it is stored. A query with secret arguments, such as the key of `encrypt`, stores no plan either, because they cannot be reliably hidden inside it.
+
+Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected. Use [`log_query_plans_probability`](/reference/settings/session-settings/log-query#log_query_plans_probability) to capture only a random sample of queries.
 
 That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/concepts/features/performance/caches/query-cache) executes no plan and so has none to store.
 
@@ -2830,8 +2835,40 @@ See also:
 
 - [`system.query_log`](/reference/system-tables/query_log)
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
+- [`log_query_plans_time`](/reference/settings/session-settings/log-query#log_query_plans_time)
+- [`log_query_plans_join_matches`](/reference/settings/session-settings/log-query#log_query_plans_join_matches)
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
+    DECLARE(Float, log_query_plans_probability, 1., R"(
+Captures the query plan, as enabled by [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), only for a sample of queries selected randomly with the specified probability. A query that is not selected does not pay the profiling cost of [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), and its `system.query_log` rows are still written, with an empty `query_plan` column.
+
+The choice is made per query, once it is known that the plan of the query can be captured, so queries that are never captured (for example, queries other than `SELECT`) do not take part in the sampling.
+
+It applies on top of [`log_queries_probability`](/reference/settings/session-settings/log-queries#log_queries_probability): a query whose rows are not written has no plan captured either, so with both settings at `0.5` about a quarter of the queries have their plan captured.
+
+The choice is made before the query runs, so it cannot depend on how long the query takes. With [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log-queries#log_queries_min_query_duration_ms), every slow query still writes its row, but only the given share of those rows carry a plan, while the same share of all queries, fast ones included, pay the profiling cost.
+
+Possible values:
+
+- 0 — No query plans are captured.
+- Positive floating-point number in the range [0..1]. For example, if the setting value is `0.1`, the plans of about one in ten queries are captured.
+- 1 — The plan of every query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
+    DECLARE(Bool, log_query_plans_time, false, R"(
+When [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) captures a query, also collect the work intervals of its processors, the same as the `time` setting of [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze-concurrency). The plan stored in `system.query_log.query_plan` then has `Time` and `Concurrency` groups on its steps, with the wall-clock time and the concurrency level of each step and of its branch, and an `ExecutionTimeBreakdown` at its root, which splits the execution time into the time spent in the steps of the plan, outside them, and with no thread running anything.
+
+Collecting them costs memory and CPU in proportion to the number of processor tasks the query runs, so they grow with the length of the query, and processing them once the query has finished adds to its duration.
+
+Has no effect unless `log_query_plans` is enabled and the query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting to collect per-step wall-clock time and concurrency levels for the query plan written to `system.query_log`."}) \
+    DECLARE(Bool, log_query_plans_join_matches, false, R"(
+When [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) captures a query, make its joins do the extra bookkeeping needed for the matched rows metrics in the cases where they cannot be derived from what the join produces anyway, the same as the `matches` setting of [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze-join-steps). Where the metrics can be derived, they are stored without this setting.
+
+Has no effect unless `log_query_plans` is enabled and the query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting to collect exact matched rows metrics of joins for the query plan written to `system.query_log`."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
@@ -3132,7 +3169,9 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, add_http_cors_header, false, R"(
-Write add http CORS header.
+Adds the `Access-Control-Allow-Origin: *` header to responses of the HTTP interface, so that web applications served from another origin can read the query results in a browser.
+
+The header is added only if the request contains the `Origin` header and the `http_options_response` server configuration is not set. Because the setting is read from the settings of the authenticated user, the header is not added to responses for requests that fail authentication.
 )", 0) \
     \
     DECLARE(UInt64, max_http_get_redirects, 0, R"(
@@ -3554,7 +3593,9 @@ Send unknown packet instead of data Nth data packet
 )", 0) \
     \
     DECLARE(Bool, insert_allow_materialized_columns, false, R"(
-If setting is enabled, Allow materialized columns in INSERT.
+If enabled, `MATERIALIZED` columns can be listed in the column list of an `INSERT` query, and the inserted values are stored instead of being calculated from the column expressions. For `Distributed` tables, the values of `MATERIALIZED` columns are then also sent to the shards.
+
+If disabled, listing a `MATERIALIZED` column in an `INSERT` query throws an exception, and the values of such columns are always calculated from their expressions.
 )", 0) \
     DECLARE(Seconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, R"(
 HTTP connection timeout (in seconds).
@@ -4063,7 +4104,7 @@ Note, that `max_bytes_before_external_sort` is still respected, spilling to disk
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 )", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
@@ -4730,7 +4771,9 @@ Possible values:
 - Any positive integer, starting from 2.
 )", 0) \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
+The number of buckets the `grace_hash` join algorithm starts with. The rows of both tables are distributed between the buckets by the hash of the join keys; only one bucket is kept in memory, and the others are written to disk and joined later. When the bucket in memory exceeds the memory limits, the number of buckets is doubled, up to `grace_hash_join_max_buckets`.
+
+The value is rounded up to a power of two. A larger value avoids redistributing rows when the right table is known to be large, at the cost of more temporary files.
 )", 0, \
         {"26.11", 1, 1, "The setting is no longer experimental. The default is unchanged."}) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
@@ -4748,7 +4791,9 @@ Possible values:
         {"24.1", 100000, 0, "Disable join optimization as it prevents from read in order optimization"}) \
     \
     DECLARE(Bool, compatibility_ignore_collation_in_create_table, true, R"(
-Compatibility ignore collation in create table
+If enabled, a `COLLATE` clause in a column declaration of a `CREATE TABLE` query is accepted and ignored. This helps to run table definitions written for other database systems, such as MySQL, without editing them.
+
+If disabled, a `CREATE TABLE` query with a column collation throws an exception.
 )", 0) \
     \
     DECLARE(String, temporary_files_codec, "LZ4", R"(
@@ -5236,7 +5281,9 @@ Send server text logs with specified minimum level to client. Valid values: 'tes
 Send server text logs with specified regexp to match log source name. Empty means all sources.
 )", 0) \
     DECLARE(Bool, enable_optimize_predicate_expression_to_final_subquery, true, R"(
-Allow push predicate to final subquery.
+Allows a filter from the query to be added to the query sent to remote servers (for example, when reading from a `Distributed` table) if the query sent to remote servers uses `FINAL`. This reduces the amount of data the remote servers return.
+
+If disabled, the filter is not added to such queries and is applied only after receiving data from the remote servers.
 )", 0) \
     DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
 Allows push predicate when subquery contains WITH clause
@@ -5568,7 +5615,9 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
-Allow execute multiIf function columnar
+Allows the `multiIf` function to compute its result for a whole column at once instead of row by row, which is faster.
+
+The columnar execution is used only if the result type is a number, `Decimal`, a date or date-time type, `Enum`, `IPv4` or `IPv6`, and the function has at most 255 branches. In other cases the row-by-row execution is used regardless of this setting.
 )", 0) \
     DECLARE(Bool, allow_executable_tables, true, R"(
 Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
@@ -7180,7 +7229,9 @@ If true, include only column names and types into result of DESCRIBE query
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
-Allow to use lightweight updates.
+Allows lightweight updates, which write only the updated values to patch parts instead of rewriting whole data parts as a mutation does.
+
+If disabled, the `UPDATE` statement throws an exception, and `ALTER TABLE ... UPDATE` and lightweight `DELETE` do not use lightweight updates even if `alter_update_mode` or `lightweight_delete_mode` request them (with `lightweight_force` or `lightweight_update_force` they throw an exception).
 )", 0, allow_experimental_lightweight_update, \
         {"25.8", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."}, \
         {"25.5", false, false, "A new setting. At the time the setting was named `allow_experimental_lightweight_update`, which is now an alias of it."}) \
@@ -7698,7 +7749,7 @@ Allow storing Kafka related offsets in ClickHouse Keeper. When enabled, a ClickH
         {"26.9", false, false, "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."}, \
         {"24.8", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper. At the time the setting was named `allow_experimental_kafka_offsets_storage_in_keeper`, which is now an alias of it."}) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
-Enable use of software prefetch in aggregation
+Enables software prefetching of hash table cells during `GROUP BY`. Prefetching hides memory latency when the aggregation hash table does not fit into the CPU cache, so it is used only once the hash table grows beyond the size of the L2 cache.
 )", 0) \
     DECLARE(Bool, allow_aggregate_partitions_independently, true, R"(
 Enable independent aggregation of partitions on separate threads when partition key suits group by key. Beneficial when number of partitions close to number of cores and partitions have roughly the same size. Heuristics in `ReadFromMergeTree` automatically disable the optimization for unfavorable layouts (too few partitions, too many partitions, or significantly skewed partition sizes); see `force_aggregate_partitions_independently` to bypass those checks.
@@ -8016,6 +8067,10 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
+    DECLARE(Bool, rewrite_intersect_except_distinct_to_join, true, R"(
+Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a hash join. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`. Operations whose arms can produce totals, such as with `WITH TOTALS`, still run without a join.
+)", 0, \
+        {"26.12", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a join."}) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(
 Limits the number of simultaneously active data streams in a `UNION` step (applies to `UNION ALL`, to `UNION DISTINCT`, because it is implemented via a `UNION ALL` step followed by a `DISTINCT` step, and to a `Merge` table read with plan-based parallel replicas, which is expanded into a union of the reads from its underlying tables). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
 )", 0, \
@@ -8187,7 +8242,9 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_merge_filters, true, R"(
-Allow to merge filters in the query plan.
+Allows merging consecutive filter steps of the query plan into one. To keep the short-circuit evaluation of the merged condition, a filter on an `AND` chain is then executed as several consecutive filters, one per condition.
+
+This is required for the filter push-down to work properly with the analyzer. Merging takes effect only if `query_plan_enable_optimizations` is enabled.
 )", 0, \
         {"24.11", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."}, \
         {"24.7", false, false, "Allow to merge filters in the query plan"}) \
@@ -8296,6 +8353,10 @@ Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter furthe
 Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0, \
         {"26.8", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."}) \
+    DECLARE(Bool, query_plan_remove_unused_joins, true, R"(
+Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them. The other side is then not read at all.
+)", 0, \
+        {"26.12", false, true, "New setting to remove a `LEFT` or `RIGHT` `JOIN` whose other side is not read and which outputs every row of the preserved side exactly once."}) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 )", 0, \
@@ -8435,7 +8496,9 @@ Possible values:
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
-Use query plan for lazy materialization optimization.
+Enables the lazy materialization optimization for `ORDER BY ... LIMIT n` queries: the columns that are not needed for sorting and filtering are read only for the `n` rows that remain after `LIMIT`, instead of for all the rows read. This reduces the amount of data read for top-N queries over wide tables.
+
+The optimization is not used if `n` is greater than `query_plan_max_limit_for_lazy_materialization`, or with `LIMIT ... WITH TIES`.
 )", 0, \
         {"25.4", false, true, "Added new setting to use query plan for lazy materialization optimisation"}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
@@ -8810,7 +8873,9 @@ Possible values:
 Min bytes required for remote read (url, s3) to do seek, instead of read with ignore.
 )", 0) \
     DECLARE_WITH_ALIAS(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, R"(
-Min bytes to read per task.
+The minimum amount of compressed data, in bytes, that a single reading task reads from a part of a `MergeTree` table stored on a remote disk (for example, S3). Larger tasks mean fewer requests to the storage, while smaller tasks allow distributing the work between threads more evenly.
+
+The task size is not increased beyond the size at which every reading thread gets at least two tasks. The setting is also used to estimate the number of reading threads when deciding whether to use parallel replicas automatically.
 )", 0, filesystem_prefetch_min_bytes_for_single_read_task, \
         {"24.8", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"}) \
     DECLARE(Bool, merge_tree_use_const_size_tasks_for_remote_reading, true, R"(
@@ -9532,7 +9597,9 @@ Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return er
 Do not add aliases to top level expression list on multiple joins rewrite
 )", 0) \
     DECLARE(Bool, optimize_sorting_by_input_stream_properties, true, R"(
-Optimize sorting by sorting properties of input stream
+If the data coming into an `ORDER BY` is already sorted by a prefix of the sorting key (for example, after a subquery with `ORDER BY` or a sort-merge join), only the rows with equal values of that prefix are sorted instead of sorting the whole data. The order of the result of a sort-merge join is also reused by the sorting for a later join.
+
+Takes effect only if `query_plan_enable_optimizations` is enabled.
 )", 0) \
     DECLARE(UInt64, keeper_max_retries, 10, R"(
 Max retries for general keeper operations
@@ -9989,9 +10056,9 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
     DECLARE(Bool, use_join_runtime_filters_for_iceberg_pruning, true, R"(
-Skip Iceberg data files, and the Parquet row groups and pages of the files that are read, that cannot contain a key of a JOIN runtime filter (see [enable_join_runtime_filters](#enable_join_runtime_filters)). Once the build side of the join finishes, the filter's keys (or their min/max range, if the set is too large) are checked against the column bounds in the manifest files, the row group statistics and the page index. Data files requested earlier are read in full.
+Skip the Parquet row groups and pages of any read from object storage (`s3`, `azureBlobStorage`, `hdfs` and their table engines, `Iceberg`, `DeltaLake`, `Hudi`), and whole data files of an Iceberg table, that cannot contain a key of a JOIN runtime filter (see [enable_join_runtime_filters](#enable_join_runtime_filters)). Once the build side of the join finishes, the filter's keys (or their min/max range, if the set is too large) are checked against the column bounds in the Iceberg manifest files, the row group statistics and the page index. Files requested earlier are read in full. Row groups and pages are pruned only by a key the file stores under the column's own name, so not by a Hive partition column, a virtual column, a Delta Lake column stored under another name or a column with a default expression.
 
-Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages require it and [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
+Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis). Skipping Iceberg data files also requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages require it and [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 )", 0, \
         {"26.11", false, true, "New setting to prune Iceberg data files, Parquet row groups and pages by JOIN runtime filters."}) \
     DECLARE(Bool, use_datalake_metadata_statistics, false, R"(
@@ -10193,7 +10260,9 @@ Parts virtually divided into segments to be distributed between replicas for par
         {"24.9", 128, 0, "Value for this setting now determined automatically"}, \
         {"24.1", 128, 128, "Add new setting to control segment size in new parallel replicas coordinator implementation"}) \
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
-Build local plan for local replica
+In a query with parallel replicas, the initiator executes its own part of the reading through a locally built query plan instead of sending a query to itself over the network, which avoids the overhead of the network round trip. Used only if `parallel_replicas_prefer_local_replica` is enabled.
+
+The automatic decision on whether to use parallel replicas (see `automatic_parallel_replicas_mode`) is made only if this setting is enabled.
 )", 0, \
         {"24.11", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
         {"24.10", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
@@ -10246,7 +10315,9 @@ A replica takes part in the read only if it has the table, and the table must ha
 )", 0, \
         {"26.11", false, true, "New setting to read tables with an object storage engine with parallel replicas."}) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
-Allow usage of materialized views with parallel replicas
+Allows queries that read from a materialized view to use parallel replicas. The query is then executed over the target table of the materialized view.
+
+Refreshable materialized views do not use parallel replicas regardless of this setting.
 )", 0, \
         {"25.12", false, true, "Allow usage of materialized views with parallel replicas"}) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, true, R"(
@@ -10284,6 +10355,10 @@ but makes distributed index analysis less efficient if large tables are used in 
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0, \
         {"26.1", false, false, "New setting"}) \
+    DECLARE(Bool, distributed_index_analysis_on_stateless_workers, false, R"(
+Runs distributed index analysis on stateless workers in an initial query that runs as a distributed plan (`make_distributed_plan`) and holds or can lease workers, independently of `distributed_index_analysis`. The workers analyze the tables on object storage of a shared table. For now enabling this setting turns off index analysis on the replicas (`distributed_index_analysis`), so the reads the workers do not take, and the reads of other queries, are analyzed locally. The workers need streaming exchanges: with `Persisted` ones (`distributed_plan_force_exchange_kind`, or no streaming listener configured) the reads are analyzed locally. The MergeTree settings `distributed_index_analysis_min_parts_to_activate` and `distributed_index_analysis_min_indexes_bytes_to_activate` apply.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_iceberg, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'iceberg'`
 
@@ -10718,6 +10793,19 @@ snapshot with its own manifest, so an `INSERT` writes exactly one manifest only 
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0, \
         {"25.12", 100, 100, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_initial_backoff_ms, 10, R"(
+The upper bound of the delay before the first retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit.
+The bound doubles with each next retry, up to `iceberg_insert_commit_retry_max_backoff_ms`, and each delay is chosen at random
+between zero and the bound, so that the writers that lost the same race do not retry at the same moment and collide again.
+The delay is taken before the latest metadata is looked up, so with many concurrent writers it also limits how often the metadata
+directory is listed. `0` retries without a delay.
+)", 0, \
+        {"26.12", 0, 10, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_max_backoff_ms, 5000, R"(
+The maximum of the delay bound before a retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit,
+see `iceberg_insert_commit_retry_initial_backoff_ms`.
+)", 0, \
+        {"26.12", 0, 5000, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
     DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
 Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
 )", 0, \
@@ -10877,7 +10965,9 @@ Internal processes include dictionary reloads, refreshable materialized view rel
 )", 0, \
         {"25.11", false, true, "New setting."}) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
-Use roaring bitmap for iceberg positional deletes.
+Selects how position delete files of Iceberg tables are applied. If enabled, the positions of the deleted rows of a data file are loaded into a roaring bitmap, which is then used to filter the rows. If disabled, the delete files are read in a streaming way alongside the data file, without loading all the deleted positions into memory first.
+
+Deletion vectors are always applied as bitmaps, regardless of this setting.
 )", 0, \
         {"25.8", false, false, "New setting"}) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
@@ -11118,14 +11208,14 @@ Allows to use the `MaterializedPostgreSQL` table engine.
 )", EXPERIMENTAL, allow_experimental_materialized_postgresql_table, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_materialized_postgresql_table`."}) \
     DECLARE_WITH_ALIAS(Bool, enable_funnel_functions, false, R"(
-Enable functions for funnel analysis.
+Enables the experimental aggregate function `sequenceNextNode`, which is used for funnel analysis. If disabled, using `sequenceNextNode` throws an exception.
 )", EXPERIMENTAL, allow_experimental_funnel_functions, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_funnel_functions`."}) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
-Enable experimental hash functions
+Has no effect. No hash function currently requires this setting. It is kept so that queries and settings profiles that set it continue to work.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_ipcrypt, false, R"(
 Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
@@ -11738,13 +11828,15 @@ Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
-For an Iceberg table, the setting also allows skipping whole data files and the Parquet row groups and pages of the files that are read, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
+For a read from object storage, the setting also allows skipping the Parquet row groups and pages of the files that are read, and whole data files of an Iceberg table, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
 The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 
-The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
+With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`.
+
+The granule pruning is also skipped for a table with pending data or `ALTER` mutations or patch parts. This case is a no-op in the same sense.
 )", 0, \
         {"26.10", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."}, \
         {"26.9", false, false, "The JOIN runtime filters became a Production tier feature."}, \

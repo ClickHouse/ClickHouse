@@ -1,0 +1,235 @@
+---
+slug: /clickstack/observability/features/session-replay
+title: 'セッション再適用'
+sidebarTitle: 'セッション再適用'
+description: 'ClickHouse オブザーバビリティでユーザーセッションを記録・再適用し、フロントエンドの問題のデバッグやユーザー行動の把握、ブラウザー上のアクティビティとバックエンドのログやトレースの相関付けを行います。'
+doc_type: 'guide'
+keywords: ['ClickHouse オブザーバビリティ', 'セッション再適用', 'ブラウザー SDK', 'フロントエンドオブザーバビリティ', 'ユーザーセッション', 'デバッグ']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+ClickHouse オブザーバビリティのセッション再適用は、Web アプリケーションでのユーザーの操作を収集して再構築し、ユーザーがセッション中に見ていた画面や行った操作をそのまま視覚的に再適用できる機能です。SDK は動画を録画するのではなく、DOM の変更、マウスの移動、クリック、スクロール、キーボード入力、コンソールログ、ネットワークリクエスト (XHR および Fetch)、JavaScript の例外を記録し、それらをもとにブラウザ上でユーザー体験を再現します。
+
+セッション再適用はログ、トレース、メトリクスとともに ClickHouse に保存されるため、ユーザー体験を確認した後、その裏で動いていたバックエンドのトレースやデータベースクエリの調査へと、数回のクリックで移ることができます。このため、セッション再適用は本番環境で発生した問題のデバッグ、ユーザー行動の把握、UX 上の課題箇所の特定、サポートに報告された問題の視覚的な確認に役立ちます。
+
+## アプリケーションのインストルメンテーション {#instrumentation}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版" />
+
+    ClickHouse オブザーバビリティは OpenTelemetry と完全な互換性があるため、標準の OpenTelemetry JavaScript SDK または任意の[言語別 SDK](/ja/clickstack/observability/ingesting-data/sdks) を使用して、ブラウザーのテレメトリー(トレース、例外)を送信できます。ただし、**セッションリプレイにはブラウザー SDK** (`@clickhouse/clickstack-browser`) **が必要です**。ブラウザー SDK は OpenTelemetry SDK を拡張したもので、セッション記録、コンソール出力のキャプチャ、ネットワークリクエストのキャプチャの機能が追加されています。セッションリプレイが不要でトレースのみを収集する場合は、OTel 互換であればどのブラウザー SDK でもこのサービスで利用できます。
+
+    以下の例ではブラウザー SDK を使用します。ClickHouse オブザーバビリティのサービスで **Team Settings → Data → Managed Telemetry** を開き、**OTLP HTTPエンドポイント**と **APIキー**をコピーします。例に含まれる `YOUR_OTEL_ENDPOINT` と `YOUR_API_KEY` を、これらの接続情報に置き換えてください。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![マスクされた OTLP HTTPエンドポイントと APIキーが表示されたマネージドテレメトリー](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    エンドポイントには、マネージドテレメトリーに表示されている HTTPS エンドポイントをそのまま使用し、`/v1/traces` などのシグナルパスは付けないでください。APIキーは、以下のように `Bearer ` プレフィックスを付けて `apiKey` に渡します。続いて、アプリケーションに SDK をインストールして初期化します。
+
+    <Tip>
+      SDK は、クライアントのエントリーモジュール(Vite の `src/main.ts` や Next.js の `instrumentation-client.ts` など)のトップレベルで一度だけ初期化してください。初期化は非同期で行われるため、`init` の直後に同じ tick 内で送信されたリクエストはキャプチャされない可能性があります。
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Script タグ">
+        バンドラーを使用しないアプリケーションでは、script タグで SDK を直接読み込みます。これにより `ClickStack` グローバル変数が公開され、NPM パッケージと同じように使用できます。
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+            apiKey: 'Bearer YOUR_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      `traceOrigins` オプションは、セッションリプレイとバックエンドのトレースを関連付けるための鍵となる設定です。API のドメインを指定すると、フロントエンドからバックエンドまでのエンドツーエンドの分散トレーシングが有効になります。プライバシー制御やエラーレポートなど、共通の SDK オプションについては[ブラウザー SDK リファレンス](/ja/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy)を参照してください。SDK の初期化時には、上記のマネージドの接続情報を使用してください。
+    </Note>
+
+    ブラウザー SDK は、デフォルトで入力値とテキストをマスクします。プライバシーへの配慮が必要なアプリケーションについては[プライバシー制御](/ja/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy)を、UI でユーザー単位にセッションを検索・フィルタリングできるようにするには[ユーザー情報の付与](/ja/clickstack/observability/ingesting-data/sdks/browser#users-and-errors)を参照してください。
+  </Tab>
+
+  <Tab title="セルフマネージド" id="self-managed">
+    Self-managed ClickHouse Observability は OpenTelemetry と完全に互換性があるため、標準の OpenTelemetry JavaScript SDK または任意の[言語 SDKs](/ja/clickstack/observability/ingesting-data/sdks)を使用して、ブラウザーのテレメトリー (トレース、例外) を送信できます。 ただし、**セッションリプレイにはブラウザー SDK** (`@clickhouse/clickstack-browser`) **が必要です**。ブラウザー SDK は OpenTelemetry SDK を拡張したもので、セッションの記録、コンソール出力のキャプチャ、ネットワークリクエストのキャプチャ機能を備えています。セッションリプレイが不要で、トレースのみを収集したい場合は、OTel 互換であればどのブラウザー SDK でもこのサービスで利用できます。
+
+    アプリケーションをインストルメントする前に、ClickHouse Cloud サービスに接続された ClickStack OpenTelemetryコレクターを稼働させておく必要があります。接続の設定については [OpenTelemetry を使用したデータ取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) ガイドを、collector の起動については[デプロイガイド](/ja/clickstack/self-configured/deployment/managed#start-a-collector-existing)を参照してください。
+
+    以下の例の `http://your-otel-collector:4318` は、ブラウザーからアクセス可能な collector の OTLP HTTPエンドポイントに置き換えてください。`apiKey` には collector のインジェスト key を `Bearer` プレフィックスなしで設定します。receiver で認証が不要な場合は省略できます。collector の CORS 設定で、アプリケーションのオリジンを許可してください。その後、ブラウザー SDK をインストールして初期化します。
+
+    <Tip>
+      SDK は、Vite の `src/main.ts` や Next.js の `instrumentation-client.ts` など、クライアントのエントリモジュールのトップレベルで一度だけ初期化してください。初期化は非同期で行われるため、`init` の直後に同じティック内で送信されたリクエストはキャプチャされない可能性があります。
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Script タグ">
+        バンドラーを使用しないアプリケーションでは、script タグで SDK を直接読み込みます。これにより `ClickStack` グローバル変数が公開され、NPM パッケージと同じように使用できます。
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'http://your-otel-collector:4318',
+            apiKey: 'YOUR_INGESTION_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      `traceOrigins` オプションは、セッションリプレイとバックエンドのトレースを関連付けるための重要な設定です。このオプションに API のドメインを設定すると、フロントエンドからバックエンドまでのエンドツーエンドの分散トレーシングが有効になります。プライバシー制御やエラーレポートを含む SDK オプションの一覧については、[ブラウザー SDK リファレンス](/ja/clickstack/observability/ingesting-data/sdks/browser)を参照してください。
+    </Note>
+
+    ブラウザー SDK は、デフォルトで入力とテキストをマスクします。プライバシーへの配慮が必要なアプリケーションについては [プライバシー制御](/ja/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) を参照してください。また、UI でユーザーごとにセッションを検索およびフィルタできるようにするには、[ユーザー情報の付与](/ja/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) を参照してください。
+
+    <Note>
+      ClickStack Browser SDK は標準の `session.id` 属性を使用します。Sessions ページでこの属性がサポートされている ClickStack のバージョンを使用してください。詳細は [SDK の互換性要件](https://github.com/ClickHouse/clickstack-browser#clickstack-versions)を参照してください。
+    </Note>
+
+### セッションデータの保存方法 {#data-storage}
+
+    <Note>
+      これらのストレージに関する詳細は、セルフマネージドの ClickHouse オブザーバビリティにのみ該当します。完全マネージド型のサービスでは、セッションリプレイのストレージとスキーマはサービス側で管理されます。
+    </Note>
+
+    セッションリプレイのデータは、ログやトレースとは別に、ClickHouse 内の専用の [`hyperdx_sessions`](/ja/clickstack/self-configured/ingesting-data/schemas#sessions) テーブルに保存されます。 各セッションイベントは 1 行として格納され、イベントのペイロードを含む `Body` フィールドと、イベントのメタデータを保持する `LogAttributes` Map で構成されます。 `Body` カラムと `LogAttributes` カラムには、リプレイの再構築に使用される実際のセッションイベントの詳細がまとめて格納されています。
+
+    テーブルスキーマの詳細については、[テーブルとスキーマ](/ja/clickstack/self-configured/ingesting-data/schemas)を参照してください。
+  </Tab>
+</Tabs>
+
+## セッション再適用の表示 {#viewing-replays}
+
+UI の左サイドバーから **クライアントセッション** に移動します。このビューには、収集されたすべてのブラウザセッションが、所要時間およびイベント数とともに一覧表示されます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![セッション再適用の検索ビュー](/images/clickstack/session-replay/observability-client-sessions.png)
+  </Frame>
+</div>
+
+セッションを開き、**実行** を選択すると、記録された操作が再適用されます。再適用ビューでは、右側に復元されたユーザー体験が、左側にブラウザイベント (ネットワークリクエスト、コンソールログ、エラー) のタイムラインが表示されます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![セッション再適用の再生](/images/clickstack/session-replay/observability-session-replay.png)
+  </Frame>
+</div>
+
+**Highlighted** モードと **All Events** モードを切り替えると、タイムラインに表示される情報の詳細度を調整できます。エラーは赤色で示され、任意のイベントをクリックすると、セッション内のその時点に再適用が移動します。
+
+### セッションからトレースへ {#session-to-trace}
+
+セッションタイムラインでネットワークリクエストやエラーを選択すると、**Trace** タブに移動して、そのリクエストがバックエンドサービスをどのように通過したかを追跡できます。そのユーザー操作によってトリガーされた関連するログ、スパン、データベースクエリを確認できます。
+
+これは、`traceOrigins` の設定によって `traceparent` ヘッダーを介してブラウザのスパンとサーバースパンが関連付けられ、ユーザーのクリックからデータベースまでを一貫してつなぐ分散トレースが生成されるためです。フロントエンドとバックエンドの両方をインストルメントする方法を含む、実践的な詳しい手順については、[Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack) を参照してください。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![セッションリプレイを開き、イベントからそのトレースをたどる様子](/images/clickstack/session-replay/observability-session-to-trace.gif)
+  </Frame>
+</div>
+
+### トレースからセッションへ {#trace-to-session}
+
+この相関付けは逆方向にも利用できます。**検索** ビューでトレースをクリックしてトレースの詳細を開き、**セッションリプレイ** タブを選択すると、そのトレースの発生時点でユーザーが実際にどのような体験をしていたかを正確に確認できます。これは、エラーや低速なリクエストを調査する際に特に役立ちます。バックエンドの問題を起点に、すぐにユーザー側の視点から状況を確認できます。
+
+## 試してみる {#try-it-out}
+
+[セッション再適用のデモ](/ja/clickstack/observability/example-datasets/session-replay)の手順に沿って、インタラクティブなアプリケーションをインストルメントし、セッションデータを ClickHouse オブザーバビリティのサービスに送信して、操作内容を再適用してみましょう。
+
+## さらに詳しく {#learn-more}
+
+* [セッションリプレイのデモ](/ja/clickstack/observability/example-datasets/session-replay) — マネージドサービスの接続情報を使用して対話型アプリケーションをインストルメントする方法
+* [ブラウザー SDK リファレンス](/ja/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) — 共通の SDK オプションと高度な設定
+* [検索](/ja/clickstack/observability/features/search) — セッションやイベントをフィルタリングするための検索構文
+* [ダッシュボード](/ja/clickstack/observability/features/dashboards/overview) — セッションデータやトレースデータから可視化やダッシュボードを作成する方法
+* [アラート](/ja/clickstack/observability/features/alerts) — エラー、レイテンシー、その他のシグナルに対するアラートの設定方法
+* [アーキテクチャ](/ja/clickstack/observability/architecture) — サービスを構成する各コンポーネントの連携の仕組み

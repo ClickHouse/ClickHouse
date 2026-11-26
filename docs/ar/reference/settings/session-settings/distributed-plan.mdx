@@ -20,12 +20,15 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "إعداد تجريبي جديد."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "يُحدَّد عدد مهام القراءة افتراضيًا بناءً على عدد الصفوف المطلوب قراءتها وعدد العمال."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "8"},{"label": "إعداد تجريبي جديد."}]}]} />
 
-العدد الافتراضي للمهام اللازمة للقراءة المتوازية في استعلام موزّع. تُوزَّع المهام عبر النسخ المتماثلة.
-يستخدم المخطِّط الموزّع القائم على القواعد هذا الإعداد. ويختار محسن قائم على التكلفة مدى التوزيع للقراءة استنادًا إلى التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
+عدد المهام المستخدمة في القراءة المتوازية ضمن الاستعلام الموزّع. تُوزَّع المهام على العمال.
+
+عند ضبط القيمة على `0`، يُحدَّد العدد تلقائيًا: مهمة واحدة لكل `distributed_plan_min_rows_per_reader` صف تحدده عملية القراءة، بحد أدنى مهمة واحدة، وبحد أقصى يساوي عدد العمال.
+
+يستخدم مخطط الاستعلامات الموزع القائم على القواعد هذا الإعداد. أما مُحسِّن الاستعلامات القائم على التكلفة فيحدد مدى توزيع القراءة بناءً على التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -145,6 +148,17 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 الحد الأقصى لعدد الصفوف لاستخدام broadcast join بدلًا من shuffle join ضمن خطة الاستعلام الموزعة.
 آلية استدلالية للمخطط الموزع القائم على القواعد. عند تمكين المُحسِّن القائم على التكلفة، يُحدَّد الاختيار بين broadcast وshuffle بناءً على التكلفة المقدّرة، ولا يكون لهذا الإعداد أي تأثير.
+
+## distributed_plan_min_rows_per_reader {#distributed_plan_min_rows_per_reader}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1000000"},{"label": "إعداد تجريبي جديد."}]}]} />
+
+الحد الأدنى لعدد الصفوف في كل مهمة قراءة عندما تكون قيمة `distributed_plan_default_reader_bucket_count` مساوية لـ `0`.
+يُستخدم في مخطط الاستعلامات الموزع القائم على القواعد.
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 

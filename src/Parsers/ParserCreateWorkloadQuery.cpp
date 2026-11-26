@@ -152,4 +152,74 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     return true;
 }
 
+std::map<String, Documentation> ParserCreateWorkloadQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["CREATE WORKLOAD"] =
+    {
+        .description = R"DOCS_MD(
+Introduced in: v24.11.0
+
+Creates a workload: a node of the hierarchy that [workload scheduling](/concepts/features/configuration/server-config/workload-scheduling) uses to share resources between workloads. The resources to schedule are created with [`CREATE RESOURCE`](/reference/statements/create/resource).
+
+## Syntax {#syntax}
+
+```sql
+CREATE [OR REPLACE] WORKLOAD [IF NOT EXISTS] name [ON CLUSTER cluster] [IN parent_name] [SETTINGS setting = value [FOR resource_name] [, ...]]
+```
+
+- `OR REPLACE` - replaces the definition of an existing workload. It cannot be combined with `IF NOT EXISTS`.
+- `IF NOT EXISTS` - if a workload or a resource named `name` exists, the query does nothing.
+- `IN parent_name` - creates the workload as a child of the workload `parent_name`. A workload without `IN` is a root workload. A cycle of workloads is rejected.
+- `SETTINGS` - scheduling settings of the workload, for example `weight`, `priority`, `max_concurrent_threads` or `max_bytes_per_second`, described in [Workload hierarchy](/concepts/features/configuration/server-config/workload-scheduling#workloads). A setting with `FOR resource_name` applies only to that resource, otherwise to every resource. An unknown setting is an error.
+
+Workloads and resources share one namespace. A query runs in the workload named by its [`workload`](/reference/settings/session-settings/other#workload) setting, see [Workload markup](/concepts/features/configuration/server-config/workload-scheduling#workload-markup).
+
+<Note>
+Memory reservation scheduling is experimental: the `MEMORY RESERVATION` resource and the workload settings `max_memory`, `max_memory_ratio`, `max_memory_before_spill` and `max_memory_to_spill_ratio`. See [Memory reservations](/concepts/features/configuration/server-config/workload-scheduling#memory-reservations).
+</Note>
+
+## Storage {#storage}
+
+Workloads are stored on disk in [`workload_path`](/reference/settings/server-settings/settings/workload#workload_path), or in ZooKeeper at [`workload_zookeeper_path`](/reference/settings/server-settings/settings/workload#workload_zookeeper_path) if it is set. With ZooKeeper storage, `ON CLUSTER` is rejected because the definitions are replicated automatically. Workloads [defined in the server configuration](/concepts/features/configuration/server-config/workload-scheduling#config_based_workloads) cannot be replaced or dropped with SQL. The [`system.workloads`](/reference/system-tables/workloads) table lists the workloads.
+
+## Privileges {#privileges}
+
+`CREATE WORKLOAD` requires the `CREATE WORKLOAD` privilege. `CREATE OR REPLACE WORKLOAD` also requires the `DROP WORKLOAD` privilege.
+
+## Example {#example}
+
+```sql title="Query"
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);
+CREATE WORKLOAD all SETTINGS max_concurrent_threads = 16;
+CREATE WORKLOAD production IN all SETTINGS weight = 3;
+CREATE WORKLOAD development IN all;
+SELECT name, parent, create_query FROM system.workloads ORDER BY name;
+```
+
+```text title="Response"
+┌─name────────┬─parent─┬─create_query───────────────────────────────────────────────┐
+│ all         │        │ CREATE WORKLOAD `all` SETTINGS max_concurrent_threads = 16 │
+│ development │ all    │ CREATE WORKLOAD development IN `all`                       │
+│ production  │ all    │ CREATE WORKLOAD production IN `all` SETTINGS weight = 3    │
+└─────────────┴────────┴────────────────────────────────────────────────────────────┘
+```
+
+## Related content {#related-content}
+
+- [Workload scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [`DROP WORKLOAD`](/reference/statements/drop#drop-workload)
+- [`system.workloads`](/reference/system-tables/workloads)
+)DOCS_MD",
+        .syntax = R"(
+CREATE [OR REPLACE] WORKLOAD [IF NOT EXISTS] name [ON CLUSTER cluster] [IN parent_name] [SETTINGS setting = value [FOR resource_name] [, ...]]
+)",
+        .parent = "CREATE",
+        .related = {"CREATE RESOURCE", "DROP"},
+    };
+
+    return documentation;
+}
+
 }

@@ -1,7 +1,7 @@
 ---
 slug: /partitions
-title: 'テーブルパーティション'
-description: 'ClickHouse のテーブルパーティションとは'
+title: 'テーブルのパーティション'
+description: 'ClickHouse のテーブルのパーティションとは'
 keywords: ['パーティション', 'partition by']
 doc_type: 'guide'
 ---
@@ -9,7 +9,7 @@ doc_type: 'guide'
 import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
-  ## ClickHouse におけるテーブルのパーティションとは？
+  ## ClickHouse におけるテーブルのパーティションとは？ {#what-are-table-partitions-in-clickhouse}
 </div>
 
 <br />
@@ -17,7 +17,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
 パーティションは、[MergeTree エンジンファミリー](/ja/reference/engines/table-engines/mergetree-family/index)のテーブルにある[データパーツ](/ja/concepts/core-concepts/parts)を、整理された論理的な単位としてまとめるための仕組みです。これは、時間範囲、カテゴリ、その他の主要な属性といった特定の基準に基づいて、概念的に意味のある形でデータを整理する方法です。こうした論理単位により、データの管理、クエリ、最適化がしやすくなります。
 
 <div id="partition-by">
-  ### PARTITION BY
+  ### PARTITION BY {#partition-by}
 </div>
 
 パーティション化は、テーブルの初期定義時に [PARTITION BY 句](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key) を指定することで有効にできます。この句には任意のカラムに対する SQL 式を含めることができ、その結果によって各行がどのパーティションに属するかが決まります。
@@ -39,20 +39,14 @@ PARTITION BY toStartOfMonth(date);
 
 当社のClickHouse SQL Playgroundで、[このテーブルにクエリを実行できます](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results)。
 
-<div id="structure-on-disk">
-  ### ディスク上の構造
-</div>
+### ディスク上の構造 {#structure-on-disk}
 
 テーブルに行のセットが挿入されるたびに、挿入されたすべての行を含む単一のデータパーツを ([少なくとも](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)) 1 つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の中で一意な各パーティションキーの値ごとに、新しいデータパーツを 1 つ作成します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![INSERT の処理](/images/managing-data/core-concepts/partitions.webp)
-
-</Frame>
-
+  <Frame>
+    ![INSERT の処理](/images/managing-data/core-concepts/partitions.webp)
+  </Frame>
 </div>
 
 <br />
@@ -62,20 +56,14 @@ ClickHouse サーバーはまず、上の図に示されている 4 行の挿入
 
 パーティション化を有効にすると、ClickHouse は各データパーツに対して自動的に [MinMax indexes](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) を作成する点に注意してください。これらは単に、パーティションキー式で使用される各テーブルカラムごとのファイルであり、そのデータパーツ内におけるそのカラムの最小値と最大値が含まれています。
 
-<div id="per-partition-merges">
-  ### パーティションごとのマージ
-</div>
+### パーティションごとのマージ {#per-partition-merges}
 
 パーティション化を有効にすると、ClickHouse はパーティションをまたいでではなく、各パーティション内でのみデータパーツを[マージ](/ja/concepts/core-concepts/merges)します。この動作を、上記の例のテーブルで図示します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![パーツのマージ](/images/managing-data/core-concepts/merges_with_partitions.webp)
-
-</Frame>
-
+  <Frame>
+    ![パーツのマージ](/images/managing-data/core-concepts/merges_with_partitions.webp)
+  </Frame>
 </div>
 
 <br />
@@ -83,7 +71,7 @@ ClickHouse サーバーはまず、上の図に示されている 4 行の挿入
 上の図のとおり、異なるパーティションに属するパーツがマージされることはありません。カーディナリティの高いパーティションキーを選ぶと、パーツが数千ものパーティションに分散し、マージ候補になることがないため、事前設定された制限を超えて、厄介な`Too many parts`エラーの原因になります。この問題への対処は簡単です。適切なパーティションキーを選び、[カーディナリティを 1000..10000 未満](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121)にしてください。
 
 <div id="monitoring-partitions">
-  ## パーティションの監視
+  ## パーティションの監視 {#monitoring-partitions}
 </div>
 
 [仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value` を使うと、サンプルテーブルに存在する一意なパーティションの一覧を[クエリ](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results)できます。
@@ -112,11 +100,11 @@ ClickHouse サーバーはまず、上の図に示されている 4 行の挿入
 </RunnableCode>
 
 <div id="what-are-table-partitions-used-for">
-  ## テーブルのパーティションは何に使われますか？
+  ## テーブルのパーティションは何に使われますか？ {#what-are-table-partitions-used-for}
 </div>
 
 <div id="data-management">
-  ### データ管理
+  ### データ管理 {#data-management}
 </div>
 
 ClickHouse では、パーティション化は主にデータ管理のための機能です。パーティション式に基づいてデータを論理的に整理することで、各パーティションを個別に管理できます。たとえば、上記のサンプルテーブルのパーティション化方式では、[有効期限 (TTL) ルール](/ja/concepts/features/operations/delete/ttl) を使って古いデータを自動的に自動削除し、メインテーブルには直近 12 か月分のデータのみを保持するといった運用が可能です (DDL ステートメントに追加された最後の行を参照) 。:
@@ -153,9 +141,7 @@ ORDER BY (town, street)
 TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 ```
 
-<div id="query-optimization">
-  ### クエリ最適化
-</div>
+### クエリ最適化 {#query-optimization}
 
 パーティションはクエリパフォーマンスの向上に役立つ場合がありますが、その効果はアクセスパターンに大きく左右されます。クエリの対象が少数のパーティション (理想的には 1 つ) に限られる場合は、パフォーマンスの向上が見込めます。これは通常、以下のクエリ例のように、パーティションキーが主キーに含まれておらず、そのパーティションキーでフィルタリングしている場合に特に有効です。
 
@@ -174,13 +160,9 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 ClickHouse はこのクエリを処理する際、無関係なデータを評価しないよう、一連のプルーニング手法を適用します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ 2](/images/managing-data/core-concepts/partition-pruning.webp)
-
-</Frame>
-
+  <Frame>
+    ![パーツマージ 2](/images/managing-data/core-concepts/partition-pruning.webp)
+  </Frame>
 </div>
 
 <br />
@@ -191,7 +173,7 @@ ClickHouse はこのクエリを処理する際、無関係なデータを評価
   </Step>
 
   <Step title="Granule pruning">
-    パーティションプルーニングの手順の後に残った データパーツ に対しては、[プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を使い、テーブルの主キーに使われているカラムに対するクエリのフィルタに論理的に一致しないすべての[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) を除外します。
+    パーティションプルーニングの手順の後に残った データパーツ に対しては、[プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を使い、テーブルの主キーに使われているカラムに対するクエリのフィルタに論理的に一致しないすべての[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のBlock) を除外します。
   </Step>
 </Steps>
 
@@ -255,7 +237,7 @@ WHERE date >= '2020-12-01'
 つまり、ClickHouse がクエリ結果の算出にあたり、1 granule ([8192](/ja/reference/settings/merge-tree-settings/index-granularity#index_granularity) 行からなる block) を 6 ミリ秒でスキャンして処理したことを意味します。
 
 <div id="partitioning-is-primarily-a-data-management-feature">
-  ### パーティション化は主にデータ管理のための機能です
+  ### パーティション化は主にデータ管理のための機能です {#partitioning-is-primarily-a-data-management-feature}
 </div>
 
 すべてのパーティションをまたぐクエリは、通常、同じクエリをパーティション化されていないテーブルで実行する場合より低速になる点に注意してください。
