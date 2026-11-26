@@ -408,7 +408,8 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
                     columns_znode, checksums_znode);
             }
 
-            if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
+            if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash()
+                && zk_part_header.getColumnsHash() != ReplicatedMergeTreePartHeader::getStoredColumnsHash(*part))
                 throw Exception(ErrorCodes::TABLE_DIFFERS_TOO_MUCH, "Columns of local part {} are different from ZooKeeper", part_name);
 
             zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);

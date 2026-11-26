@@ -43,9 +43,9 @@ SELECT count() FROM d WHERE m = 40 SETTINGS optimize_skip_unused_shards = 1;
 SELECT nullIf(m, 0) FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT r.m FROM (SELECT 2 AS k) AS l LEFT JOIN t AS r ON l.k = r.k SETTINGS join_use_nulls = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 INSERT INTO FUNCTION file(currentDatabase() || '_05368.orc', 'ORC', 'a Nullable(Int128)') SELECT toInt128(number) FROM numbers(2) UNION ALL SELECT NULL SETTINGS engine_file_truncate_on_insert = 1;
-SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.orc', 'ORC', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
+SELECT arraySort(groupArray(a)), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.orc', 'ORC', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05368.arrow', 'Arrow', 'a Nullable(Int128)') SELECT toInt128(number) FROM numbers(2) UNION ALL SELECT NULL SETTINGS engine_file_truncate_on_insert = 1;
-SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.arrow', 'Arrow', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
+SELECT arraySort(groupArray(a)), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.arrow', 'Arrow', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l Array(UInt64), t Tuple(a UInt64, b String), m Map(String, UInt64), u Tuple(a Int128, b String)') SELECT [1, 2], (1, 'a'), map('a', 1), (toInt128(2), 'b') SETTINGS engine_file_truncate_on_insert = 1;
 SELECT * FROM file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l SimpleAggregateFunction(groupArrayArray, Array(UInt64)), t SimpleAggregateFunction(anyLast, Tuple(a UInt64, b String)), m SimpleAggregateFunction(sumMap, Map(String, UInt64)), u SimpleAggregateFunction(anyLast, Tuple(Int128, String))');
 INSERT INTO FUNCTION file(currentDatabase() || '_05368_opaque.arrow', 'Arrow') SELECT CAST(42::Dynamic, 'SimpleAggregateFunction(any, Dynamic)') AS d SETTINGS output_format_arrow_unsupported_types = 'binary', engine_file_truncate_on_insert = 1;
@@ -81,3 +81,5 @@ SELECT count() FROM t AS l JOIN jn AS r ON l.m <=> r.x;
 SELECT arrayIntersect([tuple(m)], [tuple(toNullable(toUInt64(40)))]), tuple(m) <=> tuple(toNullable(toUInt64(40))), [m] = [toNullable(toUInt64(40))], if(k > 0, m, NULL) AS x, toTypeName(x) FROM t;
 SELECT x, toTypeName(x) FROM (SELECT m AS x FROM t UNION ALL SELECT NULL) ORDER BY x;
 SELECT count(), toTypeName(any(m)) FROM t JOIN (SELECT x AS m FROM jn) AS r USING (m);
+WITH CAST(toDateTime('2024-01-01 00:00:00'), 'SimpleAggregateFunction(max, DateTime)') AS hit, CAST(toDateTime('2024-01-01 00:00:01'), 'SimpleAggregateFunction(max, DateTime)') AS miss, materialize(CAST([toDate('2024-01-01')], 'Array(LowCardinality(Date))')) AS lc, materialize([toDate('2024-01-01')]) AS plain
+SELECT has(lc, hit), indexOf(lc, hit), countEqual(lc, hit), has(plain, hit), has(lc, miss), indexOf(lc, miss), countEqual(lc, miss), has(plain, miss) SETTINGS allow_suspicious_low_cardinality_types = 1, session_timezone = 'UTC';

@@ -6593,6 +6593,8 @@ Possible values:
 
 - 1 — The data types in column definitions are set to `Nullable` by default.
 - 0 — The data types in column definitions are set to not `Nullable` by default.
+
+A `SimpleAggregateFunction` cannot be `Nullable`: with 1, declare it `NOT NULL` or with a `Nullable` argument type, for example `SimpleAggregateFunction(sum, Nullable(UInt64))`.
 )", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
 Enables or disables keeping of the `Nullable` data type in [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST) operations.

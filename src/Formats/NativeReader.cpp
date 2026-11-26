@@ -5,6 +5,7 @@
 #include <IO/VarInt.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnLazy.h>
 #include <Columns/ColumnTuple.h>
@@ -95,7 +96,7 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
     /// Initialize header from the index.
     for (const auto & column : index_block_it->columns)
     {
-        auto type = DataTypeFactory::instance().get(column.type);
+        auto type = getStoredDataType(column.type);
         header.insert(ColumnWithTypeAndName{ type, column.name });
     }
 }
@@ -163,7 +164,7 @@ DataTypePtr NativeReader::getTypeByName(const String & type_name)
             return it->second;
     }
 
-    auto type = DataTypeFactory::instance().get(type_name);
+    auto type = getStoredDataType(type_name);
     setVersionToAggregateFunctions(type, true, server_revision);
     if (type_cache)
         type_cache->emplace(type_name, type);

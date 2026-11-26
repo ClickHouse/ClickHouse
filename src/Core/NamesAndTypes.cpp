@@ -2,6 +2,7 @@
 
 #include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
@@ -89,8 +90,6 @@ void NameAndTypePair::setDelimiterAndTypeInStorage(const String & name_in_storag
 
 void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
 {
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-
     assertString("columns format version: 1\n", buf);
     size_t count = 0;
     DB::readText(count, buf);
@@ -105,7 +104,7 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
         readString(type_name, buf);
         assertChar('\n', buf);
 
-        emplace_back(column_name, data_type_factory.get(type_name));
+        emplace_back(column_name, getStoredDataType(type_name));
     }
 
     if (check_eof)

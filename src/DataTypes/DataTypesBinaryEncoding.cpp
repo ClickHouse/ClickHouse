@@ -733,7 +733,12 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             return std::make_shared<DataTypeInterval>(IntervalKind::fromBinary(kind));
         }
         case BinaryTypeIndex::Nullable:
-            return std::make_shared<DataTypeNullable>(decodeDataTypeImpl(buf, complexity, max_complexity));
+        {
+            auto nested_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested_type->getCustomName()))
+                return getStoredDataType("Nullable(" + nested_type->getName() + ")");
+            return std::make_shared<DataTypeNullable>(nested_type);
+        }
         case BinaryTypeIndex::Function:
         {
             size_t arguments_size = 0;
@@ -749,7 +754,12 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             return std::make_shared<DataTypeFunction>(arguments, return_type);
         }
         case BinaryTypeIndex::LowCardinality:
-            return std::make_shared<DataTypeLowCardinality>(decodeDataTypeImpl(buf, complexity, max_complexity));
+        {
+            auto dictionary_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(dictionary_type->getCustomName()))
+                return getStoredDataType("LowCardinality(" + dictionary_type->getName() + ")");
+            return std::make_shared<DataTypeLowCardinality>(dictionary_type);
+        }
         case BinaryTypeIndex::Map:
         {
             auto key_type = decodeDataTypeImpl(buf, complexity, max_complexity);

@@ -87,6 +87,7 @@
 
 #include <Access/Common/AccessRightsElement.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -619,7 +620,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version)
+    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version, const bool stored_definition)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -628,7 +629,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
+    DataTypePtr column_type = stored_definition ? getStoredDataType(col_type) : DataTypeFactory::instance().get(col_type);
 
     if (pin_current_state_version)
         /// Spell the state version the column is going to be written with out in the type, so that
@@ -793,7 +794,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, make_columns_nullable, pin_current_state_version));
+        column_names_and_types.emplace_back(
+            col_decl.name,
+            getColumnType(col_decl, make_columns_nullable, pin_current_state_version, mode >= LoadingStrictnessLevel::SECONDARY_CREATE));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);

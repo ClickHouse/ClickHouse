@@ -2393,7 +2393,8 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
             replica_part_header = ReplicatedMergeTreePartHeader::fromString(part_zk_str);
         }
 
-        if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash())
+        if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash()
+            && replica_part_header.getColumnsHash() != ReplicatedMergeTreePartHeader::getStoredColumnsHash(*part))
         {
             /// Currently there are only one (known) cases when it may happen:
             ///  - KILL MUTATION query had removed mutation before all replicas have executed assigned MUTATE_PART entries.

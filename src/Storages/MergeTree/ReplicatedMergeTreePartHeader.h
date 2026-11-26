@@ -6,12 +6,14 @@
 #include <IO/ReadBuffer.h>
 #include <IO/Operators.h>
 #include <array>
+#include <optional>
 
 
 namespace DB
 {
 
 class NamesAndTypesList;
+class IMergeTreeDataPart;
 
 /// This class provides a compact representation of part metadata (available columns and checksums)
 /// that is intended to be stored in the part znode in ZooKeeper.
@@ -36,6 +38,10 @@ public:
 
     [[nodiscard]] const std::array<char, 16> & getColumnsHash() const { return columns_hash; }
     [[nodiscard]] const MinimalisticDataPartChecksums & getChecksums() const { return checksums; }
+
+    /// The columns hash of the `columns.txt` of `part` as stored, if it has one. It differs from the hash of the loaded
+    /// columns when loading rewrote a type that an older version stored (see `getStoredDataType`).
+    [[nodiscard]] static std::optional<std::array<char, 16>> getStoredColumnsHash(const IMergeTreeDataPart & part);
 
 private:
     ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_)

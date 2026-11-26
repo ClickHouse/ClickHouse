@@ -1,6 +1,7 @@
 #include <set>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -1651,7 +1652,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         alter_conversions && alter_conversions->isColumnRenamed(marker_name))
                         marker_name = alter_conversions->getColumnOldName(marker_name);
                     if (const auto * missing = infos.getMissingColumnInfo(marker_name); missing && !missing->type_name.empty())
-                        old_type = DataTypeFactory::instance().get(missing->type_name);
+                        old_type = getStoredDataType(missing->type_name);
                 }
 
                 if (old_type && command.data_type && !old_type->equals(*command.data_type))

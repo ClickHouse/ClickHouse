@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -61,5 +62,13 @@ DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type, const DataTy
 
 /// True for `SimpleAggregateFunction(f, Bool)` whose `f` returns `Bool`; such a type keeps `Bool` values under its own name.
 bool isSimpleAggregateFunctionOfBool(const IDataType & type);
+
+/// The type of a stored definition (table metadata, `columns.txt` of a part, ZooKeeper, a kept mutation, a `Native` header).
+/// `Nullable(SimpleAggregateFunction(f, T))`, which older versions allowed, is read as `SimpleAggregateFunction(f, Nullable(T))`,
+/// with the same columns, and likewise for `LowCardinality`.
+DataTypePtr getStoredDataType(const ASTPtr & ast);
+DataTypePtr getStoredDataType(const String & name);
+/// The AST of a stored type as `getStoredDataType` reads it: `ast` itself, or a rewritten copy.
+ASTPtr getStoredDataTypeAST(const ASTPtr & ast);
 
 }

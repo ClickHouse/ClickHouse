@@ -11,6 +11,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
 #endif
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
@@ -620,7 +621,7 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         bool frozen = false;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
         {
-            type_in_part = DataTypeFactory::instance().get(missing->type_name);
+            type_in_part = getStoredDataType(missing->type_name);
             requested_type_in_part = name_pair.second.empty()
                 ? type_in_part
                 : type_in_part->getSubcolumnType(name_pair.second);

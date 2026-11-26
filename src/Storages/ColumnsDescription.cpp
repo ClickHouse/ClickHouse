@@ -12,6 +12,7 @@
 #include <Core/Names.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -236,7 +237,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
     String type_string;
     readEscapedString(type_string, buf);
-    type = DataTypeFactory::instance().get(type_string);
+    type = getStoredDataType(type_string);
 
     if (checkChar('\t', buf))
     {

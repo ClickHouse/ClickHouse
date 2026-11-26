@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 
 
@@ -237,7 +238,7 @@ std::optional<MutationCommand> MutationCommand::parse(
         {
             res.type = MutationCommand::Type::READ_COLUMN;
             res.column_name = ast_col_decl.name;
-            res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
+            res.data_type = getStoredDataType(ast_col_decl.getType());
             return res;
         }
 
