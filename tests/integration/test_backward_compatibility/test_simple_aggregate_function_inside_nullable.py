@@ -12,6 +12,15 @@ node = cluster.add_instance(
     stay_alive=True,
     with_installed_binary=True,
 )
+# Stays on the older version.
+old = cluster.add_instance(
+    "old",
+    with_zookeeper=True,
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    stay_alive=True,
+    with_installed_binary=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -86,7 +95,24 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
         settings=variant,
     )
 
-    node.restart_with_latest_version()
+    for replica in [old, node]:
+        replica.query(f"CREATE DATABASE rdb ENGINE = Replicated('/clickhouse/databases/rdb', 's', '{replica.name}')")
+    old.query("CREATE TABLE rdb.t (k UInt32, m SimpleAggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY k")
+    node.query("INSERT INTO rdb.t VALUES (1, 10)")
+
+    old.query(
+        "CREATE TABLE f1 (k UInt32, m Nullable(SimpleAggregateFunction(sum, UInt64))) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/f', '1') ORDER BY k"
+    )
+    old.query("INSERT INTO f1 VALUES (1, 42)")
+
+    # Queued by the older version while `node` is down, replayed by `node` after the upgrade.
+    def alter_while_stopped(_):
+        no_wait = {"distributed_ddl_task_timeout": 0}
+        old.query("ALTER TABLE rdb.t MODIFY COLUMN m Nullable(SimpleAggregateFunction(sum, UInt64))", settings=no_wait)
+        old.query("ALTER TABLE rdb.t MODIFY COMMENT 'later'", settings=no_wait)
+
+    node.restart_with_latest_version(callback_onstop=alter_while_stopped)
 
     assert (
         node.query(
@@ -134,3 +160,19 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
         )
         == "0\n"
     )
+
+    assert_eq_with_retry(node, "SELECT comment FROM system.tables WHERE database = 'rdb' AND name = 't'", "later")
+    assert node.query("SELECT m, toTypeName(m) FROM rdb.t") == "10\tSimpleAggregateFunction(sum, Nullable(UInt64))\n"
+
+    # An unchanged part fetched from the older version is fetched back by a replica of the older version.
+    node.query(
+        "CREATE TABLE f2 (k UInt32, m SimpleAggregateFunction(sum, Nullable(UInt64))) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/f', '2') ORDER BY k"
+    )
+    assert_eq_with_retry(node, "SELECT k, m FROM f2", "1\t42")
+    old.query("DROP TABLE f1 SYNC")
+    old.query(
+        "CREATE TABLE f3 (k UInt32, m Nullable(SimpleAggregateFunction(sum, UInt64))) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/f', '3') ORDER BY k"
+    )
+    assert_eq_with_retry(old, "SELECT k, m FROM f3", "1\t42")

@@ -87,3 +87,4 @@ CREATE TABLE c (k UInt32, v Variant(SimpleAggregateFunction(any, UInt64), String
 INSERT INTO c SELECT 1, CAST(5, 'SimpleAggregateFunction(any, UInt64)'), tuple(42);
 INSERT INTO c VALUES (2, 'x', NULL);
 SELECT k, v.`SimpleAggregateFunction(any, UInt64)` AS e, toTypeName(e), t.x AS x, toTypeName(x), variantElement(v, 'SimpleAggregateFunction(any, UInt64)'), tupleElement(t, 'x') FROM c ORDER BY k;
+SELECT d.`SimpleAggregateFunction(any, UInt64)` AS x, toTypeName(x), s.`SimpleAggregateFunction(any, UInt64)` FROM (SELECT arrayJoin([CAST(CAST(5, 'SimpleAggregateFunction(any, UInt64)'), 'Dynamic'), 'x'::Dynamic]) AS d, CAST(d, 'Dynamic(max_types=0)') AS s) ORDER BY x;

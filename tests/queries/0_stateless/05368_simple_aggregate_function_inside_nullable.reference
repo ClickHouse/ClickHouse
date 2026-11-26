@@ -45,3 +45,5 @@
 1	1	1	1	0	0	0	0
 1	5	Nullable(UInt64)	42	Nullable(UInt64)	5	42
 2	\N	Nullable(UInt64)	\N	Nullable(UInt64)	\N	\N
+5	Nullable(UInt64)	5
+\N	Nullable(UInt64)	\N
