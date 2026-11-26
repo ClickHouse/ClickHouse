@@ -34,3 +34,5 @@ WHERE number NOT IN (toUInt64(1), CAST(NULL AS Nullable(UInt64)));
 
 SET transform_null_in = 1;
 SELECT toInt64(84) IN (toInt64(63), CAST(NULL AS Nullable(Int64)));
+SELECT nullIn(CAST(NULL AS Nullable(Int64)), (CAST(NULL AS Nullable(Int64)))),
+    notNullIn(CAST(NULL AS Nullable(Int64)), (CAST(NULL AS Nullable(Int64))));

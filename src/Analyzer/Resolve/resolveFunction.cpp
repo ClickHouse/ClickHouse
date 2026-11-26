@@ -1414,7 +1414,7 @@ static QueryTreeNodePtr buildScalarInComparison(
 }
 
 /// The first opt-in form is a list of scalar numeric expressions. Express its
-/// three-valued result with ordinary functions so it can also run on older shards.
+/// three-valued result with ordinary functions.
 static QueryTreeNodePtr buildNullAwareNumericInList(
     const QueryTreeNodePtr & left,
     const QueryTreeNodePtr & right,
