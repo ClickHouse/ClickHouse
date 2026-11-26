@@ -107,15 +107,18 @@ $CLICKHOUSE_CLIENT -q "SELECT 'lambda policy after drop', arraySort(groupArray(i
 refused "ALTER TABLE tlam DROP COLUMN arr" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tlam RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
 
-echo "-- a name that starts with the table name can also be a column of that name"
+echo "-- a name binds as written first, exact column or subcolumn, the qualifier is removed only after that"
 $CLICKHOUSE_CLIENT --multiquery -q "
-CREATE TABLE tt (id UInt32, tt Tuple(x UInt8)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tt (id UInt32, x UInt8, tt Tuple(x UInt8)) ENGINE = MergeTree ORDER BY id;
 CREATE ROW POLICY ptt ON $DB.tt FOR SELECT USING tt.x = 1 TO CURRENT_USER;
-CREATE TABLE tl (id UInt32, \`tl.x\` UInt8) ENGINE = MergeTree ORDER BY id;
-CREATE ROW POLICY ptl ON $DB.tl FOR SELECT USING tl.x = 1 TO CURRENT_USER;
+CREATE TABLE tl (id UInt32, x UInt8, \`tl.x\` UInt8, \`$DB.tl.x\` UInt8) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY ptl ON $DB.tl FOR SELECT USING tl.x = 1 AND $DB.tl.x = 1 TO CURRENT_USER;
 "
 refused "ALTER TABLE tt DROP COLUMN tt" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tt DROP COLUMN x"
 refused "ALTER TABLE tl RENAME COLUMN \`tl.x\` TO \`tl.y\`" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tl DROP COLUMN \`$DB.tl.x\`" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tl DROP COLUMN x"
 
 echo "-- a column of its own with a dot in the name is not a subcolumn of the shorter name"
 $CLICKHOUSE_CLIENT --multiquery -q "
@@ -127,6 +130,23 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE td RENAME COLUMN a TO a2"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE td DROP COLUMN a2"
 $CLICKHOUSE_CLIENT -q "SELECT 'dotted column policy after alters', arraySort(groupArray(id)) FROM td"
 refused "ALTER TABLE td DROP COLUMN \`a.b\`" ALTER_OF_COLUMN_IS_FORBIDDEN
+
+echo "-- a subquery over a same-named table of another database reads that table"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE DATABASE ${DB}_2;
+CREATE TABLE ${DB}_2.ts (tenant UInt32) ENGINE = MergeTree ORDER BY tenant;
+CREATE TABLE ts (id UInt32, tenant UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY ps ON $DB.ts FOR SELECT USING id IN (SELECT tenant FROM ${DB}_2.ts) TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ts RENAME COLUMN tenant TO tenant_id"
+
+echo "-- a column named like a SQL function is the column, the function body is not read"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tsame (id UInt32, $UDF UInt32, tenant UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY psame ON $DB.tsame FOR SELECT USING $UDF = 1 TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tsame DROP COLUMN tenant"
+refused "ALTER TABLE tsame DROP COLUMN $UDF" ALTER_OF_COLUMN_IS_FORBIDDEN
 
 echo "-- a read through an Alias applies the policies of the alias and of its target"
 $CLICKHOUSE_CLIENT --multiquery -q "
@@ -176,6 +196,8 @@ DROP ROW POLICY plam ON $DB.tlam;
 DROP ROW POLICY ptt ON $DB.tt;
 DROP ROW POLICY ptl ON $DB.tl;
 DROP ROW POLICY pd ON $DB.td;
+DROP ROW POLICY ps ON $DB.ts;
+DROP ROW POLICY psame ON $DB.tsame;
 DROP ROW POLICY ptal ON $DB.tal;
 DROP ROW POLICY pal ON $DB.al;
 DROP ROW POLICY pal2 ON $DB.al2;
@@ -193,6 +215,9 @@ DROP TABLE tlam;
 DROP TABLE tt;
 DROP TABLE tl;
 DROP TABLE td;
+DROP TABLE ts;
+DROP DATABASE ${DB}_2;
+DROP TABLE tsame;
 DROP TABLE al;
 DROP TABLE tal;
 DROP TABLE al2;

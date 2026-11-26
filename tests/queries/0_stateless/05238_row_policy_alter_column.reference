@@ -31,11 +31,15 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 lambda policy after drop	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
--- a name that starts with the table name can also be a column of that name
+-- a name binds as written first, exact column or subcolumn, the qualifier is removed only after that
+ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a column of its own with a dot in the name is not a subcolumn of the shorter name
 dotted column policy after alters	[1]
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a subquery over a same-named table of another database reads that table
+-- a column named like a SQL function is the column, the function body is not read
 ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a read through an Alias applies the policies of the alias and of its target
 ALTER_OF_COLUMN_IS_FORBIDDEN
