@@ -28,6 +28,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsSecretString google_service_account_key;
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsSecretString google_adc_client_secret;
     extern const S3AuthSettingsSecretString google_adc_refresh_token;
@@ -50,6 +51,20 @@ namespace S3RequestSetting
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 retry_attempts;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
+}
+
+namespace
+{
+
+[[noreturn]] void throwGoogleServiceAccountKeyNotSupported()
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "`google_service_account_key` is not supported by the native GCS backend of the `gcs` table function and the `GCS` "
+        "table engine: a service-account key is accepted only in the configuration of a native GCS disk "
+        "(`service_account_key`). Use `google_adc_*` refresh-token credentials, Application Default Credentials or `NOSIGN`, "
+        "or disable `use_native_gcs` to use it through the S3-compatibility API");
+}
+
 }
 
 void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -148,6 +163,10 @@ void StorageGCSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with
     /// the native disk configuration would be silently dropped here, and the request would authenticate as
     /// Application Default Credentials or anonymously while the caller believes their credential is in use.
     /// They are only supported in the server-side disk configuration, so reject them instead.
+    /// The direct argument parser does not read it, so it is checked here, see `createObjectStorage`.
+    if (key_value_args.contains("google_service_account_key"))
+        throwGoogleServiceAccountKeyNotSupported();
+
     for (const char * disk_only_key : {"service_account_key", "service_account_key_file", "access_token"})
     {
         if (key_value_args.contains(disk_only_key))
@@ -287,6 +306,13 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
             "(remove `http_client`, the triple next to it is used directly), Application Default Credentials "
             "(which cover the default service account of the metadata server) or `NOSIGN`. "
             "Remove them or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
+
+    /// The S3-compatibility path's service-account key (`google_service_account_key`, from a named collection or a
+    /// `key = value` argument) has no counterpart on the native SQL surface: the native backend reads a service-account key
+    /// only from the configuration of a native GCS disk (`service_account_key`). Ignoring it would authenticate the
+    /// request with another credential than the one the caller supplied, so fail closed.
+    if (!auth[S3AuthSetting::google_service_account_key].value.empty())
+        throwGoogleServiceAccountKeyNotSupported();
 
     gcs_settings.no_sign_request = auth[S3AuthSetting::no_sign_request];
 
