@@ -31,7 +31,7 @@ SELECT count() FROM t_expr WHERE \`lower(s)\` = 'x' SETTINGS force_data_skipping
 SELECT count() FROM t_expr WHERE \`lower(s)\` IN ('x') SETTINGS force_data_skipping_indices = 'idx';
 DROP TABLE t_expr;
 
--- The same for columns named like `mapKeys` / `mapValues` of a map.
+-- The same for columns named like \`mapKeys\` / \`mapValues\` of a map.
 DROP TABLE IF EXISTS t_map_names;
 CREATE TABLE t_map_names
 (
@@ -56,7 +56,7 @@ SELECT count() FROM t_map_names WHERE has(\`mapKeys(m)\`, 'x') SETTINGS force_da
 SELECT count() FROM t_map_names WHERE has(\`mapValues(m)\`, 'y') SETTINGS force_data_skipping_indices = 'idx_v';
 DROP TABLE t_map_names;
 
--- A real `mapKeys(m)` index is still used.
+-- A real \`mapKeys(m)\` index is still used.
 DROP TABLE IF EXISTS t_map_real;
 CREATE TABLE t_map_real
 (
@@ -85,7 +85,7 @@ SELECT count() FROM t_order WHERE concat('k', \`'k'\`) IN ('kx');
 SELECT count() FROM t_order WHERE concat(\`'k'\`, 'k') = 'xk' SETTINGS force_data_skipping_indices = 'idx_concat';
 DROP TABLE t_order;
 
--- A column named like `JSONAllPaths` of a `JSON` column.
+-- A column named like \`JSONAllPaths\` of a \`JSON\` column.
 DROP TABLE IF EXISTS t_json_names;
 CREATE TABLE t_json_names
 (
@@ -103,7 +103,7 @@ SELECT count() FROM t_json_names WHERE isNotNull(j.a);
 SELECT count() FROM t_json_names WHERE has(\`JSONAllPaths(j)\`, 'x') SETTINGS force_data_skipping_indices = 'idx';
 DROP TABLE t_json_names;
 
--- A column, or a subcolumn of another column, named like a `JSON` subcolumn is not that subcolumn.
+-- A column, or a subcolumn of another column, named like a \`JSON\` subcolumn is not that subcolumn.
 DROP TABLE IF EXISTS t_json_shadow;
 CREATE TABLE t_json_shadow
 (
