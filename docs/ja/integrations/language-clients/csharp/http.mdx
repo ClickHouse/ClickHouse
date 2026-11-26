@@ -11,8 +11,6 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse に接続するための公式 C# クライアントです。
 クライアントのソースコードは [GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-cs)で公開されています。
 当初は [Oleg V. Kozlyuk](https://github.com/DarkWanderer) によって開発されました。
@@ -310,11 +308,19 @@ ClickHouse Cloud サービスの詳細は、ClickHouse Cloud コンソールで�
 
 サービスを選択し、**Connect** をクリックします。
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud サービスの Connect ボタン" border />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud サービスの Connect ボタン](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
+</div>
 
 **C#** を選択すると、その下に接続情報が表示されます。
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="ClickHouse Cloud の C# 接続情報" border />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud の C# 接続情報](/images/_snippets/connection-details-csharp.webp)
+  </Frame>
+</div>
 
 セルフマネージドの ClickHouse を使用している場合は、ClickHouse 管理者が設定した接続情報を使用してください。
 
@@ -1915,20 +1921,20 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 <Note>
   **範囲外の値**
 
-  バイナリ書き込み時に、`Date`、`Date32`、`DateTime`、`DateTime32` の値がサポート範囲外の場合、`Write` の時点で、カラムの型とサポート範囲を示す `ArgumentOutOfRangeException` がスローされます。以前は、範囲外の値が 32 ビット整数への変換時に警告なく切り詰められ、サーバー側で再解釈された結果、有効ではあるものの誤ったタイムスタンプになることがありました。
+  バイナリ書き込み時に、`Date`、`Date32`、`DateTime`、`DateTime32` の値がサポート範囲外の場合、`Write` の時点で、列の型とサポート範囲を示す `ArgumentOutOfRangeException` がスローされます。以前は、範囲外の値が 32 ビット整数への変換時に警告なく切り詰められ、サーバー側で再解釈された結果、有効ではあるものの誤ったタイムスタンプになることがありました。
 </Note>
 
 ドライバーは値を書き込む際に `DateTime.Kind` を考慮します。
 
 | DateTime.Kind | HTTP パラメータ                            | 一括書き込み              |
 | ------------- | ------------------------------------- | ------------------- |
-| Utc           | 同じ時点を維持                               | 同じ時点を維持             |
-| Local         | 同じ時点を維持                               | 同じ時点を維持             |
-| Unspecified   | パラメータの型のタイムゾーン (デフォルトは UTC) での日時として扱う | カラムのタイムゾーンでの日時として扱う |
+| Utc           | 時点が保持される                               | 時点が保持される             |
+| Local         | 時点が保持される                               | 時点が保持される             |
+| Unspecified   | パラメータの型のタイムゾーン (デフォルトは UTC) でのローカル時刻として扱う | カラムのタイムゾーンでのローカル時刻として扱う |
 
 `DateTimeOffset` の値は常に同じ時点を維持します。
 
-**例：UTC の DateTime (同じ時点を維持)&#x20;**
+**例：UTC の DateTime (時点が保持される)&#x20;**
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
@@ -1937,7 +1943,7 @@ var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
 // Read from DateTime('UTC') column: 12:00 UTC
 ```
 
-**例：未指定の DateTime (現地時刻)&#x20;**
+**例：未指定の DateTime (ローカル時刻)&#x20;**
 
 ```csharp
 var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);

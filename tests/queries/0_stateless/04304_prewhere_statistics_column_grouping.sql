@@ -1,5 +1,5 @@
--- Tags: no-fasttest
-SET enable_analyzer = 1;
+-- Tags: no-fasttest, no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject 0, which would skip grouping/reordering and produce no PREWHERE output

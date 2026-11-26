@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 La fonction de table `eval` évalue son argument en chaîne de requête, puis exécute cette chaîne comme une seule requête `SELECT`.
 
-Cette fonction de table est expérimentale et désactivée par défaut. Activez-la avec le paramètre `allow_experimental_eval_table_function` :
+Cette fonction de table est expérimentale et désactivée par défaut. Activez-la avec le paramètre `enable_eval_table_function` :
 
 ```sql
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 ```
 
 ## Syntaxe {#syntax}
@@ -112,4 +112,4 @@ Résultat :
 ## Voir aussi {#related}
 
 * [fonction de table `view`](/fr/reference/functions/table-functions/view)
-* paramètre `allow_experimental_eval_table_function`
+* paramètre `enable_eval_table_function`

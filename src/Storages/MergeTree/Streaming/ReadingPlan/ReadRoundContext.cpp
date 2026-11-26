@@ -20,6 +20,8 @@ ContextPtr makeStreamingContext(ContextPtr context_, const ProjectionDescription
 {
     auto copy = Context::createCopy(context_);
     copy->makeQueryContext();
+    /// Every read round is a part of the streaming query: plan it from the same snapshot.
+    copy->shareQueryMaxThreadsSnapshot(*context_);
     copy->setQueryMetadataCache(nullptr);
 
     /// The stream applies these limits per read round, so the round reads must not check them against whole partitions.

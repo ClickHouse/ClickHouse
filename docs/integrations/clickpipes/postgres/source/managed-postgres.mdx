@@ -12,7 +12,7 @@ integration:
 
 [ClickHouse Managed Postgres](/products/managed-postgres/overview) is a fully managed Postgres service in ClickHouse Cloud. It is the fastest Postgres source to connect to ClickPipes: logical replication is enabled on every instance, the ClickPipes IP addresses are allowed by default, and the connection details live in the same console as your ClickHouse service.
 
-There are two ways to start replicating from a ClickHouse Managed Postgres instance. Both create a regular Postgres ClickPipe, so everything in the [Postgres ClickPipe documentation](/integrations/clickpipes/postgres/index) applies once the pipe is running.
+There are three ways to start replicating from a ClickHouse Managed Postgres instance. All of them create a regular Postgres ClickPipe, so everything in the [Postgres ClickPipe documentation](/integrations/clickpipes/postgres/index) applies once the pipe is running.
 
 ## Option 1: Sync to ClickHouse from the Postgres service {#sync-to-clickhouse}
 
@@ -27,6 +27,8 @@ If you prefer to start from the destination side, open your ClickHouse service, 
 ### Connection details {#connection-details}
 
 Open your ClickHouse Managed Postgres service and click **Connect** to see the host, port, database, user, and password. Use the direct Postgres connection, not the **via PgBouncer** toggle: ClickPipes doesn't support replication through PgBouncer or any other connection pooler. See [Connection](/products/managed-postgres/connection) for details.
+
+With [clickhousectl](/concepts/features/interfaces/cli), `clickhousectl cloud postgres get <postgres-id>` shows the hostname and username. It never returns the password: that's shown once, by `cloud postgres create`, and `clickhousectl cloud postgres reset-password <postgres-id> --generate` sets a new one.
 
 ### Creating a user with permissions {#creating-a-user-with-permissions}
 
@@ -80,7 +82,12 @@ SHOW wal_level; -- should be logical
 
 ### Network access {#network-access}
 
-ClickHouse Managed Postgres accepts connections from ClickPipes by default. If you have configured [IP filters](/products/managed-postgres/security#ip-whitelisting) on your Postgres service, add the [ClickPipes static IP addresses](/integrations/clickpipes/networking/static-ips) for the region of your **ClickHouse service** to the allowed list.
+ClickHouse Managed Postgres accepts connections from ClickPipes by default. If you have configured [IP filters](/products/managed-postgres/security#ip-whitelisting) on your Postgres service, add the [ClickPipes static IP addresses](/integrations/clickpipes/networking/static-ips) for the region of your **ClickHouse service** to the allowed list. With clickhousectl, add one rule per address on the direct Postgres port, and run `clickhousectl cloud postgres get <postgres-id>` to check the result:
+
+```bash
+clickhousectl cloud postgres update <postgres-id> \
+  --add-ip-allow '<clickpipes-ip>:5432=clickpipes'
+```
 
 ### TLS {#tls}
 
@@ -89,11 +96,34 @@ ClickHouse Managed Postgres instances present a certificate signed by a CA that 
 - Download the CA certificate bundle from the **Settings** tab of your Postgres service and provide it with **Upload CA** in the ClickPipe connection settings. This is the recommended option. See [Verified TLS connection](/products/managed-postgres/connection#verified-tls) for where to find the bundle.
 - Turn on **Skip certificate verification** in the ClickPipe connection settings. The connection stays encrypted but the server identity isn't checked.
 
-If you create the pipe with `clickhousectl`, fetch the bundle and pass it with `--ca-certificate`:
+If you create the pipe with clickhousectl, fetch the bundle and pass it with `--ca-certificate`, as shown in [option 3](#clickhousectl).
+
+## Option 3: Create the pipe with clickhousectl {#clickhousectl}
+
+[clickhousectl](/concepts/features/interfaces/cli) creates the same pipe from the command line. Set up the user and the `clickpipes` publication as in [option 2](#clickpipes-source) first. If you use the default `postgres` user instead, drop `--publication-name` and the CLI creates a publication for the mapped tables. Creating a pipe needs an [API key](/products/cloud/features/admin-features/api/openapi); OAuth login is read-only.
+
+Look up the hostname, then save the instance's CA bundle:
 
 ```bash
-clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output pg-ca.pem
 ```
+
+Create the pipe on the destination ClickHouse service, passing the CA bundle with `--ca-certificate`:
+
+```bash
+clickhousectl cloud clickpipe create postgres <clickhouse-service-id> \
+  --name events-sync \
+  --host <postgres-hostname> \
+  --pg-database postgres \
+  --username clickpipes_user \
+  --password '<password>' \
+  --ca-certificate pg-ca.pem \
+  --publication-name clickpipes \
+  --table-mapping public.events:events
+```
+
+The pipe creates `ReplacingMergeTree` tables. Read the current state with `SELECT ... FROM events FINAL WHERE _peerdb_is_deleted = 0`. For the full walkthrough, including waiting for the pipe to reach `Running` and verifying the data, see the CLI view of the [Postgres ClickPipe guide](/integrations/clickpipes/postgres/index).
 
 ## What's next? {#whats-next}
 

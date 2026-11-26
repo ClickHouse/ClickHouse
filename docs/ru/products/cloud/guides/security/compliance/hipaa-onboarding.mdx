@@ -10,8 +10,6 @@ keywords: ['hipaa', 'соответствие требованиям', 'здра
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <EnterprisePlanFeatureBadge feature="HIPAA" />
 
 ClickHouse предлагает сервисы, соответствующие требованиям правила безопасности закона HIPAA (Health Insurance Portability and Accountability Act) 1996 года. Клиенты могут обрабатывать защищённую медицинскую информацию (PHI) в этих сервисах после подписания соглашения Business Associate Agreement (BAA) и развертывания сервисов в регионе, соответствующем требованиям HIPAA.
@@ -20,9 +18,7 @@ ClickHouse предлагает сервисы, соответствующие �
 
 На этой странице описан процесс включения развертывания сервисов, соответствующих требованиям HIPAA, в ClickHouse Cloud.
 
-<div id="enable-hipaa-compliant-services">
-  ## Включение и развертывание сервисов, соответствующих требованиям HIPAA
-</div>
+## Включение и развертывание сервисов, соответствующих требованиям HIPAA {#enable-hipaa-compliant-services}
 
 <Steps>
   <Step title="Подключение сервисов Enterprise" id="sign-up-for-enterprise">
@@ -40,7 +36,13 @@ ClickHouse предлагает сервисы, соответствующие �
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="Запрос на включение HIPAA" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_1-light.webp" alt="Запрос на включение HIPAA (светлая тема)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_1.webp" alt="Запрос на включение HIPAA (тёмная тема)" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -48,7 +50,13 @@ ClickHouse предлагает сервисы, соответствующие �
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="Отправка запроса на BAA" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_2-light.webp" alt="Отправка запроса на BAA (светлая тема)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_2.webp" alt="Отправка запроса на BAA (тёмная тема)" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -56,18 +64,30 @@ ClickHouse предлагает сервисы, соответствующие �
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA включена" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_3-light.webp" alt="HIPAA включена (светлая тема)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_3.webp" alt="HIPAA включена (тёмная тема)" />
+      </Frame>
+    </div>
 
     <br />
   </Step>
 
   <Step title="Развертывание сервисов в регионах, соответствующих требованиям HIPAA" id="deploy-hipaa-services">
     1. Выберите **New service** в левом верхнем углу главного экрана в консоли
-    2. Измените **Region type** на **HIPAA compliant**
+    2. Измените **Region type** на **соответствующий требованиям HIPAA**
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="Развертывание в регионе HIPAA" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_4-light.webp" alt="Развертывание в регионе HIPAA (светлая тема)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_4.webp" alt="Развертывание в регионе HIPAA (тёмная тема)" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -78,7 +98,7 @@ ClickHouse предлагает сервисы, соответствующие �
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## Перенос существующих сервисов
+  ## Перенос существующих сервисов {#migrate-to-hipaa}
 </div>
 
 Клиентам настоятельно рекомендуется при необходимости развертывать сервисы в средах, соответствующих нормативным требованиям. Процесс переноса сервисов из стандартного региона в регион, соответствующий требованиям HIPAA, включает восстановление из резервной копии и может потребовать некоторого простоя.
@@ -97,3 +117,9 @@ ClickHouse предлагает сервисы, соответствующие �
 
   Сервисы должны оставаться в пределах того же облачного провайдера и географического региона. Этот процесс переносит сервис в среду, соответствующую требованиям, в рамках того же облачного провайдера и региона.
 </Info>
+
+## Резервные копии для сервисов, соответствующих требованиям HIPAA {#backups}
+
+Резервные копии, управляемые ClickHouse, для сервисов, соответствующих требованиям HIPAA, работают так же, как и для остальных сервисов. Резервные копии хранятся у того же облачного провайдера и в том же регионе, что и сам сервис, а клиенты с тарифом Enterprise могут настроить периодичность и срок хранения резервных копий. Резервную копию можно восстановить в новый сервис в том же регионе, в том числе в другой сервис, соответствующий требованиям HIPAA.
+
+Для сервисов, соответствующих требованиям HIPAA, экспорт резервных копий в собственную учётную запись облачного провайдера недоступен. Регулируемая среда не допускает операций записи в хранилище за её пределами, поэтому параметр **Set up external backup** в консоли отключён, а привилегия `BACKUP` для этих сервисов не выдаётся.

@@ -8,6 +8,7 @@ ENV LANG=C.UTF-8
 # Install additional packages needed for fuzzer that are not in test-base
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+            lsof \
             ncdu \
             p7zip-full \
             parallel \
@@ -35,6 +36,21 @@ RUN arch="$(uname -m)" \
     && unzip -q awscliv2.zip \
     && ./aws/install \
     && rm -rf awscliv2.zip aws
+
+# S3 (SeaweedFS) and Azure (azurite-rs) emulators, so fuzzed object storage queries reach the server
+# code instead of failing to connect. Keep the versions in sync with `ci/docker/stateless-test`.
+ARG SEAWEEDFS_VERSION=4.48
+ARG AZURITE_RS_VERSION=v0.1.0-1bc0ba9
+ARG TARGETARCH
+RUN arch=${TARGETARCH:-amd64} \
+    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
+        "https://github.com/seaweedfs/seaweedfs/releases/download/${SEAWEEDFS_VERSION}/linux_${arch}.tar.gz" -o /tmp/seaweedfs.tar.gz \
+    && tar -xzf /tmp/seaweedfs.tar.gz -C / weed \
+    && rm /tmp/seaweedfs.tar.gz \
+    && chmod +x /weed \
+    && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
+    && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
+    && chmod +x /usr/local/bin/azurite-rs
 
 COPY requirements.txt /
 RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt

@@ -4,7 +4,6 @@
 -- scan-volume cost the optimizer replicates the read and every node re-scans the whole table;
 -- with it the table is scanned once in parallel and the small result is broadcast.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 8;

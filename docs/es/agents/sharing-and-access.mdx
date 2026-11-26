@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'Uso compartido y acceso'
+slug: /agents/sharing-and-access
+title: 'Uso compartido y control de acceso'
+description: 'Modelo de permisos y control de acceso de ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agentes', 'uso compartido', 'control de acceso', 'permisos', 'RBAC']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Agents utiliza un modelo de permisos por capas: los roles determinan qué funcionalidades pueden usar los usuarios, las listas de acceso a nivel de recurso determinan quién puede usar un agente concreto u otro recurso, y los permisos de administrador determinan quién lo gestiona todo.
+
+## Roles {#roles}
+
+Un rol es un conjunto de permisos de funcionalidades asignado a uno o varios usuarios. Los roles predeterminados son:
+
+* **User**: puede ejecutar agentes y usar el chat. Que pueda crear agentes, crear habilidades, compartir recursos, etc. depende de los toggles por funcionalidad de su rol.
+* **Administrador**: todo lo que incluye User, además de controles a nivel de organización: gestionar usuarios, configurar el mercado y conceder permisos.
+
+Los Administradores pueden crear roles personalizados con sus propios toggles para obtener un control más detallado.
+
+## Uso compartido de recursos {#resource-sharing}
+
+Los agentes, los prompts y las habilidades tienen cada uno su propia lista de acceso. Existen tres niveles de acceso por entidad de seguridad:
+
+* **Viewer** - puede usar el recurso, pero no modificarlo.
+* **Editor** - puede cambiar la configuración del recurso (instrucciones, herramientas adjuntas, modelo, etc.).
+* **Owner** - tiene los permisos de Editor y, además, puede eliminar el recurso o cambiar su configuración de uso compartido.
+
+Cuando crea un recurso, usted pasa a ser su propietario de forma predeterminada. Todo lo que no comparta explícitamente será privado y solo usted tendrá acceso.
+
+## Entidades de seguridad {#principals}
+
+Puede conceder acceso a:
+
+* **Usuarios individuales**: un usuario cada vez.
+* **Grupos**: equipos o unidades de la organización. Si un usuario se incorpora al grupo o lo abandona más adelante, su acceso se actualiza automáticamente.
+* **Toda la organización**: todos los miembros de la organización ven el recurso. Está sujeto al toggle a nivel de rol que lo permite.
+
+La visibilidad para toda la organización es lo que permite descubrir un recurso en el [mercado](/es/agents/marketplace).
+
+## Compartir un agente {#share-an-agent}
+
+Haga clic en el icono de **compartir** en la parte inferior del Constructor de Agentes. Una insignia sobre el icono indica cuántos usuarios o grupos tienen acceso actualmente.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Parte inferior del panel del Constructor de Agentes con el icono de compartir resaltado y una insignia que indica una entidad de seguridad con acceso compartido](/images/cloud/agent-builder/sharing/sharing.webp)
+  </Frame>
+</div>
+
+Se abre el modal **Compartir**. Busque un usuario o grupo por nombre o correo electrónico, elija el nivel de acceso (**Viewer**, **Editor** u **Owner**) y haga clic en **Save Changes**. Para compartir con toda la organización, active el toggle **Share with everyone in ClickHouse**.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Modal Compartir con la sección de permisos de usuarios y grupos, un campo de búsqueda, un usuario existente con el rol Owner, un toggle Share with everyone in ClickHouse y los botones Cancel y Save Changes](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
+  </Frame>
+</div>
+
+El destinatario verá el agente en su lista de agentes disponibles la próxima vez que actualice la página. Para revocar el acceso, elimine la fila correspondiente en el mismo modal. El destinatario pierde el acceso de inmediato: sus conversaciones in-flight finalizan, pero ya no podrá abrir otras nuevas.
+
+## Agente predeterminado {#default-agent}
+
+Puede marcar un agente como predeterminado. Las nuevas conversaciones se abren con ese agente, a menos que elija otro. Los usuarios con rol Admin también pueden definir un agente predeterminado para toda la organización, que se aplicará a los usuarios que no hayan elegido el suyo.
+
+## Operaciones de administrador {#admin-operations}
+
+Entre las operaciones exclusivas de los administradores se incluyen:
+
+* Crear y editar roles.
+* Configurar las categorías del mercado y seleccionar los agentes destacados.
+* Habilitar o deshabilitar funcionalidades a nivel de organización (Memory, Búsqueda web, Intérprete de código, mercado, etc.).
+* Conceder permisos de administrador a otros usuarios.
+
+En ClickHouse Cloud, el Panel de Administración está disponible para los administradores de la organización. Si no puede verlo, póngase en contacto con el administrador de su organización o con el Soporte de ClickHouse Cloud para solicitar acceso.
+
+## Consideraciones importantes {#gotchas}
+
+* **Eliminar un agente revoca todo su uso compartido.** Los destinatarios pierden el acceso; sus conversaciones guardadas con el agente se pueden seguir leyendo, pero no continuar.
+* **Editar un agente compartido afecta a todos los que lo utilizan.** Use una copia si necesita experimentar sin afectar a otros usuarios.
+* **Revocar el rol de un usuario no elimina los recursos que haya creado.** Sus agentes, prompts y habilidades permanecen en sus listas de acceso; transfiera la propiedad antes de dar de baja al usuario por completo.
