@@ -27,6 +27,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, DECLARE_FORMAT_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
+    extern const SettingsTimezone session_timezone;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool enable_nullable_tuple_type;
@@ -54,6 +55,8 @@ constexpr FunctionResultSetting format_row_result_settings[] = {
     Setting::enable_nullable_tuple_type,
     Setting::http_write_exception_in_output_format,
     Setting::max_parser_depth,
+    /// A time without an explicit time zone is written in the time zone of the session.
+    Setting::session_timezone,
 };
 #undef LIST_FORMAT_SETTING
 
