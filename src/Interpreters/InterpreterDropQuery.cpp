@@ -198,6 +198,16 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         else
             drop_storage = AccessType::DROP_TABLE;
 
+        /// `TRUNCATE` of an `Alias` goes on to its target, and the alias answers the questions asked below
+        /// (whether it supports transactions, whether it is a `MergeTree`) from the target, which loads a target
+        /// that a database with `lazy_load_tables` has not loaded yet. The right to truncate the target is checked
+        /// only by `StorageAlias::truncate`, after that, so it is required here before the target is loaded.
+        if (query.kind == ASTDropQuery::Kind::Truncate && table->as<StorageAlias>())
+        {
+            context_->checkAccess(AccessType::TRUNCATE, table_id);
+            checkAccessBeforeLoadingLazyTable(table, table_id, context_, {AccessType::TRUNCATE});
+        }
+
         if (query.if_empty)
         {
             /// The stand-in of a lazily loaded table (see the `lazy_load_tables` database setting) does not know
@@ -215,14 +225,12 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 return proxy->getNested();
             }();
             /// An `Alias` reports the row count of its target, which can be such a stand-in as well.
-            /// `TRUNCATE` goes on to the target, so the right to truncate it is required to load it.
-            /// `DROP` and `DETACH` remove only the alias, so the target is loaded for a user who can see it,
-            /// which is what the alias requires to report the count of a loaded target.
+            /// `TRUNCATE` goes on to the target, so the right to truncate it is required to load it,
+            /// which was checked above. `DROP` and `DETACH` remove only the alias, so the target is loaded
+            /// for a user who can see it, which is what the alias requires to report the count of a loaded target.
             if (table->as<StorageAlias>())
             {
                 const bool is_truncate = query.kind == ASTDropQuery::Kind::Truncate;
-                if (is_truncate)
-                    checkAccessBeforeLoadingLazyTable(table, table_id, context_, {AccessType::TRUNCATE});
                 loadTableIfLazy(table_id, context_, is_truncate ? AccessType::TRUNCATE : AccessType::SHOW_TABLES);
             }
             if (auto rows = storage_to_count->totalRows(getContext()); rows > 0)
