@@ -3076,10 +3076,10 @@ def rebuild_database(port, database):
     tables = Shell.get_output(f'{client} --query "SHOW TABLES FROM {database}"', strict=True).split()
     if not tables:
         raise RuntimeError(f"rebuild_database: no tables in {database}")
-    for table in tables:
-        # An interrupted rebuild_table leaves these behind. The rebuild of their base table drops them.
-        if table.endswith(("_rebuild", "_old")):
-            continue
+    # An interrupted rebuild_table leaves <table>_rebuild and <table>_old behind.
+    # Rebuilding <table> drops them, and fails if <table> itself is missing.
+    names = sorted({table.removesuffix("_rebuild").removesuffix("_old") for table in tables})
+    for table in names:
         rebuild_table(port, f"{database}.{table}", f"{database}.{table}")
 
 
