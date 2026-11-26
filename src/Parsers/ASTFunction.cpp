@@ -24,9 +24,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/CommonParsers.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
-#include <Poco/String.h>
 
 
 using namespace std::literals;
@@ -315,8 +313,6 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A select query argument is only allowed in 'view(SELECT ...)', 'obfuscate(SELECT ...)' or "
                 "'viewIfPermitted(SELECT ... ELSE f(...))' during AST JSON deserialization");
-        if (is_view_if_permitted_shape)
-            arguments->children[1]->as<ASTFunction &>().setKind(Kind::TABLE_FUNCTION);
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer` and
         /// `ObfuscateLayer` dispatch on the lowercased name but always produce `view`,
@@ -534,43 +530,10 @@ struct FunctionOperatorMapping
 
 /// A bare `ANY` followed by a single subquery is the SQL quantifier, which the parser rewrites to `IN`, so a
 /// function actually named `any` (the aggregate) in that shape only survives a re-parse while quoted.
-/// Likewise `columns(...)` parses as a `COLUMNS` matcher
-static bool functionNameNeedsQuoting(const String & name, const ASTPtr & arguments)
+static bool quantifierNameNeedsQuoting(const String & name, const ASTPtr & arguments)
 {
-    return equalsCaseInsensitive(name, "columns")
-        || (equalsCaseInsensitive(name, "any") && arguments && arguments->children.size() == 1
-            && arguments->children[0]->as<ASTSubquery>());
-}
-
-/// A compound name (`db.view(...)`) is written part by part: one quoted `db.view` token parses back as a one-part name.
-/// A keyword part is quoted: `1 IN partition.pv(1)` does not parse.
-/// A part may contain dots, so a dot splits only between non-empty parts: an empty quoted identifier does not parse.
-static void writeFunctionName(
-    WriteBuffer & ostr, const IAST::FormatSettings & settings, const String & name, bool is_compound_name, const ASTPtr & arguments)
-{
-    if (!is_compound_name)
-    {
-        ostr << (functionNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
-        return;
-    }
-
-    const auto & keywords = getKeyWordSet();
-    auto write_part = [&](size_t begin, size_t end)
-    {
-        const String part = name.substr(begin, end - begin);
-        settings.writeIdentifier(ostr, part, /*ambiguous=*/keywords.contains(Poco::toUpper(part)));
-    };
-
-    size_t begin = 0;
-    for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
-    {
-        if (dot == begin || dot + 1 == name.size())
-            continue;
-        write_part(begin, dot);
-        ostr << '.';
-        begin = dot + 1;
-    }
-    write_part(begin, name.size());
+    return equalsCaseInsensitive(name, "any") && arguments && arguments->children.size() == 1
+        && arguments->children[0]->as<ASTSubquery>();
 }
 
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -595,7 +558,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
         if (!name.empty())
-            writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
+            ostr << backQuoteIfNeed(name);
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -644,8 +607,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
-        && !isWindowFunction())
+    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -1100,30 +1062,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    /// In function-call form `not(x)` re-parses as `NOT (x)`, same AST, so skip quoting
-    bool is_plain_not_call = !frame.allow_operators && equalsCaseInsensitive(name, "not") && arguments
-        && arguments->children.size() == 1 && !parameters && getNullsAction() == NullsAction::EMPTY && !isWindowFunction();
-
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
-    if (is_plain_not_call)
-        ostr << name;
-    else if (!name.empty())
-        writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
-
-    SecretArgumentsResult secret_arguments;
-    if (arguments && !settings.show_secrets)
-        secret_arguments = findSecretArguments(*this);
+    if (!name.empty())
+        ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
     if (parameters)
     {
         ostr << '(';
-        if (secret_arguments.hide_parameters)
-        {
-            for (size_t i = 0; i < parameters->children.size(); ++i)
-                ostr << (i == 0 ? "" : ", ") << HIDDEN_SECRET_LITERAL;
-        }
-        else
-            parameters->format(ostr, settings, state, nested_dont_need_parens);
+        parameters->format(ostr, settings, state, nested_dont_need_parens);
         ostr << ')';
     }
 
@@ -1141,6 +1087,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     if (arguments)
     {
+        SecretArgumentsResult secret_arguments;
+        if (!settings.show_secrets)
+            secret_arguments = findSecretArguments(*this);
+
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
             if (i != 0)
@@ -1265,9 +1215,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
 bool ASTFunction::hasSecretParts() const
 {
-    const auto secret_arguments = findSecretArguments(*this);
-    return secret_arguments.hasSecrets() || (secret_arguments.hide_parameters && parameters && !parameters->children.empty())
-        || childrenHaveSecretParts();
+    return findSecretArguments(*this).hasSecrets() || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)

@@ -119,7 +119,7 @@ class QueryAnalyzer
 {
 public:
     explicit QueryAnalyzer(
-        bool only_analyze_, bool positional_arguments_already_resolved_ = false, StoragePtr replaced_storage_ = nullptr);
+        bool only_analyze_, StoragePtr replaced_storage_ = nullptr, bool view_source_in_subqueries_ = false);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -283,10 +283,6 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
-    void replaceTableStorageForParallelReplicasReadIfNeeded(const TableNodePtr & table_node, IdentifierResolveScope & scope);
-
-    void restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node);
-
     void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
@@ -324,17 +320,6 @@ private:
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
-
-    struct ReplacedTableStorage
-    {
-        StoragePtr replacement;
-        StoragePtr storage;
-        StorageSnapshotPtr storage_snapshot;
-        QueryTreeNodePtr query_node;
-    };
-    std::vector<ReplacedTableStorage> replaced_table_storages;
-
-    const ReplacedTableStorage * findReplacedTableStorage(const StoragePtr & replacement) const;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
       * An inlined view keeps behaving as a table expression with that name, exactly as it does without
@@ -384,11 +369,10 @@ private:
 
     const bool only_analyze;
 
-    /// Not passed to the analyzers of inlined views and their row policies: those queries are not printed from a resolved tree.
-    const bool positional_arguments_already_resolved;
-
     /// The view source that the interpreter swaps into the query tree after the analysis.
     const StoragePtr replaced_storage;
+    /// See `SelectQueryOptions`. Not passed to the analyzers of inlined views: the inner query of a view reads the table itself.
+    const bool view_source_in_subqueries;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

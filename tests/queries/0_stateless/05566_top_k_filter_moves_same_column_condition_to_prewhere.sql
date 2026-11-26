@@ -3,7 +3,7 @@
 
 -- optimize_empty_string_comparisons turns s != '' into the notEmpty the plan arm looks for.
 SET optimize_move_to_prewhere = 1, enable_multiple_prewhere_read_steps = 1, optimize_empty_string_comparisons = 1;
-SET use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 1000;
+SET use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 1, query_plan_max_limit_for_top_k_optimization = 1000;
 SET use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1;
 -- One part (max_insert_threads = 1), one thread, 256-row blocks and no range-split injection (it can make the read
 -- in order) keep the granule counts of the cache arm exact.

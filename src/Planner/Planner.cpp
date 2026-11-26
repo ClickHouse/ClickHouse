@@ -17,10 +17,6 @@
 #include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
-#include <Access/AccessControl.h>
-#include <Access/SettingsProfile.h>
-#include <Access/SettingsProfilesInfo.h>
-
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -42,7 +38,6 @@
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
-#include <Processors/QueryPlan/BypassExtremesSteps.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -89,7 +84,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/traverseQueryTree.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectMaterializedCTE.h>
@@ -121,7 +115,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -170,7 +163,6 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 min_bytes_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
@@ -179,7 +171,6 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
-    extern const SettingsBool adaptive_aggregator_disable_thaw;
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -336,29 +327,21 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
-    /// Disable parallel replicas to collect filters, in every (sub)query: each one is planned with its own context,
-    /// which the clone still shares with the original tree, and an `IN` subquery keeps its real tables.
-    /// A materialized CTE keeps its contexts: the plan built for it here is stored in the handle the query shares and executes.
-    auto not_materialized_cte = [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    /// disable parallel replicas to collect filters
     {
-        const auto * table_node = parent->as<TableNode>();
-        return !table_node || child != table_node->getMaterializedCTESubquery();
-    };
-    traverseQueryTree(updated_query_tree, not_materialized_cte, [](const QueryTreeNodePtr & node)
-    {
-        if (auto * query_node = node->as<QueryNode>())
+        if (auto * query_node = updated_query_tree->as<QueryNode>())
         {
             auto new_context = Context::createCopy(query_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             query_node->getMutableContext() = new_context;
         }
-        else if (auto * union_node = node->as<UnionNode>())
+        else if (auto * union_node = updated_query_tree->as<UnionNode>())
         {
             auto new_context = Context::createCopy(union_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             union_node->getMutableContext() = new_context;
         }
-    });
+    }
 
     std::unordered_map<const IStorage *, QueryTreeNodePtr> dummy_storage_to_table;
 
@@ -744,8 +727,6 @@ ALWAYS_INLINE void addFilterStep(
         std::move(actions),
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
-    where_step->setOptimizeConstantColumnsAfterFilter(
-        planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_constant_columns_after_filter]);
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
@@ -796,7 +777,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_two_level_threshold_bytes],
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
-        settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
@@ -818,7 +798,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
-        settings[Setting::adaptive_aggregator_disable_thaw],
         settings[Setting::use_aggregation_memory_tracker]);
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
@@ -2368,16 +2347,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
-
-    /// The extremes are computed before `LIMIT`, and the result filter, which comes after it, must not filter them either.
-    const bool bypass_extremes = settings[Setting::extremes];
-    if (bypass_extremes)
-        query_plan.addStep(std::make_unique<DetachExtremesStep>(query_plan.getCurrentHeader()));
-
     query_plan.addStep(std::move(filter_step));
-
-    if (bypass_extremes)
-        query_plan.addStep(std::make_unique<AttachExtremesStep>(query_plan.getCurrentHeader()));
 }
 
 /// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
@@ -2551,50 +2521,29 @@ static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context
 }
 
 /// Returns the explicit `use_query_cache` opt-in / opt-out carried by a node's own query-level
-/// `SETTINGS` clause, or `std::nullopt` when the clause does not set the setting, neither literally
-/// nor through a `profile` it applies. `QueryNode` and `UnionNode` store the clause the same way,
-/// so a plain subquery and a `UNION` subquery are handled alike.
+/// `SETTINGS` clause, or `std::nullopt` when the clause does not mention the setting. `QueryNode`
+/// and `UnionNode` store the clause the same way, so a plain subquery and a `UNION` subquery are
+/// handled alike.
 ///
 /// The clause is only inspected for the *presence* of the setting; the value is then read from the
 /// node's own context, which already has the whole clause applied in order (and clamped against the
 /// constraints). `ParserSetQuery` keeps every occurrence, so `SETTINGS use_query_cache = 1,
-/// use_query_cache = 0` - or an assignment followed by `= DEFAULT`, or a literal followed by a
-/// profile that sets it the other way - has a last-wins effective value, which the first entry of
-/// `settings_changes` does not report. Returning that first entry would make this path disagree with
-/// every other consumer of the setting, e.g. taking the cache path (and possibly raising
-/// `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
-///
-/// A profile stays in the clause as written (`profile = 'p'`), so that every shard of a distributed
-/// query applies its own profile under its own constraints; it is resolved here instead. A profile
-/// that sets `use_query_cache` is this clause's opt-in / opt-out exactly like the literal, while a
-/// profile that does not mention it contributes nothing, so an outer `use_query_cache` still does
-/// not propagate into the subquery (#119019).
-template <typename Node>
-static std::optional<bool> explicitUseQueryCacheSetting(const Node & node)
+/// use_query_cache = 0` - or an assignment followed by `= DEFAULT` - has a last-wins effective value,
+/// which the first entry of `settings_changes` does not report. Returning that first entry would make
+/// this path disagree with every other consumer of the setting, e.g. taking the cache path (and
+/// possibly raising `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
+static std::optional<bool> explicitUseQueryCacheSetting(
+    const SettingsChanges & settings_changes, const std::vector<String> & default_settings, const ContextPtr & node_context)
 {
-    const ContextPtr & node_context = node.getContext();
-    const SettingsChanges & settings_changes = node.getSettingsChanges();
-
-    bool mentioned_in_clause = settings_changes.tryGet("use_query_cache") != nullptr
-        || std::ranges::contains(node.getDefaultSettings(), "use_query_cache");
-
-    if (!mentioned_in_clause)
-    {
-        /// The profile lookup needs the mutable `AccessControl`, which only the global context exposes.
-        AccessControl & access_control = node_context->getGlobalContext()->getAccessControl();
-        for (const SettingChange & change : settings_changes)
-        {
-            if (change.name != "profile")
-                continue;
-            /// The profile resolved when the clause was applied to the node's context; one dropped since is not consulted.
-            auto profile_id = access_control.find<SettingsProfile>(change.value.safeGet<String>());
-            if (profile_id && access_control.getSettingsProfileInfo(*profile_id)->settings.tryGet("use_query_cache"))
-            {
-                mentioned_in_clause = true;
-                break;
-            }
-        }
-    }
+    bool mentioned_in_clause
+        = std::any_of(
+              settings_changes.begin(),
+              settings_changes.end(),
+              [](const auto & change) { return change.name == "use_query_cache"; })
+        || std::any_of(
+              default_settings.begin(),
+              default_settings.end(),
+              [](const auto & setting_name) { return setting_name == "use_query_cache"; });
 
     if (!mentioned_in_clause)
         return {};
@@ -2617,7 +2566,8 @@ static bool shouldUseQueryCacheForSubquery(
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
     if (is_subquery)
     {
-        if (auto explicit_setting = explicitUseQueryCacheSetting(query_node))
+        if (auto explicit_setting = explicitUseQueryCacheSetting(
+                query_node.getSettingsChanges(), query_node.getDefaultSettings(), query_node.getContext()))
             return *explicit_setting;
     }
 
@@ -2768,7 +2718,8 @@ void Planner::buildPlanForUnionNode()
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
     std::optional<bool> explicit_use_query_cache;
     if (select_query_options.is_subquery)
-        explicit_use_query_cache = explicitUseQueryCacheSetting(union_node);
+        explicit_use_query_cache = explicitUseQueryCacheSetting(
+            union_node.getSettingsChanges(), union_node.getDefaultSettings(), union_node.getContext());
 
     bool should_cache = select_query_options.is_subquery && query_result_cache != nullptr
         && isQueryKindEligibleForSubqueryCache(query_context)
@@ -2795,9 +2746,6 @@ void Planner::buildPlanForUnionNode()
         if (tryAddReadFromQueryResultCacheStep(query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
             return;
     }
-
-    /// Each arm is checked only against its own context, so compare the arms with the union here.
-    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
 
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
@@ -2996,9 +2944,6 @@ void Planner::buildPlanForQueryNode()
         query_node.getHaving() = {};
     }
 
-    /// Before collecting sets and materialized CTEs, whose subqueries are planned separately.
-    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
-
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 
@@ -3027,17 +2972,14 @@ void Planner::buildPlanForQueryNode()
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
     /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
     /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
-    /// the combination works there and the check is skipped. Plan-based parallel replicas ships the
-    /// plan the same way, whatever `serialize_query_plan` says, so the check is skipped there too.
+    /// the combination works there and the check is skipped.
     if (query_context->canUseParallelReplicasOnInitiator()
         && !settings[Setting::serialize_query_plan]
-        && !settings[Setting::parallel_replicas_plan_based]
         && !settings[Setting::additional_table_filters].value.empty())
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "additional_table_filters is not supported with parallel replicas unless the plan is "
-                "shipped (parallel_replicas_plan_based=1 or serialize_query_plan=1)");
+                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -3599,9 +3541,7 @@ void Planner::buildPlanForQueryNode()
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const
 {
-    auto select_query_info = ::DB::buildSelectQueryInfo(query_tree, planner_context);
-    select_query_info.is_secondary_query_root = select_query_options.is_secondary_query_root;
-    return select_query_info;
+    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)

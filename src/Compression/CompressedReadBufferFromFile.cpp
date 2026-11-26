@@ -36,7 +36,7 @@ bool CompressedReadBufferFromFile::nextImpl()
         chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
         memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-        working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+        working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
         decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
@@ -151,7 +151,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 /// This is for clang static analyzer.
                 chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-                working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+                working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 /// Synchronous mode must be set since we need read partial data immediately from working buffer to target buffer.
                 decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
@@ -177,7 +177,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 /// This is for clang static analyzer.
                 chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-                working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+                working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 // Asynchronous mode can be set here because working_buffer wouldn't be overwritten any more since this is the last block.
                 decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 

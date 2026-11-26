@@ -50,7 +50,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool s3_allow_multipart_copy;
     extern const SettingsBool s3_check_objects_after_upload;
     extern const SettingsUInt64 s3_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 s3_max_single_part_upload_size;
@@ -261,7 +260,6 @@ struct InjectionModel
     DeclareInjectCall(CompleteMultipartUpload)
     DeclareInjectCall(AbortMultipartUpload)
     DeclareInjectCall(UploadPart)
-    DeclareInjectCall(CopyObject)
 #undef DeclareInjectCall
 };
 
@@ -301,7 +299,7 @@ struct Client : DB::S3::Client
 
     static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(std::string_view endpoint = {})
     {
-        static const DB::RemoteHostFilter remote_host_filter;
+        DB::RemoteHostFilter remote_host_filter;
         auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
             "some-region",
             remote_host_filter,
@@ -502,14 +500,6 @@ struct Client : DB::S3::Client
     {
         ++counters.copyObject;
 
-        if (injections)
-        {
-            if (auto opt_val = injections->call(request))
-            {
-                return *opt_val;
-            }
-        }
-
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
         const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
         store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), src_data);
@@ -590,28 +580,6 @@ struct UploadPartFailIngection: InjectionModel
     {
         return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, "FailInjection", "UploadPartFailIngection", false);
     }
-};
-
-/// Rejects every CopyObject with `copy_error` and, if `put_error` is set, every PutObject with it.
-struct RejectCopyAndPutInjection : InjectionModel
-{
-    explicit RejectCopyAndPutInjection(String copy_error_, std::optional<String> put_error_ = std::nullopt)
-        : copy_error(std::move(copy_error_)), put_error(std::move(put_error_)) {}
-
-    std::optional<Aws::S3::Model::CopyObjectOutcome> call(const Aws::S3::Model::CopyObjectRequest & /*request*/) override
-    {
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, copy_error, "RejectCopyInjection", false);
-    }
-
-    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & /*request*/) override
-    {
-        if (!put_error)
-            return std::nullopt;
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, *put_error, "RejectPutInjection", false);
-    }
-
-    String copy_error;
-    std::optional<String> put_error;
 };
 
 struct ChecksumRecordingInjection : InjectionModel
@@ -2392,119 +2360,6 @@ TEST_F(CopyS3FileRoutingTest, RangedCopyOfSmallSourceUsesBuffers)
     EXPECT_EQ(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
-}
-
-/// Some endpoints reject a CopyObject of an empty object. A multipart upload cannot write an empty object,
-/// so the copy must fall back to a regular upload.
-TEST_F(CopyS3FileRoutingTest, RejectedCopyOfEmptyObjectUsesRegularUpload)
-{
-    for (const char * error : {"InvalidArgument", "InvalidRequest", "EntityTooLarge"})
-    {
-        SCOPED_TRACE(error);
-        const String src_key = String("src_") + error;
-        const String dst_key = String("dst_") + error;
-        putSource(src_key, /* size= */ 0);
-        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>(error));
-
-        const auto & objects = client->store->GetBucketStore(bucket).objects;
-        ASSERT_FALSE(objects.contains(dst_key));
-
-        EXPECT_NO_THROW(runWholeCopy(src_key, /* size= */ 0, dst_key));
-
-        EXPECT_EQ(client->counters.copyObject, 1u);
-        EXPECT_EQ(client->counters.putObject, 1u);
-        EXPECT_EQ(client->counters.multiUploadCreate, 0u);
-        ASSERT_TRUE(objects.contains(dst_key));
-        EXPECT_TRUE(objects.at(dst_key).empty());
-    }
-}
-
-/// If the regular upload of an empty object is rejected too, the endpoint's error is reported.
-TEST_F(CopyS3FileRoutingTest, RejectedUploadOfEmptyObjectThrowsS3Error)
-{
-    for (const char * error : {"InvalidRequest", "EntityTooLarge"})
-    {
-        SCOPED_TRACE(error);
-        const String src_key = String("src_") + error;
-        const String dst_key = String("dst_") + error;
-        putSource(src_key, /* size= */ 0);
-        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("InvalidArgument", error));
-
-        EXPECT_THROW({
-            try
-            {
-                runWholeCopy(src_key, /* size= */ 0, dst_key);
-            }
-            catch (const DB::Exception & e)
-            {
-                ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-                EXPECT_THAT(e.what(), testing::HasSubstr("RejectPutInjection"));
-                throw;
-            }
-        }, DB::S3Exception);
-
-        EXPECT_EQ(client->counters.copyObject, 1u);
-        EXPECT_EQ(client->counters.putObject, 1u);
-        EXPECT_EQ(client->counters.multiUploadCreate, 0u);
-        EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains(dst_key));
-    }
-}
-
-/// The multipart retry of a rejected CopyObject sends byte ranges, which S3 rejects for a source of 5 MB or
-/// less, so such a copy must fall back to a regular upload.
-TEST_F(CopyS3FileRoutingTest, RejectedCopyOfSmallObjectUsesRegularUpload)
-{
-    for (size_t size : {size_t{100}, min_source_size_for_range_copy})
-    {
-        SCOPED_TRACE(size);
-        const String src_key = "src_" + std::to_string(size);
-        const String dst_key = "dst_" + std::to_string(size);
-        const String source = putSource(src_key, size);
-        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("InvalidRequest"));
-
-        const auto & objects = client->store->GetBucketStore(bucket).objects;
-        ASSERT_FALSE(objects.contains(dst_key));
-
-        EXPECT_NO_THROW(runWholeCopy(src_key, size, dst_key));
-
-        EXPECT_EQ(client->counters.copyObject, 1u);
-        EXPECT_EQ(client->counters.uploadPartCopy, 0u);
-        EXPECT_EQ(client->counters.multiUploadCreate, 0u);
-        EXPECT_EQ(client->counters.putObject, 1u);
-        ASSERT_TRUE(objects.contains(dst_key));
-        EXPECT_EQ(objects.at(dst_key), source);
-    }
-}
-
-/// The multipart retry of a rejected CopyObject is used only if multipart copy is allowed.
-TEST_F(CopyS3FileRoutingTest, RejectedCopyRetriesAsMultipartCopyOnlyIfAllowed)
-{
-    const size_t size = min_source_size_for_range_copy + 1024;
-    for (bool allow : {true, false})
-    {
-        SCOPED_TRACE(allow);
-        const String src_key = allow ? "src_allowed" : "src_disallowed";
-        const String dst_key = allow ? "dst_allowed" : "dst_disallowed";
-        const String source = putSource(src_key, size);
-        getSettings()[Setting::s3_allow_multipart_copy] = allow;
-        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("EntityTooLarge"));
-
-        EXPECT_NO_THROW(runWholeCopy(src_key, size, dst_key));
-
-        EXPECT_EQ(client->counters.copyObject, 1u);
-        if (allow)
-        {
-            EXPECT_GT(client->counters.uploadPartCopy, 0u);
-            EXPECT_EQ(client->counters.putObject, 0u);
-        }
-        else
-        {
-            EXPECT_EQ(client->counters.uploadPartCopy, 0u);
-            EXPECT_EQ(client->counters.multiUploadCreate, 0u);
-            EXPECT_EQ(client->counters.putObject, 1u);
-        }
-        EXPECT_EQ(client->store->GetBucketStore(bucket).objects.at(dst_key), source);
-    }
 }
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {

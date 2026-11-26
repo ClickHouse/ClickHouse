@@ -50,12 +50,14 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_)
+    BlockMissingValues * block_missing_values_,
+    ISerialization::KindSet allowed_kinds_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(std::move(format_settings_))
     , block_missing_values(block_missing_values_)
+    , allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -199,7 +201,7 @@ Block NativeReader::read()
         ColumnWithTypeAndName column;
 
         /// Name
-        readStringBinaryGrowing(column.name, istr);
+        readBinary(column.name, istr);
 
         /// Type
         String type_name;
@@ -210,7 +212,7 @@ Block NativeReader::read()
         }
         else
         {
-            readStringBinaryGrowing(type_name, istr);
+            readBinary(type_name, istr);
             column.type = data_type_factory.get(type_name);
         }
 

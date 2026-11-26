@@ -63,6 +63,7 @@ query_id_top_k_where=top_k_where_$CLICKHOUSE_DATABASE
 query_id_top_k_prewhere=top_k_prewhere_$CLICKHOUSE_DATABASE
 
 opts=(
+  --enable_analyzer 1
   --optimize_functions_to_subcolumns 1
   --enable_multiple_prewhere_read_steps 1
   --use_query_condition_cache 0
@@ -144,12 +145,12 @@ steps_nested_split=$(read_steps "$query_id_nested_split" "
 # column first, whether it is written in WHERE (and moved to PREWHERE) or in PREWHERE.
 steps_top_k_where=$(read_steps "$query_id_top_k_where" "
   SELECT s FROM t_steps_top_k WHERE s != 'zzzz' ORDER BY s LIMIT 5 FORMAT Null
-  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1
+  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 1
 ")
 
 steps_top_k_prewhere=$(read_steps "$query_id_top_k_prewhere" "
   SELECT s FROM t_steps_top_k PREWHERE s != 'zzzz' ORDER BY s LIMIT 5 FORMAT Null
-  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1
+  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 1
 ")
 
 ${CLICKHOUSE_CLIENT} -q "
