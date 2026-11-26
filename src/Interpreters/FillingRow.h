@@ -28,11 +28,15 @@ class FillingRow
     /// finds last value <= to
     Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
+    /// Resets the keys after `pos` to FROM, or to `next_original_row` without FROM. Returns whether the row goes before it:
+    /// never if equal to it in all keys, or up to `pos` with a first differing later key (neither NULL nor NaN) that is not less.
+    [[nodiscard]] bool resetKeysAfter(size_t pos, const FillingRow & next_original_row);
+
     void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;
     void checkFillingTowardsConstraintFitsColumnType(size_t column_ind);
 
-    bool hasSomeConstraints(size_t pos) const;
-    bool isConstraintsSatisfied(size_t pos) const;
+    [[nodiscard]] bool hasSomeConstraints(size_t pos) const;
+    [[nodiscard]] bool isConstraintsSatisfied(size_t pos) const;
 
 public:
     explicit FillingRow(const SortDescription & sort_description);
@@ -44,8 +48,8 @@ public:
     /// Returns true if need to generate some prefix for to_row
     bool shift(const FillingRow & next_original_row, bool& value_changed);
 
-    bool hasSomeConstraints() const;
-    bool isConstraintsSatisfied() const;
+    [[nodiscard]] bool hasSomeConstraints() const;
+    [[nodiscard]] bool isConstraintsSatisfied() const;
 
     void initUsingFrom(size_t from_pos = 0);
     void initUsingTo(size_t from_pos = 0);
@@ -59,17 +63,17 @@ public:
 
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
-    size_t size() const { return row.size(); }
+    [[nodiscard]] size_t size() const { return row.size(); }
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
     bool operator>=(const FillingRow & other) const;
-    bool isNull() const;
+    [[nodiscard]] bool isNull() const;
 
-    int getDirection(size_t index) const { return sort_description[index].direction; }
+    [[nodiscard]] int getDirection(size_t index) const { return sort_description[index].direction; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
-    const FillColumnDescription & getFillDescription(size_t index) const { return sort_description[index].fill_description; }
+    [[nodiscard]] const FillColumnDescription & getFillDescription(size_t index) const { return sort_description[index].fill_description; }
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
 private:
     Row row;
