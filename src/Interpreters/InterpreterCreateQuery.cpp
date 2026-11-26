@@ -4146,7 +4146,7 @@ BlockIO InterpreterCreateQuery::execute()
                 if (features && features->check_definition_fn)
                 {
                     getContext()->checkAccess(getRequiredAccess());
-                    features->check_definition_fn(*create.storage, getContext());
+                    features->check_definition_fn(*create.storage, getContext(), /*get_named_collection=*/ {});
                 }
             }
 

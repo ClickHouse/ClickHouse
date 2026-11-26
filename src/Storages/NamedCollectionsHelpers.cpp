@@ -289,7 +289,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
     const StorageID * dependent_table_id,
     const ASTSetQuery * settings,
-    bool is_replayed_definition)
+    bool is_replayed_definition,
+    const GetNamedCollectionFn & get_named_collection)
 {
     if (asts.empty())
         return nullptr;
@@ -302,11 +303,14 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     context->checkAccess(AccessType::NAMED_COLLECTION, *collection_name);
 
-    NamedCollectionPtr collection;
-    if (throw_unknown_collection)
-        collection = NamedCollectionFactory::instance().get(*collection_name);
-    else
-        collection = NamedCollectionFactory::instance().tryGet(*collection_name);
+    NamedCollectionPtr collection = get_named_collection ? get_named_collection(*collection_name) : nullptr;
+    if (!collection)
+    {
+        if (throw_unknown_collection)
+            collection = NamedCollectionFactory::instance().get(*collection_name);
+        else
+            collection = NamedCollectionFactory::instance().tryGet(*collection_name);
+    }
 
     if (!collection)
         return nullptr;

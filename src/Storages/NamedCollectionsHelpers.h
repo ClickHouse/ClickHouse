@@ -56,6 +56,7 @@ void checkNamedCollectionOverridesInDictionarySource(
 /// named collection, and replaces in `asts` an override value that is an expression with a string literal of the value it
 /// evaluated to, so that loading the table again does not evaluate it again.
 /// Checks overrides in `SETTINGS` before the engine applies them.
+/// `get_named_collection` resolves the name instead of the factory if it returns a collection.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,
     ContextPtr context,
@@ -63,7 +64,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
     const StorageID * dependent_table_id = nullptr,
     const ASTSetQuery * settings = nullptr,
-    bool is_replayed_definition = false);
+    bool is_replayed_definition = false,
+    const GetNamedCollectionFn & get_named_collection = {});
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have the collection name as the `name` argument of their configuration.

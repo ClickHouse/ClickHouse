@@ -4,6 +4,7 @@
 #include <Common/Documentation.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
@@ -39,7 +40,7 @@ public:
     /// Used to tell whether a setting from the `SETTINGS` clause of `CREATE DATABASE` belongs to the
     /// engine or to the query, before the start of the query interpretation.
     using HasBuiltinSettingFn = bool(std::string_view);
-    using CheckDefinitionFn = void(ASTStorage & engine_define, const ContextPtr & context);
+    using CheckDefinitionFn = void(ASTStorage & engine_define, const ContextPtr & context, const GetNamedCollectionFn & get_named_collection);
 
     struct Arguments
     {
@@ -89,7 +90,8 @@ public:
         /// that. Called before `CREATE DATABASE ... ON CLUSTER` is dispatched, because its workers run without the user by
         /// default; the creator checks a definition of a local query itself. It replaces what the workers could evaluate otherwise
         /// in the definition that is dispatched with what it has checked. `RESTORE` calls it too for a database that it creates,
-        /// see `RestorerFromBackup::checkDefinitionsOfDatabasesToCreate`.
+        /// see `RestorerFromBackup::checkDefinitionsOfDatabasesToCreate`, with `get_named_collection` that resolves the name of a
+        /// named collection that the restore installs before it creates the database.
         CheckDefinitionFn * check_definition_fn = nullptr;
     };
 

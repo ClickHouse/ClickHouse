@@ -7,8 +7,9 @@
 # `RESTORE` checks the definition of a `PostgreSQL` database from a backup as `CREATE DATABASE` checks it, also with
 # `ON CLUSTER`, whose hosts create the database without the user: the user's settings constraints, the access to the named
 # collection and the override of its keys. A computed key of an override in the backup is restored locally as the key that it
-# is checked as, and `ON CLUSTER` rejects it, because the hosts would compute it again without the user. The engine does not
-# connect at `CREATE`, so the host does not need to be reachable.
+# is checked as, and `ON CLUSTER` rejects it, because the hosts would compute it again without the user. A named collection that
+# the restore installs is the one that the definition is checked with. The engine does not connect at `CREATE`, so the host does
+# not need to be reachable.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,6 +18,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB="${CLICKHOUSE_DATABASE}_pg"
 NC="nc_restore_${CLICKHOUSE_DATABASE}"
 NC_OTHER="nc_restore_other_${CLICKHOUSE_DATABASE}"
+NC_RESTORED="nc_restore_restored_${CLICKHOUSE_DATABASE}"
 NC_KEYS="host = '127.0.0.1', port = 5432, database = 'db', user = 'user', password = 'password'"
 USER="u_pg_restore_${CLICKHOUSE_DATABASE}"
 PROFILE="p_pg_restore_${CLICKHOUSE_DATABASE}"
@@ -24,13 +26,14 @@ BACKUP_PREFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 function cleanup()
 {
-    for suffix in settings other override plain computed; do
+    for suffix in settings other override plain computed restored locked; do
         ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}_${suffix}"
     done
     ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER}"
     ${CLICKHOUSE_CLIENT} --query "DROP SETTINGS PROFILE IF EXISTS ${PROFILE}"
     ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${NC}"
     ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${NC_OTHER}"
+    ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${NC_RESTORED}"
 }
 trap cleanup EXIT
 
@@ -60,6 +63,11 @@ function restore_error()
 function exists()
 {
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${DB}_$1'"
+}
+
+function collection_exists()
+{
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.named_collections WHERE name = '${NC_RESTORED}'"
 }
 
 function engine_arguments_of()
@@ -115,3 +123,33 @@ ${CLICKHOUSE_CLIENT} --query "
 exists computed
 ${CLICKHOUSE_CLIENT} --query "RESTORE DATABASE ${DB}_computed FROM S3('${S3_BACKUP}', 'test', 'testtest') FORMAT Null"
 engine_arguments_of computed
+
+echo "--- a named collection restored with the database, locally and ON CLUSTER"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE NAMED COLLECTION ${NC_RESTORED} AS ${NC_KEYS};
+    CREATE DATABASE ${DB}_restored ENGINE = PostgreSQL(${NC_RESTORED}, schema = 'public');
+    BACKUP DATABASE ${DB}_restored, TABLE system.named_collections TO $(backup_of restored) FORMAT Null;"
+for on_cluster in "" "ON CLUSTER test_shard_localhost"; do
+    ${CLICKHOUSE_CLIENT} --query "
+        DROP DATABASE ${DB}_restored;
+        DROP NAMED COLLECTION ${NC_RESTORED};
+        RESTORE DATABASE ${DB}_restored, TABLE system.named_collections ${on_cluster} FROM $(backup_of restored) FORMAT Null;"
+    exists restored
+    collection_exists
+done
+
+echo "--- a key of the restored named collection that the definition may not override"
+${CLICKHOUSE_CLIENT} --query "
+    DROP DATABASE ${DB}_restored;
+    CREATE DATABASE ${DB}_locked ENGINE = PostgreSQL(${NC_RESTORED}, host = '127.0.0.2');
+    ALTER NAMED COLLECTION ${NC_RESTORED} SET host = '127.0.0.1' NOT OVERRIDABLE;
+    BACKUP DATABASE ${DB}_locked, TABLE system.named_collections TO $(backup_of locked) FORMAT Null;
+    DROP DATABASE ${DB}_locked;
+    DROP NAMED COLLECTION ${NC_RESTORED};"
+for on_cluster in "" "ON CLUSTER test_shard_localhost"; do
+    ${CLICKHOUSE_CLIENT} --query "
+        RESTORE DATABASE ${DB}_locked, TABLE system.named_collections ${on_cluster} FROM $(backup_of locked) FORMAT Null" 2>&1 \
+        | grep -o -m1 'Override not allowed'
+    exists locked
+    collection_exists
+done

@@ -13,3 +13,15 @@ nc, schema = 'public'
 CANNOT_RESTORE_DATABASE
 0
 nc, 'schema' = 'public'
+--- a named collection restored with the database, locally and ON CLUSTER
+1
+1
+1
+1
+--- a key of the restored named collection that the definition may not override
+Override not allowed
+0
+0
+Override not allowed
+0
+0

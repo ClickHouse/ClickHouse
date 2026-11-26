@@ -758,7 +758,7 @@ void replaceComputedOverrideKeys(ASTs & engine_args, const ContextPtr & context)
 /// collection, the override of its keys by the engine arguments and by the `SETTINGS` clause (`NOT OVERRIDABLE`,
 /// `SHOW NAMED COLLECTIONS SECRETS`), and the constraints. A definition without a `SETTINGS` clause is checked too, as the
 /// creator checks it.
-void checkDefinition(ASTStorage & engine_define, const ContextPtr & context)
+void checkDefinition(ASTStorage & engine_define, const ContextPtr & context, const GetNamedCollectionFn & get_named_collection)
 {
     if (!engine_define.engine || !engine_define.engine->arguments)
         return;
@@ -767,7 +767,7 @@ void checkDefinition(ASTStorage & engine_define, const ContextPtr & context)
 
     const auto named_collection = tryGetNamedCollectionWithOverrides(
         engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
-        /*dependent_table_id=*/ nullptr, engine_define.settings);
+        /*dependent_table_id=*/ nullptr, engine_define.settings, /*is_replayed_definition=*/ false, get_named_collection);
     checkSettingsOfDefinition(engine_define, named_collection.get(), context);
 }
 

@@ -566,6 +566,16 @@ void RestorerFromBackup::checkDefinitionsOfDatabasesToCreate()
         }
     }
 
+    /// The named collections are restored after the checks and before the databases are created, so a definition is checked with
+    /// a collection that the restore installs, read from the backup when a definition first names a collection.
+    std::optional<NamedCollectionsInBackup> named_collections_to_restore;
+    const GetNamedCollectionFn get_named_collection = [&](const String & collection_name) -> NamedCollectionPtr
+    {
+        if (!named_collections_to_restore)
+            named_collections_to_restore = readNamedCollectionsToRestore(*this, findNamedCollectionsDataPathInBackup());
+        return getNamedCollectionToRestore(restore_settings, *named_collections_to_restore, collection_name);
+    };
+
     for (auto & [database_name, definition] : definitions_to_check)
     {
         auto & create = definition->as<ASTCreateQuery &>();
@@ -585,7 +595,7 @@ void RestorerFromBackup::checkDefinitionsOfDatabasesToCreate()
         const ASTPtr definition_in_backup = definition->clone();
         try
         {
-            features->check_definition_fn(*create.storage, context);
+            features->check_definition_fn(*create.storage, context, get_named_collection);
         }
         catch (Exception & e)
         {
