@@ -47,6 +47,9 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
 
+# Attempts at recording the verdict as a GitHub review, see `_update_approval`.
+APPROVAL_ATTEMPTS = 7
+
 # OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
 # via `codex login --with-api-key`.
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
@@ -279,12 +282,11 @@ def _review_approves():
     return True
 
 
-def _update_approval(info, cyber_risk_flagged):
+def _update_approval_once(info, cyber_risk_flagged):
     """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
     otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
     keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
-    for different commits may finish in any order, and only the head commit's verdict is current.
-    Raises on failure, failing the job."""
+    for different commits may finish in any order, and only the head commit's verdict is current."""
     repo = _pr_repository(info)
     owner, name = repo.split("/")
     variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
@@ -320,6 +322,7 @@ def _update_approval(info, cyber_risk_flagged):
                 "event": "APPROVE",
             },
             strict=True,
+            retries=1,
         )
         return
 
@@ -333,7 +336,23 @@ def _update_approval(info, cyber_risk_flagged):
                 "message": "AI review of a later commit does not approve the PR, see the `AI Review` comment.",
             },
             strict=True,
+            retries=1,
         )
+
+
+def _update_approval(info, cyber_risk_flagged):
+    """Run `_update_approval_once` until it succeeds. Each attempt re-reads the reviews, so a write that GitHub
+    applied but answered with an error is not sent again. Raises on persistent failure, failing the job."""
+    for attempt in range(1, APPROVAL_ATTEMPTS + 1):
+        try:
+            _update_approval_once(info, cyber_risk_flagged)
+            return
+        except Exception as e:  # noqa: BLE001 - a GitHub 5xx burst can outlast the retries of one call
+            if attempt == APPROVAL_ATTEMPTS:
+                raise
+            delay = min(15 * 2 ** (attempt - 1), 120)
+            print(f"WARNING: Approval update attempt {attempt}/{APPROVAL_ATTEMPTS} failed: {e}, retrying in {delay}s")
+            time.sleep(delay)
 
 
 def _add_cyber_risk_note(flagged_sessions, review_model):
