@@ -16,6 +16,8 @@ with_uuid_uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
 ${CLICKHOUSE_CLIENT} --send_logs_level=error -m -q "
 CREATE TABLE created (a UInt32) ${engine}, keeper_path = '/clickhouse/{database}/created';
 ATTACH TABLE attached UUID '${attached_uuid}' (a UInt32) ${engine}, keeper_path = '/clickhouse/{database}/attached';
+-- The s3queue_ alias of the setting is unfolded too.
+CREATE TABLE alias (a UInt32) ${engine}, s3queue_keeper_path = '/clickhouse/{database}/alias';
 SELECT name, position(create_table_query, '{database}') = 0, position(create_table_query, currentDatabase()) > 0
 FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 "
@@ -27,6 +29,7 @@ BACKUP TABLE with_uuid TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') FORM
 RESTORE TABLE with_uuid AS restored FROM Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;
 SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'restored';
 DROP TABLE created;
+DROP TABLE alias;
 DROP TABLE attached;
 DROP TABLE with_uuid;
 DROP TABLE restored;
