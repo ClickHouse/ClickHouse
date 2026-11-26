@@ -192,7 +192,10 @@ private:
     /// `ignore_visibility` (meaningful only together with `only_table`) answers from the local shard
     /// regardless of whether the caller is allowed to see the table; see
     /// `isTableExistIgnoringVisibility`.
-    Strings fetchTablesList(ContextPtr local_context, const String * only_table = nullptr, bool ignore_visibility = false) const;
+    /// `wait_for_local_tables = false` (used by `getAllTableNames`) takes the names of a local shard from the
+    /// local database's `getAllTableNames`, which does not wait for its tables to load.
+    Strings fetchTablesList(
+        ContextPtr local_context, const String * only_table = nullptr, bool ignore_visibility = false, bool wait_for_local_tables = true) const;
 
     /// Whether `remote_database.table_name` exists at all, ignoring whether the caller is allowed to
     /// see it. Used by an outer `Remote` database whose local shard is this database: `isTableExist`

@@ -236,7 +236,7 @@ void DatabaseRemote::throwIfLocalChainRefersBack() const
 }
 
 
-Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String * only_table, bool ignore_visibility) const
+Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String * only_table, bool ignore_visibility, bool wait_for_local_tables) const
 {
     const ProxyClusters clusters = getProxyClusters();
 
@@ -407,7 +407,17 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                         && !access->isGranted(AccessType::SHOW_TABLES, remote_database);
                     Strings tables;
                     NameSet local_names;
-                    for (const auto & table : local_database->getLightweightTablesIterator(query_context))
+                    std::vector<LightWeightTableDetails> local_tables;
+                    if (wait_for_local_tables)
+                        local_tables = local_database->getLightweightTablesIterator(query_context);
+                    else
+                    {
+                        /// The name hints run inside the load job of a table, so they take the names
+                        /// without waiting for the tables to load.
+                        for (auto & table_name : local_database->getAllTableNames(query_context))
+                            local_tables.emplace_back(LightWeightTableDetails{std::move(table_name)});
+                    }
+                    for (const auto & table : local_tables)
                     {
                         local_names.insert(table.name);
                         if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, table.name))
@@ -891,7 +901,11 @@ VectorWithMemoryTracking<String> DatabaseRemote::getAllTableNames(ContextPtr loc
     /// Do not allow to throw here for the same reason as in `getTablesIterator`.
     try
     {
-        for (auto & table_name : fetchTablesList(local_context ? local_context : getContext()))
+        for (auto & table_name : fetchTablesList(
+                 local_context ? local_context : getContext(),
+                 /* only_table = */ nullptr,
+                 /* ignore_visibility = */ false,
+                 /* wait_for_local_tables = */ false))
             result.emplace_back(std::move(table_name));
     }
     catch (...)

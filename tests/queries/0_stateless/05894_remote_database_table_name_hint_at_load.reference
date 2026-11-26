@@ -1,0 +1,7 @@
+--- a Remote database over the database of the table
+0
+UNKNOWN_TABLE
+Maybe you meant r.table_with_projection
+--- the hint of a Remote database lists only the local tables the user can see
+hidden_table not suggested
+visible_table suggested
