@@ -1,2 +1,4 @@
+exception SOCKET_TIMEOUT between packets
+exception SOCKET_TIMEOUT inside a packet
 exception TIMEOUT_EXCEEDED while reading external table data
 values [3]

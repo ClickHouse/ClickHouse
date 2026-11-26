@@ -13,7 +13,9 @@ function cleanup()
 }
 trap cleanup EXIT
 
+python3 "$CUR_DIR"/05877_external_tables_max_execution_time_query_settings.python stalled_client
+
 # The failpoint delays every block of an external table by a second.
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT sleep_on_receive_external_table_data"
 
-python3 "$CUR_DIR"/05877_external_tables_max_execution_time_query_settings.python
+python3 "$CUR_DIR"/05877_external_tables_max_execution_time_query_settings.python slow_server

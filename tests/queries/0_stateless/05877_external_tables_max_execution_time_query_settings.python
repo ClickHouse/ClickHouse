@@ -5,9 +5,13 @@
 # which includes its `SETTINGS` clause. `clickhouse-client` copies the settings of that clause into
 # the `Query` packet, so the server gets them twice. This client sends the query text as it is,
 # and the server learns the limit only when it parses the query.
+#
+# The same limit applies to the time the server waits for the data of an external table:
+# a client that stops sending it gets an exception instead of holding the query for `receive_timeout`.
 
 import os
 import socket
+import sys
 import uuid
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
@@ -18,6 +22,7 @@ CLIENT_NAME = "external table time limit"
 CLIENT_REVISION = 54449
 
 TIMEOUT_EXCEEDED = 159
+SOCKET_TIMEOUT = 209
 
 
 def writeVarUInt(x, ba):
@@ -193,6 +198,13 @@ def readResponse(s):
         packet_type = readVarUInt(s)
         if packet_type == 2:  # Exception
             code, text = readException(s)
+            if code == SOCKET_TIMEOUT:
+                # The first message is of the wait for the next packet, the second one is of a read from the socket.
+                if "while receiving data from client" in text:
+                    return "exception SOCKET_TIMEOUT between packets"
+                if "while reading from socket" in text:
+                    return "exception SOCKET_TIMEOUT inside a packet"
+                return "exception SOCKET_TIMEOUT"
             if code != TIMEOUT_EXCEEDED:
                 return "exception {}".format(code)
             # The server also has the regular check of `max_execution_time`, which reports the same code.
@@ -263,9 +275,30 @@ def querySettingsOverrideSession():
         print(readResponse(s))
 
 
+def clientStopsBetweenPackets():
+    with connect() as s:
+        sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 1")
+        # One block, and neither the rest of the table nor the empty block that ends the external data.
+        sendBlock(s, "ext", [("x", "UInt64")], 1, (1).to_bytes(8, "little"))
+        print(readResponse(s))
+
+
+def clientStopsInsideAPacket():
+    with connect() as s:
+        sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 1")
+        # The block declares one row, but its data is not sent.
+        sendBlock(s, "ext", [("x", "UInt64")], 1)
+        print(readResponse(s))
+
+
 def main():
-    limitFromQuerySettings()
-    querySettingsOverrideSession()
+    # The stalled client is checked without the fail point, and the slow server is checked with it.
+    if sys.argv[1] == "stalled_client":
+        clientStopsBetweenPackets()
+        clientStopsInsideAPacket()
+    else:
+        limitFromQuerySettings()
+        querySettingsOverrideSession()
 
 
 if __name__ == "__main__":
