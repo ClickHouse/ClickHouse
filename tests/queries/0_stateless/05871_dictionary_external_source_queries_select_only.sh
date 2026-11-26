@@ -27,6 +27,7 @@ function cleanup()
 {
     $CLICKHOUSE_CLIENT --multiquery --query "
         DROP DICTIONARY IF EXISTS dict_invalidate;
+        DROP DICTIONARY IF EXISTS dict_update;
         DROP DICTIONARY IF EXISTS dict_nc;
         DROP DICTIONARY IF EXISTS dict_keys;
         DROP USER IF EXISTS $user;
@@ -67,6 +68,31 @@ done
 echo "rejected: $rejected"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'canary'"
 
+echo '--- A non-SELECT update query is not sent'
+# The update query is composed from `update_field` as written, and only an update after the first load sends it: the first load
+# sends the load query. MySQL executes the content of a `/*! ... */` comment, so the update query would run the statement in it.
+# The update is rejected, and the dictionary keeps the previous version.
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE TABLE src_update (id UInt64, value String, updated DateTime) ENGINE = MergeTree ORDER BY id;
+    INSERT INTO src_update VALUES (1, 'a', now());
+    CREATE DICTIONARY dict_update (id UInt64, value String) PRIMARY KEY id
+        SOURCE(MYSQL(HOST '127.0.0.1' PORT ${CLICKHOUSE_PORT_MYSQL} USER '$backend_user' PASSWORD 'p' DB '${CLICKHOUSE_DATABASE}' TABLE 'src_update'
+            UPDATE_FIELD 'updated /*! ; CREATE TABLE ${CLICKHOUSE_DATABASE}.canary_update (x UInt8) ENGINE = Memory */'))
+        LAYOUT(FLAT()) LIFETIME(MIN 1 MAX 1);
+    SELECT dictGet(dict_update, 'value', toUInt64(1));"
+
+rejected=0
+deadline=$((SECONDS + 120))
+while [ "$rejected" != "1" ] && [ $SECONDS -lt $deadline ]; do
+    rejected=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() > 0 FROM system.dictionaries
+        WHERE database = currentDatabase() AND name = 'dict_update'
+            AND last_exception LIKE '%Update query for MySQL dictionary%cannot contain comments%'")
+    [ "$rejected" = "1" ] || sleep 0.5
+done
+echo "rejected: $rejected"
+$CLICKHOUSE_CLIENT --query "SELECT dictGet(dict_update, 'value', toUInt64(1))"
+
 echo '--- Lookups with any key are sent'
 # The lookups of a `direct` layout add the keys to the checked load query, escaped in the style of MySQL: a quote or a backslash
 # in a key is not a part of the query for the database.
@@ -101,10 +127,11 @@ function create_as_user()
 {
     local on_cluster="$1"
     local name="$2"
+    local statement="${3:-CREATE DICTIONARY}"
     local db="$CLICKHOUSE_DATABASE"
     [ -n "$on_cluster" ] && db="$atomic_db"
     $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
-        CREATE DICTIONARY ${db}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
+        ${statement} ${db}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
             SOURCE(MYSQL(NAME ${name} TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
         | grep -qE "necessary to have the grant NAMED COLLECTION ON \`?${nc}\`?\." && echo 1 || echo 0
     $CLICKHOUSE_CLIENT --multiquery --query "
@@ -118,6 +145,8 @@ echo 'Without the grant, ON CLUSTER: denied, not created'
 create_as_user "ON CLUSTER test_shard_localhost" "$nc"
 echo 'Without the grant, the name is an expression: denied, not created'
 create_as_user "" "concat('$nc', '')"
+echo 'Without the grant, CREATE OR REPLACE: denied, not created'
+create_as_user "" "$nc" "CREATE OR REPLACE DICTIONARY"
 $CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON $nc TO $user"
 echo '--- The name of the collection cannot refer to other values of the definition'
 # The source reads the name from the dictionary configuration, which expands `${...}`: `${dictionary.comment}` would be

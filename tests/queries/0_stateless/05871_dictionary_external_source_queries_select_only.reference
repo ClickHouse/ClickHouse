@@ -2,6 +2,10 @@
 a
 rejected: 1
 0
+--- A non-SELECT update query is not sent
+a
+rejected: 1
+a
 --- Lookups with any key are sent
 quote	backslash
 --- The queries held by a named collection are checked
@@ -14,6 +18,9 @@ Without the grant, ON CLUSTER: denied, not created
 1
 0
 Without the grant, the name is an expression: denied, not created
+1
+0
+Without the grant, CREATE OR REPLACE: denied, not created
 1
 0
 --- The name of the collection cannot refer to other values of the definition

@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool dictionaries_external_source_queries_select_only;
+}
 
 namespace ErrorCodes
 {
@@ -58,8 +64,12 @@ void checkDictionaryQueryIsSelect(const String & query, const String & descripti
     parseDictionaryQueryAsSelect(query, description, error_message);
 }
 
-void checkExternalDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message)
+void checkExternalDictionaryQueryIsSelect(const String & query, const String & source_description, const char * error_message)
 {
+    /// A query valid for the database can be rejected by the ClickHouse parser, so the errors say which check rejected it.
+    const String description = source_description
+        + " (checked as a ClickHouse SELECT query, see the server setting `dictionaries_external_source_queries_select_only`)";
+
     Lexer lexer(query.data(), query.data() + query.size());
     for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
     {
@@ -78,6 +88,11 @@ void checkExternalDictionaryQueryIsSelect(const String & query, const String & d
     const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
     if (hasSettings(*ast) || (query_with_output && (query_with_output->out_file || query_with_output->format_ast)))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+}
+
+bool shouldCheckExternalDictionaryQueries(const ContextPtr & context, bool created_from_ddl)
+{
+    return created_from_ddl && context->getServerSettings()[ServerSetting::dictionaries_external_source_queries_select_only];
 }
 
 void checkExternalDictionaryLoadQueryIsSelect(const String & query, const String & load_all_query, const String & source_name)

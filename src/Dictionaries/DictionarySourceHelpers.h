@@ -33,11 +33,17 @@ ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextP
 /// (possibly taken from a named collection). So only a `SELECT` is allowed.
 void checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
 
-/// The same for a query sent to an external database (MySQL, PostgreSQL, ODBC, JDBC). It is parsed by ClickHouse,
+/// The same for a query sent to an external database (MySQL, PostgreSQL, ODBC). It is parsed by ClickHouse,
 /// so what the database can read differently is rejected too: comments (MySQL executes `/*! ... */`), heredocs,
 /// typographic quotes, backslashes in quoted tokens (PostgreSQL and SQL Server read them literally), and `INTO OUTFILE`,
 /// `FORMAT` and `SETTINGS`, which are a part of a `SELECT` only for ClickHouse.
-void checkExternalDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
+void checkExternalDictionaryQueryIsSelect(const String & query, const String & source_description, const char * error_message);
+
+/// Whether a source of an external database checks its queries with `checkExternalDictionaryQueryIsSelect` and
+/// `checkExternalDictionaryLoadQueryIsSelect`: for a dictionary created by `CREATE DICTIONARY`, unless the server setting
+/// `dictionaries_external_source_queries_select_only` is disabled. A dictionary from the server configuration is written
+/// by the administrator, so it is not checked.
+bool shouldCheckExternalDictionaryQueries(const ContextPtr & context, bool created_from_ddl);
 
 /// Checks the load query of a source of an external database, see `checkExternalDictionaryQueryIsSelect`. It is checked once,
 /// when the source is created. The lookups of `direct` and `cache` layouts add to it a condition on the requested keys, which

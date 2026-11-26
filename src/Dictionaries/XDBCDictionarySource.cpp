@@ -281,7 +281,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .check_queries_are_select = created_from_ddl,
+            .check_queries_are_select = shouldCheckExternalDictionaryQueries(global_context, created_from_ddl),
         };
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
