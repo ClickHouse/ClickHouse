@@ -19,7 +19,13 @@
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Access/ContextAccess.h>
+#include <Access/EnabledMaskingPolicies.h>
+#endif
 
 #include <algorithm>
 #include <functional>
@@ -50,6 +56,25 @@ namespace QueryPlanOptimizations
 {
 
 std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading)
+{
+    if (auto can_use = canUseProjectionForReadingStepIgnoringDataChangesOnFly(reading); !can_use)
+        return can_use;
+
+    /// Don't use projections if have mutations to apply
+    /// because we need to apply them on original data.
+    if (hasDataChangesOnFly(*reading))
+        return std::unexpected("the table has unmaterialized mutations or patch parts");
+
+    return {};
+}
+
+bool hasDataChangesOnFly(const ReadFromMergeTree & reading)
+{
+    const auto & mutations_snapshot = reading.getMutationsSnapshot();
+    return mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts();
+}
+
+std::expected<void, std::string> canUseProjectionForReadingStepIgnoringDataChangesOnFly(ReadFromMergeTree * reading)
 {
     /// TODO(unique-key): support projections, `_minmax_count_projection` included.
     if (reading->getStorageMetadata()->hasUniqueKey())
@@ -97,15 +122,9 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (query_settings[Setting::aggregate_functions_null_for_empty])
         return std::unexpected("setting aggregate_functions_null_for_empty is enabled");
 
-    auto mutations_snapshot = reading->getMutationsSnapshot();
-
-    /// Don't use projections if have mutations to apply
-    /// because we need to apply them on original data.
-    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
-        return std::unexpected("the table has unmaterialized mutations or patch parts");
-
     /// A projection part rebuilt by a lightweight delete does not store the deleted rows.
-    if (!query_settings[Setting::apply_deleted_mask] && mutations_snapshot->hasLightweightDeletedMask())
+    /// This holds for filtering by the projection as well, so it is not a data change on the fly.
+    if (!query_settings[Setting::apply_deleted_mask] && reading->getMutationsSnapshot()->hasLightweightDeletedMask())
         return std::unexpected("setting apply_deleted_mask is disabled and the table has lightweight-deleted rows");
 
     return {};
@@ -378,6 +397,32 @@ static bool projectionPartHasRequiredColumns(
     return true;
 }
 
+/// The table column that stores `name`: `tup` for the subcolumn `tup.x`, `name` itself for a column
+/// or for a name the table does not have.
+static String getNameInStorage(const ColumnsDescription & table_columns, const String & name)
+{
+    if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        return column->getNameInStorage();
+    return name;
+}
+
+/// Whether filtering by `projection` depends on the table column `name_in_storage`: the projection is built
+/// from it, stores it, or the filter reads it (`required_column_names`), directly or through one of its subcolumns.
+static bool isProjectionColumn(
+    const ProjectionDescription & projection,
+    const Names & required_column_names,
+    const ColumnsDescription & table_columns,
+    const String & name_in_storage)
+{
+    if (name_in_storage.empty())
+        return false;
+
+    auto is_stored_in = [&](const String & name) { return getNameInStorage(table_columns, name) == name_in_storage; };
+    return std::ranges::any_of(projection.required_columns, is_stored_in)
+        || std::ranges::any_of(projection.sample_block, [&](const auto & column) { return is_stored_in(column.name); })
+        || std::ranges::any_of(required_column_names, is_stored_in);
+}
+
 /// Pending metadata mutations (`RENAME COLUMN` / `DROP COLUMN`) are applied at read time by the
 /// `AlterConversions` of the parent part only; a projection part is read without them. So until such a
 /// mutation rewrites the part, its projection part may still carry a column the metadata no longer has
@@ -385,23 +430,16 @@ static bool projectionPartHasRequiredColumns(
 /// `c` instead of the new column's default. Such a part is read from the parent part instead.
 /// Only the mutations touching a column the projection holds or the read needs (for `RENAME COLUMN`,
 /// both the old and the new name) matter: a pending drop of an unrelated column keeps the projection usable.
+/// A mutation of `tup` touches the projection columns `tup.x`.
 static bool partHasPendingMetadataMutationsOnColumns(
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const MergeTreeData::DataPartPtr & part,
     const ProjectionDescription & projection,
+    const ColumnsDescription & table_columns,
     const Names & required_column_names)
 {
     if (!mutations_snapshot->hasMetadataMutations())
         return false;
-
-    auto is_affected = [&](const String & name)
-    {
-        if (name.empty())
-            return false;
-        return std::find(projection.required_columns.begin(), projection.required_columns.end(), name) != projection.required_columns.end()
-            || projection.sample_block.has(name)
-            || std::find(required_column_names.begin(), required_column_names.end(), name) != required_column_names.end();
-    };
 
     /// Only the mutations newer than the part apply to it: the snapshot may also hold finished ones.
     for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
@@ -409,11 +447,70 @@ static bool partHasPendingMetadataMutationsOnColumns(
         if (!AlterConversions::isSupportedMetadataMutation(command.type))
             continue;
 
-        if (is_affected(command.column_name) || is_affected(command.rename_to))
+        if (isProjectionColumn(projection, required_column_names, table_columns, command.column_name)
+            || isProjectionColumn(projection, required_column_names, table_columns, command.rename_to))
             return true;
     }
 
     return false;
+}
+
+ColumnsChangedOnFlyByPart::ColumnsChangedOnFlyByPart(const ReadFromMergeTree & reading_)
+    : reading(reading_)
+    , has_data_changes(hasDataChangesOnFly(reading_))
+{
+}
+
+ColumnsChangedOnFlyByPart::~ColumnsChangedOnFlyByPart() = default;
+
+bool ColumnsChangedOnFlyByPart::changesProjectionColumns(const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection)
+{
+    if (!has_data_changes)
+        return false;
+
+    auto it = changed_columns_by_part.find(part.get());
+    if (it == changed_columns_by_part.end())
+    {
+        /// The same changes the parent read applies to the part.
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
+            part, reading.getMutationsSnapshot(), reading.getContext()
+#if CLICKHOUSE_CLOUD
+            , reading.getContext()->getAccess()->getEnabledMaskingPolicies()
+#endif
+        );
+        it = changed_columns_by_part.emplace(part.get(), alter_conversions->getAllUpdatedColumns()).first;
+    }
+
+    const auto & updated_columns = it->second;
+    if (updated_columns.empty())
+        return false;
+
+    /// The projection part may have been rebuilt without the deleted rows,
+    /// and a change of `_row_exists` may restore one of them (`UPDATE t SET _row_exists = 1`).
+    if (part->hasLightweightDelete() && updated_columns.contains(RowExistsColumn::name))
+        return true;
+
+    if (!materialized_column_dependencies)
+        materialized_column_dependencies
+            = std::make_unique<MaterializedColumnDependencies>(reading.getStorageMetadata()->getColumns(), reading.getContext());
+
+    /// A column the part does not store yet (added by `ALTER ADD COLUMN`) is computed by the read from its
+    /// default expression after the patches are applied, so any updated column may change it.
+    const bool updates_data_columns = std::ranges::any_of(updated_columns, [](const String & name) { return name != RowExistsColumn::name; });
+    const auto & table_columns = reading.getStorageMetadata()->getColumns();
+
+    /// A column counts as changed if it is updated, if it is MATERIALIZED and computed from an updated column,
+    /// or if the part does not store it. A subcolumn (`tup.x`) is checked by the column that stores it (`tup`).
+    auto is_changed = [&](const String & name)
+    {
+        const String name_in_storage = getNameInStorage(table_columns, name);
+        return updated_columns.contains(name_in_storage)
+            || !materialized_column_dependencies->findColumnsToRecalculate(name_in_storage, updated_columns).empty()
+            || (updates_data_columns && table_columns.hasPhysical(name_in_storage) && !part->tryGetColumn(name_in_storage));
+    };
+
+    return std::ranges::any_of(projection.required_columns, is_changed)
+        || std::ranges::any_of(projection.sample_block, [&](const auto & column) { return is_changed(column.name); });
 }
 
 /// Projection candidate analysis is an optional optimization: when the filter does not constrain
@@ -472,7 +569,7 @@ bool analyzeProjectionCandidate(
             && projectionPartHasRequiredColumns(
                 *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, part_column_names)
             && !partHasPendingMetadataMutationsOnColumns(
-                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, part_column_names))
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, parent_metadata->getColumns(), part_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
                 projection_part,
@@ -558,6 +655,7 @@ void filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
+    ColumnsChangedOnFlyByPart & columns_changed_on_fly,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
@@ -591,7 +689,8 @@ void filterPartsAndCollectProjectionCandidates(
             && projectionPartHasRequiredColumns(
                 *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
             && !partHasPendingMetadataMutationsOnColumns(
-                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns))
+                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, parent_metadata->getColumns(), filter_required_columns)
+            && !columns_changed_on_fly.changesProjectionColumns(part_with_ranges.data_part, projection))
         {
             RangesInDataPart projection_part(
                 it->second,
@@ -635,6 +734,12 @@ void filterPartsAndCollectProjectionCandidates(
     /// Always request `_parent_part_offset` for projection analysis, even if the column does not exist. This does not
     /// affect the analysis itself. Later code will not use it as an index if the column is missing.
     static Names required_column_names = {"_parent_part_offset"};
+    /// The result filters the parts of the actual read, so keep the read's own cache gate. The projection parts are
+    /// analyzed with `empty_mutations_snapshot`, which bypasses the gate on data changes on the fly in
+    /// `filterPartsByQueryConditionCache`, so apply it here: an entry recorded before a patch part or a mutation was
+    /// added still matches the unchanged part names, and a TopK entry excludes granules that hold none of the top
+    /// rows of that time, which a delete can make the new top rows.
+    const bool has_data_changes_on_fly = hasDataChangesOnFly(reading);
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
         empty_mutations_snapshot,
@@ -645,9 +750,8 @@ void filterPartsAndCollectProjectionCandidates(
         getContextForProjectionAnalysis(context),
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
-        /// The result filters the parts of the actual read, so keep the read's own cache gate.
-        reading.isQueryConditionCacheAllowed(),
-        reading.isTopKPrewhereQueryConditionCacheAllowed(),
+        reading.isQueryConditionCacheAllowed() && !has_data_changes_on_fly,
+        reading.isTopKPrewhereQueryConditionCacheAllowed() && !has_data_changes_on_fly,
         /*stop_at_first_match=*/ !may_use_projection_index);
 
     /// Projection has no filtering effect, skip it
