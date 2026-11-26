@@ -1,8 +1,0 @@
-MergeTree
-SUPPORT_IS_DISABLED
-1	1	0
-2	7	1
-ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_block_kill', 'r1')
-SUPPORT_IS_DISABLED
-1	1	0
-2	7	1

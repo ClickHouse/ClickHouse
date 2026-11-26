@@ -185,9 +185,6 @@ private:
     /// Atomic so getMutationsSnapshot can check it without acquiring state_mutex.
     std::atomic<Int64> num_metadata_mutations_in_map{0};
 
-    /// See `RunningClearOfBlockColumnsHolder`.
-    mutable std::atomic<size_t> num_running_clears_of_block_columns{0};
-
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
@@ -472,27 +469,8 @@ public:
     /// Build the per-partition cursor promoter map for streaming reads.
     CursorPromotersMap buildPromoters(zkutil::ZooKeeperPtr & zookeeper);
 
-    /// Counts a running mutation of a part with `CLEAR COLUMN` of `_block_number` / `_block_offset` (see
-    /// `isClearOfBlockColumns`) while it exists. The part can still be committed after the mutation is killed.
-    class RunningClearOfBlockColumnsHolder : private boost::noncopyable
-    {
-    public:
-        explicit RunningClearOfBlockColumnsHolder(const ReplicatedMergeTreeQueue & queue_) : queue(queue_) { ++queue.num_running_clears_of_block_columns; }
-        ~RunningClearOfBlockColumnsHolder() { --queue.num_running_clears_of_block_columns; }
-
-    private:
-        const ReplicatedMergeTreeQueue & queue;
-    };
-
-    using RunningClearOfBlockColumnsHolderPtr = std::unique_ptr<RunningClearOfBlockColumnsHolder>;
-
-    /// If the commands clear `_block_number` / `_block_offset`, `clear_of_block_columns_holder` gets a holder created
-    /// under the same lock as the removal of a killed mutation.
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
-                                         Strings & mutation_ids, const StorageInMemoryMetadata & metadata,
-                                         RunningClearOfBlockColumnsHolderPtr & clear_of_block_columns_holder) const;
-
-    size_t getNumRunningClearsOfBlockColumns() const { return num_running_clears_of_block_columns.load(); }
+                                         Strings & mutation_ids) const;
 
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {

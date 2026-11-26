@@ -1199,12 +1199,6 @@ void CurrentlyMergingPartsTagger::finalize()
     std::lock_guard lock(storage.currently_processing_in_background_mutex);
     finalized = true;
 
-    if (clears_block_columns)
-    {
-        --storage.num_running_clears_of_block_columns;
-        clears_block_columns = false;
-    }
-
     for (const auto & part : future_part->parts)
     {
         if (!storage.currently_merging_mutating_parts.contains(part))
@@ -1688,11 +1682,6 @@ void StorageMergeTree::assertNoUnfinishedClearOfBlockColumns(Int64 block_number,
                 "Cannot execute a lightweight update, because mutation {} that clears columns `_block_number` and `_block_offset` "
                 "is not finished. Wait until it finishes, or kill it", entry.file_name);
     }
-
-    if (num_running_clears_of_block_columns)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot execute a lightweight update, because a mutation of a part that clears columns `_block_number` and "
-            "`_block_offset` is running. Wait until it finishes");
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
@@ -2818,15 +2807,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->part_format = part->getFormat();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
-
-            /// Counted here, under the same lock as `killMutation`, so that the lightweight updates stay rejected
-            /// after the mutation is killed, until this part is committed or discarded.
-            if (std::ranges::any_of(*commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(*metadata_snapshot); }))
-            {
-                tagger->clears_block_columns = true;
-                ++num_running_clears_of_block_columns;
-            }
-
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn, mutation_ids);
         }
     }

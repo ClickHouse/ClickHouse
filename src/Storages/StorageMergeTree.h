@@ -164,11 +164,6 @@ private:
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
 
-    /// The number of the running mutations of parts with `CLEAR COLUMN` of `_block_number` / `_block_offset` (see
-    /// `isClearOfBlockColumns`). A part can still be committed after its mutation is killed.
-    /// This counter has to be used with `currently_processing_in_background_mutex`.
-    size_t num_running_clears_of_block_columns = 0;
-
     /// current parts postpone reasons
     std::map<std::string, std::string> current_parts_postpone_reasons;
 
@@ -186,8 +181,7 @@ private:
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
 
     /// Throws if a mutation with a lower version than the lightweight update with `block_number` clears
-    /// `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) and is not finished, or if the mutation
-    /// of a part with such commands is running.
+    /// `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) and is not finished.
     void assertNoUnfinishedClearOfBlockColumns(Int64 block_number, const StorageMetadataPtr & metadata_snapshot) const;
     CommittingBlocksSet getCommittingBlocks() const;
 

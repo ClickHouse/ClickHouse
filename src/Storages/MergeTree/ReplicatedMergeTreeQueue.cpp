@@ -2595,8 +2595,7 @@ MutationCounters ReplicatedMergeTreeQueue::getMutationCounters() const
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
-    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version, Strings & mutation_ids,
-    const StorageInMemoryMetadata & metadata, RunningClearOfBlockColumnsHolderPtr & clear_of_block_columns_holder) const
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version, Strings & mutation_ids) const
 {
     /// NOTE: If the corresponding mutation is not found, the error is logged (and not thrown as an exception)
     /// to allow recovering from a mutation that cannot be executed. This way you can delete the mutation entry
@@ -2642,9 +2641,6 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         const auto & commands_from_entry = it->second->entry->commands;
         commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
     }
-
-    if (std::ranges::any_of(commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(metadata); }))
-        clear_of_block_columns_holder = std::make_unique<RunningClearOfBlockColumnsHolder>(*this);
 
     return commands;
 }

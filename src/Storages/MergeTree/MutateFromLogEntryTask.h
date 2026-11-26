@@ -62,9 +62,6 @@ private:
     MutationCommandsConstPtr commands;
     Strings mutation_ids_for_log;
 
-    /// Keeps the lightweight updates rejected until the mutated part is committed or discarded.
-    ReplicatedMergeTreeQueue::RunningClearOfBlockColumnsHolderPtr clear_of_block_columns_holder;
-
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
     StopwatchUniquePtr stopwatch_ptr{nullptr};

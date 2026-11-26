@@ -187,9 +187,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     Strings mutation_ids;
-    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(
-        source_part, new_part_info.mutation, mutation_ids, *metadata_snapshot, clear_of_block_columns_holder));
+    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
               entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->ast(true)->formatForLogging());
 
@@ -203,6 +201,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
