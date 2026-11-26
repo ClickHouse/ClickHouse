@@ -256,6 +256,7 @@ private:
     KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
     void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
     void cleanConsumers();
+    void closeRemainingConsumers();
 
     std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch, UInt64 cycle_epoch);
 

@@ -130,6 +130,7 @@ namespace fs = std::filesystem;
 
 namespace FailPoints
 {
+extern const char kafka2_drain_task_keeps_released_consumers[];
 extern const char kafka2_remove_zk_before_get_children[];
 extern const char kafka2_remove_zk_before_final_multi[];
 }
@@ -233,7 +234,24 @@ StorageKafka2::~StorageKafka2()
     /// The `librdkafka` callbacks dereference `this`, so the consumers must go first. Same as `StorageKafka`.
     if (!shutdown_called)
         shutdown(false);
+    else
+        closeRemainingConsumers();
     replica_is_active_node.reset();
+}
+
+void StorageKafka2::closeRemainingConsumers()
+{
+    /// A consumer released after the shutdown may still wait for the drain task: close it here, while
+    /// `thread_statuses` used by the librdkafka threads is alive.
+    drain_task->deactivate();
+    std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
+    {
+        std::lock_guard lock(consumers_mutex);
+        for (const auto & consumer : consumers)
+            if (consumer && consumer->hasConsumer() && !consumer->isInUse())
+                cpp_consumers_to_close.push_back(consumer->moveConsumer());
+    }
+    cpp_consumers_to_close.clear();
 }
 
 void StorageKafka2::partialShutdown()
@@ -1546,9 +1564,13 @@ void StorageKafka2::drainEventsTask()
         /// After the shutdown nothing takes a released consumer again: close its handle here, for the
         /// reason given in `cleanConsumers()`.
         if (retire_released_consumers)
+        {
+            /// Lets a test hand a released consumer over to the storage destructor.
+            fiu_do_on(FailPoints::kafka2_drain_task_keeps_released_consumers, { return; });
             for (const auto & consumer : consumers)
                 if (consumer && consumer->hasConsumer() && !consumer->isInUse())
                     cpp_consumers_to_close.push_back(consumer->moveConsumer());
+        }
     }
 
     cpp_consumers_to_close.clear();

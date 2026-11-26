@@ -374,19 +374,36 @@ def test_statistics_survive_shutdown_during_direct_select(kafka_cluster):
             assert instance.query(drain_task_is_scheduled).strip() == "1", (
                 "the drain task is stopped while a direct SELECT still holds a consumer"
             )
+
+            # The drain task leaves the released consumer to the storage destructor.
+            instance.query("SYSTEM ENABLE FAILPOINT kafka2_drain_task_keeps_released_consumers")
         finally:
             instance.query(f"KILL QUERY WHERE query_id = '{hold_query_id}' SYNC", ignore_error=True)
             select_thread.join(timeout=60)
             if drop_thread.ident is not None:
                 drop_thread.join(timeout=130)
 
-        # The drainer stops by itself once the last held consumer is released.
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and instance.query(drain_task_is_scheduled).strip() == "1":
-            time.sleep(1)
-        assert instance.query(drain_task_is_scheduled).strip() == "0", (
-            "the drain task did not stop after the last consumer was released"
-        )
+        try:
+            # Nothing is left for the drainer once the last held consumer is released.
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and instance.query(drain_task_is_scheduled).strip() == "1":
+                time.sleep(1)
+            assert instance.query(drain_task_is_scheduled).strip() == "0", (
+                "the drain task did not stop after the last consumer was released"
+            )
+
+            # The table leaves the drop queue right before its storage is destroyed. The server must survive that.
+            in_drop_queue = (
+                "SELECT count() FROM system.dropped_tables WHERE database = 'test' AND table = 'kafka'"
+            )
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and instance.query(in_drop_queue).strip() != "0":
+                time.sleep(1)
+            assert instance.query(in_drop_queue).strip() == "0", "the dropped table stayed in the drop queue"
+            time.sleep(3)
+            instance.query("SELECT 1")
+        finally:
+            instance.query("SYSTEM DISABLE FAILPOINT kafka2_drain_task_keeps_released_consumers", ignore_error=True)
 
 
 if __name__ == "__main__":
