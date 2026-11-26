@@ -1,6 +1,3 @@
-    A `GLOBAL IN` set built from `input()` has no plan to ship, so plan-based keeps the read local
-05237_parallel_replicas_input_table_function
-
     A read with direct read from a text index stays local (`__text_index_*` columns cannot be shipped), so the query does not use parallel replicas
 05410_time_series_tags_functions_parallel_replicas_expired_context
 
