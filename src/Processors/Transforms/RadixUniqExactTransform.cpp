@@ -7,6 +7,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/CompressTable.h>
 #include <Columns/ColumnsNumber.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
@@ -337,6 +338,74 @@ constexpr size_t DUPLICATES_BLOCK_BYTES = 16; /// SSE2, NEON
 /// The size of the cache of the recent keys (see `routeValues`): a few frequent keys fit, and it stays in L1.
 constexpr size_t RECENT_KEYS_BITS = 6;
 
+#if defined(__AVX2__)
+/// Appends to `keys` the values (zero-extended to `Key`) of the rows from `row` on that differ from their previous rows,
+/// which must exist (`row > 0`), four vectors at a time, and advances `row` past them. Returns the new number of keys.
+/// A vector stores whole lanes: `keys` needs room for all the rows, as the keys never outnumber the rows before a vector.
+template <typename T, typename Key>
+ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row, size_t end, Key * keys, size_t num_keys)
+{
+    static_assert(sizeof(Key) == 4 || sizeof(Key) == 8);
+    static_assert(sizeof(T) <= sizeof(Key));
+    constexpr size_t lanes = 32 / sizeof(Key);
+    static_assert(COMPRESS_DWORDS<sizeof(Key)> && COMPRESS_ROWS<sizeof(Key)> == lanes);
+    constexpr size_t vectors = 4;
+    constexpr size_t rows_per_step = vectors * lanes;
+    using Values = T __attribute__((ext_vector_type(lanes)));
+    using Keys = Key __attribute__((ext_vector_type(lanes)));
+    using Lanes = bool __attribute__((ext_vector_type(lanes)));
+
+    for (; row + rows_per_step <= end; row += rows_per_step)
+    {
+        const char * position = bytes + row * sizeof(T);
+        std::array<UInt32, vectors> masks; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - set before its read
+        UInt32 any = 0;
+        if constexpr (sizeof(T) < 4)
+        {
+            /// The rows of the four vectors of keys fit into one or two vectors of values.
+            using StepValues = T __attribute__((ext_vector_type(rows_per_step)));
+            using StepRows = bool __attribute__((ext_vector_type(rows_per_step)));
+            static_assert(sizeof(StepRows) == sizeof(any));
+            StepValues current;
+            StepValues previous;
+            memcpy(&current, position, sizeof(current));
+            memcpy(&previous, position - sizeof(T), sizeof(previous));
+            any = __builtin_bit_cast(UInt32, __builtin_convertvector(current != previous, StepRows));
+            for (size_t i = 0; i < vectors; ++i)
+                masks[i] = (any >> (i * lanes)) & ((1U << lanes) - 1);
+        }
+        else
+        {
+            for (size_t i = 0; i < vectors; ++i)
+            {
+                Values current;
+                Values previous;
+                memcpy(&current, position + i * sizeof(Values), sizeof(current));
+                memcpy(&previous, position + i * sizeof(Values) - sizeof(T), sizeof(previous));
+                masks[i] = __builtin_bit_cast(UInt8, __builtin_convertvector(current != previous, Lanes)) & ((1U << lanes) - 1);
+                any |= masks[i];
+            }
+        }
+
+        if (!any)
+            continue;
+
+        for (size_t i = 0; i < vectors; ++i)
+        {
+            Values values;
+            memcpy(&values, position + i * sizeof(Values), sizeof(values));
+            UInt8x8 control;
+            memcpy(&control, compress_table<sizeof(Key)>[masks[i]].data(), sizeof(control));
+            const UInt32x8 compacted = permuteDwords(
+                __builtin_bit_cast(UInt32x8, __builtin_convertvector(values, Keys)), __builtin_convertvector(control, UInt32x8));
+            memcpy(keys + num_keys, &compacted, sizeof(compacted));
+            num_keys += std::popcount(masks[i]);
+        }
+    }
+    return num_keys;
+}
+#endif
+
 /// The columns that `packFixedBatch` packs for the elements of a tuple (see `packedTupleSize`). A `Nullable` element is its
 /// null flag, normalized to 0 or 1, and its values, with zero bytes for NULL, so that equal tuples have equal bytes whatever
 /// the nested column holds under a NULL.
@@ -591,28 +660,49 @@ public:
             }
             else if (skip_duplicates)
             {
-                /// The rows of a column are contiguous, so a row is compared with the previous one in memory, and
-                /// the only dependency between the iterations is the number of keys.
-                /// A block that repeats the previous row (long runs, e.g. a sorted `CounterID`) is skipped with
-                /// vector compares, as the per-row stores would cost 1.85x the ordinary `uniqExact` there.
-                /// At least one row, as a 32-byte value does not fit into the 16-byte registers of SSE2 and NEON.
-                constexpr size_t block_size = std::max<size_t>(DUPLICATES_BLOCK_BYTES / sizeof(T), 1);
-                for (size_t block = begin; block < end; block += block_size)
+#if defined(__AVX2__)
+                if constexpr ((std::is_same_v<Key, UInt32> && sizeof(T) <= 4) || (std::is_same_v<Key, UInt64> && sizeof(T) == 8))
                 {
-                    const size_t block_end = std::min(block + block_size, end);
-                    if (block != 0 && block_end - block == block_size)
+                    /// The rows of a column are contiguous, so a row is compared with the previous one in memory.
+                    size_t row = begin;
+                    if (row == 0)
                     {
-                        bool all_same = true;
-                        for (size_t i = 0; i < block_size; ++i)
-                            all_same &= data(block + i) == data(block + i - 1);
-                        if (all_same)
-                            continue;
+                        keys[num_keys++] = valueKey(data(row));
+                        ++row;
                     }
-
-                    for (size_t row = block; row < block_end; ++row)
+                    num_keys = appendDistinctFromPrevious<T, Key>(bytes, row, end, keys.data(), num_keys);
+                    for (; row < end; ++row)
                     {
                         keys[num_keys] = valueKey(data(row));
-                        num_keys += row == 0 || data(row) != data(row - 1);
+                        num_keys += data(row) != data(row - 1);
+                    }
+                }
+                else
+#endif
+                {
+                    /// The rows of a column are contiguous, so a row is compared with the previous one in memory, and
+                    /// the only dependency between the iterations is the number of keys.
+                    /// A block that repeats the previous row (long runs, e.g. a sorted `CounterID`) is skipped with
+                    /// vector compares, as the per-row stores would cost 1.85x the ordinary `uniqExact` there.
+                    /// At least one row, as a 32-byte value does not fit into the 16-byte registers of SSE2 and NEON.
+                    constexpr size_t block_size = std::max<size_t>(DUPLICATES_BLOCK_BYTES / sizeof(T), 1);
+                    for (size_t block = begin; block < end; block += block_size)
+                    {
+                        const size_t block_end = std::min(block + block_size, end);
+                        if (block != 0 && block_end - block == block_size)
+                        {
+                            bool all_same = true;
+                            for (size_t i = 0; i < block_size; ++i)
+                                all_same &= data(block + i) == data(block + i - 1);
+                            if (all_same)
+                                continue;
+                        }
+
+                        for (size_t row = block; row < block_end; ++row)
+                        {
+                            keys[num_keys] = valueKey(data(row));
+                            num_keys += row == 0 || data(row) != data(row - 1);
+                        }
                     }
                 }
             }
