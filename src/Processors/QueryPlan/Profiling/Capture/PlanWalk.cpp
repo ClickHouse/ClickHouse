@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -14,8 +15,14 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         return walk;
 
     auto * root = plan.getRootNode();
-    if (!root || !root->step || root->step->getStepIndex() == PlanStepIndex::NONE)
+    if (!root || !root->step)
         return walk;
+
+    if (root->step->getStepIndex() == PlanStepIndex::NONE)
+    {
+        walk.steps_without_index = 1;
+        return walk;
+    }
 
     walk.plan = &plan;
     walk.root_id = root->step->getStepIndex();
@@ -61,8 +68,13 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
             return;
         }
 
+        ++walk.steps_without_index;
         for_each_child(child, [&](const Frame & grandchild) { self(parent, grandchild); });
     };
+
+    /// The step each index was found at. A step is reached again where a child plan is held by more
+    /// than one step, and is not walked twice.
+    UnorderedMapWithMemoryTracking<UInt64, const IQueryPlanStep *> step_by_index;
 
     while (!to_visit.empty())
     {
@@ -70,6 +82,18 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         to_visit.pop_back();
 
         auto & step = *frame.node->step;
+
+        const auto [it, inserted] = step_by_index.try_emplace(step.getStepIndex(), &step);
+        if (!inserted)
+        {
+            if (it->second == &step)
+                continue;
+
+            /// The steps of a query are numbered by one counter, so this is a bug. Keyed by the
+            /// index, the plan could make a step its own descendant, and reading it would not end.
+            chassert(false, "two steps of a plan have the same index");
+            return {};
+        }
 
         VisitedStep visited;
         visited.id = step.getStepIndex();

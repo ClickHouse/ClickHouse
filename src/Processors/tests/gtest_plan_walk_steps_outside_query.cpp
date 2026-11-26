@@ -72,6 +72,7 @@ TEST(PlanWalk, StepsBuiltOutsideOfQueryAreLeftOut)
     const PlanWalk walk = PlanWalk::of(plan, /*only_built_child_plans=*/ true);
     EXPECT_TRUE(walk.steps.empty());
     EXPECT_EQ(walk.plan, nullptr);
+    EXPECT_EQ(walk.steps_without_index, 1);
 
     const auto snapshot = PlanAnalysisSnapshot::capture(walk);
     EXPECT_TRUE(snapshot.stepsInPostOrder().empty());
@@ -99,6 +100,7 @@ TEST(PlanWalk, StepBuiltOutsideOfQueryIsBypassed)
 
     const PlanWalk walk = PlanWalk::of(plan, /*only_built_child_plans=*/ true);
     ASSERT_EQ(walk.steps.size(), 2);
+    EXPECT_EQ(walk.steps_without_index, 1);
     EXPECT_EQ(walk.root_id, top->step->getStepIndex());
     EXPECT_EQ(walk.steps[0].id, top->step->getStepIndex());
     EXPECT_EQ(walk.steps[0].children, VectorWithMemoryTracking<UInt64>{bottom->step->getStepIndex()});
