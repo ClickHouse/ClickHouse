@@ -386,6 +386,11 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         needs_submodules=True,
     )
+    # The merge queue writes the sccache bucket and needs the EC2 metadata endpoint for credentials
+    fast_test_mq = fast_test.copy()
+    fast_test_mq.run_in_docker = fast_test.run_in_docker.replace(
+        "fasttest+", "fasttest+--network=host+", 1
+    )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()
