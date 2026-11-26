@@ -57,10 +57,13 @@ $CLICKHOUSE_CLIENT --query "
 echo "-- DROP PART that does not happen because a merge takes the part"
 create_table t_merge
 PART=$(active_part t_merge)
+# The part must still exist when the DROP PART pauses, so no merge until then.
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES t_merge"
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_merge VALUES (1000)"
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT rmt_drop_part_pause_before_commit"
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_merge DROP PART '$PART'" 2>&1 | grep -o -m1 NO_SUCH_DATA_PART &
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT rmt_drop_part_pause_before_commit PAUSE"
+$CLICKHOUSE_CLIENT --query "SYSTEM START MERGES t_merge"
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_merge FINAL"
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT rmt_drop_part_pause_before_commit"
 wait
