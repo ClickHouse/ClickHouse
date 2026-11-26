@@ -4491,7 +4491,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             switch (packet.type)
             {
                 case Protocol::Server::Data:
-                    if (!packet.block.empty() && packet.block.rows() > 0)
+                    if (packet.block.columns() != 0 && packet.block.rows() > 0)
                     {
                         /// Convert block to string representation
                         /// For schema queries, we expect single column results

@@ -3150,15 +3150,6 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     Block block = state.block_in->read();
     state.at_packet_boundary = true;
 
-    /// A block with no columns and some rows is what a shard sends as a part of a query result. Data sent to
-    /// the server (scalars, external tables, `INSERT` and `input`) always has columns, so such a block here is
-    /// malformed.
-    if (block.columns() == 0 && block.rows() > 0)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Received a block of {} rows without columns in a Data packet from the client",
-            block.rows());
-
     if (block.empty())
         return false;
 

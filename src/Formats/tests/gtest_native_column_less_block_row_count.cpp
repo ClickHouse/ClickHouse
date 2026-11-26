@@ -41,10 +41,12 @@ String writeToString(const Block & block, UInt64 revision)
     return out.str();
 }
 
+/// Reads as the reader of an intermediate result does: it expects blocks of rows without columns.
 Block readFromString(const String & data, UInt64 revision)
 {
     ReadBufferFromString in(data);
     NativeReader reader(in, revision);
+    reader.setAllowRowsWithoutColumns(true);
     return reader.read();
 }
 
@@ -112,6 +114,25 @@ TEST(NativeColumnLessBlock, NewLayoutRejectedBelowRevision)
     }
 }
 
+/// A reader that does not expect an intermediate result takes the new layout for malformed data at any
+/// revision: a block that has rows and no columns never reaches the consumers of an ordinary result.
+TEST(NativeColumnLessBlock, NewLayoutRejectedUnlessExpected)
+{
+    constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT;
+    auto data = writeToString(makeColumnLessBlock(42), revision);
+    ReadBufferFromString in(data);
+    NativeReader reader(in, revision);
+    try
+    {
+        reader.read();
+        FAIL() << "Expected INCORRECT_DATA";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
 /// The `Native` output format passes the row count of a column-less block to the writer, at the revision
 /// that introduced it (e.g. HTTP with `client_protocol_version`).
 TEST(NativeColumnLessBlock, OutputFormatRowCountRoundTrips)
@@ -140,6 +161,7 @@ TEST(NativeColumnLessBlock, OutputFormatWritesRowCountOfEveryBlock)
 
     ReadBufferFromString in(out.str());
     NativeReader reader(in, revision);
+    reader.setAllowRowsWithoutColumns(true);
     ASSERT_EQ(reader.read().rows(), 2);
     ASSERT_EQ(reader.read().rows(), 1);
     ASSERT_TRUE(reader.read().empty());

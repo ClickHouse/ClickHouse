@@ -265,6 +265,12 @@ count, it has no other source, and the count is not recoverable from the (empty)
 row count is all there is, a column-less block with `num_rows > 0` carries no column entries, exactly
 like the other `num_columns = 0` variants.
 
+Such rows exist only in an intermediate result: at the `Complete` stage a result always has columns. So
+the variant is valid only in the result of a query sent with a stage before `Complete`. Anywhere else —
+in the result of a `Complete` query, in the data that a client sends to the server, in `Log` and
+`ProfileEvents` packets — a reader treats it as malformed data (`INCORRECT_DATA`) at every revision, so
+the consumer of an ordinary result never gets a block that has rows and no columns.
+
 A reader below revision `54498` rejects this variant (`INCORRECT_DATA`), so a writer only emits it once
 the negotiated revision is at least that. Below it the writer refuses such a block with an error
 (`NOT_IMPLEMENTED`) instead of writing an empty block that would lose its rows, and an initiator that
