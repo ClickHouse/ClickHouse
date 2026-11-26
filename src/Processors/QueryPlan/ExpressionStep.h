@@ -31,7 +31,6 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     [[nodiscard]] const ActionsDAG & getExpression() const { return actions_dag; }
 
-    /// Build the actions without JIT compilation, for an input of at most one row.
     void disableCompilation() { can_compile_expressions = false; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
