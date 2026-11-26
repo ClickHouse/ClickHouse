@@ -164,7 +164,8 @@ DROP TABLE t_05327_projection;
 -- The statistics lines of a logged join match those of `EXPLAIN ANALYZE` for the same query, with the
 -- numbers masked: the groups and their metrics come out in the order of the analyzers. The join order
 -- optimization computes the estimates; without it they are `no stats` in `EXPLAIN ANALYZE` and left
--- out of the logged plan.
+-- out of the logged plan. `EXPLAIN ANALYZE` does not run a query in distributed mode, so both runs
+-- read without parallel replicas.
 DROP TABLE IF EXISTS t_05327_left;
 DROP TABLE IF EXISTS t_05327_right;
 CREATE TABLE t_05327_left (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
@@ -173,7 +174,8 @@ INSERT INTO t_05327_left SELECT number, number FROM numbers(1000);
 INSERT INTO t_05327_right SELECT number * 3, number FROM numbers(100);
 
 SELECT count() FROM t_05327_left AS l JOIN t_05327_right AS r ON l.k = r.k WHERE '05327_join' != ''
-SETTINGS max_threads = 1, enable_join_runtime_filters = 0, query_plan_optimize_join_order_limit = 10, log_query_plans = 1 FORMAT Null;
+SETTINGS max_threads = 1, enable_join_runtime_filters = 0, query_plan_optimize_join_order_limit = 10,
+    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_query_plans = 1 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 
 -- The two runs are separate executions, and whether the right side collects its matches can differ
@@ -188,7 +190,8 @@ FROM
             arrayMap(l -> replaceRegexpOne(replaceRegexpAll(trimLeft(l, ' │├└─'), '[0-9]+(\\.[0-9]+)?(e-[0-9]+)?( (thousand|million|B|KB|MB))?', 'N'), '^(Right: .*?) · matched.*$', '\\1'),
                 (SELECT groupArray(explain) FROM (
                     EXPLAIN ANALYZE SELECT count() FROM t_05327_left AS l JOIN t_05327_right AS r ON l.k = r.k WHERE '05327_join' != ''
-                    SETTINGS max_threads = 1, enable_join_runtime_filters = 0, query_plan_optimize_join_order_limit = 10)))) AS explained,
+                    SETTINGS max_threads = 1, enable_join_runtime_filters = 0, query_plan_optimize_join_order_limit = 10,
+                        enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0)))) AS explained,
         arrayFilter(l -> match(l, '^(Cost|Selectivity|Output rows|Left|Right|Hash table):'),
             arrayMap(l -> replaceRegexpOne(replaceRegexpAll(trimLeft(l, ' │├└─'), '[0-9]+(\\.[0-9]+)?(e-[0-9]+)?( (thousand|million|B|KB|MB))?', 'N'), '^(Right: .*?) · matched.*$', '\\1'),
                 splitByChar('\n', (
