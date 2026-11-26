@@ -306,6 +306,14 @@ if (SANITIZE)
     set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
 codegen-units = 4")
     message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
+elseif (ENABLE_CFI)
+    # CFI links the crates as bitcode, where every codegen unit repeats the inline functions it uses.
+    # vortex-array keeps 4 units so that it is not the longest ThinLTO backend job of the link.
+    set(RUST_RELEASE_PROFILE_EXTRA "codegen-units = 1
+
+[profile.release.package.vortex-array]
+codegen-units = 4")
+    message(STATUS "Rust release profile: one codegen unit per crate, for the CFI link")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
