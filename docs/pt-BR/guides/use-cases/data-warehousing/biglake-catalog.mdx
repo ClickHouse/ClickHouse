@@ -20,20 +20,17 @@ O ClickHouse oferece suporte à integração com vários catálogos (Unity, Glue
   `SET allow_database_iceberg = 1;`
 </Note>
 
-<div id="prerequisites">
-  ## Pré-requisitos
-</div>
+## Pré-requisitos {#prerequisites}
 
 Antes de criar uma conexão do ClickHouse com o catálogo de runtime do lakehouse (BigLake Metastore), certifique-se de ter:
 
 * Um **projeto do Google Cloud** com o catálogo de runtime do lakehouse ativado
-* **Credenciais padrão do aplicativo** (ID do cliente OAuth e segredo do cliente) para um aplicativo, criadas por meio do [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)
-* Um **token de refresh** obtido ao concluir o fluxo OAuth com os escopos apropriados (por exemplo, `https://www.googleapis.com/auth/bigquery` e o escopo de armazenamento do GCS)
-* Um caminho de **warehouse**: um GCS bucket (e um prefixo opcional) onde suas tabelas estão armazenadas, por exemplo, `gs://your-bucket` ou `gs://your-bucket/prefix`
+* Credenciais, de um dos seguintes tipos:
+  * Uma **chave de conta de serviço**: um arquivo de chave JSON de uma service account com acesso ao catálogo e ao Bucket do GCS, criado por meio do [Google Cloud Console](https://docs.cloud.google.com/iam/docs/keys-create-delete). Esta é a opção recomendada para servidores, pois não depende de uma sessão de usuário.
+  * **Credenciais padrão do aplicativo** (ID do cliente OAuth e segredo do cliente) para um aplicativo, criadas por meio do [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc), e um **token de refresh** obtido ao concluir o fluxo OAuth com os escopos apropriados (por exemplo, `https://www.googleapis.com/auth/bigquery` e o escopo de armazenamento do GCS)
+* Um caminho de **warehouse**: um Bucket do GCS (e um prefixo opcional) onde suas tabelas estão armazenadas, por exemplo, `gs://your-bucket` ou `gs://your-bucket/prefix`
 
-<div id="creating-a-connection">
-  ## Criando uma conexão entre o catálogo de runtime do lakehouse e o ClickHouse
-</div>
+## Criando uma conexão entre o catálogo de runtime do lakehouse e o ClickHouse {#creating-a-connection}
 
 Com as credenciais OAuth configuradas, crie um banco de dados no ClickHouse usando o motor de banco de dados [DataLakeCatalog](/pt-BR/reference/engines/database-engines/datalake):
 
@@ -51,9 +48,21 @@ SETTINGS
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
 
-<div id="querying-lakehouse-runtime-tables">
-  ## Consultando tabelas do catálogo de runtime do Lakehouse usando o ClickHouse
-</div>
+Para autenticar com uma chave de conta de serviço, passe o conteúdo do arquivo de chave JSON em `google_service_account_key` e o projeto em `google_project_id`. O ClickHouse assina um JWT com a chave, troca-o por um token de acesso e o renova automaticamente. O mesmo token é usado para ler os arquivos de dados do GCS. A chave é mascarada em `SHOW CREATE DATABASE` e nos logs.
+
+```sql
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_service_account_key = '{"type": "service_account", "client_email": "...", "private_key": "...", ...}',
+    google_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+A configuração `google_service_account_key` e as configurações `google_adc_*` são mutuamente exclusivas. Nenhuma delas pode ser combinada com a configuração `disk`, porque uma tabela em um disco lê seus arquivos de dados com as credenciais do disco, e não com as do catálogo.
+
+## Consultando tabelas do catálogo de runtime do Lakehouse usando o ClickHouse {#querying-lakehouse-runtime-tables}
 
 Depois que a conexão for criada, você poderá consultar as tabelas registradas no catálogo de runtime do Lakehouse.
 
@@ -87,9 +96,7 @@ Para inspecionar a definição da tabela:
 SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
 ```
 
-<div id="loading-data-into-clickhouse">
-  ## Carregando dados do Lakehouse para o ClickHouse
-</div>
+## Carregando dados do Lakehouse para o ClickHouse {#loading-data-into-clickhouse}
 
 Para carregar dados de uma tabela no catálogo de runtime do Lakehouse para uma tabela local no ClickHouse e acelerar consultas recorrentes, crie uma tabela MergeTree e insira os dados a partir do catálogo:
 

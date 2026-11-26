@@ -22,24 +22,20 @@ Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de p
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Detalhes da sub-rede BYOC no GCP mostrando intervalos IPv4 primário e secundário com o Private Google Access ativado](/images/cloud/reference/byoc-gcp-subnet.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Detalhes da sub-rede BYOC no GCP mostrando intervalos IPv4 primário e secundário com o Private Google Access ativado](/images/cloud/reference/byoc-gcp-subnet.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Garanta a conectividade de rede" id="ensure-network-connectivity">
-    **Cloud NAT Gateway**
-    Garanta que um [gateway Cloud NAT](https://cloud.google.com/nat/docs/overview) esteja implantado na VPC. Ele fornece conectividade de saída para instâncias sem endereços IP externos, e duas coisas dependem dele:
+    **Gateway do Cloud NAT**
+    Garanta que um [gateway do Cloud NAT](https://cloud.google.com/nat/docs/overview) esteja implantado na VPC. Ele fornece conectividade de saída para instâncias sem endereços IP externos, e duas coisas dependem dele:
 
     * **Tailscale.** Os componentes do ClickHouse BYOC se registram no plano de controle do Tailscale, que fornece rede segura no modelo zero trust para operações privadas de gerenciamento sem exigir acesso público de entrada.
     * **Imagens de contêiner.** Algumas imagens executadas pela implantação não são espelhadas no registro do BYOC, incluindo imagens da comunidade, e são baixadas de seus registros upstream.
 
-    Uma VPC sem caminho de saída não concluirá o provisionamento; a validação prévia verifica se um gateway Cloud NAT cobre a rede. Não há uma lista única de endpoints publicada; se a política de rede da sua organização exigir um inventário explícito, entre em contato com o suporte para revisar sua configuração.
+    Uma VPC sem caminho de saída não concluirá o provisionamento; a validação prévia verifica se um gateway do Cloud NAT cobre a rede. Não há uma lista única de endpoints publicada; se a política de rede da sua organização exigir um inventário explícito, entre em contato com o suporte para revisar sua configuração.
 
     **Resolução de DNS**
     Garanta que sua VPC tenha resolução de DNS funcionando e que não bloqueie, interfira nem sobrescreva nomes DNS padrão. O ClickHouse BYOC depende de DNS para resolver os servidores de controle do Tailscale e os endpoints de serviço do ClickHouse. Se o DNS não estiver disponível ou estiver configurado incorretamente, os serviços do BYOC poderão falhar ao se conectar ou operar corretamente.
@@ -47,7 +43,7 @@ Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de p
 
   <Step title="Configure a infraestrutura do BYOC" id="set-up-byoc-infrastructure">
     <Note>
-      Ao clicar em **Set up Infrastructure**, o ClickHouse Cloud executa automaticamente a [validação prévia](/pt-BR/products/bring-your-own-cloud/onboarding/standard#preflight-validation) antes do provisionamento. Ela verifica se a service account de gerenciamento tem as permissões necessárias e se as APIs necessárias do Google Cloud estão ativadas, além de validar a VPC que você fornece: se a rede e a sub-rede são resolvidas, se o intervalo primário da sub-rede e o intervalo secundário de pods são grandes o suficiente e se um gateway Cloud NAT cobre a rede. Se algo estiver faltando, a configuração é interrompida indicando os problemas específicos a serem corrigidos.
+      Ao clicar em **Set up Infrastructure**, o ClickHouse Cloud executa automaticamente a [validação prévia](/pt-BR/products/bring-your-own-cloud/onboarding/standard#preflight-validation) antes do provisionamento. Ela verifica se a service account de gerenciamento tem as permissões necessárias e se as APIs necessárias do Google Cloud estão ativadas, além de validar a VPC que você fornece: se a rede e a sub-rede são resolvidas, se o intervalo primário da sub-rede e o intervalo secundário de pods são grandes o suficiente e se um gateway do Cloud NAT cobre a rede. Se algo estiver faltando, a configuração é interrompida indicando os problemas específicos a serem corrigidos.
     </Note>
 
     No console do ClickHouse Cloud, configure o seguinte ao configurar uma nova infraestrutura:
@@ -56,17 +52,13 @@ Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de p
     2. Insira o **VPC network name**.
     3. Insira o **Subnet name** que você alocou para o ClickHouse.
     4. Opcionalmente, insira **Secondary range names** para definir quais intervalos secundários da sub-rede o GKE usa para os pods. Deixe em branco para usar todos eles; cada nome que você listar já deve existir na sub-rede.
-    5. Se sua VPC estiver em um projeto host de Shared VPC, insira o **Shared VPC host project ID**. Deixe em branco quando a VPC estiver no mesmo projeto da infraestrutura. Consulte [VPC compartilhada de um projeto host](#shared-vpc-host-project) abaixo.
+    5. Se sua VPC estiver em um projeto host de VPC compartilhada, insira o **VPC compartilhada host project ID**. Deixe em branco quando a VPC estiver no mesmo projeto da infraestrutura. Consulte [VPC compartilhada de um projeto host](#shared-vpc-host-project) abaixo.
     6. Clique em **Set up Infrastructure** para iniciar o provisionamento.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![UI de configuração do BYOC do ClickHouse Cloud com Use existing VPC selecionado para GCP, mostrando os campos VPC network name, subnet name, secondary range names e Shared VPC host project ID](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![UI de configuração do BYOC do ClickHouse Cloud com Use existing VPC selecionado para GCP, mostrando os campos VPC network name, subnet name, secondary range names e VPC compartilhada host project ID](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

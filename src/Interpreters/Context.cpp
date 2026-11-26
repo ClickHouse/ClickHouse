@@ -566,7 +566,7 @@ MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibilit
 /// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
 /// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
 /// it is already shared with running threads when profiles are applied, so a reset would race there.
-static const std::vector<String> distributed_cache_force_setting_names
+[[clang::no_destroy]] static const std::vector<String> distributed_cache_force_setting_names
     = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -10710,10 +10710,10 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
-void Context::enablePlanLogCapture()
+void Context::enablePlanLogCapture(const CollectedStatistics & collected)
 {
-    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
-    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>(collected);
+    setJoinAnalyzeMode(collected.join_matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 }
 
 QueryPlanLogCapturePtr Context::getPlanLogCapture() const

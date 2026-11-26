@@ -1282,8 +1282,10 @@ void ClientCache::clearCache()
 
 ClientCacheRegistry & ClientCacheRegistry::instance()
 {
-    static ClientCacheRegistry registry;
-    return registry;
+    /// Never destroyed: an `S3::Client` owned by a static can outlive static destruction, and
+    /// `~Client` would then unregister from a destroyed registry. Reachable, so not a leak.
+    static ClientCacheRegistry * registry = new ClientCacheRegistry;
+    return *registry;
 }
 
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)

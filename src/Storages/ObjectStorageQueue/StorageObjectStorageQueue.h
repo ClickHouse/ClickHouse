@@ -40,6 +40,8 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
+        ObjectStorageQueueTableMetadata::Source source,
+        bool strict_metadata_check,
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
@@ -77,7 +79,7 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    ObjectStorageQueueSettings getSettings() const;
+    ObjectStorageQueueSettings getSettings(const ObjectStorageQueueTableMetadata * table_metadata = nullptr) const;
 
     /// Block until `path` is marked as processed (or failed) in Keeper by this
     /// queue, then return.
@@ -228,6 +230,12 @@ private:
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
+    /// Remove the per-table gauges of the table with this name from the dimensional metrics,
+    /// and its watermarks from `metadata` (which can be null).
+    static void removeGaugeMetrics(const StorageID & storage_id, ObjectStorageQueueMetadata * metadata);
+    /// Set the last-poll gauge of the table to the current time.
+    static void setLastPollTimestamp(const StorageID & storage_id);
+
     /// Apply after_processing action to successfully processed files.
     void postProcess(
         const StoredObjects & successful_objects,
