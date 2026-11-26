@@ -54,22 +54,22 @@ lambda_parameter	s3cluster	1	[2]
 lambda_parameter	s3cluster	2	[100]
 lambda_parameter	input	1	[2]
 lambda_parameter	input	2	[100]
-lambda_capture	direct	1	[9]
-lambda_capture	direct	2	[100]
-lambda_capture	file	1	[9]
-lambda_capture	file	2	[100]
-lambda_capture	s3cluster	1	[9]
-lambda_capture	s3cluster	2	[100]
-lambda_capture	input	1	[9]
-lambda_capture	input	2	[100]
-lambda_capture_member	direct	1	[9]
-lambda_capture_member	direct	2	[100]
-lambda_capture_member	file	1	[9]
-lambda_capture_member	file	2	[100]
-lambda_capture_member	s3cluster	1	[9]
-lambda_capture_member	s3cluster	2	[100]
-lambda_capture_member	input	1	[9]
-lambda_capture_member	input	2	[100]
+argument_name	direct	1	{"al":2}
+argument_name	direct	2	100
+argument_name	file	1	{"al":2}
+argument_name	file	2	100
+argument_name	s3cluster	1	{"al":2}
+argument_name	s3cluster	2	100
+argument_name	input	1	{"al":2}
+argument_name	input	2	100
+lambda_parameter_name	direct	1	2{"id":5}
+lambda_parameter_name	direct	2	100
+lambda_parameter_name	file	1	2{"id":5}
+lambda_parameter_name	file	2	100
+lambda_parameter_name	s3cluster	1	2{"id":5}
+lambda_parameter_name	s3cluster	2	100
+lambda_parameter_name	input	1	2{"id":5}
+lambda_parameter_name	input	2	100
 expression_alias	direct	1	0	10
 expression_alias	direct	2	0	100
 expression_alias	file	1	0	10
@@ -130,3 +130,6 @@ UNKNOWN_IDENTIFIER
 alias_of_other_default	1	0	8	14
 alias_of_other_default	2	0	100	14
 UNKNOWN_IDENTIFIER
+UNKNOWN_IDENTIFIER
+tuple_name	1	2
+tuple_name	2	100

@@ -80,10 +80,10 @@ check ephemeral rows "id UInt32, e UInt32 EPHEMERAL id + 100, q UInt32 DEFAULT e
 check lambda_body array_rows "id UInt32, al UInt32 ALIAS id + 1, q Array(UInt32) DEFAULT arrayMap(x -> x + al, [id])" "" "*"
 check lambda_parameter array_rows "id UInt32, al UInt32 ALIAS id + 1, q Array(UInt32) DEFAULT arrayMap(al -> al + 1, [id])" "" "*"
 
-# Lambda parameters that would capture a column read by the inlined value.
-check lambda_capture array_rows "id UInt32, al UInt32 ALIAS id + 1, q Array(UInt32) DEFAULT arrayMap(id -> id + al, [7])" "" "*"
-check lambda_capture_member array_rows "id UInt32, al UInt32 ALIAS id + 1,
-    q Array(UInt32) DEFAULT arrayMap(id -> id.x + al, [CAST(tuple(7), 'Tuple(x UInt32)')])" "" "*"
+# `formatRow` reads the names of its arguments: of the substituted column and of a lambda parameter.
+check argument_name rows "id UInt32, al UInt32 ALIAS id + 1, q String DEFAULT formatRowNoNewline('JSONEachRow', al)" "" "*"
+check lambda_parameter_name rows "id UInt32, al UInt32 ALIAS id + 1,
+    q String DEFAULT concat(toString(al), arrayMap(id -> formatRowNoNewline('JSONEachRow', id), [5])[1])" "" "*"
 
 # An identifier named like an expression alias reads the alias, not the unwritten column `a`, and an alias of a column that
 # no `DEFAULT` reads changes nothing.
@@ -145,5 +145,21 @@ $CLICKHOUSE_CLIENT -q "
     ENGINE = MergeTree ORDER BY id;"
 $CLICKHOUSE_CLIENT -q "INSERT INTO alias_in_value SELECT * FROM file('${FILE_DIR}/x_rows.jsonl', 'JSONEachRow')" 2>&1 \
     | grep -o -m1 'UNKNOWN_IDENTIFIER'
+
+# Nothing is substituted when a lambda parameter would capture a column that the value reads: `id` in the value of `al`.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE lambda_capture (id UInt32, al UInt32 ALIAS id + 1, q Array(UInt32) DEFAULT arrayMap(id -> id + al, [7]))
+    ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT -q "INSERT INTO lambda_capture SELECT * FROM file('${FILE_DIR}/array_rows.jsonl', 'JSONEachRow')" 2>&1 \
+    | grep -o -m1 'UNKNOWN_IDENTIFIER'
+
+# With `enable_named_columns_in_function_tuple`, `tuple` names its elements after its arguments, so `q` is `id + 2`, as in a
+# direct insert.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE tuple_name (id UInt32, al UInt32 ALIAS id + 1, q UInt32 DEFAULT tupleElement(tuple(al), 'al', toUInt32(0)))
+    ENGINE = MergeTree ORDER BY id;
+    SET enable_named_columns_in_function_tuple = 1;
+    INSERT INTO tuple_name SELECT * FROM file('${FILE_DIR}/rows.jsonl', 'JSONEachRow');
+    SELECT 'tuple_name', * FROM tuple_name ORDER BY ALL;"
 
 rm -rf "${USER_FILES_PATH:?}/${FILE_DIR}"

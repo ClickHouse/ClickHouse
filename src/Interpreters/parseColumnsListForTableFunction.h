@@ -38,7 +38,7 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
 
 /// Replaces each read of a column of `insertion_columns` that is not in `written_columns`, in the `DEFAULT`s of
 /// `structure_hint`, with the value the insertion table computes for that column. Nothing is replaced when these `DEFAULT`s
-/// or the values define an expression alias.
+/// or the expressions of the read columns define an expression alias, or when a lambda argument would capture a name in a value.
 void inlineUnwrittenColumnsInStructureHint(
     ColumnsDescription & structure_hint, const ColumnsDescription & insertion_columns, const Names & written_columns,
     const ContextPtr & context);
