@@ -112,7 +112,7 @@ public:
     virtual void setRawPath(const Path & path) = 0;
 
     /// Raw URI, specified by a user. Used in permission check.
-    [[nodiscard]] virtual const String & getRawURI() const = 0;
+    [[nodiscard]] virtual std::string_view getRawURI() const = 0;
 
     /// The function returns the URI of the object at `write_path` in the form the source access check uses, so that a
     /// write to a path computed at write time is checked against the same filtered grants. It returns an empty string
@@ -257,6 +257,7 @@ public:
 
     virtual SinkToStoragePtr write(
         SharedHeader /* sample_block */,
+        StorageMetadataPtr /* metadata_snapshot */,
         const StorageID & /* table_id */,
         ObjectStoragePtr /* object_storage */,
         const std::optional<FormatSettings> & /* format_settings */,
@@ -430,6 +431,9 @@ public:
     /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
     /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
     bool is_replayed_definition = false;
+
+    /// Set by `initialize` when the arguments come from a named collection.
+    bool initialized_from_named_collection = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not

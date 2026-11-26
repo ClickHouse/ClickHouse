@@ -18,6 +18,8 @@ namespace DB
 
 struct LiteralTokenMap;
 struct FailedKeywordReadings;
+struct FailedSubqueryReadings;
+struct FailedLiteralReadings;
 
 namespace ErrorCodes
 {
@@ -91,6 +93,12 @@ struct Expected
     /// Positions of CASE and INTERVAL tokens whose keyword reading failed in this parse; copies share it.
     std::shared_ptr<FailedKeywordReadings> failed_keyword_readings;
 
+    /// Positions of opening brackets where `ParserSubquery` failed in this parse; copies share it.
+    std::shared_ptr<FailedSubqueryReadings> failed_subquery_readings;
+
+    /// Opening brackets where reading a literal failed in this parse; copies share it.
+    std::shared_ptr<FailedLiteralReadings> failed_literal_readings;
+
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
     {
@@ -129,6 +137,9 @@ public:
         uint32_t backtracks = 0;
         uint32_t max_backtracks = 0;
 
+        /// Set while `parenthesesHoldExpressionOverColumnNamedFrom` parses the contents of parentheses.
+        bool in_column_named_from_lookahead = false;
+
         Pos(Tokens & tokens_, uint32_t max_depth_, uint32_t max_backtracks_)
             : TokenIterator(tokens_), max_depth(max_depth_), max_backtracks(max_backtracks_)
         {
@@ -148,6 +159,7 @@ public:
             , max_depth(inherit_from.max_depth)
             , backtracks(inherit_from.backtracks)
             , max_backtracks(inherit_from.max_backtracks)
+            , in_column_named_from_lookahead(inherit_from.in_column_named_from_lookahead)
         {
         }
 

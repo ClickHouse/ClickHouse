@@ -1,5 +1,4 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <WindowFunctions/registerWindowFunctions.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -225,8 +224,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionGroupConvexHull(factory);
         registerAggregateFunctionGroupPolygonUnion(factory);
         registerAggregateFunctionGroupPolygonIntersection(factory);
-
-        registerWindowFunctions(factory);
     }
 
     {

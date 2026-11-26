@@ -1,0 +1,91 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/python
+description: 'Instalação e configuração em Python para o ClickHouse Observability e implantações autogerenciadas.'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentação']
+sidebarTitle: 'Python'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Use o SDK Python do ClickStack para enviar logs e rastros ao ClickHouse Observability. O SDK é uma distribuição do OpenTelemetry publicada como `hyperdx-opentelemetry` e instrumenta automaticamente as bibliotecas e os frameworks Python compatíveis.
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## Instale o SDK {#install-the-sdk}
+
+Instale o [SDK Python do ClickStack](https://github.com/hyperdxio/hyperdx-py) no ambiente Python da sua aplicação:
+
+```shell
+pip install hyperdx-opentelemetry
+opentelemetry-bootstrap -a install
+```
+
+O comando bootstrap instala a instrumentação para as dependências já instaladas da sua aplicação. Execute-o depois de instalar essas dependências.
+
+## Configure seu destino {#configure-destination}
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta Beta" />
+
+    Abra **Team Settings → Data → Managed Telemetry** no seu serviço e copie o **endpoint OTLP HTTP** e a **API key**. Use o endpoint HTTPS completo, incluindo a porta:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export HYPERDX_API_KEY='Bearer YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_SERVICE_NAME='my-python-app'
+    ```
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    Use o endpoint OTLP HTTP e a chave de ingestão do seu coletor. Se o coletor não tiver TLS configurado, use `http://` em vez de `https://`. Para configurar o coletor, consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export HYPERDX_API_KEY='YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_SERVICE_NAME='my-python-app'
+    ```
+  </Tab>
+</Tabs>
+
+## Inicie sua aplicação {#start-your-application}
+
+Execute sua aplicação com instrumentação automática:
+
+```shell
+export OTEL_LOG_LEVEL='warning'
+export OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION='false'
+opentelemetry-instrument python app.py
+```
+
+Substitua `app.py` pelo arquivo de entrada da sua aplicação.
+
+`OTEL_LOG_LEVEL` define o nível de logging do SDK. Defina-o como `warning` para capturar a mensagem de teste abaixo ou como `info` para incluir logs de aplicação de menor severidade. Quando nenhum nível é configurado, o SDK usa `ERROR` por padrão.
+
+O SDK do ClickStack já instala um exportador de logs. Definir `OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION=false` impede que a instrumentação de logging do OpenTelemetry adicione outro exportador e duplique os registros de log; o SDK continua exportando os logs normalmente.
+
+## Verifique a ingestão {#verify-ingestion}
+
+Faça requisições à sua aplicação e emita uma mensagem de log do Python com nível `WARNING` ou superior. No ClickHouse Observability, selecione um intervalo de tempo recente e pesquise em Logs ou Traces por `my-python-app` (ou pelo nome do serviço que você configurou).
+
+## Configuração opcional {#optional-configuration}
+
+Para capturar os cabeçalhos e os corpos das requisições HTTP, habilite a captura avançada de rede antes de iniciar sua aplicação:
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+Os cabeçalhos e corpos das requisições podem conter dados sensíveis. Habilite a captura somente para os dados que você pretende coletar.
+
+## Solução de problemas {#troubleshooting}
+
+Se houver logs ausentes, verifique `OTEL_LOG_LEVEL` e os níveis do logger e dos handlers da sua aplicação. Configure-os para capturar a severidade das mensagens esperadas.
+
+Para solucionar problemas de instrumentação e do exportador, consulte o [guia de solução de problemas do OpenTelemetry para Python](https://opentelemetry.io/docs/zero-code/python/troubleshooting/).
