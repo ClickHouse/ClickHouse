@@ -106,6 +106,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    REGULAR(file_read_corrupt_data_without_direct_io) \
     REGULAR(file_top_k_query_condition_cache_inject_file_change) \
     ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
@@ -117,6 +118,7 @@ static struct InitFiu
     REGULAR(azure_inject_poco_network_error) \
     ONCE(azure_inject_poco_network_error_once) \
     REGULAR(azure_inject_bad_request) \
+    REGULAR(check_data_part_retryable_error) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -282,6 +284,7 @@ static struct InitFiu
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(async_insert_pause_before_schedule) \
+    ONCE(async_insert_throw_before_schedule) \
     PAUSEABLE_ONCE(async_insert_flush_pause_after_set_user) \
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
@@ -333,6 +336,8 @@ static struct InitFiu
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
+    ONCE(iceberg_writes_lose_metadata_commit_response) \
+    ONCE(iceberg_writes_lose_metadata_commit_request) \
     PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
@@ -377,6 +382,7 @@ static struct InitFiu
     PAUSEABLE(sc_drop_intention_pause) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
+    REGULAR(system_log_flush_throw) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     ONCE(database_replicated_restore_table_created_by_other_replica) \
@@ -417,6 +423,7 @@ static struct InitFiu
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
     PAUSEABLE(mt_alter_pause_after_metadata_publish) \
+    PAUSEABLE(insert_pause_before_reading_serialization_hints) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
@@ -459,6 +466,7 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
+    PAUSEABLE_ONCE(rename_table_pause_after_locks) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \
@@ -482,6 +490,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     REGULAR(transaction_hold_unknown_state) \
+    PAUSEABLE_ONCE(unique_key_delete_pause_before_commit) \
     PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
@@ -564,6 +573,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
     PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
     PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
+    REGULAR(host_resolvers_pool_drop_cache_during_resolve) \
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \

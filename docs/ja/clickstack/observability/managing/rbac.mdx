@@ -1,0 +1,182 @@
+---
+slug: /clickstack/observability/managing/rbac
+title: 'ロールベースのアクセス制御 (RBAC)'
+sidebarTitle: 'ロールベースのアクセス制御'
+toc_max_heading_level: 2
+description: 'ClickHouse オブザーバビリティでロールベースのアクセス制御を設定し、ダッシュボード、保存済み検索、ソース、アラートなどに対するチームのアクセス許可を管理します。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'rbac', 'ロール', 'アクセス許可', 'アクセス制御', 'セキュリティ']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="ベータ版サービス" />
+
+ClickHouse オブザーバビリティにはロールベースのアクセス制御 (RBAC) が備わっており、[ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)、[保存済み検索](/ja/clickstack/observability/features/search)、ソース、[アラート](/ja/clickstack/observability/features/alerts)、Webhook、ノートブックに対するきめ細かなアクセス許可を持つカスタムロールを定義できます。アクセス許可は 2 つのレベルで機能します。1 つはリソースレベルのアクセス (リソースの種類ごとにアクセス不可、閲覧、管理のいずれかを指定) で、もう 1 つは名前、タグ、または ID で個々のリソースへのアクセスを制限する、任意のきめ細かなルールです。このサービスには 3 つの組み込みロールが用意されているほか、チームのニーズに合わせてカスタムロールを作成することもできます。
+
+## ユーザーアクセスの前提条件 {#user-access-prerequisites}
+
+このサービスでは、ClickHouse Cloud を介して認証が行われます。ユーザーは ClickHouse Cloud の組織に所属し、かつ Observability サービスへのアクセス権を持っている必要があります。組織のメンバー管理については、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users)を参照してください。
+
+Cloud の SQL コンソールのアクセスレベルは、次のように Observability のアクセス権に対応します。
+
+| Cloud SQL コンソールのアクセス権           | Observability のアクセス権                                                             |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| **SQL コンソール管理者** (Full Access)  | サービスへのフルアクセス。[アラート](/ja/clickstack/observability/features/alerts)を有効にするにはこの権限が必要です。 |
+| **SQL コンソール読み取り専用** (Read Only) | オブザーバビリティデータの閲覧とダッシュボードの作成が可能です。                                                 |
+| **アクセス不可**                      | サービスにアクセスできません。                                                                  |
+
+**チーム設定 → Members &amp; Roles** を開くと、チームメンバーと各メンバーに現在割り当てられている Observability ロールを確認できます。ClickHouse Cloud で組織のメンバーを管理するには、**コンソールで管理** を選択します。
+
+## 組み込みロール {#built-in-roles}
+
+このサービスには 3 つのシステムロールが用意されています。これらのロールは編集も削除もできません。デフォルトでは、チームの作成者に管理者ロールが割り当てられます。
+
+| アクセス許可      | 管理者 | メンバー | ReadOnly |
+| ----------- | :-: | :--: | :------: |
+| すべてのリソースの閲覧 |  ✓  |   ✓  |     ✓    |
+| ダッシュボードの管理  |  ✓  |   ✓  |          |
+| 保存済み検索の管理   |  ✓  |   ✓  |          |
+| ソースの管理      |  ✓  |   ✓  |          |
+| アラートの管理     |  ✓  |   ✓  |          |
+| Webhook の管理 |  ✓  |   ✓  |          |
+| ノートブックの管理   |  ✓  |   ✓  |          |
+| チーム設定の更新    |  ✓  |   ✓  |          |
+| チームの作成/削除   |  ✓  |      |          |
+| ユーザーと招待の管理  |  ✓  |      |          |
+
+## チームメンバーへのロールの割り当て {#assigning-roles}
+
+**チーム設定** の **Members &amp; Roles** タブには、チームメンバーとその現在のロールが一覧表示されます。ロールを変更するには、ユーザー名の横にある **編集** をクリックし、新しいロールを選択します。各ユーザーに割り当てられるロールは 1 つだけです。
+
+### 新規ユーザーのデフォルトロール {#default-new-user-role}
+
+**チーム設定** → **Members &amp; Roles** で、ロール一覧の下にある **新規ユーザーのデフォルトロール** から、チームに自動参加したユーザーに割り当てるロールを選択します。デフォルトが設定されていない場合、新規ユーザーには **メンバー** ロールが割り当てられます。
+
+## カスタムロールの作成 {#creating-a-role}
+
+<Steps>
+  <Step title="チーム設定を開く" id="step-navigate">
+    **チーム設定** → **Members &amp; Roles** を開き、**RBAC ロール** セクションを表示します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![RBAC ロール](/images/clickstack/rbac/rbac-section.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="新しいロールを追加する" id="step-add-role">
+    **+ Add Role** をクリックします。**Role Name** を入力し、必要に応じて **Description** も入力します。
+  </Step>
+
+  <Step title="アクセス許可を設定して保存する" id="step-configure">
+    ロールのアクセス許可を設定し、**Create Role** をクリックします。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![ロール追加モーダル](/images/clickstack/rbac/add-role-modal.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+作成したカスタムロールは、RBAC ロール セクションにシステムロールと並んで表示され、**編集** ボタンと **Delete** ボタンから操作できます。
+
+## ロールのアクセス許可 {#role-permissions}
+
+### リソースのアクセス許可 {#resource-permissions}
+
+各ロールでは、リソースの種類ごとにアクセスレベルを付与します。レベルは次の 3 つです。
+
+| アクセスレベル    | 許可される操作                            |
+| ---------- | ---------------------------------- |
+| **アクセス不可** | そのロールにはリソースの種類自体が表示されません。          |
+| **閲覧**     | リソースとその設定を表示できますが、作成、編集、削除はできません。  |
+| **管理**     | 完全な制御が可能です。その種類のリソースを作成、編集、削除できます。 |
+
+制御できるリソースの種類は次のとおりです。
+
+* **[ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)** — 保存済みのダッシュボードレイアウトとチャート。
+* **[保存済み検索](/ja/clickstack/observability/features/search)** — 永続化されたログ/トレース/イベントのクエリ。
+* **ソース** — オブザーバビリティデータのクエリに使用するデータソース。
+* **[アラート](/ja/clickstack/observability/features/alerts)** — アラートルールとその通知設定。
+* **Webhook** — [アラート](/ja/clickstack/observability/features/alerts)の通知先となるアウトバウンド通知の宛先 (Slack、PagerDuty、汎用 HTTP エンドポイントなど) 。オブザーバビリティ API のことではありません。
+* **ノートブック** — 共同調査用のノートブック。
+
+### 管理アクセス許可 {#administrative-permissions}
+
+リソースに対するアクセス許可に加えて、各ロールには次の 2 つの管理設定があります。
+
+* **ユーザー** (アクセス不可 · 閲覧) — ロールがチームメンバーとそのロールを閲覧できるかどうかを制御します。組織のメンバー構成は **コンソールで管理** から管理します。
+* **チーム** (閲覧 · 管理) — ロールがセキュリティポリシーや RBAC 設定などのチームレベルの設定を閲覧・変更できるかどうかを制御します。
+
+### きめ細かなアクセスルール {#fine-grained-access-rules}
+
+ダッシュボード、保存済み検索、ソース、ノートブックでは、カテゴリ内の個々のリソースへのアクセスを制限する、きめ細かなアクセス制御を利用できます。リソースの種類全体に一律でアクセスを許可するのではなく、ロールのアクセスを特定のリソースのみに限定したい場合に使用します。
+
+#### デフォルトアクセスときめ細かなアクセス制御 {#access-control-modes}
+
+各リソースの種類には**アクセス制御モード**があります。
+
+* **デフォルトアクセス** — そのタイプのすべてのリソースに、単一のアクセスレベル (アクセス不可、閲覧、または管理) を適用します。
+* **きめ細かなアクセス制御** — 条件に基づいて特定のリソースに一致するアクセスルールを定義できます。どのルールにも一致しないリソースは、デフォルトでアクセス不可になります。
+
+モードを切り替えるには、ロールエディターでシェブロンをクリックしてリソースの種類を展開し、**アクセス制御モード**のトグルを切り替えます。
+
+<div className="ch-image-md">
+  <Frame>
+    ![ロールエディターにおけるデフォルトアクセスモードときめ細かなアクセス制御モード](/images/clickstack/rbac/default-vs-fine-grained.webp)
+  </Frame>
+</div>
+
+#### アクセスルールの設定 {#configuring-access-rules}
+
+各アクセスルールは、**条件**と**アクセスレベル**で構成されます。条件は、リソースのプロパティに基づいて対象のリソースを照合します。
+
+<div className="ch-image-md">
+  <Frame>
+    ![条件のツールチップ: 名前またはタグ (タイトルに表示) 、あるいは ID (URL に含まれる) でリソースを照合](/images/clickstack/rbac/condition-tip.webp)
+  </Frame>
+</div>
+
+| 条件フィールド  | 演算子              | 照合対象                                                                        | 例                                                                   |
+| -------- | ---------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Name** | `is`, `contains` | リソースの表示名 (例: ダッシュボードのタイトル) 。                                                | Name contains `production` — タイトルに「production」を含むすべてのダッシュボードに一致します。 |
+| **Tag**  | `is`, `contains` | リソースビュー右上のタグパネルでリソースに割り当てたタグ。ダッシュボード、保存済み検索、ノートブック でのみ使用できます。 | Tag is `critical` — 「critical」タグが付いたリソースに一致します。                     |
+| **ID**   | `is`, `contains` | リソースを開いたときに URL バーに表示されるリソース識別子。                                            | ID is `abc123` — 特定の 1 つのリソースに一致します。                                |
+
+次のスクリーンショットでは、URL バー内でハイライトされたダッシュボード ID と、右上のタグパネルに表示された「TESTING」タグの両方を確認できます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![URL バーにリソース ID、右上にタグが表示されたダッシュボード](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+  </Frame>
+</div>
+
+リソースの種類ごとに複数のルールを追加できます。各ルールは OR 条件で個別に評価され、**いずれか**のルールに一致したリソースにアクセスできます。どのルールにも一致しないリソースにはアクセスできません。
+
+<div className="ch-image-md">
+  <Frame>
+    ![OR 条件に関するアクセスルールのツールチップ](/images/clickstack/rbac/access-rules-tip.webp)
+  </Frame>
+</div>
+
+**例**: テスト用ダッシュボードへの読み取り専用アクセスをロールに付与するには、ダッシュボード を展開して きめ細かなアクセス制御 に切り替え、次の 2 つのルールを追加します。
+
+* **Name** `contains` `testing`、アクセスレベル **閲覧**
+* **Tag** `is` `testing`、アクセスレベル **閲覧**
+
+いずれかのルールに一致するダッシュボードにアクセスできるようになります。
+
+<div className="ch-image-md">
+  <Frame>
+    ![OR で結合された 2 つのきめ細かなアクセスルール: Name contains testing (閲覧 アクセス) と Tag is testing (閲覧 アクセス)](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+  </Frame>
+</div>
+
+## セキュリティポリシー {#security-policies}
+
+**チーム設定 → Members &amp; Roles → セキュリティポリシー** にある **Disable data exports** を有効にすると、行の詳細を含むログデータのダウンロード用およびコピー用のコントロールが、チームの全員に対して非表示になります。ただし、ユーザーは引き続き画面上のテキストを選択でき、API と MCPサーバーからも引き続きデータが返されます。この設定によって、基盤となるデータへのアクセスが禁止されるわけではありません。
+
+Generative AI 関連のコントロールは **チーム設定 → API &amp; Agents → Configure Generative AI** にあります。詳細は [Generative AI の設定](/ja/clickstack/observability/managing/config#generative-ai) を参照してください。
