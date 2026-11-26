@@ -12,13 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-HTTP_PORT=$(python3 -c "
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-")
+PORT_FILE=$(mktemp "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.XXXXXX.port")
 
 python3 -c "
 import json
@@ -32,9 +26,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split('?')[0]
         body, code = b'{}', 404
-        if path == '/ready':
-            code = 200
-        elif path == '/api/2.1/unity-catalog/tables/wh.s.t':
+        if path == '/api/2.1/unity-catalog/tables/wh.s.t':
             body, code = table, 200
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
@@ -45,7 +37,10 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-ThreadingHTTPServer(('127.0.0.1', $HTTP_PORT), Handler).serve_forever()
+server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+with open('$PORT_FILE', 'w') as f:
+    f.write(str(server.server_address[1]))
+server.serve_forever()
 " &
 HTTP_PID=$!
 
@@ -53,16 +48,18 @@ DB="${CLICKHOUSE_DATABASE}_unity"
 
 cleanup() {
     kill $HTTP_PID 2>/dev/null
+    wait $HTTP_PID 2>/dev/null
+    rm -f "$PORT_FILE"
     ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}" 2>/dev/null
 }
 trap cleanup EXIT
 
-for _ in {1..100}; do
-    if [ "$(${CLICKHOUSE_CURL} -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${HTTP_PORT}/ready")" = "200" ]; then
-        break
-    fi
+for _ in {1..300}; do
+    [ -s "$PORT_FILE" ] && break
     sleep 0.1
 done
+HTTP_PORT=$(cat "$PORT_FILE")
+[ -n "$HTTP_PORT" ] || { echo 'the catalog server did not start'; exit 1; }
 
 ${CLICKHOUSE_CLIENT} --allow_database_unity_catalog=1 --query "
     CREATE DATABASE ${DB} ENGINE = DataLakeCatalog('http://127.0.0.1:${HTTP_PORT}/api/2.1/unity-catalog')
