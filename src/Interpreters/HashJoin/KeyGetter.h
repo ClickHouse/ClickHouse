@@ -198,14 +198,12 @@ struct LowCardinalityKeyGetterForJoin
 /// `getKeyHolder` builds the key of a row, or reads keys built ahead:
 /// - after `buildAllKeys` or `usePrebuiltKeys`, the keys of the rows that the slot scatter of a parallel build routed.
 ///   The scatter calls `buildAllKeys`, and the slot inserts pass the keys it built to `usePrebuiltKeys`;
-/// - after `prepareRows`, the keys of a continuous range of rows, built 256 rows at a time when a read goes past the
-///   built ones. A range that starts after the first row is the rest of a block that an earlier call left because of
-///   `max_joined_block_rows`. The call for the rest can stop early too, so its chunks start at 8 rows and double up to
-///   256. Each join loop calls it for its first map. A prefetching loop also calls it for every other map that it
-///   prefetches for each row: then each key is built once for both the prefetch and the lookup. A loop that stops early
-///   at `max_joined_block_rows` pays only for the chunks it reached.
-///   The loop of an `OR` join with a condition in `ON` calls it for every map. For a list of rows in ascending order, it
-///   builds the keys of the listed rows at once.
+/// - after `prepareRows` or `prepareRange`, the keys of a continuous range of rows, built 256 rows at a time when a read
+///   goes past the built ones. The build insert prepares its rows with `prepareRows`. Each key search of the probe
+///   prepares its rows before it creates its prefetcher, so each key is built once for both the prefetch and the lookup:
+///   a range with `prepareRange`, a row list with `prepareAscendingRows`. A search that is likely to stop early at
+///   `max_joined_block_rows` starts with chunks of 8 rows that double up to 256, so that it pays only for the chunks it
+///   reached. `prepareAscendingRows` builds the keys of all the listed rows at once.
 template <typename Derived>
 struct PreparedJoinKeys
 {
@@ -247,10 +245,14 @@ struct PreparedJoinKeys
         return all_selected.data();
     }
 
-    /// Returns skip bytes for the rows [0, end): 1 for each row that `rows` does not list, and `skip` for each listed row.
-    const UInt8 * skipUnlisted(const PaddedPODArray<UInt64> & rows, size_t end, const UInt8 * skip)
+    /// Returns skip bytes for the rows [begin, end): 1 for each row that `rows` does not list, and `skip` for each listed row.
+    /// Every row of `rows` must be in [begin, end). The bytes of the rows before `begin` are not set.
+    const UInt8 * skipUnlisted(std::span<const UInt64> rows, size_t begin, size_t end, const UInt8 * skip)
     {
-        unlisted_skip.assign(end, UInt8(1));
+        /// From `begin`, not from row 0: the probe calls this for every batch of a block, and a fill from row 0 each time is
+        /// quadratic in the block size.
+        unlisted_skip.resize(end);
+        std::fill(unlisted_skip.begin() + begin, unlisted_skip.end(), UInt8(1));
         for (const auto row : rows)
             unlisted_skip[row] = skip[row];
         return unlisted_skip.data();
@@ -268,7 +270,7 @@ struct PreparedJoinKeys
         if (selector.isContinuousRange())
             std::tie(begin, end) = selector.getRange();
         else
-            skip = skipUnlisted(selector.getIndexes().getData(), num_rows, skip);
+            skip = skipUnlisted(selector.getIndexes().getData(), 0, num_rows, skip);
         derived().buildKeys(begin, end, keys.data() + begin, skip);
         ready_begin = 0;
         ready_keys = {keys.data(), keys.size()};
@@ -304,13 +306,13 @@ struct PreparedJoinKeys
             prepareAscendingRows(selector.getData(), skip);
     }
 
-    void prepareAscendingRows(const PaddedPODArray<UInt64> & rows, const UInt8 * skip)
+    void prepareAscendingRows(std::span<const UInt64> rows, const UInt8 * skip)
     {
         if (rows.empty() || !std::is_sorted(rows.begin(), rows.end()))
             return;
         ready_begin = rows.front();
         prepare_end = rows.back() + 1;
-        skip_rows = skipUnlisted(rows, prepare_end, skip);
+        skip_rows = skipUnlisted(rows, ready_begin, prepare_end, skip);
         /// All at once, not in chunks: the rows between the listed ones are left out, so the look-ahead of a
         /// prefetching loop can span more rows than `buildNextKeys` keeps.
         prepared_keys.resize(prepare_end - ready_begin);
@@ -319,11 +321,13 @@ struct PreparedJoinKeys
     }
 
     /// Drops the keys prepared before. With an empty range, each key is built where it is read again.
-    void prepareRange(ScatteredBlock::Selector::Range range, const UInt8 * skip)
+    /// `small_first_chunks`: for a search that is likely to stop before the end of the range, at `max_joined_block_rows`.
+    /// The default is for a search that visits every row of the range.
+    void prepareRange(ScatteredBlock::Selector::Range range, const UInt8 * skip, bool small_first_chunks = false)
     {
         ready_begin = range.first;
         prepare_end = range.second;
-        next_chunk_rows = range.first == 0 ? max_chunk_rows : min_chunk_rows;
+        next_chunk_rows = small_first_chunks ? min_chunk_rows : max_chunk_rows;
         skip_rows = skip;
         prepared_keys.clear();
         ready_keys = {};
