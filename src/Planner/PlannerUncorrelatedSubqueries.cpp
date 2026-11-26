@@ -27,12 +27,15 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -58,12 +61,8 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 
-extern const SettingsJoinAlgorithm join_algorithm;
 extern const SettingsBool join_use_nulls;
 extern const SettingsBool rewrite_in_to_join;
-extern const SettingsBool legacy_join_size_limits_trigger_spilling;
-extern const SettingsUInt64 max_bytes_before_external_join;
-extern const SettingsDouble max_bytes_ratio_before_external_join;
 
 }
 
@@ -98,7 +97,7 @@ void addStepForMarker(QueryPlan & subquery_plan, const String & marker_name)
 /// `NULL` is not a value the join can match, so a row with a `NULL` key comes out unmatched, with a `false` marker.
 /// This would let `NOT IN` keep the row whereas three valued logic in `IN` would drop. This is fixed by wrapping
 /// the marker in `if(key is null, NULL, marker)`. This is only required for a single-column `IN`.
-const ActionsDAG::Node & addNodesForNullKeyMask(
+[[nodiscard]] const ActionsDAG::Node & addNodesForNullKeyMask(
     ActionsDAG & result_dag,
     const ActionsDAG::Node & marker,
     const String & key_column_name,
@@ -166,7 +165,7 @@ void addStepForMarkerResult(
 
 /// Decorrelation rewrites the plan of the subquery the expression belongs to, and it does not support a
 /// `JoinLogical` step on the path of a correlated column.
-bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns)
+[[nodiscard]] bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns)
 {
     if (auto column_node = std::dynamic_pointer_cast<ColumnNode>(node))
         return correlated_columns.contains(column_node);
@@ -179,7 +178,7 @@ bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWit
 }
 
 /// The expressions the join keys on: the left argument of the `IN`, or its elements.
-QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
+[[nodiscard]] QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
 {
     const auto & left_key = function_node.getArguments().getNodes()[0];
 
@@ -202,7 +201,7 @@ struct JoinKeyActions
 };
 
 /// Removes the computation of the `IN` from `actions` and keeps only its key.
-JoinKeyActions buildJoinKeyActions(ActionsDAG actions, const ActionsDAG::Node & in_node, const QueryTreeNodePtr & subquery, const Block & input_header, const ContextPtr & query_context)
+[[nodiscard]] JoinKeyActions buildJoinKeyActions(ActionsDAG actions, const ActionsDAG::Node & in_node, const QueryTreeNodePtr & subquery, const Block & input_header, const ContextPtr & query_context)
 {
     const auto subquery_columns = getSubqueryProjectionColumns(subquery);
 
@@ -275,19 +274,6 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
     if (!settings[Setting::rewrite_in_to_join])
         return false;
 
-    /// `grace_hash` is passed over without a spill threshold.
-    const bool grace_hash_can_spill = settings[Setting::legacy_join_size_limits_trigger_spilling]
-        || JoinSettings::getMaxBytesBeforeExternalJoin(settings[Setting::max_bytes_before_external_join], settings[Setting::max_bytes_ratio_before_external_join]) > 0;
-
-    const std::vector<JoinAlgorithm> join_algorithms = settings[Setting::join_algorithm];
-    if (!std::ranges::any_of(join_algorithms, [&](JoinAlgorithm algorithm)
-        {
-            return algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::HASH
-                || (algorithm == JoinAlgorithm::GRACE_HASH && grace_hash_can_spill) || algorithm == JoinAlgorithm::AUTO
-                || algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
-        }))
-        return false;
-
     const auto & arguments = function_node.getArguments().getNodes();
     if (arguments.size() != 2)
         return false;
@@ -296,9 +282,9 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
     if (subquery_columns.empty())
         return false;
 
-    /// A set ignores the `WITH TOTALS` row of its subquery, but a join would add it to the query.
-    /// A view or a remote table may produce such a row as well.
-    if (queryTreeHasWithTotalsInAnySubqueryInJoinTree(arguments[1].get()) || readsViewOrRemoteStorage(arguments[1]))
+    /// A set ignores the totals row of its subquery, but a join would add it to the query. `WITH TOTALS` is
+    /// dropped from the subquery the join reads, but a view or a remote table may produce such a row as well.
+    if (readsViewOrRemoteStorage(arguments[1]))
         return false;
 
     const auto & left_key = arguments[0];
@@ -325,12 +311,19 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
         if (key_base->hasDynamicStructure() || isVariant(key_base) || column_base->hasDynamicStructure() || isVariant(column_base))
             return false;
 
-        /// The join compares the key with `equals`, which a set does not need.
-        if (!key_base->isComparableForEquality() || !column_base->isComparableForEquality())
+        /// The join compares the key with `equals`, which a set does not need. A `Variant` counts as comparable
+        /// even when one of its alternatives is not, and a sort-merge join then treats all such values as equal.
+        const auto not_comparable = [](const IDataType & type) { return !type.isComparableForEquality(); };
+        if (anyInTypeTree(*key_base, not_comparable) || anyInTypeTree(*column_base, not_comparable))
             return false;
 
-        /// A set turns a key carrying a sub-second part into no match when it casts it to a type that cannot hold one.
-        if (isDateTime64(key_base) && !isDateTime64(column_base))
+        /// A set does not match a timestamp that the cast to the column type changes, e.g. by dropping a sub-second
+        /// part, while the join would match the changed value.
+        if (isDateTime64(key_base) && key_base->getName() != column_base->getName())
+            return false;
+
+        /// A set compares floating-point values by their bits, while a sort-merge join compares the numbers and matches `-0.0` with `0.0`.
+        if (hasTypeThatCanContainFloat(subquery_columns[i].type))
             return false;
 
         /// A cast to a tuple, or to a type that cannot be inside `Nullable`, throws on a value the column type cannot hold.
@@ -344,7 +337,7 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
     return true;
 }
 
-std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions, const PlannerContext & planner_context)
+std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
     std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
@@ -362,8 +355,9 @@ std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const 
                 continue;
 
             const auto * column_set = typeid_cast<const ColumnSet *>(&node->children[1]->column->getDataColumn());
-            if (column_set && planner_context.isSetForJoinRewrite(column_set->getData()))
-                return UncorrelatedInSubquery{.in_node = node, .subquery = typeid_cast<const FutureSetFromSubquery &>(*column_set->getData()).getQueryTree(), .actions = {}};
+            const auto * set = column_set ? typeid_cast<const FutureSetForJoinRewrite *>(column_set->getData().get()) : nullptr;
+            if (set)
+                return UncorrelatedInSubquery{.in_node = node, .subquery = set->getQueryTree(), .actions = {}};
             continue;
         }
 
@@ -389,6 +383,8 @@ void buildQueryPlanForUncorrelatedInSubquery(
     const auto & query_context = planner_context->getQueryContext();
 
     const auto & in_node = *in_subquery.in_node;
+    /// The join delivers the result under the name of the `in` node, so a later step that reads this `IN` by name finds
+    /// it as it would find a result computed with a set.
     const auto in_result_name = in_node.result_name;
     const auto in_result_type = in_node.result_type;
     const bool is_negated = in_node.function_base->getName() == "notIn";
@@ -466,6 +462,23 @@ void buildQueryPlanForUncorrelatedInSubquery(
         SortingStep::Settings(settings));
     join_step->setStepDescription("JOIN to evaluate IN");
     makeJoinUnbounded(*join_step);
+
+    auto & join_settings = join_step->getJoinSettings();
+    auto & algorithms = join_settings.join_algorithms;
+
+    /// `grace_hash` runs the join when no algorithm listed before it can. Without a spill threshold it cannot spill here,
+    /// because the size limits that trigger spilling in legacy mode do not apply to this join.
+    if (auto grace = std::ranges::find(algorithms, JoinAlgorithm::GRACE_HASH);
+        grace != algorithms.end() && join_settings.getEffectiveMaxBytesBeforeExternalJoin() == 0)
+    {
+        JoinSettings before_grace = join_settings;
+        before_grace.join_algorithms.assign(algorithms.begin(), grace);
+        if (!JoinCommon::canBeExecutedByEnabledAlgorithm(before_grace, JoinKind::Left, JoinStrictness::Any))
+            algorithms.erase(grace);
+    }
+
+    if (!JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, JoinKind::Left, JoinStrictness::Any))
+        algorithms = {JoinAlgorithm::HASH};
 
     QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));

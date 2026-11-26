@@ -328,12 +328,38 @@ FROM (EXPLAIN SELECT key, count() FROM t GROUP BY if(id IN (SELECT k FROM s), 'a
 SELECT key, count() FROM t GROUP BY if(id IN (SELECT k FROM s), 'a', 'b') AS key WITH TOTALS HAVING key != 'c' ORDER BY key SETTINGS rewrite_in_to_join = 0;
 SELECT key, count() FROM t GROUP BY if(id IN (SELECT k FROM s), 'a', 'b') AS key WITH TOTALS HAVING key != 'c' ORDER BY key SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- The subquery has WITH TOTALS, which the join rewrite drops like the set';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s GROUP BY k WITH TOTALS));
+
 SELECT '-- A key that is not deterministic and also read elsewhere in the step';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT sum(((rand() % 6) AS r) IN (SELECT number FROM numbers(3)) != (r < 3)) FROM numbers(1000));
 
 SELECT sum(((rand() % 6) AS r) IN (SELECT number FROM numbers(3)) != (r < 3)) FROM numbers(1000) SETTINGS rewrite_in_to_join = 0;
 SELECT sum(((rand() % 6) AS r) IN (SELECT number FROM numbers(3)) != (r < 3)) FROM numbers(1000) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- join_algorithm = direct, which cannot run the join, so it runs as hash';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'direct');
+
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'direct', rewrite_in_to_join = 0;
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'direct', rewrite_in_to_join = 1;
+
+SELECT '-- join_algorithm = full_sorting_merge';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'full_sorting_merge');
+
+SELECT '-- join_algorithm = grace_hash alone without a spill threshold, so it runs as hash';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0);
+
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, rewrite_in_to_join = 0;
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, rewrite_in_to_join = 1;
+
+SELECT '-- join_algorithm = grace_hash in legacy mode without a spill threshold, which cannot spill without the size limits, so it runs as hash';
+SELECT countIf(explain LIKE '%GraceHashJoin%')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS join_algorithm = 'grace_hash', legacy_join_size_limits_trigger_spilling = 1, max_rows_in_join = 10000, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0);
 
 DROP TABLE t;
 DROP TABLE s;

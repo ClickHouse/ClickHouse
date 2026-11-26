@@ -695,7 +695,7 @@ void addInToJoinSteps(
     UsefulSets & useful_sets)
 {
     auto header_before_joins = query_plan.getCurrentHeader();
-    while (auto in_subquery = findInnermostUncorrelatedInSubquery(actions, *planner_context))
+    while (auto in_subquery = findInnermostUncorrelatedInSubquery(actions))
     {
         /// The part of the actions the `IN` reads is computed below the join, and the rest reads the `IN` as an input.
         auto [in_actions, rest_actions, split_nodes_mapping] = actions.split(
@@ -2037,7 +2037,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 
     for (const auto & set : useful_sets)
     {
-        if (planner_context->isSetForJoinRewrite(set))
+        if (typeid_cast<const FutureSetForJoinRewrite *>(set.get()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "An `IN` the planner evaluates with a join is read by an expression that no join is added for");
     }
 

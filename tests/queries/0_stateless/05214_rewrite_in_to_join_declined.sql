@@ -27,6 +27,10 @@ SELECT '-- IN inside a lambda';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE arrayExists(z -> z IN (SELECT k FROM s), arr));
 
+SELECT '-- IN inside `indexHint` that is the whole WHERE';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE indexHint(id IN (SELECT k FROM s)));
+
 SELECT '-- `nullIn`';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS transform_null_in = 1);
@@ -40,6 +44,14 @@ SELECT groupArray((id, b)) FROM (SELECT id, b FROM t ORDER BY id WITH FILL FROM 
 SELECT '-- A `DateTime64` key against a column that cannot hold its sub-second part';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE toDateTime64(id, 3) IN (SELECT toDateTime(k) FROM s));
+
+SELECT '-- A `DateTime64` key against a `DateTime64` column of a smaller scale';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE toDateTime64(id, 6) IN (SELECT toDateTime64(k, 3) FROM s));
+
+SELECT '-- A floating-point key, which a sort-merge join compares unlike the set';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE toFloat64(id) IN (SELECT toFloat64(k) FROM s));
 
 SELECT '-- `Array(UInt8)` against `Array(Bool)`, a cast that throws on a value the element type cannot hold';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
@@ -66,6 +78,10 @@ FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT UNTIL id IN (SELECT k FROM s));
 SELECT '-- IN with a key that equals cannot compare';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT s IN (SELECT sumState(number) FROM numbers(3)) FROM (SELECT sumState(number) AS s FROM numbers(3)));
+
+SELECT '-- IN with such a key inside a `Variant`, which counts as comparable';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT [s::Variant(AggregateFunction(sum, UInt64), UInt8)] IN (SELECT [sumState(number)::Variant(AggregateFunction(sum, UInt64), UInt8)] FROM numbers(3)) FROM (SELECT sumState(number) AS s FROM numbers(3)));
 
 SELECT '-- IN read on the totals row of a view';
 DROP VIEW IF EXISTS vt;

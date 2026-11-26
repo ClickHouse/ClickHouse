@@ -272,6 +272,33 @@ private:
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
+/// Placeholder for the set of an `IN` that `rewrite_in_to_join` evaluates with a join, until the join replaces the `IN`.
+/// It is never built: a consumer that is not part of the rewrite sees a set that is never ready.
+class FutureSetForJoinRewrite final : public FutureSet
+{
+public:
+    FutureSetForJoinRewrite(Hash hash_, ASTPtr ast_, QueryTreeNodePtr query_tree_, DataTypes types_)
+        : hash(hash_), ast(std::move(ast_)), query_tree(std::move(query_tree_)), types(std::move(types_))
+    {
+    }
+
+    [[nodiscard]] SetPtr get() const override { return nullptr; }
+    [[nodiscard]] DataTypes getTypes() const override { return types; }
+    SetPtr buildOrderedSetInplace(const ContextPtr &) override { return nullptr; }
+    [[nodiscard]] bool isMutableDuringQuery() const override { return false; }
+    [[nodiscard]] Hash getHash() const override { return hash; }
+    [[nodiscard]] ASTPtr getSourceAST() const override { return ast; }
+
+    /// The subquery the join reads.
+    [[nodiscard]] const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
+
+private:
+    Hash hash;
+    ASTPtr ast;
+    QueryTreeNodePtr query_tree;
+    DataTypes types;
+};
+
 /// Hashes a `FutureSet::Hash` for the unordered containers keyed by it. Declared here rather than
 /// inside `PreparedSets` so `BuiltSetsByHash` below can use it too; `PreparedSets::Hashing` aliases it.
 struct FutureSetHashing

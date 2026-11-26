@@ -35,13 +35,13 @@ struct UncorrelatedInSubquery
     ActionsDAG actions;
 };
 
-bool canRewriteInToJoin(
+[[nodiscard]] bool canRewriteInToJoin(
     const QueryTreeNodePtr & in_node,
     const QueryTreeNodePtr & query_node,
     const PlannerContext & planner_context);
 
 /// Returns an `IN` of `actions` that becomes a join. When one such `IN` is inside the left argument of another, the inner one is returned.
-std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions, const PlannerContext & planner_context);
+[[nodiscard]] std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions);
 
 /// Adds the steps that compute `in_subquery.actions`, where `in_subquery.in_node` is evaluated with a join with the subquery.
 void buildQueryPlanForUncorrelatedInSubquery(

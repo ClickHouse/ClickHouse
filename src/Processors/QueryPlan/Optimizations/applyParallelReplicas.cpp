@@ -257,6 +257,10 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, Unordere
         if (!column_set)
             continue;
         const auto future_set = column_set->getData();
+        /// The placeholder set of an `IN` that `rewrite_in_to_join` evaluates with a join is never built, so it cannot be shipped.
+        if (typeid_cast<const FutureSetForJoinRewrite *>(future_set.get()))
+            return true;
+
         const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get());
         if (!from_subquery || !visited.insert(from_subquery).second)
             continue;

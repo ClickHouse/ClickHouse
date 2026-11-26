@@ -6,6 +6,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -234,16 +235,28 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 FutureSetPtr PlannerContext::createSetForJoinRewrite(const QueryTreeNodePtr & in_node)
 {
     const auto & subquery = in_node->as<const FunctionNode &>().getArguments().getNodes().at(1);
-    auto set = std::make_shared<FutureSetFromSubquery>(
+
+    /// A set ignores the totals of its subquery, so the join that replaces it must not receive them either.
+    auto join_subquery = subquery->clone();
+    for (const auto & table_expression : extractTableExpressions(
+             std::static_pointer_cast<ITableExpressionNode>(join_subquery), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        if (auto * query_node = table_expression->as<QueryNode>())
+            query_node->setIsGroupByWithTotals(false);
+    }
+
+    DataTypes types;
+    for (const auto & column : getSubqueryProjectionColumns(join_subquery))
+        types.push_back(column.type);
+
+    return std::make_shared<FutureSetForJoinRewrite>(
         subquery->getTreeHash({.ignore_cte = true}),
         subquery->toAST({.set_subquery_cte_name = false}),
-        subquery,
-        FutureSetSettings(query_context->getSettingsRef()));
-    sets_for_join_rewrite.insert(set);
-    return set;
+        join_subquery,
+        std::move(types));
 }
 
-PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node, bool for_join_rewrite)
+PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
     const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
@@ -257,11 +270,11 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
          *   - `{1, 2.5} :: Set(Decimal(9, 1))` for a
          *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because it's not representable as Decimal(9, 0)).
          */
-        return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash) + (for_join_rewrite ? "_join" : "");
+        return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
     }
 
     /// For other cases we will cast left operand to the type of the set source, so no difference in types.
-    return "__set_" + toString(set_source_hash) + (for_join_rewrite ? "_join" : "");
+    return "__set_" + toString(set_source_hash);
 }
 
 }

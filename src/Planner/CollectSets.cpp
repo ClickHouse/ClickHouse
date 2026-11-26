@@ -266,14 +266,14 @@ private:
     /// Whether this `IN` can become a join. A join can not match a totals row and in a correlated query only
     /// `WHERE` over an uncorrelated join tree qualifies, because decorrelation does not support a join above
     /// a correlated step.
-    bool isUnblockedJoinRewriteScope(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool isUnblockedJoinRewriteScope(const QueryTreeNodePtr & node) const
     {
         return query_node && !blocked_in_subqueries.contains(node.get()) && !has_totals_in_join_tree
             && (!query_node->as<const QueryNode &>().isCorrelated() || (where && !has_correlated_join_tree));
     }
 
     /// Whether the planner adds the joins of an `IN` in this clause of the query below the step that computes it.
-    bool isRewritableClause(const QueryTreeNodePtr & clause) const
+    [[nodiscard]] bool isRewritableClause(const QueryTreeNodePtr & clause) const
     {
         const auto & typed_query_node = query_node->as<const QueryNode &>();
         if (clause == typed_query_node.getWhere() || clause == typed_query_node.getGroupByNode())
@@ -295,18 +295,21 @@ private:
 
     /// A scope whose expressions no join the rewrite can add is below, so an `IN` here is evaluated with
     /// a set and cannot be rewritten anywhere else in the query either.
-    bool isBlockedScope(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool isBlockedScope(const QueryTreeNodePtr & node) const
     {
         /// A lambda parameter is not a column of the plan header, so there is nothing to join on.
         if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
             return true;
 
+        /// `indexHint` builds its arguments into a dag that has no join above it.
+        const auto * function_node = node->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "indexHint")
+            return true;
+
         if (std::ranges::contains(query_node->getChildren(), node))
             return !isRewritableClause(node);
 
-        /// `indexHint` builds its arguments into a dag that has no join above it.
-        const auto * function_node = node->as<FunctionNode>();
-        return function_node && function_node->getFunctionName() == "indexHint";
+        return false;
     }
 
     PlannerContext & planner_context;

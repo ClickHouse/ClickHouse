@@ -4,12 +4,18 @@
 0	1
 -- IN inside a lambda
 0	1
+-- IN inside `indexHint` that is the whole WHERE
+0	1
 -- `nullIn`
 0	1
 -- IN inside INTERPOLATE
 0	1
 [(1,1),(2,3),(3,4),(4,4)]
 -- A `DateTime64` key against a column that cannot hold its sub-second part
+0	1
+-- A `DateTime64` key against a `DateTime64` column of a smaller scale
+0	1
+-- A floating-point key, which a sort-merge join compares unlike the set
 0	1
 -- `Array(UInt8)` against `Array(Bool)`, a cast that throws on a value the element type cannot hold
 0	1
@@ -23,6 +29,8 @@
 0	1
 0	1
 -- IN with a key that equals cannot compare
+0	1
+-- IN with such a key inside a `Variant`, which counts as comparable
 0	1
 -- IN read on the totals row of a view
 0	1

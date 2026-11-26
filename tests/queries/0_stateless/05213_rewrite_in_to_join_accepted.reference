@@ -187,7 +187,21 @@ a	2
 b	1
 
 	3
+-- The subquery has WITH TOTALS, which the join rewrite drops like the set
+1	0
 -- A key that is not deterministic and also read elsewhere in the step
 1	0
 0
+0
+-- join_algorithm = direct, which cannot run the join, so it runs as hash
+1	0
+2
+2
+-- join_algorithm = full_sorting_merge
+1	0
+-- join_algorithm = grace_hash alone without a spill threshold, so it runs as hash
+1	0
+2
+2
+-- join_algorithm = grace_hash in legacy mode without a spill threshold, which cannot spill without the size limits, so it runs as hash
 0

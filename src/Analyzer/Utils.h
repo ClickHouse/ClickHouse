@@ -45,7 +45,7 @@ bool isNameOfInFunction(const std::string & function_name);
 
 /// The columns a subquery projects. Empty when the node is not a subquery, and when it is correlated,
 /// whose columns are only known once it is decorrelated.
-NamesAndTypes getSubqueryProjectionColumns(const QueryTreeNodePtr & subquery);
+[[nodiscard]] NamesAndTypes getSubqueryProjectionColumns(const QueryTreeNodePtr & subquery);
 
 /// Returns true if function name is name of local IN function or its variations, false otherwise
 bool isNameOfLocalInFunction(const std::string & function_name);

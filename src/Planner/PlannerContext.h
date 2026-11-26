@@ -195,17 +195,16 @@ public:
     using SetKey = std::string;
 
     /// Create set key for set source node
-    static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node, bool for_join_rewrite = false);
+    static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
     void addInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) { in_to_join_subqueries.insert(node.get()); }
     void removeInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) { in_to_join_subqueries.erase(node.get()); }
-    bool isInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) const { return in_to_join_subqueries.contains(node.get()); }
-    bool hasInSubqueriesForJoinRewrite() const { return !in_to_join_subqueries.empty(); }
+    [[nodiscard]] bool isInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) const { return in_to_join_subqueries.contains(node.get()); }
+    [[nodiscard]] bool hasInSubqueriesForJoinRewrite() const { return !in_to_join_subqueries.empty(); }
 
-    FutureSetPtr createSetForJoinRewrite(const QueryTreeNodePtr & in_node);
-    bool isSetForJoinRewrite(const FutureSetPtr & set) const { return sets_for_join_rewrite.contains(set); }
+    [[nodiscard]] FutureSetPtr createSetForJoinRewrite(const QueryTreeNodePtr & in_node);
 
     /// Returns false if any of following conditions met:
     /// 1. Query is executed on a follower node.
@@ -252,7 +251,6 @@ private:
     PreparedSets prepared_sets;
 
     std::unordered_set<const IQueryTreeNode *> in_to_join_subqueries;
-    std::unordered_set<FutureSetPtr> sets_for_join_rewrite;
 };
 
 }

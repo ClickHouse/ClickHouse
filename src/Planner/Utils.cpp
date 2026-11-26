@@ -513,7 +513,7 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 namespace
 {
 
-bool isViewOrRemoteStorage(const StoragePtr & storage)
+[[nodiscard]] bool isViewOrRemoteStorage(const StoragePtr & storage)
 {
     if (storage->isView() || storage->isRemote())
         return true;
