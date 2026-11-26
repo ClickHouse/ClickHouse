@@ -4,3 +4,8 @@
 114950	400
 114950	400
 114950	400
+05557-cold	0	1
+05557-replaced-cold	0	1
+05557-replaced-warm	1	0
+05557-warm	1	0
+05557-warm-unseekable	1	0

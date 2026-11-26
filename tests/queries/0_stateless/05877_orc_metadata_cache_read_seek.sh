@@ -14,7 +14,7 @@ user_files_path=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.server_
 data_file="${user_files_path}/${file_name}"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${file_name}', ORC, 'id UInt64, payload String') SELECT number, repeat('x', 100) AS payload FROM numbers(1000000) SETTINGS engine_file_truncate_on_insert = 1, output_format_orc_compression_method = 'none'"
-file_size=$(stat -f %z "${data_file}")
+file_size=$(wc -c < "${data_file}")
 if [[ ${file_size} -le 65536 ]]; then
     echo "fixture too small: ${file_size}"
     exit 1
