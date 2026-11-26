@@ -12,6 +12,14 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，由 ClickHouse 源代码自动生成。
 
+## gpu_expression_kernel_cache_elements_size {#gpu_expression_kernel_cache_elements_size}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />GPU 引擎为表达式编译的内核会存入缓存，此设置指定该缓存中可容纳的内核最大数量。更改无需重启即可生效。
+
+## gpu_expression_kernel_cache_size {#gpu_expression_kernel_cache_size}
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="No" />GPU 引擎为表达式编译的内核缓存的最大大小 (按 PTX 字节数计算) 。超出该上限的内核将从设备上卸载。更改此设置无需重启即可生效。
+
 ## gpu_memory_pool_release_threshold {#gpu_memory_pool_release_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" changeable_without_restart="No" />GPU 默认内存对象池中保留 (而不归还给驱动程序) 的已释放设备内存量。使用默认值时，对象池会增长到查询的峰值占用，并保持该大小直至服务器关闭。

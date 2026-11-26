@@ -15,10 +15,10 @@ doc_type: 'reference'
 ## テーブルの作成 {#create-table}
 
 Paimon テーブルは、あらかじめストレージ内に存在している必要があることに注意してください。このコマンドでは、新しいテーブルを作成するための DDL パラメータは指定できません。
-`Paimon*` テーブルの作成は `allow_experimental_paimon_storage_engine` で制限されており (デフォルトでは無効) 、`CREATE TABLE` を実行する前にこれを有効にしてください。
+`Paimon*` テーブルの作成は `enable_paimon_storage_engine` で制限されており (デフォルトでは無効) 、`CREATE TABLE` を実行する前にこれを有効にしてください。
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
     ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
@@ -69,12 +69,18 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * 最新のテーブルスナップショットからスナップショット読み取りを行います。
 * 有効化されている場合、コミット済みスナップショット ID に基づくインクリメンタル読み取りを行います。
 * `use_paimon_partition_pruning` が有効な場合、パーティションプルーニングを行います。
-* 設定されている場合、メタデータをバックグラウンドで任意に更新できます。
+* 設定されている場合、メタデータをバックグラウンドで任意にリフレッシュできます。
 * Atomic/Replicated データベースを使用している場合、テーブル UUID が安定するため、Keeper のパスで `{uuid}` マクロを使用できます。
+* スキーマ進化：各データファイルは書き込み時のスキーマで読み取られ、その top-level のカラムは Paimon のフィールド ID に基づいて現在のスキーマと照合されます。そのため、リネームされたカラムや、削除後に同じ名前で再追加されたカラムも、Spark と同じように読み取られます。
 
-## プライマリキーテーブル {#primary-key-tables}
+## 主キーテーブル {#primary-key-tables}
 
-Merge-on-read は実装されていないため、**プライマリキーテーブルは読み取れません**。リーダーはスナップショットのデータファイルを単純に結合した生データを返しますが、そこには後続の upsert によって置き換えられた古いバージョンの行も残っています。そのため、スキーマで `primary-key` が宣言されているテーブルを読み取ると、例外がスローされます。
+Merge-on-read は実装されていないため、主キーテーブルは Paimon がマージを行わずに読み取れる場合にのみ読み取り可能です。具体的には、
+バケットのすべてのデータファイルがレベル 0 より上にあり、retract 行を含まないことが既知で、かつ同一レベルに存在する場合にのみ、そのバケットが読み取られます。
+`deletion-vectors.enabled` または `'merge-engine' = 'first-row'` が指定されている場合は、ファイルが複数のレベルにまたがっていても構いません。また、
+`batch-scan-mode` が `none` 以外のモードに設定されていない限り、Paimon と同様に、レベル 0 のファイルはコンパクションされるまで読み取られません。
+これ以外のバケットを読み取ろうとすると例外がスローされます。Paimon でフルコンパクション (`compact_strategy => 'full'`) を実行すると読み取り可能になります。
+主キーテーブルのインクリメンタル読み取りはサポートされていません。
 
 ## 削除ベクターを含むテーブル {#deletion-vectors}
 
@@ -101,9 +107,10 @@ clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<sna
 
 このエンジンは、対応するオブジェクトストレージエンジンと同じ設定を使用し、加えて Paimon 固有の設定もサポートします。
 
-* `allow_experimental_paimon_storage_engine` — `Paimon`、`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal` テーブルエンジンの作成を有効にします。デフォルト: `0` (無効) 。
-* `use_paimon_metadata_files_cache` — Paimon のメタデータファイル cache を有効にします (デシリアライズされたマニフェストリストと manifest をキャッシュします) 。有効にするには `1`、無効にするには `0` を設定します。デフォルト: `0`。この設定の効き方は、table function と persistent table engine で異なります — 下記の注記を参照してください。
+* `enable_paimon_storage_engine` — `Paimon`、`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal` テーブルエンジンの作成を有効にします。デフォルト: `0` (無効) 。
+* `use_paimon_metadata_files_cache` — Paimon のメタデータファイル cache を有効にします (デシリアライズされたマニフェストリストと manifest をキャッシュします) 。有効にするには `1`、無効にするには `0` を設定します。デフォルト: `0`。この設定の効き方は、table function と 永続テーブルエンジン で異なります — 下記の注記を参照してください。
 * `paimon_incremental_read` — インクリメンタル読み取りモードを有効にします。
+* `paimon_incremental_read_append_overwrite` — Paimon の `streaming-read-append-overwrite` と同様に、インクリメンタル読み取りで `OVERWRITE` スナップショットが書き込んだ行も配信します。デフォルト: `0`。
 * `paimon_metadata_refresh_interval_sec` — バックグラウンドでのメタデータのリフレッシュ間隔 (秒) 。0 より大きい値に設定すると、バックグラウンドタスクが定期的にオブジェクトストレージから最新のスナップショットとスキーマを取得します。デフォルト: 30。
 * `paimon_keeper_path` — インクリメンタル読み取り状態のための Keeper パス。設定は必須で、テーブルごとに一意である必要があります。`{database}`、`{table}`、`{uuid}` などのマクロをサポートします。
 * `paimon_replica_name` — インクリメンタル読み取り状態のためのレプリカ名。設定は必須で、レプリカごとに一意である必要があります。`{replica}` などのマクロをサポートします。
@@ -111,7 +118,7 @@ clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<sna
 例 (実験的な Paimon エンジンとメタデータファイル cache を有効にする):
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 SET use_paimon_metadata_files_cache = 1;
 
 CREATE TABLE paimon_cached
@@ -169,7 +176,7 @@ SETTINGS max_consume_snapshots = 2;
 
 一方、warehouse を*過去の状態に*戻すと、この前提が崩れます。古いバックアップからの warehouse の復元、別のエンジンによるロールバック、同じパスでの Paimon テーブルの削除と再作成は、いずれもスナップショット ID を巻き戻します。その結果、ライターはカーソルがすでに消費した ID を再利用することになります。
 
-**warehouse を巻き戻す場合は、同じ操作の中でカーソルもリセットする必要があります。** ID が再利用されると、ClickHouse はコンシューマーがどのスナップショットをすでに受信したかを再構築できません。そのため、巻き戻し後にカーソルを古いまま残しておくと配信の動作は未定義となり、再利用された ID のスナップショットがスキップされる可能性があります。
+**warehouse を巻き戻す場合は、同じ操作の中でカーソルもリセットする必要があります。** カーソルは自身が指しているスナップショットも記録しているため、ライターがカーソルのスナップショット ID を再利用すると、読み取りは `INVALID_STATE` で失敗します。この場合、何も読み取られず、カーソルも変更されません。復旧するには、カーソルを warehouse の巻き戻し先のスナップショットに設定するか (巻き戻し以降に書き込まれたすべてのスナップショットが読み取られます)、カーソルを現在の値に設定します (再利用された ID のスナップショットはスキップされます)。手動で設定したカーソルや、古いバージョンによって書き込まれたカーソルは、読み取りによって進められるまで、書き込まれた値のまま信頼されます。Paimon がカーソルの指すスナップショットを期限切れにした後は、何も検証できません。また、カーソルのスナップショットを保持したまま、読み取りがその後続のスナップショットを読み込んでいる最中に発生した巻き戻しも検証できません。
 
 巻き戻しの結果、カーソルが warehouse の最新スナップショットより先を指すようになった場合、読み取りは「新しいデータなし」として扱われるのではなく `INVALID_STATE` で失敗し、エラーメッセージには復旧用のコマンドが示されます。何も読み取られず、カーソルも変更されないため、問題が解決されるまで以降のポーリングはすべて同じエラーで失敗します。
 
@@ -220,10 +227,10 @@ clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' 
 
 **ステップ 1 — インクリメンタル読み取りとメタデータのリフレッシュを有効にした Paimon のソーステーブルを作成します。**
 
-以下の例では `PaimonLocal` を使用します。ストレージバックエンドに応じて、engine を `PaimonS3`、`PaimonAzure`、`PaimonHDFS`、または自動検出される `Paimon` engine に置き換えてください:
+以下の例では `PaimonLocal` を使用します。ストレージバックエンドに応じて、エンジン を `PaimonS3`、`PaimonAzure`、`PaimonHDFS`、または自動検出される `Paimon` エンジン に置き換えてください:
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 -- Local storage
 CREATE TABLE paimon_mv_source
@@ -276,7 +283,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 ```
 
 <Note>
-  バックグラウンドでの更新によってDDL操作がブロックされるのを防ぐため、削除する前にMVを停止してください。
+  バックグラウンドでのリフレッシュによってDDL操作がブロックされるのを防ぐため、削除する前にMVを停止してください。
 </Note>
 
 ## 制限事項 {#limitations}
@@ -287,7 +294,10 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * インクリメンタル読み取りでは at-most-once 配信が使われます。コミット済みスナップショットは、データが実際に消費される前、データファイルの収集時点で進められます。ファイル収集後にクエリが失敗した場合、スキップされたスナップショットは再試行しても再度読み取られません。
 * このテーブルエンジンは読み取り専用で、データの変更はサポートされていません。
 * インクリメンタル読み取りでは、Paimon ソースの過去データの削除は扱われません。アップストリームの Paimon データが削除または更新されても、ClickHouse の MergeTree 宛先テーブルにすでに書き込まれている対応する行は自動では削除されません。古くなったデータをクリーンアップするには、MergeTree テーブルに対して `ALTER TABLE ... DELETE` を手動で実行する必要があります。
+* 最初のインクリメンタル読み取りでは、現在のスナップショットのすべての行が返されます。それ以降のインクリメンタル読み取りでは、Paimon の append テーブルに対するストリーミング読み取りと同様に、`APPEND` スナップショットの行のみが配信され、`COMPACT`、`OVERWRITE`、`ANALYZE` スナップショットはスキップされます。Paimon は、データファイルを削除または書き換える書き込み (`INSERT OVERWRITE`、`TRUNCATE`、および `DELETE`、`UPDATE`、行を更新または削除する `MERGE INTO` による copy-on-write の書き換え) をすべて `OVERWRITE` としてコミットします。そのため、こうしたコミットで書き込まれた行 (更新された行の新しいバージョンなど) は配信されず、スキップされた `OVERWRITE` スナップショットごとに警告がログに記録されます。`paimon_incremental_read_append_overwrite = 1` を指定すると、Paimon の `streaming-read-append-overwrite` と同様にこれらの行が配信され、そのコミットで書き換えられた各データファイルの変更されていない行も併せて配信されます。ただし、同じクエリで読み取られる後続のスナップショットによって削除されたデータファイルは除きます。`COMPACT` スナップショットは読み取られないため、`APPEND` スナップショット、それが追加したファイルをマージする `COMPACT`、マージ後のファイルを書き換える `OVERWRITE` をまとめて読み取るクエリは、元のファイルと書き換え後のファイルの両方の行を返します。つまり、変更されていない行は結果に 2 回現れ、変更された行は旧バージョンと新バージョンの両方で現れます。なお、`paimon_target_snapshot_id` では引き続き任意のスナップショットの差分を取得できます。
+* 最初のインクリメンタル読み取り以降、ClickHouse が認識できないコミット種別のスナップショットに到達するとインクリメンタル読み取りは失敗します。ClickHouse をアップグレードするか、エラーメッセージの説明に従って Keeper 内のカーソルをそのスナップショットより後に移動するまで、以降の読み取りもすべて失敗します。
 * 基になる Paimon テーブルが同じオブジェクトストレージパスで削除されて再作成された場合 (たとえば Flink や Spark 経由) 、対応する ClickHouse テーブルを `DROP` してから再度 `CREATE` する必要があります。ClickHouse は schema-0 の作成タイムスタンプを比較して再作成を検出し、エラーを返します。古くなった ClickHouse テーブルは、再作成されるまで使用できません。
+* `ROW` カラム内のフィールドは、Paimon のフィールド ID ではなく名前によってデータファイルと照合されます。そのため、`ROW` 内のフィールドがリネームされる前、またはそうしたフィールドが削除されて同じ名前 (大文字と小文字を区別せずに比較) の別のフィールドが追加される前に書き込まれたデータファイルを読み取ると、例外がスローされます。読み取りを許すと、リネームされたフィールドには `NULL` が、再追加されたフィールドには削除されたフィールドの値が結果に含まれてしまうためです。フィールドの追加と削除はサポートされています。Paimon で現在のスキーマを使ってテーブルを書き換えると (たとえば `INSERT OVERWRITE <table> SELECT * FROM <table>`)、それ以降に作成されたスナップショットは読み取れるようになります。このようなデータファイルに到達したインクリメンタル読み取りは、カーソルを進めずに例外をスローします。先に進むには、変更前にコミットされたスナップショットを Paimon が期限切れにするまで待つか、カーソルをそれらのうち最後のスナップショットに移動して破棄します。後者の場合、そこまでの未消費のスナップショットはすべて破棄されます ([スナップショットを読み取れない場合](#when-a-snapshot-cannot-be-read) を参照)。
 
 ## 別名 {#aliases}
 
@@ -313,7 +323,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 | FLOAT                             | Float32                   |
 | DOUBLE                            | Float64                   |
 | STRING,VARCHAR,BYTES,VARBINARY    | String                    |
-| DATE                              | Date                      |
+| DATE                              | Date32                    |
 | TIME(p),TIME                      | Time(&#39;UTC&#39;)       |
 | TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                |
 | TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;) |
@@ -322,6 +332,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 | DECIMAL(P,S)                      | Decimal(P,S)              |
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
+| ROW                               | Tuple                     |
 
 ## サポートされるパーティションキー {#partition-supported}
 

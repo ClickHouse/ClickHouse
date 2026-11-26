@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 `eval` 表函数会先将其参数求值为查询字符串，然后将该字符串作为单条 `SELECT` 查询执行。
 
-此表函数处于 Experimental 阶段，默认已禁用。使用 `allow_experimental_eval_table_function` 设置启用它：
+此表函数处于 Experimental 阶段，默认已禁用。使用 `enable_eval_table_function` 设置启用它：
 
 ```sql
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 ```
 
 ## 语法 {#syntax}
@@ -112,4 +112,4 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 ## 相关内容 {#related}
 
 * [`view` 表函数](/zh/reference/functions/table-functions/view)
-* `allow_experimental_eval_table_function` 设置
+* `enable_eval_table_function` 设置
