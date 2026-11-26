@@ -1,10 +1,17 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -80,5 +87,38 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
     return DateLUT::instance();
 }
 
+std::optional<DataTypePtr> getDateTimeTypeWithTimeZoneArgument(
+    const IFunctionBase & function, const IDataType & type, const ColumnWithTypeAndName & time_zone_argument)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    if (!adaptor)
+        return std::nullopt;
+    const auto & inner = adaptor->getFunction();
+    if (!dynamic_cast<const FunctionDateOrDateTimeBase *>(inner.get()) && inner->getName() != "toString")
+        return std::nullopt;
+
+    /// The default implementation for NULLs admits a NULL or `Nullable` time zone; the function runs with the nested value.
+    ColumnPtr time_zone_column = time_zone_argument.column->convertToFullColumnIfLowCardinality();
+    if (time_zone_column->onlyNull())
+        return std::nullopt;
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(time_zone_column.get()))
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&const_column->getDataColumn()))
+            time_zone_column = ColumnConst::create(nullable_column->getNestedColumnPtr(), const_column->size());
+
+    auto time_zone = extractTimeZoneNameFromColumn(time_zone_column.get(), time_zone_argument.name);
+
+    const IDataType * type_ptr = &type;
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+        type_ptr = low_cardinality_type->getDictionaryType().get();
+
+    if (type_ptr->isNullable())
+        type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
+
+    if (typeid_cast<const DataTypeDateTime *>(type_ptr))
+        return std::make_shared<DataTypeDateTime>(time_zone);
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
+        return std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
+    return DataTypePtr{};
 }
 
+}
