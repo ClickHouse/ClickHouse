@@ -1747,7 +1747,7 @@ static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
 /// unresolved, like an argument of `remote`, is resolved by the server it is sent to and is not visited.
 static void bindDatabaseOfOneArgumentMerge(const QueryTreeNodePtr & query_tree, const String & database)
 {
-    std::vector<TableFunctionNode *> merges;
+    VectorWithMemoryTracking<TableFunctionNode *> merges;
     traverseQueryTree(query_tree, Everything{}, [&](const QueryTreeNodePtr & node)
     {
         auto * table_function = node->as<TableFunctionNode>();
