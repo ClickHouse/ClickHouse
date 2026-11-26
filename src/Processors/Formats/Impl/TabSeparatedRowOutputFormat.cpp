@@ -47,6 +47,22 @@ void TabSeparatedRowOutputFormat::writePrefix()
 }
 
 
+/// The body of `IRowOutputFormat::write`: in a final class the calls below are direct, without a virtual call per value.
+void TabSeparatedRowOutputFormat::write(const Columns & columns, size_t row_num)
+{
+    writeRowStartDelimiter();
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        if (i != 0)
+            writeFieldDelimiter();
+
+        writeField(*columns[i], *serializations[i], row_num);
+    }
+
+    writeRowEndDelimiter();
+}
+
 void TabSeparatedRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     if (is_raw)
