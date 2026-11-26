@@ -985,6 +985,13 @@ async function fetchReport(inputUrl, options = {}) {
           if (!found) {
             throw new Error(`Task not found: ${nameParams[1]}`);
           }
+          // A job reused from cache did not run for this commit: its row links to the run that
+          // produced the result and the artifacts, possibly of another commit or PR.
+          const reusedFrom = found.info === 'reused from cache' && (found.links || []).find(l => l.includes('praktika.html'));
+          if (reusedFrom && !options.followedReuse) {
+            console.log(`'${nameParams[1]}' is reused from cache, following ${reusedFrom}\n`);
+            return await fetchReport(reusedFrom, { ...options, followedReuse: true });
+          }
           targetData = found;
         }
         // Resolve deeper names (name_2+) by walking results

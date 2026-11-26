@@ -152,6 +152,7 @@ Run these only when the trigger appears. They are small expansion passes, not a 
 
 **Use concrete traces for suspicious code**
 - When you find suspicious callee logic, pick a minimal boundary input and trace execution step by step with concrete values. Do not dismiss it by abstract reasoning.
+- In the CI `Code Review` job only: when a finding can be shown with a query or a command, run it with a CI binary; `references/binaries.md` lists which binaries exist for the PR head, earlier commits, and master, and how to get them. Local reviews (including a local codex review) use the binaries their user provides and do not download CI binaries.
 - **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it or request the test that would prove it.
 
 **Do not let one finding close a topic**

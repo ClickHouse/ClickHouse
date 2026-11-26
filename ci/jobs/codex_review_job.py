@@ -146,10 +146,12 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- To reproduce a finding, download a CI binary as described in
+  `.claude/skills/review/references/binaries.md` into `./ci/tmp`, and run it there.
 - Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
   a nested local run replaces the state of this job in `ci/tmp` (the PR number, the job name), which
-  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. No ClickHouse binary
-  is available here either. Rely on the CI reports of the PR for the test results.
+  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. Rely on the CI reports
+  of the PR for the test results.
 """
 
 
