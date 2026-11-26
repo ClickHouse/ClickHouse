@@ -20,7 +20,7 @@ namespace
 {
 
 /// Bump on any layout change so data of another layout is refused, not misread.
-constexpr Int64 FORMAT_VERSION = 3;
+constexpr Int64 FORMAT_VERSION = 4;
 
 constexpr size_t MAX_WAREHOUSE_NAME_LENGTH = 64;
 constexpr auto HIDDEN = "[HIDDEN]";

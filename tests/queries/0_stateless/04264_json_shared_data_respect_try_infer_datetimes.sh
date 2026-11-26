@@ -8,12 +8,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -q "SET enable_json_type = 1"
-
 # Shared data path (max_dynamic_paths=0).
 # With try_infer_datetimes=0, datetime strings must be stored as String.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_shared"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_shared (data JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS enable_json_type=1"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_shared (data JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY tuple()"
 
 echo '{"data": {"ts": "2024-01-15 12:30:45"}}' | ${CLICKHOUSE_CLIENT} --input_format_try_infer_dates=1 --input_format_try_infer_datetimes=0 -q "INSERT INTO t_shared FORMAT JSONEachRow"
 
