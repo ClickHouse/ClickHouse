@@ -172,6 +172,8 @@ L&#39;expression est renvoyée sérialisée à partir de la requête analysée :
 
 Consultez les [fonctionnalités PromQL prises en charge](/fr/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) pour obtenir la liste des fonctions et des opérateurs d&#39;agrégation utilisés par l&#39;API HTTP, le dialecte `promql` et les fonctions de table.
 
+Les autres paramètres de requête sont appliqués comme paramètres ClickHouse, par exemple `max_execution_time=10`. Les points de terminaison de requêtes acceptent également certains paramètres propres à VictoriaMetrics et à Thanos : `nocache=1` définit `use_query_cache=0`, `partial_response=false` définit `skip_unavailable_shards=0`, tandis que `dedup=false`, `trace` et `round_digits` sont ignorés. En revanche, ils renvoient une erreur pour `extra_label` et `extra_filters`, car ClickHouse n&#39;applique pas ces filtres, ainsi que pour `dedup=true` et `partial_response=true`, car ClickHouse n&#39;implémente ni la déduplication ni les réponses partielles de Thanos.
+
 ### Grafana {#grafana}
 
 Configurez une source de données Prometheus avec une URL de base qui s&#39;arrête juste avant `/api/v1` :

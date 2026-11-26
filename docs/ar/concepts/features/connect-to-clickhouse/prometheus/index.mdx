@@ -172,6 +172,8 @@ curl --user default:<password> --get \
 
 راجع [ميزات PromQL المدعومة](/ar/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) للاطلاع على قائمة الدوال ومشغّلات التجميع المستخدمة في واجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالات الجداول.
 
+تُطبَّق معلمات الطلب الأخرى بوصفها إعدادات ClickHouse، مثل `max_execution_time=10`. كما تقبل نقاط نهاية الاستعلامات بعض معلمات VictoriaMetrics وThanos: إذ تضبط `nocache=1` القيمة `use_query_cache=0`، وتضبط `partial_response=false` القيمة `skip_unavailable_shards=0`، بينما تُتجاهَل `dedup=false` و`trace` و`round_digits`. وترفض نقاط النهاية هذه `extra_label` و`extra_filters` وتُرجع error، لأن ClickHouse لا يطبّق عوامل التصفية هذه، وكذلك `dedup=true` و`partial_response=true`، لأن ClickHouse لا يدعم إزالة التكرار أو الاستجابات الجزئية الخاصة بـ Thanos.
+
 ### Grafana {#grafana}
 
 هيّئ مصدر بيانات prometheus بحيث ينتهي عنوان URL الأساسي قبل المقطع `/api/v1`:

@@ -7,42 +7,42 @@
       "versionId": "626f994624b93eb9edf478df58264b0784feb8e8423734cc7c78955f5ed4b4f7",
       "translations": {
         "zh": {
-          "updatedAt": "2026-11-26T22:03:02.496Z",
+          "updatedAt": "2026-11-26T22:06:06.041Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "es": {
-          "updatedAt": "2026-11-26T22:03:02.147Z",
+          "updatedAt": "2026-11-26T22:06:05.680Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ja": {
-          "updatedAt": "2026-11-26T22:03:02.219Z",
+          "updatedAt": "2026-11-26T22:06:05.761Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "fr": {
-          "updatedAt": "2026-11-26T22:03:02.630Z",
+          "updatedAt": "2026-11-26T22:06:06.175Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ru": {
-          "updatedAt": "2026-11-26T22:03:02.429Z",
+          "updatedAt": "2026-11-26T22:06:05.972Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-26T22:03:02.362Z",
+          "updatedAt": "2026-11-26T22:06:05.904Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ar": {
-          "updatedAt": "2026-11-26T22:03:02.563Z",
+          "updatedAt": "2026-11-26T22:06:06.108Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ko": {
-          "updatedAt": "2026-11-26T22:03:02.295Z",
+          "updatedAt": "2026-11-26T22:06:05.834Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         }
@@ -152858,47 +152858,47 @@
     },
     {
       "fileId": "58692cb99cf1ad8cca54c0200f416522abf2d3b76fa46de53dff079866e7b175",
-      "versionId": "cec9340431e087dc731066bd758345b8327cf77f3b6df6751e547f569035ff94",
+      "versionId": "e7e55daccae4c065fa4f7b4f56685bdc857e7f7ab638345558f49454f937f035",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-11-25T16:59:39.767Z",
-          "fileName": "pt-BR/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "cdaf48634c1a9ef2db17baa14d2fcb5dd08be0b2b4095300a220cd9ff7383087"
-        },
-        "ja": {
-          "updatedAt": "2026-11-25T16:59:39.774Z",
-          "fileName": "ja/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "0a2b90acf04e5bc73aa5dfc8153a2a3787d04eaa212cbf30baff8fb08bcd068e"
-        },
-        "es": {
-          "updatedAt": "2026-11-25T16:59:39.796Z",
-          "fileName": "es/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "b4ec941de5d3027f472b99aed4949dcf955a68b94b293d06bb29188465e0217a"
-        },
-        "ar": {
-          "updatedAt": "2026-11-25T16:59:39.828Z",
-          "fileName": "ar/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "4749d78d0c7f8859aa31b7c6a825d762134e21cba8abb31bbe134dd2fc20e0de"
+        "ko": {
+          "updatedAt": "2026-11-26T22:06:09.724Z",
+          "fileName": "ko/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
+          "postProcessHash": "5750a64e36b1b894196425f535dee465ed1ffad9cdc6ead16d0bee957089bb95"
         },
         "fr": {
-          "updatedAt": "2026-11-25T16:59:39.866Z",
+          "updatedAt": "2026-11-26T22:06:09.725Z",
           "fileName": "fr/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "cb6bda64965915f5d0b9edb7e44612e6a03c1c98025af1a36695320cb9c8dd90"
+          "postProcessHash": "ca3798481ae2f11e7a79b2fcecae5dece13d27552b13df7a5e9d1c29a6d04b66"
         },
-        "zh": {
-          "updatedAt": "2026-11-25T16:59:39.870Z",
-          "fileName": "zh/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "24026e3c2f8e0de973066f3f4fc1dacd08a031693cb1595d64629414ade827a2"
+        "ja": {
+          "updatedAt": "2026-11-26T22:06:09.726Z",
+          "fileName": "ja/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
+          "postProcessHash": "737304af43ed7a08aa792cb956c68cec372925817b9e0fb7f2dbf45309266241"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T22:06:09.727Z",
+          "fileName": "pt-BR/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
+          "postProcessHash": "a868a74bcee8dc88d3e4d1d48e3591e069daaf5bfd51f1c6771f715973748f5d"
         },
         "ru": {
-          "updatedAt": "2026-11-25T16:59:39.875Z",
+          "updatedAt": "2026-11-26T22:06:09.727Z",
           "fileName": "ru/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "c2d427d988e1bf7b80bbe3f96a4b1799d905931ee1f670e221962938ba529501"
+          "postProcessHash": "4ff4ee7f94dbca95743d79df69fdce5d8515d210546b0cb89a400dad85b6e5db"
         },
-        "ko": {
-          "updatedAt": "2026-11-25T16:59:39.882Z",
-          "fileName": "ko/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
-          "postProcessHash": "4ee8352a93ad115543fc55dbf92fd89ccea53b1fd528424777cd4085a669a0d6"
+        "zh": {
+          "updatedAt": "2026-11-26T22:06:09.728Z",
+          "fileName": "zh/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
+          "postProcessHash": "7ffa973ff6880b2871179ba2cfa0b41f305449ce0581aea1828eb8d5c0ff1edb"
+        },
+        "es": {
+          "updatedAt": "2026-11-26T22:06:09.728Z",
+          "fileName": "es/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
+          "postProcessHash": "1c8d5f0fb622fce2abde75a0c211c5aa2a038ee6a511566ad2974790a057a9c6"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T22:06:09.729Z",
+          "fileName": "ar/concepts/features/connect-to-clickhouse/prometheus/index.mdx",
+          "postProcessHash": "beaf7c2c341f677b40a65ebe7055207eb6a365d6ff77d658079de0d83f2f8c54"
         }
       },
       "fileName": "concepts/features/connect-to-clickhouse/prometheus/index.mdx"

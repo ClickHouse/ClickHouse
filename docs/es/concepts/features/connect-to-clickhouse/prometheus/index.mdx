@@ -172,6 +172,8 @@ La expresión se devuelve serializada a partir de la consulta analizada sintáct
 
 Consulte las [funcionalidades de PromQL compatibles](/es/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) para ver la lista de funciones y operadores de agregación que utilizan la API HTTP, el dialecto `promql` y las funciones de tabla.
 
+Los demás parámetros de la solicitud se aplican como ajustes de ClickHouse; por ejemplo, `max_execution_time=10`. Los endpoints de consultas también aceptan algunos parámetros de VictoriaMetrics y Thanos: `nocache=1` establece `use_query_cache=0`, `partial_response=false` establece `skip_unavailable_shards=0`, y `dedup=false`, `trace` y `round_digits` se ignoran. En cambio, rechazan con un error `extra_label` y `extra_filters`, porque ClickHouse no aplica estos filtros, así como `dedup=true` y `partial_response=true`, porque ClickHouse no implementa la deduplicación ni las respuestas parciales de Thanos.
+
 ### Grafana {#grafana}
 
 Configure un origen de datos de Prometheus con una URL base que termine justo antes de `/api/v1`:

@@ -172,6 +172,8 @@ curl --user default:<password> --get \
 
 Список функций и операторов агрегации, используемых HTTP API, диалектом `promql` и табличными функциями, см. в разделе [Поддерживаемые возможности PromQL](/ru/reference/functions/table-functions/prometheusQueryRange#supported-promql-features).
 
+Остальные параметры запроса применяются как настройки ClickHouse, например `max_execution_time=10`. Эндпоинты запросов также принимают некоторые параметры VictoriaMetrics и Thanos: `nocache=1` устанавливает `use_query_cache=0`, `partial_response=false` устанавливает `skip_unavailable_shards=0`, а `dedup=false`, `trace` и `round_digits` игнорируются. Запросы с параметрами `extra_label` и `extra_filters` отклоняются с ошибкой, поскольку ClickHouse не применяет эти фильтры. То же относится к `dedup=true` и `partial_response=true`: в ClickHouse не реализованы дедупликация и частичные ответы Thanos.
+
 ### Grafana {#grafana}
 
 Настройте источник данных Prometheus, указав базовый URL без завершающего `/api/v1`:

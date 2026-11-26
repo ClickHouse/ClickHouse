@@ -172,6 +172,8 @@ curl --user default:<password> --get \
 
 有关 HTTP API、`promql` 方言以及表函数所支持的函数和聚合运算符列表，请参阅[支持的 PromQL 功能](/zh/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)。
 
+其他请求参数会作为 ClickHouse 设置应用，例如 `max_execution_time=10`。查询端点还支持 VictoriaMetrics 和 Thanos 的部分参数：`nocache=1` 会设置 `use_query_cache=0`，`partial_response=false` 会设置 `skip_unavailable_shards=0`，而 `dedup=false`、`trace` 和 `round_digits` 会被忽略。对于 `extra_label` 和 `extra_filters`，查询端点会直接返回错误，因为 ClickHouse 不会应用这些筛选条件；`dedup=true` 和 `partial_response=true` 同样会被拒绝，因为 ClickHouse 未实现 Thanos 的去重和部分响应功能。
+
 ### Grafana {#grafana}
 
 配置一个 Prometheus 数据源，并将其基准 URL 设置为 `/api/v1` 之前的部分：

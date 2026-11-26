@@ -172,6 +172,8 @@ curl --user default:<password> --get \
 
 HTTP API, `promql` 방언, 테이블 함수에서 사용하는 함수 및 집계 연산자 목록은 [지원되는 PromQL 기능](/ko/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)을 참고하십시오.
 
+그 밖의 요청 매개변수는 ClickHouse 설정으로 적용됩니다(예: `max_execution_time=10`). 쿼리 엔드포인트는 VictoriaMetrics 및 Thanos의 일부 매개변수도 지원합니다. `nocache=1`은 `use_query_cache=0`을 설정하고, `partial_response=false`는 `skip_unavailable_shards=0`을 설정하며, `dedup=false`, `trace`, `round_digits`는 무시됩니다. `extra_label` 및 `extra_filters`는 ClickHouse가 이러한 필터를 적용하지 않으므로 오류와 함께 거부되며, `dedup=true` 및 `partial_response=true`는 ClickHouse가 Thanos의 중복 제거나 부분 응답을 구현하지 않으므로 거부됩니다.
+
 ### Grafana {#grafana}
 
 기준 URL이 `/api/v1` 앞에서 끝나도록 Prometheus 데이터 소스를 구성하세요.

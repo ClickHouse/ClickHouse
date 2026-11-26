@@ -172,6 +172,8 @@ curl --user default:<password> --get \
 
 HTTP API、`promql` ダイアレクト、およびテーブル関数で使用される関数と集約演算子の一覧については、[サポートされている PromQL の機能](/ja/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)を参照してください。
 
+その他のリクエストパラメータは、ClickHouse 設定として適用されます (例: `max_execution_time=10`)。クエリエンドポイントは、VictoriaMetrics および Thanos の一部のパラメータも受け付けます。`nocache=1` を指定すると `use_query_cache=0` が、`partial_response=false` を指定すると `skip_unavailable_shards=0` が設定されます。また、`dedup=false`、`trace`、`round_digits` は無視されます。一方、`extra_label` と `extra_filters` は、ClickHouse がこれらのフィルタを適用しないため、エラーとして拒否されます。同様に、`dedup=true` と `partial_response=true` も、ClickHouse が Thanos の重複排除や部分レスポンスを実装していないため拒否されます。
+
 ### Grafana {#grafana}
 
 Prometheus データソースを設定し、ベースURLには `/api/v1` の手前までを指定します：
