@@ -2851,6 +2851,12 @@ void LogEntryStorage::ensureReadAheadPoolLocked()
         threads,
         2 * (readahead_settings.max_peer_readers + 1),
         /*shutdown_on_exception_=*/false); /// a failed fill must not disable read-ahead process-wide
+    /// A fill task parks inside its job until its reader is closed (see `fillTask`), so a worker occupies a
+    /// thread of the global pool for an unlimited time. It must take a slot of the global pool: otherwise the
+    /// parked workers together with the permanent threads could hold all the threads of the global pool while
+    /// slots are still left, and a thread that is queued there would never start. When there is no slot left,
+    /// `trySchedule` fails, and the caller falls back to a direct read (see `makeReaderLocked`).
+    readahead_pool->setJobsAreLongLived();
 }
 
 void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_point now)
