@@ -853,7 +853,7 @@ An empty plan, such as the one of a `QueryStart` row, renders as an empty string
         {
             "Render the plan of the last query that logged one",
             R"(
-SELECT count() FROM numbers(1000) WHERE number % 3 = 0 SETTINGS log_query_plans = 1;
+SELECT count() FROM numbers(1000) WHERE number % 3 = 0 SETTINGS log_query_plans = 1 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 
 SELECT planToASCII(query_plan)

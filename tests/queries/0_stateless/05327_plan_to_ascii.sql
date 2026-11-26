@@ -144,9 +144,10 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND position(query, '05327_logged') > 0;
 
--- A plan logged by a read that analysed a projection shows it.
+-- A plan logged by a read that analysed a projection shows it. With a granularity below the 1000 rows
+-- of the table, the projection would be read instead of only analysed, and leave no statistics.
 DROP TABLE IF EXISTS t_05327_projection;
-CREATE TABLE t_05327_projection (k UInt64, d UInt64, PROJECTION p_by_d (SELECT * ORDER BY d)) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_05327_projection (k UInt64, d UInt64, PROJECTION p_by_d (SELECT * ORDER BY d)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
 INSERT INTO t_05327_projection SELECT number, number % 10 FROM numbers(1000);
 SELECT count() FROM t_05327_projection WHERE d = 3 AND '05327_projection_read' != '' SETTINGS log_query_plans = 1, optimize_use_projections = 1, optimize_use_projection_filtering = 1 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
@@ -161,7 +162,9 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND position
 DROP TABLE t_05327_projection;
 
 -- The statistics lines of a logged join match those of `EXPLAIN ANALYZE` for the same query, with the
--- numbers masked: the groups and their metrics come out in the order of the analyzers.
+-- numbers masked: the groups and their metrics come out in the order of the analyzers. The join order
+-- optimization computes the estimates; without it they are `no stats` in `EXPLAIN ANALYZE` and left
+-- out of the logged plan.
 DROP TABLE IF EXISTS t_05327_left;
 DROP TABLE IF EXISTS t_05327_right;
 CREATE TABLE t_05327_left (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
@@ -170,7 +173,7 @@ INSERT INTO t_05327_left SELECT number, number FROM numbers(1000);
 INSERT INTO t_05327_right SELECT number * 3, number FROM numbers(100);
 
 SELECT count() FROM t_05327_left AS l JOIN t_05327_right AS r ON l.k = r.k WHERE '05327_join' != ''
-SETTINGS max_threads = 1, enable_join_runtime_filters = 0, log_query_plans = 1 FORMAT Null;
+SETTINGS max_threads = 1, enable_join_runtime_filters = 0, query_plan_optimize_join_order_limit = 10, log_query_plans = 1 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 
 -- The two runs are separate executions, and whether the right side collects its matches can differ
@@ -185,7 +188,7 @@ FROM
             arrayMap(l -> replaceRegexpOne(replaceRegexpAll(trimLeft(l, ' │├└─'), '[0-9]+(\\.[0-9]+)?(e-[0-9]+)?( (thousand|million|B|KB|MB))?', 'N'), '^(Right: .*?) · matched.*$', '\\1'),
                 (SELECT groupArray(explain) FROM (
                     EXPLAIN ANALYZE SELECT count() FROM t_05327_left AS l JOIN t_05327_right AS r ON l.k = r.k WHERE '05327_join' != ''
-                    SETTINGS max_threads = 1, enable_join_runtime_filters = 0)))) AS explained,
+                    SETTINGS max_threads = 1, enable_join_runtime_filters = 0, query_plan_optimize_join_order_limit = 10)))) AS explained,
         arrayFilter(l -> match(l, '^(Cost|Selectivity|Output rows|Left|Right|Hash table):'),
             arrayMap(l -> replaceRegexpOne(replaceRegexpAll(trimLeft(l, ' │├└─'), '[0-9]+(\\.[0-9]+)?(e-[0-9]+)?( (thousand|million|B|KB|MB))?', 'N'), '^(Right: .*?) · matched.*$', '\\1'),
                 splitByChar('\n', (
