@@ -1,3 +1,4 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
 -- Verify how query plans containing `Limit` and `Offset` steps interact with the automatic parallel
 -- replicas optimization.
 
