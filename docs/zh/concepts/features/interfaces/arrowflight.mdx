@@ -23,6 +23,10 @@ ClickHouse 支持 [Apache Arrow Flight](https://arrow.apache.org/docs/format/Fli
 * 通过 `PollFlightInfo` 增量获取结果。
 * 通过 `CancelFlightInfo` 取消查询。
 
+<Note>
+  在 ClickHouse Cloud 中，Arrow Flight 接口默认禁用，需要为您的服务启用相应的 Cloud 功能开关后才能使用。下文中的服务器配置示例适用于自管理 ClickHouse。
+</Note>
+
 ## 启用 Arrow Flight Server {#enabling-server}
 
 要启用 Arrow Flight Server，请将 `arrowflight_port` 设置添加到 ClickHouse server 配置中：

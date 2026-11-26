@@ -65,6 +65,8 @@ namespace DB::CoordinationSetting
 namespace ProfileEvents
 {
     extern const Event KeeperReadSnapshotStreamingSeeks;
+    extern const Event KeeperSnapshotApplys;
+    extern const Event KeeperSnapshotApplyMicroseconds;
 }
 
 namespace
@@ -1775,6 +1777,30 @@ TEST_P(CoordinationTest, ApplySnapshotReplacesCommittedState)
     EXPECT_EQ(committedNodeData(storage, "/committed"), "from_snapshot");
     EXPECT_FALSE(committedNodeExists(storage, "/old"));
     EXPECT_EQ(state_machine->last_commit_index(), 1);
+}
+
+TEST_P(CoordinationTest, ApplySnapshotMicroseconds)
+{
+    ChangelogDirTest snapshots("./snapshots");
+
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+
+    auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*snapshot_storage, "/committed", "from_snapshot");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage->zxid) = 1;
+
+    nuraft::snapshot snapshot(1, 0, std::make_shared<nuraft::cluster_config>());
+    auto snapshot_buf = makeSnapshotBufferFromStorage(*snapshot_storage, 1, ctx);
+    saveSingleObjectSnapshot(*state_machine, snapshot, snapshot_buf);
+
+    const auto applies_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplys];
+    const auto apply_us_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplyMicroseconds];
+    EXPECT_TRUE(state_machine->apply_snapshot(snapshot));
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplys], applies_before);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotApplyMicroseconds], apply_us_before);
 }
 
 TEST_P(CoordinationTest, ApplySnapshotPreservesPreprocessedTailAboveSnapshotIndex)

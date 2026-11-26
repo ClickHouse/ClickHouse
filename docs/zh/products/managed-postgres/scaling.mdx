@@ -7,32 +7,24 @@ keywords: ['Postgres 扩缩容', '垂直扩缩容', 'VM 类型', 'NVMe 扩缩容
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
-
-ClickHouse Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种采用 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
+ClickHouse Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种基于 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
 
 ## 实例类型与灵活性 {#instance-types}
 
 ClickHouse Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特征进行优化：
 
-* **提供 50 多种实例类型**，涵盖计算优化、内存优化和存储优化等配置
+* **提供 50 多种实例类型**，涵盖计算优化、内存优化和存储优化型等配置
 * 所有实例类型均配备 **基于 NVMe 的存储**，可提供稳定、高性能的磁盘 I/O
 * **独立资源扩缩容**：可根据工作负载选择合适的 CPU、内存和存储组合
 
 <div className="ch-image-md">
-
-<Frame>
-
-![实例类型](/images/managed-postgres/instance-types.webp)
-
-</Frame>
-
+  <Frame>
+    ![实例类型](/images/managed-postgres/instance-types.webp)
+  </Frame>
 </div>
 
 <div id="choosing-instance">
-  ### 选择合适的实例类型
+  ### 选择合适的实例类型 {#choosing-instance}
 </div>
 
 不同的工作负载适合不同的资源配置：
@@ -52,17 +44,13 @@ ClickHouse Managed Postgres 提供丰富的实例类型，可针对不同的工�
 当您更改实例类型时，ClickHouse Managed Postgres 会执行垂直扩缩容操作，创建新的基础设施资源，并在将停机时间降到最低的情况下迁移您的数据库。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![扩缩容设置](/images/managed-postgres/scaling-settings.webp)
-
-</Frame>
-
+  <Frame>
+    ![扩缩容设置](/images/managed-postgres/scaling-settings.webp)
+  </Frame>
 </div>
 
 <div id="scaling-process">
-  ### 扩缩容流程
+  ### 扩缩容流程 {#scaling-process}
 </div>
 
 扩缩容工作流会基于备份创建一个新的备用实例，并执行受控故障转移：
@@ -85,7 +73,7 @@ ClickHouse Managed Postgres 提供丰富的实例类型，可针对不同的工�
 6. **旧实例退役**：原始实例会在故障转移完成后退役
 
 <div id="scaling-duration">
-  ### 扩缩容耗时
+  ### 扩缩容耗时 {#scaling-duration}
 </div>
 
 扩缩容所需的总时间主要取决于数据库的大小，以及需要从备份中重放的 WAL 数据量：
@@ -125,7 +113,7 @@ WAL-G 提供：
 4. 确认更改后，点击“Apply changes”
 
 <div id="scaling-strategies">
-  ## 扩缩容策略
+  ## 扩缩容策略 {#scaling-strategies}
 </div>
 
 ### 垂直扩缩容 {#vertical-scaling}
@@ -137,7 +125,7 @@ WAL-G 提供：
 * **成本效率**：只为所需资源付费，避免资源过度配置
 
 <div id="read-replicas">
-  ### 通过只读副本进行横向扩缩容
+  ### 通过只读副本进行横向扩缩容 {#read-replicas}
 </div>
 
 对于读密集型工作负载，可考虑使用[只读副本](/zh/products/managed-postgres/read-replicas)来横向扩展读取能力：
@@ -149,7 +137,7 @@ WAL-G 提供：
 这种方式非常适合读写比高的应用，例如报表仪表盘、分析查询或读密集型 API 端点。
 
 <div id="cdc-scaling">
-  ### ClickHouse 集成的 CDC 扩缩容
+  ### ClickHouse 集成的 CDC 扩缩容 {#cdc-scaling}
 </div>
 
 如果你使用 [ClickPipes](/zh/products/managed-postgres/sync-to-clickhouse/clickpipes) 将数据复制到 ClickHouse，则可以独立调整 CDC (变更数据捕获) 管道的扩缩容：

@@ -263,6 +263,10 @@
     M(KeeperReadRequestQueueLockWaitMicroseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
+    M(KeeperLogStoreAppend) \
+    M(KeeperLogStoreAppendMicroseconds) \
+    M(KeeperSnapshotWriteMicroseconds) \
+    M(KeeperSnapshotApplyMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
     M(KeeperBatchMaxReadCount) \
