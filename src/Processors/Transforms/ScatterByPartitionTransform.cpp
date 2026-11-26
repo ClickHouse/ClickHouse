@@ -1,6 +1,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/castColumn.h>
@@ -305,7 +306,7 @@ void ScatterByPartitionTransform::generateOutputChunks()
             column = castColumn({column, hash_input_types[i], ""}, cast_type);
         if (!canonical_float_keys.empty() && canonical_float_keys[i])
             column = canonicalizeFloatKey(std::move(column));
-        column->computeHashInto(0, num_rows, hash.data(), false);
+        replaceNegativeZeros(column)->computeHashInto(0, num_rows, hash.data(), false);
     }
 
     selector.resize(num_rows);

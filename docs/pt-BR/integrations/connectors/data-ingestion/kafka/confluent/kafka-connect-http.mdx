@@ -58,13 +58,9 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
     Crie um tópico do Kafka e uma instância do conector HTTP Sink:
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Interface do Confluent Cloud mostrando como criar um conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Interface do Confluent Cloud mostrando como criar um conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
+      </Frame>
     </div>
 
     <br />
@@ -83,13 +79,9 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Interface do Confluent Cloud mostrando as configurações de autenticação do conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Interface do Confluent Cloud mostrando as configurações de autenticação do conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
+      </Frame>
     </div>
 
     <br />
@@ -105,13 +97,9 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
         * `Maximum Reties` - o padrão (10) é adequado, mas fique à vontade para ajustar se quiser tentativas de repetição mais robustas.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Interface do Confluent Cloud mostrando opções avançadas de configuração do conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Interface do Confluent Cloud mostrando opções avançadas de configuração do conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -119,13 +107,9 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
     Crie uma mensagem em um tópico configurado pelo seu HTTP Sink
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Interface do Confluent Cloud mostrando como criar uma mensagem de teste em um tópico do Kafka](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Interface do Confluent Cloud mostrando como criar uma mensagem de teste em um tópico do Kafka](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
+      </Frame>
     </div>
 
     <br />
@@ -135,11 +119,11 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
 </Steps>
 
 <div id="troubleshooting">
-  ### Solução de problemas
+  ### Solução de problemas {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### O HTTP Sink não agrupa mensagens em lote
+  #### O HTTP Sink não agrupa mensagens em lote {#http-sink-doesnt-batch-messages}
 </div>
 
 Da [documentação do Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -150,11 +134,11 @@ Da [documentação do Sink](https://docs.confluent.io/kafka-connectors/http/curr
 2. Ao adicionar parâmetros à URL da API HTTP, cada registro pode resultar em uma URL exclusiva. Por esse motivo, o agrupamento em lote é desativado ao usar parâmetros de URL adicionais.
 
 <div id="400-bad-request">
-  #### 400 requisição inválida
+  #### 400 requisição inválida {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 Se o HTTP Sink falhar e exibir a seguinte mensagem ao inserir um objeto JSON em uma coluna `String`:
@@ -166,7 +150,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 Defina a configuração `input_format_json_read_objects_as_strings=1` na URL como uma string codificada `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### Carregue o conjunto de dados do GitHub (opcional)
+  ### Carregue o conjunto de dados do GitHub (opcional) {#load-the-github-dataset-optional}
 </div>
 
 Observe que este exemplo preserva os campos `Array` do conjunto de dados do GitHub. Pressupomos que, nos exemplos, você tenha um tópico `github` vazio e use o [kcat](https://github.com/edenhill/kcat) para inserir mensagens no Kafka.
