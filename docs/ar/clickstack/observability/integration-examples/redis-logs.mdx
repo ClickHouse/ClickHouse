@@ -1,0 +1,348 @@
+---
+slug: /clickstack/observability/integration-examples/redis-logs
+title: 'مراقبة سجلات Redis باستخدام ClickHouse Observability'
+sidebarTitle: 'سجلات Redis'
+description: 'اجمع سجلات خادم Redis وابحث فيها واعرضها مرئيًا في ClickHouse Observability باستخدام مُجمِّع OpenTelemetry.'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+اجمع سجلات خادم Redis باستخدام مُجمِّع OpenTelemetry وأرسلها إلى ClickHouse Observability. ويمكنك استخدام [مجموعة البيانات التجريبية](#demo-dataset) لتجربة التكامل دون الحاجة إلى تثبيت Redis.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* Docker لتشغيل أمثلة جامع البيانات، أو نشر قائم لـ OpenTelemetry Collector Contrib
+* لاستخدام سجلاتك الخاصة: تثبيت قائم لـ Redis مع إمكانية الوصول إلى ملفات السجل الخاصة به
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="خدمة في المرحلة التجريبية" />
+
+    افتح ClickHouse Observability وانتقل إلى **إعدادات الفريق ← Data ← بيانات القياس عن بُعد المُدارة**. انسخ نقطة نهاية OTLP عبر HTTP ومفتاح API الخاصين بك. يمكنك استخدام **نسخ بيانات الاتصال** لنسخ التهيئة، أو **Reveal key** لإظهار المفتاح المحجوب.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات الاتصال في بيانات القياس عن بُعد المُدارة](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    لاستخدام أمثلة مُصدِّر OTLP أدناه، عيّن المتغيرات التالية في الطرفية التي ستشغّل فيها جامع البيانات:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    استبدل العناصر النائبة بنقطة النهاية الفعلية لخدمتك، بما في ذلك المنفذ، وبمفتاح API الخاص بها. استخدم نقطة نهاية HTTP الأساسية دون اللاحقة `/v1/logs`؛ إذ يُلحق المُصدِّر مسار الإشارة تلقائيًا.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP عبر HTTP الخاصة بجامع البيانات لديك، والتي يمكن الوصول إليها (مثل `http://YOUR_COLLECTOR_HOST:4318`)، إلى جانب إعدادات المصادقة. إذا كان جامع البيانات لا يتطلب المصادقة، فاحذف كتلة `headers` الخاصة بالمُصدِّر من التهيئات أدناه. راجع [دليل البدء للإصدار المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed) للاطلاع على إرشادات الإعداد.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+يجب أن يكون الوصول إلى نقطة النهاية ممكنًا من حاوية جامع البيانات. إذا كان جامع البيانات الوجهة يعمل على هذا الحاسوب، فاستخدم `http://host.docker.internal:4318`. تتضمن أوامر Docker أدناه مطابقة المضيف.
+
+## التكامل مع نسخة Redis قائمة {#existing-redis}
+
+<Steps>
+  <Step title="تحقّق من إعدادات تسجيل السجلات في Redis" id="verify-redis">
+    تحقّق من الموقع الذي يكتب فيه Redis سجلاته:
+
+    ```bash
+    redis-cli CONFIG GET logfile
+    ```
+
+    المواقع الشائعة لملفات سجل Redis:
+
+    * **Linux (apt/yum)**: `/var/log/redis/redis-server.log`
+    * **macOS (Homebrew)**: `/usr/local/var/log/redis.log` أو `/opt/homebrew/var/log/redis.log`
+    * **Docker**: غالبًا ما تُوجَّه السجلات إلى stdout، ولكن يمكن تهيئته للكتابة إلى `/data/redis.log`
+
+    إذا كان Redis يوجّه سجلاته إلى stdout، فهيّئه للكتابة إلى ملف بتعديل `redis.conf`:
+
+    ```bash
+    # Log to file instead of stdout
+    logfile /var/log/redis/redis-server.log
+
+    # Set log level (options: debug, verbose, notice, warning)
+    loglevel notice
+    ```
+
+    تأكد من وجود دليل السجلات ومن أن Redis يملك صلاحية الكتابة فيه. بعد تعديل التهيئة، أعد تشغيل Redis باستخدام اسم الخدمة الخاص بتثبيتك:
+
+    ```bash
+    # For systemd
+    sudo systemctl restart redis
+
+    # For Docker
+    docker restart <redis-container>
+    ```
+  </Step>
+
+  <Step title="تهيئة جامع البيانات" id="configure-collector">
+    احفظ ما يلي في ملف باسم `redis-monitoring.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis/redis-server.log
+        start_at: end
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '02 Jan 2006 15:04:05.000'
+            location: UTC
+          - type: add
+            field: attributes.source
+            value: redis
+          - type: add
+            field: resource["service.name"]
+            value: redis-service
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/redis:
+        error_mode: propagate
+        log_statements:
+          - set(log.severity_text, "debug") where log.attributes["log_level"] == "." or log.attributes["log_level"] == "-"
+          - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+          - set(log.severity_text, "info") where log.attributes["log_level"] == "*"
+          - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+          - set(log.severity_text, "warn") where log.attributes["log_level"] == "#"
+          - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors: [memory_limiter, transform/redis, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    تحلّل هذه التهيئة معرّف العملية، والدور، والطابع الزمني، ومستوى السجل، والرسالة. كما تضبط `service.name` على القيمة `redis-service`، وتربط مستويات سجل Redis بالحقل `SeverityText` لعرضها في لوحة المعلومات. إذ تُربط رسائل الإشعار في Redis (`*`) بالقيمة `info`، والتحذيرات (`#`) بالقيمة `warn`، ورسائل تصحيح الأخطاء والرسائل المفصّلة (`.` و`-`) بالقيمة `debug`.
+
+    لا تتضمن الطوابع الزمنية في سجلات Redis المنطقة الزمنية. لذا اضبط `location` على المنطقة الزمنية لخادم Redis لديك، مثل `America/Chicago`، علمًا بأن المثال يستخدم `UTC`. ويُحتفظ بالطوابع الزمنية الأصلية وبمتن السجل كما هي. ومع الإعداد `start_at: end`، لا تُقرأ إلا العناصر الجديدة عندما يفتح جامع البيانات الملف لأول مرة.
+  </Step>
+
+  <Step title="شغّل جامع البيانات" id="run-collector">
+    اضبط [متغيرات الاتصال](#connection-details)، ثم نفّذ الأمر من الدليل الذي يحتوي على `redis-monitoring.yaml`. عدّل مسار دليل السجلات على المضيف واسم الملف في الخيار `include` الخاص بالمستقبِل بما يتوافق مع بيئة التثبيت لديك:
+
+    ```bash
+    docker run --rm --name redis-monitoring-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/redis:/var/log/redis:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    أبقِ هذه الطرفية مفتوحة، ثم أنشئ نشاطًا في Redis يكتب إدخالات سجل جديدة. يجب أن يتمكن جامع البيانات من قراءة الملفات المربوطة.
+  </Step>
+
+  <Step title="تحقق من السجلات" id="verify-logs">
+    افتح **بحث**، واختر **Logs**، ثم صفِّ النتائج حسب `ServiceName:redis-service`. حدِّد نطاقًا زمنيًا يشمل سجلاتك الجديدة. وسِّع أحد الإدخالات لفحص `SeverityText` والحقول المُحلَّلة ضمن `LogAttributes`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![سجلات Redis في واجهة البحث](/images/clickstack/observability-redis-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## مجموعة بيانات تجريبية {#demo-dataset}
+
+تتضمن العينة 10,000 إدخال من سجل خادم Redis. اضبط [متغيرات الاتصال](#connection-details) قبل البدء.
+
+<Steps>
+  <Step title="نزّل مجموعة البيانات النموذجية" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/redis/redis-server.log
+    ```
+  </Step>
+
+  <Step title="تهيئة جامع بيانات العرض التوضيحي" id="configure-demo">
+    احفظ هذا المحتوى باسم `redis-demo.yaml` في دليل التنزيل:
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis-demo/redis-server.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '02 Jan 2006 15:04:05.000'
+            location: UTC
+          - type: add
+            field: attributes.source
+            value: redis-demo
+          - type: add
+            field: resource["service.name"]
+            value: redis-demo
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/redis:
+        error_mode: propagate
+        log_statements:
+          - set(log.severity_text, "debug") where log.attributes["log_level"] == "." or log.attributes["log_level"] == "-"
+          - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+          - set(log.severity_text, "info") where log.attributes["log_level"] == "*"
+          - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+          - set(log.severity_text, "warn") where log.attributes["log_level"] == "#"
+          - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - >-
+            set(log.time,
+              Now() - Duration("2m") -
+              (Time("2025-10-28T14:59:22Z", "%Y-%m-%dT%H:%M:%SZ") - log.time)
+            )
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors: [memory_limiter, transform/redis, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      يُزيح المعالج `transform/demo_timestamps`، المخصص للعرض التوضيحي فقط، العينة لتقع تقريبًا ضمن الساعات الـ 24 الماضية، بحيث تنتهي قبل دقيقتين من الإدخال، مع الحفاظ على نمط حركة المرور فيها. ويبقى attribute الطابع الزمني الأصلي ومتن السجل دون تغيير. احذف هذا المعالج عند التعامل مع سجلات Redis الخاصة بك.
+    </Note>
+  </Step>
+
+  <Step title="شغّل جامع بيانات العرض التوضيحي" id="run-demo">
+    من الدليل الذي يحتوي على الملفين `redis-server.log` و`redis-demo.yaml`، شغِّل الأمر التالي:
+
+    ```bash
+    docker run --rm --name redis-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/redis-server.log:/var/log/redis-demo/redis-server.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    اترك الطرفية مفتوحة أثناء التحقق من إدخال البيانات، ثم أوقف جامع البيانات باستخدام **Ctrl+C** عند الانتهاء. يؤدي تشغيل العرض التوضيحي مرة أخرى إلى إعادة إدخال بيانات العينة بطوابع زمنية محدَّثة، لأن هذا المثال لا يحفظ إزاحات الملفات بشكل دائم.
+  </Step>
+
+  <Step title="تحقق من سجلات العرض التوضيحي" id="verify-demo-logs">
+    افتح صفحة **بحث**، واختر **Logs**، وطبّق عامل التصفية `ServiceName:redis-demo`، ثم اختر **آخر يومين**. وسّع أحد الإدخالات في السجل لفحص السمات المُحلَّلة ومستوى الخطورة.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![مثال على سجلات Redis في واجهة البحث](/images/clickstack/observability-redis-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## لوحات المعلومات والتصور المرئي {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json" download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">تنزيل تهيئة لوحة المعلومات</TrackedLink>} id="download-dashboard" />
+
+  <Step title="استيراد لوحة المعلومات" id="import-dashboard">
+    1. افتح **لوحات المعلومات** وانقر على **Import** في الزاوية العلوية اليمنى.
+    2. حمّل الملف `redis-logs-dashboard.json`.
+    3. اربط الرسوم البيانية بمصدر **Logs** الخاص بك، ثم انقر على **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة لوحات المعلومات مع إبراز زر Import](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="عرض لوحة المعلومات" id="view-dashboard">
+    طبّق عامل التصفية `ServiceName:redis-demo` لعرض بيانات العينة، أو `ServiceName:redis-service` لعرض سجلاتك. وفي حالة العرض التوضيحي، اختر **آخر يومين**.
+
+    تعرض لوحة المعلومات حجم بيانات السجلات ومستوى خطورتها. ويُحصي مخطط **Request rate** فيها إدخالات السجل، لا أوامر Redis.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![مثال على لوحة معلومات سجلات Redis](/images/clickstack/observability-redis-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### تعذّر بدء تشغيل جامع البيانات {#collector-fails-to-start}
+
+راجع طرفية جامع البيانات بحثًا عن أخطاء في التهيئة. وتحقّق من ربط ملف YAML في المسار الموضّح في التوثيق، ومن تعيين نقطة النهاية وأي متغيرات مصادقة مطلوبة في الطرفية التي تشغّل منها Docker.
+
+### لا تظهر أي سجلات {#no-logs}
+
+* افحص مخرجات جامع البيانات بحثًا عن أخطاء في المصادقة أو أخطاء التصدير، وتحقق من بيانات الاتصال.
+* شغّل `redis-cli CONFIG GET logfile` للتأكد من أن Redis يكتب السجلات في ملف. تأكد كذلك من أن جامع البيانات يستطيع قراءة هذا الملف، وأن المسار المربوط يطابق مسار `include` في إعدادات المستقبِل.
+* عند ضبط `start_at: end`، يجب إنشاء إدخالات سجل جديدة بعد تشغيل جامع البيانات.
+* تحقق من مصدر **Logs** وعامل تصفية اسم الخدمة والنطاق الزمني. وفي حالة العرض التوضيحي، أضف `transform/demo_timestamps` إلى مسار التنفيذ واختر **آخر يومين**.
+
+### عدم تحليل السجلات بشكل صحيح {#logs-not-parsing}
+
+يتوقع المستقبِل الصيغة القياسية لسجلات Redis، وهي `pid:role timestamp level message`. افحص ملف السجل لديك، وعدّل التعبير النمطي إذا كانت صيغة سجلاتك مختلفة. واضبط قيمة `location` في المحلل النحوي للوقت على المنطقة الزمنية لخادم Redis.
+
+## الخطوات التالية {#next-steps}
+
+* اضبط [التنبيهات](/ar/clickstack/observability/features/alerts) لرصد التحذيرات أو أي حجم غير معتاد في بيانات السجلات.
+* أنشئ المزيد من [لوحات المعلومات](/ar/clickstack/observability/features/dashboards/overview).
+* راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry) للاطلاع على إرشادات تهيئة جامع البيانات.

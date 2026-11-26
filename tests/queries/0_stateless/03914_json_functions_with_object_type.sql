@@ -1,5 +1,4 @@
 -- Tests for JSONExtract* functions with native JSON type input.
-SET allow_experimental_json_type = 1;
 
 -- ==========================================================================
 -- Part 1: Runtime execution tests (JSONExtract* with JSON type)

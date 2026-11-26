@@ -18,24 +18,18 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 Он напрямую подключается к ClickHouse, поэтому вы можете задавать вопросы о данных на естественном языке, изучать данные, проверять гипотезы и находить ответы на вопросы «почему» — прямо в Slack, Microsoft Teams, ChatGPT или во встроенном веб-интерфейсе.
 
 <div id="pre-requisites">
-  ## Предварительные требования
+  ## Предварительные требования {#pre-requisites}
 </div>
 
 * База данных ClickHouse — самоуправляемая или в [ClickHouse Cloud](https://clickhouse.com/cloud)
 * Учетная запись [Dot](https://www.getdot.ai/)  
 
-<div id="connecting-dot-to-clickhouse">
-  ## Подключение Dot к ClickHouse
-</div>
+## Подключение Dot к ClickHouse {#connecting-dot-to-clickhouse}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Настройка подключения ClickHouse в Dot (светлый режим)](/images/integrations/data-visualization/dot_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Настройка подключения ClickHouse в Dot (светлый режим)](/images/integrations/data-visualization/dot_01.webp)
+  </Frame>
 </div>
 
 <br />
@@ -50,19 +44,15 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 4. Нажмите **Connect**.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Подключение ClickHouse](/images/integrations/data-visualization/dot_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![Подключение ClickHouse](/images/integrations/data-visualization/dot_02.webp)
+  </Frame>
 </div>
 
 Dot использует **query-pushdown**: ClickHouse выполняет ресурсоемкие вычисления в большом масштабе, а Dot обеспечивает точные и надежные ответы.
 
 <div id="highlights">
-  ## Основные возможности
+  ## Основные возможности {#highlights}
 </div>
 
 Dot делает данные доступными в формате диалога:
@@ -74,7 +64,7 @@ Dot делает данные доступными в формате диало�
 * **Масштабируемость**: Благодаря query-pushdown Dot сочетает свой интеллект со скоростью ClickHouse.
 
 <div id="security">
-  ## Безопасность и управление
+  ## Безопасность и управление {#security}
 </div>
 
 Dot готов к использованию в корпоративной среде:
@@ -86,7 +76,7 @@ Dot готов к использованию в корпоративной ср�
 * **Соответствие требованиям**: Сертифицировано по SOC 2 Type I
 
 <div id="additional-resources">
-  ## Дополнительные ресурсы
+  ## Дополнительные ресурсы {#additional-resources}
 </div>
 
 * Сайт Dot: [https://www.getdot.ai/](https://www.getdot.ai/)
