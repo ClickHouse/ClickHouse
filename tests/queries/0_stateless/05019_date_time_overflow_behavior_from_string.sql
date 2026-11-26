@@ -44,8 +44,8 @@ SELECT * FROM format(TSV, 'v DateTime', '2106-02-07 06:28:15');
 
 SELECT 'throw, tentative parsers must not accept a clamped value';
 SELECT v, variantElement(v, 'Date') AS d, variantElement(v, 'String') AS s
-FROM format(CSV, 'v Variant(Date, String)', '2150-12-31') SETTINGS allow_experimental_variant_type = 1;
-SELECT v FROM format(CSV, 'v Variant(Date, String)', '2149-06-06') SETTINGS allow_experimental_variant_type = 1;
+FROM format(CSV, 'v Variant(Date, String)', '2150-12-31');
+SELECT v FROM format(CSV, 'v Variant(Date, String)', '2149-06-06');
 
 SELECT 'throw, a digit-only timestamp is text too';
 SELECT toDateTime('4294967296'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
@@ -63,7 +63,7 @@ SELECT * FROM format(CSV, 'v Date32', '2000-13-01'); -- { serverError CANNOT_PAR
 SELECT * FROM format(TSV, 'v Date32', '2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
 SELECT * FROM format(JSONEachRow, 'v Date32', '{"v":"2000-13-01"}'); -- { serverError CANNOT_PARSE_DATE }
 SELECT toDate32OrNull('2000-13-01'), toDate32('2299-12-31'), toDate32('1900-01-01');
-SELECT v FROM format(CSV, 'v Variant(Date32, String)', '2000-13-01') SETTINGS allow_experimental_variant_type = 1;
+SELECT v FROM format(CSV, 'v Variant(Date32, String)', '2000-13-01');
 
 SELECT 'throw, an unquoted numeric token is checked too';
 SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":4294967296}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }

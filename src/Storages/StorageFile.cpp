@@ -1971,6 +1971,15 @@ Chunk StorageFileSource::generate()
 {
     const bool is_one_format = Poco::toLower(storage->format_name) == "one";
 
+    /// Fills `_size` and `_time` of the current file.
+    auto stat_current_file = [&]
+    {
+        struct stat file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+        current_file_size = file_stat.st_size;
+        current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+        return file_stat;
+    };
+
     while (!finished_generate)
     {
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -2143,7 +2152,16 @@ Chunk StorageFileSource::generate()
                 /// Special case for distributed format. Defaults are not needed here.
                 if (storage->format_name == "Distributed")
                 {
-                    pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    stat_current_file();
+
+                    QueryPipelineBuilder builder;
+                    builder.init(Pipe(std::make_shared<DistributedAsyncInsertSource>(current_path)));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                    });
+
+                    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                     pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
@@ -2153,10 +2171,7 @@ Chunk StorageFileSource::generate()
             /// The source of a split file keeps its buffer between buckets but checks the file version for each.
             if (!read_buf || split_file)
             {
-                struct stat file_stat{};
-                file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                current_file_size = file_stat.st_size;
-                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+                struct stat file_stat = stat_current_file();
 
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same

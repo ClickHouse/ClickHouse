@@ -30,7 +30,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 ## page_cache_policy {#page_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша страниц в пространстве пользователя. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Политика вытеснения для кэша страниц в пространстве пользователя. Возможные значения: `LRU`, `SLRU`, `SIEVE`. Ёмкость кэша задаётся настройкой [`page_cache_max_size`](/ru/reference/settings/server-settings/settings/page-cache#page_cache_max_size), а размер защищённой очереди при политике SLRU — настройкой [`page_cache_size_ratio`](/ru/reference/settings/server-settings/settings/page-cache#page_cache_size_ratio).
 
 ## page_cache_shards {#page_cache_shards}
 
