@@ -194,9 +194,19 @@ struct QueryState
         external_table_pipelines.clear();
     }
 
-    /// Set while external tables are read with a time limit: the time since the start of the query (see `watch`),
-    /// in microseconds, by which it has to be over. `receivePacketsExpectData` does not wait for the client past it.
-    std::optional<UInt64> external_tables_time_limit_us;
+    /// Set while external tables are read with a time limit, which is `max_execution_time`.
+    /// `receivePacketsExpectData` does not wait for the client past it.
+    struct ExternalTablesTimeLimit
+    {
+        /// Since the start of reading, and not since the start of the query (see `watch`): the query can wait for admission
+        /// (for a slot of its workload, or in the queue of `max_concurrent_queries`) before its external tables are read,
+        /// and `max_execution_time` does not include that wait, see `QueryStatus::execution_watch`.
+        Stopwatch watch;
+        UInt64 limit_us;
+
+        explicit ExternalTablesTimeLimit(UInt64 limit_us_) : limit_us(limit_us_) {}
+    };
+    std::optional<ExternalTablesTimeLimit> external_tables_time_limit;
 
     ~QueryState()
     {

@@ -1453,11 +1453,11 @@ bool TCPHandler::receivePacketsExpectDataConcurrentWithExecutor(QueryState & sta
     }
 }
 
-/// The time left for reading external tables, in microseconds. See `QueryState::external_tables_time_limit_us`.
+/// The time left for reading external tables, in microseconds. See `QueryState::external_tables_time_limit`.
 static UInt64 getTimeLeftForExternalTablesOrThrow(const QueryState & state)
 {
-    const UInt64 limit_us = *state.external_tables_time_limit_us;
-    const UInt64 elapsed_us = state.watch.elapsedMicroseconds();
+    const UInt64 limit_us = state.external_tables_time_limit->limit_us;
+    const UInt64 elapsed_us = state.external_tables_time_limit->watch.elapsedMicroseconds();
     if (elapsed_us >= limit_us)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
             "Timeout exceeded while reading external table data. Spent {} ms, timeout is {} ms.",
@@ -1484,14 +1484,14 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             /// The time limit of external tables is checked before every packet, whatever its type,
             /// and the wait for the packet does not go past it.
             UInt64 current_timeout_us = timeout_us;
-            if (state.external_tables_time_limit_us)
+            if (state.external_tables_time_limit)
                 current_timeout_us = std::min(current_timeout_us, getTimeLeftForExternalTablesOrThrow(state));
 
             if (in->poll(current_timeout_us))
                 break;
 
             /// If both this limit and `receive_timeout` are over, this one is reported.
-            if (state.external_tables_time_limit_us)
+            if (state.external_tables_time_limit)
                 getTimeLeftForExternalTablesOrThrow(state);
 
             size_t elapsed = size_t(watch.elapsedSeconds());
@@ -1503,7 +1503,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             }
         }
 
-        if (state.external_tables_time_limit_us)
+        if (state.external_tables_time_limit)
         {
             /// Reads inside the packet and writes until the next packet do not wait past the time limit either.
             /// Not less than a millisecond, the granularity that socket timeouts are safe to rely on.
@@ -1599,7 +1599,7 @@ void TCPHandler::readTemporaryTables(QueryState & state)
 
     /// Restores the timeouts of the socket when the external tables are read, so they are limited only here.
     std::optional<TimeoutSetter> timeout_restorer;
-    SCOPE_EXIT({ state.external_tables_time_limit_us.reset(); });
+    SCOPE_EXIT({ state.external_tables_time_limit.reset(); });
 
     /// Reading external tables cannot be stopped halfway with a partial result,
     /// so with `timeout_overflow_mode = 'break'` it is not limited, like before.
@@ -1607,7 +1607,10 @@ void TCPHandler::readTemporaryTables(QueryState & state)
     {
         /// `receivePacketsExpectData` enforces it: before every packet, in the wait for a packet,
         /// and with the timeouts of the socket, which it sets to the time left, inside a packet.
-        state.external_tables_time_limit_us = static_cast<UInt64>(max_execution_time.totalMicroseconds());
+        /// The time is counted from here. The query has been admitted by now (external tables are read
+        /// from inside of `executeQuery`, after the query is put to the process list), so, like for
+        /// `max_execution_time` itself, the wait for admission is not part of it.
+        state.external_tables_time_limit.emplace(static_cast<UInt64>(max_execution_time.totalMicroseconds()));
         timeout_restorer.emplace(socket(), send_timeout, receive_timeout);
     }
 
