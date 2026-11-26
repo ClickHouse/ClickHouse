@@ -64,6 +64,11 @@ public:
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
     bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }
+    std::optional<NameSet> supportedPrewhereColumnsForSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override
+    {
+        auto nested = getNested();
+        return nested->supportedPrewhereColumnsForSnapshot(getNestedSnapshot(nested, storage_snapshot, context), context);
+    }
     bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getNested()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }

@@ -187,6 +187,15 @@ public:
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
     virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
 
+    /// Same, for a read of `storage_snapshot`. A wrapper whose contract depends on the schema of the table it
+    /// reads overrides it: a data lake pins the table state selected for the query (e.g. by `iceberg_snapshot_id`)
+    /// in the metadata of the snapshot, the schema belongs to that state, and two `SELECT`s of one query can pin
+    /// different states, so the current metadata of the storage may describe another read.
+    virtual std::optional<NameSet> supportedPrewhereColumnsForSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*context*/) const
+    {
+        return supportedPrewhereColumns();
+    }
+
     /// Whether a subcolumn is admitted into PREWHERE whenever `supportedPrewhereColumns` admits
     /// its origin column. Subcolumn sets are open-ended (JSON paths), so the contract enumerates
     /// top-level names only; this tells whether the storage's PREWHERE machinery resolves a

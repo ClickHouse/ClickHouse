@@ -288,8 +288,9 @@ private:
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    explicit CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_)
+    CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_, const ContextPtr & context_)
         : query_node(query_node_)
+        , context(context_)
     {}
 
     [[nodiscard]] const QueryTreeNodePtr & getPrewhereTableExpression() const
@@ -340,7 +341,9 @@ public:
             table_storage_snapshot
                 = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
             table_expression = std::move(column_source);
-            table_supported_prewhere_columns = storage->supportedPrewhereColumns();
+            /// For the table state that this table expression reads, which may differ from the current one.
+            table_supported_prewhere_columns
+                = storage->supportedPrewhereColumnsForSnapshot(table_storage_snapshot, context);
             table_supported_prewhere_columns_include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
         }
 
@@ -368,6 +371,7 @@ public:
 
 private:
     QueryTreeNodePtr query_node;
+    ContextPtr context;
     QueryTreeNodePtr table_expression;
     StorageSnapshotPtr table_storage_snapshot;
     std::optional<NameSet> table_supported_prewhere_columns;
@@ -441,7 +445,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
     if (query_node_typed.hasPrewhere())
     {
-        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node);
+        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node, planner_context->getQueryContext());
         collect_prewhere_table_expression_visitor.visit(query_node_typed.getPrewhere());
 
         auto prewhere_table_expression = collect_prewhere_table_expression_visitor.getPrewhereTableExpression();

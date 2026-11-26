@@ -2497,7 +2497,7 @@ FilterDAGInfoPtr ReadFromMerge::RowPolicyData::makeRowLevelFilter(
 {
     const auto & columns = storage_metadata_snapshot->getColumns();
     const auto required_columns = filter_actions->getRequiredColumns();
-    if (!canPushDownRowPolicyFilter(storage, columns, required_columns))
+    if (!canPushDownRowPolicyFilter(storage, /*storage_snapshot=*/ nullptr, local_context, columns, required_columns))
         return nullptr;
 
     /// The policy DAG does not compute `ALIAS` or `EPHEMERAL` columns, and the read cannot produce them.

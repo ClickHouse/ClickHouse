@@ -2290,7 +2290,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
 
                     const bool can_push_down_filter = canPushDownRowPolicyFilter(
-                        *storage, storage_snapshot->metadata->getColumns(), row_policy_filter_info->actions.getRequiredColumnsNames());
+                        *storage,
+                        storage_snapshot,
+                        query_context,
+                        storage_snapshot->metadata->getColumns(),
+                        row_policy_filter_info->actions.getRequiredColumnsNames());
 
                     /// A logical plan (a serialized query plan or a parallel replicas plan) reads through a
                     /// placeholder `ReadFromTableStep`, which cannot carry `row_level_filter`: the node that

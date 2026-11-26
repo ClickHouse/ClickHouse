@@ -259,35 +259,22 @@ public:
     {
         auto storage = getNested();
         auto query_context = CurrentThread::tryGetQueryContext();
-        auto supported = storage->supportedPrewhereColumns();
+        const auto actual_metadata = storage->getInMemoryMetadataPtr(query_context, false);
+        const auto cached_metadata = getInMemoryMetadataPtr(query_context, false);
+        return supportedPrewhereColumnsImpl(*storage, *actual_metadata, *cached_metadata);
+    }
 
-        auto actual_metadata = storage->getInMemoryMetadataPtr(query_context, false);
-        auto cached_metadata = getInMemoryMetadataPtr(query_context, false);
-        const auto & actual_columns = actual_metadata->getColumns();
-        auto cached_columns = cached_metadata->getColumns().getAllPhysical();
+    /// The schema of a data lake belongs to the table state that the query pinned in `storage_snapshot`, and `read`
+    /// below reads `nested` with the metadata built from that state. So the columns are compared with that metadata
+    /// rather than with the current one, which another `SELECT` of the query may have moved to another state.
+    std::optional<NameSet> supportedPrewhereColumnsForSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override
+    {
+        if (!storage_snapshot || !storage_snapshot->metadata)
+            return supportedPrewhereColumns();
 
-        NameSet drifted;
-        for (const auto & cached : cached_columns)
-        {
-            auto actual = actual_columns.tryGetPhysical(cached.name);
-            if (!actual || !actual->type->equals(*cached.type))
-                drifted.insert(cached.name);
-        }
-
-        if (drifted.empty())
-            return supported;
-
-        if (!supported)
-        {
-            NameSet result;
-            for (const auto & cached : cached_columns)
-                if (!drifted.contains(cached.name))
-                    result.insert(cached.name);
-            return result;
-        }
-
-        std::erase_if(*supported, [&](const auto & name) { return drifted.contains(name); });
-        return supported;
+        auto storage = getNested();
+        const auto nested_snapshot = getNestedSnapshot(storage, storage_snapshot, context);
+        return supportedPrewhereColumnsImpl(*storage, *nested_snapshot->metadata, *storage_snapshot->metadata);
     }
 
     void read(
@@ -368,6 +355,40 @@ private:
     {
         std::lock_guard lock{resolved_nested_mutex};
         return nested;
+    }
+
+    /// The columns of the PREWHERE contract of `storage` without those whose type in `cached_metadata`, which
+    /// the query is analyzed with, differs from the type in `actual_metadata`, which `storage` is read with.
+    static std::optional<NameSet> supportedPrewhereColumnsImpl(
+        const IStorage & storage, const StorageInMemoryMetadata & actual_metadata, const StorageInMemoryMetadata & cached_metadata)
+    {
+        auto supported = storage.supportedPrewhereColumns();
+
+        const auto & actual_columns = actual_metadata.getColumns();
+        auto cached_columns = cached_metadata.getColumns().getAllPhysical();
+
+        NameSet drifted;
+        for (const auto & cached : cached_columns)
+        {
+            auto actual = actual_columns.tryGetPhysical(cached.name);
+            if (!actual || !actual->type->equals(*cached.type))
+                drifted.insert(cached.name);
+        }
+
+        if (drifted.empty())
+            return supported;
+
+        if (!supported)
+        {
+            NameSet result;
+            for (const auto & cached : cached_columns)
+                if (!drifted.contains(cached.name))
+                    result.insert(cached.name);
+            return result;
+        }
+
+        std::erase_if(*supported, [&](const auto & name) { return drifted.contains(name); });
+        return supported;
     }
 
     /// Serializes resolving the table function and the operations on the nested storage.
