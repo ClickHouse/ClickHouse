@@ -1,0 +1,279 @@
+---
+slug: /clickstack/managed-onboarding/instrument-application-serverless
+title: 'Instrumenter votre application avec OpenTelemetry'
+sidebarTitle: 'Instrumenter votre application'
+description: "Instrumentez une application de démonstration Node.js avec OpenTelemetry et envoyez ses logs, traces et métriques directement vers ClickHouse Observability. Aucun collecteur requis."
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'instrumentation', 'OpenTelemetry', 'OTLP', 'Node.js', 'TypeScript', 'relecture de session', 'premiers pas']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **En bref**
+
+  Exécutez une petite application de démonstration, instrumentez-la à l’aide du prompt IA proposé sur la page Premiers pas de votre service ou en effectuant deux modifications manuelles, puis observez les logs, traces et métriques arriver dans ClickHouse Observability.
+
+  Durée estimée : environ 10 minutes
+</Info>
+
+Vous avez créé votre service ClickHouse Observability. Ce guide vous accompagne pas à pas, d’un service vide jusqu’à la réception de la télémétrie d’une application en cours d’exécution.
+
+ClickHouse Observability fournit un endpoint OpenTelemetry géré, auquel votre application envoie directement sa télémétrie. Aucun collecteur à exécuter, aucun schéma à créer, aucune base de données à dimensionner : l’ingestion, les schémas, le stockage, l’optimisation et la mise à l’échelle sont entièrement pris en charge.
+
+## L&#39;application de démonstration {#the-demo-application}
+
+Pour vous offrir un cas réaliste à instrumenter, ce guide utilise [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), une application de démonstration que nous fournissons précisément à cet effet. Il s&#39;agit d&#39;une petite application Node.js et TypeScript qui interroge le jeu de données HackerNews hébergé sur la démo publique de ClickHouse. Chaque graphique, chaque table et chaque champ de recherche s&#39;appuie sur une véritable requête envoyée au backend. Les requêtes qui ne trouvent pas de résultat dans le cache de l&#39;application interrogent également ClickHouse, ce qui ajoute un span HTTPS sortant à chaque trace.
+
+La démo est disponible en deux variantes :
+
+* **Non instrumentée**, sur la branche `main`. Vous ajoutez vous-même l&#39;instrumentation au fil de ce guide, soit à l&#39;aide d&#39;un agent IA, soit manuellement, sans modifier la logique métier de l&#39;application. Les mêmes étapes s&#39;appliquent à vos propres services.
+* **Pré-instrumentée**, sur la branche `instrumented`. Choisissez cette branche si vous souhaitez simplement faire remonter rapidement des données de télémétrie et explorer l&#39;UI.
+
+## Prérequis {#prerequisites}
+
+* Un service ClickHouse Observability. Si vous n&#39;en avez pas encore, suivez le [guide de démarrage](/fr/clickstack/observability/getting-started).
+* Node.js 18 ou version ultérieure, ainsi que npm.
+* Un accès réseau à l&#39;endpoint de télémétrie de votre service, depuis la machine qui exécute la démonstration et depuis votre navigateur.
+
+## Instrumenter l&#39;application de démonstration {#instrument-the-demo-application}
+
+<Steps>
+  <Step title="Ouvrez la page Premiers pas" id="open-getting-started">
+    Ouvrez votre service ClickHouse Observability. Tant qu&#39;aucune donnée n&#39;est reçue, il affiche la page **Start sending telemetry**, qui propose trois façons de vous connecter.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Page Start sending telemetry affichant le service actuel, qui ne contient encore aucune donnée, et trois options : Use an existing OpenTelemetry setup, Instrument with AI et Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    Ce guide utilise **Instrument with AI** pour confier le travail à un agent de code, ou **View connection details** si vous préférez effectuer les modifications vous-même. Gardez cette page ouverte : vous y reviendrez pour vérifier que les données arrivent bien.
+  </Step>
+
+  <Step title="Clonez et exécutez l’application de démonstration" id="clone-and-run-the-demo-application">
+    Clonez le dépôt, installez les dépendances et copiez le modèle de fichier env :
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    Lancez la démonstration. La source de données ClickHouse pointe par défaut vers le cluster de démonstration public en lecture seule : la démonstration fonctionne donc sans aucune configuration supplémentaire :
+
+    ```bash
+    ./run.sh
+    ```
+
+    Ouvrez [http://localhost:5001](http://localhost:5001). Vous verrez un sélecteur d’année, des statistiques récapitulatives, un graphique d’activité, des tableaux des principaux utilisateurs et domaines, ainsi qu’un champ de recherche. Explorez l’interface : changez d’année, consultez le détail des articles.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="L’application de démonstration HackerNews Analyzer exécutée en local" />
+    </Frame>
+
+    À ce stade, l’application de démonstration fonctionne, mais n’est pas encore instrumentée. Votre service n’affiche donc encore aucune donnée provenant de celle-ci. Arrêtez-la avec Ctrl-C avant de continuer.
+  </Step>
+
+  <Step title="Instrumentez l’application de démonstration" id="instrument">
+    Choisissez l&#39;une des options. Toutes trois mènent à la même démo instrumentée.
+
+    <Tabs>
+      <Tab title="Instrumenter avec l’IA" id="instrument-with-ai">
+        Sur la page **Start sending telemetry**, sélectionnez **Copy prompt** sous **Instrument with AI**. La boîte de dialogue **Set it up with an AI agent** s&#39;ouvre et affiche un prompt destiné à votre agent de code ainsi que les deux secrets nécessaires à l&#39;application instrumentée.
+
+        <div className="ch-image-md">
+          <Frame>
+            ![Boîte de dialogue Set it up with an AI agent affichant le prompt d'instrumentation et les valeurs masquées CLICKSTACK_OTLP_ENDPOINT et CLICKSTACK_API_KEY](/images/clickstack/getting-started/observability-ai-agent-prompt.png)
+          </Frame>
+        </div>
+
+        Commencez par copier les deux secrets dans le fichier `.env` du répertoire `hn-news-analyzer`. Sélectionnez **Reveal key** pour afficher l&#39;API key complète, puis utilisez le bouton de copie situé à côté :
+
+        ```bash
+        CLICKSTACK_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        CLICKSTACK_API_KEY=<your-api-key>
+        ```
+
+        Le prompt indique à l&#39;agent de lire ces valeurs depuis l&#39;environnement et de ne jamais les coder en dur. Le fichier `.env` est exclu du contrôle de version dans le dépôt de démonstration. Pour vos propres applications, utilisez un fichier `.env` ignoré par git ou votre gestionnaire de secrets.
+
+        Ensuite, copiez le prompt et collez-le dans votre agent de code (par exemple Claude Code, Cursor ou Copilot) **depuis le répertoire `hn-news-analyzer`**. L&#39;agent détecte le langage, le framework et les points d&#39;entrée, installe le SDK OpenTelemetry, configure l&#39;exportateur à partir des deux variables ci-dessus, puis exporte les logs, les traces et les métriques via OTLP/HTTP vers votre service.
+
+        Examinez les modifications proposées par l&#39;agent avant de les appliquer. Une fois qu&#39;il a terminé, relancez la démonstration avec `./run.sh`.
+
+        <Warning>
+          Le SDK pour navigateur intègre l&#39;endpoint et l&#39;API key dans le bundle exécuté par le navigateur, où toute personne qui inspecte l&#39;onglet Réseau peut les lire. Utilisez un service dédié aux tests et excluez `.env` du contrôle de version.
+        </Warning>
+      </Tab>
+
+      <Tab title="Instrumentation manuelle" id="instrument-manually">
+        Sur la page **Start sending telemetry**, sélectionnez **View connection details** sous **Use an existing OpenTelemetry setup**, puis ouvrez l’onglet **Env vars**. Celui-ci affiche votre point de terminaison OTLP et votre API key sous la forme des variables d’environnement attendues par la démonstration.
+
+        <div className="ch-image-md">
+          <Frame>
+            ![Boîte de dialogue Set up OpenTelemetry avec les options URL, Collector config et Env vars, et les informations de connexion masquées](/images/clickstack/getting-started/observability-connection-details.png)
+          </Frame>
+        </div>
+
+### Faire pointer la démonstration vers votre service {#configure-environment}
+
+        Ouvrez `.env` et définissez les valeurs suivantes, en remplaçant l’endpoint et l’API key par les valeurs affichées dans la boîte de dialogue :
+
+        ```bash
+        OTEL_SERVICE_NAME=hn-analyzer-api
+        OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+        OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-api-key>
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_METRICS_EXPORTER=otlp
+        OTEL_LOGS_EXPORTER=otlp
+        ```
+
+        Il s&#39;agit de variables standard de l&#39;exportateur OpenTelemetry. Rien n&#39;est codé en dur dans le code source de l&#39;application.
+
+        Conservez le préfixe `https://` dans `OTEL_EXPORTER_OTLP_ENDPOINT` et n&#39;ajoutez pas `/v1/logs`, `/v1/traces` ou `/v1/metrics` à la fin. Les SDK ajoutent eux-mêmes les chemins propres à chaque signal. Définissez `OTEL_EXPORTER_OTLP_HEADERS` sur `authorization=<your-api-key>`, sans préfixe `Bearer`.
+
+        L&#39;instrumentation se déroule ensuite en trois étapes : installer le SDK, modifier la commande de lancement et activer le SDK pour navigateur. Aucune de ces étapes ne modifie la logique métier de l&#39;application.
+
+### Installer le SDK Node {#install-node-sdk}
+
+        ```bash
+        npm install @hyperdx/node-opentelemetry
+        ```
+
+### Activer le wrapper dans run.sh {#enable-run-sh-wrapper}
+
+        À la fin de `run.sh` figurent deux lignes `exec`. Commentez la ligne `node` simple et décommentez la ligne instrumentée :
+
+        ```diff
+         # BEFORE: plain node, no instrumentation:
+        -exec node scripts/entrypoint.js
+        +# exec node scripts/entrypoint.js
+
+         # AFTER: same source, wrapped by opentelemetry-instrument:
+        -# exec npx opentelemetry-instrument scripts/entrypoint.js
+        +exec npx opentelemetry-instrument scripts/entrypoint.js
+        ```
+
+        Continuez à lancer l&#39;application via `scripts/entrypoint.js`. Ce shim appelle `require('console')` afin que la capture de la console encapsule `console.log`. Si vous pointez `opentelemetry-instrument` directement sur `dist/server/index.js`, les traces sont bien transmises, mais les logs sont ignorés sans le moindre avertissement.
+
+### Activer le SDK pour navigateur {#enable-browser-sdk}
+
+        ```bash
+        npm install @hyperdx/browser
+        ```
+
+        Dans `src/web/telemetry.ts`, décommentez l&#39;import, le bloc `HyperDX.init` ainsi que l&#39;appel à `HyperDX.addAction` dans `recordAction` :
+
+        ```diff
+        -// import HyperDX from '@hyperdx/browser';
+        +import HyperDX from '@hyperdx/browser';
+
+         export function initTelemetry(): void {
+        -  // HyperDX.init({
+        -  //   url: __OTLP_ENDPOINT__,
+        -  //   apiKey: __OTLP_AUTH_TOKEN__,
+        -  //   service: 'hn-analyzer-web',
+        -  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        -  //   consoleCapture: true,
+        -  //   advancedNetworkCapture: true,
+        -  // });
+        +  HyperDX.init({
+        +    url: __OTLP_ENDPOINT__,
+        +    apiKey: __OTLP_AUTH_TOKEN__,
+        +    service: 'hn-analyzer-web',
+        +    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        +    consoleCapture: true,
+        +    advancedNetworkCapture: true,
+        +  });
+         }
+        ```
+
+        `__OTLP_ENDPOINT__` et `__OTLP_AUTH_TOKEN__` sont des constantes de compilation injectées par `vite.config.ts` à partir des mêmes valeurs `OTEL_EXPORTER_OTLP_*` que celles utilisées par le backend.
+
+        <Warning>
+          Le SDK pour navigateur intègre l&#39;endpoint et l&#39;API key dans le bundle JavaScript du navigateur, où quiconque inspecte l&#39;onglet Réseau peut les lire. Utilisez un service destiné aux tests et excluez `.env` du contrôle de version.
+        </Warning>
+
+        Relancez la démo avec `./run.sh`.
+      </Tab>
+
+      <Tab title="Utilisez une branche préinstrumentée" id="use-the-instrumented-branch">
+        Pour passer l&#39;étape d&#39;instrumentation et démarrer directement avec une démo déjà instrumentée, définissez les valeurs `OTEL_EXPORTER_OTLP_*` dans `.env` comme décrit dans l&#39;onglet d&#39;instrumentation manuelle, puis basculez sur la [branche `instrumented`](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented) :
+
+        ```bash
+        git checkout instrumented
+        npm install
+        ./run.sh
+        ```
+
+        N&#39;exécutez `./reset.sh` sur cette branche que si vous souhaitez supprimer les SDK.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Générez du trafic et vérifiez la réception des données" id="confirm-data-is-arriving">
+    Une fois la démo instrumentée lancée, rechargez [http://localhost:5001](http://localhost:5001) pour que le navigateur charge l’archive mise à jour. Changez d’année et cliquez sur des articles pour générer du trafic.
+
+    Si vous avez suivi la méthode manuelle ou utilisé la branche pré-instrumentée, la bannière de démarrage affiche trois lignes `Health check passed` pour `/v1/traces`, `/v1/metrics` et `/v1/logs`. Ces vérifications s’effectuent directement de la démo vers votre service : si elles réussissent, votre endpoint et votre API key sont corrects.
+
+    Revenez à la page **Start sending telemetry** de votre service et sélectionnez **Check for data**. Dès que votre télémétrie est reçue, le statut du service passe à **Data received** et le bouton **Start exploring** devient disponible.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Page Start sending telemetry affichant le statut du service Data received, un message confirmant que vous êtes prêt à explorer et le bouton Start exploring activé](/images/clickstack/getting-started/observability-data-received.png)
+      </Frame>
+    </div>
+
+    Sélectionnez **Start exploring** pour ouvrir **Search**.
+  </Step>
+
+  <Step title="Explorez vos données de télémétrie" id="explore-your-telemetry">
+    1. Dans **Recherche**, sélectionnez la source **Logs** et réglez l&#39;intervalle de temps sur **Last 15 minutes**. Filtrez `ServiceName` sur `hn-analyzer-api` pour afficher les logs du backend.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-logs.png" alt="Recherche de ClickHouse Observability affichant les logs du backend filtrés sur hn-analyzer-api" />
+    </Frame>
+
+    2. Sélectionnez la source **Traces** et ouvrez une requête provenant de `hn-analyzer-api`. Vous verrez le span du handler Express, un span HTTP enfant pointant vers `sql-clickhouse.clickhouse.com` avec la durée réseau réelle, ainsi que les enregistrements `console.log` corrélés dans la même trace.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-traces.png" alt="Trace de ClickHouse Observability affichant la requête du navigateur, les spans du backend, les logs corrélés et une requête HTTP vers ClickHouse" />
+    </Frame>
+
+    3. Ouvrez **Sessions client**, sélectionnez une session de `hn-analyzer-web`, puis ouvrez **Session Replay** pour examiner les interactions dans le navigateur ainsi que les requêtes qu&#39;elles ont déclenchées.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-sessions.png" alt="Relecture de session de ClickHouse Observability montrant la démonstration HackerNews Analyzer avec des événements de rafraîchissement du tableau de bord et de recherche" />
+    </Frame>
+
+    4. Ouvrez l&#39;**Explorateur de graphiques**, sélectionnez **Time Series** et la source **Metrics**, puis choisissez une métrique émise par la démonstration. Filtrez par `ResourceAttributes.service.name:"hn-analyzer-api"`, sélectionnez un intervalle de temps couvrant votre test, puis cliquez sur **Exécuter** pour vérifier la présence de données de métriques.
+
+    Les logs, traces, métriques et relectures de session sont centralisés au même endroit, partagent la même syntaxe de recherche et sont automatiquement corrélés.
+  </Step>
+</Steps>
+
+## Si rien ne s&#39;affiche {#if-nothing-shows-up}
+
+* Vérifiez les valeurs dans `.env`. L&#39;endpoint doit commencer par `https://`, se terminer par le port `4318` et ne comporter aucun suffixe `/v1/...`. L&#39;API key doit correspondre à la valeur complète, que vous pouvez copier après avoir sélectionné **Reveal key**.
+* Si vous avez suivi la méthode manuelle, vérifiez que `OTEL_EXPORTER_OTLP_HEADERS` vaut `authorization=<your-api-key>` sans préfixe `Bearer`, et que la bannière de démarrage affiche bien les trois lignes `Health check passed`.
+* Assurez-vous d&#39;avoir redémarré l&#39;application de démonstration après l&#39;avoir instrumentée, puis rechargé l&#39;onglet du navigateur. La relecture de session ne démarre qu&#39;une fois le bundle instrumenté servi.
+* Élargissez l&#39;intervalle de temps dans **Recherche** et supprimez tous les filtres. La source par défaut est peut-être définie sur **Traces** plutôt que sur **Logs**.
+* Pour écarter un problème lié au service lui-même, accédez à **Paramètres de l’équipe → Managed Telemetry** et utilisez **Send a Test Log**. Si ce log apparaît dans **Recherche**, le service reçoit bien des données et le problème vient de la configuration de l&#39;application de démonstration.
+
+## Étapes suivantes {#next-steps}
+
+Votre service contient désormais de la télémétrie issue d’une application réelle. Pour instrumenter vos propres services, réutilisez le prompt **Instrument with AI** de votre service, ou utilisez les [SDK par langage pris en charge](/fr/clickstack/observability/ingesting-data/sdks/index) avec le même endpoint et la même API key.
+
+Pour collecter des données depuis l’infrastructure plutôt que depuis le code applicatif :
+
+* [Supervision de Kubernetes](/fr/clickstack/observability/example-datasets/kubernetes) : collectez les logs et les métriques du cluster, puis explorez le tableau de bord Kubernetes.
+* [Logs et métriques locaux](/fr/clickstack/observability/example-datasets/local-data) : collectez des fichiers locaux et des métriques système sous macOS ou Linux.
+
+Pour aller plus loin avec l’UI :
+
+* [Recherche](/fr/clickstack/observability/features/search) : interrogez les logs et les traces avec une syntaxe de type Lucene ou en SQL.
+* [Relecture de session](/fr/clickstack/observability/features/session-replay) : présentation de la fonctionnalité, options du SDK et contrôles de confidentialité.
+* [Jeux de données d’exemple](/fr/clickstack/observability/example-datasets) : jeux de données plus riches et investigations guidées.

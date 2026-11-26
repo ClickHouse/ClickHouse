@@ -16,7 +16,7 @@ Com o `clickhousectl`, você pode:
 * Criar, configurar, escalar, fazer backup e consultar serviços do ClickHouse Cloud
 * Criar, monitorar, configurar e restaurar serviços do [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview)
 * Criar e operar ClickPipes a partir de armazenamento de objetos, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB e BigQuery
-* Gerenciar fontes de dados, dashboards, alertas, webhooks, buscas salvas e funções em um serviço [Managed ClickStack](/pt-BR/clickstack/deployment/managed)
+* Gerenciar fontes de dados, dashboards, alertas, webhooks, buscas salvas e funções em um serviço [Self-managed ClickHouse Observability](/pt-BR/clickstack/self-configured/deployment/managed)
 * Desenvolver UDFs executáveis localmente e implantá-las no ClickHouse Cloud
 * Gerenciar membros da organização, convites, chaves de API e funções
 * Instalar as ClickHouse Agent Skills oficiais em agentes de programação
@@ -430,7 +430,7 @@ Os pipes de CDC precisam estar `Paused` antes do `update`: pare o pipe, consulte
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack` gerencia fontes de dados, dashboards, alertas, webhooks, buscas salvas e funções em um serviço [Managed ClickStack](/pt-BR/clickstack/deployment/managed) existente. Os recursos são arquivos JSON (`--file`, ou `-` para stdin). As leituras aceitam autenticação via OAuth; as gravações exigem uma chave de API.
+`cloud clickstack` gerencia fontes de dados, dashboards, alertas, webhooks, buscas salvas e funções em um serviço [Self-managed ClickHouse Observability](/pt-BR/clickstack/self-configured/deployment/managed) existente. Os recursos são arquivos JSON (`--file`, ou `-` para stdin). As leituras aceitam autenticação via OAuth; as gravações exigem uma chave de API.
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

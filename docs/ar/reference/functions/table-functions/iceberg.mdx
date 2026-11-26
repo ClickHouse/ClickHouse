@@ -97,7 +97,7 @@ ENGINE = IcebergS3(
 أو باستخدام AWS Glue Data Catalog مع S3:
 
 ```sql
-CREATE TABLE `my_database.my_table`  
+CREATE TABLE `my_database.my_table`
 ENGINE = IcebergS3(
   's3://my-data-bucket/warehouse/my_database/my_table/',
   'aws_access_key',
@@ -132,12 +132,12 @@ ENGINE = IcebergS3(
 ### الاستخدام الأساسي {#basic-usage}
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
@@ -164,37 +164,30 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```sql
 -- Create a table with two columns
  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
- order_number bigint, 
+ order_number bigint,
  product_code string
- ) 
- USING iceberg 
- OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES 
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES
    (1, 'Mars')
 
  ts1 = now() // A piece of pseudo code
 
-- - Alter table to add a new column
- ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
  ts2 = now()
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-  ts3 = now()
+ ts3 = now()
 
-- - Query the table at each timestamp
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+-- Query the table at each timestamp
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
@@ -202,7 +195,15 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 |           1|        Mars|
 +------------+------------+
 
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -224,23 +225,23 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
 -- Insert initial data into the table
-  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
 -- Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
 -- Query the table at a current moment but using timestamp syntax
 
-  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
     +------------+------------+
     |order_number|product_code|
@@ -249,15 +250,17 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
     +------------+------------+
 
 -- Query the table at a current moment
-  SELECT * FROM spark_catalog.db.time_travel_example_2;
-    +------------+------------+-----+
+
+SELECT * FROM spark_catalog.db.time_travel_example_2;
+
++------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
     |           2|       Venus| NULL|
     +------------+------------+-----+
 ```
 
-يحدث هذا لأن `ALTER TABLE` لا يُنشئ snapshot جديدة، ولكن بالنسبة إلى الجدول الحالي، يأخذ Spark قيمة `schema_id` من أحدث ملف metadata، وليس من snapshot.
+يحدث هذا لأن `ALTER TABLE` لا يُنشئ لقطة جديدة، ولكن بالنسبة إلى الجدول الحالي، يأخذ Spark قيمة `schema_id` من أحدث ملف البيانات الوصفية، وليس من لقطة.
 
 #### السيناريو 3: الاختلافات بين المخطط التاريخي والمخطط الحالي {#scenario-3}
 
@@ -266,16 +269,16 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2');
+)
+USING iceberg
+OPTIONS ('format-version'='2');x
 
   ts = now();
 
 -- Query the table at a specific timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finishes with error: Cannot find a snapshot older than ts.
 ```
 
 في ClickHouse، يكون السلوك متوافقًا مع Spark. يمكنك ببساطة اعتبار استعلامات `Select` في ClickHouse بدلًا من استعلامات `Select` في Spark، وسيعمل الأمر بالطريقة نفسها.
@@ -318,7 +321,7 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 **ملاحظة**: جميع الإعدادات المذكورة، باستثناء `iceberg_list_only_v_prefixed_metadata_files`، هي إعدادات دالة الجدول (وليست إعدادات عامة أو على مستوى الاستعلام) ويجب تحديدها كما هو موضح أدناه:
 
 ```sql
-SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
@@ -421,7 +424,7 @@ y: 993
 
 فعّل `allow_insert_into_iceberg` لاستخدام هذه العملية.
 
-لا تُدعم العملية إلا لجداول Iceberg ذات `format-version` 2 التي تستخدم مواصفة تقسيم واحدة لم تتغير. ويجب ألا يحتوي أي ملف بيان يضمّ التقسيم المحدد على ملفات تابعة لتقسيمات أخرى. وإذا اشترك التقسيم المحدد وتقسيم آخر في ملف بيان، تفشل العملية دون أن يتغير الجدول. وترفض العملية أيضًا ملفات البيان المعنية إذا احتوت على ملفات حذف بالمساواة.
+لا تُدعم العملية إلا لجداول Iceberg ذات `format-version` 2 التي تستخدم مواصفة تقسيم واحدة لم تتغير. ويجب ألا يحتوي أي ملف بيان يضمّ التقسيم المحدد على ملفات تابعة لتقسيمات أخرى. وإذا اشترك التقسيم المحدد وتقسيم آخر في ملف بيان، تفشل العملية دون أن يتغير الجدول. وعند تفعيل `iceberg_insert_single_manifest_for_all_partitions`، يكتب كل دفق إدراج ضمن عملية `INSERT` ملفات جميع التقسيمات التي استقبلها في ملف بيان واحد (أي ملف بيان واحد بالضبط لكل عملية `INSERT` عند ضبط `max_insert_threads = 1`)، ولذلك يتعذّر حذف أي تقسيم كُتب ضمن عملية `INSERT` نفسها التي كتبت تقسيمات أخرى. وترفض العملية أيضًا ملفات البيان المعنية إذا احتوت على ملفات حذف بالمساواة.
 
 تخضع قيمة التقسيم للقواعد نفسها المتبعة في `MergeTree`. إذا كان التقسيم قائمًا على عمود واحد، فمرّر قيمة حرفية مفردة؛ وإذا كان قائمًا على عدة أعمدة، فمرّر مجموعة مرتبة (Tuple) من القيم:
 
@@ -635,7 +638,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 يراعي الأمر `expire_snapshots` [سياسة الاستبقاء بلقطات Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). يُضبط الاحتفاظ عبر خصائص جدول Iceberg وعمليات التجاوز على مستوى كل مرجع:
 
-| Property                               | Scope | Default                                                                      | Description                                                                    |
+| Property                               | Scope | Default                                                                      | الوصف                                                                    |
 | -------------------------------------- | ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `history.expire.min-snapshots-to-keep` | Table | `iceberg_expire_default_min_snapshots_to_keep` (الافتراضي `1`)               | الحد الأدنى لعدد اللقطات التي يجب الاحتفاظ بها في سلسلة الأسلاف لكل فرع        |
 | `history.expire.max-snapshot-age-ms`   | Table | `iceberg_expire_default_max_snapshot_age_ms` (الافتراضي `432000000`، 5 أيام) | الحد الأقصى لعمر اللقطات (بالملي ثانية) التي يجب الاحتفاظ بها في فرع           |
@@ -669,7 +672,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
   * لا تُدعَم إلا جداول Iceberg ذات تنسيق الإصدار 2 (إذ لا تضمن لقطات v1 وجود `manifest-list`، وهو مطلوب لتحديد الملفات المراد تنظيفها بأمان)
   * تُحفَظ اللقطة الحالية دائمًا، حتى إذا كانت أقدم من الطابع الزمني المحدد
   * يتطلب تمكين الإعداد `allow_insert_into_iceberg`
-  * يتطلب تمكين الإعداد `allow_experimental_expire_snapshots`
+  * يتطلب تمكين الإعداد `allow_expire_snapshots`
   * يُطبَّق التفويض الخاص بـ catalog نفسه (مثل مصادقة REST catalog وAWS Glue IAM وغيرها) بشكل مستقل عندما يحدّث ClickHouse البيانات الوصفية
 </Note>
 

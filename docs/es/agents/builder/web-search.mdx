@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'Web search'
+sidebarTitle: 'Búsqueda web'
 slug: /agents/builder/web-search
-title: 'Web search'
+title: 'Búsqueda web'
 description: 'Herramienta externa de búsqueda web para ClickHouse Agents'
-keywords: ['AI', 'ClickHouse Cloud', 'agents', 'Web search']
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'web search']
 doc_type: 'reference'
 ---
 
@@ -11,42 +11,32 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-Web search permite que un agente obtenga información de la web pública durante una conversación. Úsalo para preguntas cuya respuesta deba estar al día: versiones recientes, documentación alojada fuera de tu servicio o una comprobación rápida en una fuente autorizada.
+La Búsqueda web permite que un agente obtenga información de la web pública durante una conversación. Utilícela para preguntas cuya respuesta deba estar actualizada: versiones recientes, documentación que se encuentra fuera de su servicio o una comprobación rápida en una fuente de referencia.
 
-<div id="enable-it">
-  ## Habilítalo
-</div>
+## Habilitarla {#enable-it}
 
-En Agent Builder, habilita **Web Search** en la sección **Capabilities**. Una vez habilitado, el agente decide cuándo realizar una búsqueda en función de la pregunta del usuario y de las instrucciones del agente. La búsqueda se ejecuta, se recopilan los resultados y el contenido más relevante se incorpora de nuevo al contexto del modelo.
+En el Constructor de Agentes, habilite **Búsqueda web** en la sección **Capacidades**. Una vez habilitada, el agente decide cuándo realizar una búsqueda en función de la pregunta del usuario y de sus instrucciones. Se ejecuta la búsqueda, se extrae el contenido de los resultados y el contenido más relevante se incorpora al contexto del modelo.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Panel de Capabilities con la sección Web Search resaltada, que muestra la casilla de verificación de Web Search](/images/cloud/agent-builder/web-search/web-search.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panel Capacidades con la sección Búsqueda web resaltada, que muestra la casilla de verificación Búsqueda web](/images/cloud/agent-builder/web-search/web-search.webp)
+  </Frame>
 </div>
 
-<div id="how-a-search-round-works">
-  ## Cómo funciona una ronda de búsqueda
-</div>
+## Cómo funciona una ronda de búsqueda {#how-a-search-round-works}
 
-Cada búsqueda se ejecuta en tres etapas, gestionadas por Cloud por ti:
+Cada búsqueda se ejecuta en tres etapas, que Cloud gestiona por usted:
 
-1. **Búsqueda** - la consulta del agente se envía a un proveedor de búsqueda que devuelve URL candidatas.
-2. **Extracción** - se recuperan las páginas relevantes y se extrae el texto útil.
-3. **Reordenación** - un reranker puntúa los resultados para que el modelo vea primero los más útiles.
+1. **Búsqueda**: la consulta del agente se envía a un provider de búsqueda, que devuelve URL candidatas.
+2. **Extracción**: se recuperan las páginas pertinentes y se extrae el texto relevante.
+3. **Reordenación**: un modelo de reordenación puntúa los resultados para que el modelo vea primero los más útiles.
 
-La respuesta del agente cita las URL que realmente utilizó.
+La respuesta del agente cita las URL que ha utilizado realmente.
 
-<div id="when-to-use-it">
-  ## Cuándo usarlo
-</div>
+## Cuándo usarlo {#when-to-use-it}
 
-* Consulta notas de la versión o registros de cambios que no estén en tu servicio.
-* Verifica un dato con una fuente que el modelo quizá no conozca.
-* Incorpora a la conversación una entrada de blog o documentación pública para analizarla.
+* Consultar notas de la versión o registros de cambios que no estén en su servicio.
+* Contrastar un dato con una fuente que el modelo quizá no conozca.
+* Incorporar a la conversación una entrada de blog o un documento públicos para analizarlos.
 
-Omítelo en preguntas que puedan responderse con tus datos o con el propio conocimiento del modelo. Cada ronda de búsqueda añade latencia.
+No lo utilice para preguntas que puedan responderse con sus datos o con el conocimiento propio del modelo. Cada ronda de búsqueda añade latencia.

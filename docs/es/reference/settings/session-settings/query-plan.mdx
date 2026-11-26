@@ -184,6 +184,18 @@ Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizati
   Esta es una configuración de nivel experto que solo deben usar los desarrolladores para depuración. La configuración puede cambiar en el futuro de forma incompatible con versiones anteriores o eliminarse.
 </Note>
 
+## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración, habilitada de forma predeterminada: el algoritmo de orden de JOIN DPsub elige entre joins hash y sort-merge según el orden de las entradas."}]}]} />
+
+Solo afecta al algoritmo de orden de JOIN `dpsub`. Hace que tenga en cuenta el orden de las tablas unidas: para cada equi-join interno elige por coste entre una unión hash y `full_sorting_merge`, y conserva los planes parciales cuyo resultado esté ordenado por una join key que pueda aprovechar una unión posterior.
+
+Una entrada se considera ordenada por una join key cuando `optimize_read_in_order` puede leerla en el orden de esa clave desde una tabla `MergeTree`, o cuando es el resultado de una unión `full_sorting_merge` sobre esa clave. Cuando se elige ejecutar una unión como `full_sorting_merge`, primero se intenta con este algoritmo y se recurre a la lista `join_algorithm` como alternativa de respaldo. La elección solo se realiza cuando `join_algorithm` tiene su valor predeterminado: cualquier otra lista se trata como una lista de prioridad y se utiliza tal cual. Requiere `enable_join_transitive_predicates`.
+
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -262,11 +274,10 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva optimización que transforma una función arrayJoin en un paso ARRAY JOIN real; deshabilitada de forma predeterminada."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilita query_plan_lower_array_join_function de forma predeterminada."}]}]} />
 
-Activa o desactiva una optimización a nivel del plan de consulta que transforma una función `arrayJoin` dentro de una expresión en un paso `ARRAY JOIN` real, para que utilice el mismo mecanismo de ejecución que la cláusula `ARRAY JOIN` (replicación diferida y fusión de filtros).
-Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizations](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) es 1.
+Ejecuta la función `arrayJoin` del mismo modo que la cláusula `ARRAY JOIN`: como un paso `ARRAY JOIN` independiente dentro del plan de consulta. Si está deshabilitada, la función se calcula dentro de la expresión que la contiene, como en versiones anteriores.
 
 <Note>
-  Esta configuración de nivel experto solo debe utilizarse para depuración por parte de desarrolladores. Puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
+  Este ajuste de nivel experto solo debe utilizarse para depuración por parte de desarrolladores. Puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
 </Note>
 
 ## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
@@ -469,7 +480,7 @@ Usar el plan de consulta para la optimización de materialización diferida.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet locales mediante la función de tabla `file` y el motor de tabla `File`."}]}]} />
 
-Utiliza la optimización de materialización diferida para leer archivos Parquet locales mediante la función de tabla `file` y el motor de tabla `File`: en las consultas `ORDER BY ... LIMIT n`, las columnas que no se necesitan para la ordenación ni el filtrado se leen únicamente para las `n` filas que permanecen tras aplicar `LIMIT`. Solo surte efecto si `query_plan_optimize_lazy_materialization` está habilitada.
+Utiliza la optimización de materialización diferida para leer archivos Parquet y Vortex locales mediante la función de tabla `file` y el motor de tabla `File`: en las consultas `ORDER BY ... LIMIT n`, las columnas que no se necesitan para la ordenación ni el filtrado se leen únicamente para las `n` filas que permanecen tras aplicar `LIMIT`. Solo surte efecto si `query_plan_optimize_lazy_materialization` está habilitada.
 
 ## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
@@ -477,7 +488,7 @@ Utiliza la optimización de materialización diferida para leer archivos Parquet
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg)."}]}]} />
 
-Utiliza la optimización de materialización diferida al leer archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg): en las consultas `ORDER BY ... LIMIT n`, las columnas que no son necesarias para ordenar ni filtrar solo se leen para las `n` filas que permanecen tras aplicar `LIMIT`. Solo tiene efecto si `query_plan_optimize_lazy_materialization` está habilitada.
+Utiliza la optimización de materialización diferida al leer archivos Parquet y Vortex desde el almacenamiento de objetos (incluidas las tablas Iceberg): en las consultas `ORDER BY ... LIMIT n`, las columnas que no son necesarias para ordenar ni filtrar solo se leen para las `n` filas que permanecen tras aplicar `LIMIT`. Solo tiene efecto si `query_plan_optimize_lazy_materialization` está habilitada.
 
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
@@ -670,6 +681,20 @@ Valores posibles:
 
 Permite añadir una pista (predicado adicional) al filtrado generado a partir del índice de texto invertido en el plan de consulta.
 
+## query_plan_top_k_through_array_join {#query_plan_top_k_through_array_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para mover la ordenación acotada por debajo de `ARRAY JOIN` cuando sus claves no dependen de columnas expandidas."}]}]} />
+
+Activa o desactiva una optimización a nivel del plan de consulta que mueve `ORDER BY ... LIMIT n` por debajo de un `ARRAY JOIN` cuando la clave de ordenación no lee ninguna columna unida. En el caso de un `ARRAY JOIN` interno, la optimización también añade un filtro por debajo de la ordenación desplazada. Este filtro elimina las filas cuyas matrices están todas vacías, ya que dichas filas no generan ninguna salida.
+Solo tiene efecto si el parámetro de configuración [query&#95;plan&#95;enable&#95;optimizations](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) es 1.
+
+Valores posibles:
+
+* 0 - Desactivar
+* 1 - Activar
+
 ## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -694,12 +719,34 @@ Activa una optimización a nivel del plan de consulta que intenta usar el índic
 Solo surte efecto si la opción [`query_plan_enable_optimizations`](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) tiene el valor 1.
 
 <Note>
-  Esta es una configuración de nivel experto que solo deben usar los desarrolladores para tareas de depuración. La configuración puede cambiar en el futuro de forma no retrocompatible o eliminarse.
+  Este es un ajuste de nivel experto que solo deben usar los desarrolladores para tareas de depuración. La configuración puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
 </Note>
 
 Valores posibles:
 
-* 0 - Deshabilitar
-* 1 - Habilitar
+* 0 - Desactivar
+* 1 - Activar
+
+## query_plan_use_shuffle_for_order_by_rand {#query_plan_use_shuffle_for_order_by_rand}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para ejecutar `ORDER BY rand()` redistribuyendo aleatoriamente las filas en lugar de ordenarlas."}]}]} />
+
+Activa una optimización a nivel del plan de consulta que ejecuta `ORDER BY rand()` y `ORDER BY rand64()` redistribuyendo aleatoriamente las filas
+(de la misma forma que la cláusula `SHUFFLE`) en lugar de ordenarlas, lo que requiere un tiempo O(n) en lugar de O(n * log(n)).
+El resultado tiene la misma distribución: los valores de la columna `rand()` se reemplazan por otros valores aleatorios en orden de clasificación.
+Se aplica cuando el valor de `rand()` no se usa en otras expresiones y cuando hay un `LIMIT` o la ordenación externa está deshabilitada
+(la redistribución no realiza volcado a disco).
+Solo surte efecto si la opción [`query_plan_enable_optimizations`](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) tiene el valor 1.
+
+<Note>
+  Este es un ajuste de nivel experto que solo deben usar los desarrolladores para tareas de depuración. La configuración puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
+</Note>
+
+Valores posibles:
+
+* 0 - Desactivar
+* 1 - Activar
 
 {/*AUTOGENERATED_END*/}

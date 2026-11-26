@@ -14,7 +14,7 @@ Essas configurações configuram o servidor ClickHouse e são geradas automatica
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache de cabeçalhos de criptografia. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de evicção do cache de cabeçalhos de criptografia usado pelo caminho de leitura do ReaderExecutor. Valores possíveis: `LRU`, `SLRU`, `SIEVE`. Consulte [`encryption_header_cache_size`](/pt-BR/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size) para a capacidade do cache e [`encryption_header_cache_size_ratio`](/pt-BR/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio) para o tamanho da fila protegida na política SLRU.
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 
