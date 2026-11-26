@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <limits>
@@ -39,6 +40,15 @@ SharedHeader makeHeader(
         ColumnWithTypeAndName(seen_rows_type, "seen_rows")});
 }
 
+/// The header of an input of input rows, which carries no seen counts, for a merge whose seen inputs have
+/// `header`.
+SharedHeader inputRowsHeader(const SharedHeader & header)
+{
+    Block block = *header;
+    block.erase("seen_rows");
+    return std::make_shared<const Block>(std::move(block));
+}
+
 SortDescription keyDescription()
 {
     SortDescription description;
@@ -51,12 +61,13 @@ Chunk makeChunk(const Block & header, const Array & keys, UInt64 first_payload, 
     auto columns = header.cloneEmptyColumns();
     const size_t key_pos = header.getPositionByName("key");
     const size_t payload_pos = header.getPositionByName("payload");
-    const size_t seen_rows_pos = header.getPositionByName("seen_rows");
+    const auto seen_rows_pos = header.findPositionByName("seen_rows");
     for (const auto & key : keys)
     {
         columns[key_pos]->insert(key);
         columns[payload_pos]->insert(first_payload++);
-        columns[seen_rows_pos]->insert(seen_rows);
+        if (seen_rows_pos)
+            columns[*seen_rows_pos]->insert(seen_rows);
     }
     return Chunk(std::move(columns), keys.size());
 }
@@ -117,17 +128,29 @@ std::vector<UInt64> mergePayloads(
     return pullPayloads(source_processors, std::move(merge), block_size);
 }
 
-/// The same with every source of `header`, whose seen counts the output omits.
+/// The same with sources built on `header`, whose seen counts the output omits. A source whose rows carry no
+/// seen counts holds input rows, which reach the merge without the seen-rows column, as input runs do.
 std::vector<UInt64> mergePayloads(
     const SharedHeader & header, std::vector<Chunks> sources, size_t block_size, Window window,
     bool dynamic_inputs = false, SortDescription key_description = keyDescription())
 {
-    Block output_header = *header;
-    output_header.erase("seen_rows");
-    const SharedHeaders headers(sources.size(), header);
+    const auto input_header = inputRowsHeader(header);
+    const size_t seen_rows_pos = header->getPositionByName("seen_rows");
+    SharedHeaders headers;
+    for (auto & chunks : sources)
+    {
+        const bool holds_seen_rows = std::ranges::any_of(
+            chunks, [&](const Chunk & chunk) { return chunk.hasRows() && chunk.getColumns()[seen_rows_pos]->getUInt(0) != 0; });
+        if (!holds_seen_rows)
+        {
+            for (auto & chunk : chunks)
+                chunk.erase(seen_rows_pos);
+        }
+        headers.push_back(holds_seen_rows ? header : input_header);
+    }
     return mergePayloads(
-        headers, {"seen_rows", header->getByName("seen_rows").type}, std::make_shared<const Block>(output_header),
-        std::move(sources), block_size, window, dynamic_inputs, std::move(key_description));
+        headers, {"seen_rows", header->getByName("seen_rows").type}, input_header, std::move(sources), block_size,
+        window, dynamic_inputs, std::move(key_description));
 }
 
 /// The window of `DISTINCT` with its expected payloads, and a ranked window with its own.
@@ -178,13 +201,11 @@ TEST(GroupLimitSortedAlgorithm, SeenOnlyProgressIsBounded)
 
 TEST(GroupLimitSortedAlgorithm, WholeChunkOfDistinctKeysForwardsColumns)
 {
-    const auto header = makeHeader();
-    Block output_header = *header;
-    output_header.erase("seen_rows");
+    const auto seen_header = makeHeader();
+    const auto header = inputRowsHeader(seen_header);
     GroupLimitSortedAlgorithm algorithm(
-        {header}, std::make_shared<const Block>(output_header), keyDescription(),
-        NameAndTypePair{"seen_rows", header->getByName("seen_rows").type}, /*group_offset_=*/ 0,
-        /*group_limit_end_=*/ 1, 64);
+        {header}, header, keyDescription(), NameAndTypePair{"seen_rows", seen_header->getByName("seen_rows").type},
+        /*group_offset_=*/ 0, /*group_limit_end_=*/ 1, 64);
     IMergingAlgorithm::Inputs inputs(1);
     inputs[0].chunk = makeChunk(*header, {1u, 2u, 3u}, 100);
     const auto * payload = inputs[0].chunk.getColumns()[1].get();
@@ -499,9 +520,8 @@ TEST(GroupLimitSortedAlgorithm, RowsOfAKeyInConsecutiveChunksOfOneInput)
 {
     /// A sort that keeps the first rows of each key merges its runs into chunks of one row, so the rows of a
     /// key reach the group merge in consecutive chunks of one input.
-    const auto header = makeHeader();
-    Block output_header = *header;
-    output_header.erase("seen_rows");
+    const auto seen_header = makeHeader();
+    const auto header = inputRowsHeader(seen_header);
     for (const auto & [group_limit, expected] : std::vector<std::pair<size_t, std::vector<UInt64>>>{
         {1, {100, 201, 101}}, {2, {100, 200, 201, 101, 301}}})
     {
@@ -515,14 +535,15 @@ TEST(GroupLimitSortedAlgorithm, RowsOfAKeyInConsecutiveChunksOfOneInput)
             header, std::move(chunks), keyDescription(), 1, 0, MergeSorter::Mode::LimitGroupRows,
             /*preferred_block_bytes=*/ 0, group_limit);
         auto merge = std::make_shared<GroupLimitSortedTransform>(
-            "GroupLimitSortedTransform", SharedHeaders{header}, std::make_shared<const Block>(output_header), keyDescription(),
-            NameAndTypePair{"seen_rows", header->getByName("seen_rows").type}, /*group_offset=*/ 0, group_limit, 2);
+            "GroupLimitSortedTransform", SharedHeaders{header}, header, keyDescription(),
+            NameAndTypePair{"seen_rows", seen_header->getByName("seen_rows").type}, /*group_offset=*/ 0, group_limit, 2);
         EXPECT_EQ(pullPayloads({std::move(sort)}, std::move(merge), 2), expected);
     }
 }
 
-TEST(GroupLimitSortedAlgorithm, OutputColumnsWithDifferentSeenRowsPositions)
+TEST(GroupLimitSortedAlgorithm, SeenRowsColumnAtAnyPosition)
 {
+    /// A seen input can carry the seen-rows column at any position.
     const WindowCases cases{
         {{0, 1}, {101, 102, 103, 104, 106, 201, 108, 109}},
         {{0, 2}, {100, 101, 102, 103, 104, 105, 106, 107, 201, 108, 109}}};
@@ -550,15 +571,11 @@ TEST(GroupLimitSortedAlgorithm, OutputColumnsWithDifferentSeenRowsPositions)
 TEST(GroupLimitSortedAlgorithm, KeyOnlySeenRowsAndDifferentInputLayouts)
 {
     /// Seen inputs need only the keys and the counts, and every input orders its columns its own way.
-    const auto input_header = makeHeader();
-    const auto seen_header = std::make_shared<const Block>(Block{
-        input_header->getByName("seen_rows"), input_header->getByName("key")});
-    const auto reordered_header = std::make_shared<const Block>(Block{
-        input_header->getByName("payload"), input_header->getByName("seen_rows"), input_header->getByName("key")});
-    auto output = *input_header;
-    output.erase("seen_rows");
-    const auto output_header = std::make_shared<const Block>(output);
-    const NameAndTypePair seen_rows{"seen_rows", input_header->getByName("seen_rows").type};
+    const auto header = makeHeader();
+    const auto input_header = inputRowsHeader(header);
+    const auto seen_header = std::make_shared<const Block>(Block{header->getByName("seen_rows"), header->getByName("key")});
+    const auto reordered_header = std::make_shared<const Block>(Block{header->getByName("payload"), header->getByName("key")});
+    const NameAndTypePair seen_rows{"seen_rows", header->getByName("seen_rows").type};
     const WindowCases cases{
         {{0, 1}, {101, 103, 201, 202, 203, 204}},
         {{0, 2}, {100, 101, 200, 102, 103, 104, 201, 202, 203, 105, 204}}};
@@ -578,7 +595,7 @@ TEST(GroupLimitSortedAlgorithm, KeyOnlySeenRowsAndDifferentInputLayouts)
         inputs[1].emplace_back(Columns{ColumnUInt8::create(1, UInt8{1}), ColumnUInt64::create(1, 8)}, 1);
         inputs[2].push_back(makeChunk(*reordered_header, {2u, 5u, 6u}, 200));
         inputs[2].push_back(makeChunk(*reordered_header, {7u, 9u}, 203));
-        EXPECT_EQ(mergePayloads({input_header, seen_header, reordered_header}, seen_rows, output_header,
+        EXPECT_EQ(mergePayloads({input_header, seen_header, reordered_header}, seen_rows, input_header,
             std::move(inputs), block_size, window, dynamic_inputs, keyDescription()), expected);
     }
 }
@@ -586,13 +603,14 @@ TEST(GroupLimitSortedAlgorithm, KeyOnlySeenRowsAndDifferentInputLayouts)
 TEST(GroupLimitSortedAlgorithm, RepeatedOutputColumns)
 {
     /// The output projection is shared by both merge paths, so the window of `DISTINCT` checks it.
-    const auto header = makeHeader();
+    const auto seen_header = makeHeader();
+    const auto header = inputRowsHeader(seen_header);
     const auto output_header = std::make_shared<const Block>(Block{header->getByName("payload"), header->getByName("payload")});
     for (const size_t block_size : {2, 64})
     {
         SCOPED_TRACE(block_size);
         GroupLimitSortedAlgorithm algorithm(
-            {header}, output_header, keyDescription(), NameAndTypePair{"seen_rows", header->getByName("seen_rows").type},
+            {header}, output_header, keyDescription(), NameAndTypePair{"seen_rows", seen_header->getByName("seen_rows").type},
             /*group_offset_=*/ 0, /*group_limit_end_=*/ 1, block_size);
         IMergingAlgorithm::Inputs inputs(1);
         inputs[0].chunk = makeChunk(*header, {1u, 2u, 3u}, 100);

@@ -14,12 +14,12 @@ namespace DB
 /// Merges inputs sorted by `key_description`, which contains the keys without collators, and keeps the input
 /// rows whose rank within their group falls into `[group_offset, group_limit_end)`, as in the spill runs of a
 /// group limit (`DISTINCT` or `LIMIT BY`). If set, `seen_rows_column` is the unsigned integer column of the
-/// rows seen before spilling, and each input then contains only input rows, whose count is zero, or only seen
-/// rows, whose counts are positive. An input-row input can omit the column; the merge then adds zero counts
-/// of its type to every chunk, so that all cursors compare the same columns. Without `seen_rows_column`, all
-/// rows are input rows. Seen inputs need only the keys and the counts; input-row inputs also provide every
-/// output column by name. An input-row chunk holds at most `group_limit_end` rows of a group, in source
-/// order; seen chunks may contain sort-equal keys.
+/// rows seen before spilling. An input that carries it holds only seen rows, whose counts are positive. An
+/// input without it holds only input rows, and the merge appends zero counts of its type to every chunk, so
+/// that all cursors compare the same columns. Without `seen_rows_column`, all rows are input rows. Seen
+/// inputs need only the keys and the counts; input-row inputs also provide every output column by name. An
+/// input-row chunk holds at most `group_limit_end` rows of a group, in source order; seen chunks may contain
+/// sort-equal keys.
 /// Within a group, seen rows come first and their counts start the rank; input rows follow in source order
 /// and each takes the next rank. Seen rows are never emitted. With the window `[0, 1)` of `DISTINCT`, equal
 /// keys retain the first input row in source order.
@@ -63,16 +63,19 @@ private:
     /// Selects output columns while retaining chunk information and ownership of their values.
     [[nodiscard]] Chunk projectOutput(Chunk chunk, size_t source_num) const;
 
-    /// Appends zero seen counts to a chunk of an input-row input that omits them.
+    /// Appends zero seen counts to a chunk of an input-row input.
     void addZeroSeenRows(Chunk & chunk) const;
 
     struct Source
     {
-        /// The header of the input, with the appended seen counts if it omits them.
+        /// The header of the input, with the appended seen counts of an input-row input.
         SharedHeader header;
+        /// Whether the input holds seen rows, which its header shows by carrying the seen-rows column.
+        bool holds_seen_rows = false;
+        /// The positions of the output columns in `header`; empty for an input of seen rows.
         ColumnNumbers output_positions;
+        /// The output columns of the current chunk, at `output_positions`.
         ColumnRawPtrs output_columns;
-        bool adds_zero_seen_rows = false;
     };
 
     const SharedHeader output_header;

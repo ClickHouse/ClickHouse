@@ -41,14 +41,26 @@ SortDescription GroupLimitSortedAlgorithm::inputSortDescription(
 
 void GroupLimitSortedAlgorithm::addInput(SharedHeader header)
 {
-    const bool adds_zero_seen_rows = seen_column && !header->has(seen_column->name);
-    if (adds_zero_seen_rows)
+    Source source;
+    source.holds_seen_rows = seen_column && header->has(seen_column->name);
+    if (!source.holds_seen_rows)
     {
-        Block extended = *header;
-        extended.insert({seen_column->type->createColumn(), seen_column->type, seen_column->name});
-        header = std::make_shared<const Block>(std::move(extended));
+        if (seen_column)
+        {
+            Block extended = *header;
+            extended.insert({seen_column->type->createColumn(), seen_column->type, seen_column->name});
+            header = std::make_shared<const Block>(std::move(extended));
+        }
+        for (const auto & column : *output_header)
+        {
+            const auto pos = header->getPositionByName(column.name);
+            chassert(header->getByPosition(pos).type->equals(*column.type));
+            source.output_positions.push_back(pos);
+        }
+        source.output_columns.resize(source.output_positions.size());
     }
-    sources.push_back({std::move(header), {}, {}, adds_zero_seen_rows});
+    source.header = std::move(header);
+    sources.push_back(std::move(source));
     current_inputs.emplace_back();
     cursors.emplace_back();
 }
@@ -77,7 +89,7 @@ void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
     {
         auto & source = sources[source_num];
         /// An input that is already exhausted has a chunk without columns.
-        if (source.adds_zero_seen_rows && current_inputs[source_num].chunk.getNumColumns())
+        if (seen_column && !source.holds_seen_rows && current_inputs[source_num].chunk.getNumColumns())
             addZeroSeenRows(current_inputs[source_num].chunk);
         removeReplicatedFromSortingColumns(source.header, current_inputs[source_num], description);
         removeConstAndSparse(current_inputs[source_num]);
@@ -88,15 +100,11 @@ void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
         {
             auto & cursor = cursors[source_num];
             cursor = SortCursorImpl(*source.header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
-            if (seenRows(cursor, 0) == 0)
+            chassert(source.holds_seen_rows == (seenRows(cursor, 0) != 0));
+            if (!source.holds_seen_rows)
             {
-                for (const auto & column : *output_header)
-                {
-                    const auto pos = source.header->getPositionByName(column.name);
-                    chassert(source.header->getByPosition(pos).type->equals(*column.type));
-                    source.output_positions.push_back(pos);
-                    source.output_columns.push_back(cursor.all_columns[pos]);
-                }
+                for (size_t i = 0; i < source.output_positions.size(); ++i)
+                    source.output_columns[i] = cursor.all_columns[source.output_positions[i]];
                 output_inputs[source_num].chunk = projectOutput(chunk.clone(), source_num);
             }
         }
@@ -108,7 +116,7 @@ void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
 void GroupLimitSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     auto & source = sources[source_num];
-    if (source.adds_zero_seen_rows)
+    if (seen_column && !source.holds_seen_rows)
         addZeroSeenRows(input.chunk);
     removeReplicatedFromSortingColumns(source.header, input, description);
     removeConstAndSparse(input);
@@ -116,7 +124,7 @@ void GroupLimitSortedAlgorithm::consume(Input & input, size_t source_num)
     const auto & chunk = current_inputs[source_num].chunk;
     auto & cursor = cursors[source_num];
     cursor.reset(chunk.getColumns(), *source.header, chunk.getNumRows());
-    chassert((seenRows(cursor, 0) != 0) == source.output_positions.empty());
+    chassert(source.holds_seen_rows == (seenRows(cursor, 0) != 0));
     for (size_t i = 0; i < source.output_positions.size(); ++i)
         source.output_columns[i] = cursor.all_columns[source.output_positions[i]];
     queue.push(cursor);
@@ -188,7 +196,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeDistinctRows()
         current_key.set(current);
         current_key.num_columns = num_key_columns;
         size_t skipped_rows = batch_size;
-        if (seenRows(*current.impl, first_row) == 0)
+        if (!sources[current->order].holds_seen_rows)
         {
             /// Input-row chunks are internally unique, so only the first row can repeat a prior key,
             /// and only when switching chunks. Source refills compare against the saved boundary key.
@@ -245,7 +253,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeRankedRows()
         auto current = *current_ptr;
         const size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
         const size_t first_row = current->getRow();
-        const bool is_seen_source = seenRows(*current.impl, first_row) != 0;
+        const bool is_seen_source = sources[current->order].holds_seen_rows;
         const IColumn ** key_columns = current->sort_columns.data();
 
         size_t range_start = first_row;
