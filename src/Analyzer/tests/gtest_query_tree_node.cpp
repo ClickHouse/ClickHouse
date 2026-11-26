@@ -176,3 +176,103 @@ TEST(QueryTreeNode, ColumnSourcesCorrespondenceInIsEqual)
             make_list({shared_subtree, make_column(source_a)}));
     }
 }
+
+/// `isEqualLocal` compares the column sources by identity, except the column sources that are inside of the compared trees.
+TEST(QueryTreeNode, LocalComparisonOfColumnSources)
+{
+    NameAndTypePair column_name_and_type("value", std::make_shared<DataTypeUInt64>());
+
+    auto make_column = [&](const std::shared_ptr<SourceNode> & source)
+    {
+        return std::make_shared<ColumnNode>(column_name_and_type, source);
+    };
+
+    auto make_list = [](QueryTreeNodes nodes)
+    {
+        auto list = std::make_shared<ListNode>();
+        list->getNodes() = std::move(nodes);
+        return list;
+    };
+
+    auto check_equal_local = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        ASSERT_TRUE(lhs->isEqualLocal(*rhs));
+        ASSERT_TRUE(rhs->isEqualLocal(*lhs));
+        ASSERT_EQ(lhs->getTreeHashLocal(), rhs->getTreeHashLocal());
+    };
+
+    auto check_not_equal_local = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        ASSERT_FALSE(lhs->isEqualLocal(*rhs));
+        ASSERT_FALSE(rhs->isEqualLocal(*lhs));
+    };
+
+    /// Two different column sources with the same content, outside of the compared trees.
+    auto source_a = std::make_shared<SourceNode>();
+    auto source_b = std::make_shared<SourceNode>();
+
+    /// Columns of the same column source are equal.
+    check_equal_local(make_column(source_a), make_column(source_a));
+    check_equal_local(
+        make_list({make_column(source_a), make_column(source_b)}),
+        make_list({make_column(source_a), make_column(source_b)}));
+
+    /// Columns of different column sources are equal only by content.
+    ASSERT_TRUE(make_column(source_a)->isEqual(*make_column(source_b)));
+    check_not_equal_local(make_column(source_a), make_column(source_b));
+    check_not_equal_local(
+        make_list({make_column(source_a), make_column(source_b)}),
+        make_list({make_column(source_b), make_column(source_a)}));
+
+    /// A clone of an expression refers to the same column source.
+    {
+        auto expression = make_list({make_column(source_a), make_column(source_b)});
+        check_equal_local(expression, expression->clone());
+    }
+
+    /// Column sources inside of the compared trees are different nodes, and they are paired with each other.
+    {
+        auto make_tree_with_sources = [&](bool second_column_from_second_source)
+        {
+            auto first_source = std::make_shared<SourceNode>();
+            auto second_source = std::make_shared<SourceNode>();
+            return make_list({
+                first_source,
+                second_source,
+                make_column(first_source),
+                make_column(second_column_from_second_source ? second_source : first_source)});
+        };
+
+        check_equal_local(make_tree_with_sources(true), make_tree_with_sources(true));
+        check_equal_local(make_tree_with_sources(false), make_tree_with_sources(false));
+        check_not_equal_local(make_tree_with_sources(true), make_tree_with_sources(false));
+
+        /// A clone of a tree with its column sources.
+        auto tree = make_tree_with_sources(true);
+        check_equal_local(tree, tree->clone());
+    }
+
+    /// A column source inside of one tree is not equal to a column source outside of the other tree.
+    {
+        auto inner_source = std::make_shared<SourceNode>();
+        check_not_equal_local(
+            make_list({inner_source, make_column(inner_source)}),
+            make_list({std::make_shared<SourceNode>(), make_column(source_a)}));
+    }
+
+    /// A destroyed column source is still different from another destroyed column source.
+    {
+        auto first_source = std::make_shared<SourceNode>();
+        auto second_source = std::make_shared<SourceNode>();
+
+        auto first_column = make_column(first_source);
+        auto another_first_column = make_column(first_source);
+        auto second_column = make_column(second_source);
+
+        first_source.reset();
+        second_source.reset();
+
+        check_equal_local(first_column, another_first_column);
+        check_not_equal_local(first_column, second_column);
+    }
+}

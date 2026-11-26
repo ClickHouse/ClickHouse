@@ -1,0 +1,25 @@
+group_by_use_nulls
+0
+1
+\N
+reused alias of a table expression
+0
+1
+\N
+CTE
+0	1
+1	1
+table expressions without aliases
+1
+2
+grouping
+0	0
+1	0
+column sources inside of the key
+[1]
+[2]
+0
+1
+[]
+[1]
+[2]

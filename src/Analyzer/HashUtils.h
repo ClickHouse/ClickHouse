@@ -17,27 +17,36 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
   *
   * Example of usage:
   * std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::string> map;
+  *
+  * If `local` is set, the nodes are compared with `isEqualLocal` and hashed with `getTreeHashLocal`:
+  * the column sources are compared by identity. All the nodes must be parts of the same query tree.
   */
-template <typename QueryTreeNodePtrType, bool compare_aliases = true>
+template <typename QueryTreeNodePtrType, bool compare_aliases = true, bool local = false>
 struct QueryTreeNodeWithHash
 {
     QueryTreeNodeWithHash(QueryTreeNodePtrType node_) /// NOLINT
         : node(std::move(node_))
-        , hash(node->getTreeHash({.compare_aliases = compare_aliases}))
+        , hash(local ? node->getTreeHashLocal({.compare_aliases = compare_aliases}) : node->getTreeHash({.compare_aliases = compare_aliases}))
     {}
 
     QueryTreeNodePtrType node = nullptr;
     CityHash_v1_0_2::uint128 hash;
 };
 
-template <typename T, bool compare_aliases>
-inline bool operator==(const QueryTreeNodeWithHash<T, compare_aliases> & lhs, const QueryTreeNodeWithHash<T, compare_aliases> & rhs)
+template <typename T, bool compare_aliases, bool local>
+inline bool operator==(const QueryTreeNodeWithHash<T, compare_aliases, local> & lhs, const QueryTreeNodeWithHash<T, compare_aliases, local> & rhs)
 {
-    return lhs.hash == rhs.hash && lhs.node->isEqual(*rhs.node, {.compare_aliases = compare_aliases});
+    if (lhs.hash != rhs.hash)
+        return false;
+
+    if (local)
+        return lhs.node->isEqualLocal(*rhs.node, {.compare_aliases = compare_aliases});
+
+    return lhs.node->isEqual(*rhs.node, {.compare_aliases = compare_aliases});
 }
 
-template <typename T, bool compare_aliases>
-inline bool operator!=(const QueryTreeNodeWithHash<T, compare_aliases> & lhs, const QueryTreeNodeWithHash<T, compare_aliases> & rhs)
+template <typename T, bool compare_aliases, bool local>
+inline bool operator!=(const QueryTreeNodeWithHash<T, compare_aliases, local> & lhs, const QueryTreeNodeWithHash<T, compare_aliases, local> & rhs)
 {
     return !(lhs == rhs);
 }
@@ -57,6 +66,13 @@ using QueryTreeNodePtrWithHashMap = std::unordered_map<QueryTreeNodePtrWithHash,
 template <typename Value>
 using QueryTreeNodePtrWithHashIgnoreAliasesMap = std::unordered_map<QueryTreeNodePtrWithHashIgnoreAliases, Value>;
 
+/// The variants that compare the column sources by identity, see `IQueryTreeNode::isEqualLocal`.
+using QueryTreeNodePtrWithLocalHashIgnoreAliases = QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ false, /*local*/ true>;
+using QueryTreeNodePtrWithLocalHashIgnoreAliasesSet = std::unordered_set<QueryTreeNodePtrWithLocalHashIgnoreAliases>;
+
+template <typename Value>
+using QueryTreeNodePtrWithLocalHashIgnoreAliasesMap = std::unordered_map<QueryTreeNodePtrWithLocalHashIgnoreAliases, Value>;
+
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 using ColumnNodePtrWithHash = QueryTreeNodeWithHash<ColumnNodePtr>;
@@ -64,10 +80,10 @@ using ColumnNodePtrWithHashSet = std::unordered_set<ColumnNodePtrWithHash>;
 
 }
 
-template <typename T, bool compare_aliases>
-struct std::hash<DB::QueryTreeNodeWithHash<T, compare_aliases>>
+template <typename T, bool compare_aliases, bool local>
+struct std::hash<DB::QueryTreeNodeWithHash<T, compare_aliases, local>>
 {
-    size_t operator()(const DB::QueryTreeNodeWithHash<T, compare_aliases> & node_with_hash) const
+    size_t operator()(const DB::QueryTreeNodeWithHash<T, compare_aliases, local> & node_with_hash) const
     {
         return node_with_hash.hash.low64;
     }

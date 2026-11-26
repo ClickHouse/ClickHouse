@@ -137,6 +137,19 @@ public:
       */
     [[nodiscard]] bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
+    /** Is tree equal to other tree with node root, when both trees are parts of the same query tree.
+      *
+      * `isEqual` compares the column sources by content, so it does not distinguish two table expressions
+      * with the same content, for example, the two sides of a join of a table with itself.
+      * It is the right comparison for trees that belong to different query trees.
+      *
+      * `isEqualLocal` compares the column sources by identity: two columns are equal only if they refer
+      * to the same table expression node. The exception is a column source that is inside of the compared trees
+      * (a lambda, or a table expression of a subquery that is used as an expression). Such column sources
+      * are different nodes in the two trees, and they are compared the same way as in `isEqual`.
+      */
+    [[nodiscard]] bool isEqualLocal(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
 
@@ -156,6 +169,13 @@ public:
       * and `PlannerActionsVisitorImpl::visitColumn`).
       */
     [[nodiscard]] Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+
+    /** Get tree hash that is consistent with `isEqualLocal`: equal trees have equal hashes.
+      *
+      * The column sources are not hashed, so it is cheaper than `getTreeHash`.
+      * The hash must be used only together with `isEqualLocal`.
+      */
+    [[nodiscard]] Hash getTreeHashLocal(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     /// Get a deep copy of the query tree
     [[nodiscard]] QueryTreeNodePtr clone() const;
@@ -328,6 +348,16 @@ protected:
     QueryTreeNodes children;
 
 private:
+    /// How the column sources are compared in `isEqual` / `isEqualLocal` and hashed in `getTreeHash` / `getTreeHashLocal`.
+    enum class ColumnSourcesComparison : uint8_t
+    {
+        ByContent,
+        ByIdentity,
+    };
+
+    [[nodiscard]] bool isEqualWithColumnSources(const IQueryTreeNode & rhs, CompareOptions compare_options, ColumnSourcesComparison column_sources_comparison) const;
+    [[nodiscard]] Hash getTreeHashWithColumnSources(CompareOptions compare_options, ColumnSourcesComparison column_sources_comparison) const;
+
     String alias;
     /// An alias from query. Alias can be replaced by query passes,
     /// but we need to keep the original one to support additional_table_filters.

@@ -4429,12 +4429,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            /// `nullable_group_by_keys` is keyed by query-tree structure
-            /// (`ColumnNode::isEqualImpl` compares column name and type only,
-            /// ignoring source identity), so a same-shaped key in an
-            /// intermediate ancestor scope can match a correlated column whose
+            /// `nullable_group_by_keys` compares the column sources by identity
+            /// (see `IQueryTreeNode::isEqualLocal`), so a same-shaped key in an
+            /// intermediate ancestor scope does not match a correlated column whose
             /// real source lives further out. For correlated columns we
-            /// therefore consult `nullable_group_by_keys` only at the scope
+            /// still consult `nullable_group_by_keys` only at the scope
             /// that owns the column source: that is the only scope whose
             /// `group_by_use_nulls` actually applied to this column.
             const bool at_source_scope = is_correlated_column_node && correlated_column_source
@@ -4765,7 +4764,7 @@ bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
   */
 bool convertNestedGroupByKeysToNullable(
     QueryTreeNodePtr & node,
-    const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
+    const QueryTreeNodePtrWithLocalHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
     const ContextPtr & context)
 {
     /// The identifier resolve cache can make several references one node: change it in place only through its own copy.
