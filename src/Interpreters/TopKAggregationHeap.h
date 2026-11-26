@@ -168,8 +168,10 @@ protected:
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions of the current batch
-    size_t skip_chunk_end = 0;              /// chunk end of the last `fillSkipBitmap`
-    size_t skip_chunk_rows = 0;             /// rows the last `fillSkipBitmap` decided; doubles while the fills are contiguous
+    size_t skip_chunk_begin = 0;            /// chunk of the last `fillSkipBitmap`
+    size_t skip_chunk_end = 0;
+    size_t skip_chunk_rows = 0;             /// its length; see `fillSkipBitmap`
+    bool boundary_moved_since_fill = false; /// set by `updateBoundaryChoice`, so the next chunk is sized by how long the last lasted
     PaddedPODArray<UInt64> skip_compare_rows;   /// `compareColumn` scratch: rows still tied with the boundary
     PaddedPODArray<Int8> skip_compare_results;  /// `compareColumn` scratch: per-row comparison with the boundary
     std::vector<size_t> evicted_rows;       /// `heap_column` rows dropped by the last `trimToK`

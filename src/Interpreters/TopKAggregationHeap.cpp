@@ -139,6 +139,7 @@ void TopKAggregationHeapBase::freezeBase()
     publish_pending = false;
     key_arena.reset();
     skip_bitmap = {};
+    skip_chunk_begin = 0;
     skip_chunk_end = 0;
     skip_compare_rows = {};
     skip_compare_results = {};
@@ -150,16 +151,20 @@ void TopKAggregationHeapBase::freezeBase()
 std::pair<const UInt8 *, size_t> TopKAggregationHeapBase::fillSkipBitmap(
     const ColumnRawPtrs & source_columns, const void * source_typed_data, size_t begin, size_t end)
 {
-    /// A trim moves the boundary, so the chunk is short while trims are frequent (e.g. every row is a new
-    /// best key), and grows to the rest of the batch once the boundary settles.
-    /// Capped by the rows left: consecutive slices of a block (e.g. adaptive aggregation) continue the chunk, so
-    /// without the cap it would double on every slice until it wraps to zero.
+    /// A moved boundary ends the chunk, so the next one is as long as the last lasted: with a trim every 2 rows
+    /// (`LIMIT 1` over ascending keys with `DESC`) a longer chunk would compare rows only to drop the results.
+    /// Once the boundary settles, the chunk doubles up to the rest of the batch. Consecutive slices of a block
+    /// (e.g. adaptive aggregation) continue the chunk; the cap by the rows left keeps it from overflowing.
     static constexpr size_t min_chunk_rows = 16;
     chassert(begin < end);
-    const bool continues = skip_chunk_end != 0 && skip_chunk_end == begin;
-    skip_chunk_rows = std::min(end - begin, continues ? skip_chunk_rows * 2 : min_chunk_rows);
+    size_t rows = min_chunk_rows;
+    if (skip_chunk_begin < begin && begin <= skip_chunk_end)
+        rows = boundary_moved_since_fill ? begin - skip_chunk_begin : skip_chunk_rows * 2;
+    boundary_moved_since_fill = false;
+    skip_chunk_rows = std::min(end - begin, rows);
     /// A local bound: the `UInt8` stores may alias the members, which would block vectorization.
     const size_t chunk_end = begin + skip_chunk_rows;
+    skip_chunk_begin = begin;
     skip_chunk_end = chunk_end;
     /// Sized to the whole batch, so that the pointer stays valid across the chunks.
     skip_bitmap.resize(end);
@@ -284,6 +289,8 @@ void TopKAggregationHeapBase::exchangeSharedBoundary()
 
 void TopKAggregationHeapBase::updateBoundaryChoice()
 {
+    boundary_moved_since_fill = true;
+
     if (!shared_cache_column)
     {
         boundary_is_shared = false;
