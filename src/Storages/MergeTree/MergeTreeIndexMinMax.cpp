@@ -21,6 +21,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <numeric>
 
+#include <base/arithmeticOverflow.h>
+
+#include <limits>
+
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
@@ -691,7 +695,11 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     }
     else
     {
-        auto min_granules_to_select = n * index_granularity;
+        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
+        size_t min_granules_to_select = 0;
+        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
+            min_granules_to_select = std::numeric_limits<size_t>::max();
+
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
@@ -767,7 +775,11 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     }
     else
     {
-        auto min_granules_to_select = n * index_granularity;
+        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
+        size_t min_granules_to_select = 0;
+        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
+            min_granules_to_select = std::numeric_limits<size_t>::max();
+
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {

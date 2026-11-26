@@ -37,6 +37,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/CoverageCollection.h>
@@ -432,8 +433,12 @@ void BaseDaemon::initialize(Application & self)
     if (should_setup_watchdog)
         setupWatchdog();
 
-    /// Create pid file.
-    if (config().has("pid"))
+    /// Create pid file. With the filesystem isolation, the supervisor outside of it has created it, with its own PID,
+    /// and it sends the signals it gets to this process from now on.
+    const auto filesystem_isolation = getFilesystemIsolationStatus();
+    if (filesystem_isolation && filesystem_isolation->created_pid_namespace)
+        registerFilesystemIsolationServingProcess();
+    else if (config().has("pid"))
         pid_file.emplace(config().getString("pid"), StatusFile::write_pid);
 
     if (is_daemon)
@@ -849,6 +854,10 @@ String BaseDaemon::getStoredBinaryHash() const
 #if defined(OS_LINUX)
 void systemdNotify(const std::string_view & command)
 {
+    /// With the filesystem isolation, through the supervisor outside of it, which is the main process for systemd.
+    if (notifyFilesystemIsolationSupervisor(command))
+        return;
+
     const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
 
     if (path == nullptr)
