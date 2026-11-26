@@ -2,8 +2,6 @@
 -- The validation lives in the analyzer, so force it on regardless of the CI variant.
 -- https://github.com/ClickHouse/ClickHouse/issues/74442
 
-SET enable_analyzer = 1;
-
 SELECT (1, 1) IN (SELECT 1); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT 1 IN (SELECT 1, 2); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT (1, 1, 1) IN (SELECT 1, 2); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
@@ -43,8 +41,6 @@ SELECT 1 WHERE (x -> -1 * x) GLOBAL NOT IN (SELECT arrayJoin([1])); -- { serverE
 -- must NOT be rejected: `FunctionIn` compares the left value against that one column as a single
 -- key, so the query is valid as long as the left tuple can be cast to the right column type.
 -- These are valid one-key comparisons (regression for the false positive flagged in PR #97540).
-SET allow_experimental_dynamic_type = 1;
-SET allow_experimental_variant_type = 1;
 
 -- `Dynamic` can store a tuple value, so the whole left tuple is compared against it.
 SELECT (1, 2) IN (SELECT CAST((1, 2), 'Dynamic'));

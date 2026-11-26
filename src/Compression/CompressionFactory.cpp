@@ -1,4 +1,5 @@
 #include <span>
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
@@ -30,6 +31,23 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
     extern const int BAD_ARGUMENTS;
     extern const int OPENSSL_ERROR;
+}
+
+std::pair<String, ASTPtr> CompressionCodecFactory::getCodecNameAndArguments(const ASTPtr & element)
+{
+    if (const auto * identifier = element->as<ASTIdentifier>())
+        return {identifier->name(), nullptr};
+    if (const auto * function = element->as<ASTFunction>())
+        return {function->name, function->arguments};
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec: {}", element->formatForErrorMessage());
+}
+
+const CompressionCodecFamilyProperties & CompressionCodecFactory::getFamilyProperties(const String & family_name) const
+{
+    const String * canonical_family_name = tryGetCanonicalFamilyName(family_name);
+    if (!canonical_family_name)
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
+    return family_name_with_properties.at(*canonical_family_name);
 }
 
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
@@ -70,6 +88,12 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & compression_code
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     checkCodecChainIsNotColumnLevelOnly(ast);
+    /// A codec given as a string (e.g. `default_compression_codec`) has no data type, and `FirstApplicable` in it is
+    /// selected again for the type of every column, where the restrictions of lossy codecs are not checked.
+    if (CompressionCodecFirstApplicable::isInChain(ast))
+        for (const auto & element : ast->as<const ASTFunction &>().arguments->children)
+            if (CompressionCodecFirstApplicable::isFirstApplicable(element))
+                validateFirstApplicableAlternative(element, /*settings=*/ nullptr, /*reject_lossy=*/ true);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
@@ -85,24 +109,23 @@ CompressionCodecPtr CompressionCodecFactory::get(
         codecs.reserve(func->arguments->children.size());
         for (const auto & inner_codec_ast : func->arguments->children)
         {
-            String codec_family_name;
-            ASTPtr codec_arguments;
-            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
-            {
-                codec_family_name = family_name->name();
-                codec_arguments = {};
-            }
-            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
-            {
-                codec_family_name = ast_func->name;
-                codec_arguments = ast_func->arguments;
-            }
-            else
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+            const auto [codec_family_name, codec_arguments] = getCodecNameAndArguments(inner_codec_ast);
 
             CompressionCodecPtr codec;
             if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
+            {
                 codec = current_default;
+                /// E.g. `default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))'`: select for the data type.
+                if (column_type && codec->dependsOnDataType())
+                    codec = get(codec->getFullCodecDescription(), column_type);
+            }
+            else if (CompressionCodecFirstApplicable::isFirstApplicable(inner_codec_ast))
+            {
+                codec = CompressionCodecFirstApplicable::create(inner_codec_ast, column_type, current_default, only_generic);
+                /// No generic codec to keep for a structural substream.
+                if (!codec)
+                    continue;
+            }
             else
                 codec = getImpl(codec_family_name, codec_arguments, column_type);
 
@@ -365,6 +388,10 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecSZ3(*this);
 #endif
     registerCodecZXC(*this);
+    registerCodecGDeflate(*this);
+#if USE_PCO
+    registerCodecPco(*this);
+#endif
 
     default_codec = get("ZSTD", 3);
 }

@@ -17,7 +17,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 set max_threads=4, max_block_size=8192;
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 -- Reading of aggregation states from disk will affect `ReadCompressedBytes`
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
@@ -47,7 +46,9 @@ SELECT COUNT(*) FROM t WHERE a > 10101 FORMAT Null SETTINGS log_comment='query_6
 
 SELECT COUNT(*) FROM t WHERE a <= 10101 FORMAT Null SETTINGS log_comment='query_7', allow_experimental_projection_optimization=0, optimize_use_implicit_projections=0;
 
-SELECT a, s FROM t WHERE s LIKE '1%' ORDER BY a DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_8';
+-- Read in order: otherwise Top-K filtering keeps the read local with plan-based parallel replicas, so no
+-- statistics are collected for it: https://github.com/ClickHouse/ClickHouse/issues/131858
+SELECT a, s FROM t WHERE s LIKE '1%' ORDER BY a DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_8', optimize_read_in_order=1;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 

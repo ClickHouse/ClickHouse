@@ -46,6 +46,9 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
+struct TextSearchQuery;
+using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
+
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -69,9 +72,20 @@ enum class MergeTreeReadType : uint8_t
 /// Some indexes (e.g. inverted text index) may read special virtual columns.
 struct IndexReadTask
 {
-    NamesAndTypesList columns;
+    /// A virtual column filled by the index reader and the text search query it is filled from.
+    /// Default expression is evaluated by the main reader in parts where the index is not materialized.
+    struct Column
+    {
+        String name;
+        DataTypePtr type;
+        TextSearchQueryPtr search_query;
+        ASTPtr default_expression;
+    };
+
+    std::vector<Column> columns;
     MergeTreeIndexWithCondition index;
-    bool is_final = false;
+
+    [[nodiscard]] NamesAndTypesList getNamesAndTypesList() const;
 };
 
 /// Ordered map to ensure deterministic iteration order.
@@ -80,7 +94,6 @@ struct IndexReadTask
 /// `std::unordered_map` does not guarantee the same iteration order after copy,
 /// which leads to mismatched prewhere readers and actions.
 using IndexReadTasks = std::map<String, IndexReadTask>;
-using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -91,8 +104,8 @@ struct MergeTreeReadTaskColumns
     /// Column names to read from patch parts.
     NamesAndTypesLists patch_columns;
 
-    String dump() const;
-    Names getAllColumnNames() const;
+    [[nodiscard]] String dump() const;
+    [[nodiscard]] Names getAllColumnNames() const;
     void moveAllColumnsFromPrewhere();
 };
 
@@ -138,6 +151,9 @@ struct MergeTreeReadTaskInfo
     MarkRangesPtr read_request_map;
     /// The same for each of `patch_parts`; empty = the whole patch parts.
     std::vector<MarkRangesPtr> patch_read_request_maps;
+
+    /// Rows the reader drops from this part before PREWHERE; non-empty, or null to drop none.
+    ConstDeleteBitmapPtr delete_bitmap;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

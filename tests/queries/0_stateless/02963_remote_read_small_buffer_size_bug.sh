@@ -35,6 +35,9 @@ SETTINGS
     allow_prefetched_read_pool_for_remote_filesystem = 1, filesystem_prefetch_min_bytes_for_single_read_task = '1Ki',
     merge_tree_min_bytes_for_concurrent_read = 1, merge_tree_min_rows_for_concurrent_read = 1,
     merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
+    -- With parallel replicas another replica may do the read, and its ProfileEvents
+    -- never reach this query's query_log row.
+    enable_parallel_replicas = 0,
     -- The check below reads the local cache-write shape, which only reflects this node's buffer
     -- sizing when this node does the caching.
     force_read_through_distributed_cache = 0;

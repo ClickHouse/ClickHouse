@@ -1,18 +1,17 @@
 {
-  "icon": "/images/icons/icon-reference.svg",
-  "item": "参考文档",
+  "item": "Reference",
   "pages": [
     "zh/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQL 参考文档",
+      "group": "SQL Reference",
       "pages": [
         "zh/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "语句",
+          "group": "Statements",
           "pages": [
             "zh/reference/statements/index",
             {
@@ -26,6 +25,7 @@
                 "zh/reference/statements/alter/comment",
                 "zh/reference/statements/alter/constraint",
                 "zh/reference/statements/alter/database-comment",
+                "zh/reference/statements/alter/database-setting",
                 "zh/reference/statements/alter/delete",
                 "zh/reference/statements/alter/named-collection",
                 "zh/reference/statements/alter/order-by",
@@ -66,7 +66,7 @@
                     "zh/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "布局",
+                      "group": "Layouts",
                       "pages": [
                         "zh/reference/statements/create/dictionary/layouts/overview",
                         "zh/reference/statements/create/dictionary/layouts/flat",
@@ -78,6 +78,7 @@
                         "zh/reference/statements/create/dictionary/layouts/range-hashed",
                         "zh/reference/statements/create/dictionary/layouts/hierarchical",
                         "zh/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "zh/reference/statements/create/dictionary/layouts/xgboost",
                         "zh/reference/statements/create/dictionary/layouts/polygon",
                         "zh/reference/statements/create/dictionary/layouts/ip-trie",
                         "zh/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -85,7 +86,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "数据源",
+                      "group": "Sources",
                       "pages": [
                         "zh/reference/statements/create/dictionary/sources/overview",
                         "zh/reference/statements/create/dictionary/sources/local-file",
@@ -176,6 +177,7 @@
                 "zh/reference/statements/select/qualify",
                 "zh/reference/statements/select/replace_modifier",
                 "zh/reference/statements/select/sample",
+                "zh/reference/statements/select/shuffle",
                 "zh/reference/statements/select/union",
                 "zh/reference/statements/select/where",
                 "zh/reference/statements/select/with"
@@ -185,6 +187,7 @@
             "zh/reference/statements/set",
             "zh/reference/statements/show",
             "zh/reference/statements/system",
+            "zh/reference/statements/transactions",
             "zh/reference/statements/truncate",
             "zh/reference/statements/undrop",
             "zh/reference/statements/update",
@@ -194,11 +197,9 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "运算符",
+          "group": "Operators",
           "pages": [
-            "zh/reference/operators/index",
-            "zh/reference/operators/exists",
-            "zh/reference/operators/distributed-ddl"
+            "zh/reference/operators/index"
           ]
         }
       ]
@@ -206,12 +207,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "数据类型",
+      "group": "Data Types",
       "pages": [
         "zh/reference/data-types/index",
         {
           "expanded": false,
-          "group": "数值类型",
+          "group": "Numeric types",
           "pages": [
             "zh/reference/data-types/int-uint",
             "zh/reference/data-types/float",
@@ -221,7 +222,7 @@
         },
         {
           "expanded": false,
-          "group": "字符串类型",
+          "group": "String types",
           "pages": [
             "zh/reference/data-types/string",
             "zh/reference/data-types/fixedstring"
@@ -229,7 +230,7 @@
         },
         {
           "expanded": false,
-          "group": "日期和时间类型",
+          "group": "Date and time types",
           "pages": [
             "zh/reference/data-types/date",
             "zh/reference/data-types/date32",
@@ -241,7 +242,7 @@
         },
         {
           "expanded": false,
-          "group": "网络类型",
+          "group": "Network types",
           "pages": [
             "zh/reference/data-types/ipv4",
             "zh/reference/data-types/ipv6"
@@ -249,7 +250,7 @@
         },
         {
           "expanded": false,
-          "group": "复合类型",
+          "group": "Composite types",
           "pages": [
             "zh/reference/data-types/array",
             "zh/reference/data-types/tuple",
@@ -259,7 +260,7 @@
         },
         {
           "expanded": false,
-          "group": "半结构化类型",
+          "group": "Semi-structured types",
           "pages": [
             "zh/reference/data-types/newjson",
             "zh/reference/data-types/dynamic",
@@ -268,7 +269,7 @@
         },
         {
           "expanded": false,
-          "group": "可空类型和可选类型",
+          "group": "Nullable and optional types",
           "pages": [
             "zh/reference/data-types/nullable",
             "zh/reference/data-types/lowcardinality"
@@ -276,7 +277,7 @@
         },
         {
           "expanded": false,
-          "group": "专用类型",
+          "group": "Specialized types",
           "pages": [
             "zh/reference/data-types/uuid",
             "zh/reference/data-types/enum",
@@ -287,7 +288,7 @@
         },
         {
           "expanded": false,
-          "group": "聚合函数类型",
+          "group": "Aggregate function types",
           "pages": [
             "zh/reference/data-types/aggregatefunction",
             "zh/reference/data-types/simpleaggregatefunction"
@@ -295,7 +296,7 @@
         },
         {
           "expanded": false,
-          "group": "特殊数据类型",
+          "group": "Special Data Types",
           "pages": [
             "zh/reference/data-types/special-data-types/index",
             "zh/reference/data-types/special-data-types/expression",
@@ -305,7 +306,7 @@
           ]
         },
         {
-          "group": "二进制编码",
+          "group": "Binary encoding",
           "pages": [
             "zh/reference/data-types/data-types-binary-encoding"
           ]
@@ -315,17 +316,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "引擎",
+      "group": "Engines",
       "pages": [
         "zh/reference/engines/engines",
         {
           "expanded": false,
-          "group": "表引擎",
+          "group": "Table Engines",
           "pages": [
             "zh/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "集成",
+              "group": "Integrations",
               "pages": [
                 "zh/reference/engines/table-engines/integrations/index",
                 "zh/reference/engines/table-engines/integrations/arrowflight",
@@ -333,6 +334,7 @@
                 "zh/reference/engines/table-engines/integrations/azureBlobStorage",
                 "zh/reference/engines/table-engines/integrations/bigquery",
                 "zh/reference/engines/table-engines/integrations/deltalake",
+                "zh/reference/engines/table-engines/integrations/elasticsearch",
                 "zh/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "zh/reference/engines/table-engines/integrations/ExternalDistributed",
                 "zh/reference/engines/table-engines/integrations/hdfs",
@@ -359,7 +361,7 @@
             },
             {
               "expanded": false,
-              "group": "Log 家族",
+              "group": "Log Family",
               "pages": [
                 "zh/reference/engines/table-engines/log-family/index",
                 "zh/reference/engines/table-engines/log-family/log",
@@ -369,7 +371,7 @@
             },
             {
               "expanded": false,
-              "group": "MergeTree 家族",
+              "group": "MergeTree Family",
               "pages": [
                 "zh/reference/engines/table-engines/mergetree-family/index",
                 "zh/reference/engines/table-engines/mergetree-family/mergetree",
@@ -388,7 +390,7 @@
             },
             {
               "expanded": false,
-              "group": "特殊引擎",
+              "group": "Special",
               "pages": [
                 "zh/reference/engines/table-engines/special/index",
                 "zh/reference/engines/table-engines/special/alias",
@@ -415,11 +417,12 @@
         },
         {
           "expanded": false,
-          "group": "数据库引擎",
+          "group": "Database Engines",
           "pages": [
             "zh/reference/engines/database-engines/index",
             "zh/reference/engines/database-engines/atomic",
             "zh/reference/engines/database-engines/backup",
+            "zh/reference/engines/database-engines/cluster",
             "zh/reference/engines/database-engines/datalake",
             "zh/reference/engines/database-engines/dictionary",
             "zh/reference/engines/database-engines/filesystem",
@@ -428,6 +431,7 @@
             "zh/reference/engines/database-engines/memory",
             "zh/reference/engines/database-engines/mysql",
             "zh/reference/engines/database-engines/ordinary",
+            "zh/reference/engines/database-engines/overlay",
             "zh/reference/engines/database-engines/postgresql",
             "zh/reference/engines/database-engines/remote",
             "zh/reference/engines/database-engines/replicated",
@@ -442,12 +446,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "函数",
+      "group": "Functions",
       "pages": [
         "zh/reference/functions/index",
         {
           "expanded": false,
-          "group": "常规函数",
+          "group": "Regular functions",
           "pages": [
             "zh/reference/functions/regular-functions/overview",
             "zh/reference/functions/regular-functions/ai-functions",
@@ -469,7 +473,7 @@
             "zh/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "地理空间",
+              "group": "Geo",
               "pages": [
                 "zh/reference/functions/regular-functions/geo/index",
                 "zh/reference/functions/regular-functions/geo/coordinates",
@@ -513,7 +517,7 @@
         },
         {
           "expanded": false,
-          "group": "聚合函数",
+          "group": "Aggregate Functions",
           "pages": [
             "zh/reference/functions/aggregate-functions/index",
             "zh/reference/functions/aggregate-functions/combinators",
@@ -521,7 +525,7 @@
             "zh/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "参考文档",
+              "group": "Reference",
               "pages": [
                 "zh/reference/functions/aggregate-functions/reference-index",
                 "zh/reference/functions/aggregate-functions/aggThrow",
@@ -598,6 +602,7 @@
                 "zh/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "zh/reference/functions/aggregate-functions/maxMap",
                 "zh/reference/functions/aggregate-functions/meanZTest",
+                "zh/reference/functions/aggregate-functions/mergedJSONPatch",
                 "zh/reference/functions/aggregate-functions/median",
                 "zh/reference/functions/aggregate-functions/min",
                 "zh/reference/functions/aggregate-functions/minMap",
@@ -639,6 +644,15 @@
                 "zh/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "zh/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "zh/reference/functions/aggregate-functions/rankCorr",
+                "zh/reference/functions/aggregate-functions/regr_avgx",
+                "zh/reference/functions/aggregate-functions/regr_avgy",
+                "zh/reference/functions/aggregate-functions/regr_count",
+                "zh/reference/functions/aggregate-functions/regr_intercept",
+                "zh/reference/functions/aggregate-functions/regr_r2",
+                "zh/reference/functions/aggregate-functions/regr_slope",
+                "zh/reference/functions/aggregate-functions/regr_sxx",
+                "zh/reference/functions/aggregate-functions/regr_sxy",
+                "zh/reference/functions/aggregate-functions/regr_syy",
                 "zh/reference/functions/aggregate-functions/simpleLinearRegression",
                 "zh/reference/functions/aggregate-functions/singleValueOrNull",
                 "zh/reference/functions/aggregate-functions/skewPop",
@@ -659,17 +673,38 @@
                 "zh/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "zh/reference/functions/aggregate-functions/sumWithOverflow",
                 "zh/reference/functions/aggregate-functions/theilsU",
+                "zh/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "zh/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "zh/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
+                "zh/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
+                "zh/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesMadToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "zh/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesSumToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "zh/reference/functions/aggregate-functions/topK",
                 "zh/reference/functions/aggregate-functions/topKWeighted",
                 "zh/reference/functions/aggregate-functions/uniq",
@@ -689,7 +724,7 @@
         },
         {
           "expanded": false,
-          "group": "表函数",
+          "group": "Table functions",
           "pages": [
             "zh/reference/functions/table-functions/index",
             "zh/reference/functions/table-functions/arrowflight",
@@ -700,6 +735,7 @@
             "zh/reference/functions/table-functions/deltalake",
             "zh/reference/functions/table-functions/deltalakeCluster",
             "zh/reference/functions/table-functions/dictionary",
+            "zh/reference/functions/table-functions/elasticsearch",
             "zh/reference/functions/table-functions/executable",
             "zh/reference/functions/table-functions/eval",
             "zh/reference/functions/table-functions/file",
@@ -746,6 +782,7 @@
             "zh/reference/functions/table-functions/timeSeriesSamples",
             "zh/reference/functions/table-functions/timeSeriesSelector",
             "zh/reference/functions/table-functions/timeSeriesTags",
+            "zh/reference/functions/table-functions/timeSeriesTimeRanges",
             "zh/reference/functions/table-functions/url",
             "zh/reference/functions/table-functions/urlCluster",
             "zh/reference/functions/table-functions/values",
@@ -756,7 +793,7 @@
         },
         {
           "expanded": false,
-          "group": "窗口函数",
+          "group": "Window functions",
           "pages": [
             "zh/reference/functions/window-functions/index",
             "zh/reference/functions/window-functions/cume_dist",
@@ -776,7 +813,7 @@
           ]
         },
         {
-          "group": "用户自定义函数",
+          "group": "User Defined Functions",
           "pages": [
             "zh/reference/functions/regular-functions/udf",
             "zh/reference/functions/regular-functions/wasm_udf"
@@ -787,7 +824,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "格式",
+      "group": "Formats",
       "pages": [
         "zh/reference/formats/index",
         {
@@ -945,6 +982,7 @@
           ]
         },
         "zh/reference/formats/SQLInsert",
+        "zh/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -968,13 +1006,14 @@
         },
         "zh/reference/formats/Values",
         "zh/reference/formats/Vertical",
+        "zh/reference/formats/Vortex",
         "zh/reference/formats/XML"
       ]
     },
     {
       "expandable": true,
       "expanded": false,
-      "group": "设置",
+      "group": "Settings",
       "pages": [
         "zh/reference/settings/index",
         {
@@ -995,7 +1034,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "系统表",
+      "group": "System Tables",
       "pages": [
         "zh/reference/system-tables/overview",
         "zh/reference/system-tables/aggregate_function_combinators",
@@ -1020,9 +1059,11 @@
         "zh/reference/system-tables/codecs",
         "zh/reference/system-tables/collations",
         "zh/reference/system-tables/columns",
+        "zh/reference/system-tables/columns_cache",
         "zh/reference/system-tables/completions",
         "zh/reference/system-tables/constraints",
         "zh/reference/system-tables/contributors",
+        "zh/reference/system-tables/connections",
         "zh/reference/system-tables/crash_log",
         "zh/reference/system-tables/current_roles",
         "zh/reference/system-tables/dashboards",
@@ -1070,6 +1111,7 @@
         "zh/reference/system-tables/iceberg_files",
         "zh/reference/system-tables/iceberg_history",
         "zh/reference/system-tables/iceberg_metadata_log",
+        "zh/reference/system-tables/iceberg_metadata_log_entries",
         "zh/reference/system-tables/information_schema",
         "zh/reference/system-tables/instrumentation",
         "zh/reference/system-tables/jemalloc_arena_bins",
@@ -1178,7 +1220,7 @@
       ]
     },
     {
-      "group": "数据湖",
+      "group": "Data Lakes",
       "pages": [
         "zh/reference/datalakes"
       ]

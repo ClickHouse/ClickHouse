@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 다음 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동으로 생성됩니다.
 
-<div id="url_base">
-  ## url_base
-</div>
+## url_base {#url_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "url 테이블 함수와 URL 테이블 엔진에서 상대 URL 해석에 사용할 기준 URL을 지정하는 새로운 설정입니다."}]}]} />
 
@@ -37,9 +35,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * `/test/data.csv`는 `https://example.com/test/data.csv`로 해석됩니다.
 * `//other.com/test/data.csv`는 `https://other.com/test/data.csv`로 해석됩니다.
 
-<div id="url_wildcard_max_directories_to_read">
-  ## url_wildcard_max_directories_to_read
-</div>
+상대 URL이 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)에서 제공되는 경우, 이를 해석하면 해당 컬렉션의 `url` 키를 재정의하는 것으로 간주되므로 해당 컬렉션에 대한 `SHOW NAMED COLLECTIONS SECRETS` 권한이 필요합니다.
+
+## url_wildcard_max_directories_to_read {#url_wildcard_max_directories_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
