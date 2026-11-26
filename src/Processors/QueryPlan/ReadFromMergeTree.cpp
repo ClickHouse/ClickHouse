@@ -1259,7 +1259,8 @@ static bool isReadingByFirstKeyColumnValuesCheap(const RangesInDataParts & parts
 }
 
 /// Whether the rows of the granules that `element` selects pass it, apart from a set of the first key column: a set or an inexact
-/// atom on another column, e.g. a sparse `ts IN (...)`, or a disjunction may select granules with few matching rows.
+/// atom on another column, e.g. a sparse `ts IN (...)`, a relaxed set like `(k, v) IN (...)` with `v` outside the key, or a disjunction
+/// may select granules with few matching rows.
 static bool isExactForReadingByFirstKeyColumnValues(const KeyCondition::RPNElement & element)
 {
     using Element = KeyCondition::RPNElement;
@@ -1270,7 +1271,7 @@ static bool isExactForReadingByFirstKeyColumnValues(const KeyCondition::RPNEleme
             return !element.relaxed;
         case Element::FUNCTION_IN_SET:
         case Element::FUNCTION_NOT_IN_SET:
-            return element.key_columns.size() == 1 && element.key_columns.front() == 0;
+            return !element.relaxed && element.key_columns.size() == 1 && element.key_columns.front() == 0;
         case Element::FUNCTION_AND:
         case Element::FUNCTION_NOT:
         case Element::ALWAYS_TRUE:

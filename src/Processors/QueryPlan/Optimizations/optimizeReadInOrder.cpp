@@ -941,10 +941,12 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 ++next_sort_key;
             }
             else if (next_sort_key == 0 && first_key_column_set && !sort_node->column && !fixed_columns.contains(sort_node)
-                && isSafePrimaryDataKeyType(*sorting_key.data_types[0]) && reverse_indicator == 1)
+                && isSafePrimaryDataKeyType(*sorting_key.data_types[0]) && !isBool(removeLowCardinality(sorting_key.data_types[0]))
+                && reverse_indicator == 1)
             {
                 /// The rows with one value of the first key column are ordered by the rest of the key, so it is skipped
-                /// like a fixed one, and the storage reads every value of its set by its own streams.
+                /// like a fixed one, and the storage reads every value of its set by its own streams. Not for a `Bool`:
+                /// `IN` takes every nonzero byte of it as `true`, while the filter of a value compares the bytes.
                 auto values = first_key_column_set->getKeyColumns();
                 if (values.size() != 1 || values.front()->empty())
                     break;

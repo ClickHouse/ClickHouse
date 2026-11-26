@@ -19,6 +19,7 @@ ReadType: Default
 0
 0
 0
+0
 results
 1
 1
@@ -57,3 +58,6 @@ array join and exact rows before limit
 1
 0
 {"rows_before_limit_at_least":20000}
+bool
+0
+[2051,2050,2049]

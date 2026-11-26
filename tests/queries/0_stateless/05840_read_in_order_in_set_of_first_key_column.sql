@@ -53,6 +53,8 @@ SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHE
 WHERE explain ILIKE '%Read in order by values%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND toUnixTimestamp64Nano(ts) % 1000 = 7 ORDER BY ts DESC LIMIT 40)
 WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', '2') AND (k, v) IN (('1', 1), ('2', 2)) ORDER BY ts DESC LIMIT 40)
+WHERE explain ILIKE '%Read in order by values%';
 
 SELECT 'results';
 SELECT
@@ -184,6 +186,17 @@ SETTINGS exact_rows_before_limit = 1, output_format_write_statistics = 0, format
     format_template_resultset_format = '${data}{"rows_before_limit_at_least":${rows_before_limit:Raw}}\n'
 FORMAT Template;
 
+SELECT 'bool';
+-- `IN` takes the byte 2 of a `Bool` as `true`.
+DROP TABLE IF EXISTS t_in_set_order_bool;
+CREATE TABLE t_in_set_order_bool (b Bool, ts UInt64)
+ENGINE = MergeTree ORDER BY (b, ts) SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_in_set_order_bool SELECT reinterpret(toUInt8(multiIf(number < 1024, 0, number < 2050, 1, 2)), 'Bool'), number FROM numbers(2052);
+SELECT count() FROM (EXPLAIN actions = 1 SELECT ts FROM t_in_set_order_bool WHERE b IN (false, true) ORDER BY ts DESC LIMIT 3)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT groupArray(ts) FROM (SELECT ts FROM t_in_set_order_bool WHERE b IN (false, true) ORDER BY ts DESC LIMIT 3);
+
+DROP TABLE t_in_set_order_bool;
 DROP TABLE t_in_set_order_exact;
 DROP TABLE t_in_set_order_name;
 DROP TABLE t_in_set_order_key_name;
