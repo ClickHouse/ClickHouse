@@ -14,9 +14,7 @@ import CommunityMonitoring from '/snippets/ru/_community_monitoring.mdx';
 
 Это руководство предоставляет корпоративным командам, оценивающим ClickHouse Cloud, исчерпывающую информацию о возможностях мониторинга и обсервабилити для развертываний в продакшне. Корпоративные заказчики часто спрашивают о встроенных возможностях мониторинга, интеграции с существующими стеками обсервабилити, включая такие инструменты, как Datadog и AWS CloudWatch, а также о том, как мониторинг ClickHouse соотносится с самоуправляемыми развертываниями.
 
-<div id="advanced-observability">
-  ## Расширенная панель обсервабилити
-</div>
+## Расширенная панель обсервабилити {#advanced-observability}
 
 ClickHouse Cloud предоставляет комплексные возможности мониторинга через встроенные интерфейсы панелей мониторинга, доступные в разделе Monitoring. Эти панели мониторинга визуализируют системные метрики и метрики производительности в реальном времени без дополнительной настройки и служат основными инструментами для мониторинга продакшн-среды в реальном времени в ClickHouse Cloud.
 
@@ -27,27 +25,19 @@ ClickHouse Cloud предоставляет комплексные возмож�
 </Note>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
 </div>
 
-Пользователи, которые хотят расширить эти визуализации, могут использовать функцию dashboards в ClickHouse Cloud, выполняя запросы напрямую к системным таблицам.
+Пользователи, которые хотят расширить эти визуализации, могут использовать функцию панелей мониторинга в ClickHouse Cloud, выполняя запросы напрямую к системным таблицам.
 
 * **Native advanced dashboard**: альтернативный интерфейс панели мониторинга, доступный по ссылке &quot;You can still access the native advanced dashboard&quot; в разделе Monitoring. Он открывается в отдельной вкладке, требует аутентификации и предоставляет альтернативный интерфейс для мониторинга состояния системы и сервиса. Эта панель мониторинга поддерживает расширенную аналитику: вы можете изменять лежащие в ее основе SQL-запросы.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
 </div>
 
 Обе панели мониторинга обеспечивают мгновенную видимость состояния сервиса и производительности без внешних зависимостей, что отличает их от внешних инструментов, ориентированных на отладку, таких как ClickStack.
@@ -55,7 +45,7 @@ ClickHouse Cloud предоставляет комплексные возмож�
 Подробное описание возможностей панели мониторинга и доступных метрик см. в [документации по advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="query-insights">
-  ## Query Insights и мониторинг ресурсов
+  ## Query Insights и мониторинг ресурсов {#query-insights}
 </div>
 
 ClickHouse Cloud предоставляет дополнительные возможности мониторинга:
@@ -66,7 +56,7 @@ ClickHouse Cloud предоставляет дополнительные воз�
 Подробную информацию см. в документации по [Query Insights](/ru/products/cloud/features/sql-console-features/query-insights) и [использованию ресурсов](/ru/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization).
 
 <div id="prometheus">
-  ## Совместимая с Prometheus конечная точка метрик
+  ## Совместимая с Prometheus конечная точка метрик {#prometheus}
 </div>
 
 ClickHouse Cloud предоставляет конечную точку Prometheus. Это позволяет сохранить текущие рабочие процессы, использовать имеющуюся экспертизу команды и интегрировать метрики ClickHouse в корпоративные платформы мониторинга, включая Grafana, Datadog и другие инструменты, совместимые с Prometheus.
@@ -83,7 +73,7 @@ ClickHouse Cloud предоставляет конечную точку Promethe
 <ObservabilityIntegrations />
 
 <div id="clickstack-deployment">
-  ### Варианты развертывания ClickStack
+  ### Варианты развертывания ClickStack {#clickstack-deployment}
 </div>
 
 * **HyperDX в ClickHouse Cloud**  (закрытая предварительная версия): HyperDX можно запустить на любом сервисе ClickHouse Cloud.
@@ -102,7 +92,7 @@ ClickHouse Cloud предоставляет конечную точку Promethe
 <CommunityMonitoring />
 
 <div id="system-impact">
-  ## Влияние на систему
+  ## Влияние на систему {#system-impact}
 </div>
 
 Все описанные выше подходы либо используют конечные точки Prometheus, либо управляются через ClickHouse Cloud, либо напрямую выполняют запросы к системным таблицам.

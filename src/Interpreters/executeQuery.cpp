@@ -562,7 +562,7 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
 static String httpRequestURLForLogging(const ContextPtr & context)
 {
     const String & url = context->getHTTPRequestURL();
-    return url.substr(0, url.find_first_of("?#"));
+    return String(stripQueryAndFragment(url));
 }
 
 String formatQueryForLogging(const String & query, const Settings & settings)
@@ -920,8 +920,13 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
 
 /// A row whose plan could not be written says why, in place of the plan.
-static void writeQueryPlanError(String & query_plan, const String & reason)
+static void writeQueryPlanError(String & query_plan, String reason)
 {
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
     query_plan.clear();
     try
     {
@@ -3673,7 +3678,7 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
                     context->enablePlanLogCapture();
 
                 if (out_ast)
@@ -4424,6 +4429,45 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     }
 }
 
+/// Returns the AST fuzzer run for a query, or nothing when the fuzzer is off for it.
+static std::function<void()> makeASTFuzzerRunner(const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (flags.internal || context->getClientInfo().is_shared_catalog_internal || !ast)
+        return {};
+
+    Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
+    if (!(ast_fuzzer_runs_value > 0))
+        return {};
+
+    bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
+    return [ast, context, ast_fuzzer_runs_value, any_query]()
+    {
+        try
+        {
+            executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — propagate so CI sees it
+            tryLogCurrentException("ASTFuzzer");
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ASTFuzzer");
+        }
+    };
+}
+
+/// Runs the AST fuzzer from `BlockIO::onFinish`, after the query's own finish callbacks, so its `query_log` entry
+/// does not include the fuzzing.
+static void addASTFuzzerFinishCallback(BlockIO & io, const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (auto run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags))
+        io.finish_callbacks.emplace_back(
+            [run = std::move(run_ast_fuzzer)](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point) { run(); });
+}
+
 
 std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
@@ -4506,29 +4550,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         });
     }
 
-    const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-    if (!flags.internal && !is_shared_catalog_internal && ast)
-    {
-        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-        if (ast_fuzzer_runs_value > 0)
-        {
-            bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-            res.finish_callbacks.emplace_back(
-                [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
-                {
-                    try
-                    {
-                        executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                            throw; /// Oracle mismatch — propagate to abort the server
-                        tryLogCurrentException("ASTFuzzer");
-                    }
-                });
-        }
-    }
+    addASTFuzzerFinishCallback(res, ast, context, flags);
 
     return std::make_pair(std::move(ast), std::move(res));
 }
@@ -4873,7 +4895,9 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        /// One byte more than the limit detects a too long query; the limit may be the maximum of `size_t` already.
+        const size_t read_no_more = max_query_size == std::numeric_limits<size_t>::max() ? max_query_size : max_query_size + 1;
+        LimitReadBuffer limit(*istr, {.read_no_more = read_no_more});
         copyData(limit, out);
         out.finalize();
 
@@ -5131,6 +5155,9 @@ void executeQuery(
         return true;
     };
 
+    /// Run after `query_finish_callback`, which sends the HTTP response and releases the session, on both paths below.
+    std::function<void()> run_ast_fuzzer;
+
     try
     {
         if (pipeline.pushing())
@@ -5248,30 +5275,7 @@ void executeQuery(
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
-        const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-        if (!flags.internal && !is_shared_catalog_internal && ast)
-        {
-            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-            if (ast_fuzzer_runs_value > 0)
-            {
-                bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-                try
-                {
-                    executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                        throw; /// Oracle mismatch — propagate so CI sees it
-                    tryLogCurrentException("ASTFuzzer");
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ASTFuzzer");
-                }
-            }
-        }
-
+        run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags);
     }
     catch (...)
     {
@@ -5414,6 +5418,9 @@ void executeQuery(
 
         finishExecutedQuery(streams, finish_callback);
     }
+
+    if (run_ast_fuzzer)
+        run_ast_fuzzer();
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)

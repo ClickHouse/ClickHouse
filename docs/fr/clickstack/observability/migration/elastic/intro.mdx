@@ -1,0 +1,39 @@
+---
+slug: /clickstack/observability/migration/elastic/intro
+title: 'Migration d’Elastic vers ClickHouse Observability'
+sidebarTitle: 'Introduction'
+description: 'Points à prendre en compte pour migrer d’Elastic Stack vers ClickHouse Observability, service entièrement géré.'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Offre bêta" />
+
+## Migrer d’Elastic vers ClickHouse Observability {#migrating-to-clickstack-from-elastic-self-configured}
+
+Ce guide couvre la migration depuis l’Elastic Stack, y compris les déploiements qui utilisent Kibana pour explorer les logs, les traces et les métriques collectés via Elastic Agent et stockés dans Elasticsearch. Il porte principalement sur ClickHouse Observability entièrement géré et explique comment adapter les recherches basées sur Lucene, migrer la collecte de télémétrie et planifier la transition de vos données. Les instructions propres aux déploiements autogérés sont indiquées lorsque les étapes diffèrent.
+
+ClickHouse Observability est une plateforme entièrement gérée destinée aux SRE, aux développeurs et à leurs agents. Elle associe une télémétrie haute fidélité à des recherches rapides, à des agrégations high-cardinality et à SQL pour enquêter sur les défaillances. Envoyez votre télémétrie vers un endpoint OpenTelemetry géré : ClickHouse se charge de l’ingestion, des schémas, de l’infrastructure et de la mise à l’échelle.
+
+Inutile de faire correspondre les mécanismes internes d’Elasticsearch à ClickHouse pour démarrer. Pour les déploiements autogérés, consultez les [concepts équivalents](/fr/clickstack/self-configured/migration/elastic/concepts) et les [correspondances de types](/fr/clickstack/self-configured/migration/elastic/types).
+
+Envisagez de passer à ClickHouse Observability si :
+
+* **Vous souhaitez utiliser vos propres agents SRE.** Connectez Claude, Codex ou votre propre framework d’agents via le [serveur MCP ClickStack](/fr/clickstack/observability/mcp), en choisissant les modèles et les flux de travail d’investigation adaptés à votre équipe.
+* **Vos agents ont besoin de plus que de recherches prédéfinies.** Les outils MCP prennent en charge la recherche dans les logs, l’exploration des traces, les motifs d’événements et les deltas d’événements. SQL permet les jointures entre données de télémétrie, les comparaisons historiques et des analyses plus approfondies.
+* **Des requêtes lentes freinent vos investigations.** Des recherches et des agrégations rapides sur une télémétrie high-cardinality aident les ingénieurs et les agents à tester des hypothèses et à confronter les éléments de preuve.
+* **Vous avez besoin d’une télémétrie haute fidélité pour l’analyse des causes racines.** Conservez les logs détaillés, les spans de traces et les attributs que l’échantillonnage ou la préagrégation peuvent éliminer, afin de préserver le contexte nécessaire aux investigations.
+* **La croissance des volumes de télémétrie pèse sur vos coûts.** La compression en colonnes et le moteur analytique de ClickHouse vous permettent de stocker et d’interroger efficacement de grands volumes de télémétrie.
+* **Vous souhaitez consacrer moins de temps à l’exploitation de votre plateforme d’observability.** L’offre entièrement gérée prend en charge le dimensionnement de la base de données, les schémas, l’ingestion et la mise à l’échelle.
+* **Vous souhaitez vous appuyer sur des standards ouverts.** Utilisez OpenTelemetry pour la collecte, SQL pour l’analyse et MCP pour l’accès des agents, avec ClickStack open source comme socle.
+
+ClickHouse Observability peut ne pas convenir si :
+
+* Votre besoin principal relève de l’analytique de sécurité et vous avez besoin d’un produit orienté SIEM.
+* Le profilage universel est indispensable à votre flux de travail.
+* Vous avez besoin d’une plateforme d’informatique décisionnelle générique plutôt que de flux de travail d’investigation pour les SRE et les développeurs. Dans ce cas, envisagez d’utiliser ClickHouse avec [Grafana](/fr/integrations/connectors/data-visualization/grafana/index) ou [Superset](/fr/integrations/connectors/data-visualization/superset-and-clickhouse).
+
+Si vous avez besoin d’un accès direct à la base de données pour joindre la télémétrie à des données métier externes, ou si vous souhaitez effectuer vos propres optimisations de base de données, envisagez [Self-managed ClickHouse Observability](/fr/clickstack/self-configured/overview). L’offre entièrement gérée reste toutefois le premier choix pour la plupart des équipes.
