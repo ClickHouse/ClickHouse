@@ -1,0 +1,11 @@
+--- a stated value takes precedence over the named collection
+PostgreSQL connection pool size: 3
+SETTINGS postgresql_connection_pool_size = 3
+--- a value set by the named collection is not taken from the session, so nothing is stored
+PostgreSQL connection pool size: 7
+
+--- a stated value is rejected when the named collection does not allow to override it
+Override not allowed for 'postgresql_connection_pool_size'
+0
+--- a value the named collection does not set is taken from the session and stored
+SETTINGS postgresql_connection_pool_size = 5

@@ -203,6 +203,7 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
     loadSystemAccessTables();
     checkAccessForObjectsFoundInBackup();
+    checkDefinitionsOfDatabasesToCreate();
 
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
@@ -542,6 +543,88 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
         return;
 
     context->checkAccess(required_access_rights.getElements());
+}
+
+void RestorerFromBackup::checkDefinitionsOfDatabasesToCreate()
+{
+    if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
+        return;
+
+    /// The hosts of `RESTORE ... ON CLUSTER` create the databases without the user, so an engine replaced by `Null` is
+    /// skipped only for a value in the query, which reaches every host: a host may drop a session value.
+    const bool replace_external_engines_to_null = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+        && (mode != Mode::CHECK_ACCESS_ONLY || restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null"));
+
+    std::vector<std::pair<String, ASTPtr>> definitions_to_check;
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & [database_name, database_info] : database_infos)
+        {
+            if (database_info.is_predefined_database || !database_info.create_database_query)
+                continue;
+            definitions_to_check.emplace_back(database_name, database_info.create_database_query->clone());
+        }
+    }
+
+    /// The named collections are restored after the checks and before the databases are created, so a definition is checked with
+    /// a collection that the restore installs. The backup is read only when a definition first names such a collection: the
+    /// initiating host of `ON CLUSTER` may not be able to read the entries that the hosts restore.
+    std::optional<NamedCollectionsInBackup> named_collections_to_restore;
+    const GetNamedCollectionFn get_named_collection = [&](const String & collection_name) -> NamedCollectionPtr
+    {
+        if (!doesRestoreInstallNamedCollection(restore_settings, collection_name))
+            return nullptr;
+        if (!named_collections_to_restore)
+            named_collections_to_restore = readNamedCollectionsToRestore(*this, findNamedCollectionsDataPathInBackup());
+        return getNamedCollectionInBackup(*named_collections_to_restore, collection_name);
+    };
+
+    for (auto & [database_name, definition] : definitions_to_check)
+    {
+        auto & create = definition->as<ASTCreateQuery &>();
+        if (!create.storage || !create.storage->engine)
+            continue;
+        const auto * features = DatabaseFactory::instance().tryGetDatabaseEngineFeatures(create.storage->engine->name);
+        if (!features || !features->check_definition_fn)
+            continue;
+        if (replace_external_engines_to_null && features->is_external)
+            continue;
+        /// An existing local database means nothing is created here, and its definition is compared with the one in the
+        /// backup as it is. Under CHECK_ACCESS_ONLY the creating host is a different one, so a local existence answer says
+        /// nothing about it.
+        if (mode != Mode::CHECK_ACCESS_ONLY && DatabaseCatalog::instance().isDatabaseExist(database_name))
+            continue;
+
+        const ASTPtr definition_in_backup = definition->clone();
+        try
+        {
+            features->check_definition_fn(*create.storage, context, get_named_collection);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While checking the definition of database {} in the backup", backQuoteIfNeed(database_name));
+            throw;
+        }
+
+        if (mode == Mode::CHECK_ACCESS_ONLY)
+        {
+            /// The hosts read the definition from the backup, not from here, so they would evaluate again without the user what
+            /// the check has replaced, possibly to something else than what it checked.
+            if (definition->formatWithSecretsOneLine() != definition_in_backup->formatWithSecretsOneLine())
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_DATABASE,
+                    "Cannot restore database {} with ON CLUSTER, because its definition in the backup has expressions that the "
+                    "hosts would evaluate without the user, such as a computed key of an override of a named collection: {}. "
+                    "Restore it without ON CLUSTER",
+                    backQuoteIfNeed(database_name), definition_in_backup->formatForErrorMessage());
+        }
+        else
+        {
+            /// The database is created from the definition as checked, and compared with it after that.
+            std::lock_guard lock{mutex};
+            database_infos.at(database_name).create_database_query = definition;
+        }
+    }
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const

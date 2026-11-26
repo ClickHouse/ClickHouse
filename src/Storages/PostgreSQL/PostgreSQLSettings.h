@@ -36,6 +36,8 @@ struct PostgreSQLSettings
 
     [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
+    [[nodiscard]] Field get(std::string_view name) const;
+
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);

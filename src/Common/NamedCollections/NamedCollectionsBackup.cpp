@@ -219,48 +219,16 @@ void registerNamedCollectionsDirForRestore(RestorerFromBackup & restorer, const 
 }
 
 
-bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_path_in_backup)
+namespace
 {
-    auto context = restorer.getContext();
-    auto & factory = NamedCollectionFactory::instance();
-    const auto storage_properties = factory.getMetadataStorageProperties();
 
-    Strings data_paths;
-    if (storage_properties.is_replicated)
-    {
-        auto restore_coordination = restorer.getRestoreCoordination();
+using EntryFiles = std::vector<std::pair<String /* data path */, String /* filename */>>;
 
-        if (data_path_in_backup.empty())
-        {
-            /// This host's part of the backup holds no named collections, but a host sharing this
-            /// storage may restore the ones its own part holds, and then this host has to reload.
-            return !restore_coordination->getReplicatedNamedCollectionsDirs(storage_properties.replication_id).empty();
-        }
-
-        if (!restore_coordination->acquireReplicatedNamedCollections(storage_properties.replication_id))
-            return true; /// Other replica is already restoring named collections into the shared storage.
-
-        /// The directories registered by every host sharing this storage. They hold identical
-        /// entries when the backup was taken from hosts sharing a storage the same way, but a
-        /// backup taken from hosts with per-host storages (e.g. the `local` type) holds the
-        /// collections of each host in its own directory, and restoring just this host's
-        /// directory would silently lose the collections of the others.
-        data_paths = restore_coordination->getReplicatedNamedCollectionsDirs(storage_properties.replication_id);
-        if (std::find(data_paths.begin(), data_paths.end(), data_path_in_backup) == data_paths.end())
-            data_paths.push_back(data_path_in_backup);
-        ::sort(data_paths.begin(), data_paths.end());
-    }
-    else
-    {
-        if (data_path_in_backup.empty())
-            return false;
-        data_paths = {data_path_in_backup};
-    }
-
-    auto backup = restorer.getBackup();
-
-    std::vector<std::pair<String /* data path */, String /* filename */>> entry_files;
-    bool backup_is_encrypted = false;
+/// The entries of the named collections in the directories `data_paths` of the backup. Sets `backup_is_encrypted` if one of them
+/// is encrypted.
+EntryFiles listEntryFiles(const BackupPtr & backup, const Strings & data_paths, bool & backup_is_encrypted)
+{
+    EntryFiles entry_files;
     for (const auto & data_path : data_paths)
     {
         Strings filenames = backup->listFiles(data_path, /*recursive*/ false);
@@ -284,27 +252,12 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         }
     }
 
-    if (entry_files.empty())
-        return false; /// Nothing to restore (in particular, a backup taken before named collections were backed up).
+    return entry_files;
+}
 
-    /// An internal restore executes a query dispatched by the initiating host of a `RESTORE ON
-    /// CLUSTER`, possibly with full access (the default `distributed_ddl_use_initial_user_and_roles
-    /// = false`), so the right restoring the collections requires (`CREATE NAMED COLLECTION`, see
-    /// `RestorerFromBackup::getRequiredAccess`) must be required of the initiating user by the
-    /// initiating host before the query is dispatched (see `BackupsWorker::doRestore`, which runs
-    /// the access checks against the initiating user for every selected host). An initiator
-    /// predating the restore of named collections requires nothing for them, so the entries must
-    /// not be restored: fail close. Its coordination version shows whether the initiator ran the
-    /// check.
-    if (restorer.getRestoreSettings().internal
-        && !restorer.getRestoreCoordination()->doesInitiatorCheckNamedCollectionsRestoreRights())
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Cannot restore the named collections from backup {}: the initiating host of this ON CLUSTER query is "
-            "too old to check the rights restoring them requires against the initiating user. Upgrade the "
-            "initiating host or run the restore on an upgraded host",
-            backup->getNameForLogging());
-
+/// Throws if this server cannot restore the entries of the backup.
+void checkEntriesCanBeRestored(bool backup_is_encrypted, const NamedCollectionFactory::MetadataStorageProperties & storage_properties)
+{
     if (backup_is_encrypted && !storage_properties.is_encrypted)
         throw Exception(
             ErrorCodes::CANNOT_RESTORE_TABLE,
@@ -312,13 +265,14 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
             "is not encrypted (see `named_collections_storage` in the server configuration). Either configure an "
             "encrypted storage holding the key the collections were encrypted with, or skip them with "
             "SETTINGS restore_named_collections = false");
+}
 
-    /// Read, authenticate, decrypt and parse every entry before creating anything, so that a
-    /// problem - a key mismatch, which `decryptStoredEntryFromBackup` detects by the key
-    /// fingerprint of the entry's header, or a tampered entry, which it detects by the
-    /// authentication code - fails the restore before it has touched anything. Because the
-    /// collections are restored before any database or table is created, nothing has been
-    /// restored at all at this point.
+/// Returns the `CREATE NAMED COLLECTION` statement of each named collection in the entries of the backup.
+std::vector<ASTPtr> readCreateQueries(RestorerFromBackup & restorer, const BackupPtr & backup, const EntryFiles & entry_files)
+{
+    auto context = restorer.getContext();
+    auto & factory = NamedCollectionFactory::instance();
+
     std::vector<ASTPtr> create_queries;
     create_queries.reserve(entry_files.size());
     /// With several directories the same collection legitimately appears in more than one of them
@@ -440,6 +394,84 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         create_queries.push_back(std::move(ast));
     }
 
+    return create_queries;
+}
+
+}
+
+
+bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_path_in_backup)
+{
+    auto & factory = NamedCollectionFactory::instance();
+    const auto storage_properties = factory.getMetadataStorageProperties();
+
+    Strings data_paths;
+    if (storage_properties.is_replicated)
+    {
+        auto restore_coordination = restorer.getRestoreCoordination();
+
+        if (data_path_in_backup.empty())
+        {
+            /// This host's part of the backup holds no named collections, but a host sharing this
+            /// storage may restore the ones its own part holds, and then this host has to reload.
+            return !restore_coordination->getReplicatedNamedCollectionsDirs(storage_properties.replication_id).empty();
+        }
+
+        if (!restore_coordination->acquireReplicatedNamedCollections(storage_properties.replication_id))
+            return true; /// Other replica is already restoring named collections into the shared storage.
+
+        /// The directories registered by every host sharing this storage. They hold identical
+        /// entries when the backup was taken from hosts sharing a storage the same way, but a
+        /// backup taken from hosts with per-host storages (e.g. the `local` type) holds the
+        /// collections of each host in its own directory, and restoring just this host's
+        /// directory would silently lose the collections of the others.
+        data_paths = restore_coordination->getReplicatedNamedCollectionsDirs(storage_properties.replication_id);
+        if (std::find(data_paths.begin(), data_paths.end(), data_path_in_backup) == data_paths.end())
+            data_paths.push_back(data_path_in_backup);
+        ::sort(data_paths.begin(), data_paths.end());
+    }
+    else
+    {
+        if (data_path_in_backup.empty())
+            return false;
+        data_paths = {data_path_in_backup};
+    }
+
+    auto backup = restorer.getBackup();
+    bool backup_is_encrypted = false;
+    const auto entry_files = listEntryFiles(backup, data_paths, backup_is_encrypted);
+
+    if (entry_files.empty())
+        return false; /// Nothing to restore (in particular, a backup taken before named collections were backed up).
+
+    /// An internal restore executes a query dispatched by the initiating host of a `RESTORE ON
+    /// CLUSTER`, possibly with full access (the default `distributed_ddl_use_initial_user_and_roles
+    /// = false`), so the right restoring the collections requires (`CREATE NAMED COLLECTION`, see
+    /// `RestorerFromBackup::getRequiredAccess`) must be required of the initiating user by the
+    /// initiating host before the query is dispatched (see `BackupsWorker::doRestore`, which runs
+    /// the access checks against the initiating user for every selected host). An initiator
+    /// predating the restore of named collections requires nothing for them, so the entries must
+    /// not be restored: fail close. Its coordination version shows whether the initiator ran the
+    /// check.
+    if (restorer.getRestoreSettings().internal
+        && !restorer.getRestoreCoordination()->doesInitiatorCheckNamedCollectionsRestoreRights())
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore the named collections from backup {}: the initiating host of this ON CLUSTER query is "
+            "too old to check the rights restoring them requires against the initiating user. Upgrade the "
+            "initiating host or run the restore on an upgraded host",
+            backup->getNameForLogging());
+
+    checkEntriesCanBeRestored(backup_is_encrypted, storage_properties);
+
+    /// Read, authenticate, decrypt and parse every entry before creating anything, so that a
+    /// problem - a key mismatch, which `decryptStoredEntryFromBackup` detects by the key
+    /// fingerprint of the entry's header, or a tampered entry, which it detects by the
+    /// authentication code - fails the restore before it has touched anything. Because the
+    /// collections are restored before any database or table is created, nothing has been
+    /// restored at all at this point.
+    auto create_queries = readCreateQueries(restorer, backup, entry_files);
+
     /// The loaded collections of a replicated storage follow Keeper asynchronously: a background
     /// task reloads them when a Keeper watch fires. The existence decisions below (`createFromSQL`
     /// skipping an entry in the default 'if-not-exists' mode, in particular) must not trust a copy
@@ -529,6 +561,62 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
             kept_from_config_count);
     LOG_DEBUG(log, "Restored {} named collections from backup", restored_count);
     return true;
+}
+
+
+NamedCollectionsInBackup readNamedCollectionsToRestore(RestorerFromBackup & restorer, const String & data_path_in_backup)
+{
+    if (!restorer.getRestoreSettings().shouldRestoreNamedCollections())
+        return {};
+
+    const auto storage_properties = NamedCollectionFactory::instance().getMetadataStorageProperties();
+
+    /// The directories that `restoreNamedCollections` reads. The initiating host of `RESTORE ... ON CLUSTER` checks without a
+    /// coordination, and reads the directory of the host that it checks for.
+    Strings data_paths;
+    if (const auto restore_coordination = restorer.getRestoreCoordination(); storage_properties.is_replicated && restore_coordination)
+        data_paths = restore_coordination->getReplicatedNamedCollectionsDirs(storage_properties.replication_id);
+    if (!data_path_in_backup.empty() && std::find(data_paths.begin(), data_paths.end(), data_path_in_backup) == data_paths.end())
+        data_paths.push_back(data_path_in_backup);
+    ::sort(data_paths.begin(), data_paths.end());
+
+    auto backup = restorer.getBackup();
+    bool backup_is_encrypted = false;
+    const auto entry_files = listEntryFiles(backup, data_paths, backup_is_encrypted);
+    if (entry_files.empty())
+        return {};
+    checkEntriesCanBeRestored(backup_is_encrypted, storage_properties);
+
+    NamedCollectionsInBackup result;
+    for (auto & create_query : readCreateQueries(restorer, backup, entry_files))
+    {
+        String collection_name = create_query->as<const ASTCreateNamedCollectionQuery &>().collection_name;
+        result.emplace(std::move(collection_name), std::move(create_query));
+    }
+    return result;
+}
+
+
+bool doesRestoreInstallNamedCollection(const RestoreSettings & restore_settings, const String & collection_name)
+{
+    if (!restore_settings.shouldRestoreNamedCollections())
+        return false;
+
+    /// The decisions of `restoreNamedCollections`: an existing collection is kept, unless it is replaced. A collection of the
+    /// server configuration is never replaced, and the 'create' mode fails on an existing collection, so the existing one stays.
+    const auto existing = NamedCollectionFactory::instance().tryGet(collection_name);
+    return !existing
+        || (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kReplace
+            && existing->getSourceId() != NamedCollection::SourceId::CONFIG);
+}
+
+
+NamedCollectionPtr getNamedCollectionInBackup(const NamedCollectionsInBackup & collections_in_backup, const String & collection_name)
+{
+    const auto it = collections_in_backup.find(collection_name);
+    if (it == collections_in_backup.end())
+        return nullptr;
+    return NamedCollectionFromSQL::create(it->second->as<const ASTCreateNamedCollectionQuery &>());
 }
 
 

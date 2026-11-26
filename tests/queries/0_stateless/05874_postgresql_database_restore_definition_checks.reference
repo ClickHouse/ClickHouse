@@ -1,0 +1,33 @@
+--- the user's constraints, the access to the named collection and the override of its keys, also ON CLUSTER
+SETTING_CONSTRAINT_VIOLATION
+SETTING_CONSTRAINT_VIOLATION
+0
+ACCESS_DENIED
+ACCESS_DENIED
+0
+ACCESS_DENIED
+ACCESS_DENIED
+0
+nc, schema = 'public'
+--- a computed key of an override in the backup
+CANNOT_RESTORE_DATABASE
+0
+nc, 'schema' = 'public'
+--- a named collection restored with the database, locally and ON CLUSTER
+1
+1
+1
+1
+--- a key of the restored named collection that the definition may not override
+Override not allowed
+0
+0
+Override not allowed
+0
+0
+--- an existing named collection, which only the 'replace' mode replaces with the restored one, locally and ON CLUSTER
+Override not allowed
+0
+Override not allowed
+0
+1

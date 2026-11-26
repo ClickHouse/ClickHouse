@@ -91,6 +91,10 @@ private:
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
+    /// Runs the checks of the definition of each database to create that its engine makes with the user, see
+    /// `DatabaseFactory::EngineFeatures::check_definition_fn`.
+    void checkDefinitionsOfDatabasesToCreate();
+
     /// Returns the data path of the "system.named_collections" table in the backup, or an empty
     /// string when this host's part of the backup holds no named collections.
     String findNamedCollectionsDataPathInBackup() const;

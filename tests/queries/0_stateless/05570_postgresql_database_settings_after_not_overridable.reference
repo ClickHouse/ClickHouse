@@ -1,0 +1,6 @@
+--- the stored definition loads and keeps its value
+PostgreSQL connection pool size: 3
+SETTINGS postgresql_connection_pool_size = 3
+--- a definition that a user gives with the same override is rejected
+Override not allowed for 'postgresql_connection_pool_size'
+0
