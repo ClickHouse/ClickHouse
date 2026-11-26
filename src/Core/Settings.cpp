@@ -10366,7 +10366,7 @@ Cloud default value: `1`.
 )", BETA, allow_experimental_database_iceberg, \
         {"25.8", false, false, "Added an alias for setting `allow_experimental_database_iceberg`"}, \
         {"24.12", false, false, "New setting. At the time the setting was named `allow_experimental_database_iceberg`, which is now an alias of it."}) \
-    DECLARE(Bool, allow_experimental_table_namespaces, false, R"(
+    DECLARE(Bool, enable_table_namespaces, false, R"(
 Allow namespace-aware resolution of dotted table identifiers.
 
 When the setting is enabled, a dotted table path such as `db.ns.table` in a table expression names table `ns.table`
@@ -10380,7 +10380,7 @@ like a query, each time it is analysed and with the settings in effect there: th
 inserts into the table or calls the function. A table `TTL` is analysed with the server settings, and a refreshable
 materialized view is not refreshed with the settings of the session that created it, so a session setting does not
 apply to them. To make a definition independent of these settings, use the quoted name or add
-`SETTINGS allow_experimental_table_namespaces = 1` to the query inside it; the clause is ignored for a user
+`SETTINGS enable_table_namespaces = 1` to the query inside it; the clause is ignored for a user
 with `readonly = 1`, the quoted name works for everyone. A definition is stored with the quoted name, so once it
 is loaded from the stored text (after a restart or `ATTACH`) a path in a table expression of it no longer needs
 the setting.

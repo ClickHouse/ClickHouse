@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.u VALUES (3)"
 # Prints the result or the error code; the first argument is analyzer_compatibility_prefer_alias_over_subcolumn.
 run()
 {
-    $CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 --semi_join_include_columns_from_both_sides=0 \
+    $CLICKHOUSE_CLIENT --enable_table_namespaces=1 --semi_join_include_columns_from_both_sides=0 \
         --single_join_prefer_left_table=1 --analyzer_compatibility_prefer_alias_over_subcolumn="$1" \
         -q "$2" 2>&1 | grep -oE '^[0-9]+$|Code: [0-9]+' | head -n1
 }

@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 db=${CLICKHOUSE_DATABASE}
 gone=${db}_gone
 
-ON="$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1"
+ON="$CLICKHOUSE_CLIENT --enable_table_namespaces=1"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.\`system.columns\` (x UInt8) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.\`system.tables\` (x UInt8) ENGINE = Memory"

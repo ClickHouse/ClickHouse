@@ -8,8 +8,8 @@ db=${CLICKHOUSE_DATABASE}
 dba=${db}_a
 nodb=${db}_nodb
 
-ON="$CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1"
-OFF="$CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=0"
+ON="$CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1"
+OFF="$CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=0"
 
 code() { grep -oE 'Code: [0-9]+' | head -n1; }
 

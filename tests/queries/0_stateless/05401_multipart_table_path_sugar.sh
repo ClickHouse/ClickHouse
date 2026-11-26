@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 db=${CLICKHOUSE_DATABASE}
-ON="$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1"
+ON="$CLICKHOUSE_CLIENT --enable_table_namespaces=1"
 
 code() { grep -oE 'Code: [0-9]+' | head -n1; }
 
@@ -47,6 +47,6 @@ $CLICKHOUSE_CLIENT --param_p=ns -q "SELECT * FROM ${db}.{p:Identifier}.t" 2>&1 |
 $CLICKHOUSE_CLIENT -q "SELECT ${db}.ns.t.x FROM ${db}.ns.t SETTINGS enable_analyzer = 1" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
 
 echo '-- HTTP'
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t SETTINGS allow_experimental_table_namespaces = 1"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t SETTINGS enable_table_namespaces = 1"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.t\`"

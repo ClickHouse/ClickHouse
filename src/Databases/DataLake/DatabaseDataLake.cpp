@@ -2461,7 +2461,7 @@ The following settings are supported:
 
 <Note>
 Namespace-aware name resolution is an experimental feature, disabled by default. Enable it
-with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
+with `SET enable_table_namespaces = 1`. A dotted path such as
 `catalog_name.namespace.table` is shorthand for the quoted form
 `` catalog_name.`namespace.table` `` and needs the setting in a query that reads from it; without the
 setting such a query is rejected and the quoted form has to be used. Statements that name their target
@@ -2481,10 +2481,10 @@ SELECT * FROM catalog_name.`namespace.table`;
 
 You can also spell out every part with dots:
 
-- `db.ns.table` (three or more parts) in a table expression requires `allow_experimental_table_namespaces`
+- `db.ns.table` (three or more parts) in a table expression requires `enable_table_namespaces`
   and is read as the table path `ns.table` inside database `db`; it is then
   subject to the same two-part rule as `a.b` below, with `a` = `db`.
-- With `allow_experimental_table_namespaces` enabled, a two-part name `a.b` in a
+- With `enable_table_namespaces` enabled, a two-part name `a.b` in a
   table expression is resolved as table `b` of database `a`, and also as table
   `a.b` of the current database if that database supports table namespaces
   (a data lake catalog) and `a` is not `system`. A catalog namespace named
@@ -2501,12 +2501,12 @@ You can also spell out every part with dots:
   table functions `view`, `viewIfPermitted`, `eval`, `obfuscate` and `explain`
   keeps the two-part rule. In a stored definition, reference a catalog table as
   ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` needs
-  `allow_experimental_table_namespaces` each time the definition is analysed, with the settings in
+  `enable_table_namespaces` each time the definition is analysed, with the settings in
   effect there: those of the user who creates the view, reads it, or inserts into the source table
   of a materialized view. A table `TTL` is analysed with the server settings, and a refreshable
   materialized view is not refreshed with the settings of the session that created it, so a session
   setting does not apply to them. To make a definition independent of these settings, use the quoted
-  name or add `SETTINGS allow_experimental_table_namespaces = 1` to the query inside it; the clause
+  name or add `SETTINGS enable_table_namespaces = 1` to the query inside it; the clause
   is ignored for a user with `readonly = 1`, the quoted name works for everyone. A definition is
   written to disk with the quoted name, so after a restart or `ATTACH` a path in a table expression
   of it no longer needs the setting, while a path as the right operand of `IN`

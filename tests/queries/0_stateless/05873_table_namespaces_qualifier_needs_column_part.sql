@@ -1,6 +1,6 @@
 -- A table name qualifies a column only if a part of the identifier is left for the column.
 
-SET allow_experimental_table_namespaces = 1;
+SET enable_table_namespaces = 1;
 SET analyzer_compatibility_prefer_alias_over_subcolumn = 0;
 SET single_join_prefer_left_table = 1;
 

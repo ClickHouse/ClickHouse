@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A back-quoted path component containing a dot spells the same name as the separate parts.
 
 db=${CLICKHOUSE_DATABASE}
-CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1"
+CLIENT="$CLICKHOUSE_CLIENT --enable_table_namespaces=1"
 spellings=("${db}.\`ns\`.t" "${db}.ns.t" "${db}.\`ns.t\`")
 
 # Runs the query template with `@T` replaced by each spelling and checks that the outputs are identical.

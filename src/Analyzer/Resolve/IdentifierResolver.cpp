@@ -56,7 +56,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
-    extern const SettingsBool allow_experimental_table_namespaces;
+    extern const SettingsBool enable_table_namespaces;
     extern const SettingsBool semi_join_include_columns_from_both_sides;
     extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
@@ -326,7 +326,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     bool allow_compound_table_identifier_qualification,
     const StoragePtr & replaced_storage)
 {
-    const bool allow_table_namespaces = context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+    const bool allow_table_namespaces = context->getSettingsRef()[Setting::enable_table_namespaces];
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1
         || (parts_size > 2 && !allow_table_namespaces))
@@ -860,7 +860,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         if (table_node->isMaterializedCTE())
             materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
 
-    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::enable_table_namespaces];
 
     if (identifier_lookup.isTableExpressionLookup())
     {
@@ -1086,7 +1086,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
-    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::enable_table_namespaces];
 
     if (identifier_lookup.isTableExpressionLookup())
     {
@@ -1311,7 +1311,7 @@ IdentifierResolver::QualifyingTableExpression IdentifierResolver::tryFindTableEx
             if (!join_tree_node)
                 continue;
 
-            const bool allow_table_paths = current_scope->context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+            const bool allow_table_paths = current_scope->context->getSettingsRef()[Setting::enable_table_namespaces];
 
             for (const auto & table_expression_node : extractTableExpressions(join_tree_node))
             {
@@ -1439,7 +1439,7 @@ static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
     const IdentifierResolveScope & scope)
 {
     const auto & qualifier = identifier.front();
-    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::enable_table_namespaces];
 
     auto get_column_source = [](QueryTreeNodePtr resolved_identifier) -> TableExpressionNodePtr
     {
@@ -1947,7 +1947,7 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::enable_table_namespaces];
     if (binding != QualifierBinding::TableName)
     {
         if (it->second.database_name.empty() || it->second.database_name != qualifier)

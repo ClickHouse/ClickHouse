@@ -5,11 +5,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-# A multipart table path (`db.ns.t`) in a table expression needs `allow_experimental_table_namespaces`, in stored definitions too.
+# A multipart table path (`db.ns.t`) in a table expression needs `enable_table_namespaces`, in stored definitions too.
 
 db=${CLICKHOUSE_DATABASE}
-OFF="$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=0"
-ON="$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1"
+OFF="$CLICKHOUSE_CLIENT --enable_table_namespaces=0"
+ON="$CLICKHOUSE_CLIENT --enable_table_namespaces=1"
 
 # Prints the label and the first error code, or the output (newlines joined), or `ok` for no output.
 run()
@@ -40,13 +40,13 @@ run T2 "$OFF" "EXISTS TABLE ${db}.ns.t"
 
 echo '-- S: SELECT scoping'
 run S1 "$OFF" "SELECT x FROM ${db}.\`ns.t\`"
-run S2 "$OFF" "SELECT x FROM ${db}.ns.t SETTINGS allow_experimental_table_namespaces = 1"
-run S3 "$OFF" "INSERT INTO ${db}.ns.u SETTINGS allow_experimental_table_namespaces = 1 VALUES (7)"
+run S2 "$OFF" "SELECT x FROM ${db}.ns.t SETTINGS enable_table_namespaces = 1"
+run S3 "$OFF" "INSERT INTO ${db}.ns.u SETTINGS enable_table_namespaces = 1 VALUES (7)"
 run S4 "$OFF" "SELECT * FROM (SELECT x FROM ${db}.ns.t)"
-run S5a "$OFF" "SELECT * FROM (SELECT x FROM ${db}.ns.t SETTINGS allow_experimental_table_namespaces = 1)"
-run S5b "$OFF" "SELECT * FROM (SELECT x FROM ${db}.ns.t SETTINGS allow_experimental_table_namespaces = 0) SETTINGS allow_experimental_table_namespaces = 1"
+run S5a "$OFF" "SELECT * FROM (SELECT x FROM ${db}.ns.t SETTINGS enable_table_namespaces = 1)"
+run S5b "$OFF" "SELECT * FROM (SELECT x FROM ${db}.ns.t SETTINGS enable_table_namespaces = 0) SETTINGS enable_table_namespaces = 1"
 run S6a "$OFF" "SELECT x FROM ${db}.ns.t UNION ALL SELECT x FROM ${db}.ns.t"
-run S6b "$OFF" "SELECT * FROM (SELECT x FROM ${db}.ns.t UNION ALL SELECT x FROM ${db}.ns.t SETTINGS allow_experimental_table_namespaces = 1)"
+run S6b "$OFF" "SELECT * FROM (SELECT x FROM ${db}.ns.t UNION ALL SELECT x FROM ${db}.ns.t SETTINGS enable_table_namespaces = 1)"
 run S7a "$OFF" "WITH c AS (SELECT x FROM ${db}.ns.t) SELECT * FROM c"
 run S7b "$OFF" "SELECT 1 IN (SELECT x FROM ${db}.ns.t)"
 run S7c "$OFF" "SELECT * FROM view(SELECT x FROM ${db}.ns.t)"
@@ -58,15 +58,15 @@ run S9 "$OFF" "SELECT 1 IN ${db}.ns.t"
 run S10 "$ON" "SELECT 1 IN ${db}.ns.t"
 
 echo '-- V: stored definitions'
-$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "CREATE VIEW ${db}.v AS SELECT x FROM ${db}.ns.t"
+$CLICKHOUSE_CLIENT --enable_table_namespaces=1 -q "CREATE VIEW ${db}.v AS SELECT x FROM ${db}.ns.t"
 $OFF -q "SHOW CREATE TABLE ${db}.v" 2>&1 | sed "s/${db}/db/g"
-$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "CREATE MATERIALIZED VIEW ${db}.mv TO ${db}.ns.u AS SELECT x + 100 AS x FROM ${db}.plain"
+$CLICKHOUSE_CLIENT --enable_table_namespaces=1 -q "CREATE MATERIALIZED VIEW ${db}.mv TO ${db}.ns.u AS SELECT x + 100 AS x FROM ${db}.plain"
 run V2a "$OFF" "INSERT INTO ${db}.plain VALUES (1)"
 run V2b "$OFF" "SELECT count() FROM ${db}.\`ns.u\` WHERE x = 101"
 run D1 "$CLICKHOUSE_CLIENT --check_referential_table_dependencies=1" "DROP TABLE ${db}.\`ns.t\`"
 
 echo '-- C: a definition with the SETTINGS clause does not depend on the setting of its user'
-S="SETTINGS allow_experimental_table_namespaces = 1"
+S="SETTINGS enable_table_namespaces = 1"
 run C1a "$OFF" "CREATE VIEW ${db}.vc AS SELECT ns.t.x FROM ${db}.ns.t $S"
 run C1b "$OFF" "SELECT * FROM ${db}.vc"
 run C1c "$OFF" "DETACH TABLE ${db}.vc"

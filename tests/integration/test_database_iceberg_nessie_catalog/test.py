@@ -552,7 +552,7 @@ def test_three_part_identifiers(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    ns_settings = {"allow_experimental_table_namespaces": 1}
+    ns_settings = {"enable_table_namespaces": 1}
     result = node.query(
         f"SELECT id, data FROM {CATALOG_NAME}.{test_namespace}.{test_table_name} ORDER BY id",
         settings=ns_settings,

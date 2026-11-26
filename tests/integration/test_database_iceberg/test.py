@@ -2850,7 +2850,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
     except in the query argument of a table function such as `view` or `eval`.
     """
     node = started_cluster.instances["node1"]
-    on = {"allow_experimental_table_namespaces": 1}
+    on = {"enable_table_namespaces": 1}
 
     test_ref = f"test_ns_two_part_{uuid.uuid4().hex[:8]}"
     F, F_IN, F_ID, F_MAP = (f"{name}_{test_ref}" for name in ("f", "f_in", "f_id", "f_map"))
@@ -3059,7 +3059,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
         # the server settings, so the subquery carries the setting itself
         node.query(
             f"USE {CATALOG_NAME}; CREATE TABLE default.{TT} (id UInt64, d DateTime) ENGINE = MergeTree ORDER BY id "
-            f"TTL d + INTERVAL 1 DAY WHERE id IN (SELECT id FROM {X}.{T} SETTINGS allow_experimental_table_namespaces = 1)",
+            f"TTL d + INTERVAL 1 DAY WHERE id IN (SELECT id FROM {X}.{T} SETTINGS enable_table_namespaces = 1)",
             settings=on,
         )
         node.query(
@@ -3127,7 +3127,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
         # the same policy enabling namespaces only inside its subquery: still the database table
         node.query(
             f"ALTER ROW POLICY {policy} ON default.{T2} USING symbol IN "
-            f"(SELECT symbol FROM {X}.{P} SETTINGS allow_experimental_table_namespaces = 1)"
+            f"(SELECT symbol FROM {X}.{P} SETTINGS enable_table_namespaces = 1)"
         )
         for outer in ({}, on):
             _, err = node.query_and_get_answer_with_error(
@@ -3185,7 +3185,7 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
     """
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
-    on = {"allow_experimental_table_namespaces": 1}
+    on = {"enable_table_namespaces": 1}
 
     test_ref = f"test_ns_plan_{uuid.uuid4().hex[:8]}"
     X = f"ns_{test_ref}"
@@ -3291,7 +3291,7 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     """
     node1 = started_cluster.instances["node1"]
     # the tables exist on `node1` only: its replica of the shard is read in the same server
-    on = {"allow_experimental_table_namespaces": 1, "prefer_localhost_replica": 1}
+    on = {"enable_table_namespaces": 1, "prefer_localhost_replica": 1}
 
     test_ref = f"test_ns_children_{uuid.uuid4().hex[:8]}"
     L = f"local_{test_ref}"
@@ -3367,7 +3367,7 @@ def test_namespace_time_series_reads_targets_as_written(started_cluster):
     database. A two-part name written by the user is still read under the two-part rule.
     """
     node = started_cluster.instances["node1"]
-    on = {"allow_experimental_table_namespaces": 1}
+    on = {"enable_table_namespaces": 1}
     allow_time_series = {"allow_experimental_time_series_table": 1}
 
     test_ref = f"test_ns_ts_{uuid.uuid4().hex[:8]}"
@@ -3452,7 +3452,7 @@ def test_three_part_identifier(started_cluster):
     Test 3-part compound identifier syntax: db.namespace.table
     """
     node = started_cluster.instances["node1"]
-    ns_settings = {"allow_experimental_table_namespaces": 1}
+    ns_settings = {"enable_table_namespaces": 1}
 
     test_ref = f"test_three_part_identifier_{uuid.uuid4().hex[:8]}"
     table_name = f"{test_ref}_table"
@@ -3522,7 +3522,7 @@ def test_multi_level_namespace(started_cluster):
     Test N-part compound identifier syntax with multiple namespace levels: db.ns1.ns2.table
     """
     node = started_cluster.instances["node1"]
-    ns_settings = {"allow_experimental_table_namespaces": 1}
+    ns_settings = {"enable_table_namespaces": 1}
 
     test_ref = f"test_multi_ns_{uuid.uuid4().hex[:8]}"
     table_name = f"{test_ref}_table"
@@ -3578,7 +3578,7 @@ def test_namespace_path_ddl(started_cluster):
     two-part CREATE still reads as a database name.
     """
     node = started_cluster.instances["node1"]
-    ns_settings = {"allow_experimental_table_namespaces": 1}
+    ns_settings = {"enable_table_namespaces": 1}
 
     test_ref = f"test_ns_createdrop_{uuid.uuid4().hex[:8]}"
     namespace = f"ns_{test_ref}"
@@ -3596,7 +3596,7 @@ def test_namespace_path_ddl(started_cluster):
             f"CREATE TABLE {CATALOG_NAME}.{namespace}.{table_name} (x String) "
             f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/', '{minio_access_key}', '{minio_secret_key}')",
             settings={
-                "allow_experimental_table_namespaces": 1,
+                "enable_table_namespaces": 1,
                 "write_full_path_in_iceberg_metadata": 1,
             },
         )
@@ -3637,7 +3637,7 @@ def test_namespace_nested_sql_ddl(started_cluster):
         f"CREATE TABLE {CATALOG_NAME}.{root}.sub.{table_name} (x String) "
         f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/{table_name}/', 'minio', '{minio_secret_key}')",
         settings={
-            "allow_experimental_table_namespaces": 1,
+            "enable_table_namespaces": 1,
             "allow_experimental_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
@@ -3648,7 +3648,7 @@ def test_namespace_nested_sql_ddl(started_cluster):
 
     node.query(
         f"DROP TABLE {CATALOG_NAME}.{root}.sub.{table_name}",
-        settings={"allow_experimental_table_namespaces": 1},
+        settings={"enable_table_namespaces": 1},
     )
     assert (
         int(node.query(f"EXISTS TABLE {CATALOG_NAME}.`{root}.sub.{table_name}`").strip()) == 0
@@ -3664,7 +3664,7 @@ def test_namespace_nested_sql_ddl(started_cluster):
         f"CREATE TABLE IF NOT EXISTS {CATALOG_NAME}.{table_name}_without_namespace (x String) "
         f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/{table_name}_without_namespace/', 'minio', '{minio_secret_key}')",
         settings={
-            "allow_experimental_table_namespaces": 1,
+            "enable_table_namespaces": 1,
             "allow_experimental_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
@@ -3682,7 +3682,7 @@ def test_namespace_path_reads_and_gating(started_cluster):
     column qualifier is gated.
     """
     node = started_cluster.instances["node1"]
-    ns_settings = {"allow_experimental_table_namespaces": 1}
+    ns_settings = {"enable_table_namespaces": 1}
     insert_settings = {
         "allow_insert_into_iceberg": 1,
         "write_full_path_in_iceberg_metadata": 1,
@@ -3759,7 +3759,7 @@ def test_namespace_postgresql_wire(started_cluster):
     conn = None
     try:
         node.query(
-            f"CREATE USER {user} IDENTIFIED WITH no_password SETTINGS allow_experimental_table_namespaces = 1"
+            f"CREATE USER {user} IDENTIFIED WITH no_password SETTINGS enable_table_namespaces = 1"
         )
         node.query(f"GRANT SELECT ON {CATALOG_NAME}.* TO {user}")
 

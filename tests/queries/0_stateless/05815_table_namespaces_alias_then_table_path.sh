@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${db2}.t VALUES (9)"
 both()
 {
     for compat in 0 1; do
-        $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 \
+        $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 \
             --allow_experimental_correlated_subqueries=1 --single_join_prefer_left_table=1 \
             --analyzer_compatibility_prefer_alias_over_subcolumn=$compat "$@"
     done
@@ -74,14 +74,14 @@ both -q "SELECT (SELECT ${db2}.t.x FROM ${db}.\`${db2}.t\` AS ${db2} LIMIT 1) FR
 
 echo '-- 13. a missing column is still an error'
 for compat in 0 1; do
-    $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 \
+    $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 \
         --analyzer_compatibility_prefer_alias_over_subcolumn=$compat \
         -q "SELECT ns.t.nope FROM ${db}.\`ns.t\` AS ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
 done
 
 echo '-- 14. without table namespaces the path is not tried'
 for compat in 0 1; do
-    $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=0 \
+    $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=0 \
         --analyzer_compatibility_prefer_alias_over_subcolumn=$compat \
         -q "SELECT ns.t.x FROM ${db}.\`ns.t\` AS ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
 done

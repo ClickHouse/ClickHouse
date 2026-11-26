@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.\`${db}.t\` VALUES (1, tuple(2))"
 both()
 {
     for compat in 0 1; do
-        $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 \
+        $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 \
             --analyzer_compatibility_prefer_alias_over_subcolumn=$compat "$@"
     done
 }

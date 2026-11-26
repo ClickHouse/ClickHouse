@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.\`m.t.deep\` VALUES (2)"
 both()
 {
     for compat in 0 1; do
-        $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 --allow_experimental_correlated_subqueries=1 \
+        $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 --allow_experimental_correlated_subqueries=1 \
             --analyzer_compatibility_prefer_alias_over_subcolumn=$compat "$@"
     done
 }
@@ -59,7 +59,7 @@ both -q "SELECT ns.t.x FROM ${db}.ns JOIN ${db}.ns.t ON 1"
 
 echo '-- 10. missing column in a longer table path'
 for compat in 0 1; do
-    $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 --allow_experimental_correlated_subqueries=1 \
+    $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 --allow_experimental_correlated_subqueries=1 \
         --analyzer_compatibility_prefer_alias_over_subcolumn=$compat \
         -q "SELECT ns.t.deep.nope FROM ${db}.ns.t JOIN ${db}.ns.t.deep ON 1" 2>&1 | code
 done

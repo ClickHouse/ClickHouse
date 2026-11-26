@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.u VALUES (8)"
 both()
 {
     for compat in 0 1; do
-        $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 \
+        $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 \
             --analyzer_compatibility_prefer_alias_over_subcolumn=$compat "$@"
     done
 }
@@ -40,7 +40,7 @@ both -q "SELECT ${db}.ns.t.* FROM ${db}.ns.t INNER JOIN ${db}.u AS ${db} ON 1"
 
 echo '-- 5. missing column'
 for compat in 0 1; do
-    $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 \
+    $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 \
         --analyzer_compatibility_prefer_alias_over_subcolumn=$compat \
         -q "SELECT ${db}.ns.t.nope FROM ${db}.ns.t INNER JOIN ${db}.u AS ${db} ON 1" 2>&1 | code
 done
@@ -49,12 +49,12 @@ echo '-- 6. both sides multipart, alias equals the database name'
 both -q "SELECT ${db}.ns.t.x, ${db}.ns.sub.t.x FROM ${db}.ns.t INNER JOIN ${db}.ns.sub.t AS ${db} ON 1"
 
 echo '-- 7. setting off'
-$CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=0 \
+$CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=0 \
     -q "SELECT ${db}.ns.t.x FROM ${db}.\`ns.t\` INNER JOIN ${db}.u AS ${db} ON 1" 2>&1 | code
 
 echo '-- 8. SEMI JOIN, non-preserved multipart side in a dead branch'
 for compat in 0 1; do
-    $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=1 \
+    $CLICKHOUSE_CLIENT --enable_analyzer=1 --enable_table_namespaces=1 \
         --analyzer_compatibility_prefer_alias_over_subcolumn=$compat --semi_join_include_columns_from_both_sides=0 \
         -q "SELECT if(false, ${db}.ns.t.x, 42) FROM ${db}.u LEFT SEMI JOIN ${db}.ns.t ON true" 2>&1 | code
 done

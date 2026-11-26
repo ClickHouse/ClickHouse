@@ -282,7 +282,7 @@ def test_hive_table_function_in_definer_view(started_cluster):
     )
     assert (
         node.query(
-            "SELECT count() FROM default.hive_definer_view SETTINGS allow_experimental_table_namespaces = 1"
+            "SELECT count() FROM default.hive_definer_view SETTINGS enable_table_namespaces = 1"
         ).strip()
         == "4"
     )
