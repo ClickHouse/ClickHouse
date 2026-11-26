@@ -1,0 +1,6 @@
+--- KILL QUERY of the request stops its running probe
+error True
+ExceptionWhileProcessing	394
+--- the execution time limit of the request stops its running probe
+error True
+ExceptionWhileProcessing	159

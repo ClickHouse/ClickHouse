@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <fmt/format.h>
+#include <optional>
 
 
 namespace DB
@@ -61,6 +62,8 @@ public:
         ResultType result_type{};          /// The data type this node with its children evaluates to.
         std::vector<const Node *> children;  /// E.g. arguments for a function, matchers for selectors.
         const Node * parent = nullptr;
+        /// Byte offset of the node's first token in the parsed query, used in the positions of query annotations.
+        std::optional<size_t> start_pos;
         Node() = default;
         Node(const Node &) = default;
         virtual ~Node() = default;

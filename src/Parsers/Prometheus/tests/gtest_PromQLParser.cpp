@@ -3,6 +3,9 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
+#include <chrono>
+#include <functional>
+
 #include <fmt/format.h>
 
 #include <array>
@@ -2155,4 +2158,72 @@ TEST(PromQLParser, InvalidStandaloneStepRangeFunctions)
         EXPECT_FALSE(tree.tryParse(query, 3, &error_message, &error_pos)) << query;
         EXPECT_FALSE(error_message.empty()) << query;
     }
+}
+
+
+TEST(PromQLParser, NodeStartPositions)
+{
+    /// Returns the byte offset of the node reached from the root by `path` (indices of children).
+    auto start_pos = [](std::string_view query, std::initializer_list<size_t> path) -> std::optional<size_t>
+    {
+        PrometheusQueryTree tree{query};
+        const auto * node = tree.getRoot();
+        for (size_t index : path)
+            node = node->children.at(index);
+        return node->start_pos;
+    };
+
+    /// The positions follow Prometheus, which reports a parenthesized expression at its inner start.
+    EXPECT_EQ(start_pos("quantile(2, foo)", {0}), 9);
+    EXPECT_EQ(start_pos("quantile((2), foo)", {0}), 10);
+    EXPECT_EQ(start_pos("quantile(((2)), foo)", {0}), 11);
+    EXPECT_EQ(start_pos("quantile(-(2), foo)", {0}), 9);
+    EXPECT_EQ(start_pos("quantile((1) + 1, foo)", {0}), 9);
+    EXPECT_EQ(start_pos("quantile((1) + 1, foo)", {0, 0}), 10);
+    EXPECT_EQ(start_pos("rate(foo[5m] offset 1m)", {0}), 5);
+    EXPECT_EQ(start_pos("rate(foo[5m:1m])", {0}), 5);
+    EXPECT_EQ(start_pos("sum(\n  rate(\n    foo[5m]))", {0}), 7);
+    EXPECT_EQ(start_pos("sum(\n  rate(\n    foo[5m]))", {0, 0}), 17);
+
+    /// Byte offsets, not code points.
+    std::string_view query = "rate({job=\"\xC3\xA9\"}[5m]) + rate(foo[5m])";
+    EXPECT_EQ(start_pos(query, {1}), query.find("rate(foo"));
+    EXPECT_EQ(start_pos(query, {1, 0}), query.find("foo["));
+
+    /// Positions account for comments and multi-byte characters before the node.
+    std::string_view prefixed = "# caf\xC3\xA9 comment\nrate({job=\"x\"}[5m])";
+    EXPECT_EQ(start_pos(prefixed, {0}), prefixed.find("{job"));
+}
+
+
+TEST(PromQLParser, ScalingWithManyScalarPositions)
+{
+    /// A long comment followed by many nodes must parse about as fast as the two parts parsed apart
+    /// (finding the byte offset of each node position used to rescan the comment).
+    String comment = "# ";
+    comment.append(1024 * 1024, 'a');
+    comment.push_back('\n');
+
+    /// A balanced sum of 2^13 scalar literals.
+    std::function<String(size_t)> balanced = [&](size_t depth) -> String
+    {
+        if (depth == 0)
+            return "1";
+        return "(" + balanced(depth - 1) + "+" + balanced(depth - 1) + ")";
+    };
+    String expression = balanced(13);
+
+    auto parse_ms = [](const String & query)
+    {
+        auto begin = std::chrono::steady_clock::now();
+        PrometheusQueryTree tree{query};
+        std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - begin;
+        EXPECT_NE(tree.getRoot(), nullptr);
+        return elapsed.count();
+    };
+
+    double separately = parse_ms(expression) + parse_ms(comment + "1");
+    double together = parse_ms(comment + expression);
+    EXPECT_LT(together, 4 * separately) << "parsing the comment and the expression together took " << together
+        << " ms, separately " << separately << " ms";
 }

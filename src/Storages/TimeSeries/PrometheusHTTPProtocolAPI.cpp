@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#include <Common/FailPoint.h>
 #include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -25,6 +26,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Annotation.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -36,6 +38,7 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <DataTypes/DataTypeString.h>
@@ -51,6 +54,8 @@
 
 #include <fmt/format.h>
 
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -61,8 +66,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char prometheus_annotation_probe_pause_before_pull[];
+}
+
 namespace Setting
 {
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 promql_max_points_per_series;
     extern const SettingsBool promql_push_down_label_matchers;
 }
@@ -91,6 +102,92 @@ Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 time_scale)
         ++timestamp_ticks;
 
     return Decimal64{timestamp_ticks};
+}
+
+/// Quotes a string like "%q" in Go, keeping non-ASCII characters as they are.
+String quoteStringLikeGo(std::string_view str)
+{
+    String res = "\"";
+    for (size_t i = 0; i < str.size();)
+    {
+        const auto c = static_cast<UInt8>(str[i]);
+        const size_t length = UTF8::seqLength(c);
+        const auto * data = reinterpret_cast<const UInt8 *>(str.data() + i);
+        if ((c >= 0x80) && (length > 1) && (i + length <= str.size()) && UTF8::isValidUTF8(data, length))
+        {
+            res.append(str.data() + i, length);
+            i += length;
+            continue;
+        }
+
+        switch (c)
+        {
+            case '"': res += "\\\""; break;
+            case '\\': res += "\\\\"; break;
+            case '\a': res += "\\a"; break;
+            case '\b': res += "\\b"; break;
+            case '\f': res += "\\f"; break;
+            case '\n': res += "\\n"; break;
+            case '\r': res += "\\r"; break;
+            case '\t': res += "\\t"; break;
+            case '\v': res += "\\v"; break;
+            default:
+                if ((c < 0x20) || (c >= 0x7F))
+                    res += fmt::format("\\x{:02x}", static_cast<unsigned>(c));
+                else
+                    res += static_cast<char>(c);
+        }
+        ++i;
+    }
+    res += '"';
+    return res;
+}
+
+/// Writes a JSON string escaped like the JSON encoder of Prometheus does: '<', '>', '&' and control characters as \u00XX.
+void writeJSONStringLikeGo(std::string_view str, WriteBuffer & out)
+{
+    writeChar('"', out);
+    for (char ch : str)
+    {
+        const auto c = static_cast<UInt8>(ch);
+        if (ch == '"' || ch == '\\')
+        {
+            writeChar('\\', out);
+            writeChar(ch, out);
+        }
+        else if (ch == '\n')
+            writeString("\\n", out);
+        else if (ch == '\r')
+            writeString("\\r", out);
+        else if (ch == '\t')
+            writeString("\\t", out);
+        else if ((c < 0x20) || (ch == '<') || (ch == '>') || (ch == '&'))
+            writeString(fmt::format("\\u{:04x}", static_cast<unsigned>(c)), out);
+        else
+            writeChar(ch, out);
+    }
+    writeChar('"', out);
+}
+
+/// Converts a byte offset in a query to "line:column" like PositionRange.StartPosInput() in Prometheus.
+String formatPositionLikePrometheus(std::string_view query, size_t position)
+{
+    if (query.empty())
+        return "unknown position";
+    if (position > query.size())
+        return "invalid position";
+
+    size_t line = 1;
+    size_t line_start = 0;
+    for (size_t i = 0; i != position; ++i)
+    {
+        if (query[i] == '\n')
+        {
+            ++line;
+            line_start = i + 1;
+        }
+    }
+    return fmt::format("{}:{}", line, position - line_start + 1);
 }
 
 /// Makes a "SELECT [DISTINCT] <expressions> FROM (<subquery>) [LIMIT <limit>]" query.
@@ -229,16 +326,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (params.type == Type::Instant)
     {
         evaluation_settings.mode = PrometheusQueryEvaluationMode::QUERY;
+        /// The current time is taken once, so the annotations and the result are evaluated at the same time.
         if (params.time_param.empty())
-        {
-            evaluation_settings.use_current_time = true;
-        }
+            evaluation_settings.start_time = DecimalUtils::getCurrentDateTime64(time_scale);
         else
-        {
             evaluation_settings.start_time = parseTimeSeriesTimestamp(params.time_param, time_scale);
-            evaluation_settings.end_time = evaluation_settings.start_time;
-            evaluation_settings.step = 0;
-        }
+        evaluation_settings.end_time = evaluation_settings.start_time;
+        evaluation_settings.step = 0;
     }
     else if (params.type == Type::Range)
     {
@@ -250,7 +344,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
-    auto sql_query = converter.getSQL();
+    PrometheusQueryToSQL::Annotations annotations;
+    auto sql_query = converter.getSQL(&annotations);
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
@@ -259,14 +354,20 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto query_context = Context::createCopy(getContext());
     StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
 
+    /// The query is admitted before its annotations are evaluated, so a request over a quota is rejected before any probe reads data,
+    /// and the probes, which are internal queries, don't take a slot of their own next to the query.
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
     try
     {
+        Strings warnings;
+        Strings infos;
+        evaluateAnnotations(annotations, params.promql_query, *query_context->getProcessListElement(), warnings, infos);
+
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-        writeQueryResponse(response, executor, converter.getResultType());
+        writeQueryResponse(response, executor, converter.getResultType(), warnings, infos);
 
         /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
         /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
@@ -283,8 +384,144 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     finishExecutedQuery(io, query_finish_callback);
 }
 
+void PrometheusHTTPProtocolAPI::evaluateAnnotations(
+    const PrometheusQueryToSQL::Annotations & annotations,
+    const String & promql_query,
+    QueryStatus & request_status,
+    Strings & warnings,
+    Strings & infos)
+{
+    /// Like annotations.Annotations in Prometheus: one entry per message, the position of the last one wins.
+    struct Entry
+    {
+        bool is_info;
+        String message;
+        size_t position;
+    };
+    std::vector<Entry> entries;
+    std::unordered_map<String, size_t> entry_by_message;
+    std::unordered_map<const IAST *, Strings> probe_results;
+
+    auto add_entry = [&](bool is_info, String message, size_t position)
+    {
+        auto [it, inserted] = entry_by_message.emplace(message, entries.size());
+        if (inserted)
+            entries.push_back(Entry{is_info, std::move(message), position});
+        else
+            entries[it->second].position = position;
+    };
+
+    for (const auto & annotation : annotations)
+    {
+        if (!annotation.probe)
+        {
+            add_entry(annotation.is_info, annotation.message, annotation.position);
+            continue;
+        }
+
+        auto it = probe_results.find(annotation.probe.get());
+        if (it == probe_results.end())
+            it = probe_results.emplace(annotation.probe.get(), executeAnnotationProbe(annotation.probe, request_status)).first;
+
+        for (const auto & name : it->second)
+        {
+            String message = annotation.append_name ? annotation.message + quoteStringLikeGo(name) : annotation.message;
+            add_entry(annotation.is_info, std::move(message), annotation.position);
+        }
+    }
+
+    /// Prometheus returns at most 10 warnings and 10 infos (web/api/v1/api.go:1961).
+    constexpr size_t max_annotations = 10;
+    size_t omitted_warnings = 0;
+    size_t omitted_infos = 0;
+    for (const auto & entry : entries)
+    {
+        auto & strings = entry.is_info ? infos : warnings;
+        if (strings.size() < max_annotations)
+            strings.push_back(fmt::format("{} ({})", entry.message, formatPositionLikePrometheus(promql_query, entry.position)));
+        else
+            ++(entry.is_info ? omitted_infos : omitted_warnings);
+    }
+    if (omitted_warnings)
+        warnings.push_back(fmt::format("{} more warning annotations omitted", omitted_warnings));
+    if (omitted_infos)
+        infos.push_back(fmt::format("{} more info annotations omitted", omitted_infos));
+}
+
+Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe, QueryStatus & request_status)
+{
+    /// The probe is a part of the request: it isn't started after the request is killed or has run out of time.
+    if (!request_status.checkTimeLimit())
+        return {};
+
+    LOG_TRACE(log, "SQL query to evaluate an annotation:\n{}", probe->formatForLogging());
+
+    auto query_context = Context::createCopy(getContext());
+    StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
+
+    /// The query of the request is running while the probes run, so a probe can't take the id of the request.
+    query_context->setCurrentQueryId({});
+
+    /// The settings shaping the public result don't apply to the probe, whose only column is `name`.
+    query_context->resetSettingsToDefaultValue({"filter", "select", "order", "sort", "limit", "offset", "page"});
+    query_context->setHTTPCombinedFilter({});
+
+    /// The probe rows only build the annotation text: they must not hit the request's public result-size limits,
+    /// while the helper work keeps running under the request's resource limits.
+    query_context->setSetting("max_result_rows", Field(UInt64(0)));
+    query_context->setSetting("max_result_bytes", Field(UInt64(0)));
+
+    /// The probe is a helper of the request's query: it must not be charged against the user's quotas, so the
+    /// request stays a single external query, but it keeps the server-owned query parsing of the generated SQL and
+    /// the query result cache, so that a repeated probe is served from the cache.
+    QueryFlags probe_flags = serverGeneratedQueryFlags();
+    probe_flags.internal = true;
+    probe_flags.ignore_quota = true;
+    auto [ast, io] = executeQuery(probe->formatWithSecretsOneLine(), query_context, probe_flags, QueryProcessingStage::Complete);
+
+    Strings names;
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+        FailPointInjection::pauseFailPoint(FailPoints::prometheus_annotation_probe_pause_before_pull);
+        /// The probe has its own query id, so `KILL QUERY` and the execution time limit of the request are checked between the pulls.
+        /// Throws if the request is killed or has run out of time with `timeout_overflow_mode = 'throw'`; with 'break' the probe is cut off.
+        const UInt64 check_interval_ms = std::max<UInt64>(100, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+        bool cut_off = false;
+        Block block;
+        while (!cut_off && executor.pull(block, check_interval_ms))
+        {
+            cut_off = !request_status.checkTimeLimit();
+            /// pull() can return an empty block without columns, as writeQueryResponse() also expects.
+            if (cut_off || !block.rows())
+                continue;
+            const auto & column = block.getByName("name").column;
+            for (size_t i = 0; i != column->size(); ++i)
+                names.emplace_back(column->getDataAt(i));
+        }
+
+        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+        /// A probe cut off by the time limit has an incomplete result, which isn't stored.
+        if (!cut_off)
+            io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    finishExecutedQuery(io, {});
+    return names;
+}
+
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response,
+    PullingAsyncPipelineExecutor & pulling_executor,
+    PrometheusQueryResultType result_type,
+    const Strings & warnings,
+    const Strings & infos)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
@@ -313,7 +550,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
         }
     }
 
-    writeQueryResponseFooter(response);
+    writeQueryResponseFooter(response, warnings, infos);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type)
@@ -340,9 +577,30 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response,
     writeString(R"(","result":[)", response);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response)
+void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response, const Strings & warnings, const Strings & infos)
 {
-    writeString("]}}", response);
+    writeString("]}", response);
+
+    /// The fields are omitted when empty, as `omitempty` does in Prometheus (web/api/v1/api.go:169-170).
+    auto write_strings = [&](std::string_view field_name, const Strings & strings)
+    {
+        if (strings.empty())
+            return;
+        writeString(",\"", response);
+        writeString(field_name, response);
+        writeString("\":[", response);
+        for (size_t i = 0; i != strings.size(); ++i)
+        {
+            if (i)
+                writeChar(',', response);
+            writeJSONStringLikeGo(strings[i], response);
+        }
+        writeChar(']', response);
+    };
+    write_strings("warnings", warnings);
+    write_strings("infos", infos);
+
+    writeChar('}', response);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first)

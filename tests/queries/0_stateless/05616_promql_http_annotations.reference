@@ -1,0 +1,41 @@
+--- quantile: a constant phi outside [0, 1], even without data
+query: quantile(2, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)"]
+query: quantile((2), foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:11)"]
+query: quantile(-(2), foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got -2 (1:10)"]
+query: quantile(NaN, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got NaN (1:10)"]
+query: quantile(Inf, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got +Inf (1:10)"]
+query: quantile(1e6, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 1e+06 (1:10)"]
+query: quantile(1234567, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 1.234567e+06 (1:10)"]
+query: quantile(-0.00001, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got -1e-05 (1:10)"]
+query: quantile(1.5e-7 - 1, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got -0.99999985 (1:10)"]
+query: quantile(2, nonexistent)
+success 0 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)"]
+query: quantile(0.5, foo)
+success 1 
+query: quantile(2, foo) + quantile(2, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:29)"]
+--- histogram_quantile: even without data
+query: histogram_quantile(2, req_seconds_bucket)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: histogram_quantile(2, nonexistent)
+success 0 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+--- quantile_over_time: only if a window has a sample
+query: quantile_over_time(2, foo[5m])
+success 2 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: quantile_over_time(2, baz[5m])
+success 0 
+query: quantile_over_time(2, baz[5m])
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: quantile_over_time(2, foo[5m:1m])
+success 2 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: sum(quantile_over_time(2, foo[5m])) - avg(quantile_over_time(2, foo[5m]))
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:62)"]
