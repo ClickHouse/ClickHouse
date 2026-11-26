@@ -14,6 +14,9 @@ import { McpGuideGrid } from "/snippets/ja/components/McpGuideGrid/McpGuideGrid.
 ClickHouse MCPサーバーは、互換性のあるAIアシスタントをClickHouseのデータベースやツールに接続します。
 プロトコル、そのアーキテクチャ、およびClickHouse MCPサーバーの概要については、[Model Context Protocol (MCP) の概要](/ja/concepts/features/connect-to-clickhouse/native-tools/mcp)を参照してください。
 
+共有SQLメモリを評価するには、ClickHouse MCPの接続と併せて[Loomを使用してSQLの知見を再利用](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#reuse-sql-lessons-across-agent-sessions)してください。
+この演習では、データベースと名前空間にそれぞれ個別の権限を付与し、カラムのリネーム後に、保存済みの述語を現在のスキーマに照らして検証します。
+
 ## ClickHouse MCPサーバーをセットアップする {#set-up-clickhouse-mcp-server}
 
 MCPクライアントを選択し、[ClickHouse MCPサーバーのセットアップガイド](/ja/guides/use-cases/ai-ml/MCP/claude-desktop)に従ってClickHouseに接続します。

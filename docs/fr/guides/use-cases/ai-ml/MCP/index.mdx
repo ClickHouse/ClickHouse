@@ -14,6 +14,9 @@ import { McpGuideGrid } from "/snippets/fr/components/McpGuideGrid/McpGuideGrid.
 Le serveur MCP ClickHouse connecte des assistants IA compatibles aux bases de données et aux outils ClickHouse.
 Pour une présentation du protocole, de son architecture et du serveur MCP ClickHouse, consultez la [présentation du Model Context Protocol (MCP)](/fr/concepts/features/connect-to-clickhouse/native-tools/mcp).
 
+Pour évaluer une mémoire SQL partagée, [réutilisez les enseignements SQL avec Loom](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#reuse-sql-lessons-across-agent-sessions) en complément de votre connexion MCP ClickHouse.
+L’exercice s’appuie sur des privilèges accordés distincts pour la base de données et pour le namespace, puis vérifie un prédicat enregistré par rapport au schéma actif après le renommage d’une colonne.
+
 ## Configurez le serveur MCP ClickHouse {#set-up-clickhouse-mcp-server}
 
 Choisissez votre client MCP, puis suivez le [guide de configuration du serveur MCP ClickHouse](/fr/guides/use-cases/ai-ml/MCP/claude-desktop) pour le connecter à ClickHouse.

@@ -14,6 +14,9 @@ import { McpGuideGrid } from "/snippets/ru/components/McpGuideGrid/McpGuideGrid.
 MCP-сервер ClickHouse подключает совместимых ИИ-помощников к базам данных и инструментам ClickHouse.
 Общие сведения о протоколе, его архитектуре и MCP-сервере ClickHouse см. в [обзоре Model Context Protocol (MCP)](/ru/concepts/features/connect-to-clickhouse/native-tools/mcp).
 
+Чтобы оценить общую SQL-память, [используйте SQL-уроки повторно с помощью Loom](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#reuse-sql-lessons-across-agent-sessions) вместе с вашим соединением с MCP-сервером ClickHouse.
+В этом упражнении используются отдельные привилегии на базу данных и пространство имён, а после переименования столбца сохранённый предикат проверяется на соответствие актуальной схеме.
+
 ## Настройте MCP-сервер ClickHouse {#set-up-clickhouse-mcp-server}
 
 Выберите MCP-клиент и следуйте [руководству по настройке MCP-сервера ClickHouse](/ru/guides/use-cases/ai-ml/MCP/claude-desktop), чтобы подключить его к ClickHouse.

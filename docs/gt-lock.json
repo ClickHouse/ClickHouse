@@ -7,42 +7,42 @@
       "versionId": "62b5cc6dd5c2a83b9d1c3a0b913cf70ed9e42e8bfb940c180bf45390ed9e0dc1",
       "translations": {
         "ja": {
-          "updatedAt": "2026-11-26T05:43:57.514Z",
+          "updatedAt": "2026-11-26T05:45:57.291Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-26T05:43:57.636Z",
+          "updatedAt": "2026-11-26T05:45:57.412Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "fr": {
-          "updatedAt": "2026-11-26T05:43:57.872Z",
+          "updatedAt": "2026-11-26T05:45:57.647Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "zh": {
-          "updatedAt": "2026-11-26T05:43:57.754Z",
+          "updatedAt": "2026-11-26T05:45:57.531Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ar": {
-          "updatedAt": "2026-11-26T05:43:57.813Z",
+          "updatedAt": "2026-11-26T05:45:57.589Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ko": {
-          "updatedAt": "2026-11-26T05:43:57.576Z",
+          "updatedAt": "2026-11-26T05:45:57.352Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "es": {
-          "updatedAt": "2026-11-26T05:43:57.450Z",
+          "updatedAt": "2026-11-26T05:45:57.224Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ru": {
-          "updatedAt": "2026-11-26T05:43:57.695Z",
+          "updatedAt": "2026-11-26T05:45:57.472Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         }
@@ -75883,47 +75883,47 @@
     },
     {
       "fileId": "e7854c2ab3912d13e39d6cc6957c76a485d707f21cfe40b5f2a83eb367b77f29",
-      "versionId": "4d1aedff8ab9cf9185c47ee3837556e08a45c21644de5dc0dbdb36ce6d02b894",
+      "versionId": "a3540c06a1b8ff4f10161ff19a2257c99695cacd8984d59b79e47cb963cdca57",
       "translations": {
-        "ja": {
-          "updatedAt": "2026-11-25T16:59:39.187Z",
-          "fileName": "ja/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "68c5bd4d477fcc009ff21af7e0856ef98a9c5797e3bd1929a39c2ae8c40c435a"
-        },
-        "ko": {
-          "updatedAt": "2026-11-25T16:59:39.271Z",
-          "fileName": "ko/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "942da591b2a9b9f9e5e1eecd0e79934836b0d481e4ad8142047907dcbef040f2"
-        },
-        "ar": {
-          "updatedAt": "2026-11-25T16:59:39.284Z",
-          "fileName": "ar/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "fd962a83a2af3e6316e6fc90959b0021ffcbabee6a333d75867f06285d7f089f"
-        },
-        "ru": {
-          "updatedAt": "2026-11-25T16:59:39.285Z",
-          "fileName": "ru/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "f3993671f2214921d4e400bae7e4353c4409fd97baadb53a595b709e5b7853a2"
-        },
-        "zh": {
-          "updatedAt": "2026-11-25T16:59:39.524Z",
-          "fileName": "zh/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "a6e003814e0ebdadc50ae99112f8fea06d1fc10de6dd1a27823061eb6a243009"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-25T16:59:39.611Z",
-          "fileName": "pt-BR/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "dad171bd3cf8105135170d7fee2d97c023dfd87ed34525e1508290e64666bb50"
-        },
         "es": {
-          "updatedAt": "2026-11-25T16:59:39.614Z",
+          "updatedAt": "2026-11-26T05:45:59.180Z",
           "fileName": "es/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "3b44ea1c814364b5bb5218fdcca2fdf612267380334c7dbd2c1502ae76f290b9"
+          "postProcessHash": "86e144182e5a65aaea1684d5951e23aed2a67b485426c08e9a99a2f2bf23597b"
         },
         "fr": {
-          "updatedAt": "2026-11-25T16:59:39.771Z",
+          "updatedAt": "2026-11-26T05:45:59.181Z",
           "fileName": "fr/guides/use-cases/ai-ml/MCP/index.mdx",
-          "postProcessHash": "e8c93554444292f88b7dc4fbab6b37e9862cb104e8bbed8a7f21457542fc209a"
+          "postProcessHash": "cd7122a04c7ee2b661f16dad2171d3050f4c6befd6abf9820c4853a77c051b01"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T05:45:59.181Z",
+          "fileName": "zh/guides/use-cases/ai-ml/MCP/index.mdx",
+          "postProcessHash": "61bd3eeb546e87f95ef3e5cecf093b9b3d3f054f2db3448adce6015c21310376"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T05:45:59.182Z",
+          "fileName": "pt-BR/guides/use-cases/ai-ml/MCP/index.mdx",
+          "postProcessHash": "ca3d7d42f412bc34c148b68f9676770cade56cb57863dca1f578dac971579df2"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T05:45:59.182Z",
+          "fileName": "ru/guides/use-cases/ai-ml/MCP/index.mdx",
+          "postProcessHash": "c1b9965edffee11c39cc9be394baed2d535008e9be8120bf2010756808e3fd8b"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T05:45:59.183Z",
+          "fileName": "ko/guides/use-cases/ai-ml/MCP/index.mdx",
+          "postProcessHash": "82e4d6324f8a56e7a8ef180e0304d09c548e4d024f1f7b1c4c1c18164de5efa3"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T05:45:59.183Z",
+          "fileName": "ja/guides/use-cases/ai-ml/MCP/index.mdx",
+          "postProcessHash": "3f526ce294f74deb8aac6ab05392ce2a24f62dacc31bcbdde12471469789d630"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T05:45:59.183Z",
+          "fileName": "ar/guides/use-cases/ai-ml/MCP/index.mdx",
+          "postProcessHash": "b898c2d5626b38fb4e53e6b8cd6d7cd575f0e2ad90aa9eb65cd8ca2c7bb06d8f"
         }
       },
       "fileName": "guides/use-cases/ai-ml/MCP/index.mdx"

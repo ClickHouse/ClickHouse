@@ -2,7 +2,7 @@
 slug: /use-cases/AI/MCP
 sidebarTitle: 'نظرة عامة'
 title: 'تكاملات MCP مع ClickHouse'
-description: 'اختر عميل MCP أو إطار عمل لربط AI assistant بـ ClickHouse.'
+description: 'اختر عميل MCP أو إطار عمل لربط مساعد الذكاء الاصطناعي بـ ClickHouse.'
 keywords: ['ClickHouse', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
@@ -11,8 +11,11 @@ mode: 'wide'
 
 import { McpGuideGrid } from "/snippets/ar/components/McpGuideGrid/McpGuideGrid.jsx";
 
-يربط خادم ClickHouse MCP المساعدات المتوافقة المدعومة بالذكاء الاصطناعي بقواعد بيانات ClickHouse وأدواتها.
+يربط خادم ClickHouse MCP مساعدي الذكاء الاصطناعي المتوافقين بقواعد بيانات ClickHouse وأدواتها.
 للاطلاع على مقدمة عن البروتوكول ومعماريته وخادم ClickHouse MCP، راجع [نظرة عامة على Model Context Protocol ‏(MCP)](/ar/concepts/features/connect-to-clickhouse/native-tools/mcp).
+
+لتقييم ذاكرة SQL المشتركة، [أعد استخدام دروس SQL عبر Loom](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#reuse-sql-lessons-across-agent-sessions) إلى جانب اتصال ClickHouse MCP الخاص بك.
+يستخدم هذا التمرين أذونات منفصلة لقاعدة البيانات ومساحة الأسماء، ويتحقق من صحة مسند محفوظ مقارنةً بالمخطط القائم بعد إعادة تسمية عمود.
 
 ## إعداد خادم ClickHouse MCP {#set-up-clickhouse-mcp-server}
 
