@@ -18,7 +18,11 @@ SELECT metric_name, 's' AS metric_family, 'summary' AS type, tags, samples FROM
     SELECT 1 AS n, 's' AS metric_name, [('quantile', '0.5')]::Array(Tuple(String, String)) AS tags, [(fromUnixTimestamp64Milli(toInt64(0)), 7.0)] AS samples
     UNION ALL SELECT 2, 's_count', [], [(fromUnixTimestamp64Milli(toInt64(0)), 10.0)]
 ) ORDER BY n FORMAT OpenMetrics;
-SELECT 'g_gcount' AS metric_name, 'g' AS metric_family, 'gaugehistogram' AS type, [(fromUnixTimestamp64Milli(toInt64(0)), 1.0)] AS samples FORMAT OpenMetrics;
+SELECT metric_name, 'g' AS metric_family, 'gaugehistogram' AS type, tags, samples FROM
+(
+    SELECT 1 AS n, 'g_bucket' AS metric_name, [('le', '+Inf')]::Array(Tuple(String, String)) AS tags, [(fromUnixTimestamp64Milli(toInt64(0)), 1.0)] AS samples
+    UNION ALL SELECT 2, 'g_gcount', [], [(fromUnixTimestamp64Milli(toInt64(0)), 1.0)]
+) ORDER BY n FORMAT OpenMetrics;
 SELECT 'build_info' AS metric_name, 'build' AS metric_family, 'info' AS type, [('version', '1')]::Array(Tuple(String, String)) AS tags, [(fromUnixTimestamp64Milli(toInt64(0)), 1.0)] AS samples FORMAT OpenMetrics;
 
 -- A histogram sample without a suffix, with a suffix of another type, or of another family is rejected.

@@ -9,6 +9,7 @@ s{quantile="0.5"} 7 0
 s_count 10 0
 # EOF
 # TYPE g gaugehistogram
+g_bucket{le="+Inf"} 1 0
 g_gcount 1 0
 # EOF
 # TYPE build info

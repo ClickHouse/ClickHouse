@@ -23,6 +23,8 @@ c_total 5 5
 --- typed values are validated
 --- values that the types allow
 # TYPE g gaugehistogram
+g_bucket{le="-1"} 1 1
+g_bucket{le="+Inf"} 1 1
 g_gsum -1.5 1
 # EOF
 # TYPE t gauge

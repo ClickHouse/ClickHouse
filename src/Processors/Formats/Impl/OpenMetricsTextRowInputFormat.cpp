@@ -218,7 +218,11 @@ void parseExemplarSuffix(std::string_view s, size_t & pos, const String & line)
 
 /// Splits `# <PREFIX> <name>[ <rest>]` after `prefix_len` chars (including the trailing space of the prefix).
 /// The family name follows the same grammar as a sample's metric name.
-void parseMetadataLine(const String & line, size_t prefix_len, String & name, String & rest)
+///
+/// With `verbatim_rest` (used for `# HELP`), only the single separator after the name is consumed and
+/// the remaining payload is kept as is: the writer emits exactly one space before the help text, so any
+/// further leading spaces or tabs belong to the text and must survive a round trip.
+void parseMetadataLine(const String & line, size_t prefix_len, String & name, String & rest, bool verbatim_rest = false)
 {
     std::string_view sv{line};
     size_t p = prefix_len;
@@ -226,7 +230,10 @@ void parseMetadataLine(const String & line, size_t prefix_len, String & name, St
     name = String{readToken(sv, p)};
     if (!isValidName(name, /*allow_colon=*/true))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid metric family name '{}' in OpenMetrics line: {}", name, line);
-    skipAsciiSpaces(sv, p);
+    if (!verbatim_rest)
+        skipAsciiSpaces(sv, p);
+    else if (p < sv.size())
+        ++p; /// `readToken` stopped at a space or a tab: the separator
     rest = String{sv.substr(p)};
 }
 
@@ -497,7 +504,7 @@ void OpenMetricsTextRowInputFormat::parseAll()
             /// OpenMetrics allows at most one of each descriptor per family, all preceding its samples.
             if (line.starts_with("# HELP "))
             {
-                parseMetadataLine(line, sizeof("# HELP ") - 1, name, rest);
+                parseMetadataLine(line, sizeof("# HELP ") - 1, name, rest, /*verbatim_rest=*/ true);
                 auto & fm = family_meta[name];
                 if (metadataIsLate(name, fm.type))
                     throwIncorrect("'# HELP' metadata cannot follow samples for a metric family", line);

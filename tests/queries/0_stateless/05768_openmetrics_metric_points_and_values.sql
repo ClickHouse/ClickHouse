@@ -33,7 +33,12 @@ SELECT 'h_bucket' AS metric_name, 'h' AS metric_family, 'histogram' AS type, map
 SELECT 's' AS metric_name, 'summary' AS type, map('quantile', '0.5') AS tags, [(toDateTime64(1, 3), -1.)] AS samples FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 
 SELECT '--- values that the types allow';
-SELECT 'g_gsum' AS metric_name, 'g' AS metric_family, 'gaugehistogram' AS type, [(toDateTime64(1, 3), -1.5)] AS samples FORMAT OpenMetrics;
+SELECT metric_name, 'g' AS metric_family, 'gaugehistogram' AS type, tags, [(toDateTime64(1, 3), value)] AS samples FROM
+(
+    SELECT 1 AS n, 'g_bucket' AS metric_name, map('le', '-1') AS tags, 1. AS value
+    UNION ALL SELECT 2, 'g_bucket', map('le', '+Inf'), 1.
+    UNION ALL SELECT 3, 'g_gsum', map(), -1.5
+) ORDER BY n FORMAT OpenMetrics;
 SELECT 't' AS metric_name, 'gauge' AS type, [(toDateTime64(1, 3), -1.5), (toDateTime64(2, 3), nan)] AS samples FORMAT OpenMetrics;
 
 SELECT '--- input: independent families named like siblings';

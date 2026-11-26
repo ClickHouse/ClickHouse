@@ -424,6 +424,77 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     }
     current_family.series = std::move(sorted);
 
+    /// A histogram metric point is valid only as a whole (https://prometheus.io/docs/specs/om/open_metrics_spec/#histogram):
+    /// it has a `+Inf` bucket, its bucket counts are cumulative, so they do not decrease as `le` grows,
+    /// and its `_count` (`_gcount`), if present, equals the `+Inf` bucket. Check that for every label
+    /// set and timestamp before any of this family's bytes are written. The series of a label set are
+    /// adjacent and its buckets are ordered by increasing `le` and precede `_count` (see the sort above).
+    if (current_family.type == "histogram" || current_family.type == "gaugehistogram")
+    {
+        struct HistogramPoint
+        {
+            double last_bucket = 0;
+            std::optional<double> inf_bucket;
+            std::optional<double> count;
+        };
+        const std::string_view count_name = (*suffixes)[1];
+
+        MapWithMemoryTracking<Int64, HistogramPoint> histogram_points; /// by timestamp, for one label set
+        const auto check_histogram_points = [&]
+        {
+            for (const auto & [ms, point] : histogram_points)
+            {
+                if (!point.inf_bucket)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "OpenMetrics {} '{}' has no '+Inf' bucket at timestamp {} for output format '{}'",
+                        current_family.type, current_family.name, millisToSecondsString(ms), FORMAT_NAME);
+                if (point.count && *point.count != *point.inf_bucket)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "OpenMetrics {} '{}' has '{}{}' {} that differs from its '+Inf' bucket {} "
+                        "at timestamp {} for output format '{}'",
+                        current_family.type, current_family.name, current_family.name, count_name,
+                        formatSampleValue(*point.count), formatSampleValue(*point.inf_bucket),
+                        millisToSecondsString(ms), FORMAT_NAME);
+            }
+            histogram_points.clear();
+        };
+
+        for (size_t k = 0; k < current_family.series.size(); ++k)
+        {
+            if (k > 0 && point_group[k] != point_group[k - 1])
+                check_histogram_points();
+
+            /// 0 is `_bucket`, 1 is `_count` (`_gcount`), 2 is `_sum` (`_gsum`), see `familySampleSuffixes`.
+            /// `_created` is not a part of the point's value: it carries the time the series was created.
+            const SortKey & key = keys[order[k]];
+            if (key.suffix_rank > 2)
+                continue;
+
+            for (const auto & [ms, value] : current_family.series[k].points)
+            {
+                HistogramPoint & point = histogram_points[ms];
+                if (key.suffix_rank == 1)
+                {
+                    point.count = value;
+                }
+                else if (key.suffix_rank == 0)
+                {
+                    if (value < point.last_bucket)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "OpenMetrics {} '{}' has decreasing cumulative bucket counts: the bucket with 'le' = '{}' "
+                            "has {}, which is less than {} of a smaller bucket, at timestamp {} for output format '{}'",
+                            current_family.type, current_family.name, formatSampleValue(key.boundary),
+                            formatSampleValue(value), formatSampleValue(point.last_bucket),
+                            millisToSecondsString(ms), FORMAT_NAME);
+                    point.last_bucket = value;
+                    if (std::isinf(key.boundary))
+                        point.inf_bucket = value;
+                }
+            }
+        }
+        check_histogram_points();
+    }
+
     /// Validate every label value before emitting any bytes, so a malformed value (a tab or other
     /// control character) fails the whole family up front instead of throwing mid-stream.
     for (const auto & series : current_family.series)
@@ -692,7 +763,8 @@ The writer enforces the [OpenMetrics 1.0](https://prometheus.io/docs/specs/om/op
 - **Sample names.** For the types with a suffix rule, each sample name must be the family name plus one of the type's suffixes: `_total` or `_created` for `counter`; `_bucket`, `_count`, `_sum`, or `_created` for `histogram`; `_bucket`, `_gcount`, `_gsum`, or `_created` for `gaugehistogram`; no suffix, `_count`, `_sum`, or `_created` for `summary`; `_info` for `info`. For `unknown`, `gauge`, `stateset`, and an empty type, the sample name must be the family name itself. A `counter` family name must not end with `_total`: the suffix lives on `metric_name`, never on `metric_family`. Histogram `_bucket` samples must carry an `le` label (a real number or `+Inf`, not `NaN`), and bare `summary` samples a `quantile` label (a real number in `[0, 1]`).
 - **Sample order.** Within a family, the series of each metric point (a label set without `le` / `quantile`, and for `stateset` without the state label named after the family) are kept together, including the fragments of one series that arrive in several rows; buckets are sorted by increasing `le` and quantiles by increasing `quantile`, and they are followed by the other samples in the order `_count` (`_gcount`), `_sum` (`_gsum`), `_created`. The samples of one metric point are contiguous: all samples of a label set at one timestamp are written before the samples at the next timestamp, ordered by increasing timestamp. The writer establishes this order itself, so the query only has to keep each family contiguous.
 - **Sample values.** `stateset` values must be `0` or `1` and every sample must carry the label named after the family; `info` values must be `1`; `_total`, `_count`, `_sum`, `_bucket`, `_gcount`, and `_gsum` values must not be `NaN`, and, except for `_gsum`, not negative; summary quantile values must not be negative; `_bucket`, `_count`, and `_gcount` values must be integers.
-- **Escaping.** `# HELP` text is escaped on output (`\\`, `\n`, `\"`) and unescaped on input, so it may contain backslashes, newlines and double quotes. Label values use the same escapes.
+- **Histogram points.** A `histogram` or `gaugehistogram` point (the samples of one label set at one timestamp, not counting `_created`) is checked as a whole: it must have the `le="+Inf"` bucket, its cumulative bucket values must not decrease as `le` grows, and `_count` (`_gcount`), if present, must equal the `+Inf` bucket.
+- **Escaping.** `# HELP` text is escaped on output (`\\`, `\n`, `\"`) and unescaped on input, so it may contain backslashes, newlines and double quotes. Exactly one space separates the family name from the text, and the reader consumes one separator character, so leading spaces and tabs of the text are preserved. Label values use the same escapes.
 - **Unit suffix rule.** When `unit` is set, `metric_family` must end with `_<unit>`.
 - **Exposition structure.** `# HELP`/`# TYPE`/`# UNIT` are emitted at most once per family; there are no blank lines between families; the stream ends with `# EOF`.
 
