@@ -230,15 +230,20 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
     /// Candidate parallel-replica plans have not applied filters yet. Keep their existing
-    /// column-size estimates until pruning filters or analyzed parts are available.
+    /// statistics estimates until pruning filters or analyzed parts are available.
     const bool use_pruned_parts = read_from_merge_tree_step
         && (read_from_merge_tree_step->getIndexes() || read_from_merge_tree_step->getAnalyzedResult());
     ReadFromMergeTree::PartsForPrewhere prewhere_parts;
     if (use_pruned_parts)
         prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere(has_multiple_conditions ? &queried_columns : nullptr);
-    auto column_sizes = use_pruned_parts
-        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts.parts)
-        : storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+    if (use_pruned_parts && prewhere_parts.parts.empty())
+        return;
+
+    /// Sizes of the whole table: the selected parts alone can make a column look cheap that is not.
+    /// Wrappers such as `mergeTreeProjection` publish no sizes, so a MergeTree read asks its `MergeTreeData`.
+    const IStorage & sized_storage = read_from_merge_tree_step ? read_from_merge_tree_step->getMergeTreeData() : storage;
+    auto column_sizes
+        = sized_storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     if (column_sizes.empty())
         return;
 

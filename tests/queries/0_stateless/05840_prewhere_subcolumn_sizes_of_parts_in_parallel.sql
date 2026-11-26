@@ -63,7 +63,7 @@ DETACH TABLE t_json; ATTACH TABLE t_json;
 SELECT * FROM (EXPLAIN SELECT count() FROM t_json WHERE j.k1::Int64 > 0 AND j.k2::Int64 > 0) SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 0 FORMAT Null;
 SELECT * FROM (EXPLAIN SELECT count() FROM t_json WHERE j.k1::Int64 > 0 AND j.k2::Int64 > 0) SETTINGS max_threads = 1, log_comment = 'json_both_sequential' FORMAT Null;
 
--- The parts left after partition pruning.
+-- A read pruned by the partition key sizes every part as well.
 DETACH TABLE t_json; ATTACH TABLE t_json;
 SELECT * FROM (EXPLAIN SELECT count() FROM t_json WHERE d IN ('2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04') AND j.k1::Int64 > 0 AND j.k2::Int64 > 0)
 SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 0 FORMAT Null;

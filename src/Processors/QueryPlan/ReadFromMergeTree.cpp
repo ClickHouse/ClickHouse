@@ -7393,51 +7393,6 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     return res;
 }
 
-IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
-    const Names & columns, const RangesInDataParts & parts) const
-{
-    const bool calculate_subcolumn_sizes
-        = getContext()->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
-
-    /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means
-    /// the same part set. Nothing was pruned: keep the table-wide estimate the storage already caches instead
-    /// of measuring every part and column again, exactly as before pruned parts were taken into account.
-    const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
-    if (parts.size() == parts_before_pruning)
-        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
-
-    IStorage::ColumnSizeByName result;
-    if (calculate_subcolumn_sizes)
-    {
-        MergeTreeData::DataPartsVector data_parts;
-        data_parts.reserve(parts.size());
-        for (const auto & part : parts)
-            data_parts.push_back(part.data_part);
-        MergeTreeData::addColumnSizesOfParts(
-            data_parts, columns, /* with_columns = */ true, getContext()->getSettingsRef()[Setting::max_threads], result);
-    }
-    else
-    {
-        for (const auto & part : parts)
-        {
-            for (const auto & column_name : columns)
-            {
-                if (const auto column = part.data_part->tryGetColumn(column_name))
-                    result[column_name].add(part.data_part->getColumnSize(column->getNameInStorage()));
-            }
-        }
-    }
-
-    /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,
-    /// while the wide parts that were pruned away would still describe the relative column sizes.
-    /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
-    const bool nothing_measured = std::ranges::all_of(result, [](const auto & entry) { return entry.second.data_compressed == 0; });
-    if (!parts.empty() && nothing_measured)
-        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
-
-    return result;
-}
-
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(
     const Names & required_columns, const RangesInDataParts & parts) const
 {

@@ -1,0 +1,8 @@
+t_stats, editDistance written first: a1 editDistance
+t_stats, a1 written first, no short-circuit: a1 editDistance
+t_stats, a1 written first: a1 editDistance
+t_stats, statistics used: 1
+t_nostats, editDistance written first: a1 editDistance
+t_nostats, a1 written first, no short-circuit: a1 editDistance
+t_nostats, a1 written first: a1 editDistance
+t_nostats, statistics used: 0

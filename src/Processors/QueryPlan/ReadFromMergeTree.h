@@ -576,7 +576,6 @@ public:
     /// `selectivity_estimator_columns` are the columns whose statistics would order the conditions,
     /// or nullptr if statistics are not used for that.
     PartsForPrewhere getPartsForPrewhere(const Names * selectivity_estimator_columns) const;
-    IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
     /// Compose statistics over the part set of the given partition/PK analysis result

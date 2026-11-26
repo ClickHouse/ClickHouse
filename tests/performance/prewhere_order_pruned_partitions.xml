@@ -1,0 +1,12 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: the rewrite drops `PARTITION BY`, and the selected partition is what this test is about. -->
+    <create_query>
+        CREATE TABLE prewhere_order_pruned_partitions (p UInt8, a UInt32, s String)
+        ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+    </create_query>
+    <fill_query>INSERT INTO prewhere_order_pruned_partitions SELECT number % 4, 0, randomPrintableASCII(64) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO prewhere_order_pruned_partitions SELECT 9, toUInt32(cityHash64(number)), concat('k', toString(intDiv(number, 1000000) % 4), '-', repeat('ab-cd-', 5)) FROM numbers(4000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_order_pruned_partitions FINAL</fill_query>
+    <query>SELECT count() FROM prewhere_order_pruned_partitions WHERE editDistance(s, repeat('ab-dc-', 50)) &gt; 3 AND p = 9 AND a &lt; 4294967</query>
+    <drop_query>DROP TABLE prewhere_order_pruned_partitions</drop_query>
+</test>
