@@ -183,7 +183,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         if (auto parent_table = getContext()->getParentTable(); parent_table && !isSecondaryDDLReplay(getContext()))
         {
             auto table = database->tryGetTable(elem.from_table_name, getContext());
-            if (table && table->parent_table_uuid != *parent_table)
+            if (table && (*parent_table == UUIDHelpers::Nil || table->parent_table_uuid != *parent_table))
                 throw Exception(ErrorCodes::TABLE_UUID_MISMATCH, "Table {}.{} was not created on behalf of the table with UUID {}",
                     backQuoteIfNeed(elem.from_database_name), backQuoteIfNeed(elem.from_table_name), *parent_table);
         }

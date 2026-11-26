@@ -56,3 +56,18 @@ do
 
     $CLICKHOUSE_CLIENT -q "drop database $db sync"
 done
+
+# A view moved to an `Ordinary` database has no UUID, like the parent of a table created by a user, so it cannot refresh.
+# The server logs a warning about the first `Ordinary` database, hence `send_logs_level`.
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "
+    create database $db engine = Atomic;
+    create database ${db}_ordinary engine = Ordinary;
+    create table $db.tgt (x Int64) engine MergeTree order by x;
+    create materialized view $db.mv refresh every 1 year settings refresh_retries = 0 to $db.tgt empty as select 1 as x;
+    rename table $db.mv to ${db}_ordinary.mv;
+    system refresh view ${db}_ordinary.mv;"
+$CLICKHOUSE_CLIENT -q "system wait view ${db}_ordinary.mv" 2>&1 | grep -o -m1 "TABLE_UUID_MISMATCH"
+$CLICKHOUSE_CLIENT -q "
+    select engine, total_rows from system.tables where database = '$db' and name = 'tgt';
+    drop database ${db}_ordinary sync;
+    drop database $db sync;"
