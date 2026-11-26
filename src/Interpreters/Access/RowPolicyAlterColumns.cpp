@@ -16,10 +16,12 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
 
 #include <algorithm>
+#include <optional>
 
 namespace DB
 {
@@ -83,17 +85,32 @@ void collectIdentifiers(const ASTPtr & ast, const NameSet & table_names, NameSet
         collectIdentifiers(child, table_names, names, visited_udfs, bound);
 }
 
-/// tenant, t.tenant, db.t.tenant, tenant.sub and n.x for a nested n all mention the column,
-/// and t.x can also be the column t or `t.x` of table t, so the name counts with and without the qualifier
-bool mentions(const String & name, const StorageID & table_id, const String & column)
+/// the storage column a name reads is its longest dotted prefix that is a column: j for j.user.name, n.x for a nested child n.x
+std::optional<String> storageColumn(String name, const ColumnsDescription & columns)
 {
-    auto matches = [&](std::string_view candidate) { return candidate == column || candidate.starts_with(column + "."); };
-    if (matches(name))
-        return true;
+    while (!columns.has(name))
+    {
+        auto dot = name.rfind('.');
+        if (dot == String::npos)
+            return {};
+        name.resize(dot);
+    }
+    return name;
+}
+
+/// tenant, t.tenant and db.t.tenant read the column tenant, and t.x can also read the column t or `t.x` of table t;
+/// an alter of a column removes the column itself, or every child of a nested one when no column has that name (see `getNameRange`)
+bool mentions(const String & name, const StorageID & table_id, const String & column, const ColumnsDescription & columns)
+{
+    std::vector<std::string_view> candidates{name};
     for (const auto & qualifier : {table_id.database_name + "." + table_id.table_name + ".", table_id.table_name + "."})
-        if (name.starts_with(qualifier) && matches(std::string_view(name).substr(qualifier.size())))
-            return true;
-    return false;
+        if (name.starts_with(qualifier))
+            candidates.push_back(std::string_view(name).substr(qualifier.size()));
+    return std::ranges::any_of(candidates, [&](std::string_view candidate)
+    {
+        auto storage_column = storageColumn(String(candidate), columns);
+        return storage_column && (columns.has(column) ? *storage_column == column : storage_column->starts_with(column + "."));
+    });
 }
 
 /// a read through an `Alias` also applies the policies of its target chain (see `getRowPolicyFilterForStorage`),
@@ -123,7 +140,7 @@ std::vector<StorageID> tablesSharingColumns(const StoragePtr & table, const Cont
 
 }
 
-void checkRowPoliciesBeforeAlter(const StoragePtr & table, const AlterCommands & commands, const ContextPtr & context)
+void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescription & columns, const AlterCommands & commands, const ContextPtr & context)
 {
     /// row policies are local to a server, so a replica must apply what its initiator already committed
     if (isSecondaryDDLReplay(context) || std::none_of(commands.begin(), commands.end(), removesColumn))
@@ -163,7 +180,7 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const AlterCommands &
                 continue;
             if (std::ranges::any_of(names, [&](const auto & name)
                 {
-                    return std::ranges::any_of(policy_tables, [&](const auto & table_id) { return mentions(name, table_id, command.column_name); });
+                    return std::ranges::any_of(policy_tables, [&](const auto & table_id) { return mentions(name, table_id, command.column_name, columns); });
                 }))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Cannot {} column {}: row policy {} mentions it. Change or drop the policy first",
