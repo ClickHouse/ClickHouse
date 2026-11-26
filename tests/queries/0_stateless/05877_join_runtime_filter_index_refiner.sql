@@ -44,7 +44,7 @@ SELECT 'RIGHT', count(), sum(t.v) FROM t_rf_refiner AS t RIGHT JOIN (SELECT toUI
 SELECT 'LEFT ANTI', count(), sum(t.v) FROM t_rf_refiner AS t LEFT ANTI JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k;
 
 SELECT 'INNER prefetched', count(), sum(t.v) FROM t_rf_refiner AS t INNER JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k
-SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool';
+SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', log_comment = '05877_inner_prefetched_refiner_on';
 SELECT 'LEFT SEMI prefetched', count(), sum(t.v) FROM t_rf_refiner AS t LEFT SEMI JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k
 SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool';
 SELECT 'RIGHT prefetched', count(), sum(t.v) FROM t_rf_refiner AS t RIGHT JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k
@@ -70,5 +70,11 @@ SELECT
     argMax(ProfileEvents['ReadPoolRangeRefinerDroppedMarks'], event_time_microseconds) = 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05877_inner_refiner_off' AND type = 'QueryFinish';
+
+SELECT
+    argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time_microseconds) > 2500,
+    argMax(ProfileEvents['ReadPoolRangeRefinerDroppedMarks'], event_time_microseconds) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05877_inner_prefetched_refiner_on' AND type = 'QueryFinish';
 
 DROP TABLE t_rf_refiner;
