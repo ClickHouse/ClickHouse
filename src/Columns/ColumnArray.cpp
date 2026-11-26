@@ -464,6 +464,9 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     size_t size = src.sizeAt(n);
     size_t offset = src.offsetAt(n);
 
+    if (size > std::numeric_limits<Offset>::max() - getOffsets().back())
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", getOffsets().back(), size);
+
     getData().insertRangeFrom(src.getData(), offset, size);
     getOffsets().push_back(getOffsets().back() + size);
 }
@@ -801,6 +804,9 @@ void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t le
     size_t nested_length = src_concrete.getOffsets()[static_cast<ssize_t>(start + length) - 1] - nested_offset;
 
     Offsets & cur_offsets = getOffsets();
+    if (nested_length > std::numeric_limits<Offset>::max() - cur_offsets.back())
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", cur_offsets.back(), nested_length);
+
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     cur_offsets.reserve(cur_offsets.size() + length);
 

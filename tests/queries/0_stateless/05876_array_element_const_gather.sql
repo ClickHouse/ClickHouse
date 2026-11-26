@@ -49,3 +49,27 @@ FROM
     FROM (SELECT number, arrayWithConstant(536870912 + number, tuple()) AS a FROM numbers(1))
 )
 SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
+
+-- The same overflow in the size of an inner array, when the gathered chunks or rows are appended.
+SELECT length(z), length(z[1]), length(z[131073])
+FROM
+(
+    SELECT replicate([b], arrayWithConstant(131073 + number, tuple())) AS z
+    FROM
+    (
+        SELECT number, arrayFlatten(replicate(a, arrayWithConstant(524288 + number, tuple()))) AS b
+        FROM (SELECT number, arrayWithConstant(268435456 + number, tuple()) AS a FROM numbers(1))
+    )
+)
+SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT length(z)
+FROM
+(
+    SELECT replicate(replicate(b, arrayWithConstant(17 + number, tuple())), arrayWithConstant(7711 + number, tuple())) AS z
+    FROM
+    (
+        SELECT number, arrayFlatten(replicate(a, arrayWithConstant(524288 + number, tuple()))) AS b
+        FROM (SELECT number, arrayWithConstant(268435456 + number, tuple()) AS a FROM numbers(1))
+    )
+)
+SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
