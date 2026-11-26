@@ -381,11 +381,15 @@ class JobConfigs:
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
+        run_in_docker="clickhouse/fasttest+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         needs_submodules=True,
+    )
+    # The merge queue writes the sccache bucket and needs the EC2 metadata endpoint for credentials
+    fast_test_mq = fast_test.copy()
+    fast_test_mq.run_in_docker = fast_test.run_in_docker.replace(
+        "fasttest+", "fasttest+--network=host+", 1
     )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",

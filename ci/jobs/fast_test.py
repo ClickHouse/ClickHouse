@@ -269,6 +269,7 @@ def main():
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
+        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
