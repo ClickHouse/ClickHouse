@@ -1093,6 +1093,9 @@ void optimizeTreeSecondPass(
     if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
         traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
 
+    /// After every pass that merges, splits or moves expression steps.
+    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableCompilationOverAtMostOneRow(frame_node); });
+
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);
 }
