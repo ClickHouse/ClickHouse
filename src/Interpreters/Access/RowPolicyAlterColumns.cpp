@@ -42,48 +42,65 @@ bool removesColumn(const AlterCommand & command)
     return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
 }
 
-bool readsAnyOf(const ASTPtr & ast, const NameSet & table_names)
+/// the identifiers a filter reads, SQL UDF bodies included, lambda parameters and the subqueries over other tables excluded
+struct FilterNames
 {
-    if (const auto * table = ast->as<ASTTableIdentifier>())
-        return table_names.contains(table->shortName());
-    return std::ranges::any_of(ast->children, [&](const auto & child) { return readsAnyOf(child, table_names); });
-}
+    const std::vector<StorageID> & tables;
+    const ColumnsDescription & columns;
+    NameSet names;
+    NameSet visited_udfs;
 
-/// every identifier of the filter, SQL UDF bodies included, lambda parameters excluded
-void collectIdentifiers(const ASTPtr & ast, const NameSet & table_names, NameSet & names, NameSet & visited_udfs, NameSet bound = {})
-{
-    /// a filter cannot be correlated and cannot read its own table (see `buildFilterInfo`), so the names
-    /// of a subquery belong to other tables unless the subquery reads one of the checked tables
-    if (ast->as<ASTSubquery>() && !readsAnyOf(ast, table_names))
-        return;
-
-    /// a UDF is also called by a bare name passed as a lambda, `arrayExists(udf, arr)`
-    String name;
-    if (const auto * identifier = ast->as<ASTIdentifier>())
+    /// an unqualified table binds in the database of the reader, so it counts in every database
+    bool readsCheckedTable(const ASTPtr & ast) const
     {
-        name = identifier->name();
-        if (std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
-            return;
-        names.insert(name);
-    }
-    else if (const auto * function = ast->as<ASTFunction>())
-    {
-        name = function->name;
-        /// x -> body is lambda(tuple(x), body), x is local to the body
-        if (name == "lambda")
+        if (const auto * table = ast->as<ASTTableIdentifier>())
         {
-            for (const auto & parameter : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
-                bound.insert(parameter);
-            collectIdentifiers(function->arguments->children[1], table_names, names, visited_udfs, bound);
-            return;
+            auto id = table->getTableId();
+            return std::ranges::any_of(tables, [&](const auto & checked)
+            {
+                return checked.table_name == id.table_name && (id.database_name.empty() || checked.database_name == id.database_name);
+            });
         }
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return readsCheckedTable(child); });
     }
-    if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); body && visited_udfs.insert(name).second)
-        collectIdentifiers(body, table_names, names, visited_udfs);
 
-    for (const auto & child : ast->children)
-        collectIdentifiers(child, table_names, names, visited_udfs, bound);
-}
+    void collect(const ASTPtr & ast, NameSet bound = {})
+    {
+        /// a filter cannot be correlated and cannot read its own table (see `buildFilterInfo`), so the names
+        /// of a subquery belong to other tables unless the subquery reads one of the checked tables
+        if (ast->as<ASTSubquery>() && !readsCheckedTable(ast))
+            return;
+
+        String name;
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            name = identifier->name();
+            if (std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
+                return;
+            names.insert(name);
+            /// a column takes priority over a SQL UDF of the same name, which a bare name calls only as a lambda, `arrayExists(udf, arr)`
+            if (columns.has(name))
+                return;
+        }
+        else if (const auto * function = ast->as<ASTFunction>())
+        {
+            name = function->name;
+            /// x -> body is lambda(tuple(x), body), x is local to the body
+            if (name == "lambda")
+            {
+                for (const auto & parameter : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+                    bound.insert(parameter);
+                collect(function->arguments->children[1], bound);
+                return;
+            }
+        }
+        if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); body && visited_udfs.insert(name).second)
+            collect(body);
+
+        for (const auto & child : ast->children)
+            collect(child, bound);
+    }
+};
 
 /// the storage column a name reads is its longest dotted prefix that is a column: j for j.user.name, n.x for a nested child n.x
 std::optional<String> storageColumn(String name, const ColumnsDescription & columns)
@@ -98,19 +115,19 @@ std::optional<String> storageColumn(String name, const ColumnsDescription & colu
     return name;
 }
 
-/// tenant, t.tenant and db.t.tenant read the column tenant, and t.x can also read the column t or `t.x` of table t;
-/// an alter of a column removes the column itself, or every child of a nested one when no column has that name (see `getNameRange`)
+/// a name binds as written first, an exact column or a column with a subcolumn path, and with the `table.` or `db.table.`
+/// qualifier removed only after that; an alter of a column removes the column itself, or every child of a nested one
+/// when no column has that name (see `getNameRange`)
 bool mentions(const String & name, const StorageID & table_id, const String & column, const ColumnsDescription & columns)
 {
     std::vector<std::string_view> candidates{name};
-    for (const auto & qualifier : {table_id.database_name + "." + table_id.table_name + ".", table_id.table_name + "."})
+    for (const auto & qualifier : {table_id.table_name + ".", table_id.database_name + "." + table_id.table_name + "."})
         if (name.starts_with(qualifier))
             candidates.push_back(std::string_view(name).substr(qualifier.size()));
-    return std::ranges::any_of(candidates, [&](std::string_view candidate)
-    {
-        auto storage_column = storageColumn(String(candidate), columns);
-        return storage_column && (columns.has(column) ? *storage_column == column : storage_column->starts_with(column + "."));
-    });
+    for (const auto & candidate : candidates)
+        if (auto storage_column = storageColumn(String(candidate), columns))
+            return columns.has(column) ? *storage_column == column : storage_column->starts_with(column + ".");
+    return false;
 }
 
 /// a read through an `Alias` also applies the policies of its target chain (see `getRowPolicyFilterForStorage`),
@@ -147,9 +164,6 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
         return;
 
     const auto tables = tablesSharingColumns(table, context);
-    NameSet table_names;
-    for (const auto & id : tables)
-        table_names.insert(id.table_name);
     const auto & access_control = context->getAccessControl();
     for (const auto & id : access_control.findAll<RowPolicy>())
     {
@@ -164,21 +178,20 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
         if (policy_tables.empty())
             continue;
 
-        NameSet names;
-        NameSet visited_udfs;
+        FilterNames filter_names{tables, columns, {}, {}};
         for (const auto & filter : policy->filters)
         {
             if (filter.empty())
                 continue;
             ParserExpression parser;
-            collectIdentifiers(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS), table_names, names, visited_udfs);
+            filter_names.collect(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         }
 
         for (const auto & command : commands)
         {
             if (!removesColumn(command))
                 continue;
-            if (std::ranges::any_of(names, [&](const auto & name)
+            if (std::ranges::any_of(filter_names.names, [&](const auto & name)
                 {
                     return std::ranges::any_of(policy_tables, [&](const auto & table_id) { return mentions(name, table_id, command.column_name, columns); });
                 }))
