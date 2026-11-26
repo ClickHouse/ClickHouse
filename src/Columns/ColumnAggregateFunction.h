@@ -258,19 +258,6 @@ public:
         return 0;
     }
 
-    /// Like `compareAt`, all values compare equal, so `row_indexes` keeps every row.
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results, int, int) const override
-    {
-        compare_results.resize(size());
-        if (row_indexes)
-        {
-            for (UInt64 row : *row_indexes)
-                compare_results[row] = 0;
-        }
-        else
-            std::fill(compare_results.begin(), compare_results.end(), 0);
-    }
-
     bool hasEqualValues() const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnAggregateFunction");
