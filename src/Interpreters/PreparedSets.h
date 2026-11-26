@@ -76,7 +76,7 @@ public:
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
     /// The same, but never runs the subquery that fills the set: returns null if it is not built yet.
-    /// For consult-only callers: `ConditionSelectivityEstimator`, which wants a single selectivity number,
+    /// For consult-only callers, e.g. `ConditionSelectivityEstimator`, which wants a single selectivity number,
     /// and the `NOT IN` atoms of a minmax skip index, which can skip only a granule that holds one value.
     /// A cost model that executes a subquery gives planning a side effect of unbounded cost, for a
     /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
