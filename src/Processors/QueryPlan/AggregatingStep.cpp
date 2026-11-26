@@ -1373,9 +1373,9 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
         settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge_by_index]
             = params.enable_parallel_single_level_merge_by_index;
 
-    /// Every peer that receives a plan skips a name it does not know (see `QueryPlanSerializationSettings`), so
-    /// this one needs no version. A peer without the setting stages every missed row, which changes only the
-    /// speed and the memory of the aggregation.
+    /// Every peer that receives a plan skips a name it does not know (see `QueryPlanSerializationSettings`),
+    /// so this one needs no version. A peer without the setting stages every missed row, which changes only
+    /// the speed and the memory of the aggregation.
     settings[QueryPlanSerializationSetting::adaptive_aggregator_combine_arg_min_max]
         = params.adaptive_aggregator_combine_arg_min_max;
 

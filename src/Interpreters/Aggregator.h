@@ -1215,11 +1215,12 @@ private:
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
 
-    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
-    /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot
-    /// (`emplace_null_key`) without a lookup and needs a place, so without `record_places` the block has no such rows.
-    /// Under a row selection (`adaptive_row_selection`) a miss of the key of its partition's tail combines into the tail,
-    /// whose record keeps the best of their rows (see `AdaptiveMissCombiner`); otherwise every miss is a record.
+    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of
+    /// `collectCombinedMisses`. With `record_places` it stores the place of every row in `places_data`, null
+    /// for a miss. A NULL key goes to its slot (`emplace_null_key`) without a lookup and needs a place, so
+    /// without `record_places` the block has no such rows. Under a row selection (`adaptive_row_selection`) a
+    /// miss of the key of its partition's tail combines into the tail, whose record keeps the best of their
+    /// rows (see `AdaptiveMissCombiner`); otherwise every miss is a record.
     template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
     AdaptiveLocalProbes collectArgumentMisses(
         LocalMethod & local_method,
@@ -1233,14 +1234,15 @@ private:
         const EmplaceNullKey & emplace_null_key,
         const StageMisses & stage_misses) const;
 
-    /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects
-    /// for `Method`, the two-level twin of the producer's table. Each record carries a key and either a multiplicity
-    /// (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate arguments laid out by
-    /// `adaptive_argument_layout`, read from the argument columns of the block's `aggregate_instructions`, with the
-    /// multiplicity of the combined rows when the layout has one (see `AdaptiveRowSelection`). The records of
-    /// byte-staged keys also carry a hash and lengths; those of fixed-width keys recover the hash from the key when
-    /// drained. The tails of the producer's partitions learn where the records went (see `AdaptivePartitionTails`).
-    /// Returns what it staged for the accounting of the batch (see `accountStagedBatch`).
+    /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat`
+    /// selects for `Method`, the two-level twin of the producer's table. Each record carries a key and either
+    /// a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate
+    /// arguments laid out by `adaptive_argument_layout`, read from the argument columns of the block's
+    /// `aggregate_instructions`, with the multiplicity of the combined rows when the layout has one (see
+    /// `AdaptiveRowSelection`). The records of byte-staged keys also carry a hash and lengths; those of
+    /// fixed-width keys recover the hash from the key when drained. The tails of the producer's partitions
+    /// learn where the records went (see `AdaptivePartitionTails`). Returns what it staged for the accounting
+    /// of the batch (see `accountStagedBatch`).
     template <typename Method, typename State>
     AdaptiveStagedBytes appendDelayedRecords(
         const AggregateFunctionInstruction * aggregate_instructions,

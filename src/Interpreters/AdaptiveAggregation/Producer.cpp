@@ -241,8 +241,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         const auto & key = keyHolderGetKey(key_holder);
         const UInt64 hash = local_method.data.hash(key);
 
-        /// The whole range carries one key and a set stores a key once, so at most a single record stands for it
-        /// however many rows it spans: none when the key is that of its partition's tail.
+        /// The whole range carries one key and a set stores a key once, so at most a single record stands for
+        /// it however many rows it spans: none when the key is that of its partition's tail.
         const auto found = local_method.data.find(key, hash);
         if (!found)
         {
@@ -315,10 +315,10 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
 
         if constexpr (is_keys_and_packed_string<RecordKey>)
         {
-            /// A key with an empty string that repeats the last missed key, as the rows of a missing value often
-            /// do, misses as well: it is missing from the local table. It goes to the combiner with that key's
-            /// hash without being hashed or probed again, and its fixed-width values decide it, as an empty
-            /// string carries no hash.
+            /// A key with an empty string that repeats the last missed key, as the rows of a missing value
+            /// often do, misses as well: it is missing from the local table. It goes to the combiner with
+            /// that key's hash without being hashed or probed again, and its fixed-width values decide it, as
+            /// an empty string carries no hash.
             if (key.str.isEmpty() && has_missed_key && last_missed_key.str.isEmpty() && key.keys == last_missed_key.keys)
             {
                 combiner.add(static_cast<UInt32>(i), last_missed_hash, key);
@@ -445,8 +445,8 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectArgumentMisses(
         return probes;
     };
 
-    /// Under a row selection the misses of a key combine into the tail of its partition, whose record keeps the
-    /// best of their rows (see `AdaptiveMissCombiner`). Otherwise every miss is a record of its own.
+    /// Under a row selection the misses of a key combine into the tail of its partition, whose record keeps
+    /// the best of their rows (see `AdaptiveMissCombiner`). Otherwise every miss is a record of its own.
     if (adaptive_row_selection)
     {
         AdaptiveMissCombiner<RecordKey, AdaptiveMissCombine::selection, KeepKeyBytes> combiner(
@@ -541,8 +541,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     };
 
     /// With a row selection, the misses of a key that combine into its partition's tail stage one record, of
-    /// their best row by the ranks of their blocks (see `AdaptiveMissCombiner`). When the selection counts rows,
-    /// the record also counts them.
+    /// their best row by the ranks of their blocks (see `AdaptiveMissCombiner`). When the selection counts
+    /// rows, the record also counts them.
     const AdaptiveRowSelection * selection = adaptive_row_selection.get();
     if (selection)
     {
@@ -599,9 +599,9 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         else
         {
             misses.setKeysConst();
-            /// When the records combine, one miss of the block's key, whose record takes the arguments of `row`,
-            /// stands for all the block's rows: a count record counts them, a record without aggregate functions
-            /// carries the key alone, and the record of a row selection takes the block's best row.
+            /// When the records combine, one miss of the block's key, whose record takes the arguments of
+            /// `row`, stands for all the block's rows: a count record counts them, a record without aggregate
+            /// functions carries the key alone, and the record of a row selection takes the block's best row.
             const auto rows = static_cast<UInt32>(row_end - row_begin);
             const auto combine_block = [&]<AdaptiveMissCombine kind>(size_t row)
             {
@@ -632,8 +632,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         return;
     }
 
-    /// The records of a lone `count` and those without aggregate functions carry no arguments, so a miss of the key of
-    /// its partition's tail combines into the tail (see `AdaptivePartitionTails`).
+    /// The records of a lone `count` and those without aggregate functions carry no arguments, so a miss of
+    /// the key of its partition's tail combines into the tail (see `AdaptivePartitionTails`).
     if (is_simple_count || params.aggregates_size == 0)
     {
         const AdaptiveLocalProbes probes = is_simple_count
@@ -823,8 +823,9 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             key_bytes += stored_key_size;
             record_bytes += bytes;
 
-            /// A count past the format's `max_count`, the largest that one record holds, continues in further records
-            /// of the key. The last of them is the partition's last record, which the tail of the key may grow.
+            /// A count past the format's `max_count`, the largest that one record holds, continues in further
+            /// records of the key. The last of them is the partition's last record, which the tail of the key
+            /// may grow.
             if constexpr (Record::with_count)
             {
                 for (rest -= count; rest; rest -= count)
@@ -863,11 +864,11 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                     argument = aggregate_instructions[i].arguments[j];
             }
 
-        /// A sparse column, which an aggregate of one argument consumes as it is, is read through its values. A dense
-        /// copy of the column would also copy the values of the rows that hit the local table. While the source rows
-        /// of the records ascend, one pass of an iterator along its offsets finds the value of every record. A row
-        /// selection may have moved a record to a later row (see `AdaptiveMissBatch::setSourceRow`), and then each
-        /// row is looked up in the offsets.
+        /// A sparse column, which an aggregate of one argument consumes as it is, is read through its values.
+        /// A dense copy of the column would also copy the values of the rows that hit the local table. While
+        /// the source rows of the records ascend, one pass of an iterator along its offsets finds the value
+        /// of every record. A row selection may have moved a record to a later row (see
+        /// `AdaptiveMissBatch::setSourceRow`), and then each row is looked up in the offsets.
         std::vector<PaddedPODArray<UInt32>> value_rows(argument_layout.num_positions);
         const auto read_through_values = [&](size_t position)
         {
