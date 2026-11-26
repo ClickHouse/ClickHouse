@@ -5,6 +5,7 @@
 #include <thread>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -35,6 +36,8 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Databases/IDatabase.h>
 #include <Processors/ISource.h>
@@ -109,20 +112,18 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
 class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
+    /// The access is checked before `getCheckTaskList`: for a table that a database with `lazy_load_tables`
+    /// has not loaded yet, that loads it, which must not be possible for a user without the right to check it.
     TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
-        : table(DatabaseCatalog::instance().getTable(table_id, context))
+        : table(getTableCheckingAccess(table_id, context))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
-        chassert(context);
-        context->checkAccess(AccessType::CHECK, table_id);
     }
 
     TableCheckTask(StoragePtr table_, ContextPtr context)
-        : table(table_)
+        : table(checkAccess(std::move(table_), context))
         , check_data_tasks(table->getCheckTaskList({}, context))
     {
-        chassert(context);
-        context->checkAccess(AccessType::CHECK, table_->getStorageID());
     }
 
     TableCheckTask(const TableCheckTask & other)
@@ -178,6 +179,21 @@ public:
     }
 
 private:
+    static StoragePtr getTableCheckingAccess(const StorageID & table_id, const ContextPtr & context)
+    {
+        chassert(context);
+        auto storage = DatabaseCatalog::instance().getTable(table_id, context);
+        context->checkAccess(AccessType::CHECK, table_id);
+        return storage;
+    }
+
+    static StoragePtr checkAccess(StoragePtr storage, const ContextPtr & context)
+    {
+        chassert(context);
+        context->checkAccess(AccessType::CHECK, storage->getStorageID());
+        return storage;
+    }
+
     StoragePtr table;
     IStorage::DataValidationTasksPtr check_data_tasks;
 
@@ -260,7 +276,7 @@ private:
         {
             /// Try to get next table from current database
             StoragePtr table = current_table_it->table();
-            if (table && table->isMergeTree())
+            if (table && isMergeTree(table, current_table_it->databaseName(), current_table_it->name()))
                 return table;
 
             LOG_TRACE(log, "Skip checking table '{}.{}' because it is not {}",
@@ -269,6 +285,29 @@ private:
             current_table_it->next();
         }
         return {};
+    }
+
+    /// `isMergeTree` loads a table that a database with `lazy_load_tables` has not loaded yet, also when it is
+    /// asked through an `Alias`. A user without the right to check the table must not be able to load it, so for
+    /// such a user the question is answered from the engine name, which the stand-in knows from the `CREATE`
+    /// query. A `MergeTree` table is still returned, and the check of it is denied before the table is loaded.
+    bool isMergeTree(StoragePtr table, const String & database_name, const String & table_name) const
+    {
+        if (context->getAccess()->isGranted(AccessType::CHECK, database_name, table_name))
+            return table->isMergeTree();
+
+        for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+        {
+            table = resolveStorageProxy(table);
+            if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()); proxy && proxy->isLazyStandIn())
+                return table->getName().ends_with("MergeTree");
+
+            const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
+            if (!alias)
+                return table->isMergeTree();
+            table = alias->tryGetTargetTable();
+        }
+        return false;
     }
 
     DatabasePtr getNextDatabase()
