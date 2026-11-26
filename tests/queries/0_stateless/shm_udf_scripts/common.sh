@@ -111,7 +111,10 @@ function shm_local()
         /^Logging .* to / { next }
         /^Received exception:$/ { next }
         skipping_query { if (/;\)$/) skipping_query = 0; next }
-        /^\(query: / { if (!/;\)$/) skipping_query = 1; next }
+        # A query with something to hide in it (the arguments of `url` in `shm_as_user`) is echoed as
+        # formatted back from its AST, with `[HIDDEN]` in place of the secret: on one line, and
+        # without the semicolon.
+        /^\(query: / { if (!/;\)$/ && !/\[HIDDEN\]/) skipping_query = 1; next }
         # A message ending with the version of the server (as a debug build ends every message, and
         # any build one received from another server) may be over, or may be quoted inside an outer
         # one that goes on on the next line, starting with the closing quote.
