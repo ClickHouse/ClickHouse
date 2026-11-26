@@ -64,7 +64,10 @@ TEST(PocoThreadPool, StalledReleasedThreadIsJoinedLater)
     const int signal_number = SIGRTMIN + 5;
     struct sigaction action{};
     struct sigaction old_action{};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     action.sa_handler = stallThread;
+#pragma clang diagnostic pop
     sigemptyset(&action.sa_mask);
     ASSERT_EQ(sigaction(signal_number, &action, &old_action), 0);
 
