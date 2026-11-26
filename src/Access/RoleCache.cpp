@@ -100,7 +100,7 @@ void RoleCache::ensureSubscribed()
 
 void RoleCache::collectEnabledRolesIfNeeded(scope_guard * notifications)
 {
-    /// Runs without `mutex`, which every login needs: it is called only from sendNotifications(), one call at a time,
+    /// Runs without `mutex`: it is called only from sendNotifications(), one call at a time,
     /// so nothing else updates the existing sets or `need_collect_enabled_roles` meanwhile.
     VectorWithMemoryTracking<std::shared_ptr<EnabledRoles>> enabled_sets;
     {
@@ -117,8 +117,7 @@ void RoleCache::collectEnabledRolesIfNeeded(scope_guard * notifications)
             else
                 i = enabled_roles_by_params.erase(i);
         }
-        /// Recalculated from scratch below, which also drops roles referenced only by expired sets;
-        /// getEnabledRoles() adds the roles of the sets it creates meanwhile.
+        /// Rebuilt from scratch below, so roles of expired sets drop out; getEnabledRoles() adds those of the sets it creates meanwhile.
         referenced_roles.clear();
     }
 
