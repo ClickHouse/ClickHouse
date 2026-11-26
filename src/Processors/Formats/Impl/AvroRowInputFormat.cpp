@@ -914,11 +914,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [nested_deserializers](IColumn & column, avro::Decoder & decoder)
                 {
                     ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(column);
-                    auto nested_columns = column_tuple.getColumns();
+                    /// Do not copy the column vector — copying the `WrappedPtr`s bumps each
+                    /// element's `use_count()` to 2, which then trips `chassert(use_count() == 1)`
+                    /// in `WrappedPtr::operator*` -> `assumeMutableRef` inside the deserializer.
+                    /// Access elements directly via `getColumn` to keep `use_count == 1`.
                     auto read_tuple=[&]()
                     {
                         for (const auto & [nested_deserializer, pos] : nested_deserializers)
-                            nested_deserializer(*nested_columns[pos], decoder);
+                            nested_deserializer(column_tuple.getColumn(pos), decoder);
                     };
                     SerializationTuple::readElementsSafe(column, read_tuple);
                     return true;
@@ -1271,6 +1274,7 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
     Block header;
     header.insert({data_type->createColumn(), data_type, column_name});
 
+    column_types = header.getDataTypes();
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root, column_name);
     // fail on missing fields when allow_missing_fields = false
@@ -1315,6 +1319,7 @@ AvroDeserializer::AvroDeserializer(
         }
     }
 
+    column_types = header.getDataTypes();
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root);
     // fail on missing fields when allow_missing_fields = false
@@ -1346,7 +1351,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
             ext.read_columns[i] = true;
         }
         else
-            columns[i]->insertDefault();
+            column_types[i]->insertDefaultInto(*columns[i]);
     }
 }
 

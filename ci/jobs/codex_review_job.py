@@ -33,6 +33,7 @@ import traceback
 import urllib.parse
 
 from ci.praktika import Secret
+from ci.praktika._environment import _Environment
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -58,6 +59,16 @@ FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 MODEL_AT_CAPACITY = "Selected model is at capacity"
 REVIEW_HEADER = "#### AI Review"
+STATUS_PREFIX = "Status:"
+VERDICT_APPROVE = "✅ Approve"
+VERDICT_REQUEST_CHANGES = "⚠️ Request changes"
+VERDICT_BLOCK = "❌ Block"
+# The emoji variation selector and the spacing are optional, the words are matched case-insensitively.
+_VERDICT_PATTERNS = {
+    VERDICT_APPROVE: r"✅\s*(?i:approve)",
+    VERDICT_REQUEST_CHANGES: r"⚠\ufe0f?\s*(?i:request\s+changes)",
+    VERDICT_BLOCK: r"❌\s*(?i:block)",
+}
 
 
 def _join_prompt(*sections):
@@ -135,6 +146,10 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
+  a nested local run replaces the state of this job in `ci/tmp` (the PR number, the job name), which
+  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. No ClickHouse binary
+  is available here either. Rely on the CI reports of the PR for the test results.
 """
 
 
@@ -194,7 +209,10 @@ to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SK
 start with `---
 {REVIEW_HEADER}`, then use ##### for section headers.
 Do NOT post the summary yourself: the job script will post it after you finish.
-A Final Verdict of `✅ Approve` makes the job submit a GitHub approval of the PR on your behalf.
+The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
+bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,
+`{STATUS_PREFIX} {VERDICT_BLOCK}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
+makes it submit a GitHub approval of the PR on your behalf.
 """
 
 
@@ -237,17 +255,28 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
 
 
 def _review_approves():
-    """True if the `Status:` line of the last `Final Verdict` section in REVIEW_FILE is `✅ Approve`,
-    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. A summary without a status line,
-    or with the template's list of all statuses, is not an approval."""
+    """True if the last `Final Verdict` section in REVIEW_FILE states `✅ Approve` and no other verdict,
+    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The `Status:` line is read if it has
+    a verdict, otherwise the whole section, so a summary that drops the prefix or adds bold still counts.
+    No verdict, or more than one (such as the template's list of all statuses), is not an approval."""
     with open(REVIEW_FILE, encoding="utf-8") as f:
-        _, found, verdict = f.read().rpartition("Final Verdict")
-    status = re.search(r"Status:(.*)", verdict) if found else None
-    if not status:
-        print(f"WARNING: No Final Verdict status in {REVIEW_FILE}")
+        _, found, section = f.read().rpartition("Final Verdict")
+    if not found:
+        print(f"WARNING: No Final Verdict in {REVIEW_FILE}")
         return False
-    status = status.group(1)
-    return "✅ Approve" in status and not re.search(r"Request changes|Block", status)
+
+    def find_verdicts(text):
+        text = text.replace("*", "")
+        return [verdict for verdict, pattern in _VERDICT_PATTERNS.items() if re.search(pattern, text)]
+
+    status = re.search(rf"{STATUS_PREFIX}(.*)", section)
+    verdicts = find_verdicts(status.group(1)) if status else []
+    if not verdicts:
+        verdicts = find_verdicts(section)
+    if verdicts != [VERDICT_APPROVE]:
+        print(f"Final Verdict in {REVIEW_FILE} is not an approval, found verdicts: {verdicts}")
+        return False
+    return True
 
 
 def _update_approval(info, cyber_risk_flagged):
@@ -393,6 +422,24 @@ def _run_codex_once(prompt, model):
         )
 
 
+def _restore_job_state(path, saved):
+    """Restore the state file of this job if the agent has replaced it.
+
+    The agent sometimes starts a nested local run (`python3 -m ci.praktika run ...`), which writes the
+    environment of a local run - without the PR number and with another job name - over the one of
+    this job. The review then cannot be posted, and the job result is reported under a wrong name.
+    """
+    current = None
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            current = f.read()
+    if current == saved:
+        return
+    print(f"WARNING: the agent has changed {path}, restoring it")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(saved)
+
+
 def _run(prompt, flagged_sessions):
     """Run the Codex agent with retries, then post the review comment.
 
@@ -403,10 +450,18 @@ def _run(prompt, flagged_sessions):
     last_error = None
     model = MODEL
     review_model = model
+    # Make sure that the environment of this job is on disk before the agent can touch it.
+    _Environment.get()
+    environment_file = _Environment.file_name_static()
+    with open(environment_file, "r", encoding="utf-8") as f:
+        environment = f.read()
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             review_model = model
-            result = _run_codex_once(prompt, model)
+            try:
+                result = _run_codex_once(prompt, model)
+            finally:
+                _restore_job_state(environment_file, environment)
             if CYBER_RISK_FLAG in result.info:
                 flagged_sessions.append((attempt, model))
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk")

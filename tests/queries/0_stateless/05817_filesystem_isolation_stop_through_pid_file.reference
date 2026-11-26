@@ -1,0 +1,5 @@
+pid file: supervisor
+stop: done
+server: stopped gracefully
+pid file: removed
+process group: stopped gracefully

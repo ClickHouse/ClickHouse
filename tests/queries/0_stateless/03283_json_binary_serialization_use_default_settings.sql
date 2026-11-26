@@ -1,4 +1,3 @@
-set enable_json_type=1;
 set output_format_binary_write_json_as_string=1;
 
 drop table if exists test;

@@ -193,10 +193,9 @@ IcebergRESTCatalogWarehouse::RenameTableResult IcebergRESTCatalogWarehouse::rena
     return store->renameTable(source_ns, source, dest_ns, dest);
 }
 
-IcebergRESTCatalogWarehouse::UpdateTableResult IcebergRESTCatalogWarehouse::updateTable(
-    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const
+IcebergRESTCatalogWarehouse::UpdateTablesResult IcebergRESTCatalogWarehouse::updateTables(const std::vector<TableUpdate> & updates) const
 {
-    return store->updateTable(ns, table, expected, new_pointer);
+    return store->updateTables(updates);
 }
 
 void IcebergRESTCatalogWarehouse::checkStorageAccess() const

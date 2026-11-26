@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-<div id="dashboard-variables">
-  ## ダッシュボード変数
-</div>
+## ダッシュボード変数 {#dashboard-variables}
 
 *[@pulpdrew](https://github.com/pulpdrew) によるデモ*
 
@@ -35,9 +33,7 @@ Raw SQL チャートでは、変数を複数の方法で使用できます。`$_
 
 **関連 PR:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) フィルター変数の設定を追加、[#2873](https://github.com/hyperdxio/hyperdx/pull/2873) Raw SQL チャートで変数を置換、[#2874](https://github.com/hyperdxio/hyperdx/pull/2874) SQL ダッシュボード変数のオートコンプリートと検証、[#2901](https://github.com/hyperdxio/hyperdx/pull/2901) チャートビルダータイルでダッシュボード変数をサポート、[#2910](https://github.com/hyperdxio/hyperdx/pull/2910) アラートクエリで変数を空として展開、[#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 依存変数の値クエリをサポート、[#2937](https://github.com/hyperdxio/hyperdx/pull/2937) ネストしたマクロとマクロ内の変数参照をサポート、[#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 外部 API にダッシュボード変数を追加
 
-<div id="alert-detail-page-with-evaluation-history">
-  ## 評価履歴付きアラート詳細ページ
-</div>
+## 評価履歴付きアラート詳細ページ {#alert-detail-page-with-evaluation-history}
 
 *[@wrn14897](https://github.com/wrn14897) によるデモ*
 
@@ -57,15 +53,13 @@ Raw SQL チャートでは、変数を複数の方法で使用できます。`$_
 
 **関連 PR:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) アラート評価の読み取りモデルと `GET /alerts/:id/evaluations`、[#2834](https://github.com/hyperdxio/hyperdx/pull/2834) AlertHistory におけるアラート評価エラーと分析情報の永続化、[#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 評価履歴付きアラート詳細ページ、[#2928](https://github.com/hyperdxio/hyperdx/pull/2928) アラートチャートマーカーを評価対象バケットの開始位置に合わせる、[#2931](https://github.com/hyperdxio/hyperdx/pull/2931) アラート詳細ページからのアラート編集および削除を許可
 
-<div id="investigating-alerts-and-mcp-tool-annotations">
-  ## アラートの調査と MCP ツールアノテーション
-</div>
+## アラートの調査と MCP ツールアノテーション {#investigating-alerts-and-mcp-tool-annotations}
 
 *[@brandon-pereira](https://github.com/brandon-pereira) によるデモ*
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
-発報したアラートに Investigate ボタンが追加されました。このボタンをクリックすると、アラートページまたはアラート詳細ページからノートブックでの調査を開始できます。
+**ClickHouse Observability のみ:** 発報したアラートに Investigate ボタンが追加されました。このボタンをクリックすると、アラートページまたはアラート詳細ページからノートブックでの調査を開始できます。
 
 最終的には、アラートの発報時にこれらの調査を自動的に開始することを目指しています。このボタンは有用な中間段階であり、最終形ではありません。
 
@@ -81,9 +75,7 @@ MCP は現在、まずこれらのビルダーツールを使用するようエ�
 
 **関連 PR:** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) すべてのツールに MCP ツールアノテーション (`readOnlyHint` など) を追加、[#2840](https://github.com/hyperdxio/hyperdx/pull/2840) エージェントを生の SQL ではなくビルダークエリツールへ誘導、[#2870](https://github.com/hyperdxio/hyperdx/pull/2870) ダッシュボードエージェントをシリーズごとのタイルフィルターへ誘導。Investigate ボタン自体にはリンク可能な公開 PR はありません。
 
-<div id="multi-series-metric-charts-in-a-single-query">
-  ## 単一クエリでの複数シリーズのメトリクスチャート
-</div>
+## 単一クエリでの複数シリーズのメトリクスチャート {#multi-series-metric-charts-in-a-single-query}
 
 *[@wrn14897](https://github.com/wrn14897) によるデモ*
 
@@ -101,9 +93,7 @@ MCP は現在、まずこれらのビルダーツールを使用するようエ�
 
 **関連 PR:** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) 複数シリーズのメトリクスマージにおける整数テストカバレッジの拡充、[#2859](https://github.com/hyperdxio/hyperdx/pull/2859) 複数シリーズのメトリクスマージ計算を ClickHouse に移行、[#2907](https://github.com/hyperdxio/hyperdx/pull/2907) 複数シリーズのメトリクスタイルに対する alert-task カバレッジ、[#2916](https://github.com/hyperdxio/hyperdx/pull/2916) 浮動小数点数と整数の集計を混在させた複数シリーズのメトリクスチャートを修正、[#2872](https://github.com/hyperdxio/hyperdx/pull/2872) 数式エクスプレッションモデル、[#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 合成メトリクスクエリで数式をレンダリング、[#2909](https://github.com/hyperdxio/hyperdx/pull/2909) メトリクス数式用チャートエディター UI
 
-<div id="lucene-autocomplete-and-password-requirement-fixes">
-  ## Lucene のオートコンプリートとパスワード要件の修正
-</div>
+## Lucene のオートコンプリートとパスワード要件の修正 {#lucene-autocomplete-and-password-requirement-fixes}
 
 *[@pulpdrew](https://github.com/pulpdrew) によるデモ*
 

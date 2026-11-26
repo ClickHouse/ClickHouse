@@ -66,6 +66,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
@@ -1029,6 +1030,47 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Mirrors the `passed_residual_cpu_step` check that `optimizeReadInOrder` does for a direct
+/// `ReadFromMergeTree`, but for the child plans of a `Merge` table. The residual filter of the outer
+/// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
+/// would collapse the streams and serialize it. The outer pass cannot see those steps - it only sees
+/// `ReadFromMerge` - so the check has to happen here.
+static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        if (passed_residual_cpu_step)
+            read_from_merge_tree->setPreferMultipleStreams();
+        return;
+    }
+
+    /// Unlike `findReadingStep`, a non-trivial `ExpressionStep` is NOT counted here: only filters
+    /// of the outer query are pushed into the child plans, while its expressions (e.g. a monotonic
+    /// `ORDER BY` key) stay above `ReadFromMerge`, where `findReadingStep` sees them and forwards
+    /// the opt-out via `ReadFromMerge::setPreferMultipleStreams`. The child plans do contain
+    /// `ExpressionStep`s, but those are `ReadFromMerge`'s own plumbing added by
+    /// `convertAndFilterSourceStream` (header conversion with `materialize` / casts, alias
+    /// materialization, missing defaults) - counting them would disable
+    /// `PrefetchingConcatProcessor` for every `Merge` table read.
+    passed_residual_cpu_step = passed_residual_cpu_step
+        || typeid_cast<FilterStep *>(node->step.get()) != nullptr
+        || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
+
+    /// Follow only the ordered pipeline that reaches the sort. The children of a `UnionStep` all
+    /// belong to it, but for any other step with several children (a set-creating step, a join) only
+    /// the first one does: the others build sets or the right side of a join from unrelated reads,
+    /// which the residual work of the main pipeline does not run on.
+    if (typeid_cast<UnionStep *>(node->step.get()))
+    {
+        for (auto * child : node->children)
+            preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
+    }
+    else if (!node->children.empty())
+    {
+        preferMultipleStreamsForResidualCPUWork(node->children.front(), passed_residual_cpu_step);
+    }
+}
+
 namespace
 {
 
@@ -1112,6 +1154,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
+
+    /// Residual per-row work of the outer query is pushed *into* the child plans, above the child
+    /// reads, where `PrefetchingConcatProcessor` would collapse the streams and serialize it. Only
+    /// here are the child plans final (filter push-down runs after `requestReadingInOrder`), so this
+    /// is the earliest point at which the check can see those steps.
+    if (order_info)
+        for (const auto & child_plan : *child_plans)
+            if (child_plan.plan.isInitialized())
+                preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
 
     QueryPlanResourceHolder resources;
     VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
@@ -1432,9 +1483,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             ///  - the non-analyzer path: getModifiedQueryInfo rewrites _table and _database
             ///    directly into the cloned AST, so sharing it across tables is incorrect;
             ///  - tables with row policies (they extend real_column_names differently);
-            ///  - Merge/Distributed/View storages (they interpret table_expression for
-            ///    query routing and nested plan building, so sharing a representative's
-            ///    table_expression would route reads to the wrong table);
+            ///  - storages whose read uses the query tree (`readRequiresAnalyzedQuery`: Merge,
+            ///    remote storages and wrappers over either) and views (they interpret
+            ///    table_expression for query routing and nested plan building, so sharing a
+            ///    representative's table_expression would route reads to the wrong table);
             ///  - when processed_stage > FetchColumns, because createPlanForTable will
             ///    either convert query_tree->toAST() (analyzer path, referencing the wrong
             ///    table) or call replaceDatabaseAndTable on the shared AST (non-analyzer
@@ -1445,8 +1497,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             bool can_cache = query_info.table_expression
                 && !row_policy_data_opt
                 && common_processed_stage == QueryProcessingStage::FetchColumns
-                && !std::dynamic_pointer_cast<StorageMerge>(storage)
-                && !std::dynamic_pointer_cast<StorageDistributed>(storage)
+                && !storage->readRequiresAnalyzedQuery()
                 && !storage->isView();
             auto structure_key = can_cache
                 ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
@@ -1663,20 +1714,26 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     TableExpressionNodePtr original_table_expression,
     TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
-    const Names & required_column_names)
+    const Names & required_column_names,
+    bool select_only_required_columns)
 {
     auto * query_node = query->as<QueryNode>();
     auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
-    // For the case when join tree is just a table or a table function we don't need to do anything more.
-    if (join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
+    const bool is_single_table
+        = join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION;
+
+    // For the case when join tree is just a table or a table function we don't need to do anything more,
+    // unless only the required columns must be selected.
+    if (is_single_table && !select_only_required_columns)
         return modified_query;
 
     // JOIN needs to be removed because StorageMerge should produce not joined data.
     // GROUP BY should be removed as well.
 
     auto * modified_query_node = modified_query->as<QueryNode>();
+    query_node = modified_query_node;
 
     /// An `ARRAY JOIN` result column is produced above the table, so a filter over it is not a filter
     /// over the table's own columns, and the child must not be asked to read it: `StorageMerge` reads
@@ -1696,18 +1753,21 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
                 modified_query_node->getWhere(), replacement_table_expression, context);
     }
 
-    // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
-    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
-    modified_query_node = modified_query->as<QueryNode>();
+    if (!is_single_table)
+    {
+        // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
+        modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
+        modified_query_node = modified_query->as<QueryNode>();
 
-    query_node = modified_query->as<QueryNode>();
+        query_node = modified_query->as<QueryNode>();
 
-    // For backward compatibility we need to leave all filters related to this table.
-    // It may lead to some incorrect result.
-    if (query_node->hasPrewhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
-    if (query_node->hasWhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+        // For backward compatibility we need to leave all filters related to this table.
+        // It may lead to some incorrect result.
+        if (query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
+        if (query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+    }
 
     query_node->getGroupBy().getNodes().clear();
     /// A GROUP BY modifier must not outlive its clause: with no GROUP BY keys and no aggregate
@@ -1831,7 +1891,18 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names);
+        /// A remote child (`isRemote`, also behind a wrapper or a `Merge`) builds the query it sends from this tree,
+        /// so at `FetchColumns` it must ask for the columns to read and nothing else. A `Merge` with only local tables
+        /// also reads this tree (`readRequiresAnalyzedQuery`) but sends no query, so it gets the tree as is.
+        const bool select_only_required_columns
+            = common_processed_stage == QueryProcessingStage::FetchColumns && storage->isRemote();
+        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(
+            modified_query_info.query_tree,
+            modified_query_info.table_expression,
+            replacement_table_expression,
+            modified_context,
+            required_column_names,
+            select_only_required_columns);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
@@ -2483,8 +2554,21 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     StorageListWithLocks res;
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
+    /// Before `applyFilters`, the filters already pushed down to this step exclude tables too: every child applies them.
+    std::optional<ActionsDAG> pushed_down_filters_dag;
+    const ActionsDAG * filter_dag = filter_actions_dag.get();
+    if (!filter_dag && !pushed_down_filters.empty())
+    {
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        for (const auto & filter_info : pushed_down_filters)
+            filter_nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
+        pushed_down_filters_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
+        if (pushed_down_filters_dag)
+            filter_dag = &*pushed_down_filters_dag;
+    }
+
     std::function<bool(const String&,const String&)> table_filter;
-    if (filter_actions_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
+    if (filter_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
     {
         auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
@@ -2492,7 +2576,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(lc_string_type, "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample_block, query_context);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
@@ -3014,8 +3098,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
             auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
                 Block(adding_missing_defaults_dag.getResultColumns()), header.getNames(), local_context);
             adding_missing_defaults_dag = ActionsDAG::merge(std::move(adding_missing_defaults_dag), std::move(extract_subcolumns_dag));
-            adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
         }
+
+        /// `columns_to_fill` has each name once, but the header repeats a column the query selects twice.
+        adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
@@ -3095,6 +3181,21 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     order_info = order_info_;
     query_info.input_order_info = order_info;
     return true;
+}
+
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    /// The opt-out has to reach the child `ReadFromMergeTree` steps: it is their
+    /// `PrefetchingConcatProcessor` that would otherwise collapse a single-part filtered read into
+    /// a single stream and serialize the per-stream work above the `Merge` table. Only the reads of
+    /// the ordered pipeline are affected: `preferMultipleStreamsForResidualCPUWork` follows all
+    /// branches of a `UnionStep` but only the first child of a join or a set-creating step, so the
+    /// build side of a join or the source of a set keeps `PrefetchingConcatProcessor`.
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ true);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)

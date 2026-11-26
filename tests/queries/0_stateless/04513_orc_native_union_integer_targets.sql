@@ -1,7 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 
 -- An explicit Variant schema over an ORC union can use all the integer targets the ordinary
