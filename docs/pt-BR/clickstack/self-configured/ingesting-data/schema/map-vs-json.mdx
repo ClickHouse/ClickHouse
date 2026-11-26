@@ -1,0 +1,130 @@
+---
+slug: /clickstack/self-configured/ingesting-data/schema/map-vs-json
+description: 'Quando usar o tipo Map ou o tipo JSON para atributos no Self-managed ClickHouse Observability'
+sidebarTitle: 'Tipo Map vs. tipo JSON'
+title: 'Tipo Map vs. tipo JSON'
+doc_type: 'reference'
+keywords: ['clickstack', 'json', 'map', 'attributes', 'schema', 'observability']
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<Note>
+  Esta página aborda o **Self-managed ClickHouse Observability**. Para a experiência totalmente gerenciada, que é a recomendada, consulte a documentação [aqui](/pt-BR/clickstack/observability/overview).
+</Note>
+
+O [schema padrão](/pt-BR/clickstack/self-configured/ingesting-data/schemas) armazena atributos de recurso, escopo, log e span em colunas `Map(LowCardinality(String), String)`. O ClickHouse também oferece suporte a um [tipo `JSON`](/pt-BR/reference/formats/JSON/JSON) fortemente tipado, e o Self-managed ClickHouse Observability tem suporte beta para usá-lo no lugar de `Map`.
+
+**Para cargas de trabalho típicas de observabilidade, recomendamos manter o [schema padrão baseado em `Map`](/pt-BR/clickstack/self-configured/ingesting-data/schemas).** O tipo JSON está disponível para quem quiser avaliá-lo em cargas de trabalho com um conjunto pequeno e estável de chaves de atributo, mas não é o schema recomendado para uso geral.
+
+## Por que Map é o padrão recomendado {#why-map}
+
+Os dados de observabilidade são compostos principalmente por atributos, como atributos de recurso, atributos de escopo e atributos de spans e logs. Esses conjuntos costumam ser grandes, high-cardinality e ingeridos com alta vazão. O schema escolhido para esses atributos é o fator determinante no custo de ingestão e no layout de armazenamento.
+
+`Map(LowCardinality(String), String)` armazena chaves e valores em uma única estrutura. A desvantagem histórica de `Map` era que ler uma única chave exigia ler toda a coluna do map. Isso não é mais verdade: o ClickHouse agora oferece suporte à [serialização de mapas em buckets](/pt-BR/reference/data-types/map#bucketed-map-serialization), que divide o map em buckets para que as consultas leiam apenas os buckets de que precisam. Combinado com [índices de texto](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) nas chaves e valores do map, que é como [o schema padrão](/pt-BR/clickstack/self-configured/ingesting-data/schemas) está configurado, isso torna o `Map` seletivo e rápido na leitura, sem nenhuma penalidade de ingestão para novas chaves.
+
+Na prática, isso significa:
+
+* **Custo de ingestão estável à medida que o número de chaves cresce.** Adicionar uma nova chave de atributo não altera o layout das colunas em disco nem cria novos arquivos de coluna. O custo de ingestão é limitado pelo volume de dados, não pela cardinalidade das chaves.
+* **Sem explosão de metadados.** O número de arquivos de coluna em disco não cresce com o número de chaves de atributo únicas.
+* **Consultas seletivas por meio de índices.** Índices de texto nas chaves e valores do map permitem consultas pontuais sem varrer todas as linhas.
+* **Comportamento previsível em alta vazão.** O Map lida com conjuntos de atributos intermitentes e sem schema, comuns em tracing e logs, sem sobrecarga por chave.
+
+## Por que não usar JSON por padrão {#why-not-json}
+
+O tipo `JSON` adota uma abordagem diferente: no momento da inserção, o ClickHouse cria dinamicamente uma subcoluna dedicada e fortemente tipada para cada caminho que encontra. Na leitura, isso é vantajoso, pois apenas as subcolunas solicitadas são lidas, os tipos são preservados e nenhuma conversão de tipo é necessária no momento da consulta.
+
+O custo aparece na ingestão. Criar e gerenciar muitas subcolunas dinâmicas gera sobrecarga na escrita e complexidade de metadados. Em cargas de trabalho de observabilidade, que costumam ter conjuntos de atributos muito grandes ou altamente dinâmicos e alta taxa de ingestão, essa sobrecarga é significativa. O limite [`max_dynamic_paths`](/pt-BR/reference/data-types/newjson#reading-json-paths-as-sub-columns) pode atenuar o problema ao fazer spill dos caminhos excedentes para uma coluna compartilhada, mas acessar a coluna compartilhada é mais lento do que acessar subcolunas dedicadas, o que reduz justamente a vantagem na leitura que motivou o uso de JSON.
+
+Como a serialização de mapas em buckets elimina a maior parte da sobrecarga de leitura que o `Map` historicamente apresentava, a vantagem do `JSON` na leitura já não compensa seu custo na ingestão para cargas de trabalho típicas de observabilidade.
+
+## Quando ainda vale a pena considerar JSON {#when-to-consider-json}
+
+O Tipo JSON pode ser uma escolha razoável quando *todas* as condições a seguir forem atendidas:
+
+* Seu conjunto de chaves de atributo é **pequeno e estável**, ou seja, não há milhares de chaves únicas e novas chaves surgem raramente.
+* A taxa de ingestão é **moderada** em relação à cardinalidade dos atributos.
+* Você deseja **acesso fortemente tipado** aos atributos sem conversões no momento da consulta (números continuam sendo números, booleanos continuam sendo booleanos).
+* Você está disposto a operar um **recurso beta** no Self-managed ClickHouse Observability e aceita que a integração pode mudar.
+
+Se alguma dessas condições não for atendida, mantenha o [schema padrão baseado em `Map`](/pt-BR/clickstack/self-configured/ingesting-data/schemas).
+
+## Status Beta {#beta-status}
+
+<BetaBadge />
+
+<Warning>
+  **Recurso beta, não pronto para produção**
+
+  O suporte ao tipo JSON no **Self-managed ClickHouse Observability** é um **recurso beta**. Embora o tipo JSON em si esteja pronto para produção no ClickHouse 25.3+, sua integração ao serviço ainda está em desenvolvimento ativo e pode ter limitações, sofrer alterações no futuro ou conter bugs.
+</Warning>
+
+O ClickStack oferece suporte beta ao tipo JSON a partir da versão `2.0.4`.
+
+## Habilitando o suporte a JSON {#enabling-json-support}
+
+Para usar esquemas com tipagem JSON em vez dos [esquemas padrão baseados em `Map`](/pt-BR/clickstack/self-configured/ingesting-data/schemas), defina as seguintes variáveis de ambiente.
+
+| Variável                                                        | Onde definir                        | Finalidade                                      |
+| --------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | Coletor do ClickHouse Observability | Cria esquemas no ClickHouse usando o tipo JSON. |
+
+<a id="managed-clickstack" />
+
+Para habilitar o suporte a JSON no Self-managed ClickHouse Observability, entre em contato com support@clickhouse.com antes de configurar o coletor. A funcionalidade também precisa ser habilitada na UI de observabilidade do ClickHouse Cloud.
+
+Defina `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` no coletor. Por exemplo:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+## Migração de um schema baseado em Map para JSON {#migrating-from-map-to-json}
+
+<Warning>
+  **Compatibilidade com versões anteriores**
+
+  O [tipo JSON](/pt-BR/reference/formats/JSON/JSON) **não é retrocompatível** com os schemas baseados em Map existentes. Habilitar esta funcionalidade cria novas tabelas com o tipo `JSON` e exige a migração manual dos dados.
+</Warning>
+
+Para migrar dos [schemas padrão baseados em Map](/pt-BR/clickstack/self-configured/ingesting-data/schemas), siga estas etapas:
+
+<Steps>
+  <Step title="Pare o OTel collector" id="stop-the-collector" />
+
+  <Step title="Renomeie as tabelas existentes e atualize as fontes de dados" id="rename-existing-tables-sources">
+    Renomeie as tabelas existentes e atualize as fontes de dados na UI de observabilidade.
+
+    Por exemplo:
+
+    ```sql
+    RENAME TABLE otel_logs TO otel_logs_map;
+    RENAME TABLE otel_metrics TO otel_metrics_map;
+    ```
+  </Step>
+
+  <Step title="Implante o coletor" id="deploy-the-collector">
+    Implante o coletor com `OTEL_AGENT_FEATURE_GATE_ARG` definido.
+  </Step>
+
+  <Step title="Confirme que o suporte a esquemas JSON está habilitado" id="restart-the-hyperdx-container">
+    Confirme com support@clickhouse.com que o suporte a schemas JSON foi habilitado na UI de observabilidade antes de criar as novas fontes de dados.
+  </Step>
+
+  <Step title="Crie novas fontes de dados" id="create-new-data-sources">
+    Crie novas fontes de dados na UI de observabilidade que apontem para as tabelas JSON.
+  </Step>
+</Steps>
+
+### Migração dos dados existentes (opcional) {#migrating-existing-data}
+
+Para mover os dados antigos para as novas tabelas JSON:
+
+```sql
+INSERT INTO otel_logs SELECT * FROM otel_logs_map;
+INSERT INTO otel_metrics SELECT * FROM otel_metrics_map;
+```
+
+<Warning>
+  Recomendado apenas para conjuntos de dados com menos de ~10 bilhões de linhas. Os dados armazenados anteriormente com o tipo Map não preservavam a precisão dos tipos (todos os valores eram strings). Por isso, esses dados antigos aparecerão como strings no novo schema até expirarem, o que exigirá algumas conversões de tipo no frontend. Para os dados novos, o tipo será preservado com o tipo JSON.
+</Warning>
