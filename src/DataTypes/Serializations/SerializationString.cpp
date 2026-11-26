@@ -21,6 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <base/arithmeticOverflow.h>
 #include <base/unit.h>
 #include <base/unaligned.h>
 #include <Common/StringValueFilter.h>
@@ -576,7 +577,8 @@ public:
         {
             const UInt64 word = unalignedLoadLittleEndian<UInt64>(codes + pos);
             const UInt64 inverted = ~word;
-            if (unlikely(((inverted - ONES) & word & (ONES << 7)) != 0))
+            /// The subtraction wraps around on purpose (if the highest byte is 0xFF).
+            if (unlikely((common::subIgnoreOverflow(inverted, ONES) & word & (ONES << 7)) != 0))
             {
                 /// There is a byte 0xFF (the escape code): process these codes one by one.
                 const size_t chunk_end = pos + 8;
