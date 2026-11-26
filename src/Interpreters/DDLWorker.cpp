@@ -92,6 +92,8 @@ namespace ErrorCodes
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
 
+static constexpr int MAX_TRIES_TO_EXECUTE = 3;
+
 
 DDLWorker::DDLWorker(
     int pool_size_,
@@ -434,6 +436,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         Coordination::WatchCallbackPtrOrEventPtr{queue_updated_event, ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL});
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
+
+    {
+        std::lock_guard lock(failed_attempts_mutex);
+        std::erase_if(failed_attempts, [&](const auto & attempts)
+        {
+            return !std::binary_search(queue_nodes.begin(), queue_nodes.end(), attempts.first);
+        });
+    }
     /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
     LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
                    "entries={}..{}, "
@@ -672,8 +682,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         task.execution_status = ExecutionStatus::fromCurrentException();
         tryLogCurrentException(log, "Query " + query_to_show_in_logs + " wasn't finished successfully");
 
-        /// An exception of another type has none of the retriable codes above.
-        return true;
+        /// We don't know what exactly happened, but maybe it's Poco::NetException or std::bad_alloc,
+        /// so we consider unknown exception as retryable error.
+        return false;
     }
 
     task.execution_status = ExecutionStatus(0);
@@ -816,6 +827,15 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
         {
             bool status_written_by_table_or_db = task.ops.empty();
             bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+            /// The single-replica path and Replicated databases bound their retries themselves.
+            if (retriable && !is_replicated_database_task && !task.execute_on_single_replica)
+            {
+                std::lock_guard lock(failed_attempts_mutex);
+                retriable = ++failed_attempts[task.entry_name] <= MAX_TRIES_TO_EXECUTE;
+                if (!retriable)
+                    LOG_WARNING(log, "Maximum retries count for task {} exceeded, finishing it with the last error", task.entry_name);
+            }
+
             if (status_written_by_table_or_db || is_replicated_database_task || retriable)
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
@@ -824,6 +844,11 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
             /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
             /// writing query execution status into ZooKeeper.
             task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
+        }
+
+        {
+            std::lock_guard lock(failed_attempts_mutex);
+            failed_attempts.erase(task.entry_name);
         }
 
         /// We need to distinguish ZK errors occurred before and after query executing
@@ -911,7 +936,6 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     /// Node exists, or we will create or we will get an exception
     zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
 
-    static constexpr int MAX_TRIES_TO_EXECUTE = 3;
     static constexpr int MAX_EXECUTION_TIMEOUT_SEC = 3600;
 
     String executed_by;

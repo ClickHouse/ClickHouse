@@ -234,6 +234,10 @@ protected:
     std::atomic_uint64_t subsequent_errors_count = 0;
     String last_unexpected_error;
 
+    /// Failed attempts of the entries being retried after a retriable error; kept when the main thread restarts.
+    std::mutex failed_attempts_mutex;
+    std::unordered_map<String, size_t> failed_attempts TSA_GUARDED_BY(failed_attempts_mutex);
+
     mutable std::mutex checked_host_id_set_mutex;
     NameSet checked_host_id_set TSA_GUARDED_BY(checked_host_id_set_mutex);
 
