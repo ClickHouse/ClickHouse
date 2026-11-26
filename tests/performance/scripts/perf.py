@@ -874,9 +874,9 @@ if not args.long:
         if tag.text == "long":
             print("skipped\tTest is tagged as long.")
             sys.exit(0)
-else:
-    # Termination must reach the teardown, and prewarm re-raises this class.
-    signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+# Termination must reach the teardown, and prewarm re-raises this class.
+signal.signal(signal.SIGTERM, signal.default_int_handler)
 
 if args.table_engine and root.get("iceberg", "1") in ("0", "false"):
     print(f"skipped\tTest opts out of --table-engine {args.table_engine}.")
