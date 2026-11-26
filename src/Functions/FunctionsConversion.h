@@ -5369,14 +5369,20 @@ struct ToDateMonotonicity
                 || which.isUInt16()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
-            /// `Date` holds day numbers up to `DATE_LUT_MAX_DAY_NUM`; a `Date32` or `DateTime64`
-            /// argument outside that window wraps. `Date32` is wide enough for every argument type
-            /// reaching this point, so only the `Date` result needs the check.
+            /// A `Date32` or `DateTime64` argument outside the `Date` day-number window wraps under the
+            /// default `date_time_overflow_behavior`. This trait cannot read that setting, so the window
+            /// must hold for the wrapping default.
             if constexpr (std::is_same_v<T, DataTypeDate>)
             {
-                if (!dateTimeConversionRangeCannotWrap(
-                        type, left, right, 0, (Int128(DATE_LUT_MAX_DAY_NUM) + 1) * DATE_SECONDS_PER_DAY - 1))
-                    return {.is_always_monotonic_where_defined = true};
+                if (which.isDate32() || which.isDateTime64())
+                {
+                    if (!dateTimeConversionRangeCannotWrap(
+                            type, left, right, 0, (Int128(DATE_LUT_MAX_DAY_NUM) + 1) * DATE_SECONDS_PER_DAY - 1))
+                        return {};
+
+                    /// Range-local only; never `is_always_monotonic`, the window is not the whole range.
+                    return {.is_monotonic = true};
+                }
             }
 
             return {.is_monotonic = true, .is_always_monotonic = true};
@@ -5451,14 +5457,21 @@ struct ToDateTimeMonotonicity
                 }
             }
 
-            /// `DateTime` holds whole seconds up to the `UInt32` maximum; a `DateTime64` argument outside that
-            /// window wraps. `DateTime64` is wide enough for every argument type reaching this point, so only
-            /// the `DateTime` result needs the check.
+            /// A `DateTime64` argument outside the `UInt32` second window wraps under the default
+            /// `date_time_overflow_behavior`. This trait cannot read that setting, so the window must
+            /// hold for the wrapping default (the same rule as the `Date`/`Date32` branch above).
             if constexpr (std::is_same_v<T, DataTypeDateTime>)
             {
-                if (!dateTimeConversionRangeCannotWrap(
-                        type, left, right, 0, Int128(std::numeric_limits<UInt32>::max())))
-                    return {.is_always_monotonic_where_defined = true};
+                if (which.isDateTime64())
+                {
+                    if (!dateTimeConversionRangeCannotWrap(
+                            type, left, right, 0, Int128(std::numeric_limits<UInt32>::max())))
+                        return {};
+
+                    /// Not strict: truncating sub-second precision maps several values to one second.
+                    /// Range-local only; never `is_always_monotonic`, the window is not the whole range.
+                    return {.is_monotonic = true};
+                }
             }
 
             if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isUInt8() || which.isUInt16()
