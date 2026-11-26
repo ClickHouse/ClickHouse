@@ -8,11 +8,17 @@
 namespace DB
 {
 
-/// Returns true when a '{...}' selector in `glob_path` spans a '/' (e.g. `root/{a/b,c/d}/*.csv`), i.e.
-/// some '/'-separated segment has unbalanced braces. Such globs cannot be pruned per path component, so
-/// the predicate built by `makeShouldDescendPredicate` degrades to an unconditional descend — one listing
-/// request per directory. Callers must keep such globs on the serial iterator, like the recursive
-/// wildcard "**".
+/// Returns true when a '{...}' selector in `glob_path` may span a '/' (e.g. `root/{a/b,c/d}/*.csv`), i.e.
+/// the braces of some '/'-separated segment do not pair up in order. This is stricter than comparing the
+/// numbers of braces: in `root/}{ab/cd}{/*.csv` every segment holds as many '{' as '}', while
+/// `makeRegexpPatternFromGlobs` still finds the group `{ab/cd}`. Segments with stray or nested braces are
+/// reported too, although the regexp matches such braces literally. Such globs cannot be pruned per path
+/// component, so the predicate built by `makeShouldDescendPredicate` degrades to an unconditional descend —
+/// one listing request per directory. Callers must keep such globs on the serial iterator, like the
+/// recursive wildcard "**".
+///
+/// When this returns false, every group lies within one segment, and the regexp of the whole glob equals
+/// the regexps of its segments joined by '/'.
 bool globSelectorSpansPathComponents(const std::string & glob_path);
 
 /// Returns true when `glob_path` contains `**`, or stars separated only by `?` (e.g. `*?*`), which

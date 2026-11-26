@@ -3,8 +3,8 @@
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
 
-#include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace DB
@@ -36,12 +36,38 @@ std::vector<std::string> splitPathComponents(const std::string & path)
 
 bool globSelectorSpansPathComponents(const std::string & glob_path)
 {
-    for (const auto & segment : splitPathComponents(glob_path))
+    /// `makeRegexpPatternFromGlobs` turns a '{' followed by brace-free text and a '}' into a group, wherever
+    /// the braces around it are, and leaves every other brace literal. So in `root/}{ab/cd}{/*.csv` the group
+    /// is `{ab/cd}`, and the glob matches `root/}ab/cd{/x.csv`, although each of the components `}{ab` and
+    /// `cd}{` holds as many '{' as '}'. Comparing the numbers of braces is therefore not enough.
+    ///
+    /// A group spanning a '/' opens at the last brace of one component and closes at the first brace of a
+    /// later one. Both are ruled out by requiring the braces of every component to pair up in order: no '}'
+    /// without a '{' before it, no '{' inside an open pair, and no pair left open at the end. With that, every
+    /// group lies within one component, and the regexp of the whole glob is the regexps of its components
+    /// joined by '/'. Components with stray or nested braces, which the regexp matches literally, are
+    /// refused as well: they are rare, and staying on the serial iterator is always correct.
+    bool opened = false;
+    for (const char letter : glob_path)
     {
-        if (std::count(segment.begin(), segment.end(), '{') != std::count(segment.begin(), segment.end(), '}'))
+        if (letter == '{')
+        {
+            if (opened)
+                return true;
+            opened = true;
+        }
+        else if (letter == '}')
+        {
+            if (!opened)
+                return true;
+            opened = false;
+        }
+        else if (letter == '/' && opened)
+        {
             return true;
+        }
     }
-    return false;
+    return opened;
 }
 
 bool globPathHasRecursiveWildcard(const std::string & glob_path)

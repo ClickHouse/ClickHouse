@@ -1278,6 +1278,7 @@ TEST(ObjectStorageParallelListing, CrossComponentSelectorStaysOnSerialIterator)
 
     EXPECT_FALSE(globSelectorSpansPathComponents("root/{a,b}/*.csv"));
     EXPECT_FALSE(globSelectorSpansPathComponents("root/{1..10}/x"));
+    EXPECT_FALSE(globSelectorSpansPathComponents("root/{a,b}{c,d}/{1..3}/*.{csv,tsv}"));
     EXPECT_FALSE(globSelectorSpansPathComponents("root/*/x"));
     EXPECT_FALSE(globSelectorSpansPathComponents("root/plain/file.csv"));
 
@@ -1287,6 +1288,93 @@ TEST(ObjectStorageParallelListing, CrossComponentSelectorStaysOnSerialIterator)
     EXPECT_TRUE(should_descend("root/a/"));
     EXPECT_TRUE(should_descend("root/unrelated/"));
     EXPECT_TRUE(should_descend("root/a/b/very/deep/"));
+}
+
+TEST(ObjectStorageParallelListing, CrossComponentSelectorHiddenByBalancedBraceCounts)
+{
+    /// `makeRegexpPatternFromGlobs` makes a group of a '{' followed by brace-free text and a '}', wherever
+    /// the braces around it are. Here the group is `{ab/cd}` and spans '/', although each of the components
+    /// `}{ab` and `cd}{` holds one '{' and one '}', so comparing the numbers of braces per component does
+    /// not notice it. A walk pruning per component would compare the directory `}ab` with the literal
+    /// component `}{ab` and drop the subtree of the matching key.
+    const std::string glob = "root/}{ab/cd}{/*.csv";
+    const re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+    ASSERT_TRUE(re2::RE2::FullMatch("root/}ab/cd{/x.csv", matcher));
+
+    EXPECT_TRUE(globSelectorSpansPathComponents(glob));
+    EXPECT_TRUE(globSelectorSpansPathComponents("}{a/}{"));
+
+    auto should_descend = makeShouldDescendPredicate(glob);
+    EXPECT_TRUE(should_descend("root/}ab/"));
+    EXPECT_TRUE(should_descend("root/}ab/cd{/"));
+
+    /// Stray and nested braces are literal for the regexp, so these globs could be pruned per component.
+    /// They are refused all the same: the check is deliberately simple, and the serial iterator is always
+    /// correct.
+    EXPECT_TRUE(globSelectorSpansPathComponents("root/a}b{c/*.csv"));
+    EXPECT_TRUE(globSelectorSpansPathComponents("root/{a{b,c}}/*.csv"));
+    EXPECT_TRUE(globSelectorSpansPathComponents("root/{a/*.csv"));
+    EXPECT_TRUE(globSelectorSpansPathComponents("root/a}/*.csv"));
+    EXPECT_TRUE(globSelectorSpansPathComponents("root/*/{a"));
+}
+
+TEST(ObjectStorageParallelListing, ComponentRegexpsMakeUpWholeGlobRegexp)
+{
+    /// The walk prunes a directory by matching each of its path components against the regexp of the
+    /// corresponding glob component. This is sound only if the regexp of the whole glob is the regexps of its
+    /// components joined by '/', which is what `globSelectorSpansPathComponents` promises by returning false
+    /// (for globs without a recursive wildcard). Check the promise for every short glob over alphabets with
+    /// braces, the separator, and what a group can hold: a comma, a wildcard, a range.
+    auto check_all_globs = [](const std::string & alphabet, size_t max_length)
+    {
+        size_t num_checked = 0;
+        size_t num_refused = 0;
+        std::string glob;
+        for (size_t length = 1; length <= max_length; ++length)
+        {
+            std::vector<size_t> letters(length, 0);
+            while (true)
+            {
+                glob.clear();
+                for (size_t letter : letters)
+                    glob.push_back(alphabet[letter]);
+
+                if (globSelectorSpansPathComponents(glob))
+                {
+                    ++num_refused;
+                }
+                else if (!globPathHasRecursiveWildcard(glob))
+                {
+                    std::string joined;
+                    size_t pos = 0;
+                    while (true)
+                    {
+                        const size_t next = glob.find('/', pos);
+                        joined += makeRegexpPatternFromGlobs(glob.substr(pos, next == std::string::npos ? next : next - pos));
+                        if (next == std::string::npos)
+                            break;
+                        joined += '/';
+                        pos = next + 1;
+                    }
+                    ASSERT_EQ(makeRegexpPatternFromGlobs(glob), joined) << "glob: " << glob;
+                    ++num_checked;
+                }
+
+                size_t position = 0;
+                while (position < length && ++letters[position] == alphabet.size())
+                    letters[position++] = 0;
+                if (position == length)
+                    break;
+            }
+        }
+        /// Both outcomes must occur, or the check above is vacuous.
+        EXPECT_GT(num_checked, 0u);
+        EXPECT_GT(num_refused, 0u);
+    };
+
+    check_all_globs("{}/,a*", 6);
+    check_all_globs("{}/1.", 6);
 }
 
 TEST(ObjectStorageParallelListing, DetectsAllLegacyRecursiveGlobstarForms)
