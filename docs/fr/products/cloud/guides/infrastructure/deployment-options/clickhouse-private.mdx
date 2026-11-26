@@ -2,12 +2,12 @@
 title: 'ClickHouse Private'
 slug: /cloud/infrastructure/clickhouse-private
 keywords: ['privé', 'sur site']
-description: 'Présentation de l’offre ClickHouse Private'
+description: 'Vue d’ensemble de l’offre ClickHouse Private'
 doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## Vue d’ensemble
+  ## Vue d’ensemble {#overview}
 </div>
 
 ClickHouse Private est un paquet déployé par le client, composé de la même version propriétaire de ClickHouse que celle qui s’exécute sur ClickHouse Cloud, ainsi que de notre ClickHouse Operator, configuré pour la séparation du calcul et du stockage.
@@ -19,7 +19,7 @@ ClickHouse Private est un paquet déployé par le client, composé de la même v
 </Info>
 
 <div id="benefits-over-os">
-  ## Avantages par rapport à l’open source
+  ## Avantages par rapport à l’open source {#benefits-over-os}
 </div>
 
 Les fonctionnalités suivantes distinguent ClickHouse Private des déploiements open source autogérés :
@@ -36,19 +36,15 @@ ClickHouse Private est entièrement autonome dans votre environnement de déploi
 <br />
 
 <div className="ch-image-md ch-image-background-black">
-
-<Frame>
-
-![Architecture de ClickHouse Private](/images/cloud/reference/private-gov-architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![Architecture de ClickHouse Private](/images/cloud/reference/private-gov-architecture.webp)
+  </Frame>
 </div>
 
 <br />
 
 <div id="supported-configurations">
-  ## Configurations prises en charge
+  ## Configurations prises en charge {#supported-configurations}
 </div>
 
 ClickHouse Private est disponible dans les configurations suivantes ; le statut de prise en charge est indiqué pour chaque environnement :
@@ -61,7 +57,7 @@ ClickHouse Private est disponible dans les configurations suivantes ; le statut 
 | Azure         | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | Préversion     |
 
 <div id="onboarding-process">
-  ## Processus d&#39;onboarding
+  ## Processus d&#39;onboarding {#onboarding-process}
 </div>
 
 Les clients intéressés par ClickHouse Private peuvent [nous contacter](https://clickhouse.com/company/contact) pour planifier un appel d’évaluation de leur cas d’usage. Les demandes qui répondent aux exigences minimales de taille et visent des configurations prises en charge seront examinées - veuillez noter que la capacité d&#39;onboarding est limitée. La mise en place consiste à suivre un guide d’installation propre à l’environnement, en utilisant des images et des packages Helm récupérés depuis AWS ECR.

@@ -54,13 +54,9 @@ Os tipos Float no ClickHouse têm os seguintes aliases:
 
 Ao criar tabelas, é possível definir parâmetros numéricos para números de ponto flutuante (por exemplo, `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), mas o ClickHouse os ignora.
 
-<div id="using-floating-point-numbers">
-  ## Uso de números de ponto flutuante
-</div>
+## Uso de números de ponto flutuante {#using-floating-point-numbers}
 
 * Cálculos com números de ponto flutuante podem produzir erro de arredondamento.
-
-{/* */}
 
 ```sql
 SELECT 1 - 0.9
@@ -74,15 +70,11 @@ SELECT 1 - 0.9
 * Cálculos de ponto flutuante podem resultar em números como infinito (`Inf`) e &quot;não é um número&quot; (`NaN`). Isso deve ser levado em conta ao processar os resultados dos cálculos.
 * Ao interpretar números de ponto flutuante a partir de texto, o resultado pode não ser o número representável pela máquina mais próximo.
 
-<div id="nan-and-inf">
-  ## NaN e Inf
-</div>
+## NaN e Inf {#nan-and-inf}
 
 Ao contrário do SQL padrão, o ClickHouse oferece suporte às seguintes categorias de números de ponto flutuante:
 
 * `Inf` – infinito.
-
-{/* */}
 
 ```sql
 SELECT 0.5 / 0
@@ -94,8 +86,6 @@ SELECT 0.5 / 0
 
 * `-Inf` — Infinito negativo.
 
-{/* */}
-
 ```sql
 SELECT -0.5 / 0
 
@@ -105,8 +95,6 @@ SELECT -0.5 / 0
 ```
 
 * `NaN` — Não é um número.
-
-{/* */}
 
 ```sql
 SELECT 0 / 0
@@ -118,9 +106,7 @@ SELECT 0 / 0
 
 Consulte as regras de ordenação de `NaN` na seção [cláusula ORDER BY](/pt-BR/reference/statements/select/order-by).
 
-<div id="nan-values-in-set-semantics">
-  ## Valores `NaN` na semântica de conjunto
-</div>
+## Valores `NaN` na semântica de conjunto {#nan-values-in-set-semantics}
 
 O padrão IEEE 754 define `NaN` de modo que a comparação escalar `NaN = NaN` retorne `false`.
 O ClickHouse segue essa regra para o operador `=`.
@@ -161,9 +147,7 @@ FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
 
 A mesma abordagem funciona para as chaves de `DISTINCT`, `GROUP BY` e `JOIN`.
 
-<div id="bfloat16">
-  ## BFloat16
-</div>
+## BFloat16 {#bfloat16}
 
 `BFloat16` é um tipo de dado de ponto flutuante de 16 bits, com expoente de 8 bits, sinal e mantissa de 7 bits.
 Ele é útil para aplicações de aprendizado de máquina e IA.

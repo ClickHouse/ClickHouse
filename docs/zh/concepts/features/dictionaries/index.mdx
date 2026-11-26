@@ -14,35 +14,27 @@ ClickHouse 中的字典提供了一种以内存中的[键值](https://en.wikiped
 * 在不拖慢摄取过程的情况下，实时富化摄取的数据
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse 中字典的使用场景](/images/dictionary/dictionary-use-cases.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse 中字典的用例](/images/dictionary/dictionary-use-cases.webp)
+  </Frame>
 </div>
 
-## 使用字典加速 JOIN {#speeding-up-joins-using-a-dictionary}
+## 使用字典加速连接 {#speeding-up-joins-using-a-dictionary}
 
 字典可用于加速一种特定类型的 `JOIN`：[`LEFT ANY` 类型](/zh/reference/statements/select/join#supported-types-of-join)。在这种情况下，连接键需要与底层键值存储的键属性相匹配。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![将字典与 LEFT ANY JOIN 结合使用](/images/dictionary/dictionary-left-any-join.webp)
-
-</Frame>
-
+  <Frame>
+    ![将字典与 LEFT ANY JOIN 结合使用](/images/dictionary/dictionary-left-any-join.webp)
+  </Frame>
 </div>
 
-如果满足这一条件，ClickHouse 就可以利用字典执行 [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)。这是 ClickHouse 最快的 JOIN 算法，适用于右侧表所使用的底层[表引擎](/zh/reference/engines/table-engines/index)支持低延迟键值请求的场景。ClickHouse 有三种表引擎具备这一能力：[Join](/zh/reference/engines/table-engines/special/join) (本质上是一个预先计算好的哈希表) 、[EmbeddedRocksDB](/zh/reference/engines/table-engines/integrations/embedded-rocksdb) 和 [Dictionary](/zh/reference/engines/table-engines/special/dictionary)。这里我们将介绍基于字典的方法，不过这三种引擎的实现机制是相同的。
+如果满足这一条件，ClickHouse 就可以利用字典执行 [直接 JOIN](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)。这是 ClickHouse 最快的连接算法，适用于右侧表所使用的底层[表引擎](/zh/reference/engines/table-engines/index)支持低延迟键值请求的场景。ClickHouse 有三种表引擎具备这一能力：[Join](/zh/reference/engines/table-engines/special/join) (本质上是一个预先计算好的哈希表) 、[EmbeddedRocksDB](/zh/reference/engines/table-engines/integrations/embedded-rocksdb) 和 [Dictionary](/zh/reference/engines/table-engines/special/dictionary)。这里我们将介绍基于字典的方法，不过这三种引擎的实现机制是相同的。
 
 直接 JOIN 算法要求右侧表以字典为底层支撑，这样，待连接的数据就已经以内存中的低延迟键值数据结构形式存在。
 
 <div id="example">
-  ### 示例
+  ### 示例 {#example}
 </div>
 
 使用 [Stack Overflow 数据集](/zh/get-started/sample-datasets/stackoverflow)，我们来回答这样一个问题：
@@ -99,9 +91,7 @@ Peak memory usage: 3.18 GiB.
 
 虽然这个查询速度很快，但要获得良好性能，仍然依赖于我们谨慎地编写 `JOIN`。理想情况下，我们只需先将 posts 过滤为包含 &quot;SQL&quot; 的记录，然后再查看这部分博客子集的 `UpVote` 和 `DownVote` 计数，以计算相应指标。
 
-<div id="applying-a-dictionary">
-  #### 使用字典
-</div>
+#### 使用字典 {#applying-a-dictionary}
 
 为说明这些概念，我们将为投票数据使用一个字典。由于字典通常存储在内存中 ([ssd&#95;cache](/zh/reference/statements/create/dictionary/layouts/ssd-cache) 是个例外) ，你应当注意数据的大小。先确认一下 `votes` 表的大小：
 
@@ -121,7 +111,7 @@ GROUP BY table
 └─────────────────┴─────────────────┴───────────────────┴───────┘
 ```
 
-数据将在我们的字典中以未压缩形式存储，因此如果要将所有列都存入字典 (我们并不会这么做) ，至少需要 4GB 内存。该字典会复制到整个集群中，因此每个节点都需要预留这么多内存。
+数据将在我们的字典中以未压缩形式存储，因此如果要将所有列都存入字典 (我们并不会这么做) ，至少需要 4GB 内存。该字典会复制到整个集群中，因此*每个节点*都需要预留这么多内存。
 
 > 在下面的示例中，字典的数据源自 ClickHouse 表。虽然这是字典最常见的数据来源，但也支持[多种来源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources)，包括文件、http 以及数据库 (如 [Postgres](/zh/reference/statements/create/dictionary/sources/postgresql)) 。正如我们将展示的，字典可以自动刷新，因此非常适合用来确保经常变动的小型数据集可用于直接 JOIN。
 
@@ -134,6 +124,10 @@ SELECT PostId,
 FROM votes
 GROUP BY PostId
 ```
+
+<Note title="ClickHouse Cloud">
+  创建从 ClickHouse 表读取数据的字典时，请在 `SOURCE` 子句中提供一个专用用户的用户名和密码。该用户需要对源表拥有 `SELECT` 权限。请参阅 [ClickHouse 字典源示例](/zh/reference/statements/create/dictionary/sources/clickhouse)。
+</Note>
 
 要创建我们的字典，需要使用以下 DDL——请注意，这里用到了上面的查询：
 
@@ -209,7 +203,7 @@ Peak memory usage: 552.26 MiB.
 这条查询不仅简单得多，而且速度也提升到了两倍以上！如果只将赞成票和反对票总数超过 10 的帖子加载到字典中，并且仅存储预先计算好的争议值，还可以进一步优化。
 
 <div id="query-time-enrichment">
-  ## 查询时富集
+  ## 查询时富集 {#query-time-enrichment}
 </div>
 
 字典可用于在查询时查找值。这些值既可以在结果中返回，也可以用于聚合。假设我们创建一个字典，将用户 ID 映射到其位置：
@@ -356,13 +350,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## 字典高级主题
+  ## 字典高级主题 {#advanced-dictionary-topics}
 </div>
 
 有关字典布局的选择、何时使用字典而非 JOIN，以及如何监控字典使用情况，请参阅 [字典最佳实践](/zh/concepts/features/dictionaries/best-practices)。
 
 <div id="refreshing-dictionaries">
-  ### 刷新字典
+  ### 刷新字典 {#refreshing-dictionaries}
 </div>
 
 我们已为该字典指定 `LIFETIME` 为 `MIN 600 MAX 900`。`LIFETIME` 是字典的更新间隔，此处的取值会使字典每隔 600 到 900 秒以随机间隔定期重新加载。之所以需要这种随机间隔，是为了在大量服务器更新时分散字典源上的负载。在更新期间，仍然可以查询字典的旧版本，只有初始加载会阻塞查询。请注意，设置 `(LIFETIME(0))` 会阻止字典更新。
@@ -371,7 +365,7 @@ Peak memory usage: 666.82 MiB.
 对于 ClickHouse 和 Postgres 等数据库源，你可以设置一个查询，使字典仅在确实发生变化时才更新 (由该查询的响应决定) ，而不是按固定周期更新。更多详细信息请参见[此处](/zh/reference/statements/create/dictionary/lifetime)。
 
 <div id="other-dictionary-types">
-  ### 其他字典类型
+  ### 其他字典类型 {#other-dictionary-types}
 </div>
 
 ClickHouse 还支持 [分层](/zh/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/zh/reference/statements/create/dictionary/layouts/polygon) 和[正则表达式](/zh/reference/statements/create/dictionary/layouts/regexp-tree) 字典。
