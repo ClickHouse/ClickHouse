@@ -283,7 +283,6 @@ private:
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
-    Poco::Timespan max_execution_time;
     Poco::Timespan send_timeout = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);
     Poco::Timespan receive_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
     UInt64 poll_interval = DBMS_DEFAULT_POLL_INTERVAL;
