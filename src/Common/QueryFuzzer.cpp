@@ -4249,8 +4249,7 @@ void QueryFuzzer::fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_se
                 return pickRandomly(fuzz_rand, insertFormats());
         }
     };
-    /// A data lake path is the root of a table: a level or a glob below it names a table inside this one, whose files the
-    /// `remove_orphan_files` of this one deletes.
+    /// A data lake path is the root of a table: a level or a glob below it names a table inside this one
     const String lower_name = Poco::toLower(fn.name);
     const bool is_data_lake = lower_name.starts_with("iceberg") || lower_name.starts_with("deltalake") || lower_name.starts_with("hudi")
         || lower_name.starts_with("paimon");
