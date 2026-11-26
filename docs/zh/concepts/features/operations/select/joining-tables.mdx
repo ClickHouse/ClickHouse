@@ -1,35 +1,142 @@
 ---
 title: '在 ClickHouse 中使用 JOIN'
-description: '如何在 ClickHouse 中进行表连接'
-keywords: ['JOIN', 'Join 表']
+sidebarTitle: '概览'
+description: 'ClickHouse 中的 JOIN 类型与严格性。'
+keywords: ['JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'ANY JOIN', 'ASOF JOIN', 'JOIN 严格性']
 slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
+本概览介绍 JOIN 的类型与严格性。有关完整语法，请参阅 [`JOIN` 子句参考文档](/zh/reference/statements/select/join)。如需具体的优化建议和详细示例，请参阅[尽量减少并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)。
 
-ClickHouse 支持多种 JOIN 算法，它们在执行速度与内存占用之间各有取舍。有关 JOIN 的语法和语义，请参阅 [`JOIN` 子句参考文档](/zh/reference/statements/select/join)。如需具体的优化建议和详细示例，请参阅[尽量减少并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)。
+## JOIN 类型和严格性 {#join-types-and-strictness}
 
-## 选择 JOIN 算法 {#choosing-a-join-algorithm}
+每个 JOIN 都具有类型和严格性两个属性。类型决定结果中包含哪些未匹配的行，严格性决定每一行返回多少个匹配项。可用于执行 JOIN 的算法取决于这两者。有关完整语法以及另外的 `SEMI`、`ANTI`、`CROSS` 和 `PASTE` JOIN，请参阅 [`JOIN` 子句参考文档](/zh/reference/statements/select/join#supported-types-of-join)。
 
-ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)。这些算法通常需要在内存使用和性能之间做权衡。下面基于相对内存消耗和执行时间，对 ClickHouse 的 JOIN 算法做一个概览：
+### `INNER JOIN` {#inner-join}
 
-<br />
+<div className="ch-image-sm">
+  <Frame>
+    ![INNER JOIN 的维恩图：仅返回左表与右表中连接键相匹配的行的交集，即匹配行的笛卡尔积](/images/guides/join-algorithms/inner-join.png)
+  </Frame>
+</div>
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="JOIN 的内存与速度关系" />
+对于每一对连接键相匹配的行，`INNER JOIN` 会将左侧行的列与右侧行的列组合后返回。如果某一行有多个匹配项，则返回全部匹配项，因此结果中包含具有相同键的各行的笛卡尔积。`INNER` 关键字可以省略。
 
-<br />
+### `LEFT`、`RIGHT` 和 `FULL OUTER JOIN` {#outer-join}
 
-这些算法决定了 JOIN 查询的规划与执行方式。默认情况下，ClickHouse 会根据所使用的 JOIN 类型、strictness，以及被连接表的引擎，选择 direct 或 hash join 算法。此外，也可以将 ClickHouse 配置为在运行时根据资源可用性和使用情况，自适应地选择并动态切换 JOIN 算法：当 `join_algorithm=auto` 时，ClickHouse 会先尝试 hash join 算法；如果该算法超出内存限制，则会在运行过程中切换为 partial merge join。你可以通过 trace 日志查看实际选择了哪种算法。ClickHouse 还允许你通过 `join_algorithm` 设置自行指定所需的 JOIN 算法。
+<div className="ch-image-lg">
+  <Frame>
+    ![LEFT、RIGHT 和 FULL OUTER JOIN 的维恩图：每种连接都返回匹配行的笛卡尔积，并分别额外返回左表、右表或两个表中的未匹配行](/images/guides/join-algorithms/outer-join.png)
+  </Frame>
+</div>
 
-下方展示了各 JOIN 算法支持的 `JOIN` 类型，优化前应先加以考虑：
+外连接 (outer JOIN) 返回与 `INNER JOIN` 相同的行，此外还会返回未匹配的行：
 
-<br />
+* `LEFT OUTER JOIN` 还会返回左表中每个未匹配的行，右表的列以默认值填充。
+* `RIGHT OUTER JOIN` 还会返回右表中每个未匹配的行，左表的列以默认值填充。
+* `FULL OUTER JOIN` 会返回两个表中所有未匹配的行。
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="JOIN 特性" />
+启用 [`join_use_nulls`](/zh/reference/settings/session-settings/join#join_use_nulls) 设置后，ClickHouse 将返回 `NULL` 而非默认值。`OUTER` 关键字可以省略。
 
-<br />
+### `ALL` 和 `ANY` 严格性 {#all-and-any-strictness}
 
-关于各个 `JOIN` 算法的完整详细说明可见[此处](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)，其中包括它们的优点、缺点以及扩展性特征。
+<div className="ch-image-lg">
+  <Frame>
+    ![LEFT、RIGHT 和 INNER ANY JOIN 的维恩图：每种连接都返回匹配的行，且不产生笛卡尔积；LEFT 和 RIGHT 还会分别返回左表或右表中未匹配的行](/images/guides/join-algorithms/any-join.png)
+  </Frame>
+</div>
 
-选择合适的 JOIN 算法，取决于你希望优先优化内存使用还是性能。
+在 `ALL` 严格性下，JOIN 会返回所有匹配项，行为与上文各 JOIN 类型的描述一致。在 `ANY` 严格性下，JOIN 对每一行最多返回一个匹配项，且不会产生笛卡尔积：
+
+* `LEFT ANY JOIN` 对左表的每一行只返回一次，并将其与一个匹配的右表行或默认值组合。
+* `RIGHT ANY JOIN` 对右表的每一行只返回一次，并将其与一个匹配的左表行或默认值组合。
+* `INNER ANY JOIN` 仅返回存在匹配的行，且两个表中的每一行最多使用一次。
+
+当存在多个匹配行时，`ANY` 具体返回哪一行是不确定的。可通过 [`join_any_take_last_row`](/zh/reference/settings/session-settings/join#join_any_take_last_row) 设置更改选取的行。不支持 `ANY FULL` JOIN。如果查询未指定严格性，则使用 [`join_default_strictness`](/zh/reference/settings/session-settings/join#join_default_strictness) 设置。
+
+以下查询演示了 `LEFT ANY JOIN`。右表中键 `2` 和 `3` 各对应两行：
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+在 `ALL` 严格性下，同一查询会返回五行，因为键 `2` 和 `3` 各自与右表中的两行匹配。而使用 `INNER ANY JOIN` 时，则只返回键 `2` 和 `3` 对应的行。
+
+### `ASOF JOIN` {#asof-join}
+
+<div className="ch-image-sm">
+  <Frame>
+    ![ASOF JOIN 的维恩图：连接键不完全匹配的行也会被连接，为每一行返回最接近的匹配，且不产生笛卡尔积](/images/guides/join-algorithms/asof-join.png)
+  </Frame>
+</div>
+
+`ASOF JOIN` 用于连接没有精确匹配的行。在 ClickHouse 中，`ASOF` 是一种连接严格性，需与 `INNER` 或 `LEFT` JOIN 组合使用。`ON` 子句包含若干等值条件，以及恰好一个使用 `>`、`>=`、`<` 或 `<=` 的最接近匹配条件。对于左表的每一行，ClickHouse 会在满足等值条件的右表行中，按照最接近匹配条件选出最接近的一行。左表的每一行最多只与右表的一行连接。
+
+`ASOF JOIN` 通常用于时间序列数据。以下查询将每笔交易与同一代码在交易时间当时或之前的最新报价进行连接：
+
+```sql
+WITH
+    trades AS (SELECT * FROM VALUES('symbol String, volume UInt32, time DateTime',
+        ('ABC', 200, '2023-02-22 14:09:05'),
+        ('ABC', 300, '2023-02-22 14:09:28'))),
+    quotes AS (SELECT * FROM VALUES('symbol String, time DateTime, price Decimal(10, 2)',
+        ('ABC', '2023-02-22 14:09:00', 32.11),
+        ('ABC', '2023-02-22 14:09:10', 32.12),
+        ('ABC', '2023-02-22 14:09:20', 32.15),
+        ('ABC', '2023-02-22 14:09:30', 32.20)))
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades AS t
+ASOF LEFT JOIN quotes AS q ON t.symbol = q.symbol AND t.time >= q.time
+ORDER BY trade_time;
+```
+
+```response
+┌─symbol─┬─volume─┬──────────trade_time─┬──closest_quote_time─┬─quote_price─┬─final_price─┐
+│ ABC    │    200 │ 2023-02-22 14:09:05 │ 2023-02-22 14:09:00 │       32.11 │        6422 │
+│ ABC    │    300 │ 2023-02-22 14:09:28 │ 2023-02-22 14:09:20 │       32.15 │        9645 │
+└────────┴────────┴─────────────────────┴─────────────────────┴─────────────┴─────────────┘
+```
+
+`14:09:05` 的交易与 `14:09:00` 的报价连接，`14:09:28` 的交易与 `14:09:20` 的报价连接。而 `14:09:10` 和 `14:09:30` 的报价都不是任何一笔交易之前最接近的报价。
+
+有关最近匹配列所支持的列类型以及 `USING` 语法，请参阅 [ASOF JOIN 用法](/zh/reference/statements/select/join#asof-join-usage)。
+
+## 延伸阅读 {#continue-reading}
+
+* [ClickHouse 如何执行 JOIN](/zh/concepts/features/operations/select/join-execution)
+* [JOIN 算法](/zh/concepts/features/operations/select/join-algorithms)
+* [JOIN 内存管理与溢写](/zh/concepts/features/operations/select/join-memory-management)
+* [JOIN 设置](/zh/concepts/features/operations/select/join-settings)
+
+## 延伸阅读 {#further-reading}
+
+* [`JOIN` 子句参考文档](/zh/reference/statements/select/join)
+* [尽量减少并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)
+* [字典](/zh/concepts/features/dictionaries)
+* [`Join` 表引擎](/zh/reference/engines/table-engines/special/join)
+* [ClickHouse：全面支持 SQL 连接的极速 DBMS (第 1 部分) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
+* [深入解析 ClickHouse 连接：哈希连接、并行哈希连接与 Grace 哈希连接 (第 2 部分) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
+* [深入解析 ClickHouse 连接：全排序合并连接与部分合并连接 (第 3 部分) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
+* [深入解析 ClickHouse 连接：直接 JOIN (第 4 部分) ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)

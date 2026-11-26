@@ -254,9 +254,9 @@ ISerialization::KindStack SerializationSparse::getKindStack() const
     return kind_stack;
 }
 
-MutableColumnPtr SerializationSparse::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationSparse::createColumnForDeserialization(const IDataType & type) const
 {
-    return ColumnSparse::create(nested->wrapColumnForDeserialization(std::move(column)));
+    return ColumnSparse::create(nested->createColumnForDeserialization(type));
 }
 
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
@@ -264,12 +264,12 @@ SerializationPtr SerializationSparse::SubcolumnCreator::create(const Serializati
     return SerializationSparse::create(prev);
 }
 
-ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) const
+ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev, const DataTypePtr &) const
 {
     return ColumnSparse::create(prev, offsets, size);
 }
 
-ColumnPtr SerializationSparse::NullMapSubcolumnCreator::create(const ColumnPtr & /* prev */) const
+ColumnPtr SerializationSparse::NullMapSubcolumnCreator::create(const ColumnPtr & /* prev */, const DataTypePtr &) const
 {
     auto null_map_col = ColumnUInt8::create();
     auto & null_map_data = null_map_col->getData();

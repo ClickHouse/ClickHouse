@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Recomendamos que los usuarios creen siempre su propio esquema para logs y trazas por las siguientes razones:
 
 * **Elegir una clave primaria** - Los esquemas predeterminados usan un `ORDER BY` optimizado para patrones de acceso específicos. Es poco probable que tus patrones de acceso coincidan con ellos.
@@ -32,7 +30,7 @@ Recomendamos que los usuarios creen siempre su propio esquema para logs y trazas
 </Tip>
 
 <div id="extracting-structure-with-sql">
-  ## Extracción de estructura con SQL
+  ## Extracción de estructura con SQL {#extracting-structure-with-sql}
 </div>
 
 Tanto al ingestar logs estructurados como no estructurados, los usuarios suelen necesitar la capacidad de:
@@ -175,40 +173,38 @@ Ambos casos de uso pueden resolverse con ClickHouse trasladando la lógica de la
   También puede realizar el procesamiento mediante procesadores y operadores del OTel collector, como se describe [aquí](/es/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching). En la mayoría de los casos, verá que ClickHouse es significativamente más eficiente en el uso de recursos y más rápido que los procesadores del collector. La principal desventaja de realizar todo el procesamiento de eventos en SQL es el acoplamiento de su solución a ClickHouse. Por ejemplo, puede que desee enviar logs procesados a destinos alternativos desde el OTel collector, p. ej., S3.
 </Info>
 
-<div id="materialized-columns">
-  ### Columnas materializadas
-</div>
+### Columnas materializadas {#materialized-columns}
 
-Las columnas materializadas ofrecen la forma más sencilla de extraer la estructura de otras columnas. Los valores de este tipo de columnas siempre se calculan en el momento de la inserción y no se pueden especificar en consultas `INSERT`.
+Las columnas materializadas ofrecen la forma más sencilla de extraer la estructura de otras columnas. Los valores de este tipo de columnas siempre se calculan en el momento de inserción y no se pueden especificar en consultas `INSERT`.
 
 <Info>
   **Sobrecarga**
 
-  Las columnas materializadas añaden una sobrecarga de almacenamiento, ya que los valores se extraen y se almacenan en nuevas columnas en disco en el momento de la inserción.
+  Las columnas materializadas añaden una sobrecarga de almacenamiento, ya que los valores se extraen y se almacenan en nuevas columnas en disco en el momento de inserción.
 </Info>
 
 Las columnas materializadas admiten cualquier expresión de ClickHouse y pueden aprovechar cualquiera de las funciones analíticas para [procesar cadenas](/es/reference/functions/regular-functions/string-functions) (incluidas [las expresiones regulares y las búsquedas](/es/reference/functions/regular-functions/string-search-functions)) y [URL](/es/reference/functions/regular-functions/url-functions), así como para realizar [conversiones de tipo](/es/reference/functions/regular-functions/type-conversion-functions), [extraer valores de JSON](/es/reference/functions/regular-functions/json-functions) u [operaciones matemáticas](/es/reference/functions/regular-functions/math-functions).
 
-Recomendamos las columnas materializadas para el procesamiento básico. Son especialmente útiles para extraer valores de mapas, promoverlos a columnas de nivel raíz y realizar conversiones de tipo. Suelen resultar más útiles en esquemas muy básicos o junto con vistas materializadas. Considere el siguiente esquema para logs, en el que el collector ha extraído el JSON a la columna `LogAttributes`:
+Recomendamos las columnas materializadas para el procesamiento básico. Son especialmente útiles para extraer valores de mapas, promoverlos a columnas raíz y realizar conversiones de tipo. Suelen resultar más útiles en esquemas muy básicos o junto con vistas materializadas. Considere el siguiente esquema para logs, en el que el collector ha extraído el JSON a la columna `LogAttributes`:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
@@ -248,15 +244,17 @@ Peak memory usage: 3.16 MiB.
   De forma predeterminada, las columnas materializadas no se devuelven en un `SELECT *`. Esto preserva la invariancia de que el resultado de un `SELECT *` siempre pueda volver a insertarse en la tabla mediante INSERT. Este comportamiento puede deshabilitarse configurando `asterisk_include_materialized_columns=1` y puede habilitarse en Grafana (consulte `Additional Settings -> Custom Settings` en la configuración de la fuente de datos).
 </Note>
 
-<div id="materialized-views">
-  ## Vistas materializadas
-</div>
+## Vistas materializadas {#materialized-views}
 
 Las [vistas materializadas](/es/concepts/features/materialized-views/index) proporcionan una forma más potente de aplicar filtrado y transformaciones SQL a logs y trazas.
 
-Las vistas materializadas le permiten trasladar el coste de cálculo del tiempo de consulta al tiempo de inserción. Una vista materializada de ClickHouse es simplemente un trigger que ejecuta una consulta sobre bloques de datos a medida que se insertan en una tabla. Los resultados de esta consulta se insertan en una segunda tabla &quot;de destino&quot;.
+Las vistas materializadas le permiten trasladar el coste de cálculo del tiempo de consulta al momento de inserción. Una vista materializada de ClickHouse es simplemente un trigger que ejecuta una consulta sobre bloques de datos a medida que se insertan en una tabla. Los resultados de esta consulta se insertan en una segunda tabla &quot;de destino&quot;.
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="Vista materializada" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Vista materializada](/images/use-cases/observability/observability-10.webp)
+  </Frame>
+</div>
 
 <Info>
   **Actualizaciones en tiempo real**
@@ -268,30 +266,30 @@ En teoría, la consulta asociada a la vista materializada puede ser cualquier co
 
 Debe recordar que la consulta es solo un trigger que se ejecuta sobre las filas que se insertan en una tabla (la tabla de origen), y cuyos resultados se envían a una tabla nueva (la tabla de destino).
 
-Para asegurarnos de no persistir los datos dos veces (en las tablas de origen y de destino), podemos cambiar el motor de la tabla de origen para que sea un [Null table engine](/es/reference/engines/table-engines/special/null), conservando el esquema original. Nuestros OTel collectors seguirán enviando datos a esta tabla. Por ejemplo, para logs, la tabla `otel_logs` pasa a ser:
+Para asegurarnos de no persistir los datos dos veces (en las tablas de origen y de destino), podemos cambiar el motor de la tabla de origen para que sea un [motor de tablas Null](/es/reference/engines/table-engines/special/null), conservando el esquema original. Nuestros OTel collectors seguirán enviando datos a esta tabla. Por ejemplo, para logs, la tabla `otel_logs` pasa a ser:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String)
 ) ENGINE = Null
 ```
 
-El motor de tabla Null es una potente optimización; piensa en ella como `/dev/null`. Esta tabla no almacenará ningún dato, pero cualquier vista materializada adjunta seguirá ejecutándose sobre las filas insertadas antes de que se descarten.
+El motor de tablas Null es una potente optimización; piensa en ella como `/dev/null`. Esta tabla no almacenará ningún dato, pero cualquier vista materializada adjunta seguirá ejecutándose sobre las filas insertadas antes de que se descarten.
 
 Considera la siguiente consulta. Esta transforma nuestras filas en un formato que queremos conservar, extrayendo todas las columnas de `LogAttributes` (suponemos que el collector lo ha establecido mediante el operador `json_parser`), estableciendo `SeverityText` y `SeverityNumber` (a partir de algunas condiciones simples y de la definición de [estas columnas](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)). En este caso, además, solo seleccionamos las columnas que sabemos que se rellenarán, ignorando columnas como `TraceId`, `SpanId` y `TraceFlags`.
 
@@ -348,7 +346,7 @@ También extraemos la columna `Body` indicada anteriormente, por si en el futuro
 <Info>
   **Condicionales**
 
-  Observe el uso de [condicionales](/es/reference/functions/regular-functions/conditional-functions) más arriba para extraer `SeverityText` y `SeverityNumber`. Son muy útiles para formular condiciones complejas y comprobar si hay valores definidos en maps; aquí asumimos ingenuamente que todas las claves existen en `LogAttributes`. Recomendamos a los usuarios familiarizarse con ellas: serán sus aliadas al analizar logs, además de las funciones para manejar [valores NULL](/es/reference/functions/regular-functions/functions-for-nulls)!
+  Observe el uso de [condicionales](/es/reference/functions/regular-functions/conditional-functions) más arriba para extraer `SeverityText` y `SeverityNumber`. Son muy útiles para formular condiciones complejas y comprobar si hay valores definidos en mapas; aquí asumimos ingenuamente que todas las claves existen en `LogAttributes`. Recomendamos a los usuarios familiarizarse con ellas: serán sus aliadas al analizar logs, además de las funciones para manejar [valores NULL](/es/reference/functions/regular-functions/functions-for-nulls)!
 </Info>
 
 Necesitamos una tabla para recibir estos resultados. La tabla de destino que se muestra a continuación corresponde a la consulta anterior:
@@ -384,7 +382,7 @@ Los tipos seleccionados aquí se basan en las optimizaciones descritas en [&quot
   Fíjese en cómo hemos cambiado drásticamente nuestro esquema. En la práctica, probablemente también tendrá columnas de trazas que querrá conservar, así como la columna `ResourceAttributes` (normalmente contiene metadatos de Kubernetes). Grafana puede aprovechar las columnas de trazas para ofrecer funcionalidad de vinculación entre logs y trazas; consulte [&quot;Uso de Grafana&quot;](/es/guides/use-cases/observability/build-your-own/grafana).
 </Note>
 
-A continuación, creamos una vista materializada `otel_logs_mv` que ejecuta la consulta SELECT anterior para la tabla `otel_logs` y envía los resultados a `otel_logs_v2`.
+A continuación, creamos la vista materializada `otel_logs_mv`, que ejecuta la consulta SELECT anterior sobre la tabla `otel_logs` y envía los resultados a `otel_logs_v2`.
 
 ```sql
 CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
@@ -411,7 +409,11 @@ FROM otel_logs
 
 Esto se visualiza a continuación:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="MV de OTel" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![MV de OTel](/images/use-cases/observability/observability-11.webp)
+  </Frame>
+</div>
 
 Si ahora reiniciamos la configuración del collector usada en [&quot;Exportación a ClickHouse&quot;](/es/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), los datos aparecerán en `otel_logs_v2` con el formato deseado. Fíjese en el uso de funciones tipadas de extracción de JSON.
 
@@ -471,7 +473,7 @@ FROM otel_logs
 ```
 
 <div id="beware-types">
-  ### Cuidado con los tipos
+  ### Cuidado con los tipos {#beware-types}
 </div>
 
 Las vistas materializadas anteriores se basan en conversiones implícitas de tipos, especialmente al usar el mapa `LogAttributes`. ClickHouse suele convertir de forma transparente el valor extraído al tipo de la tabla de destino, lo que reduce la sintaxis necesaria. Sin embargo, recomendamos probar siempre las vistas usando la sentencia `SELECT` de la vista junto con una sentencia [`INSERT INTO`](/es/reference/statements/insert-into) sobre una tabla de destino con el mismo esquema. Esto debería confirmar que los tipos se manejan correctamente. Debe prestarse especial atención a los siguientes casos:
@@ -487,7 +489,7 @@ Las vistas materializadas anteriores se basan en conversiones implícitas de tip
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
-  ## Elegir una clave primaria (de ordenación)
+  ## Elegir una clave primaria (de ordenación) {#choosing-a-primary-ordering-key}
 </div>
 
 Una vez que hayas extraído las columnas que necesitas, puedes empezar a optimizar tu clave primaria/de ordenación.
@@ -510,7 +512,7 @@ Una vez identificado el subconjunto de columnas para la clave de ordenación, es
 </Info>
 
 <div id="using-maps">
-  ## Uso de mapas
+  ## Uso de mapas {#using-maps}
 </div>
 
 En ejemplos anteriores se muestra el uso de la sintaxis `map['key']` para acceder a valores en las columnas `Map(String, String)`. Además de usar la notación de mapa para acceder a las claves anidadas, ClickHouse ofrece [funciones de map](/es/reference/functions/regular-functions/tuple-map-functions#mapKeys) especializadas para filtrar o seleccionar estas columnas.
@@ -538,32 +540,30 @@ Peak memory usage: 71.90 MiB.
   No recomendamos usar puntos en los nombres de columnas de tipo Map y es posible que dejemos de admitir su uso. Usa un `_`.
 </Info>
 
-<div id="using-aliases">
-  ## Uso de alias
-</div>
+## Uso de alias {#using-aliases}
 
 Consultar tipos Map es más lento que consultar columnas normales; consulta [&quot;Aceleración de consultas&quot;](#accelerating-queries). Además, la sintaxis es más compleja y puede resultar engorrosa de escribir. Para resolver este último problema, recomendamos usar columnas Alias.
 
-Las columnas ALIAS se calculan en tiempo de consulta y no se almacenan en la tabla. Por lo tanto, es imposible hacer un INSERT de un valor en una columna de este tipo. Con alias, podemos hacer referencia a claves de Map y simplificar la sintaxis, exponiendo de forma transparente las entradas de Map como si fueran una columna normal. Considera el siguiente ejemplo:
+Las columnas ALIAS se calculan en el momento de la consulta y no se almacenan en la tabla. Por lo tanto, es imposible hacer un INSERT de un valor en una columna de este tipo. Con alias, podemos hacer referencia a claves de Map y simplificar la sintaxis, exponiendo de forma transparente las entradas de Map como si fueran una columna normal. Considera el siguiente ejemplo:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
@@ -574,7 +574,7 @@ PARTITION BY toDate(Timestamp)
 ORDER BY (ServiceName, Timestamp)
 ```
 
-Tenemos varias columnas materializadas y una columna `ALIAS`, `RemoteAddr`, que accede al mapa `LogAttributes`. Ahora podemos consultar los valores de `LogAttributes['remote_addr']` a través de esta columna, lo que simplifica nuestra consulta; es decir:
+Tenemos varias columnas materializadas y una columna `ALIAS`, `RemoteAddr`, que accede al Map `LogAttributes`. Ahora podemos consultar los valores de `LogAttributes['remote_addr']` a través de esta columna, lo que simplifica nuestra consulta; es decir:
 
 ```sql
 SELECT RemoteAddr
@@ -624,13 +624,13 @@ LIMIT 5
 </Info>
 
 <div id="optimizing-types">
-  ## Optimización de tipos
+  ## Optimización de tipos {#optimizing-types}
 </div>
 
 Las [prácticas recomendadas generales de ClickHouse](/es/guides/clickhouse/data-modelling/schema-design#optimizing-types) para optimizar los tipos también se aplican a este caso de uso de ClickHouse.
 
 <div id="using-codecs">
-  ## Uso de codecs
+  ## Uso de codecs {#using-codecs}
 </div>
 
 Además de las optimizaciones de tipos, puedes seguir las [mejores prácticas generales para codecs](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec) al intentar optimizar la compresión en los esquemas de observabilidad de ClickHouse.
@@ -639,16 +639,18 @@ En general, el codec `ZSTD` suele ser muy adecuado para conjuntos de datos de lo
 
 Además, aunque los timestamps se benefician de la codificación delta en términos de compresión, se ha demostrado que pueden degradar el rendimiento de las consultas lentas si esta columna se utiliza en la clave primaria/de ordenación. Recomendamos a los usuarios evaluar el equilibrio entre compresión y rendimiento de las consultas en cada caso.
 
-<div id="using-dictionaries">
-  ## Uso de diccionarios
-</div>
+## Uso de diccionarios {#using-dictionaries}
 
 [Diccionarios](/es/reference/statements/create/dictionary) son una [funcionalidad clave](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) de ClickHouse, ya que proporcionan una representación [clave-valor](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) en memoria de datos procedentes de varias [fuentes](/es/reference/statements/create/dictionary/sources/overview#dictionary-sources) internas y externas, optimizada para consultas de búsqueda de latencia ultrabaja.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="Observabilidad y diccionarios" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Observabilidad y diccionarios](/images/use-cases/observability/observability-12.webp)
+  </Frame>
+</div>
 
 Esto resulta útil en distintos escenarios: desde enriquecer sobre la marcha los datos ingeridos sin ralentizar el proceso de ingestión hasta mejorar el rendimiento general de las consultas, con un beneficio especial para los JOINs.
-Aunque en los casos de uso de observabilidad rara vez se necesitan joins, los diccionarios siguen siendo útiles para tareas de enriquecimiento, tanto en tiempo de inserción como en tiempo de consulta. A continuación, proporcionamos ejemplos de ambos casos.
+Aunque en los casos de uso de observabilidad rara vez se necesitan joins, los diccionarios siguen siendo útiles para tareas de enriquecimiento, tanto en el momento de inserción como en el momento de la consulta. A continuación, proporcionamos ejemplos de ambos casos.
 
 <Info>
   **Aceleración de joins**
@@ -657,7 +659,7 @@ Aunque en los casos de uso de observabilidad rara vez se necesitan joins, los di
 </Info>
 
 <div id="insert-time-vs-query-time">
-  ### Tiempo de inserción vs. tiempo de consulta
+  ### Tiempo de inserción vs. tiempo de consulta {#insert-time-vs-query-time}
 </div>
 
 Los diccionarios pueden usarse para enriquecer conjuntos de datos en el momento de la consulta o de la inserción. Cada uno de estos enfoques tiene sus propias ventajas e inconvenientes. En resumen:
@@ -670,7 +672,7 @@ Recomendamos que los usuarios se familiaricen con los conceptos básicos de los 
 Para ver ejemplos sencillos de enriquecimiento, consulte la guía sobre Diccionarios [aquí](/es/concepts/features/dictionaries/index). A continuación, nos centramos en tareas habituales de enriquecimiento de observabilidad.
 
 <div id="using-ip-dictionaries">
-  ### Uso de diccionarios IP
+  ### Uso de diccionarios IP {#using-ip-dictionaries}
 </div>
 
 Enriquecer geográficamente logs y traces con valores de latitud y longitud a partir de direcciones IP es un requisito habitual en observabilidad. Podemos lograrlo usando el Diccionario estructurado `ip_trie`.
@@ -777,7 +779,7 @@ CREATE TABLE geoip
         `country_code` String
 )
 ENGINE = MergeTree
-ORDER BY cidr
+ORDER BY cidr;
 
 INSERT INTO geoip
 WITH
@@ -808,7 +810,7 @@ layout(ip_trie)
 lifetime(3600);
 ```
 
-Podemos seleccionar filas del diccionario y confirmar que este conjunto de datos está disponible para consultas:
+Podemos seleccionar filas del diccionario y confirmar que este conjunto de datos está disponible para búsquedas:
 
 ```sql
 SELECT * FROM ip_trie LIMIT 3
@@ -841,10 +843,10 @@ SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.24
 │ ('PT',38.7944,-9.34284) │
 └─────────────────────────┘
 
-1 fila en el conjunto. Elapsed: 0.003 sec.
+1 row in set. Elapsed: 0.003 sec.
 ```
 
-Fíjese en la rapidez de recuperación aquí. Esto nos permite enriquecer los logs. En este caso, elegimos **realizar el enriquecimiento en tiempo de consulta**.
+Fíjese en la rapidez de recuperación aquí. Esto nos permite enriquecer los logs. En este caso, elegimos **realizar el enriquecimiento en el momento de la consulta**.
 
 Volviendo a nuestro conjunto de datos original de logs, podemos usar lo anterior para agrupar nuestros logs por país. A continuación, se asume que usamos el esquema resultante de nuestra vista materializada anterior, que tiene una columna `RemoteAddress` extraída.
 
@@ -909,13 +911,11 @@ ORDER BY (ServiceName, Timestamp)
 
 Los países y coordenadas anteriores ofrecen posibilidades de visualización que van más allá de agrupar y filtrar por país. Como inspiración, consulta [&quot;Visualizar datos geográficos&quot;](/es/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data).
 
-<div id="using-regex-dictionaries-user-agent-parsing">
-  ### Uso de diccionarios de expresiones regulares (análisis de user agent)
-</div>
+### Uso de diccionarios de expresiones regulares (análisis de user agent) {#using-regex-dictionaries-user-agent-parsing}
 
 El análisis de [cadenas user agent](https://en.wikipedia.org/wiki/User_agent) es un problema clásico de expresiones regulares y un requisito habitual en conjuntos de datos basados en logs y trazas. ClickHouse proporciona un análisis eficiente de user agents mediante diccionarios de árbol de expresiones regulares.
 
-Los diccionarios de árbol de expresiones regulares se definen en la versión open-source de ClickHouse mediante el tipo de dictionary source YAMLRegExpTree, que proporciona la path a un archivo YAML que contiene el árbol de expresiones regulares. Si desea proporcionar su propio diccionario de expresiones regulares, puede consultar [aquí](/es/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source) los detalles de la estructura requerida. A continuación, nos centramos en el análisis de user agent con [uap-core](https://github.com/ua-parser/uap-core) y cargamos nuestro diccionario en el formato CSV admitido. Este enfoque es compatible con OSS y ClickHouse Cloud.
+Los diccionarios de árbol de expresiones regulares se definen en la versión open-source de ClickHouse mediante el tipo de origen del diccionario YAMLRegExpTree, que proporciona la path a un archivo YAML que contiene el árbol de expresiones regulares. Si desea proporcionar su propio diccionario de expresiones regulares, puede consultar [aquí](/es/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source) los detalles de la estructura requerida. A continuación, nos centramos en el análisis de user agent con [uap-core](https://github.com/ua-parser/uap-core) y cargamos nuestro diccionario en el formato CSV admitido. Este enfoque es compatible con OSS y ClickHouse Cloud.
 
 <Note>
   En los ejemplos siguientes, usamos snapshots de las expresiones regulares más recientes de uap-core para el análisis de user agent de junio de 2024. El archivo más reciente, que se actualiza ocasionalmente, puede encontrarse [aquí](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml). Puede seguir los pasos [aquí](/es/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values) para cargarlo en el archivo CSV utilizado a continuación.
@@ -963,6 +963,10 @@ INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.e
 ```
 
 Con nuestras tablas Memory ya pobladas, podemos cargar nuestros diccionarios de expresiones regulares. Ten en cuenta que debemos especificar como columnas los valores de clave; estos serán los atributos que podremos extraer del user agent.
+
+<Note title="ClickHouse Cloud">
+  Al crear un diccionario que lea de una tabla de ClickHouse, incluya en la cláusula `SOURCE` el nombre de usuario y la contraseña de un usuario dedicado. Dicho usuario necesita el permiso `SELECT` sobre la tabla de origen. Consulte el [ejemplo de origen del diccionario de ClickHouse](/es/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
 
 ```sql
 CREATE DICTIONARY regexp_os_dict
@@ -1106,7 +1110,7 @@ Os:     ('Other','0','0','0')
 </Info>
 
 <div id="further-reading">
-  ### Más información
+  ### Más información {#further-reading}
 </div>
 
 Para obtener más ejemplos y detalles sobre los diccionarios, recomendamos los siguientes artículos:
@@ -1116,13 +1120,13 @@ Para obtener más ejemplos y detalles sobre los diccionarios, recomendamos los s
 * [Diccionarios](/es/reference/statements/create/dictionary)
 
 <div id="accelerating-queries">
-  ## Acelerar las consultas
+  ## Acelerar las consultas {#accelerating-queries}
 </div>
 
 ClickHouse admite varias técnicas para acelerar el rendimiento de las consultas. Lo siguiente debe considerarse solo después de elegir una clave primaria/de ordenación adecuada para optimizar los patrones de acceso más habituales y maximizar la compresión. Por lo general, esto suele tener el mayor impacto en el rendimiento con el menor esfuerzo.
 
 <div id="using-materialized-views-incremental-for-aggregations">
-  ### Uso de vistas materializadas (incrementales) para agregaciones
+  ### Uso de vistas materializadas (incrementales) para agregaciones {#using-materialized-views-incremental-for-aggregations}
 </div>
 
 En secciones anteriores, exploramos el uso de vistas materializadas para la transformación y el filtrado de datos. Sin embargo, las vistas materializadas también pueden usarse para precalcular agregaciones en el momento de la inserción y almacenar el resultado. Este resultado puede actualizarse con los resultados de inserciones posteriores, lo que permite, en la práctica, precalcular una agregación en el momento de la inserción.
@@ -1261,7 +1265,7 @@ Esto ha acelerado nuestra consulta de 0.6s a 0.008s: ¡más de 75 veces más rá
 </Note>
 
 <div id="a-more-complex-example">
-  #### Un ejemplo más complejo
+  #### Un ejemplo más complejo {#a-more-complex-example}
 </div>
 
 El ejemplo anterior agrega un recuento simple por hora con [SummingMergeTree](/es/reference/engines/table-engines/mergetree-family/summingmergetree). Las estadísticas que van más allá de las sumas simples requieren un motor de tabla de destino distinto: [AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
@@ -1348,7 +1352,7 @@ ORDER BY Hour DESC
 Ten en cuenta que aquí usamos `GROUP BY` en lugar de `FINAL`.
 
 <div id="using-materialized-views-incremental--for-fast-lookups">
-  ### Uso de vistas materializadas (incrementales)  para búsquedas rápidas
+  ### Uso de vistas materializadas (incrementales)  para búsquedas rápidas {#using-materialized-views-incremental--for-fast-lookups}
 </div>
 
 Debe tener en cuenta los patrones de acceso al elegir la clave de ordenación de ClickHouse, junto con las columnas que se usan con frecuencia en las cláusulas de filtro y agregación. Esto puede resultar restrictivo en casos de uso de observabilidad, donde los usuarios tienen patrones de acceso más diversos que no pueden encapsularse en un único conjunto de columnas. Esto se ilustra mejor con un ejemplo integrado en los esquemas predeterminados de OTel. Considere el esquema predeterminado para las trazas:
@@ -1453,9 +1457,7 @@ La CTE de este ejemplo identifica la marca de tiempo mínima y máxima para el I
 
 Este mismo enfoque puede aplicarse a patrones de acceso similares. Analizamos un ejemplo parecido en Modelado de datos [aquí](/es/concepts/features/materialized-views/incremental-materialized-view#lookup-table).
 
-<div id="using-projections">
-  ### Uso de proyecciones
-</div>
+### Uso de proyecciones {#using-projections}
 
 Las proyecciones de ClickHouse permiten especificar varias cláusulas `ORDER BY` para una tabla.
 
@@ -1473,7 +1475,11 @@ En teoría, esta capacidad puede usarse para proporcionar varias claves de orden
   Las proyecciones ofrecen muchas de las mismas capacidades que las vistas materializadas, pero deben usarse con moderación, y a menudo se prefiere estas últimas. Debe comprender sus inconvenientes y cuándo resultan adecuadas. Por ejemplo, aunque las proyecciones pueden usarse para precalcular agregaciones, recomendamos a los usuarios utilizar vistas materializadas para ello.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="Observabilidad y proyecciones" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Observabilidad y proyecciones](/images/use-cases/observability/observability-13.webp)
+  </Frame>
+</div>
 
 Considere la siguiente consulta, que filtra nuestra tabla `otel_logs_v2` por códigos de error 500. Es probable que este sea un patrón de acceso habitual en logging, ya que los usuarios suelen querer filtrar por códigos de error:
 
@@ -1575,7 +1581,7 @@ Peak memory usage: 27.85 MiB.
 En el ejemplo anterior, especificamos en la proyección las columnas utilizadas en la consulta anterior. Esto significa que solo esas columnas se almacenarán en disco como parte de la proyección, ordenadas por Status. Si, en cambio, usáramos `SELECT *` aquí, se almacenarían todas las columnas. Aunque esto permitiría que más consultas (que usen cualquier subconjunto de columnas) se beneficiaran de la proyección, también implicaría un almacenamiento adicional. Para medir el espacio en disco y la compresión, consulte [&quot;Medir el tamaño y la compresión de las tablas&quot;](#measuring-table-size--compression).
 
 <div id="secondarydata-skipping-indices">
-  ### Índices secundarios/de omisión de datos
+  ### Índices secundarios/de omisión de datos {#secondarydata-skipping-indices}
 </div>
 
 Por muy bien ajustada que esté la clave primaria en ClickHouse, algunas consultas requerirán inevitablemente un escaneo completo de la tabla. Aunque esto puede mitigarse con vistas materializadas (y proyecciones para algunas consultas), estas requieren mantenimiento adicional y que los usuarios sepan que están disponibles para asegurarse de aprovecharlas. Mientras que las bases de datos relacionales tradicionales resuelven esto con índices secundarios, estos son ineficaces en bases de datos orientadas a columnas como ClickHouse. En su lugar, ClickHouse utiliza índices de &quot;omisión&quot;, que pueden mejorar significativamente el rendimiento de las consultas al permitir que la base de datos se salte grandes fragmentos de datos en los que no hay valores coincidentes.
@@ -1587,7 +1593,7 @@ Debe leer y comprender la [guía sobre índices secundarios](/es/concepts/featur
 **En general, son eficaces cuando existe una fuerte correlación entre la clave primaria y la columna/expresión de destino que no forma parte de ella, y los usuarios buscan valores poco frecuentes, es decir, aquellos que no aparecen en muchos gránulos.**
 
 <div id="text-index-for-full-text-search">
-  ### Índice de texto para búsqueda de texto completo
+  ### Índice de texto para búsqueda de texto completo {#text-index-for-full-text-search}
 </div>
 
 ClickHouse proporciona un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) especializado para la búsqueda de texto completo.
@@ -1650,7 +1656,7 @@ Query id: ff0b866c-6df7-47be-9e36-795ef3888169
 ```
 
 <div id="adding-a-text-index">
-  #### Añadir un índice de texto
+  #### Añadir un índice de texto {#adding-a-text-index}
 </div>
 
 Se puede añadir un índice de texto en la columna Body durante la creación de la tabla:
@@ -1710,7 +1716,7 @@ Peak memory usage: 15.23 MiB.
 ```
 
 <div id="using-a-preprocessor">
-  #### Uso de un preprocesador
+  #### Uso de un preprocesador {#using-a-preprocessor}
 </div>
 
 En este conjunto de datos, la columna Body contiene una cadena en formato JSON con varios pares clave-valor (por ejemplo, `msg`, `id`, `ctx`, `attr`, etc.).
@@ -1981,16 +1987,14 @@ Encontrará más detalles sobre los índices de salto secundarios [aquí](/es/co
 </details>
 
 <div id="extracting-from-maps">
-  ### Extracción de datos de mapas
+  ### Extracción de datos de mapas {#extracting-from-maps}
 </div>
 
 El tipo Map es habitual en los esquemas de OTel. Este tipo requiere que los valores y las claves tengan el mismo tipo, lo que resulta suficiente para metadatos como las etiquetas de Kubernetes. Ten en cuenta que, al consultar una subclave de un tipo Map, se carga la columna padre completa. Si el mapa tiene muchas claves, esto puede suponer una penalización significativa en la consulta, ya que es necesario leer más datos del disco que si la clave existiera como una columna.
 
 Si consultas con frecuencia una clave concreta, considera moverla a su propia columna dedicada en el nivel raíz. Normalmente, esta es una tarea que surge como respuesta a patrones de acceso comunes después del despliegue, y puede ser difícil de prever antes de pasar a producción. Consulta [&quot;Gestionar cambios de esquema&quot;](/es/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes) para saber cómo modificar tu esquema después del despliegue.
 
-<div id="measuring-table-size--compression">
-  ## Medir el tamaño y la compresión de una tabla
-</div>
+## Medir el tamaño y la compresión de una tabla {#measuring-table-size--compression}
 
 Una de las principales razones por las que ClickHouse se utiliza para la observabilidad es la compresión.
 

@@ -8,6 +8,8 @@
 #if USE_AWS_S3
 
 #include <Common/HistogramMetrics.h>
+#include <Common/SecretString.h>
+#include <Common/Silk/FiberMutex.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
@@ -97,10 +99,10 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String metadata_service;
     String request_token_path;
     String google_adc_client_id;
-    String google_adc_client_secret;
-    String google_adc_refresh_token;
+    SecretString google_adc_client_secret;
+    SecretString google_adc_refresh_token;
     /// Content of a Google service account JSON key file, an alternative to the ADC triple.
-    String google_service_account_key;
+    SecretString google_service_account_key;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -142,7 +144,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 private:
     PocoHTTPClientConfiguration(
         std::function<ProxyConfiguration()> per_request_configuration_,
-        const String & force_region_,
+        std::string_view force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         RetryStrategy retry_strategy_,
@@ -188,7 +190,7 @@ public:
         body_stream = Aws::Utils::Stream::ResponseStream(std::move(stream));
     }
 
-    Aws::IOStream & GetResponseBody() const override
+    [[nodiscard]] Aws::IOStream & GetResponseBody() const override
     {
         return body_stream.GetUnderlyingStream();
     }
@@ -251,7 +253,7 @@ private:
         EnumSize,
     };
 
-    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte) const;
+    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte, bool server_side_copy) const;
 
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
@@ -299,7 +301,7 @@ class PocoHTTPClientGCPOAuth : public PocoHTTPClient
 public:
     explicit PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration & client_configuration);
 
-    std::string getBearerToken() const;
+    SecretString getBearerToken() const;
 private:
     void makeRequestInternal(
         Aws::Http::HttpRequest & request,
@@ -309,7 +311,7 @@ private:
 
     struct BearerToken
     {
-        String token;
+        SecretString token;
         std::chrono::system_clock::time_point is_valid_to;
     };
 
@@ -317,11 +319,11 @@ private:
     const String metadata_service;
     const String request_token_path;
     const String google_adc_client_id;
-    const String google_adc_client_secret;
-    const String google_adc_refresh_token;
-    const String google_service_account_key;
+    const SecretString google_adc_client_secret;
+    const SecretString google_adc_refresh_token;
+    const SecretString google_service_account_key;
 
-    mutable std::mutex mutex;
+    mutable Silk::FiberMutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);

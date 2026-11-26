@@ -2,7 +2,7 @@
 sidebarTitle: 'Introduction'
 description: 'Importez et exportez des données depuis Postgres vers un large éventail de formats de données et de stockages d''objets.'
 slug: '/cloud/managed-postgres/extensions/chdb'
-title: 'Documentation de référence de l''extension chdb'
+title: 'Documentation des extensions chdb'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
@@ -145,11 +145,11 @@ occasionnellement, comme le chargement de données depuis un data lake.
 
 Contrairement à un background worker, le processus auxiliaire ne détient aucune mémoire partagée Postgres et
 n&#39;est pas géré par le postmaster. Les crashs sont ainsi isolés et n&#39;affectent pas Postgres.
-Si un processus auxiliaire meurt, cela déclenche une error uniquement dans le backend qui l&#39;a démarré,
+Si un processus auxiliaire meurt, cela déclenche une erreur uniquement dans le backend qui l&#39;a démarré,
 sans incidence sur les autres sessions.
 
 <Important>
-  Pour chaque requête, le processus auxiliaire se connecte à une nouvelle database chDB temporaire sur disque
+  Pour chaque requête, le processus auxiliaire se connecte à une nouvelle base de données chDB temporaire sur disque
   pour l&#39;exécuter. Par conséquent, chaque requête s&#39;exécute actuellement dans un isolement
   total par rapport à toutes les autres. Ne créez pas de table en espérant l&#39;interroger
   dans une requête ultérieure.

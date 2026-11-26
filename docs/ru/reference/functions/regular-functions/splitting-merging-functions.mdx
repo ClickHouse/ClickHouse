@@ -138,7 +138,7 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Добавленный в: v26.7.0
 
-Разбивает текст на n-граммы, используя ту же токенизацию, что и словарь Naive Bayes (структура [`NAIVE_BAYES`](/ru/reference/statements/create/dictionary/layouts/naive-bayes)): режим `byte`, `codepoint` или `token`, с необязательным дополнением границ. Используйте эту функцию, чтобы построить предагрегированные обучающие данные `(ngram, class_id, count)`, которые использует такой словарь, — так обучающие n-граммы будут в точности совпадать с тем, что [`naiveBayesClassifier`](/ru/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) создаёт при выполнении запроса.
+Разбивает текст на n-граммы, используя ту же токенизацию, что и словарь Naive Bayes (структура [`NAIVE_BAYES`](/ru/reference/statements/create/dictionary/layouts/naive-bayes)): режим `byte`, `codepoint` или `token`, с необязательным дополнением на границах. Используйте эту функцию, чтобы построить предагрегированные обучающие данные `(ngram, class_id, count)`, которые использует такой словарь, — так обучающие n-граммы будут в точности совпадать с тем, что [`naiveBayesClassifier`](/ru/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) создаёт при выполнении запроса.
 
 **Синтаксис**
 
@@ -180,7 +180,7 @@ SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
 ['<s> cat','cat </s>']
 ```
 
-**Байтовые биграммы с дополнением по краям (результат показан в шестнадцатеричном виде)**
+**Байтовые биграммы с дополнением на границах (результат показан в шестнадцатеричном виде)**
 
 ```sql title=Query
 SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
@@ -190,7 +190,7 @@ SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
 ['0178','7879','79FF']
 ```
 
-**Биграммы кодовых точек с дополнением по краям (результат показан в шестнадцатеричном виде)**
+**Биграммы кодовых точек с дополнением на границах (результат показан в шестнадцатеричном виде)**
 
 ```sql title=Query
 SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
@@ -424,7 +424,7 @@ SELECT splitByNonAlpha('user@domain.com');
 * исходная строка пуста, а регулярное выражение не пусто.
 
 <Note>
-  Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если argument `max_substrings > 0`.
+  Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
 </Note>
 
 **Синтаксис**

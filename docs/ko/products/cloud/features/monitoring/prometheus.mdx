@@ -7,8 +7,6 @@ keywords: ['prometheus', 'grafana', '모니터링', '메트릭', 'exporter']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 기능은 [Prometheus](https://prometheus.io/)를 통합하여 ClickHouse Cloud 서비스를 모니터링할 수 있도록 지원합니다. Prometheus 메트릭에 대한 액세스는 [ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview) 엔드포인트를 통해 제공되며, 이 엔드포인트를 사용하면 Prometheus 메트릭 collector에 안전하게 연결하여 메트릭을 내보낼 수 있습니다. 이러한 메트릭은 시각화를 위해 Grafana, Datadog 등의 대시보드와 통합할 수 있습니다.
 
 서비스에 연결된 [ClickPipes](/ko/integrations/clickpipes)의 메트릭은 해당 서비스의 ClickHouse 메트릭과 함께 포함됩니다.
@@ -18,7 +16,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스에 해당하는 엔드포인트를 찾고 있다면 [ClickHouse Managed Postgres Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus)를 참조하십시오.
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## ClickHouse Cloud 메트릭을 조회하기 위한 Prometheus 엔드포인트 API
+  ## ClickHouse Cloud 메트릭을 조회하기 위한 Prometheus 엔드포인트 API {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
 </div>
 
 ### API 참조 {#api-reference}
@@ -44,7 +42,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이러한 엔드포인트의 전체 요청 및 응답 스키마는 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus)에서 확인할 수 있습니다.
 
 <div id="authentication">
-  ### 인증
+  ### 인증 {#authentication}
 </div>
 
 기본 인증에는 ClickHouse Cloud API Key를 사용하십시오:
@@ -66,71 +64,71 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### 응답 예시
+  ### 응답 예시 {#sample-response}
 </div>
 
 ```response
-# HELP ClickHouse_ServiceInfo 클러스터 상태 및 ClickHouse 버전을 포함한 서비스 정보
+# HELP ClickHouse_ServiceInfo Information about service, including cluster status and ClickHouse version
 # TYPE ClickHouse_ServiceInfo untyped
 ClickHouse_ServiceInfo{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",clickhouse_cluster_status="running",clickhouse_version="24.5",scrape="full"} 1
 
-# HELP ClickHouseProfileEvents_Query 해석 및 실행 대상 쿼리 수. 파싱 실패 또는 AST 크기 제한, 할당량 제한, 동시 실행 쿼리 수 제한으로 거부된 쿼리는 포함되지 않습니다. ClickHouse 자체에서 시작된 내부 쿼리가 포함될 수 있습니다. 서브쿼리는 카운트되지 않습니다.
+# HELP ClickHouseProfileEvents_Query Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.
 # TYPE ClickHouseProfileEvents_Query counter
 ClickHouseProfileEvents_Query{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 6
 
-# HELP ClickHouseProfileEvents_QueriesWithSubqueries 모든 서브쿼리를 포함한 쿼리 수
+# HELP ClickHouseProfileEvents_QueriesWithSubqueries Count queries with all subqueries
 # TYPE ClickHouseProfileEvents_QueriesWithSubqueries counter
 ClickHouseProfileEvents_QueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 230
 
-# HELP ClickHouseProfileEvents_SelectQueriesWithSubqueries 모든 서브쿼리를 포함한 SELECT 쿼리 수
+# HELP ClickHouseProfileEvents_SelectQueriesWithSubqueries Count SELECT queries with all subqueries
 # TYPE ClickHouseProfileEvents_SelectQueriesWithSubqueries counter
 ClickHouseProfileEvents_SelectQueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 224
 
-# HELP ClickHouseProfileEvents_FileOpen 열린 파일 수.
+# HELP ClickHouseProfileEvents_FileOpen Number of files opened.
 # TYPE ClickHouseProfileEvents_FileOpen counter
 ClickHouseProfileEvents_FileOpen{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 4157
 
-# HELP ClickHouseProfileEvents_Seek 'lseek' 함수 호출 횟수.
+# HELP ClickHouseProfileEvents_Seek Number of times the 'lseek' function was called.
 # TYPE ClickHouseProfileEvents_Seek counter
 ClickHouseProfileEvents_Seek{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 1840
 
-# HELP ClickPipes_Info 항상 1입니다. 레이블 "clickpipe_state"에 파이프의 현재 상태가 표시됩니다: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
 ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
-# HELP ClickPipes_SentEvents_Total ClickHouse로 전송된 총 레코드 수
+# HELP ClickPipes_SentEvents_Total Total number of records sent to ClickHouse
 # TYPE ClickPipes_SentEvents_Total counter
 ClickPipes_SentEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5534250
 
-# HELP ClickPipes_SentBytesCompressed_Total ClickHouse로 전송된 총 압축 바이트 수.
+# HELP ClickPipes_SentBytesCompressed_Total Total compressed bytes sent to ClickHouse.
 # TYPE ClickPipes_SentBytesCompressed_Total counter
 ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
 ="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 380837520
 ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
 
-# HELP ClickPipes_FetchedBytes_Total 소스에서 가져온 총 비압축(uncompressed) 바이트 수.
+# HELP ClickPipes_FetchedBytes_Total Total uncompressed bytes fetched from the source.
 # TYPE ClickPipes_FetchedBytes_Total counter
 ClickPipes_FetchedBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
 
-# HELP ClickPipes_Errors_Total 데이터 수집 중 발생한 총 오류 수.
+# HELP ClickPipes_Errors_Total Total errors ingesting data.
 # TYPE ClickPipes_Errors_Total counter
 ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 0
 
-# HELP ClickPipes_SentBytes_Total ClickHouse로 전송된 총 비압축(uncompressed) 바이트 수.
+# HELP ClickPipes_SentBytes_Total Total uncompressed bytes sent to ClickHouse.
 # TYPE ClickPipes_SentBytes_Total counter
 ClickPipes_SentBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 477187967
 
-# HELP ClickPipes_FetchedBytesCompressed_Total 소스에서 가져온 총 압축 바이트 수. 소스 데이터가 비압축 상태인 경우 ClickPipes_FetchedBytes_Total과 동일합니다.
+# HELP ClickPipes_FetchedBytesCompressed_Total Total compressed bytes fetched from the source. If data is uncompressed at the source, this will equal ClickPipes_FetchedBytes_Total
 # TYPE ClickPipes_FetchedBytesCompressed_Total counter
 ClickPipes_FetchedBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
 
-# HELP ClickPipes_FetchedEvents_Total 소스에서 가져온 레코드의 총 수.
+# HELP ClickPipes_FetchedEvents_Total Total number of records fetched from the source.
 # TYPE ClickPipes_FetchedEvents_Total counter
 ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5535376
 ```
 
 <div id="metric-labels">
-  ### 메트릭 레이블
+  ### 메트릭 레이블 {#metric-labels}
 </div>
 
 모든 메트릭에는 다음 레이블이 포함됩니다:
@@ -150,12 +148,12 @@ ClickPipes의 경우 메트릭에 다음 레이블도 포함됩니다:
 | clickpipe&#95;source | ClickPipe 소스 유형 |
 
 <div id="information-metrics">
-  ### 정보 메트릭
+  ### 정보 메트릭 {#information-metrics}
 </div>
 
 ClickHouse Cloud는 값이 항상 `1`인 `gauge` 타입의 특수 메트릭 `ClickHouse_ServiceInfo`를 제공합니다. 이 메트릭에는 모든 **메트릭 레이블**과 함께 다음 레이블이 포함됩니다:
 
-| Label                             | Description                                                                              |
+| 레이블                             | Description                                                                              |
 | --------------------------------- | ---------------------------------------------------------------------------------------- |
 | clickhouse&#95;cluster&#95;status | 서비스의 상태입니다. 다음 값 중 하나일 수 있습니다: [`awaking` | `running` | `degraded` | `idle` | `stopped`] |
 | clickhouse&#95;version            | 서비스에서 실행 중인 ClickHouse 서버의 버전                                                            |
@@ -167,9 +165,9 @@ ClickHouse Cloud는 값이 항상 `1`인 `gauge` 타입의 특수 메트릭 `Cli
 
 ClickPipes의 경우에도 이와 유사하게 `ClickPipes_Info`라는 `gauge` 메트릭이 있으며, **메트릭 레이블** 외에 다음 레이블을 포함합니다:
 
-| Label               | Description |
-| ------------------- | ----------- |
-| clickpipe&#95;state | 파이프의 현재 상태  |
+| 레이블                | Description |
+| -------------------- | ----------- |
+| clickpipe&#95;status | 파이프의 현재 상태  |
 
 ### Prometheus 구성 {#configuring-prometheus}
 
@@ -260,7 +258,7 @@ scrape_configs:
 디스커버리를 통해 발견된 대상은 `filtered_metrics=true`로 스크레이프됩니다. 전체 메트릭 세트를 스크레이프하는 대상을 발견하려면 디스커버리 URL에 `?filtered_metrics=false`를 추가하십시오. 전체 엔드포인트 사양은 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)에서 확인할 수 있습니다.
 
 <div id="integrating-with-grafana">
-  ## Grafana와 통합하기
+  ## Grafana와 통합하기 {#integrating-with-grafana}
 </div>
 
 Grafana와 통합하는 주요 방법은 두 가지입니다.
@@ -270,38 +268,52 @@ Grafana와 통합하는 주요 방법은 두 가지입니다.
 
 아래에서는 이러한 옵션을 사용하는 방법을 설명하며, ClickHouse Cloud Prometheus 엔드포인트와 관련된 세부 사항을 중심으로 다룹니다.
 
-<a id="grafana-cloud-with-metrics-endpoint" />
-### Grafana Cloud와 메트릭 엔드포인트
+### Grafana Cloud와 메트릭 엔드포인트 {#grafana-cloud-with-metrics-endpoint}
 
 * Grafana Cloud 계정에 로그인하세요
 * **메트릭 엔드포인트**를 선택하여 새 연결을 추가하세요
 * Scrape URL이 Prometheus 엔드포인트를 가리키도록 구성하고, 기본 인증을 사용해 API Key/secret으로 연결을 설정하세요
 * 연결을 테스트하여 정상적으로 접속되는지 확인하세요
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Grafana 메트릭 엔드포인트 구성" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Grafana 메트릭 엔드포인트 구성](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
+  </Frame>
+</div>
 
 <br />
 
 구성이 완료되면 대시보드 구성에 사용할 수 있도록 선택 가능한 드롭다운에 메트릭이 표시됩니다:
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Grafana 메트릭 탐색기 드롭다운" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Grafana 메트릭 탐색기 드롭다운](/images/integrations/prometheus-grafana-dropdown.webp)
+  </Frame>
+</div>
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 메트릭 탐색기 차트" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Grafana 메트릭 탐색기 차트](/images/integrations/prometheus-grafana-chart.webp)
+  </Frame>
+</div>
 
-<a id="grafana-cloud-with-alloy" />
-### Alloy를 사용하는 Grafana Cloud
+### Alloy를 사용하는 Grafana Cloud {#grafana-cloud-with-alloy}
 
 Grafana Cloud를 사용 중이라면 Grafana에서 Alloy 메뉴로 이동한 후, 화면의 안내에 따라 Alloy를 설치할 수 있습니다:
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
+  </Frame>
+</div>
 
 <br />
 
-이렇게 하면 인증 토큰을 사용해 Grafana Cloud 엔드포인트로 데이터를 전송하는 `prometheus.remote_write` 컴포넌트가 포함되도록 Alloy가 구성됩니다. 이후에는 ClickHouse Cloud Prometheus 엔드포인트를 위한 스크레이퍼가 포함되도록 Alloy 구성(Linux에서는 `/etc/alloy/config.alloy`에 있음)만 수정하면 됩니다.
+이렇게 하면 인증 토큰을 사용해 Grafana Cloud 엔드포인트로 데이터를 전송하는 `prometheus.remote_write` 구성 요소가 포함되도록 Alloy가 구성됩니다. 이후에는 ClickHouse Cloud Prometheus 엔드포인트를 위한 스크레이퍼가 포함되도록 Alloy 구성(Linux에서는 `/etc/alloy/config.alloy`에 있음)만 수정하면 됩니다.
 
-다음은 ClickHouse Cloud 엔드포인트에서 메트릭을 스크레이프하기 위한 `prometheus.scrape` 컴포넌트와 자동으로 구성된 `prometheus.remote_write` 컴포넌트가 포함된 Alloy 구성 예시입니다. `basic_auth` 구성 컴포넌트에는 각각 사용자 이름과 비밀번호로 Cloud API Key ID와 시크릿이 포함된다는 점에 유의하십시오.
+다음은 ClickHouse Cloud 엔드포인트에서 메트릭을 스크레이프하기 위한 `prometheus.scrape` 구성 요소와 자동으로 구성된 `prometheus.remote_write` 구성 요소가 포함된 Alloy 구성 예시입니다. `basic_auth` 구성 구성 요소에는 각각 사용자 이름과 비밀번호로 Cloud API Key ID와 시크릿이 포함된다는 점에 유의하십시오.
 
 ```yaml
 prometheus.scrape "clickhouse_cloud" {
@@ -342,10 +354,9 @@ prometheus.scrape "clickhouse_cloud" {
 
 인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
-<a id="grafana-self-managed-with-alloy" />
-### Alloy를 사용하는 자가 관리형 Grafana
+### Alloy를 사용하는 자가 관리형 Grafana {#grafana-self-managed-with-alloy}
 
-자가 관리형 Grafana 사용자는 Alloy 에이전트 설치 지침을 [여기](https://grafana.com/docs/alloy/latest/get-started/install/)에서 확인할 수 있습니다. Alloy가 Prometheus 메트릭을 원하는 대상으로 전송하도록 이미 구성되어 있다고 가정합니다. 아래의 `prometheus.scrape` 컴포넌트는 Alloy가 ClickHouse Cloud 엔드포인트를 스크레이프하게 합니다. `prometheus.remote_write`가 스크레이프된 메트릭을 수신한다고 가정합니다. 이 구성이 없다면 `forward_to key`를 대상에 맞게 조정하십시오.
+자가 관리형 Grafana 사용자는 Alloy 에이전트 설치 지침을 [여기](https://grafana.com/docs/alloy/latest/get-started/install/)에서 확인할 수 있습니다. Alloy가 Prometheus 메트릭을 원하는 대상으로 전송하도록 이미 구성되어 있다고 가정합니다. 아래의 `prometheus.scrape` 구성 요소는 Alloy가 ClickHouse Cloud 엔드포인트를 스크레이프하게 합니다. `prometheus.remote_write`가 스크레이프된 메트릭을 수신한다고 가정합니다. 이 구성이 없다면 `forward_to key`를 대상에 맞게 조정하십시오.
 
 ```yaml
 // prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
@@ -375,14 +386,17 @@ prometheus.scrape "clickhouse_cloud" {
 
 설정이 완료되면 메트릭 탐색기에서 ClickHouse 관련 메트릭을 확인할 수 있습니다:
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana 메트릭 탐색기" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Grafana 메트릭 탐색기](/images/integrations/prometheus-grafana-metrics-explorer.webp)
+  </Frame>
+</div>
 
 <br />
 
 인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
-<a id="integrating-with-datadog" />
-## Datadog와 통합하기
+## Datadog와 통합하기 {#integrating-with-datadog}
 
 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux)와 [OpenMetrics 통합](https://docs.datadoghq.com/integrations/openmetrics/)을 사용해 ClickHouse Cloud 엔드포인트에서 메트릭을 수집할 수 있습니다. 아래에는 이 Agent와 통합에 대한 간단한 예시 구성이 나와 있습니다. 다만, 실제로는 가장 필요한 메트릭만 선별하는 것이 좋습니다. 아래의 일괄 예시는 수천 개의 메트릭-인스턴스 조합을 내보내며, Datadog는 이를 커스텀 메트릭으로 처리합니다.
 
@@ -400,10 +414,13 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus Datadog 통합" />
+<div className="ch-image-md">
+  <Frame>
+    ![Prometheus Datadog 통합](/images/integrations/prometheus-datadog.webp)
+  </Frame>
+</div>
 
-<a id="related" />
-## 관련 페이지
+## 관련 페이지 {#related}
 
 * [모니터링 개요](/ko/products/cloud/features/monitoring/overview) — ClickHouse Cloud의 모든 모니터링 방법을 비교합니다
 * [Cloud Console 모니터링](/ko/products/cloud/features/monitoring/cloud-console) — 외부 도구 없이 사용할 수 있는 기본 제공 대시보드
