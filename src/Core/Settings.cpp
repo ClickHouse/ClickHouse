@@ -6593,7 +6593,7 @@ Use three-valued SQL `NULL` semantics for scalar numeric `IN` and `NOT IN` lists
 
 When a non-`NULL` list member matches, the result is true for `IN`. Otherwise, a `NULL` operand or list member produces `NULL`. An empty list produces false for `IN` and true for `NOT IN`.
 
-This setting currently supports numeric list members with a lossless common type in queries using the new analyzer. Other membership forms are not yet supported.
+This setting currently supports numeric list members that are losslessly comparable to the left operand in queries using the new analyzer. Other membership forms are not yet supported.
 )", 0) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`, and of the virtual columns whose values may differ between replicas, such as `_table`, `_database` and `_disk_name`.

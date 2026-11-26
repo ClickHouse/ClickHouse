@@ -1442,11 +1442,12 @@ static QueryTreeNodePtr buildNullAwareNumericInList(
     }
 
     const auto bare_left = removeNullable(removeLowCardinality(left->getResultType()));
+    const bool left_only_null = left->getResultType()->onlyNull();
     const auto supported_numeric_type = [](const DataTypePtr & type)
     {
-        return (isNumber(type) || isDecimal(type)) && !isBool(type) && !isEnum(type);
+        return isNumber(type) && !isBool(type) && !isEnum(type);
     };
-    if (!bare_left->onlyNull() && !supported_numeric_type(bare_left))
+    if (!left_only_null && !supported_numeric_type(bare_left))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Setting 'in_null_as_unknown' currently supports only scalar numeric lists, got {}",
             left->getResultType()->getName());
@@ -1454,11 +1455,12 @@ static QueryTreeNodePtr buildNullAwareNumericInList(
     for (const auto & member : members)
     {
         const auto bare_member = removeNullable(removeLowCardinality(member->getResultType()));
-        if (!bare_member->onlyNull() && !supported_numeric_type(bare_member))
+        const bool member_only_null = member->getResultType()->onlyNull();
+        if (!member_only_null && !supported_numeric_type(bare_member))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'in_null_as_unknown' currently supports only scalar numeric lists, got {}",
                 member->getResultType()->getName());
-        if (!bare_left->onlyNull() && !bare_member->onlyNull()
+        if (!left_only_null && !member_only_null
             && !tryGetLeastSupertype(DataTypes{bare_left, bare_member}))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'in_null_as_unknown' requires losslessly comparable numeric types, got {} and {}",
