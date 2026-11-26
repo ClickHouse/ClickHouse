@@ -18,12 +18,6 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
     if (!root || !root->step)
         return walk;
 
-    if (root->step->getStepIndex() == PlanStepIndex::NONE)
-    {
-        walk.steps_without_index = 1;
-        return walk;
-    }
-
     walk.plan = &plan;
     walk.root_id = root->step->getStepIndex();
 
@@ -35,43 +29,6 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
 
     VectorWithMemoryTracking<Frame> to_visit{{&plan, root}};
 
-    /// The children of a node: its own, then the roots of the child plans its step holds.
-    const auto for_each_child = [only_built_child_plans](const Frame & frame, const auto & callback)
-    {
-        for (auto * child : frame.node->children)
-        {
-            if (child && child->step)
-                callback(Frame{frame.owning_plan, child});
-        }
-
-        auto & step = *frame.node->step;
-        for (auto * child_plan : only_built_child_plans ? step.getBuiltChildPlans() : step.getChildPlans(/*for_explain=*/ false))
-        {
-            if (!child_plan || !child_plan->isInitialized())
-                continue;
-            auto * child_root = child_plan->getRootNode();
-            if (child_root && child_root->step)
-                callback(Frame{child_plan, child_root});
-        }
-    };
-
-    /// A step with `PlanStepIndex::NONE` was built outside of any query and has no identity to key
-    /// it by: it would collide with every other such step. It is left out of the walk, and the
-    /// steps below it hang from the nearest step above it instead.
-    const auto attach = [&](this auto && self, VisitedStep & parent, const Frame & child) -> void
-    {
-        const UInt64 child_id = child.node->step->getStepIndex();
-        if (child_id != PlanStepIndex::NONE)
-        {
-            parent.children.push_back(child_id);
-            to_visit.push_back(child);
-            return;
-        }
-
-        ++walk.steps_without_index;
-        for_each_child(child, [&](const Frame & grandchild) { self(parent, grandchild); });
-    };
-
     /// The step each index was found at. A step is reached again where a child plan is held by more
     /// than one step, and is not walked twice.
     UnorderedMapWithMemoryTracking<UInt64, const IQueryPlanStep *> step_by_index;
@@ -82,8 +39,18 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         to_visit.pop_back();
 
         auto & step = *frame.node->step;
+        const UInt64 index = step.getStepIndex();
 
-        const auto [it, inserted] = step_by_index.try_emplace(step.getStepIndex(), &step);
+        /// A step built outside of any query has no identity to key it by: it would collide with
+        /// every other such step.
+        if (index == PlanStepIndex::NONE)
+        {
+            PlanWalk empty;
+            empty.has_step_without_index = true;
+            return empty;
+        }
+
+        const auto [it, inserted] = step_by_index.try_emplace(index, &step);
         if (!inserted)
         {
             if (it->second == &step)
@@ -96,11 +63,28 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         }
 
         VisitedStep visited;
-        visited.id = step.getStepIndex();
+        visited.id = index;
         visited.step = &step;
         visited.owning_plan = frame.owning_plan;
 
-        for_each_child(frame, [&](const Frame & child) { attach(visited, child); });
+        for (auto * child : frame.node->children)
+        {
+            if (!child || !child->step)
+                continue;
+            visited.children.push_back(child->step->getStepIndex());
+            to_visit.push_back({frame.owning_plan, child});
+        }
+
+        for (auto * child_plan : only_built_child_plans ? step.getBuiltChildPlans() : step.getChildPlans(/*for_explain=*/ false))
+        {
+            if (!child_plan || !child_plan->isInitialized())
+                continue;
+            auto * child_root = child_plan->getRootNode();
+            if (!child_root || !child_root->step)
+                continue;
+            visited.children.push_back(child_root->step->getStepIndex());
+            to_visit.push_back({child_plan, child_root});
+        }
 
         walk.steps.push_back(std::move(visited));
     }

@@ -56,7 +56,7 @@ void onThreadWithoutGroup(Build && build)
 
 /// Two connected steps built outside of any query both take `NONE`. Keyed by it, the child
 /// resolved to the parent, and the post-order traversal of the snapshot never ended.
-TEST(PlanWalk, StepsBuiltOutsideOfQueryAreLeftOut)
+TEST(PlanWalk, StepsBuiltOutsideOfQueryEmptyTheWalk)
 {
     QueryPlan plan;
     onThreadWithoutGroup([&](const auto &)
@@ -72,41 +72,28 @@ TEST(PlanWalk, StepsBuiltOutsideOfQueryAreLeftOut)
     const PlanWalk walk = PlanWalk::of(plan, /*only_built_child_plans=*/ true);
     EXPECT_TRUE(walk.steps.empty());
     EXPECT_EQ(walk.plan, nullptr);
-    EXPECT_EQ(walk.steps_without_index, 1);
+    EXPECT_TRUE(walk.has_step_without_index);
 
     const auto snapshot = PlanAnalysisSnapshot::capture(walk);
     EXPECT_TRUE(snapshot.stepsInPostOrder().empty());
 }
 
-/// A step without an identity between two that have one: the walk leaves it out and attaches the
-/// step below it to the step above it.
-TEST(PlanWalk, StepBuiltOutsideOfQueryIsBypassed)
+/// One step without an identity below a step that has one is enough to empty the walk.
+TEST(PlanWalk, StepBuiltOutsideOfQueryBelowTheRootEmptiesTheWalk)
 {
     QueryPlan plan;
     onThreadWithoutGroup([&](const auto & with_group)
     {
         const auto header = makeHeader();
-        plan.addStep(with_group([&] { return QueryPlanStepPtr(std::make_unique<ReadNothingStep>(header)); }));
-        plan.addStep(makeLimit(header));
+        plan.addStep(std::make_unique<ReadNothingStep>(header));
         plan.addStep(with_group([&] { return makeLimit(header); }));
     });
 
-    const auto * top = plan.getRootNode();
-    const auto * middle = top->children.at(0);
-    const auto * bottom = middle->children.at(0);
-    ASSERT_NE(top->step->getStepIndex(), PlanStepIndex::NONE);
-    ASSERT_EQ(middle->step->getStepIndex(), PlanStepIndex::NONE);
-    ASSERT_NE(bottom->step->getStepIndex(), PlanStepIndex::NONE);
+    ASSERT_NE(plan.getRootNode()->step->getStepIndex(), PlanStepIndex::NONE);
+    ASSERT_EQ(plan.getRootNode()->children.at(0)->step->getStepIndex(), PlanStepIndex::NONE);
 
     const PlanWalk walk = PlanWalk::of(plan, /*only_built_child_plans=*/ true);
-    ASSERT_EQ(walk.steps.size(), 2);
-    EXPECT_EQ(walk.steps_without_index, 1);
-    EXPECT_EQ(walk.root_id, top->step->getStepIndex());
-    EXPECT_EQ(walk.steps[0].id, top->step->getStepIndex());
-    EXPECT_EQ(walk.steps[0].children, VectorWithMemoryTracking<UInt64>{bottom->step->getStepIndex()});
-    EXPECT_EQ(walk.steps[1].id, bottom->step->getStepIndex());
-    EXPECT_TRUE(walk.steps[1].children.empty());
-
-    const auto snapshot = PlanAnalysisSnapshot::capture(walk);
-    EXPECT_EQ(snapshot.stepsInPostOrder().size(), 2);
+    EXPECT_TRUE(walk.steps.empty());
+    EXPECT_EQ(walk.plan, nullptr);
+    EXPECT_TRUE(walk.has_step_without_index);
 }

@@ -332,7 +332,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         try
         {
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
-            chassert(walk.steps_without_index == 0, "a step of a query was built outside of its thread group");
+            chassert(!walk.has_step_without_index, "a step of a query was built outside of its thread group");
 
             /// An empty walk has nothing to key the plan by: see `PlanWalk`.
             if (walk.plan)

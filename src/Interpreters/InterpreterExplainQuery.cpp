@@ -1561,7 +1561,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 planning_ns += watch.elapsed();
 
                 const PlanWalk walk = PlanWalk::of(plan, /*only_built_child_plans=*/ false);
-                chassert(walk.steps_without_index == 0, "a step of a query was built outside of its thread group");
+                chassert(!walk.has_step_without_index, "a step of a query was built outside of its thread group");
                 step_profiler = std::make_shared<StepProfiler>(walk, analyzed.time);
                 pipeline.setStepProfiler(step_profiler);
 
