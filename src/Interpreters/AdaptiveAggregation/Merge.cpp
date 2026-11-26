@@ -1115,7 +1115,7 @@ void Aggregator::executeStagedArgumentRecords(
             const size_t state_offset = offsets_of_aggregate_states[aggregate];
             for (size_t row = 0; row < rows; ++row)
                 getCountState(places[row] + state_offset)
-                    += argument_layout.multiplicityOf(records.ptrs[row] + Record::fixed_arguments_offset) - 1;
+                    += argument_layout.multiplicityOf(records[row]) - 1;
         }
     }
 }

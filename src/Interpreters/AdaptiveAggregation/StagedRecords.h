@@ -61,24 +61,20 @@ struct AdaptiveArgumentLayout
         DataTypePtr type;
     };
 
-    /// Where a record with its fixed-size arguments at `fixed_arguments` keeps the number of rows it stands
-    /// for, as a `UInt32`, and the reading and writing of that number. The caller guarantees that the records
-    /// carry a multiplicity.
-    char * multiplicityPosition(char * fixed_arguments) const { return fixed_arguments + *multiplicity_offset; }
-    UInt32 multiplicityOf(const char * fixed_arguments) const
+    /// Where an argument record keeps the number of rows it stands for, as a `UInt32`, and the reading and
+    /// writing of that number. The caller guarantees that the records carry a multiplicity.
+    [[nodiscard]] char * multiplicityPosition(char * record) const { return record + *multiplicity_offset; }
+    [[nodiscard]] UInt32 multiplicityOf(const char * record) const
     {
-        return unalignedLoad<UInt32>(fixed_arguments + *multiplicity_offset);
+        return unalignedLoad<UInt32>(record + *multiplicity_offset);
     }
-    void setMultiplicity(char * fixed_arguments, UInt32 rows) const
-    {
-        unalignedStore<UInt32>(multiplicityPosition(fixed_arguments), rows);
-    }
+    void setMultiplicity(char * record, UInt32 rows) const { unalignedStore<UInt32>(multiplicityPosition(record), rows); }
 
     std::vector<FixedField> fixed_fields;
     std::vector<Field> variable_fields;
     /// When a record may stand for several rows, as the record of a row selection with a `count` among the
     /// selecting aggregates (see `AdaptiveRowSelection`): where it keeps that number, as a `UInt32` after the
-    /// fixed-size arguments.
+    /// fixed-size arguments, which open the record.
     std::optional<size_t> multiplicity_offset;
     /// Whether every variable-size argument, if any, is staged as a `String` (see `isStagedString`), so that a record's
     /// size follows from the lengths in it (see `StagedFixedKeyStringArgumentRecord` and
