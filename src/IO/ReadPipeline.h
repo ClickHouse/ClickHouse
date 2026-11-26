@@ -167,6 +167,11 @@ public:
     /// read from the encryption header. It must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
+    /// The end of the first range the caller will read, in the coordinates of the decrypted file. The decryption
+    /// stage reads the header before the caller sets its range, so it bounds the source with this position first:
+    /// otherwise the source request starts unbounded and is reopened when the caller sets the range.
+    void setInitialReadUntilPosition(size_t position) { initial_read_until_position = position; }
+
     /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit. When it is
     /// not set, the executor uses the stateless one-shot path.
     void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
@@ -243,6 +248,7 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
+    std::optional<size_t> initial_read_until_position;
     /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
     std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 
