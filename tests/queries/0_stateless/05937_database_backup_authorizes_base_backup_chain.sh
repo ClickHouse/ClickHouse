@@ -15,10 +15,12 @@ db="${CLICKHOUSE_DATABASE}"
 user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 cluster="ON CLUSTER test_shard_localhost"
 base="File('${CLICKHOUSE_TEST_UNIQUE_NAME}/base')"
+middle="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}/middle')"
 outer="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}/outer')"
 emb="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}/emb')"
 
-# `outer` gets its own `.sql` (no comment), so only the data part, stored in `base` alone, is read from the base.
+# `outer` -> `middle` -> `base`: each level gets its own `.sql` (its own comment), so only the data part, stored in
+# `base` alone, is read from the base, through `middle`.
 # `emb` holds only the definition of a `Backup` database over `outer`.
 ${CLICKHOUSE_CLIENT} -q "
 DROP USER IF EXISTS ${user};
@@ -34,8 +36,10 @@ GRANT SELECT ON ${db}_d4.* TO ${user};
 CREATE TABLE ${db}.t (x UInt64) ENGINE = MergeTree ORDER BY x COMMENT 'level 0';
 INSERT INTO ${db}.t VALUES (7);
 BACKUP TABLE ${db}.t TO ${base} FORMAT Null;
+ALTER TABLE ${db}.t MODIFY COMMENT 'level 1';
+BACKUP TABLE ${db}.t TO ${middle} SETTINGS base_backup = ${base} FORMAT Null;
 ALTER TABLE ${db}.t MODIFY COMMENT '';
-BACKUP TABLE ${db}.t TO ${outer} SETTINGS base_backup = ${base} FORMAT Null;
+BACKUP TABLE ${db}.t TO ${outer} SETTINGS base_backup = ${middle} FORMAT Null;
 CREATE DATABASE ${db}_emb ENGINE = Backup('${db}', ${outer});
 BACKUP DATABASE ${db}_emb TO ${emb} FORMAT Null;
 DROP DATABASE ${db}_emb;
@@ -64,7 +68,7 @@ function create_all()
 echo '--- without READ ON FILE, the base backup itself is refused'
 run created "CREATE DATABASE ${db}_direct ENGINE = Backup('${db}', ${base})"
 
-echo '--- without READ ON FILE, so is a backup whose base it is: CREATE, CREATE ON CLUSTER, RESTORE, RESTORE ON CLUSTER'
+echo '--- without READ ON FILE, so is a backup two levels above it: CREATE, CREATE ON CLUSTER, RESTORE, RESTORE ON CLUSTER'
 create_all
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.databases WHERE name IN ('${db}_d1', '${db}_d2', '${db}_d3', '${db}_d4')"
 

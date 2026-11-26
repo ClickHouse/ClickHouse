@@ -1,6 +1,6 @@
 --- without READ ON FILE, the base backup itself is refused
 Code: 497 grant READ ON FILE
---- without READ ON FILE, so is a backup whose base it is: CREATE, CREATE ON CLUSTER, RESTORE, RESTORE ON CLUSTER
+--- without READ ON FILE, so is a backup two levels above it: CREATE, CREATE ON CLUSTER, RESTORE, RESTORE ON CLUSTER
 Code: 497 grant READ ON FILE
 Code: 497 grant READ ON FILE
 Code: 497 grant READ ON FILE
