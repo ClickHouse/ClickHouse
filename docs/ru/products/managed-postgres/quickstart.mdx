@@ -7,8 +7,6 @@ keywords: ['managed postgres', 'быстрый старт', 'начало раб
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
 import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -17,14 +15,12 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 
 <Visibility for="humans">
   <View title="Интерфейс Cloud">
-    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
-
     ClickHouse Managed Postgres — это Postgres корпоративного уровня на базе NVMe-хранилища, обеспечивающий производительность до 10 раз выше для дисковых рабочих нагрузок по сравнению с сетевыми хранилищами, такими как EBS. Это руководство по быстрому старту состоит из двух частей:
 
     * **Часть 1:** Начало работы с NVMe Postgres и оценка его производительности
     * **Часть 2:** Откройте для себя Real-time аналитику благодаря интеграции с ClickHouse
 
-    ClickHouse Managed Postgres в настоящее время доступен в AWS в нескольких регионах и находится в стадии публичной бета-версии. Поддержка GCP находится в статусе закрытой предварительной версии. Записаться в лист ожидания закрытой предварительной версии для GCP можно [здесь](https://clickhouse.com/cloud/postgres#gcp-waitlist).
+    ClickHouse Managed Postgres в настоящее время доступен в AWS в нескольких регионах. Поддержка GCP находится в статусе закрытой предварительной версии. Записаться в лист ожидания закрытой предварительной версии для GCP можно [здесь](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
     **В этом руководстве по быстрому старту вы:**
 
@@ -34,53 +30,41 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
     * Реплицируйте данные в ClickHouse для Real-time аналитики
     * Выполняйте запросы к ClickHouse напрямую из Postgres с помощью `pg_clickhouse`
 
-## Часть 1: Начало работы с NVMe Postgres
+## Часть 1: Начало работы с NVMe Postgres {#part-1}
 
-### Создание базы данных
+### Создание базы данных {#create-postgres-database}
 
     Чтобы создать новый сервис ClickHouse Managed Postgres, нажмите кнопку **New service** в списке сервисов Cloud Console. После этого вы сможете выбрать Postgres в качестве типа базы данных.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Создайте сервис ClickHouse Managed Postgres](/images/managed-postgres/create-service.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Создайте сервис ClickHouse Managed Postgres](/images/managed-postgres/create-service.webp)
+      </Frame>
     </div>
 
     Введите имя для вашего инстанса базы данных и нажмите **Create service**. Вы будете перенаправлены на страницу обзора.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Обзор ClickHouse Managed Postgres](/images/managed-postgres/overview.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Обзор ClickHouse Managed Postgres](/images/managed-postgres/overview.webp)
+      </Frame>
     </div>
 
     Ваш инстанс ClickHouse Managed Postgres будет подготовлен и готов к использованию в течение 3–5 минут.
 
-### Подключитесь к базе данных
+### Подключитесь к базе данных {#connect}
 
     На боковой панели слева вы увидите [кнопку **Connect**](/ru/products/managed-postgres/connection). Нажмите на неё, чтобы просмотреть сведения о подключении и строки подключения в различных форматах.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Модальное окно Connect для ClickHouse Managed Postgres](/images/managed-postgres/connect-modal.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Модальное окно Connect для ClickHouse Managed Postgres](/images/managed-postgres/connect-modal.webp)
+      </Frame>
     </div>
 
     Скопируйте строку подключения `psql` и подключитесь к своей базе данных. Вы также можете использовать любой клиент, совместимый с Postgres, например DBeaver, или любую библиотеку приложения.
 
-### Оцените производительность NVMe
+### Оцените производительность NVMe {#nvme-performance}
 
     Давайте посмотрим, как проявляется производительность NVMe на практике. Сначала включите замер времени в psql, чтобы оценить время выполнения запроса:
 
@@ -178,7 +162,7 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
         ) AS names;
     ```
 
-### Выполнение запросов к данным
+### Выполнение запросов к данным {#run-queries}
 
     Теперь выполним несколько запросов, чтобы оценить скорость отклика Postgres с NVMe-хранилищем.
 
@@ -253,9 +237,15 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
       Перейдите к части 2, чтобы узнать, как нативная интеграция ClickHouse может значительно ускорить вашу аналитику.
     </Info>
 
+    <Tip>
+      **Демонстрационные наборы данных**
+
+      Чтобы опробовать Postgres на реальных данных, выберите **Data sources** на левой боковой панели вашего сервиса, затем нажмите **Add sample data**. Выберите набор данных (Cell towers, NYC taxi или UK property prices), укажите целевую базу данных и нажмите **Import dataset**.
+    </Tip>
+
     ***
 
-## Часть 2: Добавление аналитики в реальном времени с помощью ClickHouse
+## Часть 2: Добавление аналитики в реальном времени с помощью ClickHouse {#part-2}
 
     Postgres отлично справляется с транзакционными рабочими нагрузками (OLTP), тогда как ClickHouse создан специально для аналитических запросов (OLAP) над большими наборами данных. Интегрируя обе системы, вы получаете лучшее из обоих миров:
 
@@ -264,18 +254,14 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 
     В этом разделе описано, как реплицировать данные из Postgres в ClickHouse и выполнять к ним запросы.
 
-### Настройка интеграции с ClickHouse
+### Настройка интеграции с ClickHouse {#setup-integrate-clickhouse}
 
     Теперь, когда в Postgres есть таблицы и данные, выполним репликацию таблиц в ClickHouse для аналитики. Начнём с нажатия на **Sync to ClickHouse** на боковой панели. Затем нажмите **Replicate data in ClickHouse**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Интеграция ClickHouse Managed Postgres не настроена](/images/managed-postgres/integration-landing.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Интеграция ClickHouse Managed Postgres не настроена](/images/managed-postgres/integration-landing.webp)
+      </Frame>
     </div>
 
     В следующей форме вы можете ввести имя для интеграции и выбрать существующий экземпляр ClickHouse для репликации. Если у вас ещё нет экземпляра ClickHouse, вы можете создать его прямо из этой формы.
@@ -287,13 +273,9 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
     </Info>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Форма интеграции ClickHouse Managed Postgres](/images/managed-postgres/postgres-analytics-form.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Форма интеграции ClickHouse Managed Postgres](/images/managed-postgres/postgres-analytics-form.webp)
+      </Frame>
     </div>
 
     Нажмите **Далее**, чтобы перейти к выбору таблицы. Здесь вам нужно:
@@ -303,18 +285,14 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
     * Нажмите **Replicate data to ClickHouse**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Выбор таблиц ClickHouse Managed Postgres](/images/managed-postgres/table-picker.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Выбор таблиц ClickHouse Managed Postgres](/images/managed-postgres/table-picker.webp)
+      </Frame>
     </div>
 
     Начнётся процесс репликации, и вы будете перенаправлены на страницу обзора интеграции. Поскольку это первая интеграция, первоначальная настройка инфраструктуры может занять 2–3 минуты. Тем временем давайте посмотрим новое расширение **pg&#95;clickhouse**.
 
-### Запросы к ClickHouse из Postgres
+### Запросы к ClickHouse из Postgres {#pg-clickhouse-extension}
 
     Расширение `pg_clickhouse` позволяет выполнять запросы к данным ClickHouse напрямую из Postgres с использованием стандартного SQL. Это означает, что ваше приложение может использовать Postgres как единый уровень запросов как для транзакционных, так и для аналитических данных. Подробнее см. в [полной документации](/ru/products/managed-postgres/extensions/pg_clickhouse/introduction).
 
@@ -334,13 +312,9 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
     Замените `<clickhouse_cloud_host>` на имя хоста вашего ClickHouse, а `<database_name>` — на базу данных, выбранную при настройке репликации. Имя хоста можно найти в вашем сервисе ClickHouse, нажав **Connect** на боковой панели.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Получение хоста ClickHouse](/images/managed-postgres/get-clickhouse-host.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Получение хоста ClickHouse](/images/managed-postgres/get-clickhouse-host.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -373,33 +347,25 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
     \det+ organization.*
     ```
 
-### Аналитика в действии
+### Аналитика в действии {#analytics-after-integration}
 
     Вернитесь на страницу интеграции. Вы должны увидеть, что начальная репликация завершена. Нажмите на название интеграции, чтобы просмотреть подробности.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Список аналитики в ClickHouse Managed Postgres](/images/managed-postgres/analytics-list.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Список аналитики в ClickHouse Managed Postgres](/images/managed-postgres/analytics-list.webp)
+      </Frame>
     </div>
 
     Нажмите на имя сервиса, чтобы открыть консоль ClickHouse и просмотреть реплицированные таблицы.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Таблицы ClickHouse Managed Postgres, реплицированные в ClickHouse](/images/managed-postgres/replicated-tables.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Таблицы ClickHouse Managed Postgres, реплицированные в ClickHouse](/images/managed-postgres/replicated-tables.webp)
+      </Frame>
     </div>
 
-### Сравнение производительности Postgres и ClickHouse
+### Сравнение производительности Postgres и ClickHouse {#performance-comparison}
 
     Теперь выполним несколько аналитических запросов и сравним производительность Postgres и ClickHouse. Обратите внимание, что реплицированные таблицы используют соглашение об именовании `public_<table_name>`.
 
@@ -473,7 +439,7 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 
     | Запрос                                         | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | Ускорение |
     | ---------------------------------------------- | --------------- | ---------------------------------- | --------- |
-    | Топ пользователей (5 агрегаций)                | 555 ms          | 164 мс                             | 3.4x      |
+    | Топ пользователей (5 агрегаций)                | 555 мс          | 164 мс                             | 3.4x      |
     | Вовлечённость пользователей (JOIN + агрегации) | 1,246 мс        | 170 мс                             | 7.3x      |
 
     <Tip>
@@ -484,7 +450,7 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
       Время выполнения запросов зависит от размера инстанса, сетевой задержки между сервисами, характеристик данных и текущей нагрузки.
     </Tip>
 
-## Очистка
+## Очистка {#cleanup}
 
     Чтобы удалить ресурсы, созданные в рамках этого краткого руководства:
 
@@ -493,8 +459,6 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
   </View>
 
   <View title="CLI">
-    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
-
     Вы можете пройти этот путь самостоятельно, автоматизировать его с помощью скрипта или передать ИИ-агенту. Для версии в консоли переключитесь в режим **интерфейса Cloud**.
 
     <QuickstartCLI />

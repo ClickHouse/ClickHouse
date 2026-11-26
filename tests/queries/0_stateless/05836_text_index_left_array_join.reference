@@ -1,0 +1,29 @@
+-- equals
+1
+1
+['7']
+['7']
+-- in
+1
+1
+1
+['130','7']
+-- transform_null_in
+1
+['130','7']
+-- the filter accepts the empty string of an empty array: the index is not used
+0
+10
+0
+11
+0
+-- FixedString: the index has the zero bytes of an element, but not of an empty array
+1
+0
+10
+10
+0
+11
+-- an index on the padded array
+1
+1

@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT --query "
     JOIN (SELECT b1, b2, b3 FROM t_relation_stats_final_r FINAL) AS r
         ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
     SETTINGS
-        join_algorithm = 'ie_join',
+        join_algorithm = 'inequality',
         join_use_nulls = 0,
         use_statistics = 1,
         query_plan_optimize_join_order_limit = 0,

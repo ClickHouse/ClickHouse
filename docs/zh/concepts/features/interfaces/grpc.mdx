@@ -6,9 +6,7 @@ title: 'gRPC 接口'
 doc_type: 'reference'
 ---
 
-<div id="grpc-interface-introduction">
-  ## 简介
-</div>
+## 简介 {#grpc-interface-introduction}
 
 ClickHouse 支持 [gRPC](https://grpc.io/) 接口。gRPC 是一个基于 HTTP/2 和 [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers) 的开源远程过程调用系统。ClickHouse 中的 gRPC 实现支持：
 
@@ -23,9 +21,7 @@ ClickHouse 支持 [gRPC](https://grpc.io/) 接口。gRPC 是一个基于 HTTP/2 
 
 该接口的规范可参见 [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)。
 
-<div id="grpc-interface-configuration">
-  ## gRPC 配置
-</div>
+## gRPC 配置 {#grpc-interface-configuration}
 
 如需使用 gRPC 接口，请在主[服务器配置](/zh/concepts/features/configuration/server-config/configuration-files)中设置 `grpc_port`。其他配置选项请参见下面的示例：
 
@@ -34,36 +30,31 @@ ClickHouse 支持 [gRPC](https://grpc.io/) 接口。gRPC 是一个基于 HTTP/2 
     <grpc>
         <enable_ssl>false</enable_ssl>
 
-        <!-- 以下两个文件仅在启用 SSL 时使用 -->
+        <!-- The following two files are used only if SSL is enabled -->
         <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
         <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
 
-        <!-- 服务器是否向客户端请求证书 -->
+        <!-- Whether server requests client for a certificate -->
         <ssl_require_client_auth>false</ssl_require_client_auth>
 
-        <!-- 以下文件仅在 ssl_require_client_auth=true 时使用 -->
+        <!-- The following file is used only if ssl_require_client_auth=true -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- 默认压缩算法（当客户端未指定其他算法时使用，参见 QueryInfo 中的 result_compression）。
-             支持的算法：none、deflate、gzip、stream_gzip -->
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
         <compression>deflate</compression>
 
-        <!-- 默认压缩级别（当客户端未指定其他级别时使用，参见 QueryInfo 中的 result_compression）。
-             支持的级别：none、low、medium、high -->
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
         <compression_level>medium</compression_level>
 
-        <!-- 发送/接收消息的大小限制（字节）。-1 表示不限制 -->
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-
-        <!-- 如需获取详细日志，请启用此选项 -->
-        <verbose_logs>false</verbose_logs>
     </grpc>
 ```
 
-<div id="grpc-client">
-  ## 内置客户端
-</div>
+## 内置客户端 {#grpc-client}
 
 你可以根据提供的[规范](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)，使用任何 gRPC 支持的编程语言编写客户端。
 或者，也可以使用内置的 Python 客户端。它位于仓库中的 [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py)。内置客户端需要 [grpcio 和 grpcio-tools](https://grpc.io/docs/languages/python/quickstart) 这两个 Python 模块。

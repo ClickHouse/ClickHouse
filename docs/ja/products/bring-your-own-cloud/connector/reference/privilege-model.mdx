@@ -1,7 +1,7 @@
 ---
 title: '権限モデル'
 sidebarTitle: '権限モデル'
-description: 'ClickHouse Connector に何ができて何ができないのかを正確に解説します。アイデンティティ、送信接続、ClickHouse の grants、Kubernetes RBAC、クラウドへのアクセス、アトリビューション、データ最小化について説明します'
+description: 'ClickHouse Connector に何ができて何ができないのかを正確に解説します。アイデンティティ、送信接続、ClickHouse の 権限、Kubernetes RBAC、クラウドへのアクセス、アトリビューション、データ最小化について説明します'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'privilege', 'security', 'managed mode', 'executor']
 doc_type: 'reference'
 ---
@@ -15,22 +15,18 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 ## アイデンティティ {#identities}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
+  </Frame>
 </div>
 
 * **コネクタの mTLS クライアント証明書**は、組織 ID をコモンネームとして持ち、すべてのデーモンをコネクタエンドポイントに対して認証します。`clicklink clctl instances create` も、エンドポイントを呼び出す際に同じ証明書と HMAC キーを使用します。
-* **`pcm_scraper` と `pcm_troubleshooter`** は、scraper と troubleshooter が接続する際に使用する読み取り専用の ClickHouse ユーザーです。executor には ClickHouse ユーザーがありません。
-* **Troubleshooter の ServiceAccount** は、プロビジョニング済みのデプロイメントごとに 1 つ存在し、サポートセッションで利用できる読み取り専用の Kubernetes ビューを提供します。
-* **`pcm-executor`** は、マネージドサービスのライフサイクルを管理する executor の Kubernetes ServiceAccount です。ValidatingAdmissionPolicy により、その書き込みはサービスのネームスペースに限定されます。
+* **`pcm_scraper` と `pcm_troubleshooter`** は、スクレイパー と トラブルシューティングツール が接続する際に使用する読み取り専用の ClickHouse ユーザーです。executor には ClickHouse ユーザーがありません。
+* **トラブルシューティングツール の ServiceAccount** は、プロビジョニング済みのデプロイメントごとに 1 つ存在し、サポートセッションで利用できる読み取り専用の Kubernetes ビューを提供します。
+* **`pcm-executor`** は、マネージドサービスのライフサイクルを管理する executor の Kubernetes ServiceAccount です。ValidatingAdmissionPolicy により、その書き込みはサービスの名前空間に限定されます。
 * **`pcm-platform`** は、プラットフォーム更新に使用される executor のアイデンティティです。`clicklink clctl platform approve` を実行すると有効期間 2 時間のトークンが発行され、自動更新されることはありません。承認と承認の間、executor はプラットフォーム層への書き込みアクセスを持ちません。
 * **サービスごとの IAM ロール** (デフォルトでは `CH-S3-<service>-<region>-00-Role`) は、`clicklink clctl executor prepare` がお客様の認証情報を用いて作成します。このロールは当該サービスのデータおよびバックアップ用バケットにスコープが限定され、当該サービスの Kubernetes ServiceAccount からのみ信頼されるため、executor も ClickHouse もこれを assume できません。
-* **コネクタ EC2 VM のインスタンスプロファイル**は、プラットフォームへの直接アクセスのために、チャートのログインとイメージチェックの両方で、お客様の環境の読み取り専用 ECR プラーロールを assume します。承認 CLI も同じインスタンスプロファイルの経路を使用します。workstation の AWS プロファイルや SSO 認証情報がこれを置き換えることはありません。その他の ECR チャートレジストリでは、ambient な AWS 認証情報が使用されます。イメージのプルは、お客様のノード上でそれぞれのプルロールのもとで実行されます。executor は、お客様のバケットや IAM に対する認証情報を一切保持せず、S3 や IAM の呼び出しも行いません。[レジストリ認証情報](/ja/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)を参照してください。
+* **コネクタ EC2 VM のインスタンスプロファイル**は、プラットフォームへの直接アクセスのために、チャートのログインとイメージチェックの両方で、お客様の環境の読み取り専用 ECR プラーロールを assume します。承認 CLI も同じインスタンスプロファイルの経路を使用します。workstation の AWS プロファイルや SSO 認証情報がこれを置き換えることはありません。その他の ECR チャートレジストリでは、実行環境から暗黙的に取得されるAWS認証情報が使用されます。イメージのプルは、お客様のノード上でそれぞれのプルロールのもとで実行されます。executor は、お客様のバケットや IAM に対する認証情報を一切保持せず、S3 や IAM の呼び出しも行いません。[レジストリ認証情報](/ja/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)を参照してください。
 * **お客様自身の認証情報**が、あらゆる権限を適用します。具体的には、`init --managed` における executor のアクセス権限、`prepare` におけるバケットとロール、`approve` における各プラットフォーム更新の permission に関する部分、そして `teardown` におけるクリーンアップです。
 
 ## コネクタでできること {#what-the-connector-can-do}

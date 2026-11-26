@@ -8,11 +8,9 @@ doc_type: 'guide'
 
 La prise en charge de RISC-V par ClickHouse est expérimentale. Il n’est pas possible d’activer toutes les fonctionnalités.
 
-<div id="build-clickhouse">
-  ## Compiler ClickHouse
-</div>
+## Compiler ClickHouse {#build-clickhouse}
 
-Pour effectuer une compilation croisée pour RISC-V depuis une machine non RISC-V :
+Pour effectuer une compilation croisée pour RISC-V depuis une machine non RISC-V :
 
 ```bash
 cd ClickHouse
@@ -21,4 +19,4 @@ cmake . -Bbuild-riscv64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-ri
 ninja -C build-riscv64
 ```
 
-Le binaire obtenu ne fonctionnera que sous Linux sur une architecture CPU RISC-V 64.
+Le binaire obtenu ne fonctionnera que sous Linux sur une architecture CPU RISC-V 64.
