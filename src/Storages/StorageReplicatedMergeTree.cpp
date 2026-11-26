@@ -9835,6 +9835,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 
     std::deque<BatchInFlight> in_flight;
     size_t num_deleted = 0;
+    size_t num_failed = 0;
 
     auto wait_oldest = [&]
     {
@@ -9851,14 +9852,9 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         if (!Coordination::isUserError(response.error))
             throw zkutil::KeeperException(response.error);
 
-        /// Some node is already removed (e.g. by the cleanup thread), so the whole batch failed. Remove the rest one by one.
-        std::vector<zkutil::ZooKeeper::FutureRemove> removals;
-        removals.reserve(batch.ops.size());
-        for (const auto & op : batch.ops)
-            removals.push_back(zookeeper.asyncTryRemove(op->getPath()));
-        for (auto & removal : removals)
-            if (removal.get().error == Coordination::Error::ZOK)
-                ++num_deleted;
+        size_t failed_op_index = zkutil::getFailedOpIndex(response.error, response.responses);
+        LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", batch.ops[failed_op_index]->getPath(), response.error);
+        num_failed += batch.ops.size();
     };
 
     for (size_t batch_start = 0; batch_start < delete_requests.size(); batch_start += zkutil::MULTI_BATCH_SIZE)
@@ -9876,8 +9872,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 
     deduplication_hashes_cache.truncate();
 
-    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
-              num_deleted, partition_id, min_block_num, max_block_num);
+    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}], {} deletions failed",
+              num_deleted, partition_id, min_block_num, max_block_num, num_failed);
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(
