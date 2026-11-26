@@ -1,4 +1,5 @@
 import os
+import re
 import shlex
 import time
 import uuid
@@ -171,6 +172,16 @@ def test_empty_view_keeps_its_schedule_across_restart():
         pytest.param(
             "format version: 1\nlast_completed_timeslot: 1758240000\n", id="truncated"
         ),
+        # Well-formed files with one value outside the scheduler's range.
+        pytest.param(("attempt_number", "-1"), id="negative_attempt_number"),
+        pytest.param(
+            ("last_completed_timeslot", "9223372036854775807"),
+            id="out_of_range_timeslot",
+        ),
+        pytest.param(
+            ("last_success_end_time_ns", "9223372036854775807"),
+            id="out_of_range_end_time",
+        ),
     ],
 )
 def test_unusable_persisted_refresh_state_stops_the_view(payload):
@@ -183,6 +194,15 @@ def test_unusable_persisted_refresh_state_stops_the_view(payload):
         assert len(state_files) == 1
 
         node.stop_clickhouse()
+        if isinstance(payload, tuple):
+            field, value = payload
+            payload, replaced = re.subn(
+                rf"^{field}: .*$",
+                f"{field}: {value}",
+                read_state_file(state_files[0]),
+                flags=re.M,
+            )
+            assert replaced == 1, payload
         node.exec_in_container(
             ["bash", "-c", f"printf '%s' {shlex.quote(payload)} > {state_files[0]}"]
         )

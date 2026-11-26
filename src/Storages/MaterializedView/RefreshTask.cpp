@@ -2646,6 +2646,16 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
     optional_field("refresh_running", refresh_running);
 
     optional_field("last_success_end_time_ns", last_success_end_time);
+
+    /// The timeslot is widened to microseconds; attempt_number and last_success_end_time grow by one per refresh.
+    const Int64 timeslot = last_completed_timeslot.time_since_epoch().count();
+    const Int64 end_time_ns = last_success_end_time.time_since_epoch().count();
+    constexpr Int64 max_counter = std::numeric_limits<Int64>::max() / 2;
+    if (attempt_number < 0 || attempt_number > max_counter || end_time_ns > max_counter
+        || timeslot < -max_last_attempt_seconds || timeslot > max_last_attempt_seconds)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "RMV coordination znode has out-of-range values: attempt_number {}, last_completed_timeslot {}, last_success_end_time_ns {}",
+            attempt_number, timeslot, end_time_ns);
     optional_field("last_success_dependencies", last_success_dependencies);
     String cursor_serialized;
     optional_field("cursor", cursor_serialized);
