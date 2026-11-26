@@ -596,6 +596,8 @@ private:
             depth++;
             String res = fmt::format("(SELECT {} FROM {}{}){}", fmt::join(t.cols, ", "), t.name(), where(t, "", unused), as);
             depth--;
+            /// The filter can have sources of its own, which set it again
+            source_is_table = false;
             return res;
         }
         if (pick < 88)
