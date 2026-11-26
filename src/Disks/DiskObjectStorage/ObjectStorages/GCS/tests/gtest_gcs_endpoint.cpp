@@ -4,6 +4,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #include <Common/Exception.h>
+#include <Poco/URI.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -55,6 +56,16 @@ TEST(GCSEndpoint, CanonicalHostWithCustomPortIsKeptAsOverride)
     EXPECT_EQ(p.bucket, "my-bucket");
     EXPECT_EQ(p.key_prefix, "a/b/");
     EXPECT_EQ(p.endpoint_override, "https://storage.googleapis.com:4443");
+}
+
+TEST(GCSEndpoint, Ipv6LiteralHostKeepsBrackets)
+{
+    auto p = parse("http://[::1]:4443/my-bucket/a/b");
+    EXPECT_EQ(p.bucket, "my-bucket");
+    EXPECT_EQ(p.key_prefix, "a/b/");
+    EXPECT_EQ(p.endpoint_override, "http://[::1]:4443");
+    /// The override is a valid URL again, e.g. for the proxy resolution of the disk, which parses it.
+    EXPECT_NO_THROW(Poco::URI{p.endpoint_override});
 }
 
 TEST(GCSEndpoint, BucketOnlyGetsEmptyPrefix)

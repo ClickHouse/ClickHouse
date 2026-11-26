@@ -171,8 +171,9 @@ void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_pre
         static const String default_suffix = String(".") + DEFAULT_GCS_HOST;
         if (!isDefaultGCSEndpoint(endpoint))
         {
-            /// A non-default endpoint means an emulator / private endpoint: keep it as an override.
-            endpoint_override = uri.getScheme() + "://" + host;
+            /// A non-default endpoint means an emulator / private endpoint: keep it as an override. `getHost` returns an
+            /// IPv6 literal without its brackets, which the URL needs again (`http://[::1]:4443`).
+            endpoint_override = uri.getScheme() + "://" + (host.contains(':') ? "[" + host + "]" : host);
             if (uri.getPort() != 0)
                 endpoint_override += ":" + std::to_string(uri.getPort());
         }
