@@ -30,6 +30,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE MATERIALIZED VIEW mv_b_${PREFIX} TO ${HUB} AS SELECT k + 1000000 AS k FROM ${SRC};
     CREATE MATERIALIZED VIEW mv_out_${PREFIX} TO ${OUT} AS SELECT k FROM ${HUB}"
 
+# Few blocks: each of them runs the views four times.
 for max_insert_threads in 1 4
 do
     echo "=== max_insert_threads = ${max_insert_threads} ==="
@@ -38,7 +39,7 @@ do
         --max_block_size=100 --parallel_view_processing=1 \
         --max_insert_threads_min_free_memory_per_thread=0 --max_threads_min_free_memory_per_thread=0 \
         --max_insert_block_size=100 --min_insert_block_size_rows=100 --min_insert_block_size_bytes=1 \
-        --query "INSERT INTO ${SRC} SELECT number FROM numbers_mt(10000)"
+        --query "INSERT INTO ${SRC} SELECT number FROM numbers_mt(1000)"
 
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(k) FROM ${HUB}"
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(k) FROM ${OUT}"

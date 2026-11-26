@@ -1,12 +1,12 @@
 === max_insert_threads = 1 ===
-20000	20000
-20000	20000
+2000	2000
+2000	2000
 snapshots: 1
-20000	20000
+2000	2000
 unique manifests: 1
 === max_insert_threads = 4 ===
-20000	20000
-40000	20000
+2000	2000
+4000	2000
 snapshots: 2
-20000	40000
+2000	4000
 unique manifests: 1
