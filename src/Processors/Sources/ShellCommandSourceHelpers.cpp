@@ -4,6 +4,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/logger_useful.h>
+#include <Core/Field.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <base/errnoToString.h>
