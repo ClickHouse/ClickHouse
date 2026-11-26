@@ -401,6 +401,13 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
         /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
         findHMACSecretArguments();
     }
+    else if ((function->name() == "sipHash64Keyed") || (function->name() == "sipHash128Keyed")
+             || (function->name() == "sipHash128ReferenceKeyed"))
+    {
+        /// sipHash64Keyed(key, data, ...) -> sipHash64Keyed('[HIDDEN]', data, ...)
+        /// These functions have no named-argument grammar, so the key is always at raw index 0.
+        markSecretArgument(0);
+    }
     else if (function->name() == "url" || function->name() == "urlCluster")
     {
         /// url('url', ...) keeps the url at slot 0; urlCluster('cluster', 'url', ...) at slot 1.
