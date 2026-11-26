@@ -672,9 +672,8 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         task.execution_status = ExecutionStatus::fromCurrentException();
         tryLogCurrentException(log, "Query " + query_to_show_in_logs + " wasn't finished successfully");
 
-        /// We don't know what exactly happened, but maybe it's Poco::NetException or std::bad_alloc,
-        /// so we consider unknown exception as retryable error.
-        return false;
+        /// An exception of another type has none of the retriable codes above.
+        return true;
     }
 
     task.execution_status = ExecutionStatus(0);
