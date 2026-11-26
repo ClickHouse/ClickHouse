@@ -5,6 +5,7 @@ read_rows/read_bytes and remote-write requests (/write) with written_rows/writte
 Also checks that a traced Query API request is reflected in system.opentelemetry_span_log.
 """
 
+import json
 import urllib.parse
 import uuid
 
@@ -399,6 +400,29 @@ def test_query_range_api_appears_in_query_log_with_read_rows():
     extract_data_from_http_api_response(response)
 
     assert_query_log_has_finish_for_query_id(query_id)
+
+
+@pytest.mark.parametrize("path_prefix", ["", "/combined"])
+@pytest.mark.parametrize(
+    "endpoint, time_params",
+    [
+        ("/api/v1/query", "time=1753176757.89"),
+        ("/api/v1/query_range", "start=1753176650&end=1753176760&step=15"),
+    ],
+)
+def test_query_api_summary_header_has_read_rows(path_prefix, endpoint, time_params):
+    """X-ClickHouse-Summary of a Query API request carries the read_rows and read_bytes recorded in system.query_log."""
+    query_id = f"prometheus-summary-test-{uuid.uuid4()}"
+    url = f"http://{node.ip_address}:9093{path_prefix}{endpoint}?query=up&{time_params}"
+    response = get_response_to_http_api(url, headers={"X-ClickHouse-Query-Id": query_id})
+    extract_data_from_http_api_response(response)
+    summary = json.loads(response.headers["X-ClickHouse-Summary"])
+
+    assert_query_log_has_finish_for_query_id(query_id)
+    assert node.query(
+        f"SELECT read_rows, read_bytes FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'"
+    ) == f"{summary['read_rows']}\t{summary['read_bytes']}\n"
 
 
 def query_log_comment(query_id):

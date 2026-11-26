@@ -537,6 +537,11 @@ public:
 
         response.setContentType("application/json");
 
+        /// Feeds the progress of the queries below into the `X-ClickHouse-Summary` header, as `HTTPHandler` does.
+        auto & out = parent().getOutputStream(response);
+        context->setProgressCallback(
+            [&out, &request_context = context](const Progress & progress) { out.onProgress(progress, request_context); });
+
         /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
         StoragePtr table;
         if (!Poco::URI(uri).getPath().ends_with("/format_query"))
