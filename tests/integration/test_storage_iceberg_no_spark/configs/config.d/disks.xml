@@ -7,6 +7,7 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>true</skip_access_check>
+                <persistent_removal_log>true</persistent_removal_log>
             </disk_s3_warehouse>
         </disks>
     </storage_configuration>

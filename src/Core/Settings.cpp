@@ -1285,10 +1285,6 @@ Equality with a constant string is not moved for this reason: it is still applie
 Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
 the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
 
-Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
-(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
-the amount of data read from disk when the values are replaced by empty strings.
-
 Possible values:
 
 - 0 — Disabled.
@@ -8071,6 +8067,10 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
+    DECLARE(Bool, rewrite_intersect_except_distinct_to_join, true, R"(
+Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a hash join. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`. Operations whose arms can produce totals, such as with `WITH TOTALS`, still run without a join.
+)", 0, \
+        {"26.12", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a join."}) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(
 Limits the number of simultaneously active data streams in a `UNION` step (applies to `UNION ALL`, to `UNION DISTINCT`, because it is implemented via a `UNION ALL` step followed by a `DISTINCT` step, and to a `Merge` table read with plan-based parallel replicas, which is expanded into a union of the reads from its underlying tables). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
 )", 0, \
@@ -8354,7 +8354,7 @@ Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replaci
 )", 0, \
         {"26.8", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."}) \
     DECLARE(Bool, query_plan_remove_unused_joins, true, R"(
-Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them. The other side is then not read at all.
+Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them, or a table without a partition key whose `UNIQUE KEY` they cover. The other side is then not read at all.
 )", 0, \
         {"26.12", false, true, "New setting to remove a `LEFT` or `RIGHT` `JOIN` whose other side is not read and which outputs every row of the preserved side exactly once."}) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
