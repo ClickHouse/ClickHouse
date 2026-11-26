@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -12,7 +13,6 @@
 namespace DB
 {
 
-class Block;
 class NamesAndTypesList;
 struct NameAndTypePair;
 class ColumnsDescription;
@@ -49,8 +49,9 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool null_as_default = false);
 
 /// Tries to convert columns in block to required_columns
+/// `row_columns` are other columns of the same rows, which the DEFAULT replacing the NULLs of a column may read.
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
-    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false, const Block & row_columns = {});
 
 /// Of `column_names`, the ones a read can fill from a `DEFAULT` that calls a non-deterministic function, such as `rand64`,
 /// itself or through the defaults of the columns it reads. Two reads of a part that lacks such a column fill it with

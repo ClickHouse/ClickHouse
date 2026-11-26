@@ -1,0 +1,58 @@
+compact and wide parts, sync
+t_compact	Compact
+t_wide	Wide
+1	101
+2	5
+1	101
+2	5
+t_compact	1
+t_wide	1
+t_compact	Int64
+t_wide	Int64
+reads before the mutation
+5
+101
+1000
+5
+101
+1000
+1
+3
+1
+101
+1	101
+2	5
+3	1000
+existing DEFAULT kept by MODIFY
+1	1
+2	5
+DEFAULT changed while the conversion is pending
+5
+101
+1	101
+2	5
+DEFAULT reads a MATERIALIZED column
+1	3
+2	5
+DEFAULT reads a column converted too
+5
+10
+1	10
+2	5
+1	10
+2	5
+NULL written by a patch part before the ALTER
+4
+102
+1	4
+2	102
+DEFAULT dependency updated by a patch part after the ALTER
+11	101
+12	5
+UNKNOWN_IDENTIFIER
+LowCardinality(Nullable(String)) to String
+1	1
+2	x
+DEFAULT reads a column converted too, prefer_column_name_to_alias = 1
+1	10
+2	5

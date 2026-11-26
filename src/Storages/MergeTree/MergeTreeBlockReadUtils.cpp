@@ -99,6 +99,21 @@ bool injectRequiredColumnsRecursively(
         }
     };
 
+    /// Injects the columns the expression reads. Returns true if at least one of them is in the part.
+    auto inject_identifiers = [&](const ASTPtr & expression)
+    {
+        IdentifierNameSet identifiers;
+        expression->collectIdentifierNames(identifiers);
+
+        bool result = false;
+        for (const auto & identifier : identifiers)
+            result |= injectRequiredColumnsRecursively(
+                identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
+                options, columns, required_columns, injected_columns);
+
+        return result;
+    };
+
     auto column_in_storage = storage_snapshot->tryGetColumn(options, column_name);
     if (column_in_storage)
     {
@@ -118,6 +133,18 @@ bool injectRequiredColumnsRecursively(
             /// This can happen if the column was dropped and then re-added with the same name.
             && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
+            /// The conversion of the full column from a `Nullable` type in the part replaces NULLs with its DEFAULT.
+            auto inject_null_replacement_dependencies = [&]
+            {
+                if (!isNullableOrLowCardinalityNullable(column_in_part->type)
+                    || isNullableOrLowCardinalityNullable(column_in_storage->getTypeInStorage()))
+                    return;
+
+                auto column_default = storage_snapshot->getDefault(column_in_storage->getNameInStorage());
+                if (column_default && column_default->expression)
+                    inject_identifiers(column_default->expression);
+            };
+
             /// Resolved against the serialization the part holds for the column - which it always does, the column
             /// comes from its own list - instead of a newly built one.
             if (!column_in_storage->isSubcolumn()
@@ -125,6 +152,8 @@ bool injectRequiredColumnsRecursively(
                        column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
             {
                 add_column(column_name);
+                if (!column_in_storage->isSubcolumn())
+                    inject_null_replacement_dependencies();
                 return true;
             }
 
@@ -132,6 +161,7 @@ bool injectRequiredColumnsRecursively(
             /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
             /// subcolumn extracted from it, instead of being filled from the storage-type default.
             add_column(column_in_storage->getNameInStorage());
+            inject_null_replacement_dependencies();
             return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part)
@@ -158,17 +188,7 @@ bool injectRequiredColumnsRecursively(
     if (!default_expression)
         return false;
 
-    /// collect identifiers required for evaluation
-    IdentifierNameSet identifiers;
-    default_expression->collectIdentifierNames(identifiers);
-
-    bool result = false;
-    for (const auto & identifier : identifiers)
-        result |= injectRequiredColumnsRecursively(
-            identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
-            options, columns, required_columns, injected_columns);
-
-    return result;
+    return inject_identifiers(default_expression);
 }
 
 }
