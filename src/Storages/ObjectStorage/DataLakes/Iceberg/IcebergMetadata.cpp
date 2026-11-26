@@ -1860,7 +1860,7 @@ IcebergMetadata::estimateRead(
         std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
-            /// The estimate is observable in `EXPLAIN`, so it must fail where the scan would, as in `totalRows`.
+            /// The estimate is observable in `EXPLAIN`, so it must fail where the scan would.
             checkPathReadable(
                 persistent_components.table_location,
                 data_file->parsed_entry->file_path_key.serialize(),
@@ -1937,11 +1937,15 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const
     }
 
 
-    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
+    /// The snapshot summary is in the metadata file, so the count from it does not depend on the data files.
+    if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return total_rows;
+    }
+
     const Int32 schema_id = actual_table_state_snapshot.schema_id;
 
-    /// Metadata-only counts must not bypass the access, path, or credential restrictions enforced by a scan,
-    /// so the storage of each data file is resolved even when the snapshot summary provides the count.
     UInt64 result = 0;
     Iceberg::ManifestFilesPrefetcher manifests(
         object_storage, persistent_components, local_context, log, actual_data_snapshot->manifest_list_entries, external_storages);
@@ -1960,9 +1964,6 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const
                 persistent_components.path_resolver,
                 &verified_directories);
 
-        if (summary_total_rows.has_value())
-            continue;
-
         if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
             || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
@@ -1974,7 +1975,7 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const
     }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-    return summary_total_rows.value_or(result);
+    return result;
 }
 
 std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) const

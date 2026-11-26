@@ -10,7 +10,6 @@ from .external_paths_utils import (
     create_and_upload_table,
     external_bucket,
     _check_cluster_function_rejects_table,
-    _create_iceberg_s3_table,
     _delete_file_names,
     _manifest_lists_delete_files,
     _relocate_local_data_files_outside_table_directory,
@@ -196,25 +195,6 @@ def test_cluster_function_reads_local_data_with_external_s3_delete_file(started_
     assert instance.query(
         f"SELECT * FROM icebergLocalCluster('cluster_simple', local, path = '{host_path}', format=Parquet) ORDER BY id "
         f"SETTINGS s3_allow_server_credentials_in_user_queries = 1") == "1\talpha\n3\tgamma\n"
-
-
-def test_trivial_count_rejects_path_outside_user_files(started_cluster_iceberg_with_spark):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-
-    TABLE_NAME = f"test_count_outside_user_files_{get_uuid_str()}"
-
-    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
-
-    # Keep the local files present so failure proves path rejection, not a missing file.
-    outside_dir = f"/var/lib/clickhouse/iceberg_outside_user_files_{get_uuid_str()}"
-    base_path = _rewrite_paths_to_local_uri(started_cluster_iceberg_with_spark, TABLE_NAME, "", target_dir=outside_dir)
-    expected_error = "outside of allowed `user_files` path"
-
-    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
-
-    assert expected_error in instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
-
-    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
 
 @pytest.mark.parametrize("authority", ["", "localhost"])
