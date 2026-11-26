@@ -36,6 +36,7 @@
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Common/BlobStorageLogWriter.h>
 
+#include <Common/DimensionalMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SelfContained.h>
@@ -48,6 +49,13 @@
 
 #include <Common/logger_useful.h>
 
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & SystemLogFlushes;
+    extern MetricFamily & SystemLogFlushedRows;
+    extern MetricFamily & SystemLogDroppedRows;
+}
 
 namespace DB
 {
@@ -83,6 +91,43 @@ namespace ErrorCodes
 
 ISystemLog::~ISystemLog() = default;
 
+namespace SystemLogMetrics
+{
+
+void createQueueCounters(const String & database, const String & table)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {database, table, "queue_full"}, 0);
+}
+
+void createFlushCounters(const String & database, const String & table)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "success"}, 0);
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "failure"}, 0);
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushedRows, {database, table}, 0);
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {database, table, "flush_failed"}, 0);
+}
+
+void onFlushSuccess(const String & database, const String & table, size_t rows)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "success"});
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushedRows, {database, table}, static_cast<DimensionalMetrics::Value>(rows));
+}
+
+void onFlushFailure(const String & database, const String & table, size_t rows)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "failure"});
+    DimensionalMetrics::add(
+        DimensionalMetrics::SystemLogDroppedRows, {database, table, "flush_failed"}, static_cast<DimensionalMetrics::Value>(rows));
+}
+
+void onQueueFull(const String & database, const String & table, size_t rows)
+{
+    DimensionalMetrics::add(
+        DimensionalMetrics::SystemLogDroppedRows, {database, table, "queue_full"}, static_cast<DimensionalMetrics::Value>(rows));
+}
+
+}
+
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
@@ -94,6 +139,8 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 
     if (settings.turn_off_logger)
         log->setLevel(0);
+
+    SystemLogMetrics::createQueueCounters(settings.database, settings.table);
 }
 
 static thread_local bool recursive_push_call = false;
@@ -281,10 +328,15 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
     }
 
     if (prev_ignored_logs)
+    {
         LOG_ERROR(log, "Queue had been full at {}, accepted {} logs, ignored {} logs.",
                     result.last_log_index - result.logs.size(),
                     result.logs.size(),
                     prev_ignored_logs);
+
+        /// The whole batch is added here and not one row at a time in `push`, which is a hot path.
+        SystemLogMetrics::onQueueFull(settings.database, settings.table, prev_ignored_logs);
+    }
 
     return result;
 }

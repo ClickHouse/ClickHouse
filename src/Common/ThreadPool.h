@@ -149,7 +149,11 @@ public:
         /// This avoids the thundering herd that a shared CV with `notify_all` creates.
         /// A worker of a local pool also waits for `IdleGlobalSlotHolder::evicted` (see `idle_slot_holder`), which
         /// is protected by another mutex, so it needs `std::condition_variable_any`.
-        std::conditional_t<std::is_same_v<Thread, GlobalThreadType>, std::condition_variable, std::condition_variable_any> cv;
+        using IdleConditionVariable = std::conditional_t<std::is_same_v<Thread, GlobalThreadType>, std::condition_variable, std::condition_variable_any>;
+
+        /// Shared, so that `scheduleImpl` can notify it after releasing the pool mutex,
+        /// when the thread may already have left the pool.
+        std::shared_ptr<IdleConditionVariable> cv = std::make_shared<IdleConditionVariable>();
 
         /// Linked into the process-wide list while this worker waits in the idle stack holding a slot of the
         /// global pool (only for a worker with `global_slots_for_idle`).

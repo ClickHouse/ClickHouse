@@ -59,6 +59,7 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -195,6 +196,7 @@
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
 #include <base/scope_guard.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <atomic>
@@ -336,6 +338,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold;
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold_for_remote_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsUInt64 delay_merges_after_startup_seconds;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
@@ -417,7 +420,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_small_parts;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_object_shared_data_main_serialization_version;
+    extern const MergeTreeSettingsBool use_object_shared_data_serialization_version_for_small_parts_on_insert;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 
@@ -1159,6 +1164,9 @@ MergeTreeData::MergeTreeData(
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
 
+    merges_can_be_delayed_after_startup = isLoadingFromExistingMetadata(mode)
+        && getContext()->getApplicationType() == Context::ApplicationType::SERVER;
+
     try
     {
         settings->sanityCheck(
@@ -1494,6 +1502,35 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
     }
 }
 
+void MergeTreeData::addColumnSizesOfParts(
+    const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result)
+{
+    std::vector<std::vector<std::pair<String, ColumnSize>>> sizes_of_parts(parts.size());
+    loadStatisticsOfPartsInParallel(
+        parts.size(),
+        max_threads,
+        [&](size_t part_index)
+        {
+            auto sizes = parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ true);
+            if (!sizes)
+                return false;
+            sizes_of_parts[part_index] = std::move(*sizes);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            sizes_of_parts[part_index]
+                = *parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ false);
+        },
+        [&](size_t part_index)
+        {
+            /// Moved out, so that the memory of a consumed part is released.
+            const auto sizes = std::move(sizes_of_parts[part_index]);
+            for (const auto & [name, size] : sizes)
+                result[name].add(size);
+        });
+}
+
 bool MergeTreeData::isInsertOrderSensitive() const
 {
     /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
@@ -1516,6 +1553,21 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::Coalescing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
+}
+
+bool MergeTreeData::supportsSubcolumnOptimizationWithFinal() const
+{
+    /// Safe only for whole-row-selecting merges: the surviving row's subcolumn equals the subcolumn
+    /// of its full row. Value-combining merges recompute column values, breaking that equality.
+    switch (merging_params.mode)
+    {
+        case MergingParams::Replacing:
+        case MergingParams::Collapsing:
+        case MergingParams::VersionedCollapsing:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool MergeTreeData::hasBucketedMapSerialization() const
@@ -2413,6 +2465,53 @@ void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata &
     for (const auto & [name, _] : new_metadata.column_ttls_by_name)
         if (key_columns.contains(name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Trying to set TTL for key column {}", name);
+}
+
+void MergeTreeData::checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata)
+{
+    using Violations = std::vector<std::pair<String, String>>;
+    auto get_violations = [](const StorageInMemoryMetadata & metadata)
+    {
+        Violations violations;
+        auto add = [&](const String & owner, const ASTPtr & expression_list, const Names & names, const ColumnsDescription * projection_columns = nullptr)
+        {
+            if (!expression_list)
+                return;
+            const auto & elements = expression_list->children;
+            chassert(elements.size() == names.size());
+            for (size_t i = 0; i < elements.size(); ++i)
+                if (!elements[i]->as<ASTIdentifier>() && metadata.columns.hasPhysical(names[i])
+                    && (!projection_columns || projection_columns->hasPhysical(names[i])))
+                    violations.emplace_back(owner, names[i]);
+        };
+
+        add("sorting key", metadata.sorting_key.expression_list_ast, metadata.sorting_key.column_names);
+        /// An undefined primary key mirrors the sorting key, and `MODIFY ORDER BY` turns it into a defined one.
+        add("primary key", metadata.primary_key.expression_list_ast, metadata.primary_key.column_names);
+        add("sampling key", metadata.sampling_key.expression_list_ast, metadata.sampling_key.column_names);
+        for (const auto & index : metadata.secondary_indices)
+            if (!index.isImplicitlyCreated())
+                add("skip index " + backQuoteIfNeed(index.name), index.expression_list_ast, index.column_names);
+        /// A projection part is sorted by its own key, which replaces only a column that the projection stores.
+        for (const auto & projection : metadata.projections)
+            add("sorting key of projection " + backQuoteIfNeed(projection.name), projection.metadata->sorting_key.expression_list_ast,
+                projection.metadata->sorting_key.column_names, &projection.metadata->columns);
+        return violations;
+    };
+
+    const Violations old_violations = old_metadata ? get_violations(*old_metadata) : Violations{};
+    for (const auto & violation : get_violations(new_metadata))
+    {
+        if (std::ranges::contains(old_violations, violation))
+            continue;
+
+        const auto & [owner, name] = violation;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The expression {} of the {} has the same name as the column {}, so the table would use one in place of the "
+            "other when it is written or queried. Rename the column or change the expression. "
+            "To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'",
+            name, owner, backQuote(name));
+    }
 }
 
 namespace
@@ -3949,7 +4048,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 = !is_static_storage && !is_table_readonly && !p->isStoredOnReadonlyDisk();
             unique_key_dense_index_ops->ensureValidDenseIndex(p, part_storage_is_writable);
             if (const auto bytes_on_disk_after = p->getBytesOnDisk(); bytes_on_disk_after != bytes_on_disk_before)
-                increaseDataVolume(static_cast<ssize_t>(bytes_on_disk_after - bytes_on_disk_before), 0, 0);
+                increaseDataVolume(static_cast<ssize_t>(common::subIgnoreOverflow(bytes_on_disk_after, bytes_on_disk_before)), 0, 0);
         }
         catch (...)
         {
@@ -5978,6 +6077,12 @@ void MergeTreeData::dropAllData()
         if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
 
+        if ((*settings_ptr)[MergeTreeSetting::table_disk])
+        {
+            LOG_INFO(log, "dropAllData: the table directory is the root of disk {}, it is kept", disk->getName());
+            continue;
+        }
+
         try
         {
             if (!isSharedStorage() && !disk->isDirectoryEmpty(relative_data_path)
@@ -7350,7 +7455,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         "a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
                         backQuoteIfNeed(command.column_name), offending_expr->formatForErrorMessage());
 
-                /// GROUP BY ... SET assignments are stored as prebuilt ExpressionActions, not as an AST above.
+                /// GROUP BY ... SET assignments are checked through their prebuilt ExpressionActions, which require every column they read.
                 for (const auto & set_part : ttl.set_parts)
                     if (expression_uses_changed_subcolumn(set_part.expression))
                         throw Exception(
@@ -7491,6 +7596,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
+    if (!is_secondary_replay && !settings[Setting::allow_suspicious_indexes])
+        checkKeyExpressionNamesForCollision(new_metadata, &old_metadata);
 
     /// The TTL is analyzed while the table is loaded, when the table itself cannot be read yet.
     const bool modifies_ttl = std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL; });
@@ -7825,6 +7932,18 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     }
 
     return {part_type, storage_type};
+}
+
+MergeTreeObjectSharedDataSerializationVersion MergeTreeData::chooseObjectSharedDataSerializationVersion(
+    size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const
+{
+    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    bool is_small_part = (is_insert && (*settings)[MergeTreeSetting::use_object_shared_data_serialization_version_for_small_parts_on_insert])
+        || bytes_uncompressed < (*settings)[MergeTreeSetting::min_bytes_for_object_shared_data_main_serialization_version];
+
+    if (is_small_part)
+        return (*settings)[MergeTreeSetting::object_shared_data_serialization_version_for_small_parts];
+    return (*settings)[MergeTreeSetting::object_shared_data_serialization_version];
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
@@ -9150,6 +9269,37 @@ std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartition() c
 }
 
 
+void MergeTreeData::delayMergesAfterStartup()
+{
+    if (merges_can_be_delayed_after_startup)
+        startup_time_ns.store(clock_gettime_ns(CLOCK_MONOTONIC), std::memory_order_relaxed);
+}
+
+
+void MergeTreeData::stopDelayingMergesAfterStartup()
+{
+    if (startup_time_ns.exchange(0, std::memory_order_relaxed))
+        background_operations_assignee.trigger();
+}
+
+
+bool MergeTreeData::areMergesDelayedAfterStartup() const
+{
+    const UInt64 startup_ns = startup_time_ns.load(std::memory_order_relaxed);
+    if (!startup_ns)
+        return false;
+
+    const auto settings = getSettings();
+    if ((clock_gettime_ns(CLOCK_MONOTONIC) - startup_ns) / 1'000'000'000 >= (*settings)[MergeTreeSetting::delay_merges_after_startup_seconds])
+        return false;
+
+    /// Do not delay merges once inserts start to be slowed down because of too many parts.
+    const UInt64 parts_to_delay_insert = (*settings)[MergeTreeSetting::parts_to_delay_insert];
+    return !parts_to_delay_insert || getActivePartsCount() < parts_to_delay_insert
+        || getMaxPartsCountAndSizeForPartition().first < parts_to_delay_insert;
+}
+
+
 size_t MergeTreeData::getMaxOutdatedPartsCountForPartition() const
 {
     return getMaxPartsCountAndSizeForPartitionWithState(DataPartState::Outdated).first;
@@ -10077,15 +10227,13 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
-    for (const auto & part : parts)
-    {
-        for (const auto & col_name : subcolumn_names)
-        {
-            auto column = part->tryGetColumn(col_name);
-            if (column && column->isSubcolumn())
-                result[col_name].add(part->getSubcolumnSize(col_name));
-        }
-    }
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    addColumnSizesOfParts(
+        parts,
+        subcolumn_names,
+        /* with_columns = */ false,
+        query_context ? static_cast<size_t>(query_context->getSettingsRef()[Setting::max_threads]) : 1,
+        result);
 
     return result;
 }
@@ -10110,11 +10258,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
+            /// An incorrect subtraction is logged and kept modular, so that adding the same size back restores the total.
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect column size subtraction: {} - {} = {}, column: {}, field: {}",
-                    from, value, from - value, column.name, field);
+                    from, value, common::subIgnoreOverflow(from, value), column.name, field);
 
-            from -= value;
+            from = common::subIgnoreOverflow(from, value);
         };
 
         log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
@@ -10131,11 +10280,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
+            /// An incorrect subtraction is logged and kept modular, so that adding the same size back restores the total.
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
-                    from, value, from - value, secondary_index_name, field);
+                    from, value, common::subIgnoreOverflow(from, value), secondary_index_name, field);
 
-            from -= value;
+            from = common::subIgnoreOverflow(from, value);
         };
 
         log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
@@ -12702,7 +12852,8 @@ void MergeTreeData::optimizeDryRun(
             /*require_checksums=*/ true,
             is_broken_projection,
             /*is_cancelled=*/ [] { return false; },
-            /*throw_on_broken_projection=*/ true);
+            /*throw_on_broken_projection=*/ true,
+            /*allow_direct_io=*/ false);
 
         LOG_INFO(log, "OPTIMIZE DRY RUN: part {} passed checkDataPart", new_part->name);
     }
@@ -13464,9 +13615,12 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
             data.updateSerializationHints(precommitted_parts, total_covered_parts, acquired_parts_lock);
 
-            ssize_t diff_bytes = add_bytes - reduce_bytes;
-            ssize_t diff_rows = add_rows - reduce_rows;
-            ssize_t diff_parts  = add_parts - reduce_parts;
+            /// The covered parts may outweigh the added ones, so the differences are negative then. They are computed
+            /// modulo 2^64 and converted to signed afterwards: the counters of a part are read from its files, so a cast
+            /// before the subtraction could overflow signed arithmetic. The totals are updated modulo 2^64 as well.
+            ssize_t diff_bytes = static_cast<ssize_t>(common::subIgnoreOverflow(add_bytes, reduce_bytes));
+            ssize_t diff_rows = static_cast<ssize_t>(common::subIgnoreOverflow(add_rows, reduce_rows));
+            ssize_t diff_parts = static_cast<ssize_t>(common::subIgnoreOverflow(add_parts, reduce_parts));
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
     }
@@ -13980,18 +14134,29 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
                 columns_list.push_back(column);
     }
 
-    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
-    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
-    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
-    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
+    /// A part may be written with any combination of these versions: the `Map` version depends on whether the part is
+    /// inserted or merged, the JSON shared data version on the size of the part. A collision under any
+    /// combination corrupts the parts written with it. Checked separately, as parts of different configurations never
+    /// share a file.
+    std::set<MergeTreeMapSerializationVersion> map_versions{
+        settings[MergeTreeSetting::map_serialization_version],
+        settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]};
+    std::set<MergeTreeObjectSharedDataSerializationVersion> shared_data_versions{
+        settings[MergeTreeSetting::object_shared_data_serialization_version],
+        settings[MergeTreeSetting::object_shared_data_serialization_version_for_small_parts]};
 
-    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
-
-    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
-    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
-    /// configurations never share a file.
-    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
-        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
+    std::optional<StreamFileNameCollision> collision;
+    for (auto map_version : map_versions)
+    {
+        for (auto shared_data_version : shared_data_versions)
+        {
+            collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
+            if (collision)
+                break;
+        }
+        if (collision)
+            break;
+    }
 
     if (!collision)
         return;
@@ -14349,11 +14514,11 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
         for (const auto & part : parts)
         {
             if (part->getDataPartStorage().getDiskName() == data_part->getDataPartStorage().getDiskName())
-                broken_part_callback(part->name);
+                broken_part_callback(part->name, /* after_read_error */ false);
         }
     }
     else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
+        broken_part_callback(data_part->name, /* after_read_error */ true);
     else
         LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
@@ -15361,7 +15526,11 @@ void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
+    /// Negated modulo 2^64 and converted afterwards: negating a converted counter read from the part could overflow.
+    increaseDataVolume(
+        static_cast<ssize_t>(common::negateIgnoreOverflow(part->getBytesOnDisk())),
+        static_cast<ssize_t>(common::negateIgnoreOverflow(part->rows_count)),
+        -1);
 }
 
 void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
@@ -15626,11 +15795,12 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
         if (!new_hint)
             continue;
 
-        /// Structure may change after alter or differ because the part preserves older serialization settings.
-        /// Do not add info for such items. Instead it will be updated on commit of a compatible part.
-        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name) || !new_hint->structureEquals(*info))
+        /// Structure may change after alter. Do not add info for such items.
+        /// Instead it will be updated on commit of the result part of alter.
+        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
             continue;
 
+        chassert(new_hint->structureEquals(*info));
         if (remove)
             new_hint->remove(*info);
         else
@@ -15719,10 +15889,32 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
 }
 
-SerializationInfoByName MergeTreeData::getSerializationHints() const
+SerializationInfoByName MergeTreeData::getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const
 {
     auto lock = readLockParts();
-    return serialization_hints.clone();
+
+    /// `setPropertiesAndResetSerializationHints` publishes the new column types and the hints built for them under one `parts_lock`,
+    /// so under the lock `serialization_hints` match the current metadata. The snapshot of the caller may be taken before
+    /// a concurrent `ALTER` (or after it, if the lock is taken later), so keep only the hints of the columns
+    /// whose types are the same in both. For example, the hint of a `String` column must not be given to the `Tuple` type
+    /// it had before `ALTER TABLE ... MODIFY COLUMN`.
+    const auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    if (&*current_metadata == &metadata_snapshot)
+        return serialization_hints.clone();
+
+    const auto & current_columns = current_metadata->getColumns();
+    const auto & snapshot_columns = metadata_snapshot.getColumns();
+
+    SerializationInfoByName res(serialization_hints.getSettings());
+    for (const auto & [name, info] : serialization_hints)
+    {
+        auto current_column = current_columns.tryGetPhysical(name);
+        auto snapshot_column = snapshot_columns.tryGetPhysical(name);
+        if (current_column && snapshot_column && current_column->type->equals(*snapshot_column->type))
+            res.emplace(name, info->clone());
+    }
+
+    return res;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
@@ -15959,8 +16151,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     const String & new_part_name,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeTransactionPtr & txn,
-    std::optional<PatchPartIndex> patch_part_index,
-    bool precommit_storage) const
+    std::optional<PatchPartIndex> patch_part_index) const
 {
     auto settings = getSettings();
 
@@ -15989,6 +16180,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();
+    new_data_part->object_shared_data_serialization_version = chooseObjectSharedDataSerializationVersion(0, /*is_insert =*/false, /*projection =*/nullptr);
 
     /// Keep the format version and sort-key columns of the patch partition.
     if (new_part_info.isPatch())
@@ -16073,10 +16265,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     out.finalizeIndexGranularity();
     out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert);
 
-    /// Sealing the storage closes the packed archive, so a caller with a sidecar still to write
-    /// defers it -- the same build/seal split `MergeTreeTemporaryPart::finalize` gives the insert path.
-    if (precommit_storage)
-        new_data_part_storage->precommitTransaction();
+    new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));
 }
 

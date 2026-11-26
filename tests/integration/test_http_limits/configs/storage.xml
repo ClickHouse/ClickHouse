@@ -8,6 +8,7 @@
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <metadata_path>/var/lib/clickhouse/disks/custom_path</metadata_path>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3>
             <hdd_disk>
                 <type>local</type>

@@ -1687,7 +1687,8 @@ target_compile_options(musl PRIVATE
 if (ENABLE_CFI)
     # Clang CFI needs no runtime, so turn it back on after `-fno-sanitize=all`.
     separate_arguments(_musl_cfi_flags UNIX_COMMAND "${CFI_FLAGS}")
-    target_compile_options(musl PRIVATE ${_musl_cfi_flags})
+    # C only: clang rejects `-fsanitize=cfi` on preprocessed assembly (`.S`) without the C flags `-flto` and `-fvisibility`.
+    target_compile_options(musl PRIVATE "$<$<COMPILE_LANGUAGE:C>:${_musl_cfi_flags}>")
     if (ENABLE_CFI_DIAGNOSTICS)
         # A function built without CFI has no entry in the CFI jump tables, so a checked indirect call to it always
         # fails. With diagnostics, the UBSan runtime that reports the violations is linked in, is built without CFI,

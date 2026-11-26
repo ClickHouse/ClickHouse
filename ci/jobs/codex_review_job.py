@@ -33,6 +33,7 @@ import traceback
 import urllib.parse
 
 from ci.praktika import Secret
+from ci.praktika._environment import _Environment
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -45,6 +46,9 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # transient 5xx / authorization error that no single inner subprocess controls.
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
+
+# Attempts at recording the verdict as a GitHub review, see `_update_approval`.
+APPROVAL_ATTEMPTS = 7
 
 # OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
 # via `codex login --with-api-key`.
@@ -145,6 +149,10 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
+  a nested local run replaces the state of this job in `ci/tmp` (the PR number, the job name), which
+  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. No ClickHouse binary
+  is available here either. Rely on the CI reports of the PR for the test results.
 """
 
 
@@ -274,12 +282,11 @@ def _review_approves():
     return True
 
 
-def _update_approval(info, cyber_risk_flagged):
+def _update_approval_once(info, cyber_risk_flagged):
     """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
     otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
     keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
-    for different commits may finish in any order, and only the head commit's verdict is current.
-    Raises on failure, failing the job."""
+    for different commits may finish in any order, and only the head commit's verdict is current."""
     repo = _pr_repository(info)
     owner, name = repo.split("/")
     variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
@@ -315,6 +322,7 @@ def _update_approval(info, cyber_risk_flagged):
                 "event": "APPROVE",
             },
             strict=True,
+            retries=1,
         )
         return
 
@@ -328,7 +336,23 @@ def _update_approval(info, cyber_risk_flagged):
                 "message": "AI review of a later commit does not approve the PR, see the `AI Review` comment.",
             },
             strict=True,
+            retries=1,
         )
+
+
+def _update_approval(info, cyber_risk_flagged):
+    """Run `_update_approval_once` until it succeeds. Each attempt re-reads the reviews, so a write that GitHub
+    applied but answered with an error is not sent again. Raises on persistent failure, failing the job."""
+    for attempt in range(1, APPROVAL_ATTEMPTS + 1):
+        try:
+            _update_approval_once(info, cyber_risk_flagged)
+            return
+        except Exception as e:  # noqa: BLE001 - a GitHub 5xx burst can outlast the retries of one call
+            if attempt == APPROVAL_ATTEMPTS:
+                raise
+            delay = min(15 * 2 ** (attempt - 1), 120)
+            print(f"WARNING: Approval update attempt {attempt}/{APPROVAL_ATTEMPTS} failed: {e}, retrying in {delay}s")
+            time.sleep(delay)
 
 
 def _add_cyber_risk_note(flagged_sessions, review_model):
@@ -417,6 +441,24 @@ def _run_codex_once(prompt, model):
         )
 
 
+def _restore_job_state(path, saved):
+    """Restore the state file of this job if the agent has replaced it.
+
+    The agent sometimes starts a nested local run (`python3 -m ci.praktika run ...`), which writes the
+    environment of a local run - without the PR number and with another job name - over the one of
+    this job. The review then cannot be posted, and the job result is reported under a wrong name.
+    """
+    current = None
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            current = f.read()
+    if current == saved:
+        return
+    print(f"WARNING: the agent has changed {path}, restoring it")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(saved)
+
+
 def _run(prompt, flagged_sessions):
     """Run the Codex agent with retries, then post the review comment.
 
@@ -427,10 +469,18 @@ def _run(prompt, flagged_sessions):
     last_error = None
     model = MODEL
     review_model = model
+    # Make sure that the environment of this job is on disk before the agent can touch it.
+    _Environment.get()
+    environment_file = _Environment.file_name_static()
+    with open(environment_file, "r", encoding="utf-8") as f:
+        environment = f.read()
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             review_model = model
-            result = _run_codex_once(prompt, model)
+            try:
+                result = _run_codex_once(prompt, model)
+            finally:
+                _restore_job_state(environment_file, environment)
             if CYBER_RISK_FLAG in result.info:
                 flagged_sessions.append((attempt, model))
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk")

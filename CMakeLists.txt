@@ -39,9 +39,6 @@ include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
 
-# This is needed to set up the CMAKE_INSTALL_BINDIR variable.
-include (GNUInstallDirs)
-
 # Ignore export() since we don't use it,
 # but it gets broken with global targets via link_libraries()
 macro (export)
@@ -251,8 +248,7 @@ endif()
 # Provides faster linking and lower binary size.
 # Tradeoff is the inability to debug some source files with e.g. gdb
 # (empty stack frames and no local variables).
-# In Release builds (which have no debug info by default), this option has
-# no effect -- it only reduces debug info for RelWithDebInfo and MinSizeRel.
+# It has no effect in builds without debug info (Release, MinSizeRel, DISABLE_ALL_DEBUG_SYMBOLS).
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
@@ -271,9 +267,7 @@ if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
-# Add a section with the hash of the compiled machine code for integrity checks.
-# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
-# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
+# Add a section with the hash of the compiled machine code for integrity checks. Only for official builds.
 if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
@@ -285,32 +279,42 @@ endif ()
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
-set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact)
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact both)
 
-set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact)
+set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact both)
 if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
     message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
 endif()
 
-if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
-    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
+# The sections added to the stripped binary in place of `.symtab`.
+set(ADD_COMPACT_SYMBOLS_SECTION OFF)
+set(ADD_GNU_DEBUGDATA_SECTION OFF)
+if (SYMBOL_SECTIONS STREQUAL "compact" OR SYMBOL_SECTIONS STREQUAL "both")
+    set(ADD_COMPACT_SYMBOLS_SECTION ON)
+endif()
+if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata" OR SYMBOL_SECTIONS STREQUAL "both")
+    set(ADD_GNU_DEBUGDATA_SECTION ON)
 endif()
 
-if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+if (ADD_COMPACT_SYMBOLS_SECTION AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} requires SPLIT_DEBUG_SYMBOLS=ON")
+endif()
+
+if (ADD_GNU_DEBUGDATA_SECTION)
     # `.gnu_debugdata` is an ELF section, and `SymbolIndex` reads it only on ELF targets.
     if (NOT (OS_LINUX OR OS_FREEBSD))
-        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata is supported only for ELF targets (Linux, FreeBSD)")
+        message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} is supported only for ELF targets (Linux, FreeBSD)")
     endif()
 
     if (NOT SPLIT_DEBUG_SYMBOLS)
-        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
+        message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} requires SPLIT_DEBUG_SYMBOLS=ON")
     endif()
 
     ch_find_program(XZ_PATH NAMES "xz")
     if (XZ_PATH)
         message(STATUS "Using xz: ${XZ_PATH}")
     else()
-        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=gnu_debugdata")
+        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=${SYMBOL_SECTIONS}")
     endif()
 endif()
 
@@ -440,9 +444,14 @@ endif()
 # every `src/` library plus the libFuzzer and Address Sanitizer runtimes into one image already just
 # under the 2 GiB reach of `R_X86_64_PC32`, which the extra prologues push over; the fuzzers are never
 # shipped, and Address Sanitizer reports stack buffer overflows earlier and in more detail than an abort.
+# The Rust crates get the same canaries (see contrib/corrosion-cmake).
 if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+    list (APPEND RUSTFLAGS_ADD "-Zstack-protector=strong")
 endif()
+
+# Rust wraps integer overflow silently in release builds; panic instead, which the FFI boundaries catch.
+list (APPEND RUSTFLAGS_ADD "-C" "overflow-checks=yes")
 
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
@@ -516,6 +525,13 @@ if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
 endif()
 
+# OMIT_HEAVY_DEBUG_SYMBOLS gives the heavy targets -g1, which comes after the build type's flags. In a build
+# without debug info (Release, MinSizeRel, DISABLE_ALL_DEBUG_SYMBOLS) that would add line tables instead.
+if (OMIT_HEAVY_DEBUG_SYMBOLS AND (DISABLE_ALL_DEBUG_SYMBOLS
+    OR NOT (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")))
+    set (OMIT_HEAVY_DEBUG_SYMBOLS OFF)
+endif ()
+
 if (OS_DARWIN)
     # On Darwin the optimizatiosns to reduce the debug size are off by default. `-fno-standalone-debug` enables them
     set (DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -fno-standalone-debug")
@@ -546,6 +562,7 @@ if (DISABLE_OMIT_FRAME_POINTER)
     set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
+    list (APPEND RUSTFLAGS_ADD "-C" "force-frame-pointers=yes")
 endif()
 
 # Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
@@ -845,13 +862,6 @@ if (ENABLE_CFI AND ENABLE_OPENSSL_DYNAMIC)
     message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_OPENSSL_DYNAMIC.")
 endif ()
 
-# when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
-if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-    set (CLICKHOUSE_ETC_DIR "/etc")
-else ()
-    set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
-endif ()
-
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
 # With cross-compiling, all targets are built for the target platform which usually different from the host
@@ -945,9 +955,10 @@ if (ENABLE_RUST)
     endif()
 endif()
 
+# $CACHE{}: the option is shadowed to OFF above in builds without debug info.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
     AND NOT SANITIZE AND NOT ENABLE_FUZZING
-    AND OMIT_HEAVY_DEBUG_SYMBOLS AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
+    AND $CACHE{OMIT_HEAVY_DEBUG_SYMBOLS} AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT OFF)

@@ -1,0 +1,235 @@
+---
+slug: /clickstack/observability/features/session-replay
+title: 'Relecture de session'
+sidebarTitle: 'Relecture de session'
+description: "Capturez et rejouez les sessions utilisateur dans ClickHouse Observability pour déboguer les problèmes frontend, comprendre le comportement des utilisateurs et corréler l'activité du navigateur avec les logs et les traces du backend."
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'session replay', 'browser sdk', 'frontend observability', 'user sessions', 'debugging']
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+La relecture de session dans ClickHouse Observability capture et reconstitue les interactions des utilisateurs avec votre application web, ce qui vous permet de revoir précisément ce qu&#39;un utilisateur a vu et fait au cours de sa session. Au lieu d&#39;enregistrer une vidéo, le SDK enregistre les modifications du DOM, les mouvements de souris, les clics, les défilements, les saisies clavier, les journaux de la console, les requêtes réseau (XHR et Fetch) et les exceptions JavaScript, puis reconstitue l&#39;expérience dans le navigateur.
+
+Comme les relectures de session sont stockées dans ClickHouse aux côtés de vos logs, traces et métriques, vous pouvez passer en quelques clics du visionnage de l&#39;expérience d&#39;un utilisateur à l&#39;inspection des traces backend et des requêtes de base de données sur lesquelles elle reposait. La relecture de session s&#39;avère donc utile pour déboguer les problèmes en production, comprendre le comportement des utilisateurs, identifier les points de friction UX et confirmer visuellement les problèmes signalés à l&#39;assistance.
+
+## Instrumenter votre application {#instrumentation}
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre bêta" />
+
+    ClickHouse Observability est entièrement compatible avec OpenTelemetry : vous pouvez donc envoyer la télémétrie du navigateur (traces, exceptions) à l&#39;aide du SDK JavaScript OpenTelemetry standard ou de l&#39;un des [SDK par langage](/fr/clickstack/observability/ingesting-data/sdks). En revanche, **la relecture de session nécessite le SDK pour navigateur** (`@clickhouse/clickstack-browser`), qui enrichit le SDK OpenTelemetry avec l&#39;enregistrement des sessions, la capture de la sortie console et la capture des requêtes réseau. Si vous n&#39;avez besoin que des traces, sans relecture de session, n&#39;importe quel SDK pour navigateur compatible OTel fonctionnera avec le service.
+
+    Les exemples ci-dessous utilisent le SDK pour navigateur. Dans votre service ClickHouse Observability, ouvrez **Team Settings → Data → Managed Telemetry** et copiez l&#39;**OTLP HTTP endpoint** et l&#39;**API key**. Dans les exemples, remplacez `YOUR_OTEL_ENDPOINT` et `YOUR_API_KEY` par ces informations de connexion.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Télémétrie gérée affichant le point de terminaison OTLP HTTP et l'API key masqués](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Utilisez le point de terminaison HTTPS complet tel qu&#39;il apparaît dans Managed Telemetry, sans chemin de signal comme `/v1/traces`. Transmettez l&#39;API key via `apiKey` avec le préfixe `Bearer `, comme illustré ci-dessous. Installez ensuite le SDK et initialisez-le dans votre application.
+
+    <Tip>
+      Initialisez le SDK une seule fois, au niveau supérieur du module d&#39;entrée de votre client, par exemple `src/main.ts` avec Vite ou `instrumentation-client.ts` avec Next.js. L&#39;initialisation étant asynchrone, les requêtes effectuées juste après `init` dans le même tick risquent de ne pas être capturées.
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Balise script">
+        Pour les applications qui n&#39;utilisent pas de bundler, incluez le SDK directement au moyen d&#39;une balise script. La variable globale `ClickStack` est alors exposée et s&#39;utilise de la même manière que le paquet NPM.
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+            apiKey: 'Bearer YOUR_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      L&#39;option `traceOrigins` est essentielle pour relier les relectures de session aux traces backend : définissez-la sur le domaine de votre API afin d&#39;activer un traçage distribué complet, du frontend jusqu&#39;au backend. Pour les options communes du SDK, notamment les contrôles de confidentialité et le signalement des erreurs, consultez la [Référence du SDK pour navigateur](/fr/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy). Utilisez les informations de connexion gérées ci-dessus lors de l&#39;initialisation du SDK.
+    </Note>
+
+    Par défaut, le SDK pour navigateur masque les saisies et le texte. Pour les applications manipulant des données sensibles, consultez les [contrôles de confidentialité](/fr/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy), ainsi que la section sur l&#39;[association d&#39;informations utilisateur](/fr/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) pour pouvoir rechercher et filtrer les sessions par utilisateur dans l&#39;UI.
+  </Tab>
+
+  <Tab title="Autogéré" id="self-managed">
+    Self-managed ClickHouse Observability est entièrement compatible avec OpenTelemetry : vous pouvez donc envoyer la télémétrie du navigateur (traces, exceptions) à l&#39;aide du SDK JavaScript OpenTelemetry standard ou de l&#39;un des [SDK par langage](/fr/clickstack/observability/ingesting-data/sdks). En revanche, **la relecture de session nécessite le SDK pour navigateur** (`@clickhouse/clickstack-browser`), qui enrichit le SDK OpenTelemetry de l&#39;enregistrement de session, de la capture de la sortie console et de la capture des requêtes réseau. Si vous n&#39;avez besoin que des traces, sans relecture de session, n&#39;importe quel SDK pour navigateur compatible OTel fonctionnera avec le service.
+
+    Avant d&#39;instrumenter votre application, vous devez disposer d&#39;un collecteur OpenTelemetry ClickStack en cours d&#39;exécution et connecté à votre service ClickHouse Cloud. Suivez le guide [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) pour configurer la connexion, ou le [guide de déploiement](/fr/clickstack/self-configured/deployment/managed#start-a-collector-existing) pour démarrer un collecteur.
+
+    Utilisez le point de terminaison OTLP HTTP du collecteur accessible depuis le navigateur à la place de `http://your-otel-collector:4318` dans les exemples ci-dessous. Définissez `apiKey` sur la clé d’ingestion de votre collecteur, sans préfixe `Bearer`, ou omettez-la si le récepteur ne requiert pas d’authentification. Autorisez l’origine de votre application dans la configuration CORS du collecteur. Installez et initialisez ensuite le SDK pour navigateur.
+
+    <Tip>
+      Initialisez le SDK une seule fois, au niveau supérieur de votre module d&#39;entrée côté client, par exemple `src/main.ts` avec Vite ou `instrumentation-client.ts` avec Next.js. L&#39;initialisation étant asynchrone, les requêtes émises immédiatement après `init`, dans le même tick de la boucle d&#39;événements, risquent de ne pas être capturées.
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Balise script">
+        Pour les applications qui n&#39;utilisent pas de bundler, incluez directement le SDK à l&#39;aide d&#39;une balise script. La variable globale `ClickStack` est alors exposée et s&#39;utilise de la même manière que le paquet NPM.
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'http://your-otel-collector:4318',
+            apiKey: 'YOUR_INGESTION_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      L&#39;option `traceOrigins` est essentielle pour relier les relectures de session aux traces backend : définissez-la sur le domaine de votre API afin d&#39;activer un traçage distribué complet, du frontend jusqu&#39;au backend. Pour la liste complète des options du SDK, notamment les paramètres de confidentialité et le signalement des erreurs, consultez la [Référence du SDK pour navigateur](/fr/clickstack/observability/ingesting-data/sdks/browser).
+    </Note>
+
+    Par défaut, le SDK pour navigateur masque les saisies et le texte. Pour les applications manipulant des données sensibles, consultez la section [contrôles de confidentialité](/fr/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy), ainsi que la section [associer des informations utilisateur](/fr/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) afin de pouvoir rechercher et filtrer les sessions par utilisateur dans l&#39;UI.
+
+    <Note>
+      Le SDK navigateur ClickStack utilise l&#39;attribut standard `session.id`. Utilisez une version de ClickStack qui prend en charge cet attribut sur la page Sessions ; consultez les [exigences de compatibilité du SDK](https://github.com/ClickHouse/clickstack-browser#clickstack-versions).
+    </Note>
+
+### Stockage des données de session {#data-storage}
+
+    <Note>
+      Ces informations sur le stockage concernent uniquement Self-managed ClickHouse Observability. Avec les services entièrement gérés, le stockage et les schémas de la relecture de session sont pris en charge pour vous.
+    </Note>
+
+    Les données de relecture de session sont stockées dans une table dédiée [`hyperdx_sessions`](/fr/clickstack/self-configured/ingesting-data/schemas#sessions) dans ClickHouse, distincte des logs et des traces. Chaque événement de session correspond à une ligne comportant un champ `Body`, qui contient la charge utile de l&#39;événement, et une map `LogAttributes`, qui stocke les métadonnées de l&#39;événement. Ensemble, les colonnes `Body` et `LogAttributes` contiennent le détail des événements de session effectifs, utilisés pour reconstituer la relecture.
+
+    Pour plus de détails sur le schéma des tables, consultez [Tables et schémas](/fr/clickstack/self-configured/ingesting-data/schemas).
+  </Tab>
+</Tabs>
+
+## Afficher les relectures de session {#viewing-replays}
+
+Accédez à **Sessions client** depuis la barre latérale gauche de l’UI. Cette vue répertorie toutes les sessions de navigateur capturées, avec leur durée et leur nombre d’événements.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Vue de recherche des relectures de session](/images/clickstack/session-replay/observability-client-sessions.png)
+  </Frame>
+</div>
+
+Ouvrez une session, puis sélectionnez **Play** pour rejouer les interactions enregistrées. La vue de relecture affiche l’expérience utilisateur reconstituée à droite et, à gauche, une chronologie des événements du navigateur : requêtes réseau, journaux de la console et erreurs.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Lecture d’une relecture de session](/images/clickstack/session-replay/observability-session-replay.png)
+  </Frame>
+</div>
+
+Basculez entre les modes **Highlighted** et **All Events** pour ajuster le niveau de détail affiché dans la chronologie. Les erreurs sont signalées en rouge, et un clic sur un événement positionne la relecture à ce moment de la session.
+
+### De la session à la trace {#session-to-trace}
+
+Lorsque vous sélectionnez une requête réseau ou une erreur dans la chronologie de la session, vous pouvez passer à l&#39;onglet **Trace** pour suivre la requête à travers vos services backend et consulter les logs, les spans et les requêtes de base de données déclenchés par cette interaction utilisateur.
+
+Ce mécanisme repose sur la configuration `traceOrigins`, qui relie les spans du navigateur aux spans serveur via l&#39;en-tête `traceparent` : on obtient ainsi une trace distribuée continue, du clic de l&#39;utilisateur jusqu&#39;à la base de données. Pour une présentation détaillée de sa mise en pratique, y compris l&#39;instrumentation du frontend et du backend, consultez [Instrumenter votre application NextJS avec OpenTelemetry et ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Ouverture d'une relecture de session et suivi d'un événement jusqu'à sa trace](/images/clickstack/session-replay/observability-session-to-trace.gif)
+  </Frame>
+</div>
+
+### De la trace à la session {#trace-to-session}
+
+La corrélation fonctionne aussi dans l&#39;autre sens. Lorsque vous consultez une trace dans la vue **Recherche**, cliquez dessus pour en afficher le détail, puis sélectionnez l&#39;onglet **Relecture de session** pour voir précisément ce que vivait l&#39;utilisateur au moment de cette trace. C&#39;est particulièrement utile pour analyser des erreurs ou des requêtes lentes : vous pouvez partir du problème côté backend et adopter immédiatement le point de vue de l&#39;utilisateur.
+
+## Essayer {#try-it-out}
+
+Suivez la [démo de relecture de session](/fr/clickstack/observability/example-datasets/session-replay) pour instrumenter une application interactive, envoyer les données de session à votre service ClickHouse Observability, puis revoir vos interactions.
+
+## En savoir plus {#learn-more}
+
+* [Démo de relecture de session](/fr/clickstack/observability/example-datasets/session-replay) — instrumenter une application interactive à l’aide des informations de connexion de votre service géré
+* [Référence du SDK pour navigateur](/fr/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) — options communes du SDK et configuration avancée
+* [Recherche](/fr/clickstack/observability/features/search) — syntaxe de recherche pour filtrer les sessions et les événements
+* [Tableaux de bord](/fr/clickstack/observability/features/dashboards/overview) — créer des visualisations et des tableaux de bord à partir des données de session et de traçage
+* [Alertes](/fr/clickstack/observability/features/alerts) — configurer des alertes sur les erreurs, la latence et d’autres signaux
+* [Architecture](/fr/clickstack/observability/architecture) — comment les composants du service s’articulent

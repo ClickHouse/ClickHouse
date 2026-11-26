@@ -505,8 +505,9 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
-    remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
-    remaining_thread_job_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    Int64 max_threads_delta = static_cast<Int64>(value) - static_cast<Int64>(max_threads);
+    remaining_pool_capacity.fetch_add(max_threads_delta, std::memory_order_relaxed);
+    remaining_thread_job_capacity.fetch_add(max_threads_delta, std::memory_order_relaxed);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -658,6 +659,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
     };
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
+    std::shared_ptr<typename ThreadFromThreadPool::IdleConditionVariable> idle_thread_cv;
     // Load the current capacity
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
@@ -1058,13 +1060,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         /// avoids a thundering herd where every idle thread wakes, contends for the
         /// mutex, and goes back to sleep on every job schedule.
         ///
-        /// Notify while still holding `mutex`: once `idle_wakeup_flag` is set, a
-        /// spurious wakeup is enough for the worker to run and remove itself from
-        /// the pool, so the raw `ThreadFromThreadPool` pointer must not be used
-        /// after the lock is released.
+        /// Notify after releasing `mutex`, otherwise the woken thread blocks on it right away.
+        /// Once `idle_wakeup_flag` is set, a spurious wakeup is enough for the thread to run
+        /// and remove itself from the pool, so only its CV, not the thread, is used after unlock.
         if (ThreadFromThreadPool * thread_to_wake = popNewestIdleThreadNoLock())
-            wakeIdleThreadNoLock(thread_to_wake);
+        {
+            thread_to_wake->idle_wakeup_flag = true;
+            idle_thread_cv = thread_to_wake->cv;
+        }
     }
+
+    if (idle_thread_cv)
+        idle_thread_cv->notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -1377,7 +1384,7 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeIdleThreadNoLock(ThreadFromThreadPool * thread)
 {
     thread->idle_wakeup_flag = true;
-    thread->cv.notify_one();
+    thread->cv->notify_one();
 }
 
 template <typename Thread>
@@ -1693,7 +1700,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                             unlockIdleGlobalSlotHolders(holders);
                             break;
                         }
-                        idle_slot_holder.cv = &cv;
+                        idle_slot_holder.cv = cv.get();
                         idle_slot_holder.evicted = false;
                         linkIdleGlobalSlotHolderNoLock(holders, idle_slot_holder);
                         linked_as_slot_holder = true;
@@ -1724,7 +1731,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     {
                         auto & holders = getIdleGlobalSlotHolders();
                         PoolAndIdleGlobalSlotHoldersLock both_locks{lock, holders.mutex};
-                        cv.wait(both_locks, [&] { return idle_slot_holder.evicted || has_reason_to_wake(); });
+                        cv->wait(both_locks, [&] { return idle_slot_holder.evicted || has_reason_to_wake(); });
                         unlinkIdleGlobalSlotHolderNoLock(holders, idle_slot_holder);
                         slot_evicted = idle_slot_holder.evicted;
                         /// An evicted worker does not give its slot back: whoever evicted it did that. Otherwise the
@@ -1735,10 +1742,10 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                         unlockIdleGlobalSlotHolders(holders);
                     }
                     else
-                        cv.wait(lock, has_reason_to_wake);
+                        cv->wait(lock, has_reason_to_wake);
                 }
                 else
-                    cv.wait(lock, has_reason_to_wake);
+                    cv->wait(lock, has_reason_to_wake);
 
                 parent_pool.removeIdleThreadNoLock(this);
 
