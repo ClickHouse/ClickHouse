@@ -761,9 +761,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "1"},{"label": "السماح بتحويل أنواع البيانات في صيغة الإدخال Native"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "1"},{"label": "السماح بتحويل الأنواع في تنسيق الإدخال Native"}]}]} />
 
-السماح بتحويل أنواع البيانات في صيغة الإدخال Native
+السماح بتحويل أنواع البيانات في تنسيق الإدخال Native
 
 ## input_format_native_decode_types_in_binary_format {#input_format_native_decode_types_in_binary_format}
 
@@ -856,7 +856,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد لاستخدام الأعمدة الجغرافية في ملف Parquet"}]}]} />
 
-عند قراءة ملفات Parquet، يُفَك ترميز أعمدة البيانات الهندسية إلى أنواع البيانات الهندسية في ClickHouse (`Point` أو `MultiPoint` أو `LineString` أو `Polygon` أو `MultiLineString` أو `MultiPolygon` أو `Geometry`). ينطبق ذلك على الأعمدة الموصوفة في البيانات الوصفية `geo` الخاصة بـ GeoParquet، وعلى الأعمدة المُعلَّمة بالنوع المنطقي `GEOMETRY` أو `GEOGRAPHY` في Parquet. إذا كان هذا الإعداد معطّلًا، فتُقرأ هذه الأعمدة بنوع `String` يحتوي على بايتات WKB (أو WKT) الخام، ما لم يُطلب نوع بيانات جغرافي صراحةً.
+عند قراءة ملفات Parquet، يُفَك ترميز أعمدة البيانات الهندسية إلى أنواع البيانات الهندسية في ClickHouse (`Point` أو `MultiPoint` أو `LineString` أو `Polygon` أو `MultiLineString` أو `MultiPolygon` أو `Geometry`). ينطبق ذلك على الأعمدة الموصوفة في البيانات الوصفية `geo` الخاصة بـ GeoParquet، وعلى الأعمدة المُعلَّمة بالنوع المنطقي `GEOMETRY` أو `GEOGRAPHY` في Parquet. إذا كان هذا الإعداد معطّلًا، فتُقرأ هذه الأعمدة بنوع `String` يحتوي على بايتات WKB (أو WKT) الخام، ما لم يُطلب نوع بيانات جغرافي صراحةً. وفي هذه الحالة، تُقرأ الأعمدة ذات الترميز الأصلي (GeoArrow) في GeoParquet 1.1 بأنواعها المتداخلة الأساسية `Array` و`Tuple`.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -1219,6 +1219,22 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 في Values format: إذا تعذّر على streaming parser تحليل الحقل، فشغّل SQL parser وحاول تفسيره على أنه تعبير SQL.
+
+## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لدفع الأجزاء القابلة للترجمة من شروط WHERE المطبقة على أعمدة top-level من أنواع الأعداد الصحيحة، والفاصلة العائمة، وstring\/binary، و`Bool`، و`Date`، و`Date32`، و`DateTime64` إلى داخل عملية الفحص في صيغة Vortex، مما قد يقلل عدد الصفوف التي يُفك ترميزها؛ أما الشرط الذي لا يمكن ترجمته إلا جزئيًا فيُوسَّع إلى شرط يحتفظ بكل صف مطابق على الأقل، ثم يعيد ClickHouse تطبيق عامل التصفية الكامل بعد الفحص."}]}]} />
+
+عند قراءة ملفات Vortex، تُدفع الأجزاء القابلة للترجمة من شروط WHERE المطبقة على أعمدة top-level من أنواع الأعداد الصحيحة، والفاصلة العائمة، وstring/binary، و`Bool`، و`Date`، و`Date32`، و`DateTime64` إلى داخل عملية الفحص، بحيث يقرأ الاستعلام الانتقائي بيانات أقل ويفك ترميز كمية أقل منها. ولا يُطبَّق داخل الفحص إلا الجزء المترجَم من الشرط؛ إذ يُوسَّع الشرط الذي لا يمكن ترجمته إلا جزئيًا إلى شرط يحتفظ بكل صف مطابق على الأقل، ومن ثَمّ قد تُقرأ صفوف غير مطابقة ويُفك ترميزها. ويعيد ClickHouse تطبيق عامل التصفية الكامل بعد الفحص.
+
+## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد لإرجاع صفوف ملف Vortex بترتيبها نفسه في الملف؛ إذ يُفك ترميز الملف افتراضيًا بالتوازي، فلا يكون ترتيب الصفوف مضمونًا."}]}]} />
+
+يُرجع صفوف ملف Vortex بترتيبها نفسه في الملف. افتراضيًا، يُفك ترميز تقسيمات الصفوف في الملف بالتوازي (راجع `max_parsing_threads`) وتُرجَع فور جاهزيتها، لذا لا يكون ترتيب الصفوف مضمونًا؛ أما عند تفعيل هذا الإعداد، فإن أي تقسيم بطيء يؤخّر التقسيمات التي تليه. لا يُنصح باستخدامه، لأن ترتيب الصفوف غير مضمون عمومًا، وقد تُخلّ به أجزاء أخرى من خط تنفيذ الاستعلام.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 

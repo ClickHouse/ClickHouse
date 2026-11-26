@@ -2,13 +2,12 @@
 sidebarTitle: 'Onboarding para HIPAA'
 slug: /cloud/security/compliance/hipaa-onboarding
 title: 'Onboarding para HIPAA'
-description: 'Saiba mais sobre como fazer o onboarding de serviços compatíveis com a HIPAA'
+description: 'Saiba mais sobre como fazer o onboarding de serviços em conformidade com a HIPAA'
 doc_type: 'guide'
 keywords: ['hipaa', 'conformidade', 'saúde', 'segurança', 'proteção de dados']
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <EnterprisePlanFeatureBadge feature="HIPAA" />
@@ -17,11 +16,9 @@ O ClickHouse oferece serviços em conformidade com a Regra de Segurança da Heal
 
 Para mais informações sobre o programa de conformidade do ClickHouse e a disponibilidade de relatórios de auditoria de terceiros, consulte nossa [visão geral da conformidade](/pt-BR/products/cloud/reference/security/compliance-overview) e o [Trust Center](https://trust.clickhouse.com). Além disso, os clientes devem consultar nossa página de [recursos de segurança](/pt-BR/products/cloud/features/security) para selecionar e implementar os controles de segurança adequados para suas cargas de trabalho.
 
-Esta página descreve o processo para habilitar a implantação de serviços compatíveis com a HIPAA no ClickHouse Cloud.
+Esta página descreve o processo para habilitar a implantação de serviços em conformidade com a HIPAA no ClickHouse Cloud.
 
-<div id="enable-hipaa-compliant-services">
-  ## Habilite e implante serviços compatíveis com a HIPAA
-</div>
+## Habilite e implante serviços em conformidade com a HIPAA {#enable-hipaa-compliant-services}
 
 <Steps>
   <Step title="Assine os serviços Enterprise" id="sign-up-for-enterprise">
@@ -39,14 +36,12 @@ Esta página descreve o processo para habilitar a implantação de serviços com
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_1-light.webp" alt="Solicitar ativação da HIPAA (modo claro)" />
 
-    <Frame>
-
-    ![Solicitar ativação da HIPAA](/images/cloud/security/compliance/hipaa_1.webp)
-
-    </Frame>
-
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_1.webp" alt="Solicitar ativação da HIPAA (modo escuro)" />
+      </Frame>
     </div>
 
     <br />
@@ -55,14 +50,12 @@ Esta página descreve o processo para habilitar a implantação de serviços com
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_2-light.webp" alt="Enviar uma solicitação de BAA (modo claro)" />
 
-    <Frame>
-
-    ![Enviar uma solicitação de BAA](/images/cloud/security/compliance/hipaa_2.webp)
-
-    </Frame>
-
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_2.webp" alt="Enviar uma solicitação de BAA (modo escuro)" />
+      </Frame>
     </div>
 
     <br />
@@ -71,14 +64,12 @@ Esta página descreve o processo para habilitar a implantação de serviços com
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_3-light.webp" alt="HIPAA ativada (modo claro)" />
 
-    <Frame>
-
-    ![HIPAA ativada](/images/cloud/security/compliance/hipaa_3.webp)
-
-    </Frame>
-
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_3.webp" alt="HIPAA ativada (modo escuro)" />
+      </Frame>
     </div>
 
     <br />
@@ -90,26 +81,24 @@ Esta página descreve o processo para habilitar a implantação de serviços com
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_4-light.webp" alt="Implantar em uma região compatível com a HIPAA (modo claro)" />
 
-    <Frame>
-
-    ![Implantar em uma região compatível com a HIPAA](/images/cloud/security/compliance/hipaa_4.webp)
-
-    </Frame>
-
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_4.webp" alt="Implantar em uma região compatível com a HIPAA (modo escuro)" />
+      </Frame>
     </div>
 
     <br />
 
     3. Insira um nome para o serviço e preencha as informações restantes
 
-    Para ver uma lista completa de provedores de Cloud e serviços compatíveis com a HIPAA, consulte nossa página [Supported cloud regions](/pt-BR/products/cloud/reference/supported-regions).
+    Para ver uma lista completa de provedores de nuvem e serviços em conformidade com a HIPAA, consulte nossa página [Supported cloud regions](/pt-BR/products/cloud/reference/supported-regions).
   </Step>
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## Migrar serviços existentes
+  ## Migrar serviços existentes {#migrate-to-hipaa}
 </div>
 
 É altamente recomendável que os clientes implantem serviços em ambientes em conformidade, quando necessário. O processo de migrar serviços de uma região padrão para uma região compatível com a HIPAA envolve a restauração a partir de um backup e pode exigir algum tempo de inatividade.
@@ -128,3 +117,9 @@ Se for necessário migrar de regiões padrão para regiões compatíveis com a H
 
   Os serviços devem permanecer no mesmo provedor de Cloud e na mesma região geográfica. Esse processo migra o serviço para o ambiente em conformidade dentro do mesmo provedor de Cloud e da mesma região.
 </Info>
+
+## Backups para serviços em conformidade com a HIPAA {#backups}
+
+Os backups gerenciados pela ClickHouse funcionam da mesma forma nos serviços em conformidade com a HIPAA e nos demais serviços. Os backups são armazenados no mesmo provedor de nuvem e na mesma região do serviço, e os clientes do Plano Enterprise podem configurar a frequência e a retenção dos backups. Um backup pode ser restaurado em um novo serviço na mesma região, inclusive em outro serviço em conformidade com a HIPAA.
+
+A exportação de backups para a sua própria conta na nuvem não está disponível para serviços em conformidade com a HIPAA. Como o ambiente regulado não permite gravação em armazenamento fora dele, a opção **Set up external backup** fica desabilitada no console e o privilégio `BACKUP` não é concedido nesses serviços.
