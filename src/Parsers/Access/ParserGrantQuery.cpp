@@ -451,6 +451,11 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `CREATE HANDLER`
     - `DROP HANDLER`
     - `SHOW HANDLERS`
+  - `ICEBERG WAREHOUSE ADMIN`
+    - `ALTER ICEBERG WAREHOUSE`
+    - `CREATE ICEBERG WAREHOUSE`
+    - `DROP ICEBERG WAREHOUSE`
+    - `SHOW ICEBERG WAREHOUSES`
   - [`INSERT`](#insert)
   - [`INTROSPECTION`](#introspection)
     - `addressToLine`

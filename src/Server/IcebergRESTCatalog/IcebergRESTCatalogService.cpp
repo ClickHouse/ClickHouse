@@ -1,5 +1,6 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogService.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -424,9 +425,9 @@ IcebergRESTResponse IcebergRESTCatalogService::handleExternalRequestImpl(
         case IcebergRESTOperation::CreateWarehouse:
             return handleCreateWarehouse(request.body, user_context);
         case IcebergRESTOperation::ListWarehouses:
-            return handleListWarehouses();
+            return handleListWarehouses(user_context);
         case IcebergRESTOperation::GetWarehouse:
-            return handleGetWarehouse(*match);
+            return handleGetWarehouse(*match, user_context);
         case IcebergRESTOperation::ReplaceWarehouseCredential:
             return handleReplaceWarehouseCredential(*match, request.body, user_context);
         case IcebergRESTOperation::DeleteWarehouse:
@@ -1292,6 +1293,7 @@ std::optional<IcebergRESTResponse> IcebergRESTCatalogService::commitPreparedTabl
 IcebergRESTResponse IcebergRESTCatalogService::handleCreateWarehouse(const String & body, const Context & user_context) const
 {
     checkDDLAllowed(user_context, "create warehouse");
+    user_context.checkAccess(AccessType::CREATE_ICEBERG_WAREHOUSE);
 
     const auto json = parseRequestBody(body);
     const auto name = getString(*json, "name");
@@ -1304,8 +1306,10 @@ IcebergRESTResponse IcebergRESTCatalogService::handleCreateWarehouse(const Strin
     return makeJSON(*definition.toJSON(name), Poco::Net::HTTPResponse::HTTP_OK);
 }
 
-IcebergRESTResponse IcebergRESTCatalogService::handleListWarehouses() const
+IcebergRESTResponse IcebergRESTCatalogService::handleListWarehouses(const Context & user_context) const
 {
+    user_context.checkAccess(AccessType::SHOW_ICEBERG_WAREHOUSES);
+
     Poco::JSON::Array list;
     for (const auto & [name, definition] : warehouses->list())
         list.add(definition.toJSON(name));
@@ -1315,8 +1319,10 @@ IcebergRESTResponse IcebergRESTCatalogService::handleListWarehouses() const
     return makeJSON(result, Poco::Net::HTTPResponse::HTTP_OK);
 }
 
-IcebergRESTResponse IcebergRESTCatalogService::handleGetWarehouse(const IcebergRESTRouteMatch & match) const
+IcebergRESTResponse IcebergRESTCatalogService::handleGetWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const
 {
+    user_context.checkAccess(AccessType::SHOW_ICEBERG_WAREHOUSES);
+
     const auto & name = match.path_params.at("warehouse");
 
     const auto definition = warehouses->tryGetDefinition(name);
@@ -1330,6 +1336,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleReplaceWarehouseCredential(
     const IcebergRESTRouteMatch & match, const String & body, const Context & user_context) const
 {
     checkDDLAllowed(user_context, "replace warehouse credential");
+    user_context.checkAccess(AccessType::ALTER_ICEBERG_WAREHOUSE);
 
     const auto & name = match.path_params.at("warehouse");
 
@@ -1351,6 +1358,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleReplaceWarehouseCredential(
 IcebergRESTResponse IcebergRESTCatalogService::handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const
 {
     checkDDLAllowed(user_context, "drop warehouse");
+    user_context.checkAccess(AccessType::DROP_ICEBERG_WAREHOUSE);
 
     const auto & name = match.path_params.at("warehouse");
 
