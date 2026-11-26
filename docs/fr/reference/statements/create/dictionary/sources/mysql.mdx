@@ -81,6 +81,7 @@ Champs des paramètres :
 | `ssl_ca_pem`                    | Contenu du certificat de l’autorité de certification (CA) utilisé pour vérifier le certificat du serveur MySQL. Facultatif.                                                                                                                                                                                                                                                                                                                                 |
 | `ssl_cert_pem`                  | Contenu du certificat client, pour l’authentification basée sur certificat. Facultatif.                                                                                                                                                                                                                                                                                                                                                                     |
 | `ssl_key_pem`                   | Contenu de la clé privée associée à `ssl_cert_pem`. Facultatif.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `ssl_key_passphrase`            | Phrase secrète d’une clé `ssl_key` / `ssl_key_pem` chiffrée. Facultatif.                                                                                                                                                                                                                                                                                                                                                                                    |
 | `ssl_ca`, `ssl_cert`, `ssl_key` | Les mêmes identifiants sous forme de chemins vers des fichiers sur le serveur. Autorisés uniquement pour un dictionnaire défini dans un fichier de configuration du serveur, ou via une collection nommée qui y est définie, voir ci-dessous. Facultatif.                                                                                                                                                                                                   |
 
 <Note>
@@ -99,7 +100,11 @@ Champs des paramètres :
   Il n’existe pas de paramètre explicite `secure`. Lors de l’établissement d’une connexion SSL, la sécurité est obligatoire.
 </Note>
 
-MySQL peut être contacté sur un hôte local via des sockets. Pour cela, définissez `host` et `socket`.
+Il est possible de se connecter à MySQL sur un hôte local via des sockets. Pour ce faire, définissez `host` sur `localhost` et renseignez `socket`. Pour toute autre valeur de `host`, `socket` est ignoré et la connexion s&#39;effectue via TCP. Sans `socket`, la connexion s&#39;effectue via TCP sur `port`, y compris pour `localhost`.
+
+<Note>
+  `remote_url_allow_hosts` vérifie uniquement `host` et `port` : le chemin indiqué dans `socket` n&#39;est pas vérifié.
+</Note>
 
 Exemple de paramètres :
 
