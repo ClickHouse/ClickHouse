@@ -21,7 +21,9 @@ import { CommunityMaintainedBadge } from '/snippets/components/CommunityMaintain
 
 | Nightingale | ClickHouse Cloud | Self-managed ClickHouse |
 | --- | --- | --- |
-| v9.3.0 | Configuration reference based on the Cloud Connect guide and the v9.3.0 client. Live validation pending. | Configuration reference based on the documented server ports and the v9.3.0 client. Server version and TLS test results are unrecorded. |
+| v9.3.0 (Linux ARM64) | Verified on `26.6.1.2455` using **HTTP** over TLS on port `8443`, with server certificate verification enabled. | Configuration reference. Historical test versions and TLS settings are unavailable. |
+
+Native TLS on port `9440` is included as a configuration reference.
 
 ## Connect Nightingale to ClickHouse {#connect-nightingale-to-clickhouse}
 
@@ -112,6 +114,8 @@ SELECT now(), 'checkout', 503 FROM numbers(12);
 
 On the next evaluation, the query should return `12` and the rule should create a current event with `service=checkout`. Stop inserting errors and wait for the window to pass. The same query returns `0`, so the rule should recover on the next evaluation and record the recovery in historical events. The aggregate returns a row with the same label even when the window is empty. A notification channel is optional for inspecting these events.
 
+In the Cloud test, Nightingale verified the data source when saving it. The scheduled rule evaluated the 25-row fixture from `0` to `12` and back to `0`. The firing and recovery records shared the same rule, `service=checkout` label, and event hash.
+
 Disable or delete the demo rule when finished. See [Nightingale's SQL-backed rules guide](https://n9e.io/docs/alerting/sql-rules) for rule settings.
 
 ## Known limits {#known-limits}
@@ -119,7 +123,7 @@ Disable or delete the demo rule when finished. See [Nightingale's SQL-backed rul
 - In the open-source edition, the ClickHouse data source is available only in the SQL alert-rule editor.
 - Nightingale uses the first entry in **Nodes**. Point it at a service endpoint if your deployment needs failover.
 - Use a finite scalar number for the value field. A complex value such as an array, tuple, or map cannot be compared directly. Aggregate it or extract a number in SQL. Values are converted to `Float64`, so very large integers can lose precision.
-- The default result limit is 500 rows. Nightingale first counts the rows in a subquery and rejects results above the configured cap. Keep the window bounded on a sorting or partition key and aggregate to a small result. A small result does not limit the amount of data ClickHouse reads.
+- The default result limit is 500 rows. Nightingale first counts the rows in a subquery and rejects results above the configured cap. The Cloud check returned 500 points for a 500-row query and rejected a 501-row query. Keep the window bounded on a sorting or partition key and aggregate to a small result. A small result does not limit the amount of data ClickHouse reads.
 
 ## Troubleshooting {#troubleshooting}
 
