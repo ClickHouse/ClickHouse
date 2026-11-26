@@ -303,8 +303,12 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
+    const UInt8 is_null = src_concrete.getNullMapData()[n];
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
-    getNullMapData().push_back(src_concrete.getNullMapData()[n]);
+    auto & null_map = getNullMapData();
+    const size_t old_size = null_map.size();
+    null_map.resize(old_size + 1);
+    null_map[old_size] = is_null;
 }
 
 

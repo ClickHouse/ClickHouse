@@ -5,4 +5,7 @@
     <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore([[], [1, 2]][number % 2 + 1])</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore([[toUInt64(1)], [toUInt64(2)]][number % 2 + 1])</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore([[toUInt256(1)], [toUInt256(2)]][number % 2 + 1])</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore([[toDecimal64(1, 4)], [toDecimal64(2, 4)]][number % 2 + 1])</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore([[toDecimal256(1, 4)], [toDecimal256(2, 4)]][number % 2 + 1])</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore([[toNullable('first')], [toNullable('second')]][number % 2 + 1])</query>
 </test>

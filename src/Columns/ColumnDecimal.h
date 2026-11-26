@@ -54,10 +54,17 @@ public:
     void shrinkToFit() final { data.shrink_to_fit(); }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertFrom(const IColumn & src, size_t n) final { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+    void insertFrom(const IColumn & src, size_t n) final
 #else
-    void doInsertFrom(const IColumn & src, size_t n) final { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+    void doInsertFrom(const IColumn & src, size_t n) final
 #endif
+    {
+        /// Snapshot before growing: the source may be this column.
+        const T value = static_cast<const Self &>(src).getData()[n];
+        const size_t old_size = data.size();
+        data.resize(old_size + 1);
+        data[old_size] = value;
+    }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) final

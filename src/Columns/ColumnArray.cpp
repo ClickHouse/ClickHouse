@@ -460,7 +460,16 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     size_t size = src.sizeAt(n);
     size_t offset = src.offsetAt(n);
 
-    getData().insertRangeFrom(src.getData(), offset, size);
+    auto & nested = getData();
+    const auto & src_nested = src.getData();
+
+    /// Columns with dynamic structure import variant metadata even from empty ranges.
+    /// Keep the existing range path when the nested column itself is shared.
+    if (size > 1 || &nested == &src_nested || nested.hasDynamicStructure())
+        nested.insertRangeFrom(src_nested, offset, size);
+    else if (size == 1)
+        nested.insertFrom(src_nested, offset);
+
     getOffsets().push_back(getOffsets().back() + size);
 }
 
