@@ -172,7 +172,8 @@ struct Fixture
             /* max_tries */ 0,
             /* fallback_to_stale_replicas */ true,
             /* max_parallel_replicas */ 1,
-            /* skip_unavailable_shards */ false);
+            /* skip_unavailable_shards */ false,
+            /* fail_if_replica_unprobed */ false);
     }
 };
 

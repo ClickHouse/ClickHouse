@@ -78,8 +78,6 @@ public:
 
     const ConnectionTimeouts & getConnectionTimeouts() const { return timeouts; }
 
-    size_t numberOfProcessingReplicas() const;
-
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
@@ -167,13 +165,6 @@ private:
 
     /// The number of replicas that are in process of connection.
     size_t replicas_in_process_count = 0;
-    /// The number of ready replicas (replica is considered ready when it's
-    /// connection returns outside).
-    size_t ready_replicas_count = 0;
-
-    /// The number of requested in startNewConnection replicas (it's needed for
-    /// checking the number of requested replicas that are still in process).
-    size_t requested_connections_count = 0;
 
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;

@@ -97,7 +97,6 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
     /// Try to start establishing connections with max_entries replicas.
     for (size_t i = 0; i != max_entries; ++i)
     {
-        ++requested_connections_count;
         State state = startNewConnectionImpl(connection);
         if (state == State::READY)
             connections.push_back(connection);
@@ -148,7 +147,6 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnection(Connection *& connection_out)
 {
-    ++requested_connections_count;
     State state = startNewConnectionImpl(connection_out);
     /// If we cannot start new connection but there are connections in epoll, return NOT_READY.
     if (state == State::CANNOT_CHOOSE && !epoll.empty())
@@ -199,6 +197,8 @@ int HedgedConnectionsFactory::getNextIndex()
         next_index = (next_index + 1) % shuffled_pools.size();
 
         /// Check if we can try this replica.
+        /// An establisher cancelled by `stopChoosingReplicas` never makes progress and is never counted
+        /// as failed, so it must not be chosen again: `startNewConnectionImpl` would spin on it forever.
         if (replicas[next_index].connection_establisher->getResult().entry.isNull()
             && !replicas[next_index].connection_establisher->isCancelled()
             && (max_tries == 0 || shuffled_pools[next_index].error_count < max_tries))
@@ -330,7 +330,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
                 if (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry))
                 {
                     replicas[index].is_ready = true;
-                    ++ready_replicas_count;
                     connection_out = &*result.entry;
                     return State::READY;
                 }
@@ -418,14 +417,6 @@ bool HedgedConnectionsFactory::maySelectReplicaBelowQueryPlanSerializationVersio
     }
 
     return false;
-}
-
-size_t HedgedConnectionsFactory::numberOfProcessingReplicas() const
-{
-    if (epoll.empty())
-        return 0;
-
-    return requested_connections_count - ready_replicas_count;
 }
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(Connection *& connection_out)
