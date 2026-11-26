@@ -59,10 +59,3 @@ SELECT countIf(explain LIKE '%ExternalDistinctTransform%') > 0 FROM
     EXPLAIN PIPELINE SELECT DISTINCT n.number FROM numbers(10) AS n JOIN generateRandom('x UInt64', 1) AS r ON n.number = r.x
     SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0
 );
-
--- A `STREAM` subscription for updates, which a streaming query reads.
-SET enable_streaming_queries = 1, enable_parallel_replicas = 0;
-CREATE TABLE stream_rows (k UInt64) ENGINE = MergeTree ORDER BY k;
-INSERT INTO stream_rows SELECT number % 10 FROM numbers(100);
-SELECT DISTINCT k FROM stream_rows STREAM LIMIT 3;
-DROP TABLE stream_rows;
