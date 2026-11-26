@@ -344,6 +344,12 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
+    /// The aggregator of the index of a part that is written to `part_storage`, for indexes that depend on the table.
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const IDataPartStorage & /*part_storage*/) const
+    {
+        return createIndexAggregator();
+    }
+
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
 

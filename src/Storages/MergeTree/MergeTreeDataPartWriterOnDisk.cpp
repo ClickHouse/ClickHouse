@@ -256,7 +256,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 cached_index_marks.emplace(on_disk_stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
         }
 
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(*data_part_storage));
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -343,7 +343,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
+                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(*data_part_storage);
 
                 for (const auto & [type, stream] : index_streams)
                 {

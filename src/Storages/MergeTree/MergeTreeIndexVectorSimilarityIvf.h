@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IvfTree.h>
+#include <Storages/MergeTree/IvfTreeStore.h>
 #include <Common/Logger.h>
 
 #include <pcg_random.hpp>
@@ -19,7 +20,8 @@
 namespace DB
 {
 /// vector_similarity('ivf', 'L2Distance' | 'cosineDistance', dimensions[, lists]): lists of 4-bit codes of rotated residuals,
-/// scanned on the GPU, reached through a tree of centroids (see `IvfTree`), and the exact distances of the best candidates.
+/// reached through a tree of centroids (see `IvfTree`), and the exact distances of the best candidates. The tree is one per
+/// table, kept in a table of its own (see `IvfTreeStore`): the first build trains it, every part encodes its rows by it.
 enum class IvfMetric : uint8_t
 {
     L2 = 0,
@@ -32,6 +34,11 @@ struct IvfParams
     /// Built and searched on the GPU, or else on the CPU, in the same format.
     bool on_gpu = true;
 };
+
+namespace GPU
+{
+class IvfTreeRouter;
+}
 
 class TemporaryDataBuffer;
 
@@ -65,8 +72,9 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     const bool on_gpu;
     size_t rows = 0;
     size_t lists = 0;
-    /// The lists are the leaves of the tree.
-    IvfTree tree;
+    /// The lists are the leaves of the tree of the table, which this version of it is.
+    std::shared_ptr<const IvfTree> tree;
+    UInt64 tree_version = 0;
     std::vector<UInt64> list_offsets;
 
     std::vector<float> rotation;
@@ -75,7 +83,7 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     std::vector<IvfListBucket> buckets;
 
 private:
-    static constexpr UInt64 FILE_FORMAT_VERSION = 5;
+    static constexpr UInt64 FILE_FORMAT_VERSION = 6;
 
     size_t entryBytes() const;
     size_t entries() const { return list_offsets.empty() ? 0 : list_offsets.back(); }
@@ -90,7 +98,8 @@ private:
 
 struct MergeTreeIndexAggregatorIvf final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorIvf(const String & index_name_, const Block & index_sample_block_, size_t dimensions_, IvfMetric metric_, IvfParams params_);
+    MergeTreeIndexAggregatorIvf(const String & index_name_, const Block & index_sample_block_, size_t dimensions_, IvfMetric metric_,
+        IvfParams params_, String table_);
     ~MergeTreeIndexAggregatorIvf() override;
 
     bool empty() const override { return rows == 0; }
@@ -102,12 +111,32 @@ struct MergeTreeIndexAggregatorIvf final : IMergeTreeIndexAggregator
     const size_t dimensions;
     const IvfMetric metric;
     const IvfParams params;
+    /// The table of the part, whose tree the part encodes its rows by.
+    const String table;
 
 private:
     void add(const float * vector);
     void reset();
+    /// From now on, the rows are encoded by `tree` as they come.
+    void startEncoding(IvfTreeStore::VersionedTree tree_);
+    void encode(const float * block, size_t n);
 
+    /// The rows that came, and those encoded so far, which the next encoded row follows.
     size_t rows = 0;
+    size_t encoded_rows = 0;
+    /// Whether the store was asked for the tree of the table yet.
+    bool tree_looked_up = false;
+    /// Until the table has a tree, the rows wait in `vectors` and a sample of them in `sample`, for this part to train it.
+    std::optional<IvfTreeStore::VersionedTree> tree;
+    std::vector<float> rotated_centroids;
+    /// On the GPU: the tree on the device, which assigns and encodes the rows.
+    std::unique_ptr<GPU::IvfTreeRouter> router;
+    std::vector<IvfListBucket> buckets;
+    std::vector<UInt32> bucket_of_list;
+    std::vector<UInt64> counts;
+    std::vector<char> records;
+    /// The rows not encoded yet, encoded on all cores once they take `assign_block_bytes`.
+    std::vector<float> pending;
     std::shared_ptr<TemporaryDataBuffer> vectors;
     std::vector<float> sample;
     size_t sample_capacity = 0;
@@ -145,6 +174,7 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const IDataPartStorage & part_storage) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
     bool isVectorSimilarityIndex() const override { return true; }
