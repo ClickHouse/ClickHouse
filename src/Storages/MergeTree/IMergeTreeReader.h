@@ -93,7 +93,7 @@ public:
     /// `previous_step_columns` are the columns of the same rows read by earlier steps of the chain.
     void performRequiredConversions(Columns & res_columns, const Block * previous_step_columns = nullptr) const;
 
-    bool convertsNullsToDefaults() const { return converts_nulls_to_defaults; }
+    [[nodiscard]] bool convertsNullsToDefaults() const { return converts_nulls_to_defaults; }
 
     [[nodiscard]] ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     [[nodiscard]] size_t numColumnsInResult() const { return getColumns().size(); }
