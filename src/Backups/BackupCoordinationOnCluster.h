@@ -4,9 +4,7 @@
 #include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
-#include <Backups/BackupCoordinationReplicatedSQLObjects.h>
-#include <Backups/BackupCoordinationReplicatedNamedCollections.h>
-#include <Backups/BackupCoordinationReplicatedWorkloadEntities.h>
+#include <Backups/BackupCoordinationReplicatedDirectories.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
@@ -107,6 +105,11 @@ private:
     void serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name);
     String deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const;
 
+    /// Creates the node `<parent_path>/<key_segments...>/<current_host>` keeping `value` and the nodes for the key segments,
+    /// each of them if it doesn't exist.
+    void createNodeOfCurrentHost(
+        const String & parent_path, std::initializer_list<String> key_segments, const String & value, const String & logging_name);
+
     /// Reads data of all objects from ZooKeeper that replicas have added to backup and add it to the corresponding
     /// BackupCoordinationReplicated* objects.
     /// After that, calling addReplicated* functions is not allowed and throws an exception.
@@ -140,9 +143,9 @@ private:
 
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables TSA_GUARDED_BY(replicated_tables_mutex);
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access TSA_GUARDED_BY(replicated_access_mutex);
-    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
-    mutable std::optional<BackupCoordinationReplicatedWorkloadEntities> replicated_workload_entities TSA_GUARDED_BY(replicated_workload_entities_mutex);
-    mutable std::optional<BackupCoordinationReplicatedNamedCollections> replicated_named_collections TSA_GUARDED_BY(replicated_named_collections_mutex);
+    mutable std::optional<BackupCoordinationReplicatedDirectories<std::pair<String, UserDefinedSQLObjectType>>> replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
+    mutable std::optional<BackupCoordinationReplicatedDirectories<std::pair<String, WorkloadEntityType>>> replicated_workload_entities TSA_GUARDED_BY(replicated_workload_entities_mutex);
+    mutable std::optional<BackupCoordinationReplicatedDirectories<String>> replicated_named_collections TSA_GUARDED_BY(replicated_named_collections_mutex);
     mutable std::optional<BackupCoordinationFileInfos> file_infos TSA_GUARDED_BY(file_infos_mutex);
     mutable std::optional<BackupCoordinationKeeperMapTables> keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
     mutable std::optional<BackupCoordinationKeeperMapTables> rocksdb_tables TSA_GUARDED_BY(rocksdb_tables_mutex);

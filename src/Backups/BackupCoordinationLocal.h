@@ -4,9 +4,7 @@
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
-#include <Backups/BackupCoordinationReplicatedSQLObjects.h>
-#include <Backups/BackupCoordinationReplicatedNamedCollections.h>
-#include <Backups/BackupCoordinationReplicatedWorkloadEntities.h>
+#include <Backups/BackupCoordinationReplicatedDirectories.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
 #include <Backups/BackupSettings.h>
@@ -90,9 +88,9 @@ private:
 
     BackupCoordinationReplicatedTables replicated_tables TSA_GUARDED_BY(replicated_tables_mutex);
     BackupCoordinationReplicatedAccess replicated_access TSA_GUARDED_BY(replicated_access_mutex);
-    BackupCoordinationReplicatedSQLObjects replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
-    BackupCoordinationReplicatedWorkloadEntities replicated_workload_entities TSA_GUARDED_BY(replicated_workload_entities_mutex);
-    BackupCoordinationReplicatedNamedCollections replicated_named_collections TSA_GUARDED_BY(replicated_named_collections_mutex);
+    BackupCoordinationReplicatedDirectories<std::pair<String, UserDefinedSQLObjectType>> replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
+    BackupCoordinationReplicatedDirectories<std::pair<String, WorkloadEntityType>> replicated_workload_entities TSA_GUARDED_BY(replicated_workload_entities_mutex);
+    BackupCoordinationReplicatedDirectories<String> replicated_named_collections TSA_GUARDED_BY(replicated_named_collections_mutex);
     BackupCoordinationFileInfos file_infos TSA_GUARDED_BY(file_infos_mutex);
     BackupCoordinationKeeperMapTables keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
     BackupCoordinationKeeperMapTables rocksdb_tables TSA_GUARDED_BY(rocksdb_tables_mutex);

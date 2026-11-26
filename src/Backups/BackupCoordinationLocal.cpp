@@ -82,25 +82,25 @@ Strings BackupCoordinationLocal::getReplicatedAccessFilePaths(const String & acc
 void BackupCoordinationLocal::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path)
 {
     std::lock_guard lock{replicated_sql_objects_mutex};
-    replicated_sql_objects.addDirectory({loader_zk_path, object_type, "", dir_path});
+    replicated_sql_objects.addDirectory({{loader_zk_path, object_type}, "", dir_path});
 }
 
 Strings BackupCoordinationLocal::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
 {
     std::lock_guard lock{replicated_sql_objects_mutex};
-    return replicated_sql_objects.getDirectories(loader_zk_path, object_type, "");
+    return replicated_sql_objects.getDirectories({loader_zk_path, object_type}, "");
 }
 
 void BackupCoordinationLocal::addReplicatedWorkloadEntitiesDir(const String & loader_zk_path, WorkloadEntityType entity_type, const String & dir_path)
 {
     std::lock_guard lock{replicated_workload_entities_mutex};
-    replicated_workload_entities.addDirectory({loader_zk_path, entity_type, "", dir_path});
+    replicated_workload_entities.addDirectory({{loader_zk_path, entity_type}, "", dir_path});
 }
 
 Strings BackupCoordinationLocal::getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const
 {
     std::lock_guard lock{replicated_workload_entities_mutex};
-    return replicated_workload_entities.getDirectories(loader_zk_path, entity_type, "");
+    return replicated_workload_entities.getDirectories({loader_zk_path, entity_type}, "");
 }
 
 void BackupCoordinationLocal::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)

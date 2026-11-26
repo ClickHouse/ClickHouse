@@ -2,7 +2,7 @@
     <!--
         Keeper-backed (replicated) workload entity storage: every replica sharing this path keeps the same set of
         WORKLOAD and RESOURCE entities, and BACKUP / RESTORE ON CLUSTER coordinate a single writer/owner per
-        replication id (see BackupCoordinationReplicatedWorkloadEntities / RestoreCoordinationOnCluster).
+        replication id (see BackupCoordinationReplicatedDirectories / RestoreCoordinationOnCluster).
     -->
     <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
 </clickhouse>
