@@ -160,6 +160,16 @@ N&#39;a d&#39;effet que dans ClickHouse Cloud. Nombre maximal de paquets non acq
 
 N’a d’effet que dans ClickHouse Cloud. Nombre minimal d’octets pour effectuer une opération de seek dans le cache distribué.
 
+## distributed_cache_min_inflight_bytes_to_discard_connection {#distributed_cache_min_inflight_bytes_to_discard_connection}
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "4194304"},{"label": "Nouveau paramètre permettant de conserver une connexion au Distributed Cache comportant une petite quantité de données en transit lorsqu’une requête de lecture est annulée. Valeur par défaut : 4 Mio ; 0 rétablit le comportement précédent (abandon de la connexion dès que des données peuvent encore arriver)."}]}]} />
+
+N’a d’effet que dans ClickHouse Cloud. Lorsqu’une requête de lecture du Distributed Cache est annulée alors que des données peuvent encore arriver, la connexion est abandonnée si le nombre estimé d’octets en transit dépasse cette valeur ; sinon, elle est remise dans le pool, et la requête suivante sur cette connexion se charge de leur vidage. Avec la valeur 0, la connexion est toujours abandonnée. Lors d’un positionnement, `distributed_cache_min_inflight_bytes_to_discard_connection_on_seek` détermine d’abord s’il faut renvoyer la requête sur la même connexion ; si la requête est au contraire annulée, ce paramètre s’applique également. Contrairement à cet autre paramètre, 0 signifie ici « toujours abandonner ». Ce paramètre n’a aucun effet si `distributed_cache_discard_connection_if_unread_data` est désactivé, car la connexion est alors toujours conservée.
+
 ## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek {#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek}
 
 <CloudOnlyBadge />
@@ -260,7 +270,7 @@ N’a d’effet que dans ClickHouse Cloud. Affiche les colonnes `certificate` et
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "Nouveau paramètre"}]}]} />
 
-N’a d’effet que dans ClickHouse Cloud. Délai d’expiration pour l’envoi de données vers le serveur de cache distribué, en millisecondes. Si un client doit envoyer des données mais ne parvient à envoyer aucun octet pendant cet intervalle, une exception est levée.
+N’a d’effet que dans ClickHouse Cloud. Délai d’attente dépassé pour l’envoi de données vers le serveur de Distributed Cache, en millisecondes. Si un client doit envoyer des données mais ne parvient à envoyer aucun octet pendant cet intervalle, une exception est levée.
 
 ## distributed_cache_tcp_keep_alive_timeout_ms {#distributed_cache_tcp_keep_alive_timeout_ms}
 

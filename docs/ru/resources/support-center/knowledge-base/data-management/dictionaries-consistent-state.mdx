@@ -6,9 +6,7 @@ tags: ['Управление Cloud', 'Моделирование данных']
 keywords: ['Словари']
 ---
 
-<div id="dictionaries-in-clickhouse">
-  ## Словари в ClickHouse
-</div>
+## Словари в ClickHouse {#dictionaries-in-clickhouse}
 
 Словари, созданные в ClickHouse Cloud, на начальном этапе создания могут временно работать несогласованно. Это означает, что сразу после создания вы можете не увидеть в словаре никаких данных. Однако после нескольких попыток запрос на создание может попасть на другие реплики, и данные станут видимыми.
 
@@ -24,12 +22,16 @@ keywords: ['Словари']
 
 Чтобы решить эту проблему, при создании словаря используйте запрос `SELECT` вместо указания исходной таблицы и включите настройку `select_sequential_consistency=1`.
 
+<Note title="ClickHouse Cloud">
+  При создании словаря, который читает данные из таблицы ClickHouse, укажите в секции `SOURCE` учётные данные (имя пользователя и пароль) отдельного пользователя. У этого пользователя должно быть разрешение `SELECT` на исходную таблицу. См. [пример источника для словаря ClickHouse](/ru/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
+
 Вместо указания исходной таблицы:
 
 ```sql
 SOURCE(CLICKHOUSE(
     table 'test.temp_title_table_1706189903924'
-    user default password 'PASSWORD'))
+    user 'dict_reader' password 'dict_reader_password'))
 ```
 
 Используйте запрос `SELECT` с `select_sequential_consistency=1`:
@@ -38,12 +40,10 @@ SOURCE(CLICKHOUSE(
 SOURCE(CLICKHOUSE(QUERY
     'SELECT songTitle, mappedTitle
     FROM test.temp_title_table_1706189903924
-    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+    SETTINGS select_sequential_consistency=1' USER 'dict_reader' PASSWORD 'dict_reader_password'))
 ```
 
-<div id="why-does-this-issue-occur">
-  ## Почему возникает эта проблема?
-</div>
+## Почему возникает эта проблема? {#why-does-this-issue-occur}
 
 Когда вы выполняете вставку данных, а затем создаете или перезагружаете словарь, DDL может дойти до реплики раньше самих данных (или новых данных). Из-за этого словари на разных репликах могут оказаться в несогласованном состоянии. В результате, в зависимости от того, на какую реплику попадет запрос, вы можете получить разные результаты.
 
