@@ -24,8 +24,8 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, MetricFamilies).
+/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help, exemplars)
+/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, MetricFamilies, Exemplars).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -113,6 +113,7 @@ private:
     std::unique_ptr<TargetPipeline> time_ranges_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
+    std::unique_ptr<TargetPipeline> exemplars_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.

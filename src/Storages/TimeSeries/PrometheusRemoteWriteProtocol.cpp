@@ -7,12 +7,15 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/ProfileEvents.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/Progress.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -27,10 +30,18 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
+#include <Storages/TimeSeries/getPrometheusLabelsHash.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
+#include <optional>
+#include <unordered_map>
 
+
+namespace ProfileEvents
+{
+    extern const Event PrometheusRemoteWriteOutOfOrderExemplars;
+}
 
 namespace DB
 {
@@ -44,6 +55,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
@@ -73,16 +85,114 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
 void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
 {
     if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
+    {
+        /// The conversion to a bigger scale multiplies without a check.
+        Int64 scaled = 0;
+        if ((scale > 3) && common::mulOverflow(timestamp_ms, DecimalUtils::scaleMultiplier<Int64>(scale - 3), scaled))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp {} ms does not fit into DateTime64({})", timestamp_ms, scale);
         column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
+    }
     else
         column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
+}
+
+/// An exemplar as Prometheus stores it: the labels are sorted by name and have no empty values.
+struct Exemplar
+{
+    std::vector<std::pair<std::string_view, std::string_view>> labels;
+    Float64 value = 0;
+    Int64 timestamp = 0;
+};
+
+/// The longest exemplar label set Prometheus accepts, in code points of the names and values (`exemplar.ExemplarMaxLabelSetLength`).
+constexpr size_t EXEMPLAR_MAX_LABEL_SET_LENGTH = 128;
+
+/// How far into the future an exemplar can be (`maxAheadTime` of storage/remote/write_handler.go).
+constexpr Int64 EXEMPLAR_MAX_AHEAD_TIME_MS = 10 * 60 * 1000;
+
+/// Returns the exemplars of a time series which Prometheus 3.5 stores, in order. Like `AppendExemplar` it drops the empty labels,
+/// the exemplars too far in the future and with too long labels, and a duplicate of the newest one or an exemplar older than it.
+/// `newest_accepted` is the newest exemplar of the series accepted in the request so far.
+std::vector<Exemplar> getAcceptedExemplars(
+    const prometheus::TimeSeries & element, Int64 max_timestamp, std::optional<Exemplar> & newest_accepted, size_t & num_out_of_order)
+{
+    std::vector<Exemplar> accepted;
+    for (const auto & proto_exemplar : element.exemplars())
+    {
+        Exemplar exemplar;
+        exemplar.value = proto_exemplar.value();
+        exemplar.timestamp = proto_exemplar.timestamp();
+        if (exemplar.timestamp > max_timestamp)
+            continue;
+
+        size_t labels_length = 0;
+        for (const auto & label : proto_exemplar.labels())
+        {
+            if (label.value().empty())
+                continue;
+            labels_length += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(label.name().data()), label.name().size());
+            labels_length += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(label.value().data()), label.value().size());
+            exemplar.labels.emplace_back(label.name(), label.value());
+        }
+        if (labels_length > EXEMPLAR_MAX_LABEL_SET_LENGTH)
+            continue;
+        std::sort(exemplar.labels.begin(), exemplar.labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+        if (newest_accepted)
+        {
+            /// A zero timestamp means the exemplar has no timestamp, then only the labels and the value are compared.
+            const auto & newest = *newest_accepted;
+            bool has_timestamp = (exemplar.timestamp != 0) || (newest.timestamp != 0);
+            if ((exemplar.labels == newest.labels) && (exemplar.value == newest.value)
+                && (!has_timestamp || (exemplar.timestamp == newest.timestamp)))
+                continue;
+
+            if ((exemplar.timestamp < newest.timestamp)
+                || ((exemplar.timestamp == newest.timestamp) && (exemplar.value < newest.value))
+                || ((exemplar.timestamp == newest.timestamp) && (exemplar.value == newest.value)
+                    && (getPrometheusLabelsHash(exemplar.labels) < getPrometheusLabelsHash(newest.labels))))
+            {
+                ++num_out_of_order;
+                continue;
+            }
+        }
+
+        newest_accepted = exemplar;
+        accepted.push_back(std::move(exemplar));
+    }
+    return accepted;
+}
+
+/// The labels of a time series as one string: sorted, without duplicates and empty values, like the stored series.
+String getSeriesKey(const prometheus::TimeSeries & element)
+{
+    std::vector<std::pair<std::string_view, std::string_view>> labels;
+    labels.reserve(element.labels_size());
+    for (const auto & label : element.labels())
+    {
+        if (!label.value().empty())
+            labels.emplace_back(label.name(), label.value());
+    }
+    std::sort(labels.begin(), labels.end());
+    labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
+
+    String key;
+    for (const auto & [name, value] : labels)
+    {
+        key += name;
+        key += '\xff';
+        key += value;
+        key += '\xff';
+    }
+    return key;
 }
 
 Block makeTimeSeriesBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     size_t num_metadata_rows,
     const StorageInMemoryMetadata & metadata,
-    const String & samples_column_name)
+    const String & samples_column_name,
+    size_t & num_out_of_order_exemplars)
 {
     const size_t num_rows = time_series.size() + num_metadata_rows;
 
@@ -108,6 +218,30 @@ Block makeTimeSeriesBlock(
     auto time_series_offsets = ColumnArray::ColumnOffsets::create();
     time_series_offsets->reserve(num_rows);
     const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
+
+    /// The outer column `exemplars` exists only if the table stores exemplars, otherwise they are dropped.
+    DataTypePtr exemplars_type;
+    MutableColumnPtr exemplar_timestamps;
+    MutableColumnPtr exemplar_values;
+    MutableColumnPtr exemplar_label_names;
+    MutableColumnPtr exemplar_label_values;
+    auto exemplar_labels_offsets = ColumnArray::ColumnOffsets::create();
+    auto exemplars_offsets = ColumnArray::ColumnOffsets::create();
+    Int64 max_exemplar_timestamp = 0;
+    std::unordered_map<String, std::optional<Exemplar>> newest_exemplars;
+    if (const auto * exemplars_column = metadata.columns.tryGet(TimeSeriesColumnNames::Exemplars))
+    {
+        exemplars_type = exemplars_column->type;
+        const auto & element_types = typeid_cast<const DataTypeTuple &>(*typeid_cast<const DataTypeArray &>(*exemplars_type).getNestedType()).getElements();
+        exemplar_timestamps = element_types.at(0)->createColumn();
+        exemplar_values = element_types.at(1)->createColumn();
+        const auto & labels_type = typeid_cast<const DataTypeMap &>(*element_types.at(2));
+        exemplar_label_names = labels_type.getKeyType()->createColumn();
+        exemplar_label_values = labels_type.getValueType()->createColumn();
+        exemplars_offsets->reserve(num_rows);
+        max_exemplar_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count() + EXEMPLAR_MAX_AHEAD_TIME_MS;
+    }
 
     for (const auto & element : time_series)
     {
@@ -140,6 +274,27 @@ Block makeTimeSeriesBlock(
             values->insert(sample.value());
         }
         time_series_offsets->insert(timestamps->size());
+
+        if (exemplars_type)
+        {
+            if (!element.exemplars().empty())
+            {
+                /// A request can have several entries of the same series, they share the newest accepted exemplar.
+                auto & newest_exemplar = newest_exemplars[getSeriesKey(element)];
+                for (const auto & exemplar : getAcceptedExemplars(element, max_exemplar_timestamp, newest_exemplar, num_out_of_order_exemplars))
+                {
+                    insertTimestamp(exemplar.timestamp, timestamp_scale, *exemplar_timestamps);
+                    exemplar_values->insert(exemplar.value);
+                    for (const auto & [name, value] : exemplar.labels)
+                    {
+                        exemplar_label_names->insertData(name.data(), name.size());
+                        exemplar_label_values->insertData(value.data(), value.size());
+                    }
+                    exemplar_labels_offsets->insert(exemplar_label_names->size());
+                }
+            }
+            exemplars_offsets->insert(exemplar_timestamps->size());
+        }
     }
 
     metric_name_column->insertManyDefaults(num_metadata_rows);
@@ -147,6 +302,8 @@ Block makeTimeSeriesBlock(
     {
         tags_offsets->insert(tags_names->size());
         time_series_offsets->insert(timestamps->size());
+        if (exemplars_type)
+            exemplars_offsets->insert(exemplar_timestamps->size());
     }
 
     Columns tags_tuple_columns;
@@ -165,6 +322,20 @@ Block makeTimeSeriesBlock(
     block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
     block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
     block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, samples_column_name});
+
+    if (exemplars_type)
+    {
+        Columns label_columns;
+        label_columns.push_back(std::move(exemplar_label_names));
+        label_columns.push_back(std::move(exemplar_label_values));
+        Columns exemplar_columns;
+        exemplar_columns.push_back(std::move(exemplar_timestamps));
+        exemplar_columns.push_back(std::move(exemplar_values));
+        exemplar_columns.push_back(ColumnMap::create(
+            ColumnArray::create(ColumnTuple::create(std::move(label_columns)), std::move(exemplar_labels_offsets))));
+        auto exemplars_column = ColumnArray::create(ColumnTuple::create(std::move(exemplar_columns)), std::move(exemplars_offsets));
+        block.insert(ColumnWithTypeAndName{std::move(exemplars_column), exemplars_type, TimeSeriesColumnNames::Exemplars});
+    }
     return block;
 }
 
@@ -220,14 +391,15 @@ Block makeBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
     const StorageInMemoryMetadata & metadata,
-    const String & samples_column_name)
+    const String & samples_column_name,
+    size_t & num_out_of_order_exemplars)
 {
     Block block;
     if (!time_series.empty())
     {
         appendBlock(
             block,
-            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata, samples_column_name));
+            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata, samples_column_name, num_out_of_order_exemplars));
     }
     if (!metrics_metadata.empty())
     {
@@ -329,7 +501,16 @@ void PrometheusRemoteWriteProtocol::write(
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    size_t num_out_of_order_exemplars = 0;
+    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name, num_out_of_order_exemplars),
+                *time_series_storage, getContext());
+
+    /// Like Prometheus, the out-of-order exemplars are counted and dropped without failing the request.
+    if (num_out_of_order_exemplars)
+    {
+        ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteOutOfOrderExemplars, num_out_of_order_exemplars);
+        LOG_WARNING(log, "{}: Dropped {} out-of-order exemplars", storage_id.getNameForLogs(), num_out_of_order_exemplars);
+    }
 
     LOG_TRACE(
         log,

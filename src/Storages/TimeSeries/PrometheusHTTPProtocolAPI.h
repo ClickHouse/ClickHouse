@@ -17,7 +17,8 @@ class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
 
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
-/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /federate
+/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata,
+/// /api/v1/query_exemplars, /federate
 class PrometheusHTTPProtocolAPI : public WithMutableContext
 {
 public:
@@ -96,6 +97,15 @@ public:
     /// in the Prometheus text exposition format.
     void federate(WriteBuffer & response, const Strings & match_params, QueryFinishCallback query_finish_callback = {});
 
+    /// Exemplars (/api/v1/query_exemplars): the exemplars in [`start`, `end`] of the series matched by any selector of `query`.
+    /// Returns false without writing anything if `query` has no selectors, then the response is 204 No Content.
+    bool queryExemplars(
+        WriteBuffer & response,
+        const String & query_param,
+        const String & start_param,
+        const String & end_param,
+        QueryFinishCallback query_finish_callback = {});
+
 private:
     /// Parses the `match[]` instant selectors and the optional `start` and `end` bounds of the metadata endpoints
     /// and makes a UNION ALL query selecting the ids (`series_id`) of the series matched by any of the selectors,
@@ -127,6 +137,7 @@ private:
     void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
+    void writeLabels(WriteBuffer & response, const std::vector<std::pair<String, String>> & labels);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
 

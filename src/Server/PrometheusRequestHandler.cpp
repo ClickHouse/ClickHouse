@@ -19,6 +19,7 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -476,8 +477,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API (/api/v1/query, /api/v1/query_range,
+/// /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/query_exemplars).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -540,7 +541,12 @@ public:
         /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
         StoragePtr table;
         if (!Poco::URI(uri).getPath().ends_with("/format_query"))
+        {
+            /// Exemplars need a grant on the table itself, it is checked before the table is looked up.
+            if (Poco::URI(uri).getPath().ends_with("/query_exemplars"))
+                context->checkAccess(AccessType::SELECT, getTimeSeriesTableID());
             table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        }
 
         try
         {
@@ -630,6 +636,16 @@ public:
                 UInt64 limit = getLimitParam();
 
                 protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
+            }
+            else if (uri_path.ends_with("/query_exemplars"))
+            {
+                /// Like Prometheus, an expression without selectors gets 204 No Content.
+                if (!protocol.queryExemplars(getOutputStream(response), params->get("query", ""), params->get("start", ""),
+                                             params->get("end", ""), query_finish_callback))
+                {
+                    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+                    response.setChunkedTransferEncoding(false);
+                }
             }
             else if (uri_path.ends_with("/metadata"))
             {
