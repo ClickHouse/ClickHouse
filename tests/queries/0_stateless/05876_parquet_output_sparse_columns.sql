@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: Parquet is not built in the fast test
 
--- The Parquet writer accepts sparse columns and converts them in its encoding threads.
+-- The Parquet writer accepts sparse columns and converts them itself where it needs full ones.
 -- The exports run over HTTP, where the server itself runs the Parquet writer.
 
 DROP TABLE IF EXISTS t_mixed;
@@ -53,27 +53,27 @@ SELECT 'sparse kept', sparse_bytes * 2 < full_bytes, 'sparse converted by the se
 -- The exported rows are the table's ones on every write path of the writer.
 -- One reading stream keeps the order of the pieces: the full part first, then the sparse one.
 SELECT 'parallel', (SELECT (count(), sum(cityHash64(*))) FROM t_mixed) = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
-    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4',
+    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&allow_special_serialization_kinds_in_output_formats=1&output_format_parquet_parallel_encoding=1',
     Parquet, 'id UInt64, u UInt64, s String, n Nullable(UInt32), tup Tuple(a UInt64, b String), lc LowCardinality(String), arr Array(UInt8)'));
 SELECT 'single thread', (SELECT (count(), sum(cityHash64(*))) FROM t_mixed) = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
-    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&output_format_parquet_parallel_encoding=0',
+    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&output_format_parquet_parallel_encoding=0&allow_special_serialization_kinds_in_output_formats=1',
     Parquet, 'id UInt64, u UInt64, s String, n Nullable(UInt32), tup Tuple(a UInt64, b String), lc LowCardinality(String), arr Array(UInt8)'));
 SELECT 'max_threads 1', (SELECT (count(), sum(cityHash64(*))) FROM t_mixed) = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
-    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=1',
+    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=1&allow_special_serialization_kinds_in_output_formats=1',
     Parquet, 'id UInt64, u UInt64, s String, n Nullable(UInt32), tup Tuple(a UInt64, b String), lc LowCardinality(String), arr Array(UInt8)'));
 SELECT 'split', (SELECT (count(), sum(cityHash64(*))) FROM t_mixed) = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
-    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&output_format_parquet_row_group_size=1000',
+    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&output_format_parquet_row_group_size=1000&allow_special_serialization_kinds_in_output_formats=1&output_format_parquet_parallel_encoding=1',
     Parquet, 'id UInt64, u UInt64, s String, n Nullable(UInt32), tup Tuple(a UInt64, b String), lc LowCardinality(String), arr Array(UInt8)'));
 SELECT 'row group bytes', (SELECT (count(), sum(cityHash64(*))) FROM t_mixed) = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
-    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&output_format_parquet_row_group_size_bytes=100000',
+    || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&output_format_parquet_row_group_size_bytes=100000&allow_special_serialization_kinds_in_output_formats=1&output_format_parquet_parallel_encoding=1',
     Parquet, 'id UInt64, u UInt64, s String, n Nullable(UInt32), tup Tuple(a UInt64, b String), lc LowCardinality(String), arr Array(UInt8)'));
 -- Row groups closed by bytes count the full size of the sparse columns, as on master.
 SELECT 'row groups by full size', (SELECT num_row_groups FROM url('http://localhost:' || toString(getServerPort('http_port'))
-    || '/?query=SELECT+u,+s+FROM+' || currentDatabase() || '.t_sparse+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&max_block_size=1000&output_format_parquet_row_group_size_bytes=50000',
-    ParquetMetadata)) >= 3;
+    || '/?query=SELECT+u,+s+FROM+' || currentDatabase() || '.t_sparse+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&max_block_size=250&output_format_parquet_row_group_size_bytes=12500&allow_special_serialization_kinds_in_output_formats=1',
+    ParquetMetadata)) BETWEEN 26 AND 41;
 SELECT 'array join', (SELECT (count(), sum(cityHash64(*))) FROM (SELECT id, s, a FROM t_mixed ARRAY JOIN range(3) AS a))
     = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
-    || '/?query=SELECT+id,+s,+a+FROM+' || currentDatabase() || '.t_mixed+ARRAY+JOIN+range(3)+AS+a+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&enable_lazy_columns_replication=1',
+    || '/?query=SELECT+id,+s,+a+FROM+' || currentDatabase() || '.t_mixed+ARRAY+JOIN+range(3)+AS+a+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&enable_lazy_columns_replication=1&allow_special_serialization_kinds_in_output_formats=1&output_format_parquet_parallel_encoding=1',
     Parquet, 'id UInt64, s String, a UInt8'));
 
 DROP TABLE t_mixed;
