@@ -184,6 +184,18 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
   개발자가 디버깅 목적으로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
 </Note>
 
+## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "새로운 설정으로, 기본적으로 활성화됨: DPsub 조인 순서 알고리즘이 입력의 정렬 순서(sort order)를 바탕으로 해시 조인과 정렬-병합 조인 중 하나를 선택합니다."}]}]} />
+
+`dpsub` 조인 순서 알고리즘에만 적용됩니다. 이 설정을 사용하면 알고리즘이 조인되는 테이블의 정렬 순서(sort order)를 고려합니다. 각 내부 등가 조인(inner equi-join)마다 비용을 기준으로 해시 조인과 `full_sorting_merge` 중 하나를 선택하며, 이후 조인에서 활용할 수 있는 조인 키로 결과가 정렬된 부분 계획은 유지합니다.
+
+입력이 `MergeTree` 테이블에서 `optimize_read_in_order`를 통해 해당 키 순서대로 읽힐 수 있거나 해당 키에 대한 `full_sorting_merge` 조인의 결과이면, 그 입력은 조인 키로 정렬된 것으로 간주됩니다. `full_sorting_merge`로 실행하도록 선택된 조인은 먼저 `full_sorting_merge`를 시도하고, 실패하면 `join_algorithm` 목록을 폴백으로 사용합니다. 이 선택은 `join_algorithm`이 기본값일 때만 이루어지며, 그 밖의 목록은 우선순위 목록으로 간주되어 그대로 사용됩니다. `enable_join_transitive_predicates`가 활성화되어 있어야 합니다.
+
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -256,11 +268,10 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "arrayJoin 함수를 실제 ARRAY JOIN 단계로 낮추는 새로운 최적화입니다. 기본적으로 비활성화되어 있습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "query_plan_lower_array_join_function을 기본적으로 활성화합니다."}]}]} />
 
-표현식 내부의 `arrayJoin` 함수를 실제 `ARRAY JOIN` 단계로 낮춰, `ARRAY JOIN` 절과 동일한 실행 메커니즘(지연 실행 복제 및 필터 융합)을 거치도록 하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
-[query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1일 때만 적용됩니다.
+`arrayJoin` 함수를 `ARRAY JOIN` 절과 동일한 방식, 즉 쿼리 실행 계획(query plan)의 별도 `ARRAY JOIN` 단계로 실행합니다. 비활성화하면 이전 버전과 마찬가지로 이 함수가 포함된 표현식 내부에서 계산됩니다.
 
 <Note>
-  이는 개발자가 디버깅 용도로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+  이는 개발자가 디버깅 용도로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환성이 없는 방식으로 변경되거나 제거될 수 있습니다.
 </Note>
 
 ## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
@@ -463,7 +474,7 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`file` 테이블 함수 및 `File` 테이블 엔진을 사용해 로컬 Parquet 파일을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 적용하는 새로운 설정입니다."}]}]} />
 
-`file` 테이블 함수 및 `File` 테이블 엔진을 사용해 로컬 Parquet 파일을 읽을 때 지연 머티리얼라이즈 최적화를 적용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
+`file` 테이블 함수 및 `File` 테이블 엔진을 사용해 로컬 Parquet 및 Vortex 파일을 읽을 때 지연 머티리얼라이즈 최적화를 적용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
 
 ## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
@@ -471,7 +482,7 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 사용하기 위한 새로운 설정"}]}]} />
 
-객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽을 때 지연 머티리얼라이즈 최적화를 사용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개의 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
+객체 스토리지에서 Parquet 및 Vortex 파일(Iceberg 테이블 포함)을 읽을 때 지연 머티리얼라이즈 최적화를 사용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개의 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
 
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
@@ -658,6 +669,20 @@ JOIN 연산에서 왼쪽 테이블(left table)을 순서대로 읽는 방식을 
 
 쿼리 계획에서 역텍스트 인덱스를 기반으로 생성된 필터링 힌트(추가 프레디케이트)를 추가할 수 있도록 합니다.
 
+## query_plan_top_k_through_array_join {#query_plan_top_k_through_array_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "정렬 키가 확장된 컬럼에 의존하지 않을 때 범위가 제한된 정렬을 `ARRAY JOIN` 아래로 이동하는 새로운 설정입니다."}]}]} />
+
+정렬 키가 조인된 컬럼을 읽지 않을 때 `ORDER BY ... LIMIT n`을 `ARRAY JOIN` 아래로 이동하는 쿼리 계획 수준 최적화(query-plan-level optimization)를 켜거나 끕니다. 내부 `ARRAY JOIN`에서는 이 최적화가 이동된 정렬 아래에 필터(filter)도 추가합니다. 이 필터는 배열이 모두 비어 있는 행(rows)을 제거합니다. 이러한 행은 출력을 생성하지 않기 때문입니다.
+[query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1인 경우에만 적용됩니다.
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
 ## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -679,6 +704,28 @@ JOIN 연산에서 왼쪽 테이블(left table)을 순서대로 읽는 방식을 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "새 설정입니다."}]}]} />
 
 벡터 유사도 인덱스 사용을 시도하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
+이 설정은 [`query_plan_enable_optimizations`](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1일 때만 적용됩니다.
+
+<Note>
+  이 설정은 개발자가 디버깅 목적으로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+</Note>
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
+## query_plan_use_shuffle_for_order_by_rand {#query_plan_use_shuffle_for_order_by_rand}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "행을 정렬하는 대신 셔플하여 `ORDER BY rand()`를 실행하는 새로운 설정입니다."}]}]} />
+
+`ORDER BY rand()` 및 `ORDER BY rand64()`를 실행할 때 행을 정렬하는 대신 (`SHUFFLE` 절과 동일한 방식으로) 셔플하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
+이 방식은 O(n * log(n)) 대신 O(n) 시간이 소요됩니다.
+결과의 분포는 동일하며, `rand()` 컬럼의 값은 정렬된 순서의 다른 무작위 값으로 대체됩니다.
+`rand()` 값이 다른 표현식에서 사용되지 않으면서 `LIMIT`이 있거나 외부 정렬이 비활성화된 경우에 적용됩니다
+(셔플은 디스크로 유출(spill)되지 않습니다).
 이 설정은 [`query_plan_enable_optimizations`](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1일 때만 적용됩니다.
 
 <Note>

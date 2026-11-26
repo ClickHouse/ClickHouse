@@ -1,0 +1,228 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-08-07
+title: 'Demo days - 2026-08-07'
+sidebarTitle: '2026-08-07'
+description: 'Journées de démonstration ClickStack du 2026-08-07'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Page de détails de l’alerte avec historique des évaluations {#alert-detail-page-with-evaluation-history}
+
+*Démonstration par [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/ZMdWe3-Oc7c" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La page des alertes comporte actuellement une bande d’historique et un bouton d’erreur. Elle semble utile, jusqu’à ce que l’on essaie de s’en servir pour répondre à une question.
+
+L’erreur est stockée dans le document de l’alerte lui-même ; la page affiche donc le dernier état plutôt qu’un véritable historique. Impossible de savoir si l’alerte s’est déclenchée, si elle a échoué auparavant ou si elle suit le rythme de sa planification d’évaluation. Ce problème est apparu lors de travaux sur la performance des alertes, lorsque la vue existante s’est révélée franchement déroutante, et pas seulement pauvre en informations.
+
+La nouvelle page de détails enregistre chaque évaluation sous forme d’événement. Une plage de timestamps permet d’examiner n’importe quelle fenêtre de l’historique ; les déclenchements et les résolutions y sont représentés séparément et clairement signalés.
+
+Le regroupement est détaillé dans la table. Si une alerte utilise `GROUP BY`, vous pouvez ouvrir une évaluation et voir précisément quels groupes se sont déclenchés et lesquels ne l’ont pas fait. Cette distinction est importante lorsque seule une partie de l’ensemble de résultats dépasse le seuil. Les erreurs sont également stockées au niveau de chaque entrée de l’historique : vous pouvez ainsi voir ce qui a échoué et à quel moment, y compris l’erreur d’origine renvoyée par la requête ClickHouse.
+
+Les colonnes de durée indiquent si une alerte suit le rythme. La durée de requête correspond au temps passé à exécuter la requête ClickHouse. Si une alerte est planifiée toutes les minutes mais que sa requête en prend trois, les retards n’ont rien de mystérieux : ils sont inévitables. La durée du webhook indique le temps passé à envoyer le résultat vers sa destination.
+
+Les buckets ignorés rendent visible le retard accumulé. Une valeur de sept signifie que sept fenêtres d’évaluation planifiées ont été manquées puis traitées ultérieurement.
+
+**PR associées :** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) modèle de lecture des évaluations d’alertes et GET /alerts/:id/evaluations, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persistance des erreurs d’évaluation des alertes et des données d’analyse dans AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) page de détails de l’alerte avec historique des évaluations
+
+## Mesurer l&#39;adoption des outils de métriques dans le MCP grâce aux évaluations {#measuring-metric-tool-adoption-in-the-mcp-with-evals}
+
+*Démonstration par [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/1_8MyDALMY8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Il s&#39;agit du troisième, et probablement dernier, scénario consacré aux métriques dans le framework d&#39;évaluation. Il se situe délibérément à mi-chemin entre les deux autres.
+
+Le scénario existant `metric-saturation` vérifie si un agent sait utiliser les outils de métriques lorsqu&#39;il y est contraint. Le nouveau scénario `deploy-regression` vérifie s&#39;il les choisit de lui-même. Un déploiement progressif de `checkout-api` est mis en pause après trois groupes de conteneurs sur six. La nouvelle construction lève une `TypeError` sur les codes promo à montant fixe, si bien qu&#39;environ 7–8 % des paiements renvoient une erreur 500, mais uniquement sur les groupes de conteneurs mis à jour et uniquement pour ces codes.
+
+Rien de tout cela n&#39;est signalé à l&#39;agent. L&#39;indice le plus probant s&#39;obtient en croisant les paiements en échec par nom de groupe de conteneurs, puis en rapprochant ces groupes de conteneurs des journaux d&#39;événements du déploiement. Les métriques injectées confirment le moment où les échecs commencent, mais elles ne révèlent ni la répartition entre groupes de conteneurs ni le défaut sous-jacent. Un agent peut ignorer complètement les métriques et résoudre malgré tout le scénario. C&#39;est précisément ce qui rend tout recours aux métriques spontané plutôt que contraint.
+
+Quelques pièges empêchent la piste d&#39;être trop évidente. Un déploiement sans rapport intervient quelques minutes avant le début des échecs, tandis qu&#39;un flot inoffensif d&#39;avertissements de dépréciation augmente aux mêmes bornes que les véritables erreurs.
+
+La construction du scénario a également mis en évidence des points où le MCP pourrait mieux indiquer aux agents quels kinds et noms de métriques sont disponibles. Les modifications apportées en conséquence rendent les uns comme les autres plus faciles à découvrir.
+
+L&#39;amélioration est modeste, et la comparaison ne le cache pas. Les agents obtiennent déjà de bons scores sans ces modifications. Avec elles, en revanche, ils atteignent les métriques utiles nettement plus vite dans plusieurs exécutions. L&#39;écart se réduit avec Fable, qui est tout simplement le modèle le plus performant ici.
+
+Un résultat est allé dans le sens inverse : Opus a obtenu un score légèrement inférieur avec les modifications des métriques dans quelques exécutions. Il faudra davantage de données avant de pouvoir l&#39;écarter.
+
+Pour la première fois, le framework d&#39;évaluation a mesuré une amélioration de la manière dont le MCP expose les métriques. Nous n&#39;avons plus à nous fier uniquement à l&#39;impression qu&#39;une modification est meilleure.
+
+Prochaine étape : réaliser suffisamment d&#39;exécutions pour comprendre le résultat d&#39;Opus, puis nettoyer le code correspondant.
+
+**PR associées :** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) ajout du scénario deploy-regression (mesure de l&#39;adoption spontanée des outils de métriques), [#2717](https://github.com/hyperdxio/hyperdx/pull/2717) renforcement du scénario metric-saturation, [#2694](https://github.com/hyperdxio/hyperdx/pull/2694) notation et rapport de l&#39;adoption des outils de métriques, [#2855](https://github.com/hyperdxio/hyperdx/pull/2855) exposition des métriques de type summary via le MCP
+
+## Tables distribuées, histogrammes et recherches de traces plus rapides {#distributed-tables-histograms-and-faster-trace-lookups}
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VQKNOb45pcs" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Cette fois, il s&#39;agit d&#39;une série de correctifs plus modestes, dont plusieurs font suite aux retours de l&#39;équipe ClickHouse. Le plus simple concernait un bouton d&#39;effacement absent dans une section de filtres, alors que toutes les autres sections en disposaient déjà. Un bouton global « Tout effacer » figure toujours sur la liste des souhaits.
+
+Le cas des tables distribuées était plus complexe. Certaines tables cibles sous-jacentes ne déclarent pas toutes les colonnes exposées par la table distribuée. ClickStack exécute un `SELECT *` lors du chargement des détails complets d&#39;une ligne, ce qui échoue purement et simplement avec une telle configuration. Le panneau latéral de la ligne affichait déjà une erreur, mais pas la ligne développée, et aucun des deux n&#39;expliquait pourquoi ClickStack émettait un `SELECT *` au départ. Les deux vues affichent désormais l&#39;erreur avec suffisamment de contexte pour que les indications soient réellement utiles.
+
+Les métriques présentaient deux problèmes distincts. D&#39;abord, la table des histogrammes exponentiels n&#39;était jamais persistée dans les sources de métriques. Cela n&#39;avait aucune incidence jusqu&#39;à l&#39;arrivée récente de la prise en charge des histogrammes exponentiels. Un utilisateur ouvrant une source existante incomplète voyait le champ rempli par l&#39;inférence de schéma, en concluait logiquement qu&#39;il n&#39;y avait rien à modifier et ne l&#39;enregistrait jamais.
+
+L&#39;inférence de schéma ne se déclenche plus du simple fait de l&#39;ouverture d&#39;une source existante. Elle se déclenche désormais lors de la création d&#39;une source de métriques ou de la modification de sa base de données, ce qui indique clairement que la table inférée doit encore être enregistrée.
+
+Le menu déroulant d&#39;agrégation proposait également la moyenne, le minimum, le maximum et d&#39;autres fonctions pour les métriques d&#39;histogramme, alors que les histogrammes n&#39;en prennent en charge aucune. En choisir une provoquait un échec à l&#39;exécution de la requête ou à l&#39;enregistrement de la tuile. Ces options sont désormais masquées pour les métriques de type histogramme et histogramme exponentiel. Le chemin `query_tile` du MCP les rejette également pour les tuiles persistées, en cohérence avec l&#39;UI, au lieu d&#39;inventer sa propre manière d&#39;échouer.
+
+Le correctif de la limite de séries est plus subtil. Lorsqu&#39;un `GROUP BY` produit plusieurs séries, vous pouvez définir une limite destinée à conserver les N premières selon leur valeur maximale. En mode ratio, le classement ne tenait compte que du numérateur. Cela favorisait les numérateurs élevés plutôt que les ratios réellement élevés, si bien qu&#39;une série avec un grand numérateur et un dénominateur tout aussi grand pouvait en évincer une dont le ratio était effectivement supérieur. Le classement repose désormais sur le ratio affiché.
+
+La sélection par défaut de la source sur la page de recherche a également changé. Auparavant, la première source configurée était sélectionnée, même si elle contenait des métriques ou des sessions. Les utilisateurs pouvaient alors tomber sur une erreur de source incompatible pour un choix qu&#39;ils n&#39;avaient pas fait. La page Recherche sélectionne désormais par défaut la première source activée qu&#39;elle peut réellement utiliser.
+
+La sélection d&#39;une trace depuis le panneau latéral d&#39;un journal masquait aussi une recherche coûteuse. HyperDX effectuait la recherche uniquement par ID de span et de trace, sans tenir compte de la partition d&#39;horodatage ni des clés primaires, ce qui devient lent sur les déploiements à fort volume. La recherche est désormais bornée par une plage de dates inférée à partir de la source, avec un repli délibéré vers une requête non bornée lorsque la fenêtre ne donne aucun résultat. Un journal lié à un span ayant débuté plusieurs heures plus tôt illustre l&#39;utilité de ce repli.
+
+Les liens profonds par nom de source sont arrivés la semaine précédente, suivis d&#39;une question tout à fait légitime : comment les utilisateurs étaient-ils censés les découvrir ? Les paramètres d’URL acceptés par chaque page étaient déjà traités comme un contrat ; ils sont donc désormais documentés comme tel. Seuls les filtres de source sont omis, car ils restent pour l&#39;instant propres à ClickHouse. Une passe de documentation distincte a ajouté des champs de configuration de source tels que les liens de span, couvrant à la fois les ajouts récents et quelques éléments qui avaient tout simplement été oubliés.
+
+**PRs associées :** [#2771](https://github.com/hyperdxio/hyperdx/pull/2771) amélioration de l’état d’erreur du SELECT * sur les tables distribuées et extension aux lignes développées, [#2817](https://github.com/hyperdxio/hyperdx/pull/2817) détection automatique des tables de métriques uniquement lorsque la base de données sélectionnée change, [#2794](https://github.com/hyperdxio/hyperdx/pull/2794) absence d’inférence des tables de métriques pour les sources disposant déjà de tables (ouverte), [#2793](https://github.com/hyperdxio/hyperdx/pull/2793) masquage des fonctions d’agrégation non prises en charge pour les métriques d’histogramme, [#2796](https://github.com/hyperdxio/hyperdx/pull/2796) rejet, dans query&#95;tile, des tuiles d’histogramme persistées utilisant des aggFns non prises en charge (ouverte), [#2759](https://github.com/hyperdxio/hyperdx/pull/2759) utilisation de la valeur du ratio pour le classement lié à la limite de séries en mode ratio, [#2769](https://github.com/hyperdxio/hyperdx/pull/2769) la page de recherche ne sélectionne plus par défaut un type de source incompatible, [#2816](https://github.com/hyperdxio/hyperdx/pull/2816) limitation à une fenêtre temporelle du lookup de ligne effectué par le panneau latéral après « Afficher la trace », [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) ajout de la configuration des variables de filtre
+
+## Centiles dans la carte de chaleur et recherche Lucene, par des contributeurs {#heatmap-percentiles-and-lucene-search-from-contributors}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lCNozJs2Jlw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Une dizaine de pull requests de contributeurs externes nous sont parvenues cette semaine. Deux d&#39;entre elles méritent une mention particulière.
+
+La première, proposée par [@niladrix719](https://github.com/niladrix719), ajoute le contexte des centiles à l&#39;infobulle de survol de la carte de chaleur. Plutôt que de comparer à l&#39;œil nu une cellule au reste de la carte de chaleur, il suffit désormais de la survoler pour constater, par exemple, que le bucket de 26 millisecondes se situe au 85e centile des durées affichées.
+
+La seconde est une série d&#39;améliorations de la recherche Lucene proposée par [@shuvamk](https://github.com/shuvamk).
+
+Les plages non bornées fonctionnent désormais correctement. `Duration:[* TO 500]` devient un prédicat `<= 500`, au lieu de demander à ClickHouse de convertir la chaîne `*` en `UInt64`, ce qui se terminait comme on peut l&#39;imaginer. Les accolades sont également prises en charge pour les bornes de plage exclusives.
+
+Les corrections d&#39;échappement sont plus importantes encore, car ces bogues renvoyaient des résultats erronés au lieu d&#39;une erreur. Les termes de champ Lucene sont insérés directement dans un motif `ILIKE`, où un caractère de soulignement représente n&#39;importe quel caractère unique et un signe pourcentage n&#39;importe quelle séquence de caractères. Une recherche sur `ServiceName:user_service` renvoyait donc également des valeurs telles que `user-service` et `user.service`. Ces métacaractères sont désormais échappés avant que la requête n&#39;atteigne ClickHouse.
+
+Une autre correction empêche le double échappement des indices de map dans les recherches numériques et booléennes. Le prédicat généré traitait l&#39;expression entière comme un seul identifiant au lieu d&#39;effectuer un lookup dans la map.
+
+Les exemples intégrés à l&#39;application, associés au sélecteur de langage Lucene, ont également été mis à jour pour couvrir les nouvelles formes par plage.
+
+**PR associées :** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) afficher le contexte des centiles dans l&#39;infobulle de survol de la carte de chaleur, [#2779](https://github.com/hyperdxio/hyperdx/pull/2779) prendre en compte les bornes de plage ouvertes, exclusives et non numériques, [#2774](https://github.com/hyperdxio/hyperdx/pull/2774) échapper les métacaractères LIKE dans les termes de recherche, [#2841](https://github.com/hyperdxio/hyperdx/pull/2841) échapper une seule fois les indices de Map dans les recherches numériques et Bool, [#2837](https://github.com/hyperdxio/hyperdx/pull/2837) ajouter des exemples pour la nouvelle syntaxe Lucene
+
+## Métriques RED dans la recherche de traces {#red-metrics-on-trace-search}
+
+*Démonstration par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/qbb7MJmUFf8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Il s&#39;agit d&#39;un travail exploratoire, sans engagement quant à sa mise en production.**
+
+La recherche de traces utilise actuellement le même histogramme de comptage unique que la recherche de journaux, coloré selon le niveau de journalisation. Il indique combien de traces vous consultez, mais ne dit presque rien de leurs performances.
+
+La vue des résultats proposée remplace cet histogramme par des métriques RED pour les sources de traces. Le débit est représenté par des barres indiquant le nombre de spans. Les erreurs peuvent s&#39;afficher soit sous forme de taux en pourcentage (courbe), soit en volume brut (barres). La durée trace la moyenne, le p95 et le p99 directement à partir de la colonne de durée brute de la source.
+
+La carte de chaleur est la vue la plus intéressante. Dans la démonstration, elle fait ressortir presque immédiatement un service dont la durée augmente régulièrement. Elle révèle également la forme de la distribution de la latence, qu&#39;une simple tendance de percentile peut masquer.
+
+Le coût reste la question en suspens. La recherche de traces déclenche déjà de nombreuses requêtes à chaque recherche, et y ajouter plusieurs agrégations nécessitera un travail d&#39;optimisation des performances avant d&#39;aller plus loin.
+
+Vos retours sur ce comportement sont les bienvenus.
+
+**PRs associées :** [#2826](https://github.com/hyperdxio/hyperdx/pull/2826) affichage des métriques RED dans la vue des résultats de recherche de traces (ouverte, exploratoire)
+
+## Colonnes de log personnalisées dans le plugin Grafana pour ClickHouse {#custom-log-columns-in-the-clickhouse-grafana-plugin}
+
+*Démonstration par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lp4aPioDlsQ" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Il y a quelques semaines, plusieurs clients ont signalé le même problème : avec la vue compacte des logs du plugin Grafana, les colonnes et champs supplémentaires de leurs logs étaient difficiles à consulter.
+
+Cette évolution ajoute un paramètre Columns à la section des logs de la configuration de la source de données. Il est défini au niveau de la source de données et non requête par requête : le choix est donc conservé pour tous les utilisateurs de cette source, sans qu&#39;il faille le réappliquer à chaque fois.
+
+Vous pouvez sélectionner n&#39;importe quelle colonne de la table. Le plugin intègre ces colonnes aux labels de log sous leur nom réel, ce qui les rend disponibles dans l&#39;ensemble de Grafana. Elles apparaissent dans la liste Fields à gauche ainsi que dans le détail des lignes de log, où un nouveau groupe Fields vient s&#39;ajouter à Resource attributes et Log attributes, avec les mêmes actions de filtrage (filter-for et filter-out). Dans la vue de table, elles se comportent comme de véritables filtres de colonne.
+
+Tout cela repose sur une seule et même requête. Sans cette configuration, ces champs n&#39;apparaissent à aucun de ces endroits, et c&#39;était précisément la frustration à l&#39;origine de la demande.
+
+Les signalements venaient des deux types de schémas. Certains clients utilisent OpenTelemetry mais ajoutent leurs propres colonnes. D&#39;autres utilisent des schémas entièrement personnalisés et, pour des raisons qui leur sont propres, stockent les champs dans de véritables colonnes plutôt que dans des attributs de ressource ou de log. Dans les deux cas, ces valeurs restaient totalement invisibles dans Grafana.
+
+La modification était encore en cours de revue au moment de cette démonstration, l&#39;objectif étant de l&#39;intégrer à la build du plugin de la semaine suivante. Pour en savoir plus, consultez l&#39;[article sur la version 4.20 du plugin Grafana pour ClickHouse](https://clickhouse.com/blog/clickhouse-grafana-plugin-4-20).
+
+**PR associées :** [grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) parcourir et filtrer selon n&#39;importe quelle colonne de la table de logs (ouverte au moment de la démonstration)
+
+## Plafonner les séries à cardinalité élevée à la source {#capping-high-cardinality-series-at-the-source}
+
+*Démonstration par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/AKjuQuLKEaI" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Une réponse à cardinalité élevée peut transmettre à un graphique des centaines de milliers de lignes. Avant même de dessiner quoi que ce soit, le client doit convertir chaque ligne en JSON. Sur un tableau de bord chargé, cette transformation coûte plus cher que la requête elle-même. Un `GROUP BY` non borné peut en outre épuiser la mémoire du serveur avant même que l&#39;ensemble de résultats n&#39;atteigne le navigateur.
+
+La nouvelle approche empêche la plupart de ces lignes de sortir de ClickHouse. Les requêtes incluent désormais des paramètres de nombre maximal de lignes et de nombre maximal de lignes regroupées, tous deux actuellement plafonnés à 5,000. Cette valeur est, il faut bien l&#39;avouer, une estimation empirique d&#39;un plafond raisonnable. Lorsque la réponse indique qu&#39;une limite a été dépassée, le graphique signale que la requête a renvoyé trop de données.
+
+Ce mécanisme vient s&#39;ajouter à une optimisation front-end antérieure qui plafonne le rendu à 250 séries. Conserver des dizaines de milliers de séries en mémoire pour n&#39;en dessiner qu&#39;une centaine environ faisait grimper la consommation des onglets du navigateur à plusieurs gigaoctets et ralentissait le survol et le déplacement dans le graphique.
+
+Les deux plafonds restent en vigueur. Un `GROUP BY` pathologique récupère désormais environ 5,000 lignes et n&#39;en affiche que 250. Des options explicites « tout charger » restent disponibles pour les cas où vous avez réellement besoin de l&#39;ensemble des données.
+
+Pour un graphique qui atteint régulièrement l&#39;un ou l&#39;autre plafond, la vraie solution reste d&#39;améliorer le SQL : ajoutez une limite ou rendez le `GROUP BY` plus sélectif.
+
+**PR associées :** [#2802](https://github.com/hyperdxio/hyperdx/pull/2802) plafonne les séries des graphiques temporels à cardinalité élevée, avec des options « tout charger », [#2856](https://github.com/hyperdxio/hyperdx/pull/2856) plafonne le coût des tuiles en SQL brut dès la source grâce à une limite de lignes/cardinalité côté serveur (ouverte)
+
+## Exemplars : du graphique de métriques à la trace {#exemplars-from-a-metric-chart-to-the-trace}
+
+*Démonstration par [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/SC_Bo2hqw8c" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les exemplars relient une métrique agrégée à un événement individuel, généralement une trace. Si un histogramme de latence montre le 99e percentile qui grimpe à 2.4 secondes, un exemplar peut pointer vers une requête réelle à 2.4 secondes et ouvrir sa trace.
+
+Lorsqu&#39;une application enregistre une mesure au sein d&#39;un span actif, OpenTelemetry l&#39;intègre à l&#39;agrégation habituelle. Un filtre d&#39;exemplars détermine si cette mesure est éligible, puis un petit réservoir en conserve quelques exemples, exportés avec le point de métrique agrégé. Chaque exemplar contient sa valeur d’origine et son timestamp, les ID de trace et de span, ainsi que tous les attributs écartés du flux agrégé.
+
+Ce petit réservoir vous fournit un contexte concret sans exporter chaque mesure brute ni associer `trace_id` et d&#39;autres valeurs high-cardinality à chaque série de métriques. Un exemplar reste néanmoins un simple exemple : il ne s&#39;agit pas nécessairement de la pire requête ni d&#39;un échantillon statistiquement représentatif. La résolution de son lien dépend en outre de l&#39;exportateur, des backends concernés et de la conservation ou non de la trace référencée.
+
+La démonstration utilise un backend Prometheus via l&#39;endpoint proxy `query_exemplars`, fusionné la veille. Si la fenêtre demandée est trop longue, l&#39;endpoint la réduit au lieu de rejeter la requête.
+
+Les données de test proviennent d&#39;un Collecteur OpenTelemetry qui émet des métriques de spans. À mesure qu&#39;il traite les spans, le collecteur les convertit en métriques dotées d&#39;exemplars liés à l&#39;ID de trace. Ces exemplars apparaissent ensuite sous forme de marqueurs sur le graphique de métriques. Au survol, la valeur et le timestamp de l&#39;exemplar s&#39;affichent avec ses métadonnées de trace, ainsi qu&#39;un bouton qui ouvre directement la trace. Le tout fonctionne bien et s&#39;est montré plutôt rapide jusqu&#39;ici.
+
+La configuration se fait par tuile. Activez les exemplars sur le graphique, puis choisissez la source de traces chargée de résoudre les liens. La fonctionnalité ne prend actuellement en charge que les métriques à série unique, et l&#39;ensemble reste conditionné à un flag au niveau du déploiement, en plus de l&#39;option propre à chaque graphique.
+
+Les tests ont révélé quelques bugs mineurs, dont certains avaient déjà été identifiés de leur côté par d&#39;autres personnes, mais le path Prometheus est pratiquement prêt. ClickHouse constitue la prochaine étape. Ce path interrogera les exemplars directement depuis la table de métriques, offrant ainsi aux équipes qui construisent des métriques à partir de données de traçage le même moyen de remonter jusqu&#39;à une trace individuelle.
+
+**PR associées :** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) dériver des métriques de requêtes avec des exemplars de traces à partir des spans (ouverte), [#2806](https://github.com/hyperdxio/hyperdx/pull/2806) ajouter /v1/prometheus/query&#95;exemplars et renforcer le proxy, [#2807](https://github.com/hyperdxio/hyperdx/pull/2807) scinder les deux plus gros fichiers de graphiques en répertoires, [#2808](https://github.com/hyperdxio/hyperdx/pull/2808) surcouche d&#39;exemplars pour les graphiques temporels de métriques et PromQL (ouverte), [#2809](https://github.com/hyperdxio/hyperdx/pull/2809) accepter les paramètres d&#39;exemplars sur les tuiles créées via l&#39;API et par des agents (ouverte)
+
+## Fonctions auxiliaires d’import Terraform et export par lot {#terraform-import-helpers-and-batch-export}
+
+*Démonstration par [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/fTJHMqBIU44" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les tableaux de bord, les recherches enregistrées et les alertes basées sur des recherches enregistrées disposent désormais d’un bouton Export to Terraform. Les équipes peuvent ainsi placer leurs ressources existantes sous la gestion de Terraform via le fournisseur ClickHouse, sans rédiger à la main de blocs d’import ni deviner les noms de types de ressources et les formats d’ID.
+
+C’est le résultat produit qui a suscité des questions lors de la démonstration. Le bouton génère un bloc `import` et laisse à Terraform le soin de produire la définition complète de la ressource. En effet, ajouter simplement un bloc de ressource ne suffit pas à prendre le contrôle de la ressource existante : Terraform risque au contraire d’en créer une autre ou d’écraser celle qui existe déjà. Le nouveau flux de travail d’import de Terraform gère correctement cette distinction.
+
+Collez le bloc d’import généré dans votre configuration, puis exécutez `terraform plan` avec l’option `-generate-config-out` pointant vers un fichier tel que `generated.tf`. Terraform analyse la ressource existante et écrit le bloc de ressource correspondant. Une fois importée, la ressource est intégrée à l’État Terraform et les `apply` suivants la gèrent au lieu de tenter de la recréer dans ClickStack.
+
+La page Paramètres de l’équipe propose également un export par lot qui télécharge un fichier unique regroupant toutes les ressources prises en charge. Lors de la démonstration, cela représentait 70 tableaux de bord, une quarantaine d’alertes et 55 recherches enregistrées. Les webhooks et les sources sont également pris en charge.
+
+Les secrets sont volontairement exclus de l’API V2. Une requête `GET` ne renvoie que ce que l’interface affiche déjà : une connexion inclut donc son hôte et son nom d’utilisateur, mais pas son mot de passe. Il vous appartient de fournir le secret manquant lors de la mise en service de la configuration générée.
+
+**PR associées :** [#2741](https://github.com/hyperdxio/hyperdx/pull/2741) ajout de fonctions auxiliaires d’import Terraform pour les ressources ClickStack
+
+## Composants de graphique partagés, finitions visuelles et proposition de brouillons {#shared-chart-components-visual-polish-and-a-drafts-proposal}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les cartes des tableaux de bord personnalisés et celles des préréglages avaient fini par diverger visuellement, ce qui soulevait une question évidente : pourquoi n&#39;utilisaient-elles pas le même composant dès le départ ? C&#39;est désormais le cas. Un composant ChartCard partagé encapsule les graphiques autonomes dans les mêmes primitives que celles des tuiles de tableau de bord, ce qui garde synchronisés la bordure, le remplissage et le séparateur d&#39;en-tête pleine largeur, sans avoir à les aligner à la main. Faire converger les deux chemins vers un seul composant s&#39;est révélé plus complexe que prévu, mais ils produisent désormais le même rendu en interne. Il reste encore du travail pour les cartes sans contrôles à droite, qui doivent conserver une hauteur cohérente.
+
+Une série de petites améliorations a également été apportée, dont plusieurs visent directement l&#39;apparence de ClickStack dans les captures d&#39;écran et les vidéos de démonstration. Le contrôle segmenté affichait sa ligne de liste sous la forme d&#39;une bordure autour d&#39;une boîte de hauteur nulle, si bien que les bords supérieur et inférieur se superposaient pour former ce qui ressemblait à une ligne de 2px. Il s&#39;agit désormais d&#39;un véritable bord de 1px. Les couleurs des boutons ont été retravaillées pour la même raison.
+
+Le logo open source en mode clair est également corrigé. Auparavant, nous passions d&#39;un thème à l&#39;autre à l&#39;aide d&#39;un filtre CSS qui inversait toutes les couleurs, y compris celles du logo, si bien que le mode clair affichait une couleur de marque erronée. Il s&#39;avère que le même logo fonctionne dans les deux thèmes ; il n&#39;est donc plus nécessaire de distinguer les cas selon le thème.
+
+Le clic sur les lignes dans la recherche fonctionne de nouveau correctement. L&#39;ancien comportement était voulu, mais il n&#39;en donnait pas l&#39;impression. Le panneau coulissant pouvait s&#39;ouvrir par-dessus la ligne sur laquelle vous aviez cliqué, vous laissant face à une partie de l&#39;écran apparemment inchangée. Désormais, un clic dans la zone du panneau coulissant le met à jour, tandis qu&#39;un clic à l&#39;extérieur le ferme.
+
+Nous avons également ajouté des composants Alert sémantiques pour les états d&#39;avertissement et de succès, en plus de l&#39;état de danger. De nouvelles compétences d&#39;agent redirigent tout code qui recourt à du texte rouge ou d&#39;avertissement brut vers un composant Alert, plutôt que de le laisser coder en dur une couleur de la palette Mantine.
+
+La dernière partie relève uniquement de l&#39;exploration de conception. Il s&#39;agit de maquettes, et vos retours sont les bienvenus.
+
+Tout est parti d&#39;un problème précis dans l&#39;éditeur de tuiles : une boîte de dialogue modale ouvrait un panneau coulissant, qui ouvrait à son tour une autre boîte de dialogue modale, et une seule pression sur Échap fermait toute la pile au lieu de vous ramener un niveau en arrière. À partir de là, le travail s&#39;est élargi à une réflexion plus globale sur les tableaux de bord.
+
+La proposition remplace la distinction entre tableaux de bord enregistrés et temporaires par des brouillons. Un clic sur « New dashboard » crée un brouillon privé visible par vous seul. Une fois prêt, vous pouvez l&#39;enregistrer pour l&#39;équipe. Vous pouvez également renvoyer un tableau de bord d&#39;équipe vers les brouillons ou le supprimer définitivement. Cela couvre ce que font aujourd&#39;hui les tableaux de bord temporaires, sans vous obliger à trancher d&#39;emblée. Un seul concept au lieu de deux.
+
+Les favoris bénéficieraient d&#39;une vue en liste en plus des cartes, car une page de grandes cartes peut repousser étonnamment bas l&#39;élément que vous recherchez. Les modèles seraient regroupés sur une seule ligne. Le filtrage par étiquette prendrait en charge plusieurs étiquettes, avec un tri par nom ou par dernière consultation, au lieu de faire d&#39;une seule étiquette sélectionnée l&#39;unique moyen d&#39;organisation disponible.
+
+L&#39;éditeur de tuiles ancrerait son panneau de paramètres à droite au lieu d&#39;ouvrir un panneau coulissant. Il fusionnerait également les deux chemins actuels d&#39;accès aux paramètres en un chemin unique et prévisible.
+
+**PR associées :** [#2829](https://github.com/hyperdxio/hyperdx/pull/2829) ajout d&#39;un composant ChartCard partagé et migration des usages de ChartBox, [#2814](https://github.com/hyperdxio/hyperdx/pull/2814) affinage du thème Mantine (onglets, arrière-plan du code, contrôle segmenté), [#2704](https://github.com/hyperdxio/hyperdx/pull/2704) jetons de couleur sémantiques ajustés pour AA et variantes Alert/Text, [#2714](https://github.com/hyperdxio/hyperdx/pull/2714) documentation des variantes sémantiques Alert/Text/danger, [#2682](https://github.com/hyperdxio/hyperdx/pull/2682) fermeture des panneaux coulissants de recherche et de session lors d&#39;un clic extérieur, [#2721](https://github.com/hyperdxio/hyperdx/pull/2721) déplacement de l&#39;éditeur de tuiles dans un panneau coulissant avec panneau de paramètres ancré (toujours ouverte). La refonte des brouillons et des favoris n&#39;a pas encore de PR : elle n&#39;existe pour l&#39;instant qu&#39;à l&#39;état de maquettes.

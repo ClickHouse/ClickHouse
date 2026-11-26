@@ -69,7 +69,9 @@ HTTPSessionPtr makeHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
     const ProxyConfiguration & proxy_config = {},
-    UInt64 * connect_time = nullptr
+    UInt64 * connect_time = nullptr,
+    HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware,
+    std::optional<std::chrono::steady_clock::time_point> deadline = {}
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);

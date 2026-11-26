@@ -9,7 +9,7 @@ doc_type: 'guide'
 import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
-  ## ClickHouse 中的表分区是什么？
+  ## ClickHouse 中的表分区是什么？ {#what-are-table-partitions-in-clickhouse}
 </div>
 
 <br />
@@ -17,7 +17,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
 分区会将 [MergeTree 引擎家族](/zh/reference/engines/table-engines/mergetree-family/index)中表的[数据分区片段](/zh/concepts/core-concepts/parts)组织成有序的逻辑单元。这种数据组织方式在概念上清晰明确，并可根据时间范围、类别或其他关键属性等特定标准进行划分。这些逻辑单元使数据更易于管理、查询和优化。
 
 <div id="partition-by">
-  ### PARTITION BY
+  ### PARTITION BY {#partition-by}
 </div>
 
 可以在初始定义表时通过 [PARTITION BY 子句](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)启用分区。该子句可以包含基于任意列的 SQL 表达式，其结果将决定某一行属于哪个分区。
@@ -39,20 +39,14 @@ PARTITION BY toStartOfMonth(date);
 
 您可以在我们的 ClickHouse SQL Playground 中[查询此表](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results)。
 
-<div id="structure-on-disk">
-  ### 磁盘上的结构
-</div>
+### 磁盘上的结构 {#structure-on-disk}
 
 每当一组行被插入到表中时，ClickHouse 不会创建一个包含所有已插入行的单个数据分区片段 (至少会创建 [一个](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)，如[此处](/zh/concepts/core-concepts/parts)所述) ，而是会为已插入行中每个唯一的分区键值各创建一个新的数据分区片段：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![INSERT PROCESSING](/images/managing-data/core-concepts/partitions.webp)
-
-</Frame>
-
+  <Frame>
+    ![INSERT PROCESSING](/images/managing-data/core-concepts/partitions.webp)
+  </Frame>
 </div>
 
 <br />
@@ -62,20 +56,14 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
 
 请注意，启用分区后，ClickHouse 会自动为每个数据分区片段创建 [MinMax 索引](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341)。它们本质上就是针对分区键表达式中用到的每个表列生成的文件，其中包含该列在该数据分区片段中的最小值和最大值。
 
-<div id="per-partition-merges">
-  ### 分区内合并
-</div>
+### 分区内合并 {#per-partition-merges}
 
 启用分区后，ClickHouse 只会在分区内[合并](/zh/concepts/core-concepts/merges)数据分区片段，而不会跨分区合并。我们以上文的示例表来说明这一点：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![分片合并](/images/managing-data/core-concepts/merges_with_partitions.webp)
-
-</Frame>
-
+  <Frame>
+    ![分片合并](/images/managing-data/core-concepts/merges_with_partitions.webp)
+  </Frame>
 </div>
 
 <br />
@@ -83,7 +71,7 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
 如上图所示，属于不同分区的 parts 永远不会被合并。如果选择了高基数的分区键，那么分散在成千上万个分区中的 parts 将永远不会成为合并候选项——这会超出预先配置的限制，并导致令人头疼的 `Too many parts` 错误。解决这个问题其实很简单：选择合理的分区键，并将[基数控制在 1000 到 10000 以内](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121)。
 
 <div id="monitoring-partitions">
-  ## 监控分区
+  ## 监控分区 {#monitoring-partitions}
 </div>
 
 您可以使用[虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value` 来[查询](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results)示例表中所有现有唯一分区的列表：
@@ -112,11 +100,11 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
 </RunnableCode>
 
 <div id="what-are-table-partitions-used-for">
-  ## 表分区有什么作用？
+  ## 表分区有什么作用？ {#what-are-table-partitions-used-for}
 </div>
 
 <div id="data-management">
-  ### 数据管理
+  ### 数据管理 {#data-management}
 </div>
 
 在 ClickHouse 中，分区主要用于数据管理。通过按分区表达式对数据进行逻辑组织，每个分区都可以独立管理。例如，上述示例表中的分区方案支持这样一种场景：借助 [TTL 规则](/zh/concepts/features/operations/delete/ttl) 自动删除较旧的数据，从而使主表中只保留最近 12 个月的数据 (参见 DDL 语句新增的最后一行) ：
@@ -153,9 +141,7 @@ ORDER BY (town, street)
 TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 ```
 
-<div id="query-optimization">
-  ### 查询优化
-</div>
+### 查询优化 {#query-optimization}
 
 分区有助于提升查询性能，但效果在很大程度上取决于访问模式。如果查询只涉及少数几个分区 (最好是一个) ，性能就可能提升。通常只有当分区键不在主键中，且查询会按该分区键进行过滤时，这种优化才有意义，如下面的示例查询所示。
 
@@ -174,24 +160,20 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 ClickHouse 通过依次应用一系列剪枝技术来处理该查询，从而避免评估无关数据：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![分片合并 2](/images/managing-data/core-concepts/partition-pruning.webp)
-
-</Frame>
-
+  <Frame>
+    ![分片合并 2](/images/managing-data/core-concepts/partition-pruning.webp)
+  </Frame>
 </div>
 
 <br />
 
 <Steps>
   <Step title="分区剪枝">
-    [MinMax 索引](/zh/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) 用于忽略在逻辑上不可能匹配查询过滤条件的整个分区 (即一组 数据分区片段) ；这些过滤条件作用于表分区键中使用的列。
+    [MinMax 索引](/zh/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) 用于忽略在逻辑上不可能匹配查询过滤条件的整个分区 (即一组 parts) ；这些过滤条件作用于表分区键中使用的列。
   </Step>
 
   <Step title="粒度剪枝">
-    对于分区剪枝步骤之后剩余的数据分区片段，会使用其[主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)忽略所有在逻辑上不可能匹配查询过滤条件的[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (由多行组成的块) ；这些过滤条件作用于表主键中使用的列。
+    对于分区剪枝步骤之后剩余的parts，会使用其[主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)忽略所有在逻辑上不可能匹配查询过滤条件的[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行块) ；这些过滤条件作用于表主键中使用的列。
   </Step>
 </Steps>
 
@@ -255,7 +237,7 @@ WHERE date >= '2020-12-01'
 这意味着，ClickHouse 在 6 毫秒内扫描并处理了 1 个粒度 (一个由 [8192](/zh/reference/settings/merge-tree-settings/index-granularity#index_granularity) 行组成的块) ，以计算查询结果。
 
 <div id="partitioning-is-primarily-a-data-management-feature">
-  ### 分区主要是一项数据管理功能
+  ### 分区主要是一项数据管理功能 {#partitioning-is-primarily-a-data-management-feature}
 </div>
 
 请注意，跨所有分区进行查询，通常比在未分区的表上执行相同查询更慢。

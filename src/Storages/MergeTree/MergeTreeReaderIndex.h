@@ -38,6 +38,9 @@ public:
 
     [[nodiscard]] bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
+    /// Reading the rows only applies the result of the index analysis: it loads nothing from the part.
+    void registerReadRanges() override {}
+
     bool canSkipMark(size_t mark) override;
 
     [[nodiscard]] bool canSkipAnyMark() const override;

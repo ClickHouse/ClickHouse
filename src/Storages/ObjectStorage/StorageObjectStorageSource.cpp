@@ -1,9 +1,12 @@
+#include "config.h"
+
 #include <memory>
 #include <optional>
 #include <unordered_set>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -15,6 +18,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Functions/indexHint.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/IReadBufferMetadataProvider.h>
@@ -64,7 +68,12 @@
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <DistributedCache/DistributedCacheCommon.h>
@@ -128,6 +137,11 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace Setting
+{
+    extern const SettingsBool enable_url_encoding;
+}
+
 namespace
 {
     DataTypePtr rowLineageColumnType()
@@ -183,10 +197,7 @@ namespace
 
     String getPathComponentForGlobMatching(const String & path)
     {
-        const auto position = path.find_first_of("?#");
-        if (position == String::npos)
-            return path;
-        return path.substr(0, position);
+        return String(stripQueryAndFragment(path));
     }
 
     /// Whether the path contains a hidden segment that starts at or past the given offset.
@@ -248,25 +259,172 @@ namespace
         return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
     }
 
-    String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
+    /// The identity of the credentials with which `object_storage` reads, for the key of the page cache: it serves bytes
+    /// without a request, so a reader must not get the bytes read with other credentials (e.g. a reader allowed to list
+    /// the objects but not to read them). `std::nullopt` if it is not known, then each read is authorized by a `HEAD`
+    /// request with its own credentials instead. Not used for `Web`, whose key includes the URLs and the headers.
+    std::optional<String> getCredentialsIdentityForPageCache(IObjectStorage & object_storage)
+    {
+        switch (object_storage.getType())
+        {
+            case ObjectStorageType::Local:
+                /// Read with the permissions of the server.
+                return String{};
+            case ObjectStorageType::S3:
+            {
+#if USE_AWS_S3
+                auto client = object_storage.tryGetS3StorageClient();
+                if (!client)
+                    return std::nullopt;
+                const auto & client_configuration = client->getClientConfiguration();
+                /// A client with its own HTTP client (`gcp_oauth`) authenticates requests outside of the AWS credentials
+                /// (with a bearer token), so the identity is not known.
+                if (!client_configuration.http_client.empty())
+                    return std::nullopt;
+                /// Anonymous credentials (`NOSIGN`) are empty, and all such readers share the same identity, unless they
+                /// authenticate with headers (`Authorization`, or a key of `SSE-C`), which are also part of the identity.
+                const auto credentials = client->getCredentials();
+                SipHash hash;
+                hash.update(credentials.GetAWSAccessKeyId());
+                hash.update('\0');
+                hash.update(credentials.GetAWSSecretKey());
+                hash.update('\0');
+                hash.update(credentials.GetSessionToken());
+                hash.update('\0');
+                for (const auto & header : client_configuration.extra_headers)
+                {
+                    hash.update(header.name);
+                    hash.update('\0');
+                    hash.update(header.value);
+                    hash.update('\0');
+                }
+                return toString(hash.get128());
+#else
+                return std::nullopt;
+#endif
+            }
+            default:
+                return std::nullopt;
+        }
+    }
+
+    /// Whether `object_storage` reads a version of an object other than the current one (`?versionId=` of `S3`). The
+    /// caches are keyed on the path and the ETag, and the metadata from a listing is of the current version, so such
+    /// a read must not use them.
+    bool readsExplicitObjectVersion([[maybe_unused]] const IObjectStorage & object_storage)
+    {
+#if USE_AWS_S3
+        if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
+            return !s3_object_storage->getURI().version_id.empty();
+#endif
+        return false;
+    }
+
+    /// Whether a read of a `Web` object can be served by any of several URLs (failover options of its URL shard, or all
+    /// the URLs if the shard is not known). The metadata (`HEAD`) and the data (`GET`) are each taken from the first
+    /// reachable URL, which is not recorded, and a strong ETag identifies the content only within one resource: two
+    /// hosts can serve different bytes under the same ETag. So such a read has no identity for the page cache.
+    bool webObjectHasSeveralURLs(const RelativePathWithMetadata & object_info, const WebObjectStorage & web_object_storage)
+    {
+        const auto & url_shards = web_object_storage.getURLShards();
+        if (object_info.read_source_index)
+        {
+            if (*object_info.read_source_index >= url_shards.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
+            return url_shards[*object_info.read_source_index].size() > 1;
+        }
+
+        size_t num_urls = 0;
+        for (const auto & urls : url_shards)
+            num_urls += urls.size();
+        return num_urls > 1;
+    }
+
+#if ENABLE_DISTRIBUTED_CACHE
+    /// Whether the cache server can read an object of `object_storage` on a cache miss as the direct read would. Its
+    /// connection carries only the endpoint, the credentials and the ETag hash, so it cannot serve reads that rely on
+    /// anything else:
+    /// - `Web`: it has only the first base URL, without the URL shard of the object and without the headers;
+    /// - `S3` with request headers (an `SSE-C` key, `Authorization`): they are not sent to the cache server;
+    /// - `S3` with anonymous credentials (`NOSIGN`): the cache server would use its own credentials instead.
+    /// `Azure` only if requested explicitly (`table_engine_read_through_distributed_cache = 1`), not by `auto`: the
+    /// cache server does not check the ETag of its download, so it could cache a newer generation under the old ETag.
+    bool distributedCacheCanServe(IObjectStorage & object_storage, bool requested_explicitly)
+    {
+        switch (object_storage.getType())
+        {
+            case ObjectStorageType::S3:
+            {
+#if USE_AWS_S3
+                auto client = object_storage.tryGetS3StorageClient();
+                if (!client)
+                    return false;
+                if (!client->getClientConfiguration().extra_headers.empty())
+                    return false;
+                return !client->getCredentials().GetAWSAccessKeyId().empty() || !client->getGCSOAuthToken().empty();
+#else
+                return false;
+#endif
+            }
+            case ObjectStorageType::Azure:
+                return requested_explicitly;
+            case ObjectStorageType::Web:
+                return false;
+            default:
+                return true;
+        }
+    }
+#endif
+
+    String getPageCachePathForObjectStorage(
+        const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage, const String & credentials_identity)
     {
         if (object_storage->getType() != ObjectStorageType::Web)
-            return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
+            return fmt::format("s3:{}:{}:{}", getObjectStorageHash(*object_storage), credentials_identity, object_info.getPath());
 
-        if (!object_info.read_source_index)
-            return "web:" + object_info.getPath();
-
+        /// The path of a `Web` object is relative to the base URLs, and the response can depend on the headers
+        /// (e.g. credentials), so both are part of the key: the same path with the same `ETag` from another origin
+        /// or for another user can have different contents.
         const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
         const auto & url_shards = web_object_storage.getURLShards();
-        if (*object_info.read_source_index >= url_shards.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
 
         SipHash hash;
-        for (const auto & url : url_shards[*object_info.read_source_index])
+
+        /// The readers parse the URL of the object with `enable_url_encoding` of the request context (with it, an encoded
+        /// slash `%2F` in the path is decoded into a path separator), so the same path can name different resources.
+        const bool enable_url_encoding = web_object_storage.getRequestContext()->getSettingsRef()[Setting::enable_url_encoding];
+        hash.update(enable_url_encoding);
+        hash.update('\0');
+
+        auto hash_urls = [&](const WebObjectStorage::URLOptions & urls)
         {
-            hash.update(url.base_url);
+            for (const auto & url : urls)
+            {
+                hash.update(url.base_url);
+                hash.update('\0');
+                hash.update(url.query_fragment);
+                hash.update('\0');
+            }
+            hash.update('\1');
+        };
+
+        if (object_info.read_source_index)
+        {
+            if (*object_info.read_source_index >= url_shards.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
+            hash_urls(url_shards[*object_info.read_source_index]);
+        }
+        else
+        {
+            for (const auto & urls : url_shards)
+                hash_urls(urls);
+        }
+
+        for (const auto & header : web_object_storage.getHeaders())
+        {
+            hash.update(header.name);
             hash.update('\0');
-            hash.update(url.query_fragment);
+            hash.update(header.value);
             hash.update('\0');
         }
 
@@ -284,7 +442,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
-    extern const SettingsBool table_engine_read_through_distributed_cache;
+    extern const SettingsBoolAuto table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_columns_cache;
@@ -362,6 +520,96 @@ static ActionsDAG substituteIdentityPartitionColumns(
     }
 
     return ActionsDAG::merge(std::move(substitution), dag.clone());
+}
+
+/// Returns `filter` rewritten to read the columns `schema_transform` reads (the data file's own), or nullptr
+/// if the filter reads a subcolumn of a column that the transform changes beyond a rename. An indexHint reading
+/// a renamed or changed column is replaced by 1.
+static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsDAG & filter, const ActionsDAG & schema_transform)
+{
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> current_columns;
+    for (const auto * output : schema_transform.getOutputs())
+        current_columns.emplace(output->result_name, output);
+
+    auto file_column = [](const ActionsDAG::Node * output) -> const ActionsDAG::Node *
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_type->equals(*output->result_type))
+            return node;
+        return nullptr;
+    };
+
+    /// The current column `name` is, or the one it is a subcolumn of, and the subcolumn suffix (".null", ".x").
+    auto find_column = [&](std::string_view name) -> std::pair<const ActionsDAG::Node *, std::string_view>
+    {
+        if (auto it = current_columns.find(name); it != current_columns.end())
+            return {it->second, {}};
+        for (size_t pos = name.rfind('.'); pos != std::string_view::npos && pos > 0; pos = name.rfind('.', pos - 1))
+            if (auto it = current_columns.find(name.substr(0, pos)); it != current_columns.end())
+                return {it->second, name.substr(pos)};
+        return {nullptr, {}};
+    };
+
+    ActionsDAG::NodeRawConstPtrs needed;
+    std::vector<std::tuple<String, DataTypePtr, String>> renamed_subcolumns;
+    for (const auto * input : filter.getInputs())
+    {
+        auto [column, subcolumn] = find_column(input->result_name);
+        if (!column)
+            continue;
+        if (subcolumn.empty())
+        {
+            needed.push_back(column);
+            continue;
+        }
+        const auto * source = file_column(column);
+        if (!source)
+            return nullptr;
+        if (source->result_name != column->result_name)
+            renamed_subcolumns.emplace_back(source->result_name + String(subcolumn), input->result_type, input->result_name);
+    }
+
+    auto reads_changed_column = [&](this const auto & self, const ActionsDAG & actions) -> bool
+    {
+        for (const auto * input : actions.getInputs())
+        {
+            const auto * column = find_column(input->result_name).first;
+            if (!column)
+                continue;
+            const auto * source = file_column(column);
+            if (!source || source->result_name != column->result_name)
+                return true;
+        }
+        for (const auto & node : actions.getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION)
+                if (const auto * index_hint = FunctionIndexHint::tryGet(node.function_base); index_hint && self(index_hint->getActions()))
+                    return true;
+        return false;
+    };
+
+    auto filter_copy = filter.clone();
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> hints_over_changed_columns;
+    for (const auto & node : filter_copy.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+            if (const auto * index_hint = FunctionIndexHint::tryGet(node.function_base); index_hint && reads_changed_column(index_hint->getActions()))
+                hints_over_changed_columns.emplace(
+                    &node,
+                    ColumnWithTypeAndName{DataTypeUInt8().createColumnConst(1, 1u), std::make_shared<DataTypeUInt8>(), node.result_name});
+    filter_copy.substitute(hints_over_changed_columns);
+
+    auto file_to_current = ActionsDAG::cloneSubDAG(needed, /*remove_aliases=*/ false);
+    for (const auto & [file_name, type, current_name] : renamed_subcolumns)
+    {
+        const auto & file_input = file_to_current.addInput(file_name, type);
+        file_to_current.getOutputs().push_back(&file_to_current.addAlias(file_input, current_name));
+    }
+
+    const size_t num_filter_outputs = filter.getOutputs().size();
+    auto composed = ActionsDAG::merge(std::move(file_to_current), std::move(filter_copy));
+    ActionsDAG::NodeRawConstPtrs outputs(composed.getOutputs().begin(), composed.getOutputs().begin() + num_filter_outputs);
+    return std::make_shared<const ActionsDAG>(ActionsDAG::cloneSubDAG(outputs, /*remove_aliases=*/ true));
 }
 
 static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
@@ -681,7 +929,7 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
         const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
         /// NUL cannot occur in a path, so it separates the two unambiguously.
         const String hashed = sipHash128String(identifier + '\0' + qualified_path);
-        identifier = identifier.substr(0, identifier.find_first_of("?#")) + "#storage=" + hashed;
+        identifier = String(stripQueryAndFragment(identifier)) + "#storage=" + hashed;
     }
     return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
 }
@@ -839,7 +1087,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         /// outer glob happens to match the full entry string). Archives keep `GlobIterator`, and the
         /// entry-level predicate is applied after `ArchiveIterator` has created entry object infos.
         std::optional<Strings> paths;
-        if (!match_web_paths_only && !is_archive && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        /// Not when a data column named `_path` shadows the virtual one.
+        if (!match_web_paths_only && !is_archive && filter_actions_dag && virtual_columns.contains("_path")
+            && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
@@ -1839,13 +2089,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     stripped_prewhere_info = format_filter_info->prewhere_info;
             }
 
+            const auto schema_transformer = schema_changed ? configuration->getSchemaTransformer(context_, object_info) : nullptr;
+
+            /// The reader of a schema-evolved file sees the file's own columns, so it gets the filter over them.
+            std::shared_ptr<const ActionsDAG> filter_actions_dag = format_filter_info->filter_actions_dag;
+            const bool filter_over_file_columns = schema_transformer && filter_actions_dag;
+            if (filter_over_file_columns)
+                filter_actions_dag = getFilterOverFileColumns(*filter_actions_dag, *schema_transformer);
+
             auto row_level_filter = format_filter_info->row_level_filter;
             auto prewhere_info = format_filter_info->prewhere_info;
             bool filters_substituted = false;
             /// A filter evaluated inside the reader must see the identity-partitioned columns of this
             /// data file as the manifest defines them, because the file itself need not store them.
-            if (format_supports_prewhere && !identity_partition_columns.empty()
-                && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
+            if (format_supports_prewhere && !identity_partition_columns.empty() && !schema_transformer)
             {
                 if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
                 {
@@ -1885,8 +2142,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// (getSchemaTransformer() == null, no rename) the mapper already yields
                     /// the current names, so keep the filters in the reader to preserve
                     /// Parquet row-group / page pruning.
-                    const bool has_schema_transform
-                        = configuration->getSchemaTransformer(context_, object_info) != nullptr;
+                    const bool has_schema_transform = schema_transformer != nullptr;
                     if (format_supports_prewhere && has_schema_transform)
                     {
                         if (format_filter_info->row_level_filter)
@@ -1896,7 +2152,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     }
                     const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
                     auto result = std::make_shared<FormatFilterInfo>(
-                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? row_level_filter : nullptr,
                         keep_in_reader ? prewhere_info : nullptr);
@@ -1905,14 +2161,21 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
-                    result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper
-                        ? format_filter_info->current_schema_column_mapper
-                        : format_filter_info->column_mapper;
+                    if (filter_over_file_columns)
+                        result->current_schema_column_mapper = nullptr;
+                    else
+                        result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper
+                            ? format_filter_info->current_schema_column_mapper
+                            : format_filter_info->column_mapper;
                     if (top_k_filter_allowed)
                         result->top_k_filter = format_filter_info->top_k_filter;
                     /// With a schema transform the reader sees the names of the file's schema, which the filters do not use.
                     if (keep_in_reader)
+                    {
                         result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
+                        result->join_runtime_filter_reads_uncached_column_index
+                            = format_filter_info->join_runtime_filter_reads_uncached_column_index;
+                    }
                     return result;
                 }
             }
@@ -1934,26 +2197,31 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (!format_supports_prewhere)
             {
                 auto result = std::make_shared<FormatFilterInfo>(
-                    format_filter_info->filter_actions_dag,
+                    filter_actions_dag,
                     format_filter_info->context.lock(),
                     column_mapper,
                     nullptr, nullptr);
-                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                result->current_schema_column_mapper
+                    = filter_over_file_columns ? nullptr : format_filter_info->current_schema_column_mapper;
                 return result;
             }
 
             if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed)
-                || column_mapper != format_filter_info->column_mapper)
+                || column_mapper != format_filter_info->column_mapper
+                || filter_actions_dag != format_filter_info->filter_actions_dag)
             {
                 auto result = std::make_shared<FormatFilterInfo>(
-                    format_filter_info->filter_actions_dag,
+                    filter_actions_dag,
                     format_filter_info->context.lock(),
                     column_mapper,
                     row_level_filter, prewhere_info);
-                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                result->current_schema_column_mapper
+                    = filter_over_file_columns ? nullptr : format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
                 result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
+                result->join_runtime_filter_reads_uncached_column_index
+                    = format_filter_info->join_runtime_filter_reads_uncached_column_index;
                 return result;
             }
 
@@ -2005,6 +2273,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
                 filter_info_with_row_numbers->top_k_filter = filter_info->top_k_filter;
                 filter_info_with_row_numbers->join_runtime_filter_predicate = filter_info->join_runtime_filter_predicate;
+                filter_info_with_row_numbers->join_runtime_filter_reads_uncached_column_index
+                    = filter_info->join_runtime_filter_reads_uncached_column_index;
             }
             filter_info_with_row_numbers->need_row_numbers = true;
             filter_info = filter_info_with_row_numbers;
@@ -2117,6 +2387,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
+        /// The header of a file with another schema has the names of that schema.
+        if (!schema_changed)
+            input_format->setMapColumnsReadByOneSide(
+                read_from_format_info.map_columns_read_by_keys, read_from_format_info.map_columns_read_by_values);
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -2377,9 +2651,20 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
 
+    /// The caches are keyed on the ETag of the current version of an object, so a read of another version bypasses them.
+    const bool reads_explicit_object_version = readsExplicitObjectVersion(*object_storage);
+
     bool use_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
-    if (settings[Setting::table_engine_read_through_distributed_cache]
+    /// `auto` follows the decision for the other reads (the server setting `enable_read_through_distributed_cache`,
+    /// overridden by `force_read_through_distributed_cache`), resolved into `read_through_distributed_cache`.
+    /// Not for a fully qualified path (`s3://bucket/key`, a data file of a Delta Lake shallow clone): the object storage
+    /// splits it into a bucket and a key, but the cache server would look it up as a key in the bucket of the connection.
+    const auto & read_through_distributed_cache_setting = settings[Setting::table_engine_read_through_distributed_cache];
+    if (!reads_explicit_object_version
+        && !trySplitFullyQualifiedObjectPath(object_info.getPath())
+        && read_through_distributed_cache_setting.valueOr(effective_read_settings.read_through_distributed_cache)
+        && distributedCacheCanServe(*object_storage, /* requested_explicitly */ read_through_distributed_cache_setting.valueOrNullopt().has_value())
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az)
         && DistributedCache::getConnectionInfo(*object_storage))
@@ -2393,15 +2678,25 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!use_distributed_cache)
     {
         filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
-        use_filesystem_cache = effective_read_settings.enable_filesystem_cache
+        use_filesystem_cache = !reads_explicit_object_version
+            && effective_read_settings.enable_filesystem_cache
             && !filesystem_cache_name.empty()
             && (object_storage->getType() == ObjectStorageType::Azure
                 || object_storage->getType() == ObjectStorageType::S3);
     }
 
-    bool use_page_cache = allow_page_cache && !use_distributed_cache && !use_filesystem_cache
-        && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
+    /// The page cache goes on top of the distributed cache as for `MergeTree` (with `use_page_cache_with_distributed_cache`),
+    /// but not on top of the filesystem cache, which is local as well.
+    bool use_page_cache = allow_page_cache && !reads_explicit_object_version && !use_filesystem_cache
+        && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage
+        && (!use_distributed_cache || effective_read_settings.use_page_cache_with_distributed_cache);
 
+    if (use_page_cache && object_storage->getType() == ObjectStorageType::Web
+        && webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage)))
+    {
+        LOG_DEBUG(log, "Cannot use page cache, the object can be read from several URLs (failover)");
+        use_page_cache = false;
+    }
 
     /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
@@ -2417,9 +2712,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     else if (object_storage->getType() == ObjectStorageType::Azure)
         validate_etag_on_read = settings[Setting::azure_validate_etag_on_read];
 
+    /// Whether the metadata comes from a `HEAD` request of this read, with its credentials.
+    bool metadata_is_fetched_by_this_read = false;
     if (!object_info.metadata)
     {
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        metadata_is_fetched_by_this_read = true;
     }
     else if (!object_info.metadata->is_fetched && !object_info.metadata->is_from_table_records && validate_etag_on_read)
     {
@@ -2427,14 +2725,38 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         /// read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch
         /// that merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        metadata_is_fetched_by_this_read = true;
     }
 
     /// A cache serves bytes without a request with this reader's credentials, so it needs an identity scoped to them.
+    /// The immutable content id from the table records is such an identity for every cache, so a data file of
+    /// Iceberg or Delta Lake is cached without a `HEAD` request.
     if (object_info.metadata->is_from_table_records
-        && (((use_filesystem_cache || use_page_cache) && !object_info.metadata->getContentCacheToken())
-            || (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())))
+        && (use_filesystem_cache || use_page_cache || use_distributed_cache)
+        && !object_info.metadata->getContentCacheToken())
     {
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        metadata_is_fetched_by_this_read = true;
+    }
+
+    /// The page cache serves bytes without a request, and its key includes the identity of the credentials of the read
+    /// where it is known. Otherwise, the read is authorized by a `HEAD` request with its own credentials, because the
+    /// metadata from a listing proves only the permission to list the objects, not to read them.
+    String page_cache_credentials_identity;
+    if (use_page_cache && object_storage->getType() != ObjectStorageType::Web)
+    {
+        if (auto credentials_identity = getCredentialsIdentityForPageCache(*object_storage))
+        {
+            page_cache_credentials_identity = std::move(*credentials_identity);
+        }
+        else if (!metadata_is_fetched_by_this_read)
+        {
+            /// This `HEAD` only authorizes the read. Keep the tags of the previous metadata: they are read for the
+            /// `_tags` virtual column, and a `HEAD` without tags would replace them with an empty map.
+            ObjectAttributes tags = std::move(object_info.metadata->tags);
+            object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+            object_info.metadata->tags = std::move(tags);
+        }
     }
 
     if (use_page_cache && !object_info.metadata->getContentCacheToken())
@@ -2443,7 +2765,26 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
-    if (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    /// The page cache keeps the bytes under the ETag seen by this read, so the bytes must be checked to be of that
+    /// generation of the object. Otherwise an object changed between the `HEAD` and the `GET` and then restored is
+    /// served from the cache with the bytes of the other generation. An immutable content id needs no check.
+    bool pin_read_to_etag_for_page_cache = false;
+    if (use_page_cache && object_info.metadata->isEtagUsableAsCacheKey())
+    {
+        if (object_storage->getType() == ObjectStorageType::Web)
+        {
+            pin_read_to_etag_for_page_cache = true;
+        }
+        else if ((object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::Azure)
+            && !validate_etag_on_read)
+        {
+            LOG_DEBUG(log, "Cannot use page cache, the read is not validated against the etag "
+                "(`s3_validate_etag_on_read` or `azure_validate_etag_on_read` is disabled)");
+            use_page_cache = false;
+        }
+    }
+
+    if (use_distributed_cache && !object_info.metadata->getContentCacheToken())
     {
         LOG_DEBUG(log, "Cannot use distributed cache, etag is missing or not a strong content identifier");
         use_distributed_cache = false;
@@ -2521,11 +2862,20 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
     /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
-    if (validate_etag_on_read && object_info.metadata.has_value())
+    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache) && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
-    /// The distributed cache keys on the etag whether or not this read validates it.
+    /// The distributed cache keys on the content cache token whether or not this read validates the etag. The cache
+    /// server also checks the etag of its own `GET` against the token if it is an etag, so it needs to know the kind.
     if (use_distributed_cache)
-        stored_object.etag_hash = getETagHash(object_info.metadata->etag);
+    {
+        if (const auto content_token = object_info.metadata->getContentCacheToken())
+        {
+            stored_object.cache_token_hash = getCacheTokenHash(*content_token);
+            stored_object.cache_token_kind = object_info.metadata->isEtagUsableAsCacheKey()
+                ? StoredObject::CacheTokenKind::ETag
+                : StoredObject::CacheTokenKind::ImmutableContentId;
+        }
+    }
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -2576,7 +2926,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_page_cache)
     {
         pipeline.needMemoryCache(
-            getPageCachePathForObjectStorage(object_info, object_storage),
+            getPageCachePathForObjectStorage(object_info, object_storage, page_cache_credentials_identity),
             "etag:" + *object_info.metadata->getContentCacheToken(),
             modified_read_settings.page_cache_settings);
     }

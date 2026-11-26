@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
