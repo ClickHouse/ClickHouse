@@ -21,4 +21,6 @@ rows_materialized	1	2090-01-01 00:00:00
 Wide
 rows_where	1
 rows_where	3
+Wide
 rows_where_merged	3
+rows_where_cond_merged	3
